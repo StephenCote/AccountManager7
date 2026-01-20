@@ -1288,24 +1288,25 @@
         m.redraw();
     }
 
-    // Mini card for stack display
+    // Mini card for stack display - responsive scaling
     // cardType: 'character', 'item', 'location', 'event' (for future use)
-    // Responsive: smaller on mobile (60x85), larger on desktop (80x110)
-    function renderMiniCard(card, onClick, isHighlight, source, cardType) {
+    // useResponsive: true for cards in hand areas that should scale with container
+    function renderMiniCard(card, onClick, isHighlight, source, cardType, useResponsive) {
         let portraitUrl = card ? getPortraitUrl(card, "128x128") : null;
         let borderClass = isHighlight ? "cg-card-selected" : "border-gray-400 dark:border-gray-500";
         let isDragging = draggedCard && draggedCard.objectId === card?.objectId;
         let typeIcon = cardType === 'character' ? 'person' : cardType === 'item' ? 'inventory_2' : cardType === 'location' ? 'location_on' : 'event';
+        let cardClass = useResponsive ? "cg-card-mini-responsive" : "cg-card-mini";
 
         return m("div", {
-            class: "cg-card-mini " + borderClass + (isDragging ? " opacity-50" : ""),
-            style: "width: 60px; height: 85px;",
+            class: cardClass + " " + borderClass + (isDragging ? " opacity-50" : ""),
+            style: useResponsive ? "" : "width: 60px; height: 85px;",
             onclick: onClick,
             draggable: source ? true : false,
             ondragstart: source ? function(e) { handleDragStart(e, card, source); } : null,
             ondragend: source ? handleDragEnd : null
         }, [
-            m("div", {class: "cg-mini-portrait"}, [
+            m("div", {class: "cg-mini-portrait flex-1"}, [
                 portraitUrl ?
                     m("img", {src: portraitUrl, class: "w-full h-full object-cover", draggable: false}) :
                     m("span", {class: "cg-mini-portrait-icon"}, "person"),
@@ -1315,7 +1316,7 @@
                 ])
             ]),
             m("div", {class: "cg-mini-name"}, [
-                m("div", {class: "cg-mini-name-text", style: "font-size: 9px"},
+                m("div", {class: "cg-mini-name-text text-xs md:text-sm"},
                     card ? card.name.split(" ")[0] : "?")
             ])
         ]);
@@ -1462,22 +1463,19 @@
                             actionHand.length === 0 ?
                                 m("div", {
                                     class: "cg-dropzone " + (isActionDropTarget ? "cg-dropzone-action-active" : "cg-dropzone-action-inactive"),
-                                    style: "width: 50px; min-height: 70px;"
-                                }, m("span", {class: "material-symbols-outlined text-purple-400", style: "font-size: 20px"}, "add")) :
-                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectActionCard(actionHand[actionHandIndex]); }}, [
-                                    // Stacked cards visual
-                                    actionHand.length > 1 ? m("div", {class: "cg-stack-action", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    actionHand.length > 2 ? m("div", {class: "cg-stack-action-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
-                                    // Top card
+                                    style: "min-width: 80px; min-height: 112px;"
+                                }, m("span", {class: "material-symbols-outlined text-purple-400 text-2xl md:text-3xl"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center justify-center h-full", onclick: function() { selectActionCard(actionHand[actionHandIndex]); }}, [
+                                    // Top card - responsive
                                     m("div", {
                                         class: "cg-mini-action",
-                                        style: "width: 50px; height: 70px;",
                                         draggable: true,
                                         ondragstart: function(e) { handleDragStart(e, actionHand[actionHandIndex], 'actionHand'); },
                                         ondragend: handleDragEnd
                                     }, [
-                                        m("span", {class: "cg-mini-icon-purple", style: "font-size: 24px"}, actionHand[actionHandIndex].icon),
-                                        m("span", {class: "cg-mini-text-purple", style: "font-size: 9px"}, actionHand[actionHandIndex].label)
+                                        m("span", {class: "cg-mini-icon-purple text-2xl md:text-3xl"}, actionHand[actionHandIndex].icon),
+                                        m("span", {class: "cg-mini-text-purple text-xs md:text-sm"}, actionHand[actionHandIndex].label),
+                                        actionHand.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, actionHand.length) : ""
                                     ])
                                 ])
                         ]),
@@ -1490,19 +1488,18 @@
                             ondrop: handleDropOnUserHand
                         }, [
                             userHand.length === 0 ?
-                                m("div", {class: "text-center text-gray-400 flex-1 flex items-center"}, [
+                                m("div", {class: "text-center text-gray-400 flex-1 flex items-center justify-center h-full"}, [
                                     m("div", {
-                                        class: "cg-dropzone-char " + (isCharDropTarget ? "cg-dropzone-green-active" : "border-gray-400"),
-                                        style: "width: 60px; height: 85px;"
+                                        class: "cg-dropzone-char w-24 h-32 md:w-32 md:h-44 lg:w-40 lg:h-56 " + (isCharDropTarget ? "cg-dropzone-green-active" : "border-gray-400")
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-2xl"}, "person_add"),
-                                        m("span", {style: "font-size: 9px"}, "Drop")
+                                        m("span", {class: "material-symbols-outlined text-3xl md:text-4xl lg:text-5xl"}, "person_add"),
+                                        m("span", {class: "text-xs md:text-sm"}, "Drop")
                                     ])
                                 ]) :
-                                m("div", {class: "flex-1 flex items-center"},
+                                m("div", {class: "flex-1 flex items-center justify-center h-full"},
                                     userHand.map(function(card) {
                                         let isSelected = selectedCard && selectedCard.objectId === card.objectId;
-                                        return renderMiniCard(card, function() { selectCard(card); }, isSelected, 'userHand', 'character');
+                                        return renderMiniCard(card, function() { selectCard(card); }, isSelected, 'userHand', 'character', true);
                                     })
                                 )
                         ]),
@@ -1521,20 +1518,18 @@
                             itemHand.length === 0 ?
                                 m("div", {
                                     class: "cg-dropzone " + (isItemDropTarget ? "cg-dropzone-item-active" : "cg-dropzone-item-inactive"),
-                                    style: "width: 50px; min-height: 70px;"
-                                }, m("span", {class: "material-symbols-outlined text-emerald-400", style: "font-size: 20px"}, "add")) :
-                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectItemCard(itemHand[itemHandIndex]); }}, [
-                                    itemHand.length > 1 ? m("div", {class: "cg-stack-item", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    itemHand.length > 2 ? m("div", {class: "cg-stack-item-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
+                                    style: "min-width: 80px; min-height: 112px;"
+                                }, m("span", {class: "material-symbols-outlined text-emerald-400 text-2xl md:text-3xl"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center justify-center h-full", onclick: function() { selectItemCard(itemHand[itemHandIndex]); }}, [
                                     m("div", {
                                         class: "cg-mini-item",
-                                        style: "width: 50px; height: 70px;",
                                         draggable: true,
                                         ondragstart: function(e) { handleDragStart(e, itemHand[itemHandIndex], 'itemHand'); },
                                         ondragend: handleDragEnd
                                     }, [
-                                        m("span", {class: "cg-mini-icon-emerald", style: "font-size: 24px"}, "inventory_2"),
-                                        m("span", {class: "cg-mini-text-emerald", style: "font-size: 9px"}, itemHand[itemHandIndex].name ? itemHand[itemHandIndex].name.substring(0, 8) : "Item")
+                                        m("span", {class: "cg-mini-icon-emerald text-2xl md:text-3xl"}, "inventory_2"),
+                                        m("span", {class: "cg-mini-text-emerald text-xs md:text-sm"}, itemHand[itemHandIndex].name ? itemHand[itemHandIndex].name.substring(0, 8) : "Item"),
+                                        itemHand.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-emerald-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, itemHand.length) : ""
                                     ])
                                 ])
                         ]),
@@ -1553,20 +1548,18 @@
                             apparelHand.length === 0 ?
                                 m("div", {
                                     class: "cg-dropzone " + (isApparelDropTarget ? "cg-dropzone-apparel-active" : "cg-dropzone-apparel-inactive"),
-                                    style: "width: 50px; min-height: 70px;"
-                                }, m("span", {class: "material-symbols-outlined text-pink-400", style: "font-size: 20px"}, "add")) :
-                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectApparelCard(apparelHand[apparelHandIndex]); }}, [
-                                    apparelHand.length > 1 ? m("div", {class: "cg-stack-apparel", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    apparelHand.length > 2 ? m("div", {class: "cg-stack-apparel-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
+                                    style: "min-width: 80px; min-height: 112px;"
+                                }, m("span", {class: "material-symbols-outlined text-pink-400 text-2xl md:text-3xl"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center justify-center h-full", onclick: function() { selectApparelCard(apparelHand[apparelHandIndex]); }}, [
                                     m("div", {
                                         class: "cg-mini-apparel",
-                                        style: "width: 50px; height: 70px;",
                                         draggable: true,
                                         ondragstart: function(e) { handleDragStart(e, apparelHand[apparelHandIndex], 'apparelHand'); },
                                         ondragend: handleDragEnd
                                     }, [
-                                        m("span", {class: "cg-mini-icon-pink", style: "font-size: 24px"}, "checkroom"),
-                                        m("span", {class: "cg-mini-text-pink", style: "font-size: 9px"}, getApparelDisplayName(apparelHand[apparelHandIndex]).substring(0, 8))
+                                        m("span", {class: "cg-mini-icon-pink text-2xl md:text-3xl"}, "checkroom"),
+                                        m("span", {class: "cg-mini-text-pink text-xs md:text-sm"}, getApparelDisplayName(apparelHand[apparelHandIndex]).substring(0, 8)),
+                                        apparelHand.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-pink-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, apparelHand.length) : ""
                                     ])
                                 ])
                         ])
@@ -1698,17 +1691,13 @@
                             systemActionHand.length === 0 ?
                                 m("div", {
                                     class: "cg-dropzone " + (isActionDropTarget ? "cg-dropzone-action-active" : "cg-dropzone-action-inactive"),
-                                    style: "width: 50px; min-height: 70px;"
-                                }, m("span", {class: "material-symbols-outlined text-purple-400", style: "font-size: 20px"}, "add")) :
-                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectActionCard(systemActionHand[sysActionIdx]); }}, [
-                                    systemActionHand.length > 1 ? m("div", {class: "cg-stack-action", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    systemActionHand.length > 2 ? m("div", {class: "cg-stack-action-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
-                                    m("div", {
-                                        class: "cg-mini-action",
-                                        style: "width: 50px; height: 70px;"
-                                    }, [
-                                        m("span", {class: "cg-mini-icon-purple", style: "font-size: 24px"}, systemActionHand[sysActionIdx].icon),
-                                        m("span", {class: "cg-mini-text-purple", style: "font-size: 9px"}, systemActionHand[sysActionIdx].label)
+                                    style: "min-width: 80px; min-height: 112px;"
+                                }, m("span", {class: "material-symbols-outlined text-purple-400 text-2xl md:text-3xl"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center justify-center h-full", onclick: function() { selectActionCard(systemActionHand[sysActionIdx]); }}, [
+                                    m("div", {class: "cg-mini-action"}, [
+                                        m("span", {class: "cg-mini-icon-purple text-2xl md:text-3xl"}, systemActionHand[sysActionIdx].icon),
+                                        m("span", {class: "cg-mini-text-purple text-xs md:text-sm"}, systemActionHand[sysActionIdx].label),
+                                        systemActionHand.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, systemActionHand.length) : ""
                                     ])
                                 ])
                         ]),
@@ -1721,19 +1710,18 @@
                             ondrop: handleDropOnGameHand
                         }, [
                             gameHand.length === 0 ?
-                                m("div", {class: "text-center text-gray-400 flex-1 flex items-center"}, [
+                                m("div", {class: "text-center text-gray-400 flex-1 flex items-center justify-center h-full"}, [
                                     m("div", {
-                                        class: "cg-dropzone-char " + (isCharDropTarget ? "cg-dropzone-red-active" : "border-gray-400"),
-                                        style: "width: 60px; height: 85px;"
+                                        class: "cg-dropzone-char w-24 h-32 md:w-32 md:h-44 lg:w-40 lg:h-56 " + (isCharDropTarget ? "cg-dropzone-red-active" : "border-gray-400")
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-2xl"}, "smart_toy"),
-                                        m("span", {style: "font-size: 9px"}, "Drop")
+                                        m("span", {class: "material-symbols-outlined text-3xl md:text-4xl lg:text-5xl"}, "smart_toy"),
+                                        m("span", {class: "text-xs md:text-sm"}, "Drop")
                                     ])
                                 ]) :
-                                m("div", {class: "flex space-x-1 flex-1 items-center"},
+                                m("div", {class: "flex space-x-1 flex-1 items-center justify-center h-full"},
                                     gameHand.map(function(card) {
                                         let isSelected = selectedCard && selectedCard.objectId === card.objectId;
-                                        return renderMiniCard(card, function() { selectCard(card); }, isSelected, 'gameHand', 'character');
+                                        return renderMiniCard(card, function() { selectCard(card); }, isSelected, 'gameHand', 'character', true);
                                     })
                                 )
                         ]),
@@ -1752,17 +1740,13 @@
                             systemItems.length === 0 ?
                                 m("div", {
                                     class: "cg-dropzone " + (isItemDropTarget ? "cg-dropzone-item-active" : "cg-dropzone-item-inactive"),
-                                    style: "width: 50px; min-height: 70px;"
-                                }, m("span", {class: "material-symbols-outlined text-emerald-400", style: "font-size: 20px"}, "add")) :
-                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectItemCard(systemItems[sysItemIdx]); }}, [
-                                    systemItems.length > 1 ? m("div", {class: "cg-stack-item", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    systemItems.length > 2 ? m("div", {class: "cg-stack-item-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
-                                    m("div", {
-                                        class: "cg-mini-item",
-                                        style: "width: 50px; height: 70px;"
-                                    }, [
-                                        m("span", {class: "cg-mini-icon-emerald", style: "font-size: 24px"}, "inventory_2"),
-                                        m("span", {class: "cg-mini-text-emerald", style: "font-size: 9px"}, systemItems[sysItemIdx].name ? systemItems[sysItemIdx].name.substring(0, 8) : "Item")
+                                    style: "min-width: 80px; min-height: 112px;"
+                                }, m("span", {class: "material-symbols-outlined text-emerald-400 text-2xl md:text-3xl"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center justify-center h-full", onclick: function() { selectItemCard(systemItems[sysItemIdx]); }}, [
+                                    m("div", {class: "cg-mini-item"}, [
+                                        m("span", {class: "cg-mini-icon-emerald text-2xl md:text-3xl"}, "inventory_2"),
+                                        m("span", {class: "cg-mini-text-emerald text-xs md:text-sm"}, systemItems[sysItemIdx].name ? systemItems[sysItemIdx].name.substring(0, 8) : "Item"),
+                                        systemItems.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-emerald-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, systemItems.length) : ""
                                     ])
                                 ])
                         ]),
@@ -1781,17 +1765,13 @@
                             systemApparel.length === 0 ?
                                 m("div", {
                                     class: "cg-dropzone " + (isApparelDropTarget ? "cg-dropzone-apparel-active" : "cg-dropzone-apparel-inactive"),
-                                    style: "width: 50px; min-height: 70px;"
-                                }, m("span", {class: "material-symbols-outlined text-pink-400", style: "font-size: 20px"}, "add")) :
-                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectApparelCard(systemApparel[sysApparelIdx]); }}, [
-                                    systemApparel.length > 1 ? m("div", {class: "cg-stack-apparel", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    systemApparel.length > 2 ? m("div", {class: "cg-stack-apparel-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
-                                    m("div", {
-                                        class: "cg-mini-apparel",
-                                        style: "width: 50px; height: 70px;"
-                                    }, [
-                                        m("span", {class: "cg-mini-icon-pink", style: "font-size: 24px"}, "checkroom"),
-                                        m("span", {class: "cg-mini-text-pink", style: "font-size: 9px"}, getApparelDisplayName(systemApparel[sysApparelIdx]).substring(0, 8))
+                                    style: "min-width: 80px; min-height: 112px;"
+                                }, m("span", {class: "material-symbols-outlined text-pink-400 text-2xl md:text-3xl"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center justify-center h-full", onclick: function() { selectApparelCard(systemApparel[sysApparelIdx]); }}, [
+                                    m("div", {class: "cg-mini-apparel"}, [
+                                        m("span", {class: "cg-mini-icon-pink text-2xl md:text-3xl"}, "checkroom"),
+                                        m("span", {class: "cg-mini-text-pink text-xs md:text-sm"}, getApparelDisplayName(systemApparel[sysApparelIdx]).substring(0, 8)),
+                                        systemApparel.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-pink-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, systemApparel.length) : ""
                                     ])
                                 ])
                         ])

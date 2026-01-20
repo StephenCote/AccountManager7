@@ -922,9 +922,12 @@
         @apply cg-panel transition-colors;
       }
 
-      /* Card base styles */
+      /* Card base styles - responsive mini card */
       .cg-card-mini {
-        @apply rounded-lg overflow-hidden border-2 bg-gradient-to-b from-amber-100 to-amber-200 dark:from-gray-700 dark:to-gray-800 shadow-lg cursor-grab hover:scale-105 transition-transform flex-shrink-0;
+        @apply rounded-lg overflow-hidden border-2 bg-gradient-to-b from-amber-100 to-amber-200 dark:from-gray-700 dark:to-gray-800 shadow-lg cursor-grab hover:scale-105 transition-transform flex-shrink-0 flex flex-col;
+      }
+      .cg-card-mini-responsive {
+        @apply cg-card-mini w-24 h-32 md:w-32 md:h-44 lg:w-40 lg:h-56;
       }
       .cg-card-back {
         @apply rounded-lg overflow-hidden border-2 border-gray-400 dark:border-gray-500 bg-gradient-to-b from-blue-800 to-blue-900 shadow-lg flex-shrink-0;
@@ -950,15 +953,15 @@
         @apply absolute rounded-lg bg-gradient-to-b from-purple-600 to-purple-800 border-2 border-purple-500;
       }
 
-      /* Action/Item/Apparel mini-card styles */
+      /* Action/Item/Apparel mini-card styles - responsive sizing */
       .cg-mini-action {
-        @apply relative rounded bg-gradient-to-b from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-900 border-2 border-purple-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow;
+        @apply relative rounded bg-gradient-to-b from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-900 border-2 border-purple-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow w-20 h-28 md:w-24 md:h-32 lg:w-28 lg:h-40;
       }
       .cg-mini-item {
-        @apply relative rounded bg-gradient-to-b from-emerald-100 to-emerald-200 dark:from-emerald-800 dark:to-emerald-900 border-2 border-emerald-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow;
+        @apply relative rounded bg-gradient-to-b from-emerald-100 to-emerald-200 dark:from-emerald-800 dark:to-emerald-900 border-2 border-emerald-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow w-20 h-28 md:w-24 md:h-32 lg:w-28 lg:h-40;
       }
       .cg-mini-apparel {
-        @apply relative rounded bg-gradient-to-b from-pink-100 to-pink-200 dark:from-pink-800 dark:to-pink-900 border-2 border-pink-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow;
+        @apply relative rounded bg-gradient-to-b from-pink-100 to-pink-200 dark:from-pink-800 dark:to-pink-900 border-2 border-pink-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow w-20 h-28 md:w-24 md:h-32 lg:w-28 lg:h-40;
       }
 
       /* Stack shadow cards for action/item/apparel */
@@ -1078,7 +1081,7 @@
 
       /* Card section containers */
       .cg-card-section {
-        @apply flex flex-col items-center transition-colors rounded p-1 h-3/4;
+        @apply flex flex-col items-center justify-center transition-colors rounded p-1 md:p-2 flex-1 min-w-0;
       }
       .cg-card-section-action {
         @apply cg-card-section;
@@ -1124,7 +1127,7 @@
 
       /* Hand content areas */
       .cg-hand-content {
-        @apply flex-1 flex items-center justify-center p-1 md:p-2 gap-1 md:gap-3 overflow-x-auto;
+        @apply flex-1 flex items-stretch justify-center p-2 md:p-4 gap-2 md:gap-4 overflow-x-auto;
       }
 
       /* Played actions */
@@ -1432,7 +1435,7 @@
 
       /* Mini card portrait area */
       .cg-mini-portrait {
-        @apply h-16 bg-gray-300 dark:bg-gray-700 flex items-center justify-center overflow-hidden relative;
+        @apply bg-gray-300 dark:bg-gray-700 flex items-center justify-center overflow-hidden relative;
       }
       .cg-mini-portrait-icon {
         @apply material-symbols-outlined text-xl text-gray-400 dark:text-gray-500;
@@ -1441,7 +1444,7 @@
         @apply absolute top-0.5 right-0.5 p-0.5 rounded bg-black/40 text-white;
       }
       .cg-mini-name {
-        @apply h-5 px-0.5 flex items-center justify-center bg-amber-200 dark:bg-gray-800 border-t border-amber-300 dark:border-gray-600;
+        @apply px-1 py-0.5 flex items-center justify-center bg-amber-200 dark:bg-gray-800 border-t border-amber-300 dark:border-gray-600 flex-shrink-0;
       }
       .cg-mini-name-text {
         @apply font-bold text-gray-800 dark:text-gray-200 truncate text-center;
