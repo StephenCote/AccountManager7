@@ -139,8 +139,8 @@ public class TagService {
 			BaseRecord data = getFullData(user, "data.data", referenceId, false);
 			if(data.get(FieldNames.FIELD_DESCRIPTION) == null) {
 				String captionStr = null;
-				if (imageTagResponse.getCaptions() != null && imageTagResponse.getCaptions().size() > 0) {
-					captionStr = imageTagResponse.getCaptions().get(imageTagResponse.getCaptions().size() - 1);
+				if (imageTagResponse.getCaptions() != null && imageTagResponse.getCaptions().size() >= 2) {
+					captionStr = imageTagResponse.getCaptions().get(imageTagResponse.getCaptions().size() - 2);
 				}
 				if (captionStr != null) {
 					data.setValue(FieldNames.FIELD_DESCRIPTION, captionStr);
