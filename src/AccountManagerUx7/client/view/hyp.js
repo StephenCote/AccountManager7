@@ -353,8 +353,7 @@
 
                     // Core Message (Center)
                     m("div.absolute.top-1/2.left-1/2.-translate-x-1/2.-translate-y-1/2.text-center", { },
-                        m("h1", {class : "text-5xl font-bold transition-colors duration-1000 opacity-75", 
-                            class: HypnoApp.theme.mainText,
+                        m("h1", {class : "text-5xl font-bold transition-colors duration-1000 opacity-75 " + HypnoApp.theme.mainText,
                             style: { textShadow: `0 0 8px rgba(255, 255, 255, 0.3), 0 0 20px ${HypnoApp.theme.shadow}` }
                             
                         }, HypnoApp.coreText.toUpperCase())

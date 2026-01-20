@@ -196,7 +196,7 @@
                             path = path.slice(idx + origin.path.length + 1);
                         }
 
-                        console.log(path, am7view.typeByPath(path));
+                        // console.log(path, am7view.typeByPath(path));
                         let pathType;
                         if (path.indexOf("/") > -1) {
                             let np = node.path;

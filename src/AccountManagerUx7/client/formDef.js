@@ -3452,7 +3452,6 @@
                     format: "picker",
                     pickerType: "data.color",
                     pickerProperty: {
-                        selected: "id",
                         selected: "{object}",
                         entity: "hairColor"
                     }

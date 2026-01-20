@@ -66,11 +66,12 @@
     }
     function doGetFile(req, res) {
         let url = "." + req.url;
-    
-        let file = (req.url.match(/^\/$/) ? "index.html" : (req.params.file || ""));
+        let defFile = cfg.production ? "index.prod.html" : "index.html";
+
+        let file = (req.url.match(/^\/$/) ? defFile : (req.params.file || ""));
         let suffix = (
             file
-            ? file.slice(file.indexOf("."), file.length)
+            ? file.slice(file.lastIndexOf("."), file.length)
             : url.slice(url.lastIndexOf("."), url.length)
         );
         

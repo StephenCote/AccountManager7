@@ -1,4 +1,5 @@
 {
+    "production": true,
     "clientPort": 8899,
     "serverKey": "/ssl/server.key",
     "serverCert": "/ssl/server.cert",
@@ -36,6 +37,7 @@
     "files" : [
         "/blank.html",
         "/index.html",
+        "/index.prod.html",
         "/test.html",
         "/styles/basiTail.css",
         "/styles/pageStyle.css",

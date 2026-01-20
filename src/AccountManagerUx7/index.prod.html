@@ -1,0 +1,44 @@
+<!doctype html>
+<html class="light">
+
+<head>
+    <meta charset="utf-8">
+
+    <head>
+        <title>basi</title>
+        <link rel="icon" href="/media/logo_48.png" />
+
+        <!-- Production: Single bundled and minified CSS file -->
+        <link href="/dist/app.bundle.min.css" rel="stylesheet" />
+
+        <script type="text/javascript">
+            (function () {
+                window.g_application_path = "%AM7_SERVER%/AccountManagerService7";
+            })();
+        </script>
+
+        <!-- External libraries (loaded from node_modules - cannot be bundled due to special initialization) -->
+        <script src="/node_modules/mithril/mithril.min.js"></script>
+        <script src="/node_modules/tone/build/Tone.js"></script>
+        <script src="/node_modules/codemirror/lib/codemirror.js"></script>
+        <script src="/node_modules/codemirror/mode/javascript/javascript.js"></script>
+        <script src="/node_modules/codemirror/mode/css/css.js"></script>
+        <script src="/node_modules/codemirror/addon/lint/lint.js"></script>
+        <script src="/node_modules/codemirror/addon/lint/css-lint.js"></script>
+        <script src="/common/marked.umd.js"></script>
+    </head>
+
+<body>
+
+    <!-- Production: Single bundled and minified JS file -->
+    <script src="/dist/app.bundle.min.js"></script>
+
+    <!-- External ES modules (cannot be bundled due to dynamic imports) -->
+    <script src="/node_modules/pdfjs-dist/webpack.mjs" type="module"></script>
+    <script src="/node_modules/pdfjs-dist/build/pdf.mjs" type="module"></script>
+    <script src="/node_modules/pdfjs-dist/web/pdf_viewer.mjs" type="module"></script>
+    <script src="/node_modules/audiomotion-analyzer/dist/index.js" type="module"></script>
+
+</body>
+
+</html>

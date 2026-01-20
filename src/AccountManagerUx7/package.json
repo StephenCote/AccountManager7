@@ -4,7 +4,9 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "node build.js",
+    "build:watch": "nodemon --watch client --watch model --watch common --watch styles -e js,css --exec \"node build.js\""
   },
   "keywords": [],
   "author": "",
@@ -30,6 +32,7 @@
     "uuid": "^8.3.2"
   },
   "devDependencies": {
+    "esbuild": "^0.27.2",
     "eslint": "^7.32.0",
     "eslint-config-standard": "^16.0.3",
     "eslint-plugin-import": "^2.25.4",
