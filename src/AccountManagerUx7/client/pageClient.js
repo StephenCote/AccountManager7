@@ -171,7 +171,16 @@
         chatAvatar,
         normalizePath,
         chatStream: undefined,
-        audioStream: undefined
+        audioStream: undefined,
+        imageTags: (id) => {
+            return am7client.getImageTags(id);
+        },
+        applyImageTags: async (id) => {
+            let tags = await am7client.applyImageTags(id);
+            await am7client.clearCache("data.data");
+            await am7client.clearCache("data.tag");
+            return tags;
+        }
 
     };
 

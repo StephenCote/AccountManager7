@@ -24,7 +24,7 @@
 		var sToken = sBase + "/token";
 		var sAppr = sBase + "/approval";
 		var sScr = sBase + "/script";
-		
+		var sTagSvc = sBase +"/tag";
 		window.uwm = {
 			consoleMode : 0,
 			developerMode : 0,	
@@ -358,7 +358,36 @@
 	function getPrincipal(fH){
 		return get(sPrincipal + "/", fH);
 	}
-
+	function getImageTags(sObjectId, fH){
+		if(!sObjectId){
+			console.error("Invalid objectId (" + sObjectId + ")");
+			return;
+		}
+		let sType = "data.data";
+		var o = getFromCache(sType, "GET", sObjectId);
+		if(o){
+			if(fH) fH(o);
+			return o;
+		}
+		var f = fH;
+		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,"GET",sObjectId,v);} if(f) f(v);};
+	    return get(sTagSvc + "/" + sObjectId, fc);
+	}
+	function applyImageTags(sObjectId, fH){
+		if(!sObjectId){
+			console.error("Invalid objectId (" + sObjectId + ")");
+			return;
+		}
+		let sType = "data.data";
+		var o = getFromCache(sType, "GET", sObjectId);
+		if(o){
+			if(fH) fH(o);
+			return o;
+		}
+		var f = fH;
+		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,"GET",sObjectId,v);} if(f) f(v);};
+	    return get(sTagSvc + "/apply/" + sObjectId, fc);
+	}
 	function getByObjectId(sType,sObjectId, fH){
 		if(!sType || !sObjectId){
 			console.error("Invalid type (" + sType + ") or objectId (" + sObjectId + ")");
@@ -862,7 +891,9 @@
 		logout : logout,
 		base:function(){
 			return sBase;
-		}
+		},
+		getImageTags,
+		applyImageTags
 	};
 
 	
