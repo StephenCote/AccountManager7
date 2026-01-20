@@ -1,0 +1,27 @@
+# Image Tagger API Dependencies
+# For DGX Spark with CUDA 13.0 (cu130)
+
+# Web framework
+fastapi
+uvicorn[standard]
+pydantic
+
+# Image processing
+Pillow
+
+# PyTorch with CUDA 13.0 support
+# Install FIRST with: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+# Do NOT include torch here to avoid conflicts
+
+# Hugging Face Transformers for vision-language models
+transformers
+accelerate
+safetensors
+
+# For efficient loading and inference
+einops
+timm
+
+# HTTP client (for model downloads)
+requests
+aiohttp

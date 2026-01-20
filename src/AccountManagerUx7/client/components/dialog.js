@@ -365,10 +365,10 @@
     // Levels: NONE, INTERNAL, UNDER, ON, BASE, ACCENT, SUIT, GARNITURE, ACCESSORY, OVER, OUTER, FULL_BODY, ENCLOSURE, UNKNOWN
     // UNDER/ON = tattoos/implants (under skin, on skin), BASE = skin contact clothing
     const socialSharingMap = {
-        "NONE": "inappropriate",      // No clothing - nude
-        "INTERNAL": "inappropriate",  // Internal items (implants)
-        "UNDER": "inappropriate",     // Under skin (implants)
-        "ON": "inappropriate",        // On skin (tattoos)
+        "NONE": "nude",      // No clothing - nude
+        "INTERNAL": "nude",  // Internal items (implants)
+        "UNDER": "nude",     // Under skin (implants)
+        "ON": "nude",        // On skin (tattoos)
         "BASE": "intimate",           // Skin contact clothing (underwear)
         "ACCENT": "public",           // Everything above BASE is public
         "SUIT": "public",
