@@ -134,15 +134,20 @@
       }
 
       let pages = pagination.pages();
-      if (!pages.containerId) {
+      if (!pages.containerId || !pages.container) {
         page.toast("error", "No container selected");
         return;
       }
 
-      // Build query to find first 500 images in the group
+      let groupId = pages.container.id;
+      if (!groupId) {
+        page.toast("error", "Container does not have a valid group ID");
+        return;
+      }
+
+      // Build query to find data in the group, then filter for images client-side
       let q = am7client.newQuery("data.data");
-      q.field("groupId", pages.container.id);
-      q.field("contentType", "image/%");
+      q.field("groupId", groupId);
       q.entity.request = ["id", "objectId", "name", "contentType"];
       q.range(0, 500);
 
@@ -150,11 +155,16 @@
       let qr = await page.search(q);
 
       if (!qr || !qr.results || !qr.results.length) {
-        page.toast("warn", "No images found in this group");
+        page.toast("warn", "No data found in this group");
         return;
       }
 
-      let images = qr.results;
+      // Filter for images only
+      let images = qr.results.filter(r => r.contentType && r.contentType.match(/^image\//i));
+      if (!images.length) {
+        page.toast("warn", "No images found in this group");
+        return;
+      }
       taggingInProgress = true;
       taggingAbort = false;
       m.redraw();
