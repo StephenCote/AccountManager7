@@ -259,3 +259,40 @@ img.alignleft
     background: rgba(255, 255, 255, 0.02);
     border-color: rgba(255, 255, 255, 0.1);
 }
+
+/* Tag pills for list view */
+.tags-cell {
+    max-width: 200px;
+    overflow: hidden;
+}
+
+.tag-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    margin: 1px 2px;
+    font-size: 0.75rem;
+    background-color: #e2e8f0;
+    color: #475569;
+    border-radius: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
+    vertical-align: middle;
+}
+
+.tag-pill.tag-more {
+    background-color: #94a3b8;
+    color: #fff;
+    cursor: help;
+}
+
+.dark .tag-pill {
+    background-color: #334155;
+    color: #cbd5e1;
+}
+
+.dark .tag-pill.tag-more {
+    background-color: #64748b;
+    color: #fff;
+}

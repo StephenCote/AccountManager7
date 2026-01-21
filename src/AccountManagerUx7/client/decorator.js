@@ -281,17 +281,23 @@
                 return m("td", { class: cw}, [getIcon(p)]);
             }
             else if(h == "_tags"){
+                let allTags = p.tags || [];
+                let maxVisible = 3;
+                let visibleTags = allTags.slice(0, maxVisible);
+                let remainingCount = allTags.length - maxVisible;
 
-                let tags = (p.tags || []).map((t) => {
-                    return [m("span", {
-                        class: "cursor-pointer material-symbols-outlined", onclick: function (e) {
-                            e.preventDefault();
-
-                            return false;
-                        }
-                    }, "label"), t.name];
+                let tagElements = visibleTags.map((t) => {
+                    return m("span", { class: "tag-pill", title: t.name }, t.name);
                 });
-                return m("td", { class: cw}, tags);
+
+                if (remainingCount > 0) {
+                    tagElements.push(m("span", {
+                        class: "tag-pill tag-more",
+                        title: allTags.slice(maxVisible).map(t => t.name).join(", ")
+                    }, "+" + remainingCount));
+                }
+
+                return m("td", { class: cw + " tags-cell" }, tagElements);
             }
             else if(h == "_favorite"){
                 return m("td", {class: cw},  m("span", {
