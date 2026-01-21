@@ -281,7 +281,15 @@
                 return m("td", { class: cw}, [getIcon(p)]);
             }
             else if(h == "_tags"){
-                let allTags = p.tags || [];
+                let rawTags = p.tags || [];
+                // Filter out null/undefined tags or tags without names
+                let allTags = rawTags.filter((t) => {
+                    if (!t || !t.name) {
+                        console.warn("Invalid tag found on object:", p.objectId || p.id, "tag:", t);
+                        return false;
+                    }
+                    return true;
+                });
                 let maxVisible = 3;
                 let visibleTags = allTags.slice(0, maxVisible);
                 let remainingCount = allTags.length - maxVisible;
