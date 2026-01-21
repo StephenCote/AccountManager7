@@ -181,6 +181,7 @@
         }
 
         let img = images[i];
+        page.toast("info", "Tagging " + (i + 1) + " of " + images.length + ": " + img.name, 5000);
         try {
           let tags = await page.applyImageTags(img.objectId);
           if (tags) {
@@ -190,12 +191,6 @@
         catch (e) {
           console.error("Failed to tag image: " + img.name, e);
           errorCount++;
-        }
-
-        // Update progress every 10 images
-        if ((i + 1) % 10 === 0) {
-          page.toast("info", "Tagged " + (i + 1) + " of " + images.length + " images...", 5000);
-          m.redraw();
         }
       }
 
