@@ -400,6 +400,7 @@
       entity: entity,
       paginating: false,
       new: function () {
+        requesting = false;
         pages = newPagination();
         return pages;
       },

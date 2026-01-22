@@ -288,6 +288,7 @@
         let byParent = (am7model.isParent(modType) && type !== 'auth.group');
         navContainerId = grp.objectId;
         if (byParent) navigateByParent = true;
+        pagination.new();
         m.redraw();
       }
       else {
@@ -638,13 +639,8 @@
         return;
       }
 
-      let red = false;
-      if (embeddedMode || pickerMode) {
-        //m.redraw();
-        red = true;
-      }
-
-      else pagination.filter(navFilter, red);
+      let red = (embeddedMode || pickerMode);
+      pagination.filter(navFilter, red);
     }
 
     function getListView() {

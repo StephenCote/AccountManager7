@@ -563,7 +563,7 @@
                     page.toast("info", "Creating image " + (i + 1) + " of " + count + "...", -1);
 
                     // Increment seed for subsequent images
-                    let useSeed = (i === 0) ? baseSeed : (parseInt(baseSeed) + i);
+                    let useSeed = baseSeed;//(i === 0) ? baseSeed : (parseInt(baseSeed) + i);
                     let imgEntity = Object.assign({}, cinst.entity);
                     imgEntity.seed = useSeed;
 
