@@ -1,8 +1,9 @@
 package org.cote.accountmanager.tools;
 
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Response model for the Image Tagger API.

@@ -20,7 +20,6 @@ import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
-import org.cote.accountmanager.util.ErrorUtil;
 
 public class PromptUtil {
 	public static final Logger logger = LogManager.getLogger(PromptUtil.class);

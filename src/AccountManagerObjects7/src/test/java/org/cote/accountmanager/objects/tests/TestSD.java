@@ -3,8 +3,6 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.security.SecureRandom;
@@ -12,15 +10,8 @@ import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 
-import javax.imageio.ImageIO;
-import javax.imageio.metadata.IIOMetadata;
-import javax.imageio.metadata.IIOMetadataNode;
-import javax.imageio.stream.ImageInputStream;
-
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
@@ -29,7 +20,6 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
-import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111OverrideSettings;
@@ -41,20 +31,14 @@ import org.cote.accountmanager.olio.sd.swarm.SWSessionResponse;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
-import com.drew.imaging.ImageMetadataReader;
 import com.drew.imaging.ImageProcessingException;
-import com.drew.metadata.Directory;
-import com.drew.metadata.Metadata;
-import com.drew.metadata.Tag;
 
 import jakarta.ws.rs.core.MediaType;
 

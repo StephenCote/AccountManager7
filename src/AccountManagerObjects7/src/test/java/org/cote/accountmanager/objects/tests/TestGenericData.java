@@ -8,7 +8,6 @@ import java.util.List;
 import org.apache.commons.csv.CSVFormat;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.parsers.GenericParser;
@@ -17,10 +16,7 @@ import org.cote.accountmanager.parsers.ParseMap;
 import org.cote.accountmanager.parsers.data.DataParseWriter;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
-import org.cote.accountmanager.schema.type.GeographyEnumType;
 import org.junit.Test;
 
 public class TestGenericData extends BaseTest {
