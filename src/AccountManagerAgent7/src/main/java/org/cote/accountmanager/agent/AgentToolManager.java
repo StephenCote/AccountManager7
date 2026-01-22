@@ -354,7 +354,7 @@ public class AgentToolManager {
 	}
 
 	public static List<BaseRecord> extractJSON(final String model, final String contents) {
-		// logger.info("Extracting JSON from contents: " + contents);
+		logger.info("Extracting JSON from contents: " + contents);
 		int fbai = contents.indexOf("{");
 		String uconts = contents.substring(0, fbai + 1) + "\"schema\":\"" + model + "\","
 				+ contents.substring(fbai + 1, contents.length());

@@ -77,7 +77,7 @@ public class TestAgent extends BaseTest {
 		assertNotNull("Person was null", per2);		
 		*/
 		
-		String testChatConfig = testChatConfigPrefix + " " + testProperties.getProperty("test.llm.serviceType").trim().toUpperCase() + " 9.chat";
+		String testChatConfig = testChatConfigPrefix + " " + testProperties.getProperty("test.llm.serviceType").trim().toUpperCase() + " 10.chat";
 		BaseRecord cfg = getChatConfig(testUser1, testChatConfig);
 
 		BaseRecord plan = null;
@@ -180,6 +180,7 @@ public class TestAgent extends BaseTest {
 				cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken").trim());
 			}
 			else if(serviceType == LLMServiceEnumType.OLLAMA) {
+				logger.info("** " + testProperties.getProperty("test.llm.ollama.server"));
 				cfg.setValue("serverUrl", testProperties.getProperty("test.llm.ollama.server").trim());
 				cfg.setValue("model", testProperties.getProperty("test.llm.ollama.model").trim());
 				
