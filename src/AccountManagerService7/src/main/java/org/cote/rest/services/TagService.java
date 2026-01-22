@@ -1,6 +1,8 @@
 package org.cote.rest.services;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -12,10 +14,16 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.tools.ImageTagResponse;
 import org.cote.accountmanager.tools.ImageTagUtil;
 import org.cote.accountmanager.tools.TagResult;
@@ -32,6 +40,7 @@ import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -143,5 +152,110 @@ public class TagService {
 			}
 		}
 		return  Response.status((imageTagResponse != null ? 200 : 404)).entity(imageTagResponse != null ? JSONUtil.exportObject(imageTagResponse) : null).build();
+	}
+
+	/**
+	 * Search for objects matching ALL of the provided tags.
+	 */
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/search/{type:[A-Za-z\\.]+}")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response searchByTags(@PathParam("type") String type, String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Query query = buildTagQuery(type, json, true);
+		if (query == null) {
+			return Response.status(400).entity(null).build();
+		}
+		QueryResult result = IOSystem.getActiveContext().getAccessPoint().list(user, query);
+		return Response.status(200).entity(result != null ? result.toFullString() : null).build();
+	}
+
+	/**
+	 * Count objects matching ALL of the provided tags.
+	 */
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/search/{type:[A-Za-z\\.]+}/count")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response countByTags(@PathParam("type") String type, String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Query query = buildTagQuery(type, json, true);
+		if (query == null) {
+			return Response.status(400).entity(null).build();
+		}
+		int count = IOSystem.getActiveContext().getAccessPoint().count(user, query);
+		return Response.status(200).entity(count).build();
+	}
+
+	/**
+	 * Search for objects matching ANY of the provided tags.
+	 */
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/search/{type:[A-Za-z\\.]+}/any")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response searchByAnyTags(@PathParam("type") String type, String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Query query = buildTagQuery(type, json, false);
+		if (query == null) {
+			return Response.status(400).entity(null).build();
+		}
+		QueryResult result = IOSystem.getActiveContext().getAccessPoint().list(user, query);
+		return Response.status(200).entity(result != null ? result.toFullString() : null).build();
+	}
+
+	/**
+	 * Count objects matching ANY of the provided tags.
+	 */
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/search/{type:[A-Za-z\\.]+}/any/count")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response countByAnyTags(@PathParam("type") String type, String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Query query = buildTagQuery(type, json, false);
+		if (query == null) {
+			return Response.status(400).entity(null).build();
+		}
+		int count = IOSystem.getActiveContext().getAccessPoint().count(user, query);
+		return Response.status(200).entity(count).build();
+	}
+
+	private Query buildTagQuery(String type, String json, boolean matchAll) {
+		BaseRecord[] tags = JSONUtil.importObject(json, LooseRecord[].class, RecordDeserializerConfig.getFilteredModule());
+		if (tags == null || tags.length == 0) {
+			return null;
+		}
+
+		List<String> tagIds = new ArrayList<>();
+		for (BaseRecord tag : tags) {
+			Long tagId = tag.get(FieldNames.FIELD_ID);
+			if (tagId != null && tagId > 0) {
+				tagIds.add(tagId.toString());
+			}
+		}
+		if (tagIds.isEmpty()) {
+			return null;
+		}
+
+		Query query = QueryUtil.createQuery(type);
+		Query partQuery = QueryUtil.createParticipationQuery(null, null, null, null, null);
+		partQuery.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.IN, String.join(",", tagIds));
+		partQuery.field(FieldNames.FIELD_PARTICIPATION_MODEL, ModelNames.MODEL_TAG);
+		partQuery.field(FieldNames.FIELD_PARTICIPANT_MODEL, type);
+		try {
+			partQuery.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPANT_ID);
+			List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
+			joins.add(partQuery);
+			query.set(FieldNames.FIELD_GROUP_CLAUSE, StatementUtil.getAlias(query) + "." + FieldNames.FIELD_ID);
+			if (matchAll) {
+				query.set(FieldNames.FIELD_HAVING_CLAUSE, "COUNT(DISTINCT " + StatementUtil.getAlias(partQuery) + "." + FieldNames.FIELD_PARTICIPATION_ID + ") = " + tagIds.size());
+			}
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+			return null;
+		}
+		return query;
 	}
 }

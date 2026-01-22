@@ -108,7 +108,12 @@ public class QueryUtil {
 			jF = "*";
 		}
 		
-		return (actorId + "-" + type + "-" + "-" + sortBy + "-" + order.toLowerCase().substring(0, 3) + "-" + startIndex + "-" + count + " [" + jF + "] [" + reqF + "] " + fieldKey(query));
+		String groupClause = query.get(FieldNames.FIELD_GROUP_CLAUSE);
+		String havingClause = query.get(FieldNames.FIELD_HAVING_CLAUSE);
+		String gcF = (groupClause != null ? groupClause : "*");
+		String hcF = (havingClause != null ? havingClause : "*");
+
+		return (actorId + "-" + type + "-" + "-" + sortBy + "-" + order.toLowerCase().substring(0, 3) + "-" + startIndex + "-" + count + " [" + jF + "] [" + reqF + "] [" + gcF + "] [" + hcF + "] " + fieldKey(query));
 	}
 
 	private static String fieldKey(BaseRecord field) {

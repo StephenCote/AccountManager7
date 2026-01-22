@@ -6,7 +6,6 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -119,74 +118,85 @@ public class TestData extends BaseTest {
 			logger.info("Data with tag2: " + tag2Members.size());
 			assertTrue("Expected 2 data objects with tag2", tag2Members.size() == 2);
 
-			// Test 3: Query for data with BOTH tag1 AND tag2 using IN clause on participation
-			// Query participation records where participation_id IN (tag1, tag2)
+			// Test 3: Query for data with tag1 AND tag2 using participation join
 			long tag1Id = tag1.get(FieldNames.FIELD_ID);
 			long tag2Id = tag2.get(FieldNames.FIELD_ID);
 			long tag3Id = tag3.get(FieldNames.FIELD_ID);
 
 			String twoTagIds = tag1Id + "," + tag2Id;
-			Query multiTagQuery = QueryUtil.createQuery(ModelNames.MODEL_PARTICIPATION);
-			multiTagQuery.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.IN, twoTagIds);
-			multiTagQuery.field(FieldNames.FIELD_PARTICIPATION_MODEL, ModelNames.MODEL_TAG);
-			multiTagQuery.field(FieldNames.FIELD_PARTICIPANT_MODEL, ModelNames.MODEL_DATA);
-			multiTagQuery.setRequest(new String[] {FieldNames.FIELD_PARTICIPANT_ID});
+			Query multiTagQuery = QueryUtil.createQuery(ModelNames.MODEL_DATA);
+			
+			multiTagQuery.setRequest(new String[]{"id"});
+			Query partQuery = QueryUtil.createParticipationQuery(null, null, null, null, null);
+			partQuery.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.IN, twoTagIds);
+			partQuery.field(FieldNames.FIELD_PARTICIPATION_MODEL, ModelNames.MODEL_TAG);
+			partQuery.field(FieldNames.FIELD_PARTICIPANT_MODEL, ModelNames.MODEL_DATA);
+			partQuery.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPANT_ID);
+			List<BaseRecord> joins = multiTagQuery.get(FieldNames.FIELD_JOINS);
+			joins.add(partQuery);
+			// any of the tags
+			multiTagQuery.set(FieldNames.FIELD_GROUP_CLAUSE, StatementUtil.getAlias(multiTagQuery) + "." + FieldNames.FIELD_ID);
+			//multiTagQuery.set(FieldNames.FIELD_HAVING_CLAUSE, "COUNT(DISTINCT " + StatementUtil.getAlias(partQuery) + "." + FieldNames.FIELD_PARTICIPATION_ID + ") = 2");
 
-			logger.info("Multi-tag participation query SQL:");
+
+			logger.info("Multi-tag query SQL:");
 			logger.info(StatementUtil.getSelectTemplate(multiTagQuery).getSql());
 
-			QueryResult multiTagResult = ioContext.getSearch().find(multiTagQuery);
-			logger.info("Participation records for tag1 or tag2: " + multiTagResult.getCount());
+			QueryResult multiTagResult = ioContext.getAccessPoint().list(testUser, multiTagQuery);
+			logger.info("Data with tag1 or tag2: " + multiTagResult.getCount());
+			// Returns data matching ANY of the tags (data1, data2, data3)
+			//logger.info(multiTagQuery.toSelect());
+			
+			assertTrue("Expected 3 data objects with tag1 or tag2, but found " + multiTagResult.getCount(), multiTagResult.getCount() == 3);
 
-			// Count participant occurrences - data with ALL tags will appear N times (once per tag)
-			java.util.Map<Long, Long> participantCounts = new java.util.HashMap<>();
-			for (BaseRecord part : multiTagResult.getResults()) {
-				long partId = part.get(FieldNames.FIELD_PARTICIPANT_ID);
-				participantCounts.merge(partId, 1L, Long::sum);
+			// Test 4: Query for data matching ALL of tag1 AND tag2 (using HAVING)
+			Query allTagQuery = QueryUtil.createQuery(ModelNames.MODEL_DATA);
+			allTagQuery.setRequest(new String[]{FieldNames.FIELD_ID});
+			Query partQuery2 = QueryUtil.createParticipationQuery(null, null, null, null, null);
+			partQuery2.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.IN, twoTagIds);
+			partQuery2.field(FieldNames.FIELD_PARTICIPATION_MODEL, ModelNames.MODEL_TAG);
+			partQuery2.field(FieldNames.FIELD_PARTICIPANT_MODEL, ModelNames.MODEL_DATA);
+			partQuery2.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPANT_ID);
+			List<BaseRecord> joins2 = allTagQuery.get(FieldNames.FIELD_JOINS);
+			joins2.add(partQuery2);
+
+			allTagQuery.set(FieldNames.FIELD_GROUP_CLAUSE, StatementUtil.getAlias(allTagQuery) + "." + FieldNames.FIELD_ID);
+			allTagQuery.set(FieldNames.FIELD_HAVING_CLAUSE, "COUNT(DISTINCT " + StatementUtil.getAlias(partQuery2) + "." + FieldNames.FIELD_PARTICIPATION_ID + ") = 2");
+
+			logger.info("All-tags (" + twoTagIds + ") query SQL: " + allTagQuery.key());
+			logger.info(StatementUtil.getSelectTemplate(allTagQuery).getSql());
+			QueryResult allTagResult = ioContext.getAccessPoint().list(testUser, allTagQuery);
+			logger.info("Data with tag1 AND tag2: " + allTagResult.getCount());
+			for(BaseRecord dat : allTagResult.getResults()){
+
+				logger.info("#" + (long)dat.get("id"));
 			}
+			// Only data1 and data3 have BOTH tag1 and tag2
+			assertTrue("Expected 2 data objects with both tag1 and tag2, found " + allTagResult.getCount(), allTagResult.getCount() == 2);
 
-			// Filter to only those that appear for ALL tags (count == 2 for two tags)
-			List<Long> dataWithBothTags = participantCounts.entrySet().stream()
-				.filter(e -> e.getValue() == 2)
-				.map(java.util.Map.Entry::getKey)
-				.collect(Collectors.toList());
-
-			logger.info("Data with tag1 AND tag2: " + dataWithBothTags.size());
-			assertTrue("Expected 2 data objects with both tag1 and tag2, got " + dataWithBothTags.size(), dataWithBothTags.size() == 2);
-
-			// Test 4: Query for data with tag1, tag2, AND tag3
+			// Test 5: Query for data matching ALL of tag1, tag2, AND tag3
 			String threeTagIds = tag1Id + "," + tag2Id + "," + tag3Id;
-			Query threeTagQuery = QueryUtil.createQuery(ModelNames.MODEL_PARTICIPATION);
-			threeTagQuery.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.IN, threeTagIds);
-			threeTagQuery.field(FieldNames.FIELD_PARTICIPATION_MODEL, ModelNames.MODEL_TAG);
-			threeTagQuery.field(FieldNames.FIELD_PARTICIPANT_MODEL, ModelNames.MODEL_DATA);
-			threeTagQuery.setRequest(new String[] {FieldNames.FIELD_PARTICIPANT_ID});
+			Query allThreeQuery = QueryUtil.createQuery(ModelNames.MODEL_DATA);
+			allThreeQuery.setRequest(new String[]{FieldNames.FIELD_ID});
+			Query partQuery3 = QueryUtil.createParticipationQuery(null, null, null, null, null);
+			partQuery3.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.IN, threeTagIds);
+			partQuery3.field(FieldNames.FIELD_PARTICIPATION_MODEL, ModelNames.MODEL_TAG);
+			partQuery3.field(FieldNames.FIELD_PARTICIPANT_MODEL, ModelNames.MODEL_DATA);
+			partQuery3.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPANT_ID);
+			List<BaseRecord> joins3 = allThreeQuery.get(FieldNames.FIELD_JOINS);
+			joins3.add(partQuery3);
 
-			QueryResult threeTagResult = ioContext.getSearch().find(threeTagQuery);
+			allThreeQuery.set(FieldNames.FIELD_GROUP_CLAUSE, StatementUtil.getAlias(allThreeQuery) + "." + FieldNames.FIELD_ID);
+			allThreeQuery.set(FieldNames.FIELD_HAVING_CLAUSE, "COUNT(DISTINCT " + StatementUtil.getAlias(partQuery3) + "." + FieldNames.FIELD_PARTICIPATION_ID + ") = 3");
 
-			// Count participant occurrences
-			java.util.Map<Long, Long> threeTagCounts = new java.util.HashMap<>();
-			for (BaseRecord part : threeTagResult.getResults()) {
-				long partId = part.get(FieldNames.FIELD_PARTICIPANT_ID);
-				threeTagCounts.merge(partId, 1L, Long::sum);
-			}
+			logger.info("All-three-tags query SQL:");
+			logger.info(StatementUtil.getSelectTemplate(allThreeQuery).getSql());
+			QueryResult allThreeResult = ioContext.getAccessPoint().list(testUser, allThreeQuery);
+			logger.info("Data with tag1 AND tag2 AND tag3: " + allThreeResult.getCount());
+			// Only data3 has all 3 tags
+			assertTrue("Expected 1 data object with all 3 tags, found " + allThreeResult.getCount(), allThreeResult.getCount() == 1);
 
-			// Filter to only those that appear for ALL 3 tags
-			List<Long> dataWithAllThreeTags = threeTagCounts.entrySet().stream()
-				.filter(e -> e.getValue() == 3)
-				.map(java.util.Map.Entry::getKey)
-				.collect(Collectors.toList());
-
-			logger.info("Data with tag1 AND tag2 AND tag3: " + dataWithAllThreeTags.size());
-			assertTrue("Expected 1 data object with all 3 tags, got " + dataWithAllThreeTags.size(), dataWithAllThreeTags.size() == 1);
-
-			// Verify it's the correct data object (data3)
-			if (!dataWithAllThreeTags.isEmpty()) {
-				long data3Id = data3.get(FieldNames.FIELD_ID);
-				assertTrue("Expected data3 to be in results", dataWithAllThreeTags.contains(data3Id));
-			}
-
-		} catch (FactoryException | IndexException | ReaderException | ModelException | FieldException e) {
+		} catch (FactoryException | IndexException | ReaderException | ModelException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
