@@ -494,13 +494,33 @@
 		console.error("REFACTOR: findBy");
 		// return Hemi.xml.postJSON(sSearch + "/" + sType + "/" + sObjId,oSearch,fH,(fH ? 1 : 0));
 	}
-	function findByTag(sType, oSearch, fH){
-		console.error("REFACTOR: findByTag");
-		// return Hemi.xml.postJSON(sSearch + "/" + sType + "/tags",oSearch,fH,(fH ? 1 : 0));
+	function findByTag(sType, aTags, fH){
+		var sKey = sType + "-" + aTags.map(t => t.id).join(",");
+		var o = getFromCache("TAG-ALL", "POST", sKey);
+		if(o){ if(fH) fH(o); return Promise.resolve(o); }
+		var fc = function(v){ if(v) addToCache("TAG-ALL", "POST", sKey, v); if(fH) fH(v); };
+		return post(sTagSvc + "/search/" + sType, aTags, fc);
 	}
-	function countByTag(sType, oSearch, fH){
-		console.error("REFACTOR: countByTag");
-		// return Hemi.xml.postJSON(sSearch + "/" + sType + "/tags/count",oSearch,fH,(fH ? 1 : 0));
+	function countByTag(sType, aTags, fH){
+		var sKey = sType + "-count-" + aTags.map(t => t.id).join(",");
+		var o = getFromCache("TAG-ALL", "POST", sKey);
+		if(o){ if(fH) fH(o); return Promise.resolve(o); }
+		var fc = function(v){ if(typeof v != "undefined" && v != null) addToCache("TAG-ALL", "POST", sKey, v); if(fH) fH(v); };
+		return post(sTagSvc + "/search/" + sType + "/count", aTags, fc);
+	}
+	function findByAnyTag(sType, aTags, fH){
+		var sKey = sType + "-" + aTags.map(t => t.id).join(",");
+		var o = getFromCache("TAG-ANY", "POST", sKey);
+		if(o){ if(fH) fH(o); return Promise.resolve(o); }
+		var fc = function(v){ if(v) addToCache("TAG-ANY", "POST", sKey, v); if(fH) fH(v); };
+		return post(sTagSvc + "/search/" + sType + "/any", aTags, fc);
+	}
+	function countByAnyTag(sType, aTags, fH){
+		var sKey = sType + "-count-" + aTags.map(t => t.id).join(",");
+		var o = getFromCache("TAG-ANY", "POST", sKey);
+		if(o){ if(fH) fH(o); return Promise.resolve(o); }
+		var fc = function(v){ if(typeof v != "undefined" && v != null) addToCache("TAG-ANY", "POST", sKey, v); if(fH) fH(v); };
+		return post(sTagSvc + "/search/" + sType + "/any/count", aTags, fc);
 	}
 	function find(sType,sObjType,sPath,fH){
 		// console.error("REFACTOR: find");
@@ -779,12 +799,14 @@
 		isRequestable : getIsRequestable,
 		attachPolicy : attachPolicy,
 		findByTag : findByTag,
+		findByAnyTag : findByAnyTag,
 		findBy : findBy,
 		search : search,
 		// query : query,
 		newQuery : newQuery,
 		searchCount : searchCount,
 		countByTag : countByTag,
+		countByAnyTag : countByAnyTag,
 		findTags : findTags,
 		make : make,
 		mediaDataPath : mediaDataPath,
