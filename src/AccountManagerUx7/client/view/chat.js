@@ -125,6 +125,7 @@
     async function resolveChatImages(msgIndex) {
         let msgs = chatCfg.history?.messages;
         if (!msgs || !msgs[msgIndex]) return;
+        if (!window.am7imageTokens) return;
         let msg = msgs[msgIndex];
         if (!msg.content) return;
 

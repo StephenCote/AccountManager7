@@ -3406,7 +3406,7 @@
     // ==========================================
 
     // Convenience accessor for shared image token parser
-    function parseImageTokens(content) { return window.am7imageTokens.parse(content); }
+    function parseImageTokens(content) { return window.am7imageTokens ? window.am7imageTokens.parse(content) : []; }
 
     // Patch a chat message to replace tag-only tokens with id+tag tokens
     async function patchChatMessage(msgIndex, newContent) {
@@ -3698,7 +3698,7 @@
                     ]) : "",
 
                     // Tag selector row (shown when camera button toggled)
-                    showTagSelector ? m("div", {class: "px-3 py-2 border-t border-gray-200 dark:border-gray-600"}, [
+                    (showTagSelector && window.am7imageTokens) ? m("div", {class: "px-3 py-2 border-t border-gray-200 dark:border-gray-600"}, [
                         m("div", {class: "flex flex-wrap gap-1 mb-1"}, [
                             window.am7imageTokens.tags.map(function(tag) {
                                 let isSelected = selectedImageTags.indexOf(tag) > -1;
@@ -3723,13 +3723,13 @@
                         m("div", {class: "flex space-x-2"}, [
                             // Camera/image button to toggle tag selector
                             m("button", {
-                                class: "p-2 rounded " + (showTagSelector ? "text-purple-600 bg-purple-100 dark:bg-purple-900" : "text-gray-500 hover:text-purple-600"),
+                                class: "px-2 py-2 rounded flex-shrink-0 " + (showTagSelector ? "text-purple-400 bg-purple-900" : "text-gray-400 hover:text-purple-400"),
                                 onclick: function() {
                                     showTagSelector = !showTagSelector;
                                     if (!showTagSelector) selectedImageTags = [];
                                 },
                                 title: "Send a pic"
-                            }, m("span", {class: "material-symbols-outlined text-sm"}, "photo_camera")),
+                            }, m("span", {class: "material-symbols-outlined"}, "add_photo_alternate")),
                             m("input", {
                                 type: "text",
                                 class: "cg-chat-input text-sm focus:ring-2 focus:ring-purple-500",
