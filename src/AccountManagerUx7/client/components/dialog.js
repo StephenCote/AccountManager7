@@ -461,6 +461,215 @@
         };
     }
 
+    // ==========================================
+    // Image Token System (shared by cardGame.js and chat.js)
+    // ==========================================
+
+    const chatImageTags = ["selfie", "nude", "intimate", "sexy", "private", "casual", "public", "professional"];
+
+    const tagToWearLevel = {
+        "nude": "NONE",
+        "intimate": "BASE",
+        "sexy": "BASE",
+        "private": "ACCENT",
+        "casual": "SUIT",
+        "public": "SUIT",
+        "professional": "SUIT",
+        "selfie": null
+    };
+
+    // Cache for resolved image URLs
+    let resolvedImageCache = {};
+
+    function parseImageTokens(content) {
+        if (!content) return [];
+        let tokens = [];
+        let regex = /\$\{image\.([^}]+)\}/g;
+        let match;
+        while ((match = regex.exec(content)) !== null) {
+            let inner = match[1];
+            let parts = inner.split(".");
+            let id = null;
+            let tagStr;
+            if (parts.length > 1 && parts[0].indexOf("-") > -1) {
+                id = parts[0];
+                tagStr = parts.slice(1).join(".");
+            } else {
+                tagStr = inner;
+            }
+            let tags = tagStr.split(",").map(t => t.trim()).filter(t => t.length > 0);
+            tokens.push({
+                match: match[0],
+                id: id,
+                tags: tags,
+                start: match.index,
+                end: match.index + match[0].length
+            });
+        }
+        return tokens;
+    }
+
+    function getImageThumbnailUrl(image, size) {
+        if (!image || !image.groupPath || !image.name) return null;
+        return g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) +
+               "/data.data" + image.groupPath + "/" + image.name + "/" + (size || "256x256");
+    }
+
+    async function findImageForTags(character, tags) {
+        if (!character || !tags || !tags.length) return null;
+
+        let charName = character.name || (character.firstName + " " + character.lastName);
+        let nameTag = await page.getTag(charName, "data.data");
+        if (!nameTag) return null;
+
+        let charImages = await am7client.members("data.tag", nameTag.objectId, "data.data", 0, 100);
+        if (!charImages || !charImages.length) return null;
+
+        let candidateIds = new Set(charImages.map(img => img.objectId));
+
+        for (let tagName of tags) {
+            if (tagName === "selfie") continue;
+            let tag = await page.getTag(tagName, "data.data");
+            if (!tag) {
+                candidateIds.clear();
+                break;
+            }
+            let tagMembers = await am7client.members("data.tag", tag.objectId, "data.data", 0, 100);
+            if (!tagMembers || !tagMembers.length) {
+                candidateIds.clear();
+                break;
+            }
+            let memberIds = new Set(tagMembers.map(img => img.objectId));
+            for (let cid of candidateIds) {
+                if (!memberIds.has(cid)) candidateIds.delete(cid);
+            }
+        }
+
+        if (candidateIds.size === 0) return null;
+        let ids = Array.from(candidateIds);
+        let picked = ids[Math.floor(Math.random() * ids.length)];
+        return charImages.find(img => img.objectId === picked) || null;
+    }
+
+    async function generateImageForTags(character, tags) {
+        if (!character) return null;
+
+        page.toast("info", "Generating image for " + (character.name || "character") + "...", -1);
+
+        try {
+            let targetLevel = "SUIT";
+            for (let tag of tags) {
+                if (tagToWearLevel[tag] && tagToWearLevel[tag] !== null) {
+                    let lvl = tagToWearLevel[tag];
+                    let levelOrder = ["NONE", "BASE", "ACCENT", "SUIT"];
+                    if (levelOrder.indexOf(lvl) < levelOrder.indexOf(targetLevel)) {
+                        targetLevel = lvl;
+                    }
+                }
+            }
+
+            let entity = await m.request({
+                method: 'GET',
+                url: am7client.base() + "/olio/randomImageConfig",
+                withCredentials: true
+            });
+
+            let charType = character[am7model.jsonModelKey] || "olio.charPerson";
+
+            let image = await m.request({
+                method: 'POST',
+                url: am7client.base() + "/olio/" + charType + "/" + character.objectId + "/reimage",
+                body: entity,
+                withCredentials: true
+            });
+
+            if (!image) {
+                page.toast("error", "Failed to generate image");
+                return null;
+            }
+
+            let sharingTag = targetLevel === "NONE" ? "nude" :
+                            targetLevel === "BASE" ? "intimate" : "public";
+            let stag = await getOrCreateSharingTag(sharingTag, "data.data");
+            if (stag) {
+                await page.member("data.tag", stag.objectId, "data.data", image.objectId, true);
+            }
+
+            for (let tagName of tags) {
+                if (tagName !== sharingTag) {
+                    let t = await getOrCreateSharingTag(tagName, "data.data");
+                    if (t) {
+                        await page.member("data.tag", t.objectId, "data.data", image.objectId, true);
+                    }
+                }
+            }
+
+            let charName = character.name || (character.firstName + " " + character.lastName);
+            let nameTag = await getOrCreateSharingTag(charName, "data.data");
+            if (nameTag) {
+                await page.member("data.tag", nameTag.objectId, "data.data", image.objectId, true);
+            }
+
+            await page.applyImageTags(image.objectId);
+
+            page.clearToast();
+            page.toast("success", "Image generated");
+            return image;
+        } catch (e) {
+            console.error("generateImageForTags error:", e);
+            page.clearToast();
+            page.toast("error", "Image generation failed");
+            return null;
+        }
+    }
+
+    async function resolveImageToken(token, character) {
+        if (token.id) {
+            if (resolvedImageCache[token.id]) {
+                return resolvedImageCache[token.id];
+            }
+            let charName = character.name || (character.firstName + " " + character.lastName);
+            let nameTag = await page.getTag(charName, "data.data");
+            if (nameTag) {
+                let members = await am7client.members("data.tag", nameTag.objectId, "data.data", 0, 100);
+                if (members) {
+                    let img = members.find(mi => mi.objectId === token.id);
+                    if (img) {
+                        let url = getImageThumbnailUrl(img, "256x256");
+                        resolvedImageCache[token.id] = { image: img, url: url };
+                        return { image: img, url: url };
+                    }
+                }
+            }
+            return null;
+        }
+
+        let image = await findImageForTags(character, token.tags);
+        if (!image) {
+            image = await generateImageForTags(character, token.tags);
+        }
+        if (image) {
+            let url = getImageThumbnailUrl(image, "256x256");
+            resolvedImageCache[image.objectId] = { image: image, url: url };
+            return { image: image, url: url };
+        }
+        return null;
+    }
+
+    // Expose image token functions globally
+    if(typeof window !== "undefined"){
+        window.am7imageTokens = {
+            tags: chatImageTags,
+            tagToWearLevel: tagToWearLevel,
+            cache: resolvedImageCache,
+            parse: parseImageTokens,
+            thumbnailUrl: getImageThumbnailUrl,
+            findForTags: findImageForTags,
+            generateForTags: generateImageForTags,
+            resolve: resolveImageToken
+        };
+    }
+
     async function getCurrentWearLevel(inst){
         // Get character's store and apparel
         let sto = await page.searchFirst("olio.store", undefined, undefined, inst.api.store().objectId);

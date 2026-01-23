@@ -3402,227 +3402,11 @@
     }
 
     // ==========================================
-    // Image Token Functions
+    // Image Token Functions (delegates to window.am7imageTokens from dialog.js)
     // ==========================================
 
-    // Available image tags for chat (subset of socialSharingTags)
-    const chatImageTags = ["selfie", "intimate", "sexy", "private", "casual", "public", "professional"];
-
-    // Map sharing tags back to approximate wear levels for image generation
-    const tagToWearLevel = {
-        "nude": "NONE",
-        "intimate": "BASE",
-        "sexy": "BASE",
-        "private": "ACCENT",
-        "casual": "SUIT",
-        "public": "SUIT",
-        "professional": "SUIT",
-        "selfie": null // style tag, doesn't affect wear level
-    };
-
-    // Cache for resolved image URLs: key = "objectId" -> url
-    let resolvedImageCache = {};
-
-    // Parse image tokens from message content
-    // Returns array of {match, id, tags, start, end}
-    function parseImageTokens(content) {
-        if (!content) return [];
-        let tokens = [];
-        let regex = /\$\{image\.([^}]+)\}/g;
-        let match;
-        while ((match = regex.exec(content)) !== null) {
-            let inner = match[1]; // e.g., "abc123.selfie,casual" or "selfie,casual"
-            let parts = inner.split(".");
-            let id = null;
-            let tagStr;
-            // If first part looks like an objectId (contains hyphens), treat as id
-            if (parts.length > 1 && parts[0].indexOf("-") > -1) {
-                id = parts[0];
-                tagStr = parts.slice(1).join(".");
-            } else {
-                tagStr = inner;
-            }
-            let tags = tagStr.split(",").map(t => t.trim()).filter(t => t.length > 0);
-            tokens.push({
-                match: match[0],
-                id: id,
-                tags: tags,
-                start: match.index,
-                end: match.index + match[0].length
-            });
-        }
-        return tokens;
-    }
-
-    // Build thumbnail URL for a data.data image object
-    function getImageThumbnailUrl(image, size) {
-        if (!image || !image.groupPath || !image.name) return null;
-        return g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) +
-               "/data.data" + image.groupPath + "/" + image.name + "/" + (size || "256x256");
-    }
-
-    // Find images for a character matching all specified tags
-    async function findImageForTags(character, tags) {
-        if (!character || !tags || !tags.length) return null;
-
-        // Get character name tag (data.data type) to find character's images
-        let charName = character.name || (character.firstName + " " + character.lastName);
-        let nameTag = await page.getTag(charName, "data.data");
-        if (!nameTag) return null;
-
-        // Get all images for this character
-        let charImages = await am7client.members("data.tag", nameTag.objectId, "data.data", 0, 100);
-        if (!charImages || !charImages.length) return null;
-
-        // For each sharing tag, get its members and intersect
-        let candidateIds = new Set(charImages.map(img => img.objectId));
-
-        for (let tagName of tags) {
-            if (tagName === "selfie") continue; // style tag, skip for filtering
-            let tag = await page.getTag(tagName, "data.data");
-            if (!tag) {
-                candidateIds.clear();
-                break;
-            }
-            let tagMembers = await am7client.members("data.tag", tag.objectId, "data.data", 0, 100);
-            if (!tagMembers || !tagMembers.length) {
-                candidateIds.clear();
-                break;
-            }
-            let memberIds = new Set(tagMembers.map(img => img.objectId));
-            // Intersect
-            for (let id of candidateIds) {
-                if (!memberIds.has(id)) candidateIds.delete(id);
-            }
-        }
-
-        if (candidateIds.size === 0) return null;
-
-        // Return first matching image (pick random from candidates for variety)
-        let ids = Array.from(candidateIds);
-        let picked = ids[Math.floor(Math.random() * ids.length)];
-        return charImages.find(img => img.objectId === picked) || null;
-    }
-
-    // Generate a new image for the character matching the requested tags
-    async function generateImageForTags(character, tags) {
-        if (!character) return null;
-
-        page.toast("info", "Generating image for " + (character.name || "character") + "...", -1);
-
-        try {
-            // Determine target wear level from tags
-            let targetLevel = "SUIT"; // default to clothed
-            for (let tag of tags) {
-                if (tagToWearLevel[tag] && tagToWearLevel[tag] !== null) {
-                    // Use the most revealing level requested
-                    let lvl = tagToWearLevel[tag];
-                    let levelOrder = ["NONE", "BASE", "ACCENT", "SUIT"];
-                    if (levelOrder.indexOf(lvl) < levelOrder.indexOf(targetLevel)) {
-                        targetLevel = lvl;
-                    }
-                }
-            }
-
-            // Get SD config
-            let entity = await m.request({
-                method: 'GET',
-                url: am7client.base() + "/olio/randomImageConfig",
-                withCredentials: true
-            });
-
-            // Determine character type
-            let charType = character[am7model.jsonModelKey] || "olio.charPerson";
-
-            // Generate the image
-            let image = await m.request({
-                method: 'POST',
-                url: am7client.base() + "/olio/" + charType + "/" + character.objectId + "/reimage",
-                body: entity,
-                withCredentials: true
-            });
-
-            if (!image) {
-                page.toast("error", "Failed to generate image");
-                return null;
-            }
-
-            // Tag with sharing context based on target level
-            let sharingTag = targetLevel === "NONE" ? "nude" :
-                            targetLevel === "BASE" ? "intimate" : "public";
-            let tag = await window.am7sharingTags.getOrCreate(sharingTag, "data.data");
-            if (tag) {
-                await page.member("data.tag", tag.objectId, "data.data", image.objectId, true);
-            }
-
-            // Tag with any additional requested tags
-            for (let tagName of tags) {
-                if (tagName !== sharingTag) {
-                    let t = await window.am7sharingTags.getOrCreate(tagName, "data.data");
-                    if (t) {
-                        await page.member("data.tag", t.objectId, "data.data", image.objectId, true);
-                    }
-                }
-            }
-
-            // Tag with character name (data.data type)
-            let charName = character.name || (character.firstName + " " + character.lastName);
-            let nameTag = await window.am7sharingTags.getOrCreate(charName, "data.data");
-            if (nameTag) {
-                await page.member("data.tag", nameTag.objectId, "data.data", image.objectId, true);
-            }
-
-            // Apply auto image tags
-            await page.applyImageTags(image.objectId);
-
-            page.clearToast();
-            page.toast("success", "Image generated");
-            return image;
-        } catch (e) {
-            console.error("generateImageForTags error:", e);
-            page.clearToast();
-            page.toast("error", "Image generation failed");
-            return null;
-        }
-    }
-
-    // Resolve an image token - find existing or generate new
-    async function resolveImageToken(token, character) {
-        // If token has an ID, try to load directly
-        if (token.id) {
-            if (resolvedImageCache[token.id]) {
-                return resolvedImageCache[token.id];
-            }
-            // Build URL from cached character images or fetch
-            let charName = character.name || (character.firstName + " " + character.lastName);
-            let nameTag = await page.getTag(charName, "data.data");
-            if (nameTag) {
-                let members = await am7client.members("data.tag", nameTag.objectId, "data.data", 0, 100);
-                if (members) {
-                    let img = members.find(m => m.objectId === token.id);
-                    if (img) {
-                        let url = getImageThumbnailUrl(img, "256x256");
-                        resolvedImageCache[token.id] = { image: img, url: url };
-                        return { image: img, url: url };
-                    }
-                }
-            }
-            return null;
-        }
-
-        // No ID - search by tags
-        let image = await findImageForTags(character, token.tags);
-        if (!image) {
-            // Generate new image
-            image = await generateImageForTags(character, token.tags);
-        }
-        if (image) {
-            let url = getImageThumbnailUrl(image, "256x256");
-            resolvedImageCache[image.objectId] = { image: image, url: url };
-            return { image: image, url: url };
-        }
-        return null;
-    }
+    // Convenience accessor for shared image token parser
+    function parseImageTokens(content) { return window.am7imageTokens.parse(content); }
 
     // Patch a chat message to replace tag-only tokens with id+tag tokens
     async function patchChatMessage(msgIndex, newContent) {
@@ -3667,9 +3451,9 @@
         let changed = false;
 
         for (let token of tokens) {
-            if (token.id && resolvedImageCache[token.id]) continue; // Already resolved and cached
+            if (token.id && window.am7imageTokens.cache[token.id]) continue; // Already resolved and cached
 
-            let resolved = await resolveImageToken(token, character);
+            let resolved = await window.am7imageTokens.resolve(token, character);
             if (resolved && resolved.image) {
                 if (!token.id) {
                     // Replace tag-only token with id+tag token
@@ -3677,7 +3461,7 @@
                     newContent = newContent.replace(token.match, newToken);
                     changed = true;
                 }
-                // Image is now in resolvedImageCache via resolveImageToken
+                // Image is now in window.am7imageTokens.cache via resolve()
             }
         }
 
@@ -3713,8 +3497,8 @@
                 }
 
                 // Render image or placeholder
-                if (token.id && resolvedImageCache[token.id]) {
-                    let cached = resolvedImageCache[token.id];
+                if (token.id && window.am7imageTokens.cache[token.id]) {
+                    let cached = window.am7imageTokens.cache[token.id];
                     nodes.push(m("img", {
                         src: cached.url,
                         class: "max-w-[200px] rounded-lg my-1 cursor-pointer block",
@@ -3878,7 +3662,7 @@
                                 // Trigger image resolution for unresolved tokens or uncached IDs
                                 if (!resolvingImages[idx]) {
                                     let tokens = parseImageTokens(msg.content);
-                                    let needsResolution = tokens.some(t => !t.id || !resolvedImageCache[t.id]);
+                                    let needsResolution = tokens.some(t => !t.id || !window.am7imageTokens.cache[t.id]);
                                     if (needsResolution) {
                                         resolvingImages[idx] = true;
                                         resolveMessageImages(idx).then(function() {
@@ -3916,7 +3700,7 @@
                     // Tag selector row (shown when camera button toggled)
                     showTagSelector ? m("div", {class: "px-3 py-2 border-t border-gray-200 dark:border-gray-600"}, [
                         m("div", {class: "flex flex-wrap gap-1 mb-1"}, [
-                            chatImageTags.map(function(tag) {
+                            window.am7imageTokens.tags.map(function(tag) {
                                 let isSelected = selectedImageTags.indexOf(tag) > -1;
                                 return m("button", {
                                     class: "px-2 py-0.5 rounded-full text-xs " +

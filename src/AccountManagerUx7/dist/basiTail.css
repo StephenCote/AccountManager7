@@ -7455,6 +7455,10 @@ button.button-tab-active:hover:is(.dark *) {
   max-width: 200px;
 }
 
+.max-w-\[256px\] {
+  max-width: 256px;
+}
+
 .max-w-\[80\%\] {
   max-width: 80%;
 }
@@ -7788,6 +7792,11 @@ button.button-tab-active:hover:is(.dark *) {
   border-color: rgb(107 114 128 / var(--tw-border-opacity, 1));
 }
 
+.border-gray-600 {
+  --tw-border-opacity: 1;
+  border-color: rgb(75 85 99 / var(--tw-border-opacity, 1));
+}
+
 .border-gray-900 {
   --tw-border-opacity: 1;
   border-color: rgb(17 24 39 / var(--tw-border-opacity, 1));
@@ -7894,6 +7903,10 @@ button.button-tab-active:hover:is(.dark *) {
 .bg-gray-500 {
   --tw-bg-opacity: 1;
   background-color: rgb(107 114 128 / var(--tw-bg-opacity, 1));
+}
+
+.bg-gray-500\/30 {
+  background-color: rgb(107 114 128 / 0.3);
 }
 
 .bg-gray-600 {
@@ -8457,6 +8470,11 @@ button.button-tab-active:hover:is(.dark *) {
   color: rgb(4 120 87 / var(--tw-text-opacity, 1));
 }
 
+.text-gray-200 {
+  --tw-text-opacity: 1;
+  color: rgb(229 231 235 / var(--tw-text-opacity, 1));
+}
+
 .text-gray-300 {
   --tw-text-opacity: 1;
   color: rgb(209 213 219 / var(--tw-text-opacity, 1));
@@ -8790,6 +8808,11 @@ button.button-tab-active:hover:is(.dark *) {
 .hover\:bg-gray-300:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(209 213 219 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-gray-500:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(107 114 128 / var(--tw-bg-opacity, 1));
 }
 
 .hover\:bg-green-200:hover {

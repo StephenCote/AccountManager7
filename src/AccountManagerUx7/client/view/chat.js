@@ -93,6 +93,122 @@
 
     let profile = false;
 
+    // Image token state
+    let resolvingImages = {};
+    let showTagSelector = false;
+    let selectedImageTags = [];
+
+    // Patch a chat message to replace tag-only tokens with id+tag tokens (chat.js version)
+    async function patchChatImageToken(msgIndex, newContent) {
+        if (!inst) return;
+        try {
+            let q = am7view.viewQuery(am7model.newInstance(inst.api.sessionType()));
+            q.field("id", inst.api.session().id);
+            let qr = await page.search(q);
+            if (qr && qr.results && qr.results.length > 0) {
+                let req = qr.results[0];
+                if (req.messages && req.messages[msgIndex]) {
+                    req.messages[msgIndex].content = newContent;
+                    await page.patchObject(req);
+                }
+            }
+            // Update local history
+            if (chatCfg.history?.messages?.[msgIndex]) {
+                chatCfg.history.messages[msgIndex].content = newContent;
+            }
+        } catch (e) {
+            console.error("patchChatImageToken error:", e);
+        }
+    }
+
+    // Resolve all image tokens in a message (chat.js version)
+    async function resolveChatImages(msgIndex) {
+        let msgs = chatCfg.history?.messages;
+        if (!msgs || !msgs[msgIndex]) return;
+        let msg = msgs[msgIndex];
+        if (!msg.content) return;
+
+        let tokens = window.am7imageTokens.parse(msg.content);
+        if (!tokens.length) return;
+
+        let character = msg.role === "user" ? chatCfg.user : chatCfg.system;
+        if (!character) return;
+
+        let newContent = msg.content;
+        let changed = false;
+
+        for (let token of tokens) {
+            if (token.id && window.am7imageTokens.cache[token.id]) continue;
+
+            let resolved = await window.am7imageTokens.resolve(token, character);
+            if (resolved && resolved.image) {
+                if (!token.id) {
+                    let newToken = "${image." + resolved.image.objectId + "." + token.tags.join(",") + "}";
+                    newContent = newContent.replace(token.match, newToken);
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed) {
+            await patchChatImageToken(msgIndex, newContent);
+        }
+        m.redraw();
+    }
+
+    // Process content string: replace image tokens with HTML for resolved images or placeholders
+    function processImageTokensInContent(content, msgRole, msgIndex) {
+        if (!content || !window.am7imageTokens) return content;
+        let tokens = window.am7imageTokens.parse(content);
+        if (!tokens.length) return content;
+
+        // Trigger resolution for unresolved/uncached tokens
+        if (!resolvingImages[msgIndex]) {
+            let needsResolution = tokens.some(t => !t.id || !window.am7imageTokens.cache[t.id]);
+            if (needsResolution) {
+                resolvingImages[msgIndex] = true;
+                resolveChatImages(msgIndex).then(function() {
+                    resolvingImages[msgIndex] = false;
+                });
+            }
+        }
+
+        // Replace tokens with HTML
+        let result = content;
+        for (let i = tokens.length - 1; i >= 0; i--) {
+            let token = tokens[i];
+            let html;
+            if (token.id && window.am7imageTokens.cache[token.id]) {
+                let cached = window.am7imageTokens.cache[token.id];
+                html = '<img src="' + cached.url + '" class="max-w-[256px] rounded-lg my-2 cursor-pointer" onclick="page.imageView(window.am7imageTokens.cache[\'' + token.id + '\'].image)" />';
+            } else {
+                html = '<span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-500/30 text-xs my-1"><span class="material-symbols-outlined text-xs">photo_camera</span>' + token.tags.join(", ") + '...</span>';
+            }
+            result = result.substring(0, token.start) + html + result.substring(token.end);
+        }
+        return result;
+    }
+
+    function toggleImageTag(tag) {
+        let idx = selectedImageTags.indexOf(tag);
+        if (idx > -1) {
+            selectedImageTags.splice(idx, 1);
+        } else {
+            selectedImageTags.push(tag);
+        }
+    }
+
+    function insertImageToken() {
+        if (!selectedImageTags.length) return;
+        let token = "${image." + selectedImageTags.join(",") + "}";
+        let input = document.querySelector("[name='chatmessage']");
+        if (input) {
+            input.value = (input.value ? input.value + " " : "") + token;
+        }
+        selectedImageTags = [];
+        showTagSelector = false;
+    }
+
     function doClear() {
       clearEditMode();
       inst = undefined;
@@ -658,6 +774,8 @@
         }
 
         if (typeof cnt == "string") {
+          // Process image tokens before markdown parsing
+          cnt = processImageTokensInContent(cnt, msg.role, midx);
           //cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
           cnt = m.trust(marked.parse(cnt = page.components.emoji.markdownEmojis(cnt.replace(/\r/, ""))));
         }
@@ -814,8 +932,31 @@
       let msgProps = { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } };
       let input = m("input[" + (!inst || chatCfg.pending ? "disabled='true'" : "") + "]", msgProps);
 
+      // Tag selector row (shown when image button toggled)
+      let tagSelectorRow = "";
+      if (showTagSelector && window.am7imageTokens) {
+          tagSelectorRow = m("div", { class: "px-3 py-2 border-b border-gray-600 flex flex-wrap gap-1 items-center" }, [
+              window.am7imageTokens.tags.map(function(tag) {
+                  let isSelected = selectedImageTags.indexOf(tag) > -1;
+                  return m("button", {
+                      class: "px-2 py-0.5 rounded-full text-xs " +
+                          (isSelected ?
+                              "bg-purple-600 text-white" :
+                              "bg-gray-600 text-gray-200 hover:bg-gray-500"),
+                      onclick: function() { toggleImageTag(tag); }
+                  }, tag);
+              }),
+              selectedImageTags.length > 0 ?
+                  m("button", {
+                      class: "ml-2 px-3 py-0.5 rounded bg-purple-600 text-white text-xs hover:bg-purple-700",
+                      onclick: function() { insertImageToken(); }
+                  }, "Insert " + selectedImageTags.join(",") + " pic") : ""
+          ]);
+      }
+
       return m("div", { class: "result-nav-outer" },
-        m("div", { class: "results-fixed" },
+        m("div", { class: "results-fixed" }, [
+          tagSelectorRow,
           m("div", { class: "splitcontainer" }, [
             m("div", { class: "splitleftcontainer" },
               m("button", { class: "flyout-button", onclick: openChatSettings },
@@ -829,6 +970,7 @@
                 page.iconButton("button",  "cancel", "", doCancel),
                 // (camera ? " animate-pulse" : "")
                 page.iconButton("button",  (camera ? "photo_camera" : "no_photography"), "", toggleCamera),
+                page.iconButton("button",  (showTagSelector ? "image" : "add_photo_alternate"), "", function() { showTagSelector = !showTagSelector; if (!showTagSelector) selectedImageTags = []; }),
                 page.iconButton("button",  (profile ? "account_circle" : "account_circle_off"), "", toggleProfile),
                 page.iconButton("button",  (audio ? "volume_up" : (audioMagic8 ? "counter_8" : "volume_mute")), "", toggleAudio),
                 page.iconButton("button",  "query_stats", "", chatInto),
@@ -840,7 +982,7 @@
               ])
             )
           ]),
-        )
+        ])
       );
     }
     
