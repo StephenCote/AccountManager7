@@ -586,6 +586,54 @@
             let charType = character[am7model.jsonModelKey] || "olio.charPerson";
             let charName = character.name || (character.firstName + " " + character.lastName);
 
+            // Save current portrait so we can restore it after reimage
+            let charRecord = await page.searchFirst(charType, undefined, undefined, character.objectId);
+            let originalPortraitId = charRecord && charRecord.profile && charRecord.profile.portrait ? charRecord.profile.portrait.id : null;
+            let profileId = charRecord && charRecord.profile ? charRecord.profile.id : null;
+
+            // Dress character to target wear level
+            let originalWearStates = [];
+            if (charRecord && charRecord.store) {
+                let sto = await page.searchFirst("olio.store", undefined, undefined, charRecord.store.objectId);
+                if (sto && sto.apparel && sto.apparel.length) {
+                    am7client.clearCache("olio.apparel");
+                    let aq = am7view.viewQuery("olio.apparel");
+                    aq.field("objectId", sto.apparel[0].objectId);
+                    let aqr = await page.search(aq);
+                    if (aqr && aqr.results && aqr.results.length) {
+                        let app = aqr.results[0];
+                        if (app.wearables && app.wearables.length) {
+                            let q = am7view.viewQuery("olio.wearable");
+                            q.range(0, 20);
+                            let oids = app.wearables.map(a => a.objectId).join(",");
+                            q.field("groupId", app.wearables[0].groupId);
+                            let fld = q.field("objectId", oids);
+                            fld.comparator = "in";
+                            let qr = await page.search(q);
+                            if (qr && qr.results && qr.results.length) {
+                                let wears = qr.results;
+                                let targetIdx = am7model.enums.wearLevelEnumType.indexOf(targetLevel);
+                                let patches = [];
+                                wears.forEach(function(w) {
+                                    if (w.level) {
+                                        originalWearStates.push({id: w.id, inuse: w.inuse});
+                                        let lvl = am7model.enums.wearLevelEnumType.indexOf(w.level.toUpperCase());
+                                        let shouldWear = (targetLevel !== "NONE" && lvl <= targetIdx);
+                                        if (w.inuse !== shouldWear) {
+                                            patches.push({schema: 'olio.wearable', id: w.id, inuse: shouldWear});
+                                        }
+                                    }
+                                });
+                                if (patches.length) {
+                                    await am7client.clearCache();
+                                    await Promise.all(patches.map(function(p) { return page.patchObject(p); }));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // If debug mode, open the reimage dialog and wait for user confirmation
             if (debugReimage) {
                 page.clearToast();
@@ -659,6 +707,22 @@
             }
 
             await page.applyImageTags(image.objectId);
+
+            // Restore original portrait (reimage sets it to the new image)
+            if (profileId && originalPortraitId) {
+                let od = {id: profileId, portrait: {id: originalPortraitId}};
+                od[am7model.jsonModelKey] = "identity.profile";
+                await page.patchObject(od);
+            }
+
+            // Restore original wear states
+            if (originalWearStates.length) {
+                let restorePatches = originalWearStates.map(function(s) {
+                    return {schema: 'olio.wearable', id: s.id, inuse: s.inuse};
+                });
+                await am7client.clearCache();
+                await Promise.all(restorePatches.map(function(p) { return page.patchObject(p); }));
+            }
 
             page.clearToast();
             page.toast("success", "Image generated");
