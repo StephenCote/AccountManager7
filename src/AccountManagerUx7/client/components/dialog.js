@@ -583,10 +583,15 @@
                     // Apply image tags (caption/description)
                     await page.applyImageTags(x.objectId);
 
-                    // Apply character name tag
+                    // Apply character name tag (model type, for character queries)
                     let nameTag = await getOrCreateSharingTag(inst.api.name(), inst.model.name);
                     if(nameTag){
                         await page.member("data.tag", nameTag.objectId, "data.data", x.objectId, true);
+                    }
+                    // Apply character name tag (data.data type, for image discovery)
+                    let imageNameTag = await getOrCreateSharingTag(inst.api.name(), "data.data");
+                    if(imageNameTag){
+                        await page.member("data.tag", imageNameTag.objectId, "data.data", x.objectId, true);
                     }
 
                     images.push(x);
@@ -752,10 +757,15 @@
                     await applySharingTag(x, "NUDE");
                     // Apply image tags (caption/description)
                     await page.applyImageTags(x.objectId);
-                    // Apply character name tag
+                    // Apply character name tag (model type, for character queries)
                     let nameTag = await getOrCreateSharingTag(inst.api.name(), inst.model.name);
                     if(nameTag){
                         await page.member("data.tag", nameTag.objectId, "data.data", x.objectId, true);
+                    }
+                    // Apply character name tag (data.data type, for image discovery)
+                    let imageNameTag = await getOrCreateSharingTag(inst.api.name(), "data.data");
+                    if(imageNameTag){
+                        await page.member("data.tag", imageNameTag.objectId, "data.data", x.objectId, true);
                     }
                     images.push(x);
                 }
@@ -800,10 +810,15 @@
                 // Apply image tags (caption/description)
                 await page.applyImageTags(x.objectId);
 
-                // Apply character name tag
+                // Apply character name tag (model type, for character queries)
                 let nameTag = await getOrCreateSharingTag(inst.api.name(), inst.model.name);
                 if(nameTag){
                     await page.member("data.tag", nameTag.objectId, "data.data", x.objectId, true);
+                }
+                // Apply character name tag (data.data type, for image discovery)
+                let imageNameTag = await getOrCreateSharingTag(inst.api.name(), "data.data");
+                if(imageNameTag){
+                    await page.member("data.tag", imageNameTag.objectId, "data.data", x.objectId, true);
                 }
 
                 images.push(x);
