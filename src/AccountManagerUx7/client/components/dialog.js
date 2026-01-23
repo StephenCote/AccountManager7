@@ -552,7 +552,7 @@
     }
 
     // When true, opens the reimage dialog before generating so user can review/edit config
-    let debugReimage = true;
+    let debugReimage = false;
 
     async function generateImageForTags(character, tags) {
         if (!character) return null;
