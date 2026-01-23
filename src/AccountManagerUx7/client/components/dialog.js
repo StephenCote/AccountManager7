@@ -578,6 +578,11 @@
                 withCredentials: true
             });
 
+            // Set composition to selfie if tags include "selfie"
+            if (tags.indexOf("selfie") >= 0) {
+                entity.bodyStyle = "((selfie))";
+            }
+
             let charType = character[am7model.jsonModelKey] || "olio.charPerson";
             let charName = character.name || (character.firstName + " " + character.lastName);
 
