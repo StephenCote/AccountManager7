@@ -645,7 +645,7 @@ public class AccessPoint {
 		return prr;
 	}
 	
-	private PolicyResponseType authorizeQuery(BaseRecord contextUser, Query query) {
+	public PolicyResponseType authorizeQuery(BaseRecord contextUser, Query query) {
 		
 		if(query == null) {
 			logger.error("Null query or user");

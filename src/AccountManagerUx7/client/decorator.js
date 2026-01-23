@@ -201,7 +201,10 @@
     ];
     
     function getHeaders(type, map){
-        return (map || defaultHeaderMap).filter((h) => am7model.hasField(type, h) || h.match(/^_/));
+        return (map || defaultHeaderMap).filter((h) => {
+            if(h == "_tags" && type == "data.tag") return false;
+            return am7model.hasField(type, h) || h.match(/^_/);
+        });
     }
 
     function getHeadersView(ctl, map){

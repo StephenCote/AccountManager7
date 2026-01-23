@@ -7,9 +7,17 @@ import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.MembershipStatistic;
 import org.cote.service.util.ServiceUtil;
 
 import jakarta.annotation.security.DeclareRoles;
@@ -90,6 +98,42 @@ public class AuthorizationService {
 		return Response.status(200).entity(count).build();
 	}
 	
+	@RolesAllowed({"admin","user"})
+	@GET @Path("/stats/{participantType:[\\.A-Za-z]+}/{containerId:[0-9]+}/{limit:[0-9]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public Response membershipStats(@PathParam("type") String modelType, @PathParam("participantType") String participantType, @PathParam("containerId") long containerId, @PathParam("limit") int limit, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if(user == null) {
+			return Response.status(401).entity("Not authenticated").build();
+		}
+
+		// Authorize user read access to the model type
+		Query authQuery = QueryUtil.createQuery(modelType);
+		authQuery.setRequest(new String[]{FieldNames.FIELD_ID});
+		if(containerId > 0L) {
+			ModelSchema schema = RecordFactory.getSchema(modelType);
+			if(schema != null && schema.hasField(FieldNames.FIELD_GROUP_ID)) {
+				authQuery.field(FieldNames.FIELD_GROUP_ID, containerId);
+			} else if(schema != null && schema.hasField(FieldNames.FIELD_PARENT_ID)) {
+				authQuery.field(FieldNames.FIELD_PARENT_ID, containerId);
+			}
+		}
+		PolicyResponseType prr = IOSystem.getActiveContext().getAccessPoint().authorizeQuery(user, authQuery);
+		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+			return Response.status(403).entity("Not authorized").build();
+		}
+
+		String partModel = (participantType != null && !participantType.equalsIgnoreCase("any")) ? participantType : null;
+		long organizationId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+		List<MembershipStatistic> stats = IOSystem.getActiveContext().getMemberUtil().countMembers(modelType, partModel, containerId, organizationId);
+		if(limit > 0 && stats.size() > limit) {
+			stats = stats.subList(0, limit);
+		}
+		return Response.status(200).entity(JSONUtil.exportObject(stats)).build();
+	}
+
 	@RolesAllowed({"admin","user"})
 	@GET @Path("/{objectId:[0-9A-Za-z\\-]+}/{actorType:[\\.A-Za-z]+}/{startIndex:[\\d]+}/{count:[\\d]+}")
 	@Produces(MediaType.APPLICATION_JSON)

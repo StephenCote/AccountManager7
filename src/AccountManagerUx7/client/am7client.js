@@ -25,6 +25,7 @@
 		var sAppr = sBase + "/approval";
 		var sScr = sBase + "/script";
 		var sTagSvc = sBase +"/tag";
+		var sOlio = sBase + "/olio";
 		window.uwm = {
 			consoleMode : 0,
 			developerMode : 0,	
@@ -726,9 +727,31 @@
 		}
 		var f = fH;
 		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,sK,sObjectId,v);} if(f) f(v);};
-		return get(sAuthZ + "/" + sType + "/" + sObjectId + "/" + sActorType + "/count",fc);	
+		return get(sAuthZ + "/" + sType + "/" + sObjectId + "/" + sActorType + "/count",fc);
 	}
-	
+	function membershipStats(sType, sParticipantType, iContainerId, iLimit, fH){
+		var sPart = sParticipantType || "any";
+		var iCont = iContainerId || 0;
+		var iLim = iLimit || 0;
+		var sK = "STATS-" + sType + "-" + sPart + "-" + iCont + "-" + iLim;
+		var o = getFromCache(sType, sK, null);
+		if(o){
+			if(fH) fH(o);
+			return o;
+		}
+		var f = fH;
+		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,sK,null,v);} if(f) f(v);};
+		return get(sAuthZ + "/" + sType + "/stats/" + sPart + "/" + iCont + "/" + iLim, fc);
+	}
+
+	function personalityProfile(sObjectId, fH){
+		return get(sOlio + "/profile/" + sObjectId, fH);
+	}
+
+	function profileComparison(sObjectId1, sObjectId2, fH){
+		return get(sOlio + "/compare/" + sObjectId1 + "/" + sObjectId2, fH);
+	}
+
 	function getUserPersonObject(sId,fH){
 		return new Promise((res, rej) => {
 			if(!sId){
@@ -836,6 +859,7 @@
 		permitSystem : permitSystem,
 		members : listMembers,
 		countMembers,
+		membershipStats,
 		systemRoles : listSystemRoles,
 		systemPolicies : listSystemPolicies,
 		systemPermissions : listSystemPermissions,
@@ -915,7 +939,9 @@
 			return sBase;
 		},
 		getImageTags,
-		applyImageTags
+		applyImageTags,
+		personalityProfile,
+		profileComparison
 	};
 
 	

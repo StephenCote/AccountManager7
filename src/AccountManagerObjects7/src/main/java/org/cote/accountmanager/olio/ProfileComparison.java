@@ -4,6 +4,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.olio.personality.PersonalityRules;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
@@ -13,6 +15,7 @@ import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class ProfileComparison {
+	@JsonIgnore
 	private OlioContext context = null;
 	private PersonalityProfile profile1 = null;
 	private PersonalityProfile profile2 = null;

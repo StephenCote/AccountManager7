@@ -3,13 +3,16 @@ package org.cote.accountmanager.olio;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.personality.MBTI;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class PersonalityProfile extends AnimalProfile {
-	
+
+	@JsonIgnore
 	private List<BaseRecord> events = new ArrayList<>();
 	private boolean married = false;
 	private boolean children = false;

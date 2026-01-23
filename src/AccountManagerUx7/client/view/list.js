@@ -33,7 +33,6 @@
 
     let dnd;
     let taggingInProgress = false;
-    let taggingAbort = false;
 
     function textField(sClass, id, plc, fKeyHandler) {
       return m("input", { placeholder: plc, onkeydown: fKeyHandler, id: id, type: "text", class: sClass });
@@ -125,11 +124,7 @@
     }
 
     async function applyTagsToList() {
-      // If already in progress, abort
       if (taggingInProgress) {
-        taggingAbort = true;
-        page.toast("warn", "Aborting tag operation...");
-        m.redraw();
         return;
       }
 
@@ -145,7 +140,6 @@
         return;
       }
 
-      // Build query to find data in the group, then filter for images client-side
       let q = am7client.newQuery("data.data");
       q.field("groupId", groupId);
       q.entity.request = ["id", "objectId", "name", "contentType"];
@@ -159,49 +153,22 @@
         return;
       }
 
-      // Filter for images only
       let images = qr.results.filter(r => r.contentType && r.contentType.match(/^image\//i));
       if (!images.length) {
         page.toast("warn", "No images found in this group");
         return;
       }
+
       taggingInProgress = true;
-      taggingAbort = false;
       m.redraw();
 
-      let successCount = 0;
-      let errorCount = 0;
-
-      page.toast("info", "Tagging " + images.length + " images...", 10000);
-
-      for (let i = 0; i < images.length; i++) {
-        if (taggingAbort) {
-          page.toast("warn", "Tag operation aborted at " + i + " of " + images.length);
-          break;
-        }
-
-        let img = images[i];
-        page.toast("info", "Tagging " + (i + 1) + " of " + images.length + ": " + img.name, 5000);
-        try {
-          let tags = await page.applyImageTags(img.objectId);
-          if (tags) {
-            successCount++;
-          }
-        }
-        catch (e) {
-          console.error("Failed to tag image: " + img.name, e);
-          errorCount++;
-        }
-      }
-
-      taggingInProgress = false;
-      taggingAbort = false;
-
-      if (successCount > 0 || errorCount > 0) {
-        page.toast("success", "Completed: " + successCount + " tagged" + (errorCount > 0 ? ", " + errorCount + " errors" : ""));
-      }
-
-      m.redraw();
+      page.components.dialog.batchProgress("Tag Images", images, async function(img){
+        let tags = await page.applyImageTags(img.objectId);
+        return tags;
+      }, function(state){
+        taggingInProgress = false;
+        m.redraw();
+      });
     }
 
     function closeSelected() {
@@ -544,9 +511,18 @@
         if(type && type == "data.data"){
           buttons.push(pagination.button("button" + (taggingInProgress ? " active" : ""), "sell", "", applyTagsToList));
         }
+        if(type && (type == "data.tag" || type == "auth.role" || type == "auth.group")){
+          buttons.push(pagination.button("button", "cloud", "", openCloud));
+        }
       }
 
       return buttons;
+    }
+
+    function openCloud(){
+      let pages = pagination.pages();
+      let containerId = (pages.container ? pages.container.id : 0);
+      page.components.dialog.memberCloud(baseListType, containerId);
     }
 
     function getPageToggleButtons(type){

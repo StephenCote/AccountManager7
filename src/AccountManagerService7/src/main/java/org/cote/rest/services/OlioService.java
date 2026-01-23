@@ -22,6 +22,8 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.PersonalityProfile;
+import org.cote.accountmanager.olio.ProfileComparison;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -240,5 +242,44 @@ public class OlioService {
 		}
 		return a1;
 	}
-	
+
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/profile/{objectId:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response personalityProfile(@PathParam("objectId") String objectId, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(true);
+		BaseRecord person = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(person == null){
+			return Response.status(404).entity(null).build();
+		}
+		PersonalityProfile prof = ProfileUtil.getProfile(octx, person);
+		return Response.status(200).entity(JSONUtil.exportObject(prof)).build();
+	}
+
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/compare/{objectId1:[0-9A-Za-z\\-]+}/{objectId2:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response profileComparison(@PathParam("objectId1") String objectId1, @PathParam("objectId2") String objectId2, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		Query q1 = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId1);
+		q1.planMost(true);
+		BaseRecord person1 = IOSystem.getActiveContext().getAccessPoint().find(user, q1);
+		Query q2 = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId2);
+		q2.planMost(true);
+		BaseRecord person2 = IOSystem.getActiveContext().getAccessPoint().find(user, q2);
+		if(person1 == null || person2 == null){
+			return Response.status(404).entity(null).build();
+		}
+		PersonalityProfile prof1 = ProfileUtil.getProfile(octx, person1);
+		PersonalityProfile prof2 = ProfileUtil.getProfile(octx, person2);
+		ProfileComparison comp = new ProfileComparison(octx, prof1, prof2);
+		return Response.status(200).entity(JSONUtil.exportObject(comp)).build();
+	}
+
 }

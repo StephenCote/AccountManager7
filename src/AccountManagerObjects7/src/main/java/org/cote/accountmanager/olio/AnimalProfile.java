@@ -3,20 +3,25 @@ package org.cote.accountmanager.olio;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import org.cote.accountmanager.record.BaseRecord;
 
 public class AnimalProfile {
 
+	@JsonIgnore
 	private BaseRecord record = null;
 	private String name = null;
 	private long id = 0L;
 	private int age = 0;
 	private String gender = null;
 	private boolean alive = false;
-	
+
 	/// temporary placeholder for instinct-driven fixations
 	///
+	@JsonIgnore
 	private List<BaseRecord> fixations = new ArrayList<>();
+	@JsonIgnore
 	private List<BaseRecord> interactions = new ArrayList<>();
 	
 	private HighEnumType physicalStrength = HighEnumType.DISREGARDED;

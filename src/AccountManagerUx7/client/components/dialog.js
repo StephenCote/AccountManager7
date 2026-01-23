@@ -583,6 +583,12 @@
                     // Apply image tags (caption/description)
                     await page.applyImageTags(x.objectId);
 
+                    // Apply character name tag
+                    let nameTag = await getOrCreateSharingTag(inst.api.name(), inst.model.name);
+                    if(nameTag){
+                        await page.member("data.tag", nameTag.objectId, "data.data", x.objectId, true);
+                    }
+
                     images.push(x);
 
                     // For first image, extract seed and update portrait
@@ -746,6 +752,11 @@
                     await applySharingTag(x, "NUDE");
                     // Apply image tags (caption/description)
                     await page.applyImageTags(x.objectId);
+                    // Apply character name tag
+                    let nameTag = await getOrCreateSharingTag(inst.api.name(), inst.model.name);
+                    if(nameTag){
+                        await page.member("data.tag", nameTag.objectId, "data.data", x.objectId, true);
+                    }
                     images.push(x);
                 }
             }
@@ -788,6 +799,12 @@
 
                 // Apply image tags (caption/description)
                 await page.applyImageTags(x.objectId);
+
+                // Apply character name tag
+                let nameTag = await getOrCreateSharingTag(inst.api.name(), inst.model.name);
+                if(nameTag){
+                    await page.member("data.tag", nameTag.objectId, "data.data", x.objectId, true);
+                }
 
                 images.push(x);
             }
@@ -939,6 +956,222 @@
         m.redraw();
     }
 
+    function batchProgress(label, items, processItem, onComplete){
+        let state = {
+            started: false,
+            running: false,
+            aborted: false,
+            current: 0,
+            total: items.length,
+            currentName: "",
+            successCount: 0,
+            errorCount: 0
+        };
+
+        async function startBatch(){
+            state.started = true;
+            state.running = true;
+            state.aborted = false;
+            m.redraw();
+            for(let i = 0; i < items.length; i++){
+                if(state.aborted) break;
+                state.current = i + 1;
+                state.currentName = items[i].name || ("Item " + (i + 1));
+                m.redraw();
+                try {
+                    let result = await processItem(items[i], i);
+                    if(result) state.successCount++;
+                } catch(e){
+                    console.error("Batch item error:", e);
+                    state.errorCount++;
+                }
+            }
+            state.running = false;
+            m.redraw();
+            if(onComplete) onComplete(state);
+        }
+
+        function stopBatch(){
+            state.aborted = true;
+        }
+
+        let progressView = {
+            view: function(){
+                let pct = state.total > 0 ? Math.round((state.current / state.total) * 100) : 0;
+                return m("div", {style: "padding: 16px;"}, [
+                    m("div", {style: "margin-bottom: 12px; color: #666;"}, label + " - " + state.total + " items"),
+                    m("div", {style: "margin-bottom: 8px; height: 24px; background: #e0e0e0; border-radius: 12px; overflow: hidden;"}, [
+                        m("div", {style: "height: 100%; width:" + pct + "%; background: linear-gradient(90deg, #4a90d9, #67b26f); transition: width 0.3s; border-radius: 12px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:0.75em; font-weight:bold;"}, state.started ? pct + "%" : "")
+                    ]),
+                    m("div", {style: "margin-bottom: 12px; font-size: 0.9em; color: #555; min-height: 1.4em;"},
+                        state.running ? (state.current + " of " + state.total + ": " + state.currentName) :
+                        (state.started ? ("Done - " + state.successCount + " succeeded" + (state.errorCount > 0 ? ", " + state.errorCount + " errors" : "") + (state.aborted ? " (aborted)" : "")) : "Ready to start")
+                    ),
+                    m("div", {style: "display: flex; gap: 8px;"}, [
+                        !state.started ? m("button", {class: "page-dialog-button", onclick: startBatch}, [
+                            m("span", {class: "material-symbols-outlined md-18 mr-2"}, "play_arrow"),
+                            "Start"
+                        ]) : "",
+                        state.running ? m("button", {class: "page-dialog-button", onclick: stopBatch}, [
+                            m("span", {class: "material-symbols-outlined md-18 mr-2"}, "stop"),
+                            "Stop"
+                        ]) : "",
+                        (!state.running) ? m("button", {class: "page-dialog-button", onclick: function(){ endDialog(); }}, [
+                            m("span", {class: "material-symbols-outlined md-18 mr-2"}, "close"),
+                            "Close"
+                        ]) : ""
+                    ])
+                ]);
+            }
+        };
+
+        let cfg = {
+            label: label,
+            entityType: "batchProgress",
+            size: 50,
+            data: {entity: {}, view: progressView},
+            cancel: async function(data){
+                if(state.running){
+                    state.aborted = true;
+                } else {
+                    endDialog();
+                }
+            }
+        };
+        setDialog(cfg);
+    }
+
+    async function memberCloud(modelType, containerId){
+        let stats = await am7client.membershipStats(modelType, "any", containerId, 0);
+        if(!stats || !stats.length){
+            page.toast("info", "No membership data found");
+            return;
+        }
+
+        let cloudMode = true;
+        let selectedStat = null;
+        let memberList = [];
+
+        let minCount = Math.min(...stats.map(s => s.count));
+        let maxCount = Math.max(...stats.map(s => s.count));
+
+        function fontSize(count){
+            if(maxCount === minCount) return 1.5;
+            return 0.8 + ((count - minCount) / (maxCount - minCount)) * 2.2;
+        }
+
+        async function selectStat(stat){
+            selectedStat = stat;
+            cloudMode = false;
+            memberList = [];
+            m.redraw();
+            let mems = await am7client.members(modelType, stat.objectId, stat.type || "any", 0, 100);
+            if(mems && mems.length) am7model.updateListModel(mems);
+            memberList = mems || [];
+            m.redraw();
+        }
+
+        function backToCloud(){
+            cloudMode = true;
+            selectedStat = null;
+            memberList = [];
+            m.redraw();
+        }
+
+        function cloudColor(count){
+            let ratio = (maxCount === minCount) ? 0.5 : (count - minCount) / (maxCount - minCount);
+            let hue = 210 - (ratio * 160);
+            let sat = 55 + (ratio * 25);
+            let lit = 92 - (ratio * 20);
+            return "hsl(" + hue + "," + sat + "%," + lit + "%)";
+        }
+
+        function cloudTextColor(count){
+            let ratio = (maxCount === minCount) ? 0.5 : (count - minCount) / (maxCount - minCount);
+            let hue = 210 - (ratio * 160);
+            let lit = 35 - (ratio * 10);
+            return "hsl(" + hue + ",60%," + lit + "%)";
+        }
+
+        let cloudView = {
+            view: function(){
+                if(cloudMode){
+                    return m("div", {style: "padding: 20px; text-align: center; line-height: 1.4;"},
+                        stats.map(function(stat){
+                            let size = fontSize(stat.count);
+                            let bg = cloudColor(stat.count);
+                            let fg = cloudTextColor(stat.count);
+                            return m("span", {
+                                style: "font-size:" + size + "em; cursor:pointer; margin: 5px 6px; display:inline-block;" +
+                                    "background:" + bg + "; color:" + fg + ";" +
+                                    "padding: 4px 12px; border-radius: 20px;" +
+                                    "border: 1px solid " + fg + "20;" +
+                                    "transition: transform 0.15s, box-shadow 0.15s;" +
+                                    "box-shadow: 0 1px 3px rgba(0,0,0,0.08);",
+                                title: stat.name + " (" + stat.count + ")",
+                                onmouseenter: function(e){ e.target.style.transform = "scale(1.08)"; e.target.style.boxShadow = "0 3px 8px rgba(0,0,0,0.15)"; },
+                                onmouseleave: function(e){ e.target.style.transform = ""; e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.08)"; },
+                                onclick: function(){ selectStat(stat); }
+                            }, [stat.name, m("sup", {style: "margin-left:3px; font-size:0.65em; opacity:0.7;"}, stat.count)]);
+                        })
+                    );
+                }
+                // Detail view
+                return m("div", {style: "padding: 16px;"}, [
+                    m("div", {style: "margin-bottom: 12px;"}, [
+                        m("button", {class: "page-dialog-button", onclick: backToCloud}, [
+                            m("span", {class: "material-symbols-outlined md-18 mr-2"}, "arrow_back"),
+                            "Back"
+                        ])
+                    ]),
+                    m("div", {style: "margin-bottom: 12px;"}, [
+                        m("h4", {style: "margin: 0 0 4px 0;"}, [
+                            m("a", {href: "#!/view/" + modelType + "/" + selectedStat.objectId, target: "_blank"}, selectedStat.name)
+                        ]),
+                        m("span", {style: "color: #666;"}, selectedStat.count + " member" + (selectedStat.count != 1 ? "s" : ""))
+                    ]),
+                    m("div", {class: "cloud-members"},
+                        memberList.length == 0 ? m("em", "Loading members...") :
+                        m("ul", {style: "list-style: none; padding: 0; margin: 0;"},
+                            memberList.map(function(mem){
+                                let memType = mem[am7model.jsonModelKey] || "unknown";
+                                let memName = mem.name || mem.objectId;
+                                let thumb = "";
+                                let orgPath = am7client.dotPath(am7client.currentOrganization);
+                                if(memType == "olio.charPerson" && mem.profile && mem.profile.portrait && mem.profile.portrait.contentType){
+                                    let pp = mem.profile.portrait;
+                                    thumb = m("img", {height: 48, width: 48, style: "border-radius: 50%; object-fit: cover; margin-right: 8px;", src: g_application_path + "/thumbnail/" + orgPath + "/data.data" + pp.groupPath + "/" + pp.name + "/48x48"});
+                                } else if(memType == "olio.charPerson"){
+                                    thumb = m("span", {class: "material-symbols-outlined", style: "font-size: 48px; color: #999; margin-right: 8px;"}, "person");
+                                } else if(memType == "data.data" && mem.contentType && mem.contentType.match(/^image/)){
+                                    thumb = m("img", {height: 48, width: 48, style: "object-fit: cover; border-radius: 4px; margin-right: 8px;", src: g_application_path + "/thumbnail/" + orgPath + "/data.data" + mem.groupPath + "/" + mem.name + "/48x48"});
+                                }
+                                return m("li", {style: "padding: 4px 0; border-bottom: 1px solid #eee; display: flex; align-items: center;"}, [
+                                    thumb,
+                                    m("div", [
+                                        m("a", {href: "#!/view/" + memType + "/" + mem.objectId, target: "_blank"}, memName),
+                                        m("span", {style: "color: #999; margin-left: 8px; font-size: 0.85em;"}, memType)
+                                    ])
+                                ]);
+                            })
+                        )
+                    )
+                ]);
+            }
+        };
+
+        let cfg = {
+            label: "Membership Cloud",
+            entityType: modelType,
+            size: 75,
+            data: {entity: {}, view: cloudView},
+            cancel: async function(data){
+                endDialog();
+            }
+        };
+        setDialog(cfg);
+    }
+
     let dialog = {
         endDialog,
         setDialog,
@@ -950,7 +1183,9 @@
         reimage,
         chatSettings,
         showProgress,
-        chatInto
+        chatInto,
+        memberCloud,
+        batchProgress
     }
     page.components.dialog = dialog;
 }())

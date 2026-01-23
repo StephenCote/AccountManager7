@@ -23,6 +23,7 @@ import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -31,7 +32,9 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.MembershipStatistic;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
@@ -344,6 +347,81 @@ public class TestData extends BaseTest {
 		}
 	}
 	
+
+	@Test
+	public void TestTagCloudQuery() {
+		logger.info("Test Tag Cloud Query - Tags with membership counts sorted by count descending");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/TagCloud");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "tagCloudUser", testOrgContext.getOrganizationId());
+
+		String testId = UUID.randomUUID().toString();
+		String tagGroupPath = "~/Tags/Cloud-" + testId;
+		String dataGroupPath = "~/TagCloudData/" + testId;
+
+		try {
+			// Create 3 tags
+			ParameterList tagPlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, tagGroupPath);
+			tagPlist.parameter(FieldNames.FIELD_NAME, "CloudTag1-" + UUID.randomUUID().toString());
+			BaseRecord tag1 = ioContext.getAccessPoint().create(testUser, ioContext.getFactory().newInstance(ModelNames.MODEL_TAG, testUser, null, tagPlist));
+			assertNotNull("Failed to create tag1", tag1);
+
+			tagPlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, tagGroupPath);
+			tagPlist.parameter(FieldNames.FIELD_NAME, "CloudTag2-" + UUID.randomUUID().toString());
+			BaseRecord tag2 = ioContext.getAccessPoint().create(testUser, ioContext.getFactory().newInstance(ModelNames.MODEL_TAG, testUser, null, tagPlist));
+			assertNotNull("Failed to create tag2", tag2);
+
+			tagPlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, tagGroupPath);
+			tagPlist.parameter(FieldNames.FIELD_NAME, "CloudTag3-" + UUID.randomUUID().toString());
+			BaseRecord tag3 = ioContext.getAccessPoint().create(testUser, ioContext.getFactory().newInstance(ModelNames.MODEL_TAG, testUser, null, tagPlist));
+			assertNotNull("Failed to create tag3", tag3);
+
+			// Create 5 data objects and assign memberships:
+			// tag1: 5 members, tag2: 3 members, tag3: 1 member
+			for (int i = 0; i < 5; i++) {
+				ParameterList dataPlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, dataGroupPath);
+				dataPlist.parameter(FieldNames.FIELD_NAME, "CloudData" + i + "-" + UUID.randomUUID().toString());
+				BaseRecord data = ioContext.getAccessPoint().create(testUser, ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser, null, dataPlist));
+				assertNotNull("Failed to create data" + i, data);
+
+				assertTrue("Failed to tag data" + i + " with tag1", ioContext.getMemberUtil().member(testUser, tag1, data, null, true));
+				if (i < 3) {
+					assertTrue("Failed to tag data" + i + " with tag2", ioContext.getMemberUtil().member(testUser, tag2, data, null, true));
+				}
+				if (i < 1) {
+					assertTrue("Failed to tag data" + i + " with tag3", ioContext.getMemberUtil().member(testUser, tag3, data, null, true));
+				}
+			}
+
+			// Authorize a query for the tag model
+			Query authQuery = QueryUtil.createQuery(ModelNames.MODEL_TAG);
+			authQuery.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME});
+			long tagGroupId = tag1.get(FieldNames.FIELD_GROUP_ID);
+			authQuery.field(FieldNames.FIELD_GROUP_ID, tagGroupId);
+
+			PolicyResponseType prr = ioContext.getAccessPoint().authorizeQuery(testUser, authQuery);
+			assertNotNull("Authorization response was null", prr);
+			assertTrue("Query was not authorized: " + prr.getType(), prr.getType() == PolicyResponseEnumType.PERMIT);
+			logger.info("Tag cloud query authorized");
+
+			// Use MemberUtil.countMembers to get tag cloud data
+			List<MembershipStatistic> cloud = ioContext.getMemberUtil().countMembers(ModelNames.MODEL_TAG, null, tagGroupId, testOrgContext.getOrganizationId());
+			logger.info("Tag cloud returned " + cloud.size() + " tags");
+			for (MembershipStatistic stat : cloud) {
+				logger.info("Tag: " + stat.getName() + " (id=" + stat.getId() + ") members=" + stat.getCount());
+			}
+			assertTrue("Expected 3 tags in cloud, found " + cloud.size(), cloud.size() == 3);
+
+			// Verify descending order by count
+			assertTrue("Expected first tag to have 5 members", cloud.get(0).getCount() == 5L);
+			assertTrue("Expected second tag to have 3 members", cloud.get(1).getCount() == 3L);
+			assertTrue("Expected third tag to have 1 member", cloud.get(2).getCount() == 1L);
+
+		} catch (FactoryException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+	}
 
 	@Test
 	public void TestDataConstruct() {

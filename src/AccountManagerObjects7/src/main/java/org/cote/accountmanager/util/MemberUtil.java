@@ -1,5 +1,9 @@
 package org.cote.accountmanager.util;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -21,10 +25,13 @@ import org.cote.accountmanager.io.IWriter;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.EffectEnumType;
 
@@ -68,24 +75,8 @@ public class MemberUtil implements IMember {
 		final String partModel = ParticipationFactory.getParticipantModel(rec.getSchema(), fieldName, model);
 		
 		if(reader.getRecordIo() == RecordIO.FILE) {
-			BaseRecord plist = getFileMembers(rec, nameSuffix);
-			if(plist != null) {
-
-				List<BaseRecord> parts = plist.get(FieldNames.FIELD_PARTS);
-				list = parts.stream().filter(o ->{
-					long mid = o.get(FieldNames.FIELD_PART_ID);
-					long pid = o.get(FieldNames.FIELD_PERMISSION_ID);
-					String type = o.get(FieldNames.FIELD_TYPE);
-					return (
-						(partModel == null || partModel.equals(type))
-						&&
-						(id == 0L || id == mid)
-						&&
-						(permissionId == 0L || permissionId == pid)
-					);
-					
-				}).collect(Collectors.toList());
-			}
+			logger.error("Not supported");
+			return list;
 		}
 		else if(reader.getRecordIo() == RecordIO.DATABASE) {
 			Query q = QueryUtil.createParticipationQuery(null, rec, fieldName, null, null);
@@ -310,5 +301,88 @@ public class MemberUtil implements IMember {
 		}
 		return recordUtil.createRecord(part1);
 	}
-	
+
+	/// Returns participation counts for a given model, sorted by count descending.
+	/// containerId scopes by groupId (for directory-based models) or parentId (for hierarchical models like roles/groups).
+	public List<MembershipStatistic> countMembers(String modelName, String participantModel, long containerId, long organizationId) {
+		List<MembershipStatistic> results = new ArrayList<>();
+
+		if(reader.getRecordIo() != RecordIO.DATABASE) {
+			logger.warn("countMembers is only supported for database IO");
+			return results;
+		}
+
+		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
+		ModelSchema schema = RecordFactory.getSchema(modelName);
+		if(schema == null) {
+			logger.error("Model schema not found: " + modelName);
+			return results;
+		}
+
+		String modelTable = dbUtil.getTableName(null, modelName);
+		String partTable = dbUtil.getTableName(schema, ModelNames.MODEL_PARTICIPATION);
+		boolean hasName = schema.hasField(FieldNames.FIELD_NAME);
+		boolean hasType = schema.hasField(FieldNames.FIELD_TYPE);
+		boolean hasGroupId = schema.hasField(FieldNames.FIELD_GROUP_ID);
+		boolean hasParentId = schema.hasField(FieldNames.FIELD_PARENT_ID);
+
+		StringBuilder sql = new StringBuilder();
+		sql.append("SELECT t.id, t.objectId");
+		if(hasName) sql.append(", t.name");
+		if(hasType) sql.append(", t.type");
+		sql.append(", COUNT(p.participantId) as memberCount");
+		sql.append(" FROM ").append(modelTable).append(" t");
+		sql.append(" INNER JOIN ").append(partTable).append(" p ON p.participationId = t.id");
+		sql.append(" WHERE p.participationModel = ?");
+		if(hasType) {
+			sql.append(" AND p.participantModel = t.type");
+		} else if(participantModel != null) {
+			sql.append(" AND p.participantModel = ?");
+		}
+		if(containerId > 0L) {
+			if(hasGroupId) {
+				sql.append(" AND t.groupId = ?");
+			} else if(hasParentId) {
+				sql.append(" AND t.parentId = ?");
+			}
+		}
+		if(organizationId > 0L) {
+			sql.append(" AND t.organizationId = ?");
+		}
+		sql.append(" GROUP BY t.id, t.objectId");
+		if(hasName) sql.append(", t.name");
+		if(hasType) sql.append(", t.type");
+		sql.append(" ORDER BY memberCount DESC");
+
+		try (Connection con = dbUtil.getDataSource().getConnection();
+			PreparedStatement stmt = con.prepareStatement(sql.toString())) {
+			int idx = 1;
+			stmt.setString(idx++, modelName);
+			if(!hasType && participantModel != null) {
+				stmt.setString(idx++, participantModel);
+			}
+			if(containerId > 0L && (hasGroupId || hasParentId)) {
+				stmt.setLong(idx++, containerId);
+			}
+			if(organizationId > 0L) {
+				stmt.setLong(idx++, organizationId);
+			}
+			ResultSet rs = stmt.executeQuery();
+			while(rs.next()) {
+				long id = rs.getLong("id");
+				String objectId = rs.getString("objectId");
+				String name = hasName ? rs.getString("name") : null;
+				String type = hasType ? rs.getString("type") : null;
+				long count = rs.getLong("memberCount");
+				results.add(new MembershipStatistic(id, objectId, name, type, modelName, count));
+			}
+			rs.close();
+		} catch (SQLException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+
+		return results;
+	}
+
 }
