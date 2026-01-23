@@ -551,6 +551,9 @@
         return charImages.find(img => img.objectId === picked) || null;
     }
 
+    // When true, opens the reimage dialog before generating so user can review/edit config
+    let debugReimage = true;
+
     async function generateImageForTags(character, tags) {
         if (!character) return null;
 
@@ -568,6 +571,7 @@
                 }
             }
 
+            // Load SD config
             let entity = await m.request({
                 method: 'GET',
                 url: am7client.base() + "/olio/randomImageConfig",
@@ -575,6 +579,45 @@
             });
 
             let charType = character[am7model.jsonModelKey] || "olio.charPerson";
+            let charName = character.name || (character.firstName + " " + character.lastName);
+
+            // If debug mode, open the reimage dialog and wait for user confirmation
+            if (debugReimage) {
+                page.clearToast();
+                let cinst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
+
+                // Try to load character-specific SD config
+                let charConfigName = charName + "-SD.json";
+                let charConfig = await loadSDConfig(charConfigName);
+                if (charConfig) {
+                    applySDConfig(cinst, charConfig);
+                }
+
+                // Wait for user to confirm or cancel the dialog
+                entity = await new Promise(function(resolve, reject) {
+                    let cfg = {
+                        label: "Chat Image: " + charName + " [" + tags.join(", ") + "]",
+                        entityType: "olio.sd.config",
+                        size: 75,
+                        data: {entity: cinst.entity, inst: cinst},
+                        confirm: async function() {
+                            endDialog();
+                            resolve(cinst.entity);
+                        },
+                        cancel: async function() {
+                            endDialog();
+                            resolve(null);
+                        }
+                    };
+                    setDialog(cfg);
+                });
+
+                if (!entity) {
+                    page.clearToast();
+                    return null; // User cancelled
+                }
+                page.toast("info", "Generating image...", -1);
+            }
 
             let image = await m.request({
                 method: 'POST',
@@ -588,6 +631,7 @@
                 return null;
             }
 
+            // Tag with sharing context
             let sharingTag = targetLevel === "NONE" ? "nude" :
                             targetLevel === "BASE" ? "intimate" : "public";
             let stag = await getOrCreateSharingTag(sharingTag, "data.data");
@@ -604,7 +648,6 @@
                 }
             }
 
-            let charName = character.name || (character.firstName + " " + character.lastName);
             let nameTag = await getOrCreateSharingTag(charName, "data.data");
             if (nameTag) {
                 await page.member("data.tag", nameTag.objectId, "data.data", image.objectId, true);
@@ -666,7 +709,9 @@
             thumbnailUrl: getImageThumbnailUrl,
             findForTags: findImageForTags,
             generateForTags: generateImageForTags,
-            resolve: resolveImageToken
+            resolve: resolveImageToken,
+            get debug() { return debugReimage; },
+            set debug(v) { debugReimage = v; }
         };
     }
 

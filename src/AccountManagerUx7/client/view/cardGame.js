@@ -3249,7 +3249,7 @@
             // systemCharacter = target (AI), userCharacter = actor (player)
             let actorFirst = actor.firstName || actor.name.split(" ")[0];
             let targetFirst = target.firstName || target.name.split(" ")[0];
-            let chatConfigName = "CardGame: " + actorFirst + " x " + targetFirst;
+            let chatConfigName = "CardGame - " + actorFirst + " x " + targetFirst;
 
             // Search for existing chatConfig by name (more reliable than cached list)
             let chatCfg;
