@@ -58,6 +58,96 @@
 			"name": "styles",
 			"type": "list",
 			"baseType": "string"
+		},
+		{
+			"name": "selfiePhones",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "selfieAngles",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "selfieLightings",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "animeStudios",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "animeEras",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "portraitLightings",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "portraitBackdrops",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "comicPublishers",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "comicEras",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "comicColorings",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "digitalMediums",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "digitalSoftwares",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "digitalArtists",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "fashionMagazines",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "fashionDecades",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "vintageDecades",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "vintageProcessings",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "vintageCameras",
+			"type": "list",
+			"baseType": "string"
 		}
 	]
 }

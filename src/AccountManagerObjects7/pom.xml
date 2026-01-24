@@ -59,7 +59,7 @@
 					<environmentVariables>
 
 					</environmentVariables>
-					<skipTests>true</skipTests>
+					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
 						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
@@ -70,9 +70,11 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestSD.java</exclude>
 						
+						<exclude>**/TestSDStyles.java</exclude>
 						-->
+						<exclude>**/TestData.java</exclude>
+						<exclude>**/TestSD.java</exclude>
 						<exclude>**/TestPerformance.java</exclude>
 						<exclude>**/TestGenericData.java</exclude>
 						<exclude>**/TestAttribute.java</exclude>
@@ -87,7 +89,7 @@
 						<exclude>**/TestAgentChat.java</exclude>
 						<exclude>**/TestOlioRules.java</exclude>
 						<exclude>**/TestChat2.java</exclude>
-						<exclude>**/TestData.java</exclude>
+						
 						<exclude>**/TestDocumentSearch.java</exclude>
 						<exclude>**/TestSchemaModification.java</exclude>
 

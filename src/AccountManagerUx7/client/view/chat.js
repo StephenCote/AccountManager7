@@ -936,7 +936,7 @@
       // Tag selector row (shown when image button toggled)
       let tagSelectorRow = "";
       if (showTagSelector && window.am7imageTokens) {
-          tagSelectorRow = m("div", { class: "px-3 py-2 border-b border-gray-600 flex flex-wrap gap-1 items-center" }, [
+          tagSelectorRow = m("div", { class: "px-3 py-2 border-b border-gray-600 flex flex-wrap gap-1 items-center max-h-24 overflow-y-auto" }, [
               window.am7imageTokens.tags.map(function(tag) {
                   let isSelected = selectedImageTags.indexOf(tag) > -1;
                   return m("button", {

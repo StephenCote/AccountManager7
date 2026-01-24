@@ -1,6 +1,6 @@
 {
 	"schema": "olio.sd.configData",
-	
+
 	"stillCameras": ["Korona", "Leica M3", "Canon AE-1 SLR", "Hasselblad 500C", "Rolleiflex 2.8F", "Mamiya RZ67", "Contax 645", "Polaroid SX-70,Nikon F", "Pentax 67", "Hasselblad 1600F SLR", "Minolta HI-Matic E SLR", "Olympus XA 2", "Globus M large format", "Polaroid Supercolor 1000 instant", "Kodak 35mm stereo", "Widelux F7 panoramic", "Baldafix folding", "Kodak Brownie box", "Graflex Speed Graphic press"],
 	"films": ["Black and White", "Kodak Tri-X", "Kodak Ektachrome", "Kodak Kodachrome", "Fujifilm Velvia", "Kodak Portra 400", "Fujifilm Pro 400H", "Kodak Portra 800", "Polaroid Instant", "Ilford HP5 Plus", "Fujifilm Superia 400", "Lomography 100", "Kodak Ektar 100", "Kodak Portra 160", "Kodak Gold 200"],
 	"lenses": ["Large format", "50mm Summicron", "Carl Zeiss Planar 80mm f/2.8", "Nikkor 50mm f/1.4", "Canon FD 50mm f/1.8", "SMC Pentax 105mm f/2.4", "Mamiya Sekor Z 110mm f/2.8", "116mm f/8 glass lens"],
@@ -8,9 +8,9 @@
 	"colorProcesses": ["Kinemacolor", "Prizma", "Kodachrome", "Technicolor", "Kodacolor", "Cinecolor", "Fujicolor", "Polavision", "Zone System Black and White"],
 	"movieCameras": ["Bell & Howell 2709 Standard", "Bolex H16", "Super Panavision 70", "Sony HDW-F900", "RED ONE", "IMAX", "ARRI ALEXA", "Sony CineAlta F23", "Hi8 video camera", "Mitchell BNC camera", "Technicolor three-strip camera"],
 	"movieFilms": ["Super 8", "16 mm", "35 mm", "65 mm"],
-	"directors": ["Stanley Kubrick", "Steven Spielberg", "Quentin Tarantino", "Martin Scorsese", "Stanley Kubrick", "Alfred Hitchcock", "David Lean", "Christopher Nolan", "Akira Kurosawa", "Francis Ford Coppola", "Billy Wilder", "David Fincher", "Tim Burton", "Ingmar Bergman", "Orson Welles", "Kathryn Bigelow", "Spike Lee", "Ridley Scott", "James Cameron", "Sidney Lumet", "Paul Thomas Anderson", "Federico Fellini", "John Huston", "Charlie Chaplin", "Andrei Tarkovsky", "Roman Polanski", "Fritz Lang", "Jean-Luc Godard", "John Ford", "Howard Hawks", "Peter Jackson", "Pedro Almodóvar", "David Lynch", "Woody Allen", "Miloš Forman", "Alejandro González Iñárritu", "Alfonso Cuarón", "William Oliver Stone", "Sergio Leone", "Brian De Palma", "George Lucas", "Joel Coen", "Darren Aronofsky", "Clint Eastwood", "Wes Anderson", "François Truffaut", "F. W. Murnau", "D. W. Griffith", "Jean Renoir", "Robert Altman", "John Carpenter", "Danny Boyle"],
-	"styles": ["art", "movie", "photograph"],
-	
+	"directors": ["Stanley Kubrick", "Steven Spielberg", "Quentin Tarantino", "Martin Scorsese", "Alfred Hitchcock", "David Lean", "Christopher Nolan", "Akira Kurosawa", "Francis Ford Coppola", "Billy Wilder", "David Fincher", "Tim Burton", "Ingmar Bergman", "Orson Welles", "Kathryn Bigelow", "Spike Lee", "Ridley Scott", "James Cameron", "Sidney Lumet", "Paul Thomas Anderson", "Federico Fellini", "John Huston", "Charlie Chaplin", "Andrei Tarkovsky", "Roman Polanski", "Fritz Lang", "Jean-Luc Godard", "John Ford", "Howard Hawks", "Peter Jackson", "Pedro Almodóvar", "David Lynch", "Woody Allen", "Miloš Forman", "Alejandro González Iñárritu", "Alfonso Cuarón", "William Oliver Stone", "Sergio Leone", "Brian De Palma", "George Lucas", "Joel Coen", "Darren Aronofsky", "Clint Eastwood", "Wes Anderson", "François Truffaut", "F. W. Murnau", "D. W. Griffith", "Jean Renoir", "Robert Altman", "John Carpenter", "Danny Boyle"],
+	"styles": ["art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage"],
+
 	"artStyles": [
 		"Impressionist painting with soft brush strokes and vibrant colors",
 		"Surrealist artwork with dream-like elements and strange juxtapositions",
@@ -32,6 +32,31 @@
 		"Symbolist art with mythological and dream-like themes",
 		"Constructivist artwork with industrial and geometric forms",
 		"Contemporary art with innovative and diverse techniques"
-	]
-	
+	],
+
+	"selfiePhones": ["iPhone 15 Pro", "Samsung Galaxy S24 Ultra", "Google Pixel 8 Pro", "iPhone 14", "Samsung Galaxy S23", "OnePlus 12", "iPhone 13 Pro Max", "Google Pixel 7", "Huawei P60 Pro", "Samsung Galaxy Z Fold5", "iPhone 12", "Nothing Phone 2", "Xiaomi 14 Pro", "Sony Xperia 1 V"],
+	"selfieAngles": ["high angle", "low angle", "straight-on", "dutch angle", "over-the-shoulder", "mirror reflection", "arm's length", "elevated above", "chin-level", "profile angle", "bird's eye", "worm's eye"],
+	"selfieLightings": ["golden hour", "ring light", "natural window light", "harsh flash", "neon lights", "backlit silhouette", "overhead fluorescent", "candlelight", "blue hour twilight", "studio softbox", "screen glow", "overcast diffused", "direct sunlight", "party strobe"],
+
+	"animeStudios": ["Studio Ghibli", "Madhouse", "Bones", "Ufotable", "Kyoto Animation", "Trigger", "MAPPA", "Wit Studio", "A-1 Pictures", "Production I.G", "Gainax", "Sunrise", "Toei Animation", "Shaft", "CloverWorks"],
+	"animeEras": ["1970s classic", "1980s OVA era", "1990s golden age", "early 2000s digital transition", "mid 2000s moe era", "2010s modern", "late 2010s sakuga renaissance", "2020s hyperdetailed", "retro 80s cyberpunk", "90s shojo", "2000s shonen", "1960s Astro Boy era"],
+
+	"portraitLightings": ["Rembrandt lighting", "butterfly lighting", "split lighting", "loop lighting", "broad lighting", "short lighting", "rim lighting", "clamshell lighting", "high key", "low key", "Paramount lighting", "cross lighting", "kicker light accent", "natural ambient"],
+	"portraitBackdrops": ["seamless white", "dark charcoal muslin", "hand-painted scenic", "environmental urban", "natural outdoor bokeh", "studio gradient", "textured brick wall", "vintage wallpaper", "minimalist grey sweep", "weathered wooden planks", "fog machine atmosphere", "velvet drape", "abstract projected patterns"],
+
+	"comicPublishers": ["Marvel Comics", "DC Comics", "Image Comics", "Dark Horse Comics", "2000 AD", "Vertigo", "IDW Publishing", "Valiant Comics", "Archie Comics", "EC Comics", "Heavy Metal", "Fantagraphics", "Top Cow", "Dynamite Entertainment", "Boom! Studios"],
+	"comicEras": ["Golden Age 1930s-1940s", "Silver Age 1950s-1960s", "Bronze Age 1970s-early 1980s", "Modern Age late 1980s-1990s", "2000s widescreen era", "2010s indie renaissance", "classic newspaper strip", "underground comix 1970s", "manga-influenced Western 2000s", "digital era 2020s"],
+	"comicColorings": ["four-color process", "hand-painted watercolor", "digital cel shading", "Ben-Day dots halftone", "ink wash grayscale", "limited palette duotone", "fully painted oils", "flat color digital", "crosshatch ink shading", "screenprint color separation", "vibrant neon palette", "muted earthtone palette"],
+
+	"digitalMediums": ["concept art illustration", "3D render", "matte painting", "digital oil painting", "vector illustration", "voxel art", "procedural generation", "photobashing composite", "pixel art upscaled", "digital watercolor", "isometric design", "environment concept art", "character concept sheet"],
+	"digitalSoftwares": ["Photoshop", "Blender 3D", "ZBrush", "Unreal Engine 5", "Substance Painter", "Procreate", "Clip Studio Paint", "Cinema 4D", "Houdini", "Maya", "ArtStation trending", "Octane Render", "KeyShot", "After Effects composite"],
+	"digitalArtists": ["Greg Rutkowski", "Artgerm", "Ross Tran", "Wlop", "Craig Mullins", "Feng Zhu", "Loish", "Sakimichan", "Simon Stalenhag", "Beeple", "James Gurney", "Ilya Kuvshinov", "Maciej Kuciara", "Peter Mohrbacher", "Karla Ortiz"],
+
+	"fashionMagazines": ["Vogue editorial", "Harper's Bazaar spread", "Elle magazine", "GQ editorial", "Vanity Fair portrait", "W Magazine avant-garde", "Dazed and Confused", "i-D Magazine", "Paper Magazine", "V Magazine", "CR Fashion Book", "Another Magazine", "Love Magazine"],
+	"fashionDecades": ["1920s flapper era", "1930s Hollywood glamour", "1940s wartime utility", "1950s New Look elegance", "1960s mod revolution", "1970s bohemian chic", "1980s power dressing", "1990s grunge minimalism", "2000s Y2K futurism", "2010s streetwear luxury", "2020s sustainable fashion"],
+
+	"vintageDecades": ["1850s daguerreotype era", "1870s carte de visite", "1890s pictorialist", "1900s Edwardian", "1920s jazz age", "1930s Depression era", "1940s wartime", "1950s Americana", "1960s counterculture", "1970s Polaroid era", "1980s neon aesthetic", "1990s disposable camera"],
+	"vintageProcessings": ["daguerreotype", "cyanotype print", "tintype", "albumen print", "platinum print", "autochrome Lumiere", "hand-tinted gelatin silver", "Kodachrome slide", "cross-processed E6", "bleach bypass", "expired film effect", "sepia toned", "selenium toned", "solarization", "infrared film"],
+	"vintageCameras": ["daguerreotype plate camera", "Kodak Brownie No. 2", "Graflex Speed Graphic", "Leica I rangefinder", "Rolleicord TLR", "Polaroid Land Camera 95", "Kodak Instamatic", "Holga 120", "Diana F+", "Lomo LC-A", "Kodak Disc camera", "Minox spy camera", "Argus C3", "Bell and Howell Filmo"]
+
 }

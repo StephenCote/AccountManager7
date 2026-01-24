@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio.sd.swarm;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -52,7 +53,14 @@ public class SWTxt2Img extends SWCommon {
 	@JsonProperty("refinercontrolpercentage")
 	private double refinerControlPercentage = 0.2;
 
-	
+	@JsonProperty("initimage")
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private String initImage = null;
+
+	@JsonProperty("initimagecreativity")
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private Double initImageCreativity = null;
+
 	public SWTxt2Img() {
 		
 	}
@@ -215,6 +223,22 @@ public class SWTxt2Img extends SWCommon {
 
 	public void setRefinerUpscale(int refinerUpscale) {
 		this.refinerUpscale = refinerUpscale;
+	}
+
+	public String getInitImage() {
+		return initImage;
+	}
+
+	public void setInitImage(String initImage) {
+		this.initImage = initImage;
+	}
+
+	public Double getInitImageCreativity() {
+		return initImageCreativity;
+	}
+
+	public void setInitImageCreativity(Double initImageCreativity) {
+		this.initImageCreativity = initImageCreativity;
 	}
 
 }

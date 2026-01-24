@@ -150,6 +150,19 @@ public class TagService {
 				//logger.info("Applying tag: " + tag.getTag());
 				DocumentUtil.applyTag(user, tag.getTag(), "data.data", data, true);
 			}
+			// Auto-tag with character name if in a Characters path
+			String groupPath = data.get(FieldNames.FIELD_GROUP_PATH);
+			if(groupPath != null) {
+				int charIdx = groupPath.indexOf("/Characters/");
+				if(charIdx >= 0) {
+					String afterChars = groupPath.substring(charIdx + "/Characters/".length());
+					int slashIdx = afterChars.indexOf("/");
+					String charName = slashIdx > 0 ? afterChars.substring(0, slashIdx) : afterChars;
+					if(charName.length() > 0) {
+						DocumentUtil.applyTag(user, charName, "data.data", data, true);
+					}
+				}
+			}
 		}
 		return  Response.status((imageTagResponse != null ? 200 : 404)).entity(imageTagResponse != null ? JSONUtil.exportObject(imageTagResponse) : null).build();
 	}

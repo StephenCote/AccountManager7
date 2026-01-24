@@ -1515,6 +1515,12 @@
             m.route.set(gpath, {key: Date.now()});
         };
 
+        objectPage.reimage = async function(name, field, tableType, tableForm, props){
+            if(inst && page.components.dialog.reimage){
+                page.components.dialog.reimage(entity, inst);
+            }
+        };
+
         objectPage.execute = function(name, field, type, form, properties){
             pendingResponse = undefined;
             am7client.executeScript(entity.urn, function(v){

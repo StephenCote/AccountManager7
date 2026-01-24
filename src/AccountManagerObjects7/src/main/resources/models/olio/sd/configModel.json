@@ -180,11 +180,98 @@
 		{
 			"name": "style",
 			"type": "string",
-			"limit": ["art", "movie", "photograph"]
+			"limit": ["art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom"]
 		},
 		{
 			"name": "artStyle",
 			"type": "string"
+		},
+		{
+			"name": "selfiePhone",
+			"type": "string"
+		},
+		{
+			"name": "selfieAngle",
+			"type": "string"
+		},
+		{
+			"name": "selfieLighting",
+			"type": "string"
+		},
+		{
+			"name": "animeStudio",
+			"type": "string"
+		},
+		{
+			"name": "animeEra",
+			"type": "string"
+		},
+		{
+			"name": "portraitLighting",
+			"type": "string"
+		},
+		{
+			"name": "portraitBackdrop",
+			"type": "string"
+		},
+		{
+			"name": "comicPublisher",
+			"type": "string"
+		},
+		{
+			"name": "comicEra",
+			"type": "string"
+		},
+		{
+			"name": "comicColoring",
+			"type": "string"
+		},
+		{
+			"name": "digitalMedium",
+			"type": "string"
+		},
+		{
+			"name": "digitalSoftware",
+			"type": "string"
+		},
+		{
+			"name": "digitalArtist",
+			"type": "string"
+		},
+		{
+			"name": "fashionMagazine",
+			"type": "string"
+		},
+		{
+			"name": "fashionDecade",
+			"type": "string"
+		},
+		{
+			"name": "vintageDecade",
+			"type": "string"
+		},
+		{
+			"name": "vintageProcessing",
+			"type": "string"
+		},
+		{
+			"name": "vintageCamera",
+			"type": "string"
+		},
+		{
+			"name": "customPrompt",
+			"type": "string"
+		},
+		{
+			"name": "referenceImageId",
+			"type": "string"
+		},
+		{
+			"name": "denoisingStrength",
+			"type": "double",
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"default": 0.75
 		}
 	]
 }

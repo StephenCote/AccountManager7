@@ -107,9 +107,8 @@ public class OlioService {
 	@POST
 	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/reimage")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response reimageCharacterWithConfig(String json, @PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
+	public Response reimageWithConfig(String json, @PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 		if(imp == null) {
 			logger.error("Invalid config");
@@ -121,14 +120,37 @@ public class OlioService {
 		if(imp.get("refinerModel") == null) {
 			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 		}
-		// sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 
-		BaseRecord a1 = null;
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+
+		if(type.equals(ModelNames.MODEL_DATA)) {
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, objectId);
+			q.planMost(true);
+			BaseRecord sourceData = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+			if(sourceData == null) {
+				logger.error("Data record not found: " + objectId);
+				return Response.status(404).entity(null).build();
+			}
+			String groupPath = sourceData.get(FieldNames.FIELD_GROUP_PATH);
+			if(groupPath == null) {
+				BaseRecord grp = sourceData.get(FieldNames.FIELD_GROUP);
+				if(grp != null) {
+					groupPath = grp.get(FieldNames.FIELD_PATH);
+				}
+			}
+			String name = sourceData.get(FieldNames.FIELD_NAME);
+			List<BaseRecord> images = sdu.createImage(user, groupPath, imp, name, 1, imp.get("hires"), imp.get("seed"));
+			if(images.size() > 0) {
+				return Response.status(200).entity(images.get(0).toFullString()).build();
+			}
+			return Response.status(200).entity(null).build();
+		}
+
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
-		a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		BaseRecord a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		if(a1 != null) {
 			String verb = imp.get("imageAction");
 			String bodyStyle = imp.get("bodyStyle");

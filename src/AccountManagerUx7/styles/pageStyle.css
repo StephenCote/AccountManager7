@@ -146,6 +146,13 @@
     gap: 0.25rem;
     padding: 0.25rem;
     min-width: 100px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.cloud-members {
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 .gallery-tag-btn {

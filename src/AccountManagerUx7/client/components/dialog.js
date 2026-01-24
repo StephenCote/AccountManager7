@@ -578,9 +578,9 @@
                 withCredentials: true
             });
 
-            // Set composition to selfie if tags include "selfie"
+            // Set style to selfie if tags include "selfie"
             if (tags.indexOf("selfie") >= 0) {
-                entity.bodyStyle = "((selfie))";
+                entity.style = "selfie";
             }
 
             let charType = character[am7model.jsonModelKey] || "olio.charPerson";
@@ -837,6 +837,8 @@
 
     async function reimage(object, inst) {
 
+        let isCharPerson = inst.model.name === "olio.charPerson";
+
         //let entity = am7model.newPrimitive("olio.sd.config");
         let entity = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
         let cinst = (lastReimage || am7model.prepareInstance(entity, am7model.forms.sdConfig));
@@ -861,7 +863,15 @@
         }
 
         lastReimage = cinst;
-        await am7olio.setNarDescription(inst, cinst);
+
+        if(isCharPerson) {
+            await am7olio.setNarDescription(inst, cinst);
+        } else {
+            // For data.data, set reference image for img2img
+            if(inst.api.objectId()) {
+                cinst.entity.referenceImageId = inst.api.objectId();
+            }
+        }
 
         // Apply preferred seed from character attributes (overrides saved config)
         let cseed = (inst.entity?.attributes || []).filter(a => a.name == "preferredSeed");
@@ -880,7 +890,7 @@
 
                 let baseSeed = cinst.api.seed();
                 let images = [];
-                let wearLevel = await getCurrentWearLevel(inst);
+                let wearLevel = isCharPerson ? await getCurrentWearLevel(inst) : null;
 
                 for(let i = 0; i < count; i++){
                     page.toast("info", "Creating image " + (i + 1) + " of " + count + "...", -1);
@@ -906,26 +916,30 @@
                     // Apply image tags (caption/description)
                     await page.applyImageTags(x.objectId);
 
-                    // Apply character name tag (model type, for character queries)
-                    let nameTag = await getOrCreateSharingTag(inst.api.name(), inst.model.name);
-                    if(nameTag){
-                        await page.member("data.tag", nameTag.objectId, "data.data", x.objectId, true);
-                    }
-                    // Apply character name tag (data.data type, for image discovery)
-                    let imageNameTag = await getOrCreateSharingTag(inst.api.name(), "data.data");
-                    if(imageNameTag){
-                        await page.member("data.tag", imageNameTag.objectId, "data.data", x.objectId, true);
+                    if(isCharPerson) {
+                        // Apply character name tag (model type, for character queries)
+                        let nameTag = await getOrCreateSharingTag(inst.api.name(), inst.model.name);
+                        if(nameTag){
+                            await page.member("data.tag", nameTag.objectId, "data.data", x.objectId, true);
+                        }
+                        // Apply character name tag (data.data type, for image discovery)
+                        let imageNameTag = await getOrCreateSharingTag(inst.api.name(), "data.data");
+                        if(imageNameTag){
+                            await page.member("data.tag", imageNameTag.objectId, "data.data", x.objectId, true);
+                        }
                     }
 
                     images.push(x);
 
                     // For first image, extract seed and update portrait
                     if(i === 0){
-                        inst.entity.profile.portrait = x;
+                        if(isCharPerson) {
+                            inst.entity.profile.portrait = x;
 
-                        let od = {id: inst.entity.profile.id, portrait: {id: x.id}};
-                        od[am7model.jsonModelKey] = "identity.profile";
-                        await page.patchObject(od);
+                            let od = {id: inst.entity.profile.id, portrait: {id: x.id}};
+                            od[am7model.jsonModelKey] = "identity.profile";
+                            await page.patchObject(od);
+                        }
 
                         // Extract seed from response image (important for random seeds)
                         let seed = x.attributes.filter(a => a.name == "seed");
@@ -981,18 +995,100 @@
         };
         
         am7model.forms.sdConfig.fields.dressDown.field.command = async function(){
+            if(!isCharPerson) return;
             await am7olio.dressCharacter(inst, false);
             await am7olio.setNarDescription(inst, cinst);
         };
-        
+
         am7model.forms.sdConfig.fields.dressUp.field.command = async function(){
+            if(!isCharPerson) return;
             await am7olio.dressCharacter(inst, true);
             await am7olio.setNarDescription(inst, cinst);
         };
         am7model.forms.sdConfig.fields.randomSeed.field.command = async function(){
             cinst.api.seed(-1);
         };
+        am7model.forms.sdConfig.fields.selectReference.field.command = async function(){
+            let galleryImages = [];
+            if(isCharPerson) {
+                let profile = inst.entity.profile;
+                let portrait = profile ? profile.portrait : null;
+                let profileObjectId = profile ? profile.objectId : null;
+                if(profileObjectId && (!portrait || !portrait.groupId)){
+                    let pq = am7view.viewQuery("identity.profile");
+                    pq.field("objectId", profileObjectId);
+                    pq.entity.request.push("portrait");
+                    let pqr = await page.search(pq);
+                    if(pqr && pqr.results && pqr.results.length){
+                        portrait = pqr.results[0].portrait;
+                    }
+                }
+                if(portrait && portrait.groupId){
+                    let q = am7client.newQuery("data.data");
+                    q.field("groupId", portrait.groupId);
+                    q.entity.request.push("id", "objectId", "name", "groupId", "groupPath", "contentType");
+                    q.range(0, 100);
+                    q.sort("createdDate");
+                    q.order("descending");
+                    let qr = await page.search(q);
+                    if(qr && qr.results) {
+                        galleryImages = qr.results.filter(r => r.contentType && r.contentType.match(/^image\//i));
+                    }
+                }
+            } else if(inst.entity.groupId) {
+                let q = am7client.newQuery("data.data");
+                q.field("groupId", inst.entity.groupId);
+                q.entity.request.push("id", "objectId", "name", "groupId", "groupPath", "contentType");
+                q.range(0, 100);
+                q.sort("createdDate");
+                q.order("descending");
+                let qr = await page.search(q);
+                if(qr && qr.results) {
+                    galleryImages = qr.results.filter(r => r.contentType && r.contentType.match(/^image\//i));
+                }
+            }
+            if(!galleryImages.length){
+                page.toast("warn", "No gallery images found");
+                return;
+            }
+            let savedCfg = dialogCfg;
+            let orgPath = am7client.dotPath(am7client.currentOrganization);
+            let pickerView = {
+                view: function(){
+                    return m("div", {style: "padding: 12px; display: flex; flex-wrap: wrap; gap: 8px; max-height: 400px; overflow-y: auto;"},
+                        galleryImages.map(function(img){
+                            let src = g_application_path + "/thumbnail/" + orgPath + "/data.data" + img.groupPath + "/" + img.name + "/96x96";
+                            let selected = cinst.entity.referenceImageId === img.objectId;
+                            return m("img", {
+                                src: src,
+                                width: 96, height: 96,
+                                style: "object-fit: cover; border-radius: 4px; cursor: pointer; border: 3px solid " + (selected ? "#2196F3" : "transparent") + ";",
+                                title: img.name,
+                                onclick: function(){
+                                    cinst.entity.referenceImageId = img.objectId;
+                                    if(!cinst.entity.denoisingStrength || cinst.entity.denoisingStrength === 0.75) {
+                                        cinst.entity.denoisingStrength = 0.6;
+                                    }
+                                    setDialog(savedCfg);
+                                    m.redraw();
+                                }
+                            });
+                        })
+                    );
+                }
+            };
+            setDialog({
+                label: "Select Reference Image",
+                entityType: "imagePicker",
+                size: 75,
+                data: {entity: {}, view: pickerView},
+                cancel: async function(){
+                    setDialog(savedCfg);
+                }
+            });
+        };
         am7model.forms.sdConfig.fields.createApparelSequence.field.command = async function(){
+            if(!isCharPerson) return;
             // Get character's store and apparel
             let sto = await page.searchFirst("olio.store", undefined, undefined, inst.api.store().objectId);
             let appl = sto.apparel;

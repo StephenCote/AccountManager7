@@ -606,6 +606,12 @@
                 icon: 'fact_check',
                 function: 'makeFact',
                 requiredAttribute: "objectId"
+            },
+            reimage: {
+                label: 'Reimage',
+                icon: 'run_circle',
+                function: 'reimage',
+                requiredAttribute: "objectId"
             }
         },
         query: ["stream", "compressionType", "vaulted", "enciphered"],
@@ -809,7 +815,7 @@
                 label: 'Style',
                 field: {
                     type: 'list',
-                    limit: ['art', 'movie', 'photograph']
+                    limit: ['art', 'movie', 'photograph', 'selfie', 'anime', 'portrait', 'comic', 'digitalArt', 'fashion', 'vintage', 'custom']
                 }
             },
             artStyle: {
@@ -831,7 +837,153 @@
                 layout: 'one',
                 referField: true,
                 requiredAttributes: ["style"],
-                requiredValues: ["photograph"],
+                requiredValues: ["photograph|portrait|fashion"],
+            },
+            selfiePhone: {
+                label: 'Phone',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["selfie"],
+            },
+            selfieAngle: {
+                label: 'Angle',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["selfie"],
+            },
+            selfieLighting: {
+                label: 'Lighting',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["selfie"],
+            },
+            animeStudio: {
+                label: 'Studio',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["anime"],
+            },
+            animeEra: {
+                label: 'Era',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["anime"],
+            },
+            portraitLighting: {
+                label: 'Lighting',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["portrait"],
+            },
+            portraitBackdrop: {
+                label: 'Backdrop',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["portrait"],
+            },
+            comicPublisher: {
+                label: 'Publisher',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["comic"],
+            },
+            comicEra: {
+                label: 'Era',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["comic"],
+            },
+            comicColoring: {
+                label: 'Coloring',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["comic"],
+            },
+            digitalMedium: {
+                label: 'Medium',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["digitalArt"],
+            },
+            digitalSoftware: {
+                label: 'Software',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["digitalArt"],
+            },
+            digitalArtist: {
+                label: 'Artist',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["digitalArt"],
+            },
+            fashionMagazine: {
+                label: 'Magazine',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["fashion"],
+            },
+            fashionDecade: {
+                label: 'Decade',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["fashion"],
+            },
+            vintageDecade: {
+                label: 'Decade',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["vintage"],
+            },
+            vintageProcessing: {
+                label: 'Processing',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["vintage"],
+            },
+            vintageCamera: {
+                label: 'Camera',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["vintage"],
+            },
+            customPrompt: {
+                label: 'Custom Style Prompt',
+                layout: 'full',
+                requiredAttributes: ["style"],
+                requiredValues: ["custom"],
+            },
+            selectReference: {
+                format: "button",
+                layout: "one",
+                icon: 'image',
+                field: {
+                    label: "Reference",
+                    command: undefined
+                }
+            },
+            denoisingStrength: {
+                label: 'Denoising',
+                layout: 'one',
+                format: 'range'
             },
             blank2 : {
                 layout : "third",
@@ -3402,6 +3554,14 @@
 
     forms.charPerson = {
         label: "Character",
+        commands: {
+            reimage: {
+                label: 'Reimage',
+                icon: 'run_circle',
+                function: 'reimage',
+                requiredAttribute: "objectId"
+            }
+        },
         fields: {
             profile: {
                 layout: "one",
@@ -3499,16 +3659,6 @@
                  }
              },
              */
-            reimage: {
-                format: "button",
-                layout: "one",
-                icon: 'run_circle',
-                requiredAttributes: ["objectId"],
-                field: {
-                    label: "Reimage",
-                    command: page.components.dialog.reimage
-                }
-            },
             narrate: {
                 format: "button",
                 layout: "one",

@@ -39,10 +39,12 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.BinaryUtil;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
+import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 
 import com.drew.imaging.ImageProcessingException;
 
@@ -284,7 +286,7 @@ public class SDUtil {
 		}
 		else if (apiType == SDAPIEnumType.SWARM) {
 			s2iObj = SWUtil.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps, seed);
-			//logger.info(JSONUtil.exportObject(s2iObj));
+			applyImg2Img(user, sdConfig, (SWTxt2Img)s2iObj);
 		}
 		else if (apiType == SDAPIEnumType.UNKNOWN) {
 			logger.error("Unknown API type – cannot create image");
@@ -415,7 +417,7 @@ public class SDUtil {
 
 	public static String getSDConfigPrompt(BaseRecord cfg) {
 		StringBuilder buff = new StringBuilder();
-		
+
 		String style = cfg.get("style");
 		buff.append("(");
 		if(style.equals("art")) {
@@ -424,12 +426,39 @@ public class SDUtil {
 		else if(style.equals("photograph")) {
 			buff.append("(Photograph) taken with a (" + cfg.get("stillCamera") + ") camera and (" + cfg.get("lens") + ") lens using (" + cfg.get("film") + ") film processed with (" + cfg.get("colorProcess") + ") by (" + cfg.get("photographer") + ")");
 		}
-		else {
+		else if(style.equals("movie")) {
 			buff.append("(Movie still) taken with a (" + cfg.get("movieCamera") + ") camera using (" + cfg.get("movieFilm") + ") film processed with (" + cfg.get("colorProcess") + ") by (" + cfg.get("director") + ")");
+		}
+		else if(style.equals("selfie")) {
+			buff.append("(Selfie) taken with a (" + cfg.get("selfiePhone") + ") at a (" + cfg.get("selfieAngle") + ") angle with (" + cfg.get("selfieLighting") + ") lighting");
+		}
+		else if(style.equals("anime")) {
+			buff.append("(Anime illustration) in the style of (" + cfg.get("animeStudio") + ") with (" + cfg.get("animeEra") + ") aesthetics");
+		}
+		else if(style.equals("portrait")) {
+			buff.append("(Studio portrait) with (" + cfg.get("portraitLighting") + ") using (" + cfg.get("portraitBackdrop") + ") backdrop by (" + cfg.get("photographer") + ")");
+		}
+		else if(style.equals("comic")) {
+			buff.append("(Comic book panel) in (" + cfg.get("comicPublisher") + ") style from the (" + cfg.get("comicEra") + ") with (" + cfg.get("comicColoring") + ")");
+		}
+		else if(style.equals("digitalArt")) {
+			buff.append("(" + cfg.get("digitalMedium") + ") created with (" + cfg.get("digitalSoftware") + ") in the style of (" + cfg.get("digitalArtist") + ")");
+		}
+		else if(style.equals("fashion")) {
+			buff.append("(Fashion photography) for (" + cfg.get("fashionMagazine") + ") in (" + cfg.get("fashionDecade") + ") style by (" + cfg.get("photographer") + ")");
+		}
+		else if(style.equals("vintage")) {
+			buff.append("(Vintage photograph) from the (" + cfg.get("vintageDecade") + ") using (" + cfg.get("vintageProcessing") + ") with a (" + cfg.get("vintageCamera") + ")");
+		}
+		else if(style.equals("custom")) {
+			String cp = cfg.get("customPrompt");
+			if(cp != null && cp.length() > 0) {
+				buff.append(cp);
+			}
 		}
 		buff.append(").");
 		return buff.toString();
-		
+
 	}
 	public static BaseRecord getConfigData() {
 		if(configData == null) {
@@ -444,35 +473,203 @@ public class SDUtil {
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}
-		
+
 		BaseRecord cfg = getConfigData();
 
 		String style = randomSDConfigValue(cfg, "styles");
 		sd.setValue("style", style);
-		if(style.equals("art")) {
-			sd.setValue("artStyle", randomSDConfigValue(cfg, "artStyles"));
-		}
-		else {
-			sd.setValue("colorProcess", randomSDConfigValue(cfg, "colorProcesses"));
-			if(style.equals("photograph")) {
+		switch(style) {
+			case "art":
+				sd.setValue("artStyle", randomSDConfigValue(cfg, "artStyles"));
+				break;
+			case "photograph":
+				sd.setValue("colorProcess", randomSDConfigValue(cfg, "colorProcesses"));
 				sd.setValue("stillCamera", randomSDConfigValue(cfg, "stillCameras"));
 				sd.setValue("photographer", randomSDConfigValue(cfg, "photographers"));
 				sd.setValue("lens", randomSDConfigValue(cfg, "lenses"));
 				sd.setValue("film", randomSDConfigValue(cfg, "films"));
-			}
-			else {
+				break;
+			case "movie":
+				sd.setValue("colorProcess", randomSDConfigValue(cfg, "colorProcesses"));
 				sd.setValue("movieFilm", randomSDConfigValue(cfg, "movieFilms"));
 				sd.setValue("movieCamera", randomSDConfigValue(cfg, "movieCameras"));
 				sd.setValue("director", randomSDConfigValue(cfg, "directors"));
-			}
+				break;
+			case "selfie":
+				sd.setValue("selfiePhone", randomSDConfigValue(cfg, "selfiePhones"));
+				sd.setValue("selfieAngle", randomSDConfigValue(cfg, "selfieAngles"));
+				sd.setValue("selfieLighting", randomSDConfigValue(cfg, "selfieLightings"));
+				break;
+			case "anime":
+				sd.setValue("animeStudio", randomSDConfigValue(cfg, "animeStudios"));
+				sd.setValue("animeEra", randomSDConfigValue(cfg, "animeEras"));
+				break;
+			case "portrait":
+				sd.setValue("portraitLighting", randomSDConfigValue(cfg, "portraitLightings"));
+				sd.setValue("portraitBackdrop", randomSDConfigValue(cfg, "portraitBackdrops"));
+				sd.setValue("photographer", randomSDConfigValue(cfg, "photographers"));
+				break;
+			case "comic":
+				sd.setValue("comicPublisher", randomSDConfigValue(cfg, "comicPublishers"));
+				sd.setValue("comicEra", randomSDConfigValue(cfg, "comicEras"));
+				sd.setValue("comicColoring", randomSDConfigValue(cfg, "comicColorings"));
+				break;
+			case "digitalArt":
+				sd.setValue("digitalMedium", randomSDConfigValue(cfg, "digitalMediums"));
+				sd.setValue("digitalSoftware", randomSDConfigValue(cfg, "digitalSoftwares"));
+				sd.setValue("digitalArtist", randomSDConfigValue(cfg, "digitalArtists"));
+				break;
+			case "fashion":
+				sd.setValue("fashionMagazine", randomSDConfigValue(cfg, "fashionMagazines"));
+				sd.setValue("fashionDecade", randomSDConfigValue(cfg, "fashionDecades"));
+				sd.setValue("photographer", randomSDConfigValue(cfg, "photographers"));
+				break;
+			case "vintage":
+				sd.setValue("vintageDecade", randomSDConfigValue(cfg, "vintageDecades"));
+				sd.setValue("vintageProcessing", randomSDConfigValue(cfg, "vintageProcessings"));
+				sd.setValue("vintageCamera", randomSDConfigValue(cfg, "vintageCameras"));
+				break;
 		}
-		
+
 		return sd;
 	}
 
-	protected static String randomSDConfigValue(BaseRecord cfg, String fieldName) {
+	public static String randomSDConfigValue(BaseRecord cfg, String fieldName) {
 		List<String> vals = cfg.get(fieldName);
-		return vals.get(rand.nextInt(vals.size()));	
+		return vals.get(rand.nextInt(vals.size()));
 	}
-	
+
+	public static byte[] getDataBytes(BaseRecord data) {
+		byte[] value = null;
+		if (data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null) {
+			BaseRecord stream = data.get(FieldNames.FIELD_STREAM);
+			StreamSegmentUtil ssu = new StreamSegmentUtil();
+			value = ssu.streamToEnd(stream.get(FieldNames.FIELD_OBJECT_ID), 0, 0);
+		} else {
+			try {
+				value = ByteModelUtil.getValue(data);
+			} catch (ValueException | FieldException e) {
+				logger.error(e);
+			}
+		}
+		return value;
+	}
+
+	private void applyImg2Img(BaseRecord user, BaseRecord sdConfig, SWTxt2Img s2i) {
+		String refImageId = sdConfig.get("referenceImageId");
+		if(refImageId == null || refImageId.length() == 0) {
+			return;
+		}
+		Query refQ = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, refImageId);
+		refQ.planMost(true);
+		BaseRecord refImage = IOSystem.getActiveContext().getAccessPoint().find(user, refQ);
+		if(refImage == null) {
+			logger.warn("Reference image not found: " + refImageId);
+			return;
+		}
+		byte[] imageBytes = getDataBytes(refImage);
+		if(imageBytes == null || imageBytes.length == 0) {
+			logger.warn("Reference image has no data: " + refImageId);
+			return;
+		}
+		String base64Image = BinaryUtil.toBase64Str(imageBytes);
+		s2i.setInitImage(base64Image);
+		Double ds = sdConfig.get("denoisingStrength");
+		s2i.setInitImageCreativity(ds != null ? ds : 0.75);
+	}
+
+	public List<BaseRecord> createImage(BaseRecord user, String groupPath, BaseRecord sdConfig, String name, int batch, boolean hires, int seed) {
+		if(apiType != SDAPIEnumType.SWARM) {
+			logger.error("createImage without charPerson is only supported for SWARM API type");
+			return new ArrayList<>();
+		}
+
+		String prompt = getSDConfigPrompt(sdConfig);
+		String desc = sdConfig.get("description");
+		if(desc != null && desc.length() > 0) {
+			prompt = desc + " " + prompt;
+		}
+
+		SWTxt2Img s2i = new SWTxt2Img();
+		s2i.setPrompt(prompt);
+		s2i.setSteps(sdConfig.get("steps"));
+		s2i.setModel(sdConfig.get("model"));
+		s2i.setScheduler(sdConfig.get("scheduler"));
+		s2i.setSampler(sdConfig.get("sampler"));
+		s2i.setCfgScale(sdConfig.get("cfg"));
+		s2i.setSeed(sdConfig.get("seed"));
+		s2i.setImages(batch);
+		if((Boolean)sdConfig.get("hires") == true) {
+			s2i.setRefinerScheduler(sdConfig.get("refinerScheduler"));
+			s2i.setRefinerSampler(sdConfig.get("refinerSampler"));
+			s2i.setRefinerMethod(sdConfig.get("refinerMethod"));
+			s2i.setRefinerModel(sdConfig.get("refinerModel"));
+			s2i.setRefinerSteps(sdConfig.get("refinerSteps"));
+			s2i.setRefinerUpscale(sdConfig.get("refinerUpscale"));
+			s2i.setRefinerUpscaleMethod(sdConfig.get("refinerUpscaleMethod"));
+			s2i.setRefinerCfgScale(sdConfig.get("refinerCfg"));
+			s2i.setRefinerControlPercentage(sdConfig.get("refinerControlPercentage"));
+		}
+		else {
+			s2i.setRefinerControlPercentage(0.0);
+		}
+
+		applyImg2Img(user, sdConfig, s2i);
+
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		List<BaseRecord> datas = new ArrayList<>();
+		int rando = Math.abs(rand.nextInt());
+		try {
+			logger.info("Generating image: " + name);
+			SWImageResponse rep = txt2img(s2i);
+			if(rep == null || rep.getImages() == null || rep.getImages().size() == 0) {
+				logger.error("No images returned in response");
+				return datas;
+			}
+
+			int counter = 1;
+			int seedl = seed;
+			for(String bai : rep.getImages()) {
+				byte[] dataTest = ClientUtil.get(byte[].class, ClientUtil.getResource(autoserver + "/" + bai), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+				SWImageInfo info = SWUtil.extractInfo(dataTest);
+				if(info != null && info.getImageParams() != null) {
+					seedl = info.getImageParams().getSeed();
+				}
+				if(dataTest == null || dataTest.length == 0) {
+					logger.error("Could not retrieve image data from swarm server for " + bai);
+					continue;
+				}
+
+				String dname = name + " - " + counter + " - " + rando + " - " + seedl;
+				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+				q.field(FieldNames.FIELD_NAME, dname);
+				BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
+
+				if(data == null) {
+					ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+					clist.parameter(FieldNames.FIELD_NAME, dname);
+					data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
+					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+					data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+					AttributeUtil.addAttribute(data, "seed", seedl);
+					AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
+					IOSystem.getActiveContext().getAccessPoint().create(user, data);
+				}
+				else {
+					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+					IOSystem.getActiveContext().getAccessPoint().update(user, data);
+				}
+				datas.add(data);
+				counter++;
+				seedl = seedl + 1;
+			}
+		}
+		catch(NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | ModelException | ImageProcessingException | IOException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+
+		return datas;
+	}
+
 }
