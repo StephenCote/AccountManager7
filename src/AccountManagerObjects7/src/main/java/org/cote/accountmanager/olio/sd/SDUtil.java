@@ -22,6 +22,8 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.WearLevelEnumType;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111OverrideSettings;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Response;
@@ -670,6 +672,127 @@ public class SDUtil {
 		}
 
 		return datas;
+	}
+
+	/// Generate mannequin images for an apparel record, one image per cumulative wear level
+	public List<BaseRecord> generateMannequinImages(BaseRecord user, String groupPath, BaseRecord apparel, BaseRecord sdConfig, boolean hires, long seed) {
+		List<BaseRecord> images = new ArrayList<>();
+		List<BaseRecord> wears = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+		if(wears == null || wears.isEmpty()) {
+			logger.warn("No wearables in apparel");
+			return images;
+		}
+
+		// Determine which wear levels are present
+		java.util.Set<WearLevelEnumType> levels = new java.util.TreeSet<>();
+		for(BaseRecord wear : wears) {
+			String levelStr = wear.get(OlioFieldNames.FIELD_LEVEL);
+			if(levelStr != null) {
+				try {
+					WearLevelEnumType level = WearLevelEnumType.valueOf(levelStr);
+					levels.add(level);
+				} catch(IllegalArgumentException e) {
+					// Skip invalid levels
+				}
+			}
+		}
+
+		if(levels.isEmpty()) {
+			logger.warn("No valid wear levels found in apparel");
+			return images;
+		}
+
+		String apparelName = apparel.get(FieldNames.FIELD_NAME);
+		int rando = Math.abs(rand.nextInt());
+		long useSeed = seed > 0 ? seed : Math.abs(rand.nextLong());
+
+		// Use sdConfig values or defaults
+		BaseRecord config = sdConfig != null ? sdConfig : randomSDConfig();
+
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+
+		// Generate one image per cumulative level
+		for(WearLevelEnumType level : levels) {
+			String prompt = NarrativeUtil.getMannequinPrompt(apparel, level, config);
+			String negPrompt = NarrativeUtil.getMannequinNegativePrompt();
+
+			SWTxt2Img s2i = new SWTxt2Img();
+			s2i.setPrompt(prompt);
+			s2i.setNegativePrompt(negPrompt);
+			s2i.setWidth(512);
+			s2i.setHeight(768);
+			s2i.setSteps(config.get("steps"));
+			s2i.setModel(config.get("model"));
+			s2i.setScheduler(config.get("scheduler"));
+			s2i.setSampler(config.get("sampler"));
+			s2i.setCfgScale(config.get("cfg"));
+			s2i.setSeed((int)useSeed);
+			s2i.setImages(1);
+
+			if(hires && config.get("refinerModel") != null) {
+				s2i.setRefinerScheduler(config.get("refinerScheduler"));
+				s2i.setRefinerSampler(config.get("refinerSampler"));
+				s2i.setRefinerMethod(config.get("refinerMethod"));
+				s2i.setRefinerModel(config.get("refinerModel"));
+				s2i.setRefinerSteps(config.get("refinerSteps"));
+				s2i.setRefinerUpscale(config.get("refinerUpscale"));
+				s2i.setRefinerUpscaleMethod(config.get("refinerUpscaleMethod"));
+				s2i.setRefinerCfgScale(config.get("refinerCfg"));
+				s2i.setRefinerControlPercentage(config.get("refinerControlPercentage"));
+			} else {
+				s2i.setRefinerControlPercentage(0.0);
+			}
+
+			String name = apparelName + " - " + level.toString() + " - " + rando + " - " + useSeed;
+
+			try {
+				logger.info("Generating mannequin image: " + name);
+				SWImageResponse rep = txt2img(s2i);
+				if(rep == null || rep.getImages() == null || rep.getImages().isEmpty()) {
+					logger.error("No images returned for level " + level);
+					useSeed++;
+					continue;
+				}
+
+				for(String bai : rep.getImages()) {
+					byte[] dataTest = ClientUtil.get(byte[].class, ClientUtil.getResource(autoserver + "/" + bai), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+					SWImageInfo info = SWUtil.extractInfo(dataTest);
+					int seedl = (int)useSeed;
+					if(info != null && info.getImageParams() != null) {
+						seedl = info.getImageParams().getSeed();
+					}
+					if(dataTest == null || dataTest.length == 0) {
+						logger.error("Could not retrieve image data from swarm server for " + bai);
+						continue;
+					}
+
+					String dname = name;
+					Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+					q.field(FieldNames.FIELD_NAME, dname);
+					BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
+
+					if(data == null) {
+						ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+						clist.parameter(FieldNames.FIELD_NAME, dname);
+						data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
+						data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+						data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+						AttributeUtil.addAttribute(data, "seed", seedl);
+						AttributeUtil.addAttribute(data, "wearLevel", level.toString());
+						AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
+						IOSystem.getActiveContext().getAccessPoint().create(user, data);
+					} else {
+						data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+						IOSystem.getActiveContext().getAccessPoint().update(user, data);
+					}
+					images.add(data);
+				}
+			} catch(Exception e) {
+				logger.error("Error generating mannequin image for level " + level, e);
+			}
+			useSeed++;
+		}
+		return images;
 	}
 
 }

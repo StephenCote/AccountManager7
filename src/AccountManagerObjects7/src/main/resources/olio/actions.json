@@ -243,55 +243,240 @@
 		]
 	},
 	{
-		"name": "build"
+		"name": "build",
+		"minimumEnergyCost": 0.3,
+		"minimumTime": 3600,
+		"counterActions": [
+			"flee"
+		],
+		"positiveStatistics": [
+			"physicalStrength",
+			"physicalEndurance",
+			"manualDexterity",
+			"intelligence"
+		],
+		"positivePersonality": [
+			"conscientiousness",
+			"openness"
+		],
+		"positiveInstincts": [
+			"cooperate",
+			"adapt"
+		],
+		"negativeStates": [
+			"energy"
+		]
 	},
 	{
+		"name": "fight",
+		"minimumEnergyCost": 0.2,
+		"minimumTime": 300,
 		"counterActions": [
 			"defend",
 			"flee"
 		],
-		"name": "fight"
-	},
-	{
-		"name": "flee",
-		"counterActions": [
-			"fight"
+		"positiveStatistics": [
+			"physicalStrength",
+			"physicalEndurance",
+			"agility",
+			"speed",
+			"reaction"
+		],
+		"positiveInstincts": [
+			"fight",
+			"resist"
+		],
+		"negativeInstincts": [
+			"cry",
+			"flight"
+		],
+		"negativeStates": [
+			"health",
+			"energy"
 		]
 	},
 	{
+		"name": "flee",
+		"minimumEnergyCost": 0.15,
+		"minimumTime": 60,
 		"counterActions": [
 			"fight"
 		],
-		"name": "defend"
+		"positiveStatistics": [
+			"speed",
+			"agility",
+			"perception"
+		],
+		"positiveInstincts": [
+			"flight"
+		],
+		"negativeInstincts": [
+			"fight",
+			"resist"
+		],
+		"negativeStates": [
+			"energy"
+		]
 	},
 	{
+		"name": "defend",
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 120,
+		"counterActions": [
+			"fight"
+		],
+		"positiveStatistics": [
+			"physicalEndurance",
+			"agility",
+			"reaction",
+			"perception"
+		],
+		"positiveInstincts": [
+			"protect",
+			"resist"
+		],
+		"negativeStates": [
+			"energy"
+		]
+	},
+	{
+		"name": "scout",
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1800,
 		"counterActions": [
 			"wander"
 		],
-		"name": "scout"
+		"positiveStatistics": [
+			"perception",
+			"agility",
+			"intelligence",
+			"wisdom"
+		],
+		"positiveInstincts": [
+			"adapt"
+		],
+		"negativeStates": [
+			"energy"
+		]
 	},
 	{
+		"name": "navigate",
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1800,
 		"counterActions": [
 			"wander"
 		],
-		"name": "navigate"
+		"positiveStatistics": [
+			"intelligence",
+			"wisdom",
+			"perception"
+		],
+		"positiveInstincts": [
+			"adapt"
+		],
+		"negativeStates": [
+			"energy"
+		]
 	},
 	{
-		"name": "wander"
+		"name": "wander",
+		"minimumEnergyCost": 0.05,
+		"minimumTime": 600,
+		"positiveStatistics": [
+			"perception",
+			"luck"
+		],
+		"positiveInstincts": [
+			"adapt"
+		],
+		"positivePersonality": [
+			"openness"
+		],
+		"negativeStates": [
+			"energy"
+		]
 	},
 	{
-		"name": "socialize"
+		"name": "socialize",
+		"minimumEnergyCost": 0.05,
+		"minimumTime": 300,
+		"positiveStatistics": [
+			"charisma",
+			"wisdom",
+			"perception"
+		],
+		"positivePersonality": [
+			"extraversion",
+			"agreeableness",
+			"openness"
+		],
+		"positiveInstincts": [
+			"herd",
+			"cooperate",
+			"laugh"
+		]
 	},
 	{
 		"name": "organize",
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1800,
 		"counterActions": [
 			"protest"
+		],
+		"positiveStatistics": [
+			"charisma",
+			"intelligence",
+			"wisdom"
+		],
+		"positivePersonality": [
+			"conscientiousness",
+			"extraversion"
+		],
+		"positiveInstincts": [
+			"herd",
+			"cooperate"
 		]
 	},
 	{
 		"name": "protest",
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1800,
 		"counterActions": [
 			"organize"
+		],
+		"positiveStatistics": [
+			"charisma",
+			"mentalStrength",
+			"mentalEndurance"
+		],
+		"positivePersonality": [
+			"openness",
+			"neuroticism"
+		],
+		"positiveInstincts": [
+			"resist"
+		],
+		"negativeInstincts": [
+			"cooperate"
+		]
+	},
+	{
+		"name": "interact",
+		"provider": "org.cote.accountmanager.olio.actions.InteractionAction",
+		"minimumEnergyCost": 0.05,
+		"minimumTime": 60,
+		"positiveStatistics": [
+			"charisma",
+			"intelligence",
+			"wisdom"
+		],
+		"positivePersonality": [
+			"extraversion",
+			"agreeableness"
+		],
+		"positiveInstincts": [
+			"cooperate",
+			"herd"
 		]
 	}
 ]

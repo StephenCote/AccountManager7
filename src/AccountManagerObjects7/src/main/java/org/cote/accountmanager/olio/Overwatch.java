@@ -221,6 +221,49 @@ public class Overwatch {
 		return outBool;
 	}
 
+	/**
+	 * Process a single action to completion without the full Overwatch loop.
+	 * Used for player-driven actions in the card game where each action is resolved individually.
+	 * Attaches resulting interactions to the current realm increment.
+	 */
+	public ActionResultEnumType processOne(BaseRecord actionResult) throws OverwatchException {
+		try {
+			String actionName = actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2);
+			if (actionName == null) {
+				actionName = actionResult.get(OlioFieldNames.FIELD_ACTION_NAME);
+			}
+			IAction action = Actions.getActionProvider(context, actionName);
+			if (action == null) {
+				throw new OverwatchException("Invalid action: " + actionName);
+			}
+
+			BaseRecord actor = ActionUtil.getActionActor(actionResult);
+			BaseRecord iactor = ActionUtil.getActionInteractor(actionResult);
+
+			// Execute the action
+			Actions.executeAction(context, actionResult, actor, iactor);
+
+			// Conclude the action
+			ActionResultEnumType result = Actions.concludeAction(context, actionResult, actor, iactor);
+
+			// Attach interactions to the current increment event
+			BaseRecord increment = context.clock().getIncrement();
+			if (increment != null) {
+				List<BaseRecord> interactions = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
+				if (interactions != null && !interactions.isEmpty()) {
+					OlioUtil.batchAddForeignList(context, increment,
+							OlioFieldNames.FIELD_INTERACTIONS, interactions);
+				}
+			}
+
+			Queue.processQueue();
+			return result;
+		} catch (OlioException e) {
+			logger.error(e);
+			throw new OverwatchException(e);
+		}
+	}
+
 	protected void processInteractions() {
 
 	}

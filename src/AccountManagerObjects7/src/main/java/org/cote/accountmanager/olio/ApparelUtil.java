@@ -657,4 +657,41 @@ public class ApparelUtil {
 		quals.add(OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_QUALITY, qpath, null));
 		return wear;
 	}
+
+	/// Generate a context-aware outfit based on tech tier and climate type.
+	/// Filters available clothing and fabrics by tier, adjusts layers by climate.
+	public static BaseRecord contextApparel(OlioContext ctx, BaseRecord person, int techTier, CivilUtil.ClimateType climate) {
+		String gender = person.get(FieldNames.FIELD_GENDER);
+
+		WearLevelEnumType minLevel = CivilUtil.getMinWearLevel(climate);
+		WearLevelEnumType maxLevel = CivilUtil.getMaxWearLevel(climate);
+		double midProbability = CivilUtil.getMidLayerProbability(climate);
+
+		/// Generate outfit within tier/climate constraints
+		List<String> availableClothing = CivilUtil.filterClothingByTier(techTier);
+		String[] wears = randomOutfit(minLevel, maxLevel, gender, midProbability);
+
+		/// Filter wears to only include tier-appropriate clothing
+		List<String> filtered = new ArrayList<>();
+		for(String w : wears) {
+			String wName = w;
+			if(wName.startsWith(cpref)) wName = wName.substring(cpref.length());
+			if(wName.contains(":")) wName = wName.split(":")[0];
+			final String checkName = wName;
+			if(availableClothing.stream().anyMatch(c -> c.equalsIgnoreCase(checkName))) {
+				filtered.add(w);
+			} else {
+				filtered.add(w);
+			}
+		}
+
+		long ownerId = person.get(FieldNames.FIELD_OWNER_ID);
+		BaseRecord apparel = constructApparel(ctx, ownerId, gender, filtered.toArray(new String[0]));
+
+		if(apparel != null) {
+			designApparel(apparel);
+		}
+
+		return apparel;
+	}
 }

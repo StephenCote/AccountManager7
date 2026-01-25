@@ -70,9 +70,10 @@
 					</includes>
 					<excludes>
 						<!--
+						<exclude>**/TestOlioGameFeatures</exclude>
 						
-						<exclude>**/TestSDStyles.java</exclude>
 						-->
+						<exclude>**/TestSDStyles.java</exclude>
 						<exclude>**/TestData.java</exclude>
 						<exclude>**/TestSD.java</exclude>
 						<exclude>**/TestPerformance.java</exclude>

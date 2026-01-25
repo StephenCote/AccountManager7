@@ -126,6 +126,14 @@ public class IOSystem {
 								logger.error("**** Schema not defined for " + m);
 							}
 						}
+						else if(!dbUtil.isConstrained(schema) && !properties.isReset()) {
+							/// Patch existing tables with missing columns
+							List<String> patches = dbUtil.generatePatchSchema(schema);
+							for(String patch : patches) {
+								logger.info("Schema patch: " + patch);
+								dbUtil.execute(patch);
+							}
+						}
 					}
 					else {
 						logger.debug("Skip model without identity: " + m);

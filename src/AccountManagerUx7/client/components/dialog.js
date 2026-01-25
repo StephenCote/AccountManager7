@@ -1305,6 +1305,86 @@
         setDialog(cfg);
     }
 
+    async function reimageApparel(object, inst) {
+        if (!inst || inst.model.name !== "olio.apparel") {
+            page.toast("error", "Not an apparel record");
+            return;
+        }
+
+        let entity = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
+        let cinst = am7model.prepareInstance(entity, am7model.forms.sdMannequinConfig);
+
+        function tempApplyDefaults(){
+            cinst.api.steps(40);
+            cinst.api.refinerSteps(40);
+            cinst.api.model("sdXL_v10VAEFix.safetensors");
+            cinst.api.refinerModel("juggernautXL_ragnarokBy.safetensors");
+        }
+
+        tempApplyDefaults();
+
+        // Wire up the random seed button
+        am7model.forms.sdMannequinConfig.fields.randomSeed.field.command = async function(){
+            cinst.api.seed(-1);
+        };
+
+        let cfg = {
+            label: "Mannequin Images: " + inst.api.name(),
+            entityType: "olio.sd.config",
+            size: 50,
+            data: {entity: cinst.entity, inst: cinst},
+            confirm: async function (data) {
+                let baseSeed = cinst.api.seed();
+                let hires = cinst.api.hires ? cinst.api.hires() : false;
+
+                page.toast("info", "Creating mannequin images...", -1);
+
+                let imgEntity = Object.assign({}, cinst.entity);
+                imgEntity.seed = baseSeed;
+                imgEntity.hires = hires;
+
+                let images = await m.request({
+                    method: 'POST',
+                    url: am7client.base() + "/olio/apparel/" + inst.api.objectId() + "/reimage",
+                    body: imgEntity,
+                    withCredentials: true
+                });
+
+                page.clearToast();
+
+                if(images && images.length > 0){
+                    page.toast("success", "Created " + images.length + " mannequin image(s)");
+
+                    // Clear the context cache for this object
+                    page.clearContextObject(inst.api.objectId());
+                    images.forEach(img => {
+                        if(img.objectId) page.clearContextObject(img.objectId);
+                    });
+
+                    // Force Mithril redraw
+                    m.redraw();
+
+                    // Show images
+                    if(images.length === 1){
+                        page.imageView(images[0]);
+                    } else if(images.length > 1){
+                        page.imageGallery(images, inst);
+                    }
+                }
+                else{
+                    page.toast("error", "Mannequin imaging failed");
+                }
+
+                endDialog();
+            },
+            cancel: async function (data) {
+                endDialog();
+            }
+        };
+
+        setDialog(cfg);
+    }
+
     function loadDialog(){
         if(!dialogCfg || !dialogUp) return "";
         return createDialog(dialogCfg.size, dialogCfg.entityType, dialogCfg.data, dialogCfg.label, dialogCfg.confirm, dialogCfg.cancel);
@@ -1485,6 +1565,7 @@
         let cloudMode = true;
         let selectedStat = null;
         let memberList = [];
+        let previewSrc = null;
 
         let minCount = Math.min(...stats.map(s => s.count));
         let maxCount = Math.max(...stats.map(s => s.count));
@@ -1551,7 +1632,13 @@
                     );
                 }
                 // Detail view
-                return m("div", {style: "padding: 16px;"}, [
+                return m("div", {style: "padding: 16px; position: relative;"}, [
+                    previewSrc ? m("div", {
+                        style: "position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 10; display: flex; align-items: center; justify-content: center; cursor: pointer;",
+                        onclick: function(){ previewSrc = null; m.redraw(); }
+                    }, [
+                        m("img", {src: previewSrc, style: "max-width: 90%; max-height: 90%; object-fit: contain; border-radius: 4px; box-shadow: 0 4px 24px rgba(0,0,0,0.5);"})
+                    ]) : "",
                     m("div", {style: "margin-bottom: 12px;"}, [
                         m("button", {class: "page-dialog-button", onclick: backToCloud}, [
                             m("span", {class: "material-symbols-outlined md-18 mr-2"}, "arrow_back"),
@@ -1572,13 +1659,16 @@
                                 let memName = mem.name || mem.objectId;
                                 let thumb = "";
                                 let orgPath = am7client.dotPath(am7client.currentOrganization);
+                                let imgSrc = null;
                                 if(memType == "olio.charPerson" && mem.profile && mem.profile.portrait && mem.profile.portrait.contentType){
                                     let pp = mem.profile.portrait;
-                                    thumb = m("img", {height: 48, width: 48, style: "border-radius: 50%; object-fit: cover; margin-right: 8px;", src: g_application_path + "/thumbnail/" + orgPath + "/data.data" + pp.groupPath + "/" + pp.name + "/48x48"});
+                                    imgSrc = g_application_path + "/thumbnail/" + orgPath + "/data.data" + pp.groupPath + "/" + pp.name;
+                                    thumb = m("img", {height: 48, width: 48, style: "border-radius: 50%; object-fit: cover; margin-right: 8px; cursor: pointer;", src: imgSrc + "/48x48", onclick: function(e){ e.preventDefault(); previewSrc = imgSrc + "/512x512"; m.redraw(); }});
                                 } else if(memType == "olio.charPerson"){
                                     thumb = m("span", {class: "material-symbols-outlined", style: "font-size: 48px; color: #999; margin-right: 8px;"}, "person");
                                 } else if(memType == "data.data" && mem.contentType && mem.contentType.match(/^image/)){
-                                    thumb = m("img", {height: 48, width: 48, style: "object-fit: cover; border-radius: 4px; margin-right: 8px;", src: g_application_path + "/thumbnail/" + orgPath + "/data.data" + mem.groupPath + "/" + mem.name + "/48x48"});
+                                    imgSrc = g_application_path + "/thumbnail/" + orgPath + "/data.data" + mem.groupPath + "/" + mem.name;
+                                    thumb = m("img", {height: 48, width: 48, style: "object-fit: cover; border-radius: 4px; margin-right: 8px; cursor: pointer;", src: imgSrc + "/48x48", onclick: function(e){ e.preventDefault(); previewSrc = imgSrc + "/512x512"; m.redraw(); }});
                                 }
                                 return m("li", {style: "padding: 4px 0; border-bottom: 1px solid #eee; display: flex; align-items: center;"}, [
                                     thumb,
@@ -1615,6 +1705,7 @@
         vectorize,
         summarize,
         reimage,
+        reimageApparel,
         chatSettings,
         showProgress,
         chatInto,

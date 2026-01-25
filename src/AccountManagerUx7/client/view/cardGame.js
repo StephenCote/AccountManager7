@@ -601,17 +601,36 @@
                 })
             ),
 
-            // Derived stats footer
-            m("div", {class: "cg-card-footer-section text-xs"}, [
-                m("div", {class: "flex justify-between"}, [
-                    m("span", {class: "text-gray-600 dark:text-gray-400"}, "Health:"),
-                    m("span", {class: "text-green-600 dark:text-green-400"}, formatStatValue(stats.health))
-                ]),
-                m("div", {class: "flex justify-between"}, [
-                    m("span", {class: "text-gray-600 dark:text-gray-400"}, "Power:"),
-                    m("span", {class: "text-blue-600 dark:text-blue-400"}, formatStatValue(stats.power))
-                ])
-            ])
+            // Needs/State bars from game state
+            m("div", {class: "cg-card-footer-section text-xs space-y-1"}, (function() {
+                let gs = char._gameState || {};
+                let needFields = [
+                    {name: "health", label: "HP", color: "bg-green-500", invert: false},
+                    {name: "energy", label: "NRG", color: "bg-blue-500", invert: false},
+                    {name: "hunger", label: "HNG", color: "bg-orange-500", invert: true},
+                    {name: "thirst", label: "THR", color: "bg-cyan-500", invert: true},
+                    {name: "fatigue", label: "FTG", color: "bg-purple-500", invert: true}
+                ];
+                return needFields.map(function(nf) {
+                    let val = gs[nf.name];
+                    if (val === undefined || val === null) val = nf.invert ? 0 : 1;
+                    let pct = val * 100;
+                    let barColor = nf.color;
+                    // For inverted needs (hunger, thirst, fatigue), high = bad
+                    if (nf.invert && pct > 70) barColor = "bg-red-500";
+                    else if (!nf.invert && pct < 30) barColor = "bg-red-500";
+                    return m("div", {class: "flex items-center space-x-1"}, [
+                        m("span", {class: "w-7 text-gray-600 dark:text-gray-400"}, nf.label),
+                        m("div", {class: "flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded"}, [
+                            m("div", {
+                                class: "h-full rounded " + barColor,
+                                style: "width:" + pct + "%"
+                            })
+                        ]),
+                        m("span", {class: "w-8 text-right text-gray-600 dark:text-gray-400"}, Math.round(pct) + "%")
+                    ]);
+                });
+            })())
         ]);
     }
 
@@ -894,6 +913,8 @@
                 if (idx > -1) {
                     let drawn = deck.splice(idx, 1)[0];
                     userHand.push(drawn);
+                    claimCharacter(drawn.objectId);
+                    refreshCharacterState(drawn);
                     if (previewIndex >= deck.length && deck.length > 0) {
                         previewIndex = 0;
                     }
@@ -2660,6 +2681,10 @@
         if (idx > -1) {
             hand.splice(idx, 1);
             discard.push(card);
+            // Release player control when discarding from user hand
+            if (source === 'userHand') {
+                releaseCharacter(card.objectId);
+            }
             // Clear selection if discarded card was selected
             if (selectedCard && selectedCard.objectId === card.objectId) {
                 selectedCard = null;
@@ -3084,18 +3109,41 @@
     }
 
     async function createInteraction(pending) {
-        // Build the interaction object based on olio.interaction schema
         let actor = pending.actor;
         let interactor = pending.interactor;
 
-        // For now, create a local interaction object to demonstrate the flow
-        // In a full implementation, this would save to the server
+        try {
+            // Resolve interaction via server-side action pipeline
+            let interaction = await m.request({
+                method: 'POST',
+                url: g_application_path + "/rest/game/interact",
+                withCredentials: true,
+                body: {
+                    actorId: actor.objectId,
+                    interactorId: interactor.objectId,
+                    interactionType: pending.type
+                }
+            });
+
+            if (interaction) {
+                let outcomes = {
+                    actorOutcome: interaction.actorOutcome || "equilibrium",
+                    interactorOutcome: interaction.interactorOutcome || "equilibrium",
+                    description: formatOutcomeLabel(interaction.actorOutcome)
+                };
+                page.toast("info", formatOutcome(outcomes));
+                return interaction;
+            }
+        } catch(e) {
+            console.warn("Server interaction failed, using local fallback:", e);
+        }
+
+        // Fallback to local resolution if server is unavailable
         let interaction = {
             schema: "olio.interaction",
             name: pending.label + ": " + actor.name + " -> " + interactor.name,
             description: actor.name + " " + pending.label.toLowerCase() + "s " + interactor.name,
             type: pending.type.toLowerCase(),
-            state: "pending",
             actorType: "olio.charPerson",
             actor: {objectId: actor.objectId, name: actor.name},
             interactorType: "olio.charPerson",
@@ -3104,15 +3152,82 @@
             interactorOutcome: "unknown"
         };
 
-        // Determine outcome based on simple logic (could be expanded with stats comparison)
         let outcomes = determineOutcome(pending.type, actor, interactor);
         interaction.actorOutcome = outcomes.actorOutcome;
         interaction.interactorOutcome = outcomes.interactorOutcome;
         interaction.description += " - " + formatOutcome(outcomes);
-
         page.toast("info", formatOutcome(outcomes));
-
         return interaction;
+    }
+
+    function formatOutcomeLabel(outcome) {
+        if (!outcome) return "Unknown";
+        switch(outcome.toUpperCase()) {
+            case "VERY_FAVORABLE": return "Great success!";
+            case "FAVORABLE": return "Success";
+            case "EQUILIBRIUM": return "Neutral outcome";
+            case "UNFAVORABLE": return "Failed";
+            case "VERY_UNFAVORABLE": return "Critical failure!";
+            default: return outcome.replace(/_/g, " ");
+        }
+    }
+
+    async function claimCharacter(objectId) {
+        try {
+            await m.request({
+                method: 'POST',
+                url: g_application_path + "/rest/game/claim/" + objectId,
+                withCredentials: true
+            });
+        } catch(e) {
+            console.warn("Failed to claim character:", e);
+        }
+    }
+
+    async function releaseCharacter(objectId) {
+        try {
+            await m.request({
+                method: 'POST',
+                url: g_application_path + "/rest/game/release/" + objectId,
+                withCredentials: true
+            });
+        } catch(e) {
+            console.warn("Failed to release character:", e);
+        }
+    }
+
+    async function advanceTurn() {
+        try {
+            let result = await m.request({
+                method: 'POST',
+                url: g_application_path + "/rest/game/advance",
+                withCredentials: true
+            });
+            page.toast("info", "Turn advanced (" + (result.updated || 0) + " characters updated)");
+            // Refresh state for characters in hand
+            for (let card of userHand) {
+                await refreshCharacterState(card);
+            }
+            m.redraw();
+        } catch(e) {
+            console.warn("Failed to advance turn:", e);
+            page.toast("error", "Failed to advance turn");
+        }
+    }
+
+    async function refreshCharacterState(card) {
+        try {
+            let state = await m.request({
+                method: 'GET',
+                url: g_application_path + "/rest/game/state/" + card.objectId,
+                withCredentials: true
+            });
+            if (state) {
+                card._gameState = state;
+            }
+        } catch(e) {
+            // Silently fail for state refresh
+        }
     }
 
     function determineOutcome(actionType, actor, interactor) {
@@ -4157,6 +4272,8 @@
             // Load full character to get store reference
             userChar = await loadFullCharacter(userChar);
             userHand.push(userChar);
+            claimCharacter(userChar.objectId);
+            await refreshCharacterState(userChar);
             await selectCard(userChar);
 
             // Load character's store items and apparel
@@ -4446,6 +4563,15 @@
             }, [
                 m("span", {class: "material-symbols-outlined material-icons-24"}, "playing_cards"),
                 "Deal"
+            ]),
+            // End Turn button - advances time for claimed characters
+            m("button", {
+                class: "flyout-button",
+                onclick: advanceTurn,
+                title: "End turn: advance time and accumulate needs for claimed characters"
+            }, [
+                m("span", {class: "material-symbols-outlined material-icons-24"}, "skip_next"),
+                "End Turn"
             ]),
             m("button", {
                 class: "flyout-button",

@@ -609,7 +609,7 @@
             },
             reimage: {
                 label: 'Reimage',
-                icon: 'run_circle',
+                icon: 'auto_awesome',
                 function: 'reimage',
                 requiredAttribute: "objectId"
             }
@@ -1102,6 +1102,54 @@
 
 
 
+        }
+    };
+
+    /// Simplified form for mannequin/apparel imaging - minimal controls
+    forms.sdMannequinConfig = {
+        label: "Mannequin Config",
+        fields: {
+            randomSeed: {
+                format: "button",
+                layout: "one",
+                icon: 'casino',
+                field: {
+                    label: "Random",
+                    command: undefined
+                }
+            },
+            seed:{
+                label: 'Seed',
+                layout: 'one'
+            },
+            hires: {
+                label: 'Hi-Res',
+                layout: 'one'
+            },
+            model: {
+                layout: 'one',
+                label: 'Model',
+                field: {
+                    type: 'list',
+                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix']
+                }
+            },
+            steps: {
+                label: 'Steps',
+                layout: 'one'
+            },
+            refinerModel: {
+                layout: 'one',
+                label: 'Refiner',
+                field: {
+                    type: 'list',
+                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix']
+                }
+            },
+            refinerSteps: {
+                label: 'Refiner Steps',
+                layout: 'one'
+            }
         }
     };
 
@@ -3557,7 +3605,7 @@
         commands: {
             reimage: {
                 label: 'Reimage',
-                icon: 'run_circle',
+                icon: 'auto_awesome',
                 function: 'reimage',
                 requiredAttribute: "objectId"
             }
@@ -3774,6 +3822,14 @@
     });
     forms.apparel = {
         label: "Apparel",
+        commands: {
+            reimage: {
+                label: 'Reimage',
+                icon: 'auto_awesome',
+                function: 'reimageApparel',
+                requiredAttribute: "objectId"
+            }
+        },
         fields: {
             name: {
                 layout: 'half'
@@ -3826,6 +3882,13 @@
                 layout: 'full',
                 format: "table",
                 form: forms.entitylist
+            },
+            gallery: {
+                layout: 'full',
+                format: 'gallery',
+                field: {
+                    label: 'Gallery'
+                }
             }
         },
         forms: ["lightgroupinfo"]

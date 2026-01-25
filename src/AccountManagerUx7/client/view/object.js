@@ -1521,6 +1521,12 @@
             }
         };
 
+        objectPage.reimageApparel = async function(name, field, tableType, tableForm, props){
+            if(inst && page.components.dialog.reimageApparel){
+                page.components.dialog.reimageApparel(entity, inst);
+            }
+        };
+
         objectPage.execute = function(name, field, type, form, properties){
             pendingResponse = undefined;
             am7client.executeScript(entity.urn, function(v){

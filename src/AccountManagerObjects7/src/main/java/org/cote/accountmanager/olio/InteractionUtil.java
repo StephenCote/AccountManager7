@@ -13,6 +13,8 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
@@ -489,7 +491,201 @@ public class InteractionUtil {
 		}
 		return inter;
 	}
-	
+
+	/// Resolve an interaction between two characters using the full action pipeline.
+	/// This is the primary entry point for the card game service.
+	///
+	public static BaseRecord resolveInteraction(OlioContext ctx, BaseRecord actor, BaseRecord interactor, InteractionEnumType interType) throws OlioException {
+
+		PersonalityProfile prof1 = ProfileUtil.getProfile(ctx, actor);
+		PersonalityProfile prof2 = ProfileUtil.getProfile(ctx, interactor);
+		if(ProfileUtil.sameProfile(prof1, prof2)) {
+			throw new OlioException("Cannot resolve interaction between same profile");
+		}
+
+		// Get context alignment from current epoch, defaulting to NEUTRAL
+		AlignmentEnumType contextAlign = AlignmentEnumType.NEUTRAL;
+		BaseRecord epoch = ctx.clock().getEpoch();
+		if(epoch != null) {
+			String alignStr = epoch.get("alignment");
+			if(alignStr != null) {
+				try { contextAlign = AlignmentEnumType.valueOf(alignStr); }
+				catch(IllegalArgumentException e) { /* keep NEUTRAL */ }
+			}
+		}
+
+		// Determine the reason/role/threat context from profiles
+		ReasonToDo rtd = guessReasonToInteract(ctx, prof1, contextAlign, prof2);
+		if(rtd == null) {
+			// If no reason can be determined, use defaults
+			rtd = new ReasonToDo();
+			rtd.setInteraction(interType);
+			rtd.setAlignment(AlignmentEnumType.NEUTRAL);
+			rtd.setInteractorAlignment(AlignmentEnumType.NEUTRAL);
+			rtd.setRole(CharacterRoleEnumType.UNKNOWN);
+			rtd.setInteractorRole(CharacterRoleEnumType.UNKNOWN);
+			rtd.setReason(ReasonEnumType.UNKNOWN);
+			rtd.setInteractorReason(ReasonEnumType.UNKNOWN);
+			rtd.setThreat(getThreatForInteraction(interType));
+			rtd.setInteractorThreat(ThreatEnumType.getTarget(rtd.getThreat()));
+		}
+
+		// Override the interaction type with the requested one
+		rtd.setInteraction(interType);
+		rtd.setThreat(getThreatForInteraction(interType));
+		rtd.setInteractorThreat(ThreatEnumType.getTarget(rtd.getThreat()));
+
+		// Create the interaction record
+		BaseRecord interaction = newInteraction(
+			ctx,
+			interType,
+			null,
+			actor,
+			rtd.getAlignment(),
+			rtd.getThreat(),
+			rtd.getRole(),
+			rtd.getReason(),
+			interactor,
+			rtd.getInteractorAlignment(),
+			rtd.getInteractorThreat(),
+			rtd.getInteractorRole(),
+			rtd.getInteractorReason()
+		);
+
+		if(interaction == null) {
+			throw new OlioException("Failed to create interaction record");
+		}
+
+		// Get the current increment as the event container
+		BaseRecord increment = ctx.clock().getIncrement();
+		if(increment == null) {
+			throw new OlioException("No active increment - clock may not be started");
+		}
+
+		// Create action parameters for the "interact" action and begin the action
+		BaseRecord actionResult = Actions.beginAction(ctx, increment, "interact", actor, interactor);
+		if(actionResult == null) {
+			throw new OlioException("Failed to begin interact action");
+		}
+
+		// Attach the interaction to the action result
+		List<BaseRecord> interactions = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
+		interactions.add(interaction);
+
+		// Resolve via single-step overwatch
+		try {
+			ctx.getOverwatch().processOne(actionResult);
+		}
+		catch(OverwatchException e) {
+			throw new OlioException("Failed to process interaction: " + e.getMessage());
+		}
+
+		// Calculate social influence based on group context and outcome
+		calculateSocialInfluence(ctx, actor, interactor, interaction);
+
+		return interaction;
+	}
+
+	/// Resolve an interaction with an automatically determined type based on profiles.
+	///
+	public static BaseRecord resolveInteraction(OlioContext ctx, BaseRecord actor, BaseRecord interactor) throws OlioException {
+		PersonalityProfile prof1 = ProfileUtil.getProfile(ctx, actor);
+		PersonalityProfile prof2 = ProfileUtil.getProfile(ctx, interactor);
+
+		AlignmentEnumType contextAlign = AlignmentEnumType.NEUTRAL;
+		BaseRecord epoch = ctx.clock().getEpoch();
+		if(epoch != null) {
+			String alignStr = epoch.get("alignment");
+			if(alignStr != null) {
+				try { contextAlign = AlignmentEnumType.valueOf(alignStr); }
+				catch(IllegalArgumentException e) { /* keep NEUTRAL */ }
+			}
+		}
+
+		ReasonToDo rtd = guessReasonToInteract(ctx, prof1, contextAlign, prof2);
+		if(rtd == null) {
+			throw new OlioException("Cannot determine a reason for these characters to interact");
+		}
+
+		return resolveInteraction(ctx, actor, interactor, rtd.getInteraction());
+	}
+
+	/// Calculate social influence based on the outcome of an interaction and group context.
+	/// A negative interaction with an out-group adversary can be a net positive for in-group standing,
+	/// while the same action with an in-group member degrades social cohesion.
+	///
+	public static void calculateSocialInfluence(OlioContext ctx, BaseRecord actor, BaseRecord interactor, BaseRecord interaction) {
+		OutcomeEnumType actorOutcome = interaction.getEnum("actorOutcome");
+		OutcomeEnumType interactorOutcome = interaction.getEnum("interactorOutcome");
+		InteractionEnumType interType = interaction.getEnum(FieldNames.FIELD_TYPE);
+
+		if(actorOutcome == null || interactorOutcome == null) {
+			return;
+		}
+
+		// Determine if actor and interactor share a population group
+		long actorGroupId = actor.get(FieldNames.FIELD_GROUP_ID);
+		long interactorGroupId = interactor.get(FieldNames.FIELD_GROUP_ID);
+		boolean sameGroup = (actorGroupId > 0 && actorGroupId == interactorGroupId);
+
+		// Base influence from outcome quality
+		double outcomeValue = getOutcomeValue(actorOutcome);
+		// Interaction type polarity (positive interactions like COOPERATE vs negative like COMBAT)
+		int interQual = InteractionEnumType.getCompare(interType);
+
+		// Calculate influence delta
+		double influenceDelta = 0.0;
+		if(sameGroup) {
+			// In-group: positive outcomes from positive interactions build cohesion
+			// Negative outcomes from negative interactions damage cohesion
+			if(interQual >= 0) {
+				influenceDelta = outcomeValue * 0.1; // Positive interaction outcome → positive influence
+			} else {
+				influenceDelta = outcomeValue * -0.15; // Negative interaction within group → damage
+			}
+		} else {
+			// Out-group: negative interactions with favorable outcomes can boost standing
+			// Successful combat/opposition against adversary = positive for actor
+			if(interQual < 0) {
+				influenceDelta = outcomeValue * 0.1; // Winning against adversary = positive
+			} else {
+				influenceDelta = outcomeValue * 0.05; // Cooperating with outsider = mild positive
+			}
+		}
+
+		// Apply influence to actor's instinct for cooperation/resistance
+		if(Math.abs(influenceDelta) > 0.01) {
+			BaseRecord actorInstinct = actor.get(OlioFieldNames.FIELD_INSTINCT);
+			if(actorInstinct != null) {
+				int cooperate = actorInstinct.get("cooperate");
+				int resist = actorInstinct.get("resist");
+				if(sameGroup && influenceDelta > 0) {
+					actorInstinct.setValue("cooperate", Math.min(100, cooperate + (int)(influenceDelta * 10)));
+				} else if(sameGroup && influenceDelta < 0) {
+					actorInstinct.setValue("resist", Math.min(100, resist + (int)(Math.abs(influenceDelta) * 10)));
+				}
+				Queue.queue(actorInstinct);
+			}
+		}
+
+		logger.info("Social influence: " + actor.get(FieldNames.FIELD_NAME) + " → " +
+			(sameGroup ? "in-group" : "out-group") + " " + interType.toString() +
+			" outcome=" + actorOutcome.toString() + " delta=" + String.format("%.3f", influenceDelta));
+	}
+
+	/// Map outcome to a numeric value for influence calculation
+	///
+	private static double getOutcomeValue(OutcomeEnumType outcome) {
+		switch(outcome) {
+			case VERY_FAVORABLE: return 1.0;
+			case FAVORABLE: return 0.6;
+			case EQUILIBRIUM: return 0.0;
+			case UNFAVORABLE: return -0.6;
+			case VERY_UNFAVORABLE: return -1.0;
+			default: return 0.0;
+		}
+	}
+
 }
 
 class ReasonToDo{

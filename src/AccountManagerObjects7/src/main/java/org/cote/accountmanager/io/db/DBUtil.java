@@ -833,5 +833,79 @@ $$;""";
 	    return tables;
 
 	}
-	
+
+	/// Get existing column names for a table from information_schema
+	///
+	public List<String> getTableColumns(String tableName) {
+		List<String> columns = new ArrayList<>();
+		String useName = tableName;
+		if(this.connectionType == ConnectionEnumType.H2) {
+			useName = useName.toUpperCase();
+		}
+		else if(this.connectionType == ConnectionEnumType.POSTGRE) {
+			useName = useName.toLowerCase();
+		}
+		try (
+			Connection con = dataSource.getConnection();
+			PreparedStatement st = con.prepareStatement("SELECT column_name FROM information_schema.columns WHERE table_name = ?;");
+		){
+			st.setString(1, useName);
+			ResultSet rset = st.executeQuery();
+			while(rset.next()) {
+				columns.add(rset.getString("column_name").toLowerCase());
+			}
+			rset.close();
+		} catch (SQLException e) {
+			logger.error(e);
+		}
+		return columns;
+	}
+
+	/// Compare model schema fields against existing database columns.
+	/// Returns list of FieldSchema objects that exist in the model but not in the database.
+	///
+	public List<FieldSchema> getMissingColumns(ModelSchema schema) {
+		String tableName = getTableName(schema.getName());
+		if(!haveTable(schema.getName())) {
+			return new ArrayList<>();
+		}
+
+		List<String> existingColumns = getTableColumns(tableName);
+		List<FieldSchema> missing = new ArrayList<>();
+
+		for(FieldSchema field : schema.getFields()) {
+			if(field.isVirtual() || field.isEphemeral() || field.isReferenced()) {
+				continue;
+			}
+			String dataType = getDataType(field, field.getFieldType());
+			if(dataType == null) {
+				continue;
+			}
+			String colName = getColumnName(field.getName()).replace("\"", "").toLowerCase();
+			if(!existingColumns.contains(colName)) {
+				missing.add(field);
+			}
+		}
+		return missing;
+	}
+
+	/// Generate ALTER TABLE ADD COLUMN statements for missing fields.
+	/// Returns empty list if table doesn't exist or no columns are missing.
+	///
+	public List<String> generatePatchSchema(ModelSchema schema) {
+		List<FieldSchema> missing = getMissingColumns(schema);
+		List<String> statements = new ArrayList<>();
+		if(missing.isEmpty()) {
+			return statements;
+		}
+		String tableName = getTableName(schema.getName());
+		for(FieldSchema field : missing) {
+			String colDef = generateSchemaLine(null, schema, field);
+			if(colDef != null) {
+				statements.add("ALTER TABLE " + tableName + " ADD COLUMN " + colDef + ";");
+			}
+		}
+		return statements;
+	}
+
 }

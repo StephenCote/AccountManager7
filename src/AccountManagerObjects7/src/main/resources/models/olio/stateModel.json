@@ -61,6 +61,35 @@
 			"type": "boolean"
 		},
 		{
+			"name": "playerControlled",
+			"type": "boolean",
+			"description": "When true, the character is controlled by a player and excluded from automatic evolution"
+		},
+		{
+			"name": "hunger",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"description": "Hunger level (0 = sated, 1 = starving). Accumulates per increment, reduced by consuming food.",
+			"validateRange": true
+		},
+		{
+			"name": "thirst",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"description": "Thirst level (0 = hydrated, 1 = parched). Accumulates per increment, reduced by consuming water.",
+			"validateRange": true
+		},
+		{
+			"name": "fatigue",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"description": "Fatigue level (0 = rested, 1 = exhausted). Accumulates with actions and wakefulness, reduced by sleep.",
+			"validateRange": true
+		},
+		{
 			"name": "currentEast",
 			"type": "int",
 			"description": "Meters from the western grid line of the currentLocation",
@@ -77,7 +106,8 @@
 			"type": "double",
 			"minValue": 0,
 			"maxValue": 1,
-			"description": "Percentage of health remaining",
+			"default": 1.0,
+			"description": "Percentage of health remaining (1.0 = full health)",
 			"validateRange": true
 		},
 		{
@@ -85,7 +115,8 @@
 			"type": "double",
 			"minValue": 0,
 			"maxValue": 1,
-			"description": "Percentage of energy remaining",
+			"default": 1.0,
+			"description": "Percentage of energy remaining (1.0 = full energy)",
 			"validateRange": true
 		},
 		{

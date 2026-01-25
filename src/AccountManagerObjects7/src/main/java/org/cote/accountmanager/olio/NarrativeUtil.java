@@ -1539,9 +1539,86 @@ public class NarrativeUtil {
 			
 			chatConfig.setValue("populationDescription", pdesc);
 			chatConfig.setValue("animalDescription", adesc);
-			
+
 		}
 
 	}
-	
+
+	/// Generate a mannequin prompt for apparel at or below a given wear level.
+	/// Shows cumulative clothing up to maxLevel on a retail mannequin.
+	public static String getMannequinPrompt(BaseRecord apparel, WearLevelEnumType maxLevel, BaseRecord sdConfig) {
+		StringBuilder buff = new StringBuilder();
+
+		buff.append("8k highly detailed ((highest quality)) ((professional fashion photography)) ");
+		buff.append("of a ((full body retail mannequin)) displaying: ");
+
+		List<BaseRecord> wears = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+		int maxVal = WearLevelEnumType.valueOf(maxLevel);
+
+		/// Filter wearables to those at or below maxLevel (cumulative)
+		List<BaseRecord> filtered = wears.stream().filter(w -> {
+			String levelStr = w.get(OlioFieldNames.FIELD_LEVEL);
+			if(levelStr == null) return false;
+			try {
+				WearLevelEnumType wlvl = WearLevelEnumType.valueOf(levelStr);
+				return WearLevelEnumType.valueOf(wlvl) <= maxVal;
+			} catch(Exception e) {
+				return false;
+			}
+		}).collect(Collectors.toList());
+
+		if(filtered.isEmpty()) {
+			buff.append("((nude mannequin, no clothing))");
+		} else {
+			buff.append("(((");
+			buff.append(describeOutfitForMannequin(filtered));
+			buff.append(")))");
+		}
+
+		buff.append(". ((white seamless background)), ");
+		buff.append("((studio lighting)), ((fashion catalog)), ");
+		buff.append("professional product photography, front view");
+
+		if(sdConfig != null) {
+			String style = sdConfig.get("style");
+			if(style != null && !style.isEmpty()) {
+				buff.append(", ").append(style);
+			}
+		}
+
+		return buff.toString();
+	}
+
+	/// Generate a negative prompt for mannequin images
+	public static String getMannequinNegativePrompt() {
+		return "human face, realistic skin, hair, eyes, hands, fingers, "
+			+ "feet, toes, skin texture, portrait, headshot, "
+			+ "deformed, blurry, low quality, text, watermark";
+	}
+
+	/// Describe an outfit for a mannequin prompt (clothing items only, no body description)
+	private static String describeOutfitForMannequin(List<BaseRecord> wearables) {
+		StringBuilder desc = new StringBuilder();
+		boolean first = true;
+		for(BaseRecord w : wearables) {
+			String name = w.get(FieldNames.FIELD_NAME);
+			if(name == null) continue;
+			String fabric = w.get(OlioFieldNames.FIELD_FABRIC);
+			BaseRecord color = w.get(OlioFieldNames.FIELD_COLOR);
+			String colorName = (color != null ? (String) color.get(FieldNames.FIELD_NAME) : null);
+
+			if(!first) desc.append(", ");
+			first = false;
+
+			if(colorName != null && !colorName.isEmpty()) {
+				desc.append(colorName).append(" ");
+			}
+			if(fabric != null && !fabric.isEmpty() && describeFabrics) {
+				desc.append(fabric).append(" ");
+			}
+			desc.append(name);
+		}
+		return desc.toString();
+	}
+
 }

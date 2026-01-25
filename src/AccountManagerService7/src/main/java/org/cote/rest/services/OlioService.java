@@ -10,6 +10,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
@@ -134,9 +135,16 @@ public class OlioService {
 			}
 			String groupPath = sourceData.get(FieldNames.FIELD_GROUP_PATH);
 			if(groupPath == null) {
-				BaseRecord grp = sourceData.get(FieldNames.FIELD_GROUP);
-				if(grp != null) {
-					groupPath = grp.get(FieldNames.FIELD_PATH);
+				long groupId = sourceData.get(FieldNames.FIELD_GROUP_ID);
+				if(groupId > 0L) {
+					try {
+						BaseRecord grp = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_GROUP, groupId);
+						if(grp != null) {
+							groupPath = grp.get(FieldNames.FIELD_PATH);
+						}
+					} catch(ReaderException e) {
+						logger.error(e);
+					}
 				}
 			}
 			String name = sourceData.get(FieldNames.FIELD_NAME);
@@ -187,7 +195,75 @@ public class OlioService {
 
 		return Response.status(200).entity(oi.toFullString()).build();
 	}
-	
+
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/apparel/{objectId:[0-9A-Za-z\\-]+}/reimage")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response reimageApparel(String json, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord imp = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(imp == null) {
+			logger.error("Invalid config");
+			return Response.status(400).entity(null).build();
+		}
+		if(imp.get("model") == null) {
+			imp.setValue("model", context.getInitParameter("sd.model"));
+		}
+		if(imp.get("refinerModel") == null) {
+			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+		}
+
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
+		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(true);
+		BaseRecord apparel = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(apparel == null) {
+			logger.error("Apparel record not found: " + objectId);
+			return Response.status(404).entity(null).build();
+		}
+		List<BaseRecord> wearables = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+		if(wearables == null || wearables.isEmpty()) {
+			logger.error("Apparel has no wearables: " + objectId);
+			return Response.status(400).entity("{\"error\":\"Apparel has no wearables\"}").build();
+		}
+
+		String groupPath = apparel.get(FieldNames.FIELD_GROUP_PATH);
+		if(groupPath == null) {
+			groupPath = "~/Gallery/Apparel";
+		}
+
+		boolean hires = imp.get("hires") != null ? (Boolean)imp.get("hires") : false;
+		long seed = imp.get("seed") != null ? ((Number)imp.get("seed")).longValue() : -1;
+
+		List<BaseRecord> images = sdu.generateMannequinImages(user, groupPath, apparel, imp, hires, seed);
+
+		if(images.isEmpty()) {
+			return Response.status(200).entity("[]").build();
+		}
+
+		// Update apparel gallery with new images
+		List<BaseRecord> gallery = apparel.get("gallery");
+		if(gallery == null) {
+			gallery = new java.util.ArrayList<>();
+		}
+		gallery.addAll(images);
+		apparel.setValue("gallery", gallery);
+		IOSystem.getActiveContext().getAccessPoint().update(user, apparel);
+
+		// Return all generated images as JSON array
+		StringBuilder sb = new StringBuilder("[");
+		for(int i = 0; i < images.size(); i++) {
+			if(i > 0) sb.append(",");
+			sb.append(images.get(i).toFullString());
+		}
+		sb.append("]");
+
+		return Response.status(200).entity(sb.toString()).build();
+	}
+
 	@RolesAllowed({"user"})
 	@GET
 	@Path("/roll")

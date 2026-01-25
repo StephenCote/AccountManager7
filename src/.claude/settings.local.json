@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node build.js:*)"
+      "Bash(node build.js:*)",
+      "Bash(grep:*)",
+      "Bash(mvn clean compile:*)"
     ]
   }
 }
