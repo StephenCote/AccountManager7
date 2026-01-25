@@ -3,6 +3,7 @@ package org.cote.accountmanager.olio;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -1619,6 +1620,188 @@ public class NarrativeUtil {
 			desc.append(name);
 		}
 		return desc.toString();
+	}
+
+	/// Terrain-to-description mapping for landscape generation
+	private static Map<String, String> terrainDescriptions = new HashMap<>();
+	static {
+		terrainDescriptions.put("GLACIER", "vast frozen glacier with towering ice formations, deep blue crevasses, snow-covered peaks");
+		terrainDescriptions.put("TUNDRA", "frozen tundra landscape with permafrost, sparse vegetation, lichens and mosses, distant snow-capped mountains");
+		terrainDescriptions.put("OCEAN", "open ocean with rolling waves, deep blue water stretching to the horizon, scattered clouds");
+		terrainDescriptions.put("SHORELINE", "sandy shoreline where land meets sea, gentle waves lapping at the beach, driftwood and seashells");
+		terrainDescriptions.put("MARSH", "wetland marsh with tall reeds and grasses, shallow water pools, wading birds");
+		terrainDescriptions.put("SWAMP", "murky swamp with cypress trees draped in moss, dark water, dense vegetation");
+		terrainDescriptions.put("CLEAR", "open cleared land with low grass, scattered wildflowers, clear skies");
+		terrainDescriptions.put("DESERT", "arid desert landscape with cracked earth, scattered rocks, distant heat shimmer");
+		terrainDescriptions.put("DUNES", "rolling sand dunes with wind-carved ridges, golden sand stretching to the horizon");
+		terrainDescriptions.put("OASIS", "lush desert oasis with palm trees, clear pool of water, green vegetation surrounded by sand");
+		terrainDescriptions.put("POND", "tranquil pond with lily pads, reeds along the shore, reflective water surface");
+		terrainDescriptions.put("PLAINS", "vast open plains with tall grass swaying in the wind, rolling hills in the distance");
+		terrainDescriptions.put("GRASS", "grassy meadow with wildflowers, gentle rolling terrain, butterflies and bees");
+		terrainDescriptions.put("SAVANNA", "African savanna with scattered acacia trees, golden grass, wide open spaces");
+		terrainDescriptions.put("LAKE", "large freshwater lake with calm waters, forested shores, distant mountains reflected in the surface");
+		terrainDescriptions.put("VALLEY", "lush green valley between hills, a stream running through, wildflowers and trees");
+		terrainDescriptions.put("RIVER", "flowing river with rocky banks, clear rushing water, trees lining the shores");
+		terrainDescriptions.put("JUNGLE", "dense tropical jungle with towering trees, thick undergrowth, vines and exotic plants");
+		terrainDescriptions.put("FOREST", "temperate forest with tall deciduous trees, dappled sunlight, ferns and woodland plants");
+		terrainDescriptions.put("STREAM", "babbling stream with smooth rocks, clear shallow water, moss-covered stones");
+		terrainDescriptions.put("HILL", "rolling hills with grass and scattered trees, gentle slopes, wildflowers");
+		terrainDescriptions.put("PLATEAU", "elevated plateau with flat rocky terrain, distant views, sparse vegetation");
+		terrainDescriptions.put("MOUNTAIN", "majestic mountain landscape with rocky peaks, alpine meadows, pine forests below the treeline");
+		terrainDescriptions.put("CAVE", "cave entrance with stalactites, dim natural lighting, rocky formations");
+		terrainDescriptions.put("SHELTER", "natural rock shelter with overhanging cliff, protected area, scattered stones");
+	}
+
+	/// Generate a landscape prompt for a location based on terrain types.
+	/// @param location The location record (can be a cell or parent location)
+	/// @param adjacentTerrains Set of additional terrain types from nearby cells
+	/// @return SD prompt for landscape generation
+	public static String getLandscapePrompt(BaseRecord location, Set<String> adjacentTerrains) {
+		StringBuilder buff = new StringBuilder();
+
+		String mainTerrain = location.get(FieldNames.FIELD_TERRAIN_TYPE);
+		if(mainTerrain == null) mainTerrain = "PLAINS";
+
+		String featureName = location.get(FieldNames.FIELD_NAME);
+
+		// Start with quality tags
+		buff.append("8k highly detailed ((masterpiece)) ((best quality)) ((professional landscape photography)) ");
+		buff.append("panoramic view of ");
+
+		// Main terrain description
+		String mainDesc = terrainDescriptions.getOrDefault(mainTerrain.toUpperCase(), "natural landscape");
+		buff.append("((" + mainDesc + ")) ");
+
+		// Add feature name if available
+		if(featureName != null && !featureName.isEmpty()) {
+			buff.append("known as " + featureName + ", ");
+		}
+
+		// Add variety from adjacent terrains
+		if(adjacentTerrains != null && !adjacentTerrains.isEmpty()) {
+			buff.append("with ");
+			List<String> adjacentDescs = new ArrayList<>();
+			for(String adj : adjacentTerrains) {
+				if(!adj.equalsIgnoreCase(mainTerrain)) {
+					String adjDesc = terrainDescriptions.get(adj.toUpperCase());
+					if(adjDesc != null) {
+						// Extract a shorter description for adjacent areas
+						String shortDesc = adjDesc.split(",")[0];
+						adjacentDescs.add(shortDesc + " in the distance");
+					}
+				}
+			}
+			if(!adjacentDescs.isEmpty()) {
+				buff.append(String.join(", ", adjacentDescs.subList(0, Math.min(3, adjacentDescs.size()))));
+				buff.append(", ");
+			}
+		}
+
+		// Atmosphere and lighting
+		buff.append("((natural lighting)), ((atmospheric perspective)), ");
+		buff.append("((cinematic composition)), golden hour lighting, ");
+		buff.append("volumetric fog, depth of field, ");
+		buff.append("no people, no animals, no buildings, empty landscape");
+
+		return buff.toString();
+	}
+
+	/// Get negative prompt for landscape generation
+	public static String getLandscapeNegativePrompt() {
+		return "people, humans, person, animals, buildings, structures, cars, vehicles, " +
+			   "text, watermark, signature, logo, frame, border, " +
+			   "low quality, blurry, distorted, deformed, ugly, " +
+			   "cartoon, anime, illustration, painting, drawing";
+	}
+
+	/// Get a landscape description for use as a character/animal setting.
+	/// Returns a shorter description suitable for embedding in character prompts.
+	public static String getLandscapeSettingDescription(BaseRecord location, Set<String> adjacentTerrains) {
+		String mainTerrain = location.get(FieldNames.FIELD_TERRAIN_TYPE);
+		if(mainTerrain == null) mainTerrain = "PLAINS";
+
+		String featureName = location.get(FieldNames.FIELD_NAME);
+
+		StringBuilder buff = new StringBuilder();
+		String mainDesc = terrainDescriptions.getOrDefault(mainTerrain.toUpperCase(), "natural landscape");
+
+		// Build a concise setting description
+		buff.append(mainDesc);
+
+		if(featureName != null && !featureName.isEmpty()) {
+			buff.append(" called " + featureName);
+		}
+
+		// Add one or two adjacent features for variety
+		if(adjacentTerrains != null && !adjacentTerrains.isEmpty()) {
+			for(String adj : adjacentTerrains) {
+				if(!adj.equalsIgnoreCase(mainTerrain)) {
+					String adjDesc = terrainDescriptions.get(adj.toUpperCase());
+					if(adjDesc != null) {
+						String shortDesc = adjDesc.split(",")[0];
+						buff.append(", near " + shortDesc);
+						break; // Just add one
+					}
+				}
+			}
+		}
+
+		return buff.toString();
+	}
+
+	/// Generate an animal SD prompt with landscape setting
+	public static String getAnimalPrompt(BaseRecord animal, String landscapeSetting, BaseRecord sdConfig) {
+		StringBuilder buff = new StringBuilder();
+
+		String animalName = animal.get(FieldNames.FIELD_NAME);
+		String animalType = animal.get(FieldNames.FIELD_TYPE);
+		String groupType = animal.get("groupName");
+
+		buff.append("8k highly detailed ((masterpiece)) ((best quality)) ((wildlife photography)) ");
+		buff.append("of a ");
+
+		// Describe the animal
+		if(animalType != null) {
+			buff.append("((" + animalType + ")) ");
+		}
+		if(animalName != null && !animalName.equals(animalType)) {
+			buff.append("named " + animalName + " ");
+		}
+
+		// Add behavior hint based on group type
+		if(groupType != null) {
+			switch(groupType.toUpperCase()) {
+				case "PREDATOR":
+					buff.append("((alert and watchful)), predatory stance, ");
+					break;
+				case "PREY":
+					buff.append("((cautious)), grazing peacefully, ");
+					break;
+				case "DOMESTIC":
+					buff.append("((calm and friendly)), relaxed pose, ");
+					break;
+				default:
+					buff.append("in natural pose, ");
+			}
+		}
+
+		// Add landscape setting
+		if(landscapeSetting != null && !landscapeSetting.isEmpty()) {
+			buff.append("in " + landscapeSetting + ", ");
+		}
+
+		buff.append("((natural lighting)), ((cinematic)), ");
+		buff.append("sharp focus, detailed fur/feathers, ");
+		buff.append("professional nature photography");
+
+		return buff.toString();
+	}
+
+	/// Get negative prompt for animal generation
+	public static String getAnimalNegativePrompt() {
+		return "humans, people, person, text, watermark, signature, logo, " +
+			   "low quality, blurry, distorted, deformed, ugly, mutated, " +
+			   "extra limbs, missing limbs, cartoon, anime, illustration";
 	}
 
 }

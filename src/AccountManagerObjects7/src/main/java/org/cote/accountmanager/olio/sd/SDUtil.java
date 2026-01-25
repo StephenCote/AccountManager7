@@ -674,6 +674,282 @@ public class SDUtil {
 		return datas;
 	}
 
+	/// Generate a landscape image for a location based on terrain types.
+	/// @param user The user record
+	/// @param groupPath Path where the image will be stored
+	/// @param location The location record with terrain information
+	/// @param adjacentTerrains Set of terrain types from adjacent cells
+	/// @param sdConfig Optional SD configuration
+	/// @param hires Enable high resolution upscaling
+	/// @param seed Random seed for reproducibility
+	/// @return The generated image data record, or null if failed
+	public BaseRecord generateLandscapeImage(BaseRecord user, String groupPath, BaseRecord location, java.util.Set<String> adjacentTerrains, BaseRecord sdConfig, boolean hires, long seed) {
+		if(apiType != SDAPIEnumType.SWARM) {
+			logger.error("generateLandscapeImage is only supported for SWARM API type");
+			return null;
+		}
+
+		String prompt = NarrativeUtil.getLandscapePrompt(location, adjacentTerrains);
+		String negPrompt = NarrativeUtil.getLandscapeNegativePrompt();
+
+		// Initialize with defaults, merge any config overrides
+		BaseRecord config = randomSDConfig();
+		if(sdConfig != null) {
+			String style = sdConfig.get("style");
+			if(style != null) config.setValue("style", style);
+		}
+
+		// Get config values with fallbacks
+		Integer cfgSteps = config.get("steps");
+		String cfgModel = config.get("model");
+		String cfgScheduler = config.get("scheduler");
+		String cfgSampler = config.get("sampler");
+		Integer cfgCfg = config.get("cfg");
+
+		if(cfgSteps == null) cfgSteps = 25;
+		if(cfgModel == null) cfgModel = "sdXL_v10VAEFix.safetensors";
+		if(cfgScheduler == null) cfgScheduler = "normal";
+		if(cfgSampler == null) cfgSampler = "dpmpp_2m";
+		if(cfgCfg == null) cfgCfg = 7;
+
+		SWTxt2Img s2i = new SWTxt2Img();
+		s2i.setPrompt(prompt);
+		s2i.setNegativePrompt(negPrompt);
+		s2i.setWidth(1024);  // Landscape aspect ratio
+		s2i.setHeight(576);
+		s2i.setSteps(cfgSteps);
+		s2i.setModel(cfgModel);
+		s2i.setScheduler(cfgScheduler);
+		s2i.setSampler(cfgSampler);
+		s2i.setCfgScale(cfgCfg);
+		s2i.setSeed((int)(seed > 0 ? (seed & 0x7FFFFFFF) : Math.abs(rand.nextInt())));
+		s2i.setImages(1);
+
+		if(hires && config.get("refinerModel") != null) {
+			s2i.setRefinerScheduler(config.get("refinerScheduler"));
+			s2i.setRefinerSampler(config.get("refinerSampler"));
+			s2i.setRefinerMethod(config.get("refinerMethod"));
+			s2i.setRefinerModel(config.get("refinerModel"));
+			s2i.setRefinerSteps(config.get("refinerSteps"));
+			s2i.setRefinerUpscale(config.get("refinerUpscale"));
+			s2i.setRefinerUpscaleMethod(config.get("refinerUpscaleMethod"));
+			s2i.setRefinerCfgScale(config.get("refinerCfg"));
+			s2i.setRefinerControlPercentage(config.get("refinerControlPercentage"));
+		} else {
+			s2i.setRefinerControlPercentage(0.0);
+		}
+
+		String locName = location.get(FieldNames.FIELD_NAME);
+		if(locName == null) locName = "Landscape";
+		String terrain = location.get(FieldNames.FIELD_TERRAIN_TYPE);
+		if(terrain == null) terrain = "UNKNOWN";
+
+		int rando = Math.abs(rand.nextInt());
+		String name = locName + " - " + terrain + " - " + rando;
+
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+
+		try {
+			logger.info("Generating landscape image: " + name);
+			SWImageResponse rep = txt2img(s2i);
+			if(rep == null || rep.getImages() == null || rep.getImages().isEmpty()) {
+				logger.error("No images returned in response");
+				return null;
+			}
+
+			String bai = rep.getImages().get(0);
+			byte[] dataTest = ClientUtil.get(byte[].class, ClientUtil.getResource(autoserver + "/" + bai), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+			SWImageInfo info = SWUtil.extractInfo(dataTest);
+			int seedl = (int)seed;
+			if(info != null && info.getImageParams() != null) {
+				seedl = info.getImageParams().getSeed();
+			}
+			if(dataTest == null || dataTest.length == 0) {
+				logger.error("Could not retrieve image data from swarm server");
+				return null;
+			}
+
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_NAME, name);
+			BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
+
+			if(data == null) {
+				ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+				clist.parameter(FieldNames.FIELD_NAME, name);
+				data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
+				data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+				data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+				AttributeUtil.addAttribute(data, "seed", seedl);
+				AttributeUtil.addAttribute(data, "terrain", terrain);
+				AttributeUtil.addAttribute(data, "imageType", "landscape");
+				if(location.get(FieldNames.FIELD_OBJECT_ID) != null) {
+					AttributeUtil.addAttribute(data, "location", (String)location.get(FieldNames.FIELD_OBJECT_ID));
+				}
+				AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
+				IOSystem.getActiveContext().getAccessPoint().create(user, data);
+			} else {
+				data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+				IOSystem.getActiveContext().getAccessPoint().update(user, data);
+			}
+			return data;
+
+		} catch(Exception e) {
+			logger.error("Error generating landscape image", e);
+		}
+		return null;
+	}
+
+	/// Generate an animal image with optional landscape reference.
+	/// @param user The user record
+	/// @param animal The animal record
+	/// @param groupPath Path where the image will be stored
+	/// @param location Optional location for landscape setting
+	/// @param adjacentTerrains Optional set of adjacent terrain types
+	/// @param landscapeImageId Optional objectId of an existing landscape image to use as reference
+	/// @param sdConfig Optional SD configuration
+	/// @param hires Enable high resolution upscaling
+	/// @param seed Random seed
+	/// @return List of generated image records
+	public List<BaseRecord> createAnimalImage(BaseRecord user, BaseRecord animal, String groupPath, BaseRecord location, java.util.Set<String> adjacentTerrains, String landscapeImageId, BaseRecord sdConfig, boolean hires, int seed) {
+		List<BaseRecord> datas = new ArrayList<>();
+
+		if(apiType != SDAPIEnumType.SWARM) {
+			logger.error("createAnimalImage is only supported for SWARM API type");
+			return datas;
+		}
+
+		// Get landscape setting description if location provided
+		String landscapeSetting = null;
+		if(location != null) {
+			landscapeSetting = NarrativeUtil.getLandscapeSettingDescription(location, adjacentTerrains);
+		}
+
+		String prompt = NarrativeUtil.getAnimalPrompt(animal, landscapeSetting, sdConfig);
+		String negPrompt = NarrativeUtil.getAnimalNegativePrompt();
+
+		// Initialize with defaults
+		BaseRecord config = randomSDConfig();
+		if(sdConfig != null) {
+			String style = sdConfig.get("style");
+			if(style != null) config.setValue("style", style);
+		}
+
+		Integer cfgSteps = config.get("steps");
+		String cfgModel = config.get("model");
+		String cfgScheduler = config.get("scheduler");
+		String cfgSampler = config.get("sampler");
+		Integer cfgCfg = config.get("cfg");
+
+		if(cfgSteps == null) cfgSteps = 25;
+		if(cfgModel == null) cfgModel = "sdXL_v10VAEFix.safetensors";
+		if(cfgScheduler == null) cfgScheduler = "normal";
+		if(cfgSampler == null) cfgSampler = "dpmpp_2m";
+		if(cfgCfg == null) cfgCfg = 7;
+
+		SWTxt2Img s2i = new SWTxt2Img();
+		s2i.setPrompt(prompt);
+		s2i.setNegativePrompt(negPrompt);
+		s2i.setWidth(768);
+		s2i.setHeight(768);
+		s2i.setSteps(cfgSteps);
+		s2i.setModel(cfgModel);
+		s2i.setScheduler(cfgScheduler);
+		s2i.setSampler(cfgSampler);
+		s2i.setCfgScale(cfgCfg);
+		s2i.setSeed(seed > 0 ? seed : Math.abs(rand.nextInt()));
+		s2i.setImages(1);
+
+		// Apply landscape as reference image if provided
+		if(landscapeImageId != null && !landscapeImageId.isEmpty()) {
+			Query refQ = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, landscapeImageId);
+			refQ.planMost(true);
+			BaseRecord refImage = IOSystem.getActiveContext().getAccessPoint().find(user, refQ);
+			if(refImage != null) {
+				byte[] imageBytes = getDataBytes(refImage);
+				if(imageBytes != null && imageBytes.length > 0) {
+					String base64Image = BinaryUtil.toBase64Str(imageBytes);
+					s2i.setInitImage(base64Image);
+					s2i.setInitImageCreativity(0.85); // Allow significant changes to add animal
+					logger.info("Using landscape image as reference: " + landscapeImageId);
+				}
+			}
+		}
+
+		if(hires && config.get("refinerModel") != null) {
+			s2i.setRefinerScheduler(config.get("refinerScheduler"));
+			s2i.setRefinerSampler(config.get("refinerSampler"));
+			s2i.setRefinerMethod(config.get("refinerMethod"));
+			s2i.setRefinerModel(config.get("refinerModel"));
+			s2i.setRefinerSteps(config.get("refinerSteps"));
+			s2i.setRefinerUpscale(config.get("refinerUpscale"));
+			s2i.setRefinerUpscaleMethod(config.get("refinerUpscaleMethod"));
+			s2i.setRefinerCfgScale(config.get("refinerCfg"));
+			s2i.setRefinerControlPercentage(config.get("refinerControlPercentage"));
+		} else {
+			s2i.setRefinerControlPercentage(0.0);
+		}
+
+		String animalName = animal.get(FieldNames.FIELD_NAME);
+		if(animalName == null) animalName = "Animal";
+		String animalType = animal.get(FieldNames.FIELD_TYPE);
+		if(animalType != null) {
+			animalName = animalType + " - " + animalName;
+		}
+
+		int rando = Math.abs(rand.nextInt());
+		String name = animalName + " - " + rando;
+
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+
+		try {
+			logger.info("Generating animal image: " + name);
+			SWImageResponse rep = txt2img(s2i);
+			if(rep == null || rep.getImages() == null || rep.getImages().isEmpty()) {
+				logger.error("No images returned in response");
+				return datas;
+			}
+
+			for(String bai : rep.getImages()) {
+				byte[] dataTest = ClientUtil.get(byte[].class, ClientUtil.getResource(autoserver + "/" + bai), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+				SWImageInfo info = SWUtil.extractInfo(dataTest);
+				int seedl = seed;
+				if(info != null && info.getImageParams() != null) {
+					seedl = info.getImageParams().getSeed();
+				}
+				if(dataTest == null || dataTest.length == 0) {
+					logger.error("Could not retrieve image data from swarm server");
+					continue;
+				}
+
+				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+				q.field(FieldNames.FIELD_NAME, name);
+				BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
+
+				if(data == null) {
+					ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+					clist.parameter(FieldNames.FIELD_NAME, name);
+					data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
+					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+					data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+					AttributeUtil.addAttribute(data, "seed", seedl);
+					AttributeUtil.addAttribute(data, "imageType", "animal");
+					if(animal.get(FieldNames.FIELD_OBJECT_ID) != null) {
+						AttributeUtil.addAttribute(data, "animal", (String)animal.get(FieldNames.FIELD_OBJECT_ID));
+					}
+					AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
+					IOSystem.getActiveContext().getAccessPoint().create(user, data);
+				} else {
+					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+					IOSystem.getActiveContext().getAccessPoint().update(user, data);
+				}
+				datas.add(data);
+			}
+		} catch(Exception e) {
+			logger.error("Error generating animal image", e);
+		}
+		return datas;
+	}
+
 	/// Generate mannequin images for an apparel record, one image per cumulative wear level
 	public List<BaseRecord> generateMannequinImages(BaseRecord user, String groupPath, BaseRecord apparel, BaseRecord sdConfig, boolean hires, long seed) {
 		List<BaseRecord> images = new ArrayList<>();

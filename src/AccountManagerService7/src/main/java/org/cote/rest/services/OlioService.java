@@ -34,6 +34,7 @@ import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
@@ -367,6 +368,146 @@ public class OlioService {
 		PersonalityProfile prof2 = ProfileUtil.getProfile(octx, person2);
 		ProfileComparison comp = new ProfileComparison(octx, prof1, prof2);
 		return Response.status(200).entity(JSONUtil.exportObject(comp)).build();
+	}
+
+	/// Generate a landscape image for a location (cell or parent location).
+	/// Returns existing image if found, or generates a new one.
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/landscape/{locationId:[0-9A-Za-z\\-]+}/reimage")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response reimageLandscape(String json, @PathParam("locationId") String locationId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord imp = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(imp == null) {
+			imp = RecordFactory.newInstance(ModelNames.MODEL_MODEL);
+		}
+		if(imp.get("model") == null) {
+			imp.setValue("model", context.getInitParameter("sd.model"));
+		}
+		if(imp.get("refinerModel") == null) {
+			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+		}
+
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
+
+		// Try to find location as geoLocation or location model
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_OBJECT_ID, locationId);
+		q.planMost(true);
+		BaseRecord location = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+
+		if(location == null) {
+			logger.error("Location not found: " + locationId);
+			return Response.status(404).entity("{\"error\":\"Location not found\"}").build();
+		}
+
+		// Get adjacent terrain types if this is a cell
+		java.util.Set<String> adjacentTerrains = new java.util.HashSet<>();
+		String mainTerrain = location.get(FieldNames.FIELD_TERRAIN_TYPE);
+		if(mainTerrain != null) {
+			adjacentTerrains.add(mainTerrain);
+		}
+
+		// Try to get adjacent cells for terrain variety
+		// This would require more context about the location's position
+		// For now, we'll use what's available from the location itself
+
+		String locName = location.get(FieldNames.FIELD_NAME);
+		if(locName == null) locName = "Landscape";
+		String groupPath = "~/Gallery/Landscapes/" + locName;
+
+		boolean hires = imp.get("hires") != null ? (Boolean)imp.get("hires") : false;
+		long seed = imp.get("seed") != null ? ((Number)imp.get("seed")).longValue() : -1;
+
+		BaseRecord image = sdu.generateLandscapeImage(user, groupPath, location, adjacentTerrains, imp, hires, seed);
+
+		if(image == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to generate landscape image\"}").build();
+		}
+
+		return Response.status(200).entity(image.toFullString()).build();
+	}
+
+	/// Get an existing landscape image for a location without generating a new one
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/landscape/{locationId:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getLandscape(@PathParam("locationId") String locationId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		// Search for existing landscape images tagged with this location
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA);
+		q.filterParticipant(user, null, ModelNames.MODEL_USER);
+		// Note: This would need attribute-based query which may not be straightforward
+		// For now, return 404 if not found - client should call POST to generate
+
+		return Response.status(404).entity("{\"message\":\"Use POST to generate landscape\"}").build();
+	}
+
+	/// Generate an animal image with optional landscape reference.
+	/// POST body can include: { hires, seed, landscapeImageId }
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/animal/{objectId:[0-9A-Za-z\\-]+}/reimage")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response reimageAnimal(String json, @PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		BaseRecord imp = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(imp == null) {
+			imp = RecordFactory.newInstance(ModelNames.MODEL_MODEL);
+		}
+		if(imp.get("model") == null) {
+			imp.setValue("model", context.getInitParameter("sd.model"));
+		}
+		if(imp.get("refinerModel") == null) {
+			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+		}
+
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_ANIMAL, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(true);
+		BaseRecord animal = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(animal == null) {
+			logger.error("Animal not found: " + objectId);
+			return Response.status(404).entity("{\"error\":\"Animal not found\"}").build();
+		}
+
+		// Get animal's current location if available
+		BaseRecord location = animal.get(OlioFieldNames.FIELD_STATE + ".currentLocation");
+		java.util.Set<String> adjacentTerrains = new java.util.HashSet<>();
+		if(location != null) {
+			String terrain = location.get(FieldNames.FIELD_TERRAIN_TYPE);
+			if(terrain != null) {
+				adjacentTerrains.add(terrain);
+			}
+		}
+
+		String animalName = animal.get(FieldNames.FIELD_NAME);
+		if(animalName == null) animalName = "Animal";
+		String groupPath = "~/Gallery/Animals/" + animalName;
+
+		boolean hires = imp.get("hires") != null ? (Boolean)imp.get("hires") : false;
+		int seed = imp.get("seed") != null ? ((Number)imp.get("seed")).intValue() : -1;
+		String landscapeImageId = imp.get("landscapeImageId");
+
+		List<BaseRecord> images = sdu.createAnimalImage(user, animal, groupPath, location, adjacentTerrains, landscapeImageId, imp, hires, seed);
+
+		if(images.isEmpty()) {
+			return Response.status(500).entity("{\"error\":\"Failed to generate animal image\"}").build();
+		}
+
+		// Return all generated images
+		StringBuilder sb = new StringBuilder("[");
+		for(int i = 0; i < images.size(); i++) {
+			if(i > 0) sb.append(",");
+			sb.append(images.get(i).toFullString());
+		}
+		sb.append("]");
+
+		return Response.status(200).entity(sb.toString()).build();
 	}
 
 }

@@ -412,6 +412,16 @@ public class GameService {
 						t.put("type", entry.getKey().toString());
 						t.put("source", src.get(FieldNames.FIELD_OBJECT_ID));
 						t.put("sourceName", src.get(FieldNames.FIELD_NAME));
+						// Include additional info for animals
+						String modelName = src.getModel();
+						t.put("modelType", modelName);
+						if(OlioModelNames.MODEL_ANIMAL.equals(modelName)) {
+							t.put("isAnimal", true);
+							t.put("animalType", src.get(FieldNames.FIELD_TYPE));
+							t.put("groupType", src.get("groupName"));
+						} else {
+							t.put("isAnimal", false);
+						}
 						threatList.add(t);
 					}
 				}
@@ -705,15 +715,75 @@ public class GameService {
 				return Response.status(500).entity("{\"error\":\"Realm has no population group\"}").build();
 			}
 
-			// Move the character to the population group
 			long popGroupId = popGroup.get(FieldNames.FIELD_ID);
-			person.set(FieldNames.FIELD_GROUP_ID, popGroupId);
 
-			// Initialize state if needed
+			// Move the character and ALL linked objects to the population group
+			moveRecordToGroup(person, popGroupId);
+
+			// Move statistics
+			BaseRecord stats = person.get(OlioFieldNames.FIELD_STATISTICS);
+			if(stats != null) {
+				moveRecordToGroup(stats, popGroupId);
+			}
+
+			// Move instinct
+			BaseRecord instinct = person.get("instinct");
+			if(instinct != null) {
+				moveRecordToGroup(instinct, popGroupId);
+			}
+
+			// Move personality
+			BaseRecord personality = person.get("personality");
+			if(personality != null) {
+				moveRecordToGroup(personality, popGroupId);
+			}
+
+			// Move state
 			BaseRecord state = person.get(FieldNames.FIELD_STATE);
 			if(state == null) {
 				state = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_STATE);
 				person.set(FieldNames.FIELD_STATE, state);
+			} else {
+				moveRecordToGroup(state, popGroupId);
+			}
+
+			// Move store and its contents (apparel, items, etc.)
+			BaseRecord store = person.get("store");
+			if(store != null) {
+				moveRecordToGroup(store, popGroupId);
+
+				// Move apparel and wearables
+				List<BaseRecord> apparelList = store.get("apparel");
+				if(apparelList != null) {
+					for(BaseRecord apparel : apparelList) {
+						moveRecordToGroup(apparel, popGroupId);
+						// Move wearables within apparel
+						List<BaseRecord> wearables = apparel.get("wearables");
+						if(wearables != null) {
+							for(BaseRecord wear : wearables) {
+								moveRecordToGroup(wear, popGroupId);
+							}
+						}
+					}
+				}
+
+				// Move items
+				List<BaseRecord> items = store.get("items");
+				if(items != null) {
+					for(BaseRecord item : items) {
+						moveRecordToGroup(item, popGroupId);
+					}
+				}
+			}
+
+			// Move profile and portrait
+			BaseRecord profile = person.get("profile");
+			if(profile != null) {
+				moveRecordToGroup(profile, popGroupId);
+				BaseRecord portrait = profile.get("portrait");
+				if(portrait != null) {
+					moveRecordToGroup(portrait, popGroupId);
+				}
 			}
 
 			// Set initial location to realm origin if not set
@@ -722,6 +792,7 @@ public class GameService {
 				BaseRecord origin = realm.get(OlioFieldNames.FIELD_ORIGIN);
 				if(origin != null) {
 					state.set(OlioFieldNames.FIELD_CURRENT_LOCATION, origin);
+					Queue.queueUpdate(state, new String[] { OlioFieldNames.FIELD_CURRENT_LOCATION });
 				}
 			}
 
@@ -734,12 +805,10 @@ public class GameService {
 			if(state.get("alive") == null) state.set("alive", true);
 			if(state.get("awake") == null) state.set("awake", true);
 
-			// Update the character - explicitly include groupId in the update
-			Queue.queueUpdate(person, new String[] { FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_STATE });
+			// Process all queued updates
 			Queue.processQueue();
 
 			// Add to population membership if not already there
-			// The population group membership links the character to the realm
 			IOSystem.getActiveContext().getMemberUtil().member(user, popGroup, person, null, true);
 
 			Map<String, Object> result = new HashMap<>();
@@ -752,6 +821,19 @@ public class GameService {
 		} catch(Exception e) {
 			logger.error("Failed to adopt character", e);
 			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Helper to move a record to a new group
+	private void moveRecordToGroup(BaseRecord rec, long groupId) {
+		if(rec == null) return;
+		try {
+			Long currentGroupId = rec.get(FieldNames.FIELD_GROUP_ID);
+			if(currentGroupId != null && currentGroupId.equals(groupId)) return; // Already in correct group
+			rec.set(FieldNames.FIELD_GROUP_ID, groupId);
+			Queue.queueUpdate(rec, new String[] { FieldNames.FIELD_GROUP_ID });
+		} catch(Exception e) {
+			logger.warn("Failed to move record to group: {}", e.getMessage());
 		}
 	}
 

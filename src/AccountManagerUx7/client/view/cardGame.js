@@ -460,15 +460,49 @@
                             situation.location.climate + " climate") : null
                 ]) : null,
 
-                // Change character button
+                // Character actions
                 m("div", {class: "sg-panel-footer"}, [
+                    m("button", {
+                        class: "sg-btn sg-btn-small sg-btn-icon",
+                        onclick: function() {
+                            // Navigate to character object view
+                            m.route.set("/app/object/olio.charPerson/" + player.objectId);
+                        },
+                        title: "View/Edit Character"
+                    }, [
+                        m("span", {class: "material-symbols-outlined"}, "open_in_new")
+                    ]),
+                    m("button", {
+                        class: "sg-btn sg-btn-small sg-btn-icon",
+                        onclick: async function() {
+                            // Reimage character using OlioService endpoint
+                            page.toast("info", "Generating new portrait...");
+                            try {
+                                await m.request({
+                                    method: 'GET',
+                                    url: g_application_path + "/rest/olio/charPerson/" + player.objectId + "/reimage/false",
+                                    withCredentials: true
+                                });
+                                page.toast("success", "Portrait regenerated!");
+                                // Reload the character to get new portrait
+                                await loadSituation();
+                                m.redraw();
+                            } catch (e) {
+                                page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
+                            }
+                        },
+                        title: "Reimage Portrait"
+                    }, [
+                        m("span", {class: "material-symbols-outlined"}, "auto_awesome")
+                    ]),
                     m("button", {
                         class: "sg-btn sg-btn-small",
                         onclick: function() {
                             characterSelectOpen = true;
                             loadAvailableCharacters();
-                        }
-                    }, "Change Character")
+                        },
+                        title: "Change Character"
+                    }, "Change")
                 ])
             ]);
         }
@@ -686,15 +720,31 @@
     function renderThreatCard(threat) {
         let priority = threat.priority || 0.5;
         let pColor = getPriorityColor(priority);
+        // Determine icon and name based on whether it's an animal
+        let icon = threat.icon || "\u26A0"; // Default warning
+        let name = threat.sourceName || threat.name || threat.type || "Threat";
+        let typeLabel = threat.threatType || threat.type || "THREAT";
+
+        if (threat.isAnimal) {
+            icon = "\u{1F43E}"; // Paw print for animals
+            if (threat.animalType) {
+                name = threat.animalType;
+                if (threat.sourceName && threat.sourceName !== threat.animalType) {
+                    name = threat.animalType + " (" + threat.sourceName + ")";
+                }
+            }
+            typeLabel = threat.groupType || "ANIMAL";
+        }
+
         return m("div", {
             class: "sg-threat-card sg-border-" + pColor,
-            onclick: function() { selectEntity(threat.source || threat, 'threat'); }
+            onclick: function() { selectEntity(threat, 'threat'); }
         }, [
             m("div", {class: "sg-threat-header"}, [
-                m("span", {class: "sg-threat-icon"}, threat.icon || "\u26A0"),
+                m("span", {class: "sg-threat-icon"}, icon),
                 m("div", {class: "sg-threat-info"}, [
-                    m("div", {class: "sg-threat-name"}, threat.name || threat.type || "Threat"),
-                    m("div", {class: "sg-threat-type"}, threat.threatType || "THREAT")
+                    m("div", {class: "sg-threat-name"}, name),
+                    m("div", {class: "sg-threat-type"}, typeLabel)
                 ]),
                 m("div", {class: "sg-threat-priority sg-color-" + pColor},
                     priority.toFixed(2))
@@ -746,7 +796,8 @@
             actions.push({type: "WATCH"});
         }
 
-        return m("div", {class: "sg-action-buttons"}, actions.map(function(act) {
+        // Action buttons
+        let actionButtons = m("div", {class: "sg-action-buttons"}, actions.map(function(act) {
             let def = ACTION_TYPES[act.type] || {label: act.type, icon: "help", color: "gray"};
             return m("button", {
                 class: "sg-btn sg-btn-action" + (act.primary ? " sg-btn-primary" : ""),
@@ -756,6 +807,103 @@
                 " " + def.label
             ]);
         }));
+
+        // Utility buttons for selected entity (View/Reimage)
+        let utilityButtons = null;
+        if (selectedEntity && selectedEntityType) {
+            let entityId = selectedEntity.objectId || selectedEntity.id || selectedEntity.source;
+            let isAnimal = selectedEntityType === 'threat' && (selectedEntity.isAnimal || selectedEntity.animalType);
+            let isPerson = selectedEntityType === 'person';
+
+            if (entityId && (isPerson || isAnimal)) {
+                utilityButtons = m("div", {class: "sg-utility-buttons", style: "margin-top: 8px; display: flex; gap: 8px;"}, [
+                    // View/Edit button
+                    m("button", {
+                        class: "sg-btn sg-btn-small sg-btn-icon",
+                        onclick: function() {
+                            let modelType = isPerson ? "olio.charPerson" : "olio.animal";
+                            m.route.set("/app/object/" + modelType + "/" + entityId);
+                        },
+                        title: "View/Edit"
+                    }, [
+                        m("span", {class: "material-symbols-outlined"}, "open_in_new")
+                    ]),
+                    // Reimage button
+                    m("button", {
+                        class: "sg-btn sg-btn-small sg-btn-icon",
+                        onclick: async function() {
+                            if (isPerson) {
+                                // Reimage person
+                                page.toast("info", "Generating new portrait...");
+                                try {
+                                    await m.request({
+                                        method: 'GET',
+                                        url: g_application_path + "/rest/olio/charPerson/" + entityId + "/reimage/false",
+                                        withCredentials: true
+                                    });
+                                    page.toast("success", "Portrait regenerated!");
+                                    await loadSituation();
+                                    m.redraw();
+                                } catch (e) {
+                                    page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
+                                }
+                            } else if (isAnimal) {
+                                // Reimage animal
+                                page.toast("info", "Generating animal image...");
+                                try {
+                                    await m.request({
+                                        method: 'POST',
+                                        url: g_application_path + "/rest/olio/animal/" + entityId + "/reimage",
+                                        body: {hires: false},
+                                        withCredentials: true
+                                    });
+                                    page.toast("success", "Animal image generated!");
+                                    await loadSituation();
+                                    m.redraw();
+                                } catch (e) {
+                                    page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
+                                }
+                            }
+                        },
+                        title: "Reimage"
+                    }, [
+                        m("span", {class: "material-symbols-outlined"}, "auto_awesome")
+                    ]),
+                    // Landscape button (generate landscape for current location)
+                    m("button", {
+                        class: "sg-btn sg-btn-small sg-btn-icon",
+                        onclick: async function() {
+                            if (!situation || !situation.location) {
+                                page.toast("warning", "No location available");
+                                return;
+                            }
+                            let locId = situation.location.objectId || situation.location.id;
+                            if (!locId) {
+                                page.toast("warning", "Location ID not available");
+                                return;
+                            }
+                            page.toast("info", "Generating landscape image...");
+                            try {
+                                await m.request({
+                                    method: 'POST',
+                                    url: g_application_path + "/rest/olio/landscape/" + locId + "/reimage",
+                                    body: {hires: false},
+                                    withCredentials: true
+                                });
+                                page.toast("success", "Landscape generated!");
+                            } catch (e) {
+                                page.toast("error", "Failed to generate landscape: " + (e.message || "Unknown error"));
+                            }
+                        },
+                        title: "Generate Landscape"
+                    }, [
+                        m("span", {class: "material-symbols-outlined"}, "landscape")
+                    ])
+                ]);
+            }
+        }
+
+        return m("div", [actionButtons, utilityButtons]);
     }
 
     async function executeAction(actionType) {
@@ -770,7 +918,7 @@
             return;
         }
 
-        let targetId = selectedEntity.objectId || selectedEntity.id;
+        let targetId = selectedEntity.objectId || selectedEntity.id || selectedEntity.source;
         if (!targetId) {
             page.toast("error", "Invalid target");
             return;
