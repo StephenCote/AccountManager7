@@ -734,8 +734,9 @@ public class GameService {
 			if(state.get("alive") == null) state.set("alive", true);
 			if(state.get("awake") == null) state.set("awake", true);
 
-			// Update the character
-			IOSystem.getActiveContext().getRecordUtil().updateRecord(person);
+			// Update the character - explicitly include groupId in the update
+			Queue.queueUpdate(person, new String[] { FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_STATE });
+			Queue.processQueue();
 
 			// Add to population membership if not already there
 			// The population group membership links the character to the realm
