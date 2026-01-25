@@ -379,14 +379,19 @@ public class OlioService {
 	public Response reimageLandscape(String json, @PathParam("locationId") String locationId, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord imp = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
-		if(imp == null) {
-			imp = RecordFactory.newInstance(ModelNames.MODEL_MODEL);
-		}
-		if(imp.get("model") == null) {
-			imp.setValue("model", context.getInitParameter("sd.model"));
-		}
-		if(imp.get("refinerModel") == null) {
-			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+		try {
+			if(imp == null) {
+				imp = RecordFactory.newInstance(ModelNames.MODEL_MODEL);
+			}
+			if(imp.get("model") == null) {
+				imp.setValue("model", context.getInitParameter("sd.model"));
+			}
+			if(imp.get("refinerModel") == null) {
+				imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+			}
+		} catch(Exception e) {
+			logger.error("Error preparing config: " + e.getMessage());
+			return Response.status(500).entity("{\"error\":\"Configuration error\"}").build();
 		}
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
@@ -434,14 +439,8 @@ public class OlioService {
 	@Path("/landscape/{locationId:[0-9A-Za-z\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getLandscape(@PathParam("locationId") String locationId, @Context HttpServletRequest request) {
-		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-
-		// Search for existing landscape images tagged with this location
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA);
-		q.filterParticipant(user, null, ModelNames.MODEL_USER);
-		// Note: This would need attribute-based query which may not be straightforward
-		// For now, return 404 if not found - client should call POST to generate
-
+		// For landscape images, the client should use POST to generate
+		// and then retrieve by the returned image ID
 		return Response.status(404).entity("{\"message\":\"Use POST to generate landscape\"}").build();
 	}
 
@@ -453,16 +452,20 @@ public class OlioService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response reimageAnimal(String json, @PathParam("objectId") String objectId, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 		BaseRecord imp = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
-		if(imp == null) {
-			imp = RecordFactory.newInstance(ModelNames.MODEL_MODEL);
-		}
-		if(imp.get("model") == null) {
-			imp.setValue("model", context.getInitParameter("sd.model"));
-		}
-		if(imp.get("refinerModel") == null) {
-			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+		try {
+			if(imp == null) {
+				imp = RecordFactory.newInstance(ModelNames.MODEL_MODEL);
+			}
+			if(imp.get("model") == null) {
+				imp.setValue("model", context.getInitParameter("sd.model"));
+			}
+			if(imp.get("refinerModel") == null) {
+				imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+			}
+		} catch(Exception e) {
+			logger.error("Error preparing config: " + e.getMessage());
+			return Response.status(500).entity("{\"error\":\"Configuration error\"}").build();
 		}
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));

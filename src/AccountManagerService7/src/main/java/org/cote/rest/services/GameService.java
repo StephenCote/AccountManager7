@@ -413,7 +413,7 @@ public class GameService {
 						t.put("source", src.get(FieldNames.FIELD_OBJECT_ID));
 						t.put("sourceName", src.get(FieldNames.FIELD_NAME));
 						// Include additional info for animals
-						String modelName = src.getModel();
+						String modelName = src.getSchema();
 						t.put("modelType", modelName);
 						if(OlioModelNames.MODEL_ANIMAL.equals(modelName)) {
 							t.put("isAnimal", true);
