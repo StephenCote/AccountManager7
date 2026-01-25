@@ -624,6 +624,8 @@
         let galleryImages = images || [];
         let characterInstance = charInst;
 
+        console.log("imageGallery called with images:", images?.length, "charInst:", charInst);
+
         // If charInst is provided, try to load all images from the appropriate source
         if(characterInstance && characterInstance.entity){
             let entity = characterInstance.entity;
@@ -698,6 +700,8 @@
         } else {
             console.warn("imageGallery: No characterInstance or entity provided", characterInstance);
         }
+
+        console.log("imageGallery: Final galleryImages count:", galleryImages.length, "images:", galleryImages);
 
         page.components.dialog.setDialog({
             label: "Gallery (" + galleryImages.length + " images)",

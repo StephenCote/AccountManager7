@@ -1350,6 +1350,8 @@
                     withCredentials: true
                 });
 
+                console.log("reimageApparel: Server returned images:", images);
+
                 page.clearToast();
 
                 if(images && images.length > 0){
@@ -1364,18 +1366,23 @@
                     // Force Mithril redraw
                     m.redraw();
 
-                    // Show images
+                }
+                else{
+                    page.toast("error", "Mannequin imaging failed");
+                }
+
+                // Close config dialog first, then show images
+                endDialog();
+
+                // Show images - these functions open their own dialogs
+                if(images && images.length > 0){
+                    console.log("reimageApparel: About to call imageGallery, inst:", inst, "inst.entity:", inst?.entity);
                     if(images.length === 1){
                         page.imageView(images[0]);
                     } else if(images.length > 1){
                         page.imageGallery(images, inst);
                     }
                 }
-                else{
-                    page.toast("error", "Mannequin imaging failed");
-                }
-
-                endDialog();
             },
             cancel: async function (data) {
                 endDialog();

@@ -775,12 +775,10 @@ public class SDUtil {
 				SWImageResponse rep = txt2img(s2i);
 				if(rep == null) {
 					logger.error("Null response from txt2img for level " + level + " - check SWarm server connection");
-					useSeed++;
 					continue;
 				}
 				if(rep.getImages() == null || rep.getImages().isEmpty()) {
 					logger.error("No images in response for level " + level);
-					useSeed++;
 					continue;
 				}
 
@@ -820,7 +818,7 @@ public class SDUtil {
 			} catch(Exception e) {
 				logger.error("Error generating mannequin image for level " + level, e);
 			}
-			useSeed++;
+			// Don't increment seed - user wants consistent seed across all levels
 		}
 		return images;
 	}

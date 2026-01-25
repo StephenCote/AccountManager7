@@ -379,9 +379,12 @@
         let useEntity = ctx.useEntity || ctx.entity;
         let fieldClass = ctx.fieldClass + " gallery-field";
 
+        console.log("gallery renderer: ctx.defVal:", ctx.defVal?.length, "useEntity:", useEntity, "useEntity.images:", useEntity?.images?.length);
+
         // Images can come from ctx.defVal (field value) or useEntity.images
         let images = ctx.defVal || (useEntity && useEntity.images);
         if (!images || !images.length) {
+            console.warn("gallery renderer: No images found");
             return [m("span", "No images")];
         }
 
