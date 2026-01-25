@@ -1027,7 +1027,8 @@
                 requiredAttributes: ["style"],
                 requiredValues: ["movie"],
             },
-            layout : "half",
+            blank3: {
+                layout : "half",
                 format: "blank",
                 field: {
                     label: "",

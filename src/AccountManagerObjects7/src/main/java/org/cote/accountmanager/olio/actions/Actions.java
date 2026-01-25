@@ -203,9 +203,9 @@ public class Actions {
 			throw new OlioException("Invalid action: " + actName);
 		}
 		
-		boolean narrate = actionResult.get("parameters.narrate");
-		
-		if(narrate) {
+		Boolean narrate = actionResult.get("parameters.narrate");
+
+		if(narrate != null && narrate) {
 			List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 			if(inters.size() > 0) {
 				logger.info(NarrativeUtil.describeInteraction(inters.get(0)));
