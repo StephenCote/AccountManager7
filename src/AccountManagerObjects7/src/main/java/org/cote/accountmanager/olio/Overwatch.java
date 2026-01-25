@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
@@ -236,6 +237,9 @@ public class Overwatch {
 			if (action == null) {
 				throw new OverwatchException("Invalid action: " + actionName);
 			}
+
+			// Ensure action result is fully populated (may be an existing action from cache)
+			IOSystem.getActiveContext().getReader().populate(actionResult);
 
 			BaseRecord actor = ActionUtil.getActionActor(actionResult);
 			BaseRecord iactor = ActionUtil.getActionInteractor(actionResult);
