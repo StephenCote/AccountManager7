@@ -855,6 +855,9 @@
 
         tempApplyDefaults();
 
+        // Use consistent photograph style as default (can be overridden by saved config)
+        cinst.entity.style = "photograph";
+
         // Try to load character-specific config
         let charConfigName = inst.api.name() + "-SD.json";
         let charConfig = await loadSDConfig(charConfigName);
@@ -926,6 +929,14 @@
                         let imageNameTag = await getOrCreateSharingTag(inst.api.name(), "data.data");
                         if(imageNameTag){
                             await page.member("data.tag", imageNameTag.objectId, "data.data", x.objectId, true);
+                        }
+                    }
+
+                    // Apply style-specific tags
+                    if(cinst.entity.style === "selfie") {
+                        let selfieTag = await getOrCreateSharingTag("selfie", "data.data");
+                        if(selfieTag){
+                            await page.member("data.tag", selfieTag.objectId, "data.data", x.objectId, true);
                         }
                     }
 
@@ -1240,6 +1251,14 @@
                     await page.member("data.tag", imageNameTag.objectId, "data.data", x.objectId, true);
                 }
 
+                // Apply style-specific tags (e.g., selfie)
+                if(cinst.entity.style === "selfie") {
+                    let selfieTag = await getOrCreateSharingTag("selfie", "data.data");
+                    if(selfieTag){
+                        await page.member("data.tag", selfieTag.objectId, "data.data", x.objectId, true);
+                    }
+                }
+
                 images.push(x);
             }
 
@@ -1319,13 +1338,33 @@
             cinst.api.refinerSteps(40);
             cinst.api.model("sdXL_v10VAEFix.safetensors");
             cinst.api.refinerModel("juggernautXL_ragnarokBy.safetensors");
+            // Use consistent photograph style for apparel
+            cinst.entity.style = "photograph";
         }
 
         tempApplyDefaults();
 
+        // Try to load shared apparel config
+        let sharedConfig = await loadSDConfig("sharedApparelSD.json");
+        if(sharedConfig){
+            applySDConfig(cinst, sharedConfig);
+        }
+
         // Wire up the random seed button
         am7model.forms.sdMannequinConfig.fields.randomSeed.field.command = async function(){
             cinst.api.seed(-1);
+        };
+
+        // Wire up the load shared button
+        am7model.forms.sdMannequinConfig.fields.loadShared.field.command = async function(){
+            let config = await loadSDConfig("sharedApparelSD.json");
+            if(config){
+                applySDConfig(cinst, config);
+                page.toast("success", "Loaded shared apparel config");
+                m.redraw();
+            } else {
+                page.toast("warn", "No shared apparel config found");
+            }
         };
 
         let cfg = {
@@ -1362,6 +1401,22 @@
                     images.forEach(img => {
                         if(img.objectId) page.clearContextObject(img.objectId);
                     });
+
+                    // Apply style-specific tags (e.g., selfie)
+                    if(cinst.entity.style === "selfie") {
+                        let selfieTag = await getOrCreateSharingTag("selfie", "data.data");
+                        if(selfieTag){
+                            for(let img of images){
+                                await page.member("data.tag", selfieTag.objectId, "data.data", img.objectId, true);
+                            }
+                        }
+                    }
+
+                    // Save shared config if checkbox is checked
+                    if(cinst.api.shared && cinst.api.shared()){
+                        await saveSDConfig("sharedApparelSD.json", cinst.entity);
+                        cinst.api.shared(false);
+                    }
 
                     // Force Mithril redraw
                     m.redraw();

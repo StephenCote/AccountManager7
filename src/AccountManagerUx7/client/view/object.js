@@ -1527,6 +1527,30 @@
             }
         };
 
+        objectPage.loadApparelGallery = async function(name, field) {
+            console.log("Load gallery");
+            if(entity.gallery && entity.gallery.length) return entity.gallery;
+            if(!entity.name) return [];
+            // Query images from ~/Gallery/Apparel/{apparel name} group
+            let groupPath = "~/Gallery/Apparel/" + entity.name;
+            let grp = await page.makePath("auth.group", "DATA", groupPath);
+            if(!grp) return [];
+            let q = am7client.newQuery("data.data");
+            q.field("groupId", grp.id);
+            q.entity.request.push("id", "objectId", "name", "groupId", "groupPath", "contentType", "attributes");
+            q.range(0, 100);
+            q.sort("createdDate");
+            q.order("descending");
+            let qr = await page.search(q);
+            let images = [];
+            console.log(qr?.results);
+            if(qr && qr.results) {
+                images = qr.results.filter(r => r.contentType && r.contentType.match(/^image\//i));
+                entity.gallery = images;
+            }
+            return images;
+        };
+
         objectPage.execute = function(name, field, type, form, properties){
             pendingResponse = undefined;
             am7client.executeScript(entity.urn, function(v){

@@ -102,7 +102,8 @@ public class Dress extends CommonAction implements IAction {
 					Queue.queueUpdate(w, new String[] {OlioFieldNames.FIELD_IN_USE});
 				}
 			});
-			if((boolean)app.get(OlioFieldNames.FIELD_IN_USE) == false) {
+			Boolean inUse = app.get(OlioFieldNames.FIELD_IN_USE);
+			if(inUse == null || !inUse) {
 				app.setValue(OlioFieldNames.FIELD_IN_USE, true);
 				Queue.queueUpdate(app, new String[] {OlioFieldNames.FIELD_IN_USE});
 			}

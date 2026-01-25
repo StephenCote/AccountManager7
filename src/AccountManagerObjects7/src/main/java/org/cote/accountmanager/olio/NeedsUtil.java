@@ -259,7 +259,8 @@ public class NeedsUtil {
             for (BaseRecord p : pop) {
                 String name = p.get(FieldNames.FIELD_NAME);
                 BaseRecord state = p.get(FieldNames.FIELD_STATE);
-                if (!roam && (boolean) state.get("agitated") == true) {
+                Boolean agitated = state.get("agitated");
+                if (!roam && agitated != null && agitated) {
                     continue;
                 }
                 BaseRecord location = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);

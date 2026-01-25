@@ -3,7 +3,8 @@
     "allow": [
       "Bash(node build.js:*)",
       "Bash(grep:*)",
-      "Bash(mvn clean compile:*)"
+      "Bash(mvn clean compile:*)",
+      "Bash(mvn test:*)"
     ]
   }
 }

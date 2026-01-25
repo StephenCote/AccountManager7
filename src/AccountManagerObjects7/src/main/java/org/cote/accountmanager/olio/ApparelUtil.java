@@ -90,7 +90,10 @@ public class ApparelUtil {
 		BaseRecord app = null;
 		List<BaseRecord> appl = per.get(OlioFieldNames.FIELD_STORE_APPAREL);
 		if(appl != null && appl.size() > 0) {
-			Optional<BaseRecord> oapp = appl.stream().filter(a -> ((boolean)a.get(OlioFieldNames.FIELD_IN_USE))).findFirst();
+			Optional<BaseRecord> oapp = appl.stream().filter(a -> {
+				Boolean inUse = a.get(OlioFieldNames.FIELD_IN_USE);
+				return inUse != null && inUse;
+			}).findFirst();
 			if(oapp.isPresent()) {
 				app = oapp.get();
 			}
@@ -101,7 +104,10 @@ public class ApparelUtil {
 		BaseRecord app = getWearingApparel(per);
 		List<BaseRecord> wearl = new ArrayList<>();
 		if(app != null) {
-			wearl = ((List<BaseRecord>)app.get(OlioFieldNames.FIELD_WEARABLES)).stream().filter(a -> ((boolean)a.get(OlioFieldNames.FIELD_IN_USE))).collect(Collectors.toList());
+			wearl = ((List<BaseRecord>)app.get(OlioFieldNames.FIELD_WEARABLES)).stream().filter(a -> {
+				Boolean inUse = a.get(OlioFieldNames.FIELD_IN_USE);
+				return inUse != null && inUse;
+			}).collect(Collectors.toList());
 			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get(OlioFieldNames.FIELD_LEVEL)), WearLevelEnumType.valueOf((String)f2.get(OlioFieldNames.FIELD_LEVEL))));
 			Collections.reverse(wearl);
 		}

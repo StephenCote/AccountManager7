@@ -25,7 +25,8 @@ public class Wake extends CommonAction implements IAction {
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 
-		if((boolean)actor.get("state.awake") == true) {
+		Boolean awake = actor.get("state.awake");
+		if(awake != null && awake) {
 			logger.warn("Actor " + FieldNames.FIELD_NAME + " is already awake");
 		}
 		else {

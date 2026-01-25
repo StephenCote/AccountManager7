@@ -110,36 +110,38 @@ public class IOSystem {
 			if(!dbUtil.testConnection()) {
 				throw new SystemException("Failed to establish database connection");
 			}
-			if(!dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck() || properties.isReset()) {
+			boolean needsSchemaWork = !dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck() || properties.isReset();
+			if(needsSchemaWork) {
 				logger.info("Scanning model schemas");
 				dbUtil.createExtensions();
 				checkPersistedSchema = true;
-				for(String m : ModelNames.MODELS) {
-					ModelSchema schema = RecordFactory.getSchema(m);
-					if(RecordUtil.isIdentityModel(schema)) {
-						if(!dbUtil.isConstrained(schema) && (!dbUtil.haveTable(schema, m) || properties.isReset())) {
-							String dbSchema = (properties.isReset() ? dbUtil.generateSchema(schema) : dbUtil.generateNewSchemaOnly(schema));
-							if(dbSchema != null) {
-								dbUtil.execute(dbSchema);
-							}
-							else {
-								logger.error("**** Schema not defined for " + m);
-							}
+			}
+
+			// Always scan for schema changes - create new tables or patch existing ones
+			for(String m : ModelNames.MODELS) {
+				ModelSchema schema = RecordFactory.getSchema(m);
+				if(RecordUtil.isIdentityModel(schema)) {
+					if(!dbUtil.isConstrained(schema) && (!dbUtil.haveTable(schema, m) || properties.isReset())) {
+						String dbSchema = (properties.isReset() ? dbUtil.generateSchema(schema) : dbUtil.generateNewSchemaOnly(schema));
+						if(dbSchema != null) {
+							dbUtil.execute(dbSchema);
 						}
-						else if(!dbUtil.isConstrained(schema) && !properties.isReset()) {
-							/// Patch existing tables with missing columns
-							List<String> patches = dbUtil.generatePatchSchema(schema);
-							for(String patch : patches) {
-								logger.info("Schema patch: " + patch);
-								dbUtil.execute(patch);
-							}
+						else {
+							logger.error("**** Schema not defined for " + m);
 						}
 					}
-					else {
-						logger.debug("Skip model without identity: " + m);
+					else if(!dbUtil.isConstrained(schema) && !properties.isReset()) {
+						/// Patch existing tables with missing columns
+						List<String> patches = dbUtil.generatePatchSchema(schema);
+						for(String patch : patches) {
+							logger.info("Schema patch: " + patch);
+							dbUtil.execute(patch);
+						}
 					}
 				}
-
+				else {
+					logger.debug("Skip model without identity: " + m);
+				}
 			}
 			
 			

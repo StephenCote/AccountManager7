@@ -230,10 +230,8 @@ public class OlioService {
 			return Response.status(400).entity("{\"error\":\"Apparel has no wearables\"}").build();
 		}
 
-		String groupPath = apparel.get(FieldNames.FIELD_GROUP_PATH);
-		if(groupPath == null) {
-			groupPath = "~/Gallery/Apparel";
-		}
+		String apparelName = apparel.get(FieldNames.FIELD_NAME);
+		String groupPath = "~/Gallery/Apparel/" + apparelName;
 
 		boolean hires = imp.get("hires") != null ? (Boolean)imp.get("hires") : false;
 		long seed = imp.get("seed") != null ? ((Number)imp.get("seed")).longValue() : -1;
@@ -243,15 +241,6 @@ public class OlioService {
 		if(images.isEmpty()) {
 			return Response.status(200).entity("[]").build();
 		}
-
-		// Update apparel gallery with new images
-		List<BaseRecord> gallery = apparel.get("gallery");
-		if(gallery == null) {
-			gallery = new java.util.ArrayList<>();
-		}
-		gallery.addAll(images);
-		apparel.setValue("gallery", gallery);
-		IOSystem.getActiveContext().getAccessPoint().update(user, apparel);
 
 		// Return all generated images as JSON array
 		StringBuilder sb = new StringBuilder("[");

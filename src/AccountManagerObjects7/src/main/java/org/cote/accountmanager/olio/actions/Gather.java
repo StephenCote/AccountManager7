@@ -131,7 +131,10 @@ public class Gather extends CommonAction implements IAction {
 		BaseRecord realm = context.clock().getRealm();
 		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
 		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(context, zoo, cell);
-		List<BaseRecord> dzpop = zpop.stream().filter(a -> (boolean)a.get("state.alive")).collect(Collectors.toList());
+		List<BaseRecord> dzpop = zpop.stream().filter(a -> {
+			Boolean alive = a.get("state.alive");
+			return alive != null && alive;
+		}).collect(Collectors.toList());
 		if(pois.size() == 0 && dzpop.size() == 0) {
 			logger.warn("There are no " + (itemCategory != null ? itemCategory + " " : "") + "resource points of interests or dead animals in this part of " + tet.toString() + " around " + cell.get(FieldNames.FIELD_NAME));
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.FAILED);

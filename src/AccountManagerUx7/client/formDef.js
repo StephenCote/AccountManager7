@@ -971,15 +971,7 @@
                 requiredAttributes: ["style"],
                 requiredValues: ["custom"],
             },
-            selectReference: {
-                format: "button",
-                layout: "one",
-                icon: 'image',
-                field: {
-                    label: "Reference",
-                    command: undefined
-                }
-            },
+
             denoisingStrength: {
                 label: 'Denoising',
                 layout: 'one',
@@ -1035,6 +1027,13 @@
                 requiredAttributes: ["style"],
                 requiredValues: ["movie"],
             },
+            layout : "half",
+                format: "blank",
+                field: {
+                    label: "",
+                    readOnly: true
+                }
+            },
             model: {
                 layout: 'third',
                 label: 'Model',
@@ -1089,6 +1088,15 @@
                 referField: true,
                 requiredAttributes: ["shared"],
                 requiredValues: ["true"],
+            },
+            selectReference: {
+                format: "button",
+                layout: "one",
+                icon: 'image',
+                field: {
+                    label: "Reference",
+                    command: undefined
+                }
             },
             createApparelSequence: {
                 format: "button",
@@ -1149,6 +1157,22 @@
             refinerSteps: {
                 label: 'Refiner Steps',
                 layout: 'one'
+            },
+            shared: {
+                label: "Save Shared",
+                layout: 'one'
+            },
+            loadShared: {
+                format: "button",
+                layout: "one",
+                icon: 'open_in_new',
+                field: {
+                    label: "Load Shared",
+                    command: undefined
+                },
+                referField: true,
+                requiredAttributes: ["shared"],
+                requiredValues: ["true"],
             }
         }
     };
@@ -3879,18 +3903,22 @@
                 layout: 'full'
             },
             wearables: {
-                layout: 'full',
+                layout: 'half',
                 format: "table",
                 form: forms.entitylist
             },
             gallery: {
-                layout: 'full',
+                layout: 'half',
                 format: 'gallery',
+
                 field: {
-                    label: 'Gallery'
+                    label: 'Gallery',
+                    promise: true,
+                    function: 'loadApparelGallery'
                 }
             }
         },
+        query: ["gallery"],
         forms: ["lightgroupinfo"]
     };
 

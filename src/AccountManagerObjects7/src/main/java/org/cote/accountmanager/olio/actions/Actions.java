@@ -128,7 +128,8 @@ public class Actions {
 		String actionName = params.get(OlioFieldNames.FIELD_ACTION_NAME);
 		BaseRecord cact = ActionUtil.getInAction(actor, actionName);
 		if(cact != null) {
-			if(params != null && (boolean)params.get(OlioFieldNames.FIELD_AUTOCOMPLETE) == true) {
+			Boolean autoComplete = params != null ? params.get(OlioFieldNames.FIELD_AUTOCOMPLETE) : null;
+			if(autoComplete != null && autoComplete) {
 				logger.info("Auto-completing " + actor.get(FieldNames.FIELD_NAME) + "'s current '" + actionName + "' action.");
 				cact.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
 				Queue.queueUpdate(cact, new String[] {FieldNames.FIELD_TYPE});

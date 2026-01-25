@@ -432,6 +432,10 @@ public class TestOlioGameFeatures extends BaseTest {
 			logger.info("Interaction result: " + interaction.toFullString());
 		} catch(OlioException e) {
 			logger.error("Interaction failed: " + e.getMessage());
+		} catch(Exception e) {
+			logger.error("Unexpected error: " + e.getMessage());
+			e.printStackTrace();
+			throw e;
 		}
 	}
 
@@ -480,7 +484,9 @@ public class TestOlioGameFeatures extends BaseTest {
 		List<BaseRecord> nearby = GeoLocationUtil.limitToAdjacent(octx, pop, currentLoc);
 		logger.info("Nearby characters: " + nearby.size());
 		for(BaseRecord n : nearby) {
-			if(!n.get(FieldNames.FIELD_OBJECT_ID).equals(person.get(FieldNames.FIELD_OBJECT_ID))) {
+			String nOid = n.get(FieldNames.FIELD_OBJECT_ID);
+			String pOid = person.get(FieldNames.FIELD_OBJECT_ID);
+			if(nOid != null && pOid != null && !nOid.equals(pOid)) {
 				logger.info("  " + n.get(FieldNames.FIELD_NAME));
 			}
 		}

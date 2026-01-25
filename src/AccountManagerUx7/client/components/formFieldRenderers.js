@@ -16,6 +16,7 @@
     ///   - show: whether the field should be visible
 
     let renderers = {};
+    let audioRecord = false;
 
     /// ========================================
     /// SIMPLE RENDERERS - No dependencies
@@ -238,9 +239,9 @@
 
         return [m("div", {class: "relative w-full"},
             m("input", inputAttrs),
-            m("div", {class: "absolute inset-y-0 right-0 flex items-center"},
+            (audioRecord ? m("div", {class: "absolute inset-y-0 right-0 flex items-center"},
                 createAudioRecordButton(ctx)
-            )
+            ) : "")
         )];
     };
 
@@ -259,9 +260,9 @@
 
         return [m("div", {class: "relative w-full"},
             m("input", inputAttrs),
-            m("div", {class: "absolute inset-y-0 right-0 flex items-center"},
+            (audioRecord ? m("div", {class: "absolute inset-y-0 right-0 flex items-center"},
                 createAudioRecordButton(ctx)
-            )
+            ) : "")
         )];
     };
 
@@ -277,9 +278,9 @@
 
         return [m("div", {class: "relative w-full"},
             m("textarea", textareaAttrs, ctx.defVal),
-            m("div", {class: "absolute top-2 right-0 flex items-start"},
+            (audioRecord ? m("div", {class: "absolute top-2 right-0 flex items-start"},
                 createAudioRecordButton(ctx)
-            )
+            ) : "")
         )];
     };
 
@@ -379,12 +380,15 @@
         let useEntity = ctx.useEntity || ctx.entity;
         let fieldClass = ctx.fieldClass + " gallery-field";
 
-        console.log("gallery renderer: ctx.defVal:", ctx.defVal?.length, "useEntity:", useEntity, "useEntity.images:", useEntity?.images?.length);
-
-        // Images can come from ctx.defVal (field value) or useEntity.images
-        let images = ctx.defVal || (useEntity && useEntity.images);
+        // Images can come from ctx.defVal (field value), useEntity.gallery, useEntity.images, or ctx.entity directly
+        let images = ctx.defVal;
+        if(!images || !images.length) {
+            images = useEntity && (useEntity.gallery || useEntity.images);
+        }
+        if(!images || !images.length) {
+            images = ctx.entity && (ctx.entity.gallery || ctx.entity.images);
+        }
         if (!images || !images.length) {
-            console.warn("gallery renderer: No images found");
             return [m("span", "No images")];
         }
 
