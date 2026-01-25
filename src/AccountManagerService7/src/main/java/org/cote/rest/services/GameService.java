@@ -31,6 +31,7 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
@@ -367,21 +368,31 @@ public class GameService {
 			return Response.status(500).entity("{\"error\":\"No realm found\"}").build();
 		}
 
-		// Get total population and build profiles
+		// Get population and nearby people first (more efficient)
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
-		Map<BaseRecord, PersonalityProfile> profiles = new HashMap<>();
-		for(BaseRecord p : pop) {
-			profiles.put(p, ProfileUtil.getProfile(octx, p));
-		}
-		PersonalityProfile playerProfile = profiles.get(person);
-
-		// Get nearby characters and cells
 		List<BaseRecord> adjacentCells = GeoLocationUtil.getAdjacentCells(octx, currentLoc, 3);
 		List<BaseRecord> nearbyPeople = GeoLocationUtil.limitToAdjacent(octx, pop, currentLoc);
 
-		// Evaluate threats
-		BaseRecord epoch = octx.clock().getEpoch();
-		Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(octx, realm, epoch, profiles, playerProfile);
+		// Only compute profiles for nearby people + player (performance optimization)
+		Map<BaseRecord, PersonalityProfile> profiles = new HashMap<>();
+		PersonalityProfile playerProfile = ProfileUtil.getProfile(octx, person);
+		profiles.put(person, playerProfile);
+		for(BaseRecord p : nearbyPeople) {
+			if(!profiles.containsKey(p)) {
+				profiles.put(p, ProfileUtil.getProfile(octx, p));
+			}
+		}
+
+		// Evaluate threats (only considers nearby entities)
+		BaseRecord epoch = octx.clock() != null ? octx.clock().getEpoch() : null;
+		Map<ThreatEnumType, List<BaseRecord>> threats = null;
+		if(epoch != null) {
+			try {
+				threats = ThreatUtil.evaluateImminentThreats(octx, realm, epoch, profiles, playerProfile);
+			} catch(Exception te) {
+				logger.warn("Failed to evaluate threats: {}", te.getMessage());
+			}
+		}
 
 		// Build response as a Map
 		try {
@@ -407,13 +418,13 @@ public class GameService {
 			}
 			result.put("threats", threatList);
 
-			// Get needs
-			Map<String, Double> needs = new HashMap<>();
-			needs.put("hunger", state.get("hunger"));
-			needs.put("thirst", state.get("thirst"));
-			needs.put("fatigue", state.get("fatigue"));
-			needs.put("health", state.get("health"));
-			needs.put("energy", state.get("energy"));
+			// Get needs (with null-safe defaults)
+			Map<String, Object> needs = new HashMap<>();
+			needs.put("hunger", getDoubleOrDefault(state, "hunger", 0.0));
+			needs.put("thirst", getDoubleOrDefault(state, "thirst", 0.0));
+			needs.put("fatigue", getDoubleOrDefault(state, "fatigue", 0.0));
+			needs.put("health", getDoubleOrDefault(state, "health", 1.0));
+			needs.put("energy", getDoubleOrDefault(state, "energy", 1.0));
 			result.put("needs", needs);
 
 			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
@@ -631,6 +642,18 @@ public class GameService {
 		return Response.status(200).entity(apparel.toFullString()).build();
 	}
 
+	private double getDoubleOrDefault(BaseRecord rec, String field, double defaultValue) {
+		try {
+			Object val = rec.get(field);
+			if(val == null) return defaultValue;
+			if(val instanceof Double) return (Double)val;
+			if(val instanceof Number) return ((Number)val).doubleValue();
+		} catch(Exception e) {
+			// ignore
+		}
+		return defaultValue;
+	}
+
 	private double getActionPriority(InteractionEnumType type) {
 		switch(type) {
 			case COMBAT: return 0.9;
@@ -645,6 +668,348 @@ public class GameService {
 			case INVESTIGATE: return 0.2;
 			case SOCIALIZE: return 0.25;
 			default: return 0.3;
+		}
+	}
+
+	/// Adopt a character into the Olio world space.
+	/// Moves the character to the realm's population group.
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/adopt/{objectId:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response adoptCharacter(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		// Find the character
+		BaseRecord person = findCharacter(user, objectId);
+		if(person == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		// Get the first realm to adopt into
+		List<BaseRecord> realms = octx.getRealms();
+		if(realms.isEmpty()) {
+			return Response.status(500).entity("{\"error\":\"No realm available\"}").build();
+		}
+		BaseRecord realm = realms.get(0);
+
+		try {
+			// Get the population group for the realm
+			BaseRecord popGroup = realm.get(OlioFieldNames.FIELD_POPULATION);
+			if(popGroup == null) {
+				return Response.status(500).entity("{\"error\":\"Realm has no population group\"}").build();
+			}
+
+			// Move the character to the population group
+			long popGroupId = popGroup.get(FieldNames.FIELD_ID);
+			person.set(FieldNames.FIELD_GROUP_ID, popGroupId);
+
+			// Initialize state if needed
+			BaseRecord state = person.get(FieldNames.FIELD_STATE);
+			if(state == null) {
+				state = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_STATE);
+				person.set(FieldNames.FIELD_STATE, state);
+			}
+
+			// Set initial location to realm origin if not set
+			BaseRecord currentLoc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+			if(currentLoc == null) {
+				BaseRecord origin = realm.get(OlioFieldNames.FIELD_ORIGIN);
+				if(origin != null) {
+					state.set(OlioFieldNames.FIELD_CURRENT_LOCATION, origin);
+				}
+			}
+
+			// Initialize state values
+			if(state.get("health") == null) state.set("health", 1.0);
+			if(state.get("energy") == null) state.set("energy", 1.0);
+			if(state.get("hunger") == null) state.set("hunger", 0.0);
+			if(state.get("thirst") == null) state.set("thirst", 0.0);
+			if(state.get("fatigue") == null) state.set("fatigue", 0.0);
+			if(state.get("alive") == null) state.set("alive", true);
+			if(state.get("awake") == null) state.set("awake", true);
+
+			// Update the character
+			IOSystem.getActiveContext().getRecordUtil().updateRecord(person);
+
+			// Add to population membership if not already there
+			// The population group membership links the character to the realm
+			IOSystem.getActiveContext().getMemberUtil().member(user, popGroup, person, null, true);
+
+			Map<String, Object> result = new HashMap<>();
+			result.put("adopted", true);
+			result.put("characterId", person.get(FieldNames.FIELD_OBJECT_ID));
+			result.put("realmName", realm.get(FieldNames.FIELD_NAME));
+			result.put("groupPath", popGroup.get(FieldNames.FIELD_PATH));
+
+			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+		} catch(Exception e) {
+			logger.error("Failed to adopt character", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Start a new game session - returns available characters from the world.
+	/// Can be used to select a character or get a random one.
+	///
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/newGame")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response newGame(@Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		List<BaseRecord> realms = octx.getRealms();
+		if(realms.isEmpty()) {
+			return Response.status(500).entity("{\"error\":\"No realm available\"}").build();
+		}
+		BaseRecord realm = realms.get(0);
+
+		try {
+			// Get population for this realm
+			List<BaseRecord> pop = octx.getRealmPopulation(realm);
+
+			// Build character list with basic info
+			List<Map<String, Object>> characters = new ArrayList<>();
+			for(BaseRecord p : pop) {
+				Map<String, Object> charInfo = new HashMap<>();
+				charInfo.put("objectId", p.get(FieldNames.FIELD_OBJECT_ID));
+				charInfo.put("name", p.get(FieldNames.FIELD_NAME));
+				charInfo.put("firstName", p.get("firstName"));
+				charInfo.put("lastName", p.get("lastName"));
+				charInfo.put("gender", p.get("gender"));
+				charInfo.put("age", p.get("age"));
+
+				// Get portrait if available
+				BaseRecord profile = p.get("profile");
+				if(profile != null) {
+					BaseRecord portrait = profile.get("portrait");
+					if(portrait != null) {
+						charInfo.put("portraitId", portrait.get(FieldNames.FIELD_OBJECT_ID));
+					}
+				}
+				characters.add(charInfo);
+			}
+
+			Map<String, Object> result = new HashMap<>();
+			result.put("realmName", realm.get(FieldNames.FIELD_NAME));
+			result.put("realmId", realm.get(FieldNames.FIELD_OBJECT_ID));
+			result.put("characters", characters);
+			result.put("totalPopulation", pop.size());
+
+			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+		} catch(Exception e) {
+			logger.error("Failed to get new game data", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Check if a character is part of the Olio world population
+	///
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/isInWorld/{objectId:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response isCharacterInWorld(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		BaseRecord person = findCharacter(user, objectId);
+		if(person == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		List<BaseRecord> realms = octx.getRealms();
+		boolean inWorld = false;
+		String realmName = null;
+
+		for(BaseRecord realm : realms) {
+			List<BaseRecord> pop = octx.getRealmPopulation(realm);
+			for(BaseRecord p : pop) {
+				if(objectId.equals(p.get(FieldNames.FIELD_OBJECT_ID))) {
+					inWorld = true;
+					realmName = realm.get(FieldNames.FIELD_NAME);
+					break;
+				}
+			}
+			if(inWorld) break;
+		}
+
+		Map<String, Object> result = new HashMap<>();
+		result.put("inWorld", inWorld);
+		result.put("realmName", realmName);
+		result.put("characterId", objectId);
+
+		return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+	}
+
+	/// List saved games for the current user
+	///
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/saves")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response listSaves(@Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		try {
+			// Get or create the user's game saves group
+			BaseRecord saveDir = IOSystem.getActiveContext().getPathUtil().makePath(user, "DATA", "~/GameSaves", "auth.group", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if(saveDir == null) {
+				return Response.status(200).entity("{\"saves\":[]}").build();
+			}
+
+			// Query saves from this group
+			Query q = QueryUtil.createQuery("data.data", FieldNames.FIELD_GROUP_ID, saveDir.get(FieldNames.FIELD_ID));
+			q.setRequestRange(0, 100);
+			q.field(FieldNames.FIELD_CONTENT_TYPE, "application/json");
+			QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
+
+			List<Map<String, Object>> saves = new ArrayList<>();
+			if(qr != null && qr.getResults() != null) {
+				for(BaseRecord save : qr.getResults()) {
+					Map<String, Object> s = new HashMap<>();
+					s.put("objectId", save.get(FieldNames.FIELD_OBJECT_ID));
+					s.put("name", save.get(FieldNames.FIELD_NAME));
+					s.put("createdDate", save.get(FieldNames.FIELD_CREATED_DATE));
+					s.put("modifiedDate", save.get(FieldNames.FIELD_MODIFIED_DATE));
+					saves.add(s);
+				}
+			}
+
+			Map<String, Object> result = new HashMap<>();
+			result.put("saves", saves);
+			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+		} catch(Exception e) {
+			logger.error("Failed to list saves", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Save game state
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/save")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response saveGame(String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String saveName = params.get("name");
+		String characterId = params.get("characterId");
+		if(saveName == null || saveName.isEmpty()) {
+			saveName = "Save " + System.currentTimeMillis();
+		}
+
+		try {
+			// Get or create the user's game saves group
+			BaseRecord saveDir = IOSystem.getActiveContext().getPathUtil().makePath(user, "DATA", "~/GameSaves", "auth.group", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+
+			// Create save data
+			Map<String, Object> saveData = new HashMap<>();
+			saveData.put("characterId", characterId);
+			saveData.put("timestamp", System.currentTimeMillis());
+			saveData.put("eventLog", params.get("eventLog"));
+
+			// Create data record for save
+			BaseRecord saveRec = RecordFactory.newInstance("data.data");
+			saveRec.set(FieldNames.FIELD_NAME, saveName);
+			saveRec.set(FieldNames.FIELD_GROUP_ID, saveDir.get(FieldNames.FIELD_ID));
+			saveRec.set(FieldNames.FIELD_CONTENT_TYPE, "application/json");
+			saveRec.set("dataBytesStore", JSONUtil.exportObject(saveData).getBytes("UTF-8"));
+
+			IOSystem.getActiveContext().getRecordUtil().createRecord(saveRec);
+
+			Map<String, Object> result = new HashMap<>();
+			result.put("saved", true);
+			result.put("saveId", saveRec.get(FieldNames.FIELD_OBJECT_ID));
+			result.put("name", saveName);
+			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+		} catch(Exception e) {
+			logger.error("Failed to save game", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Load game state
+	///
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/load/{objectId:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response loadGame(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		try {
+			// Find the save record
+			Query q = QueryUtil.createQuery("data.data", FieldNames.FIELD_OBJECT_ID, objectId);
+			QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
+
+			if(qr == null || qr.getResults() == null || qr.getResults().length == 0) {
+				return Response.status(404).entity("{\"error\":\"Save not found\"}").build();
+			}
+
+			BaseRecord save = qr.getResults()[0];
+			byte[] data = save.get("dataBytesStore");
+			if(data == null) {
+				return Response.status(500).entity("{\"error\":\"Save data is empty\"}").build();
+			}
+
+			String saveJson = new String(data, "UTF-8");
+			Map<String, Object> result = new HashMap<>();
+			result.put("loaded", true);
+			result.put("name", save.get(FieldNames.FIELD_NAME));
+			result.put("saveData", JSONUtil.importObject(saveJson, Map.class));
+
+			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+		} catch(Exception e) {
+			logger.error("Failed to load game", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Delete a saved game
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/deleteSave/{objectId:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response deleteSave(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		try {
+			Query q = QueryUtil.createQuery("data.data", FieldNames.FIELD_OBJECT_ID, objectId);
+			QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
+
+			if(qr == null || qr.getResults() == null || qr.getResults().length == 0) {
+				return Response.status(404).entity("{\"error\":\"Save not found\"}").build();
+			}
+
+			IOSystem.getActiveContext().getRecordUtil().deleteRecord(qr.getResults()[0]);
+
+			Map<String, Object> result = new HashMap<>();
+			result.put("deleted", true);
+			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+		} catch(Exception e) {
+			logger.error("Failed to delete save", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
 		}
 	}
 }

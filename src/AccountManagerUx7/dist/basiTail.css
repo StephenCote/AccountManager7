@@ -7978,6 +7978,11 @@ button.button-tab-active:hover:is(.dark *) {
   color: rgb(133 77 14 / var(--tw-text-opacity, 1));
 }
 
+.text-gray-600 {
+  --tw-text-opacity: 1;
+  color: rgb(75 85 99 / var(--tw-text-opacity, 1));
+}
+
 .opacity-0 {
   opacity: 0;
 }

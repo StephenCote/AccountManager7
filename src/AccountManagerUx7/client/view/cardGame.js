@@ -969,6 +969,14 @@
         return [
             m("button", {
                 class: "flyout-button",
+                onclick: startNewGame,
+                title: "Start a new game"
+            }, [
+                m("span", {class: "material-symbols-outlined material-icons-24"}, "add_circle"),
+                "New"
+            ]),
+            m("button", {
+                class: "flyout-button",
                 onclick: function() {
                     saveDialogOpen = true;
                     loadSavedGames();
@@ -1012,15 +1020,95 @@
     }
 
     // ==========================================
+    // ==========================================
+    // New Game Functions
+    // ==========================================
+
+    // Start a completely new game - resets state and loads fresh character list
+    async function startNewGame() {
+        // Reset all state
+        player = null;
+        situation = null;
+        selectedEntity = null;
+        selectedEntityType = null;
+        eventLog = [];
+        chatMessages = [];
+        chatSession = null;
+        currentSave = null;
+
+        // Clear any stored character selection
+        sessionStorage.removeItem("olio_selected_character");
+
+        // Load fresh character list from server
+        try {
+            let resp = await m.request({
+                method: 'GET',
+                url: g_application_path + "/rest/game/newGame",
+                withCredentials: true
+            });
+            if (resp && resp.characters) {
+                availableCharacters = resp.characters;
+                addEvent("New game started - " + resp.totalPopulation + " characters in " + resp.realmName, "info");
+            }
+        } catch (e) {
+            console.warn("newGame endpoint not available, falling back to direct query");
+            await loadAvailableCharacters();
+        }
+
+        // Open character selection
+        characterSelectOpen = true;
+        m.redraw();
+    }
+
+    // Set a specific character to start with (called from external navigation)
+    function setSelectedCharacter(charId) {
+        sessionStorage.setItem("olio_selected_character", charId);
+    }
+
+    // ==========================================
     // Component Export
     // ==========================================
 
     let cardGame = {
-        oninit: async function() {
+        oninit: async function(vnode) {
+            // Check for character passed via route or sessionStorage
+            let preSelectedCharId = null;
+
+            // Check route params first
+            if (vnode.attrs && vnode.attrs.character) {
+                preSelectedCharId = vnode.attrs.character;
+            }
+            // Then check sessionStorage
+            if (!preSelectedCharId) {
+                preSelectedCharId = sessionStorage.getItem("olio_selected_character");
+                if (preSelectedCharId) {
+                    sessionStorage.removeItem("olio_selected_character");
+                }
+            }
+
+            // Load available characters
             await loadAvailableCharacters();
+
+            // If we have a pre-selected character, find and claim them
+            if (preSelectedCharId && availableCharacters.length > 0) {
+                let targetChar = availableCharacters.find(c =>
+                    c.objectId === preSelectedCharId || c.id === preSelectedCharId
+                );
+                if (targetChar) {
+                    await claimCharacter(targetChar);
+                    return;
+                } else {
+                    // Character not in available list - might need to be adopted
+                    page.toast("warn", "Selected character not found in world population");
+                }
+            }
+
             // Auto-select first character if available
             if (availableCharacters.length > 0) {
                 await claimCharacter(availableCharacters[0]);
+            } else {
+                // No characters - show selection dialog
+                characterSelectOpen = true;
             }
         },
         view: function() {
@@ -1034,6 +1122,12 @@
                 m("div", {class: "cg-footer-fixed"}, getFooter())
             ];
         }
+    };
+
+    // Export external interface for card game
+    window.am7cardGame = {
+        setSelectedCharacter: setSelectedCharacter,
+        startNewGame: startNewGame
     };
 
     page.views.cardGame = cardGame;

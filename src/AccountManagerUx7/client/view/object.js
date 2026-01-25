@@ -1533,6 +1533,18 @@
             }
         };
 
+        objectPage.startGameWithCharacter = async function(name, field, tableType, tableForm, props){
+            if(inst && page.components.dialog.startGameWithCharacter){
+                page.components.dialog.startGameWithCharacter(entity, inst);
+            }
+        };
+
+        objectPage.adoptCharacter = async function(name, field, tableType, tableForm, props){
+            if(inst && page.components.dialog.adoptCharacter){
+                page.components.dialog.adoptCharacter(entity, inst);
+            }
+        };
+
         objectPage.loadApparelGallery = async function(name, field) {
             console.log("Load gallery");
             if(entity.gallery && entity.gallery.length) return entity.gallery;

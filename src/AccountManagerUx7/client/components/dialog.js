@@ -1844,6 +1844,131 @@
         setDialog(cfg);
     }
 
+    // Start the card game with a specific character
+    // Only works if the character is part of a realm's population
+    async function startGameWithCharacter(object, inst) {
+        if (!inst || !inst.entity) {
+            page.toast("error", "No character selected");
+            return;
+        }
+
+        let characterId = inst.entity.objectId || inst.entity.id;
+        let characterName = inst.entity.name || "Unknown";
+
+        // Check if character is part of a realm's population by checking groupPath
+        // Characters in the world should be in a path like ~/World Building/...
+        let groupPath = inst.entity.groupPath || "";
+        let isInWorld = groupPath.includes("World Building") || groupPath.includes("Worlds") || groupPath.includes("Population");
+
+        if (!isInWorld) {
+            // Show adopt dialog instead
+            let cfg = {
+                title: "Character Not in World",
+                icon: "warning",
+                label: "This character is not part of the Olio world. Would you like to adopt them into the world first?",
+                size: 40,
+                buttons: [
+                    { label: "Adopt Character", value: "adopt" },
+                    { label: "Cancel", value: "cancel" }
+                ],
+                submit: async function(data) {
+                    endDialog();
+                    if (data.value === "adopt") {
+                        await adoptCharacter(object, inst);
+                    }
+                },
+                cancel: async function() {
+                    endDialog();
+                }
+            };
+            setDialog(cfg);
+            return;
+        }
+
+        // Navigate to the card game with this character
+        page.toast("info", "Starting game with " + characterName);
+
+        // Store the selected character for the game
+        if (window.am7cardGame) {
+            am7cardGame.setSelectedCharacter(characterId);
+        } else {
+            // Store in session for pickup by card game
+            sessionStorage.setItem("olio_selected_character", characterId);
+        }
+
+        // Navigate to the card game view
+        m.route.set("/app/game/cardGame", { character: characterId });
+    }
+
+    // Adopt a character into the Olio worldspace
+    // Moves to proper group and adds to realm population
+    async function adoptCharacter(object, inst) {
+        if (!inst || !inst.entity) {
+            page.toast("error", "No character selected");
+            return;
+        }
+
+        let character = inst.entity;
+        let characterName = character.name || "Unknown";
+
+        // Show realm selection dialog
+        let cfg = {
+            title: "Adopt Character to World",
+            icon: "person_add",
+            label: "Adopt '" + characterName + "' into the Olio world",
+            size: 50,
+            view: function() {
+                return m("div", { class: "p-4" }, [
+                    m("p", { class: "mb-4" },
+                        "This will move the character to the world's population and make them available for game interactions."),
+                    m("div", { class: "mb-4" }, [
+                        m("label", { class: "block mb-2 font-medium" }, "Target Realm:"),
+                        m("select", {
+                            id: "adoptRealmSelect",
+                            class: "w-full p-2 border rounded"
+                        }, [
+                            m("option", { value: "default" }, "Default Realm")
+                        ])
+                    ]),
+                    m("div", { class: "text-sm text-gray-600" }, [
+                        m("p", "Current location: " + (character.groupPath || "Unknown")),
+                        m("p", "Character will be added to the realm's population group.")
+                    ])
+                ]);
+            },
+            submit: async function(data) {
+                endDialog();
+                page.toast("info", "Adopting " + characterName + "...");
+
+                try {
+                    // Call the adopt endpoint
+                    let result = await m.request({
+                        method: "POST",
+                        url: am7client.base() + "/rest/game/adopt/" + (character.objectId || character.id),
+                        withCredentials: true,
+                        body: {}
+                    });
+
+                    if (result && result.adopted) {
+                        page.toast("success", characterName + " has been adopted into the world!");
+                        // Refresh the character view
+                        page.clearContextObject(inst.api.objectId());
+                        m.redraw();
+                    } else {
+                        page.toast("error", result.error || "Failed to adopt character");
+                    }
+                } catch (e) {
+                    console.error("Adopt failed:", e);
+                    page.toast("error", "Failed to adopt character: " + (e.message || "Unknown error"));
+                }
+            },
+            cancel: async function() {
+                endDialog();
+            }
+        };
+        setDialog(cfg);
+    }
+
     let dialog = {
         endDialog,
         setDialog,
@@ -1855,6 +1980,8 @@
         reimage,
         reimageApparel,
         showOutfitBuilder,
+        startGameWithCharacter,
+        adoptCharacter,
         chatSettings,
         showProgress,
         chatInto,

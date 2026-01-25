@@ -3639,6 +3639,18 @@
                 icon: 'checkroom',
                 function: 'showOutfitBuilder',
                 requiredAttribute: "objectId"
+            },
+            startGame: {
+                label: 'Start Game',
+                icon: 'sports_esports',
+                function: 'startGameWithCharacter',
+                requiredAttribute: "objectId"
+            },
+            adoptCharacter: {
+                label: 'Adopt to World',
+                icon: 'person_add',
+                function: 'adoptCharacter',
+                requiredAttribute: "objectId"
             }
         },
         fields: {
