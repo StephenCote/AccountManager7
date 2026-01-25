@@ -1758,6 +1758,92 @@
         setDialog(cfg);
     }
 
+    // Show the outfit builder panel for a character
+    async function showOutfitBuilder(object, inst) {
+        if (!inst) {
+            page.toast("error", "No instance provided");
+            return;
+        }
+
+        let characterId = null;
+        let gender = "female";
+        let currentApparel = null;
+
+        // Check if this is a charPerson (character) or apparel
+        let modelName = inst.model ? inst.model.name : null;
+
+        if (modelName === "olio.charPerson") {
+            // Invoked from character - the entity IS the character
+            characterId = inst.entity.objectId || inst.entity.id;
+            gender = inst.entity.gender || "female";
+            // Get the character's current apparel if any
+            if (inst.entity.store && inst.entity.store.apparel && inst.entity.store.apparel.length > 0) {
+                currentApparel = inst.entity.store.apparel[0];
+            }
+        } else if (modelName === "olio.apparel") {
+            // Invoked from apparel - try to get the associated character
+            if (inst.entity && inst.entity.designer) {
+                characterId = inst.entity.designer.objectId || inst.entity.designer.id;
+                gender = inst.entity.designer.gender || "female";
+            }
+            currentApparel = inst.entity;
+        }
+
+        // Set up outfit builder state
+        if (window.am7olio) {
+            am7olio.outfitBuilderState.characterId = characterId;
+            am7olio.outfitBuilderState.gender = gender;
+            am7olio.outfitBuilderState.currentApparel = currentApparel;
+        }
+
+        // Create the dialog with the outfit builder
+        let cfg = {
+            title: "Outfit Builder" + (inst.entity.name ? " - " + inst.entity.name : ""),
+            icon: "checkroom",
+            label: "Generate context-aware outfit for character",
+            size: 80,
+            data: { entity: inst.entity, characterId: characterId },
+            view: function() {
+                if (!window.am7olio || !am7olio.OutfitBuilderPanel) {
+                    return m("div", { class: "p-4 text-red-500" }, "Outfit builder component not loaded");
+                }
+                let builderApparel = am7olio.outfitBuilderState.currentApparel;
+                return m("div", { class: "flex gap-4 p-4" }, [
+                    // Outfit Builder Panel
+                    m("div", { class: "flex-1" }, [
+                        m(am7olio.OutfitBuilderPanel, {
+                            characterId: characterId,
+                            gender: gender,
+                            onGenerate: async function(apparel) {
+                                if (apparel) {
+                                    // Update the state with new apparel
+                                    am7olio.outfitBuilderState.currentApparel = apparel;
+                                    m.redraw();
+                                }
+                            }
+                        })
+                    ]),
+                    // Piece Editor (if apparel exists)
+                    builderApparel && builderApparel.wearables ? m("div", { class: "flex-1" }, [
+                        m(am7olio.PieceEditorPanel, {
+                            apparel: builderApparel
+                        })
+                    ]) : null
+                ]);
+            },
+            submit: async function(data) {
+                endDialog();
+                // Refresh the character view to show updated apparel
+                page.clearContextObject(inst.api.objectId());
+                m.redraw();
+            },
+            cancel: async function(data) {
+                endDialog();
+            }
+        };
+        setDialog(cfg);
+    }
+
     let dialog = {
         endDialog,
         setDialog,
@@ -1768,6 +1854,7 @@
         summarize,
         reimage,
         reimageApparel,
+        showOutfitBuilder,
         chatSettings,
         showProgress,
         chatInto,

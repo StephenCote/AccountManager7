@@ -1467,6 +1467,606 @@
       }
 
       /* ==========================================
+         Outfit Builder Classes (ob-*, pe-*)
+         ========================================== */
+
+      /* Outfit Builder Panel */
+      .ob-panel {
+        @apply flex flex-col bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4;
+      }
+      .ob-header {
+        @apply flex items-center text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700;
+      }
+      .ob-loading {
+        @apply flex items-center justify-center py-2 text-blue-500 text-sm;
+      }
+      .ob-section {
+        @apply mb-4;
+      }
+      .ob-section-label {
+        @apply text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2;
+      }
+
+      /* Tech tier grid */
+      .ob-tier-grid {
+        @apply grid grid-cols-5 gap-2;
+      }
+      .ob-tier-btn {
+        @apply flex flex-col items-center p-2 rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer text-gray-600 dark:text-gray-300;
+      }
+      .ob-tier-selected {
+        @apply bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600 text-blue-700 dark:text-blue-300;
+      }
+      .ob-tier-label {
+        @apply text-xs mt-1;
+      }
+
+      /* Climate grid */
+      .ob-climate-grid {
+        @apply grid grid-cols-5 gap-2;
+      }
+      .ob-climate-btn {
+        @apply flex flex-col items-center p-2 rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer text-gray-600 dark:text-gray-300;
+      }
+      .ob-climate-selected {
+        @apply bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-700 dark:text-green-300;
+      }
+      .ob-climate-label {
+        @apply text-xs mt-1;
+      }
+
+      /* Preset buttons */
+      .ob-preset-grid {
+        @apply flex flex-wrap gap-2;
+      }
+      .ob-preset-btn {
+        @apply flex items-center px-3 py-2 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-sm text-gray-700 dark:text-gray-300 transition-colors;
+      }
+
+      /* Generate button */
+      .ob-actions {
+        @apply mt-4 pt-4 border-t border-gray-200 dark:border-gray-700;
+      }
+      .ob-generate-btn {
+        @apply w-full flex items-center justify-center px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors disabled:opacity-50;
+      }
+
+      /* Preview section */
+      .ob-preview {
+        @apply mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-lg p-3 -mx-1;
+      }
+      .ob-apparel-name {
+        @apply font-medium text-gray-800 dark:text-gray-100 mb-1;
+      }
+      .ob-apparel-desc {
+        @apply text-sm text-gray-600 dark:text-gray-400 mb-3;
+      }
+      .ob-mannequin-btn {
+        @apply flex items-center px-3 py-2 rounded bg-purple-600 hover:bg-purple-500 text-white text-sm transition-colors;
+      }
+      .ob-mannequin-gallery {
+        @apply grid grid-cols-4 gap-2 mt-3;
+      }
+      .ob-mannequin-thumb {
+        @apply relative rounded overflow-hidden bg-gray-200 dark:bg-gray-700;
+      }
+      .ob-mannequin-thumb img {
+        @apply w-full h-auto;
+      }
+      .ob-level-label {
+        @apply absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs text-center py-1;
+      }
+
+      /* Piece Editor Panel */
+      .pe-panel {
+        @apply flex flex-col bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4;
+      }
+      .pe-header {
+        @apply flex items-center text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700;
+      }
+      .pe-slots {
+        @apply grid grid-cols-2 gap-3;
+      }
+      .pe-slot {
+        @apply rounded border border-gray-200 dark:border-gray-700 overflow-hidden;
+      }
+      .pe-slot-header {
+        @apply flex items-center px-3 py-2 bg-gray-100 dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300;
+      }
+      .pe-slot-items {
+        @apply p-2 space-y-1 min-h-16;
+      }
+      .pe-slot-empty {
+        @apply text-xs text-gray-400 dark:text-gray-500 text-center py-2;
+      }
+      .pe-item {
+        @apply flex items-center justify-between px-2 py-1 rounded bg-gray-50 dark:bg-gray-900 text-sm;
+      }
+      .pe-item-worn {
+        @apply bg-green-100 dark:bg-green-900/30 border-l-2 border-green-500;
+      }
+      .pe-item-name {
+        @apply text-gray-700 dark:text-gray-300 truncate;
+      }
+      .pe-item-color {
+        @apply w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600;
+      }
+
+      /* Mannequin Viewer */
+      .mv-container {
+        @apply flex flex-col items-center;
+      }
+      .mv-viewport {
+        @apply relative w-64 h-96 bg-gradient-to-b from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600;
+      }
+      .mv-base {
+        @apply absolute inset-0 flex items-center justify-center;
+      }
+      .mv-base-img {
+        @apply max-w-full max-h-full object-contain opacity-30;
+      }
+      .mv-silhouette {
+        @apply absolute inset-0 flex items-center justify-center;
+      }
+      .mv-silhouette-icon {
+        @apply text-9xl text-gray-300 dark:text-gray-600;
+      }
+      .mv-overlay {
+        @apply absolute inset-0 flex items-center justify-center;
+      }
+      .mv-overlay-img {
+        @apply max-w-full max-h-full object-contain;
+      }
+      .mv-loading {
+        @apply absolute inset-0 flex items-center justify-center bg-black/30;
+      }
+      .mv-loading .material-symbols-outlined {
+        @apply text-4xl text-white;
+      }
+
+      /* Wear level tabs */
+      .mv-levels {
+        @apply flex justify-center gap-1 mt-3;
+      }
+      .mv-level-btn {
+        @apply flex flex-col items-center px-2 py-1 rounded text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors;
+      }
+      .mv-level-selected {
+        @apply bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400;
+      }
+      .mv-level-available {
+        @apply text-gray-700 dark:text-gray-300;
+      }
+      .mv-level-label {
+        @apply text-xs mt-0.5;
+      }
+
+      /* Gender toggle */
+      .mv-gender-toggle {
+        @apply flex gap-2 mt-2;
+      }
+      .mv-gender-btn {
+        @apply p-2 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 transition-colors;
+      }
+      .mv-gender-selected {
+        @apply bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-400;
+      }
+
+      /* Animate spin for loading */
+      .animate-spin {
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      /* Selected thumbnail in gallery */
+      .ob-thumb-selected {
+        @apply ring-2 ring-blue-500;
+      }
+
+      /* ==========================================
+         Situation Game UI Classes (sg-*)
+         ========================================== */
+
+      /* Main layout */
+      .sg-layout {
+        @apply flex flex-col h-screen bg-gray-100 dark:bg-gray-900;
+      }
+      .sg-layout-full {
+        @apply fixed inset-0 z-40;
+      }
+
+      /* Header bar */
+      .sg-header {
+        @apply flex items-center justify-between px-4 py-2 bg-gray-200 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700;
+      }
+      .sg-header-left {
+        @apply flex items-center space-x-4;
+      }
+      .sg-header-right {
+        @apply flex items-center space-x-4;
+      }
+      .sg-header-item {
+        @apply flex items-center space-x-1 text-sm text-gray-600 dark:text-gray-400;
+      }
+      .sg-loading {
+        @apply text-sm text-blue-500 animate-pulse;
+      }
+
+      /* Main 3-column layout */
+      .sg-main {
+        @apply flex-1 flex overflow-hidden p-2 gap-2;
+      }
+      .sg-col {
+        @apply flex flex-col overflow-hidden;
+      }
+      .sg-col-left {
+        @apply w-64 flex-shrink-0;
+      }
+      .sg-col-center {
+        @apply flex-1;
+      }
+      .sg-col-right {
+        @apply w-72 flex-shrink-0;
+      }
+
+      /* Panels */
+      .sg-panel {
+        @apply flex flex-col h-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden;
+      }
+      .sg-panel-header {
+        @apply flex items-center px-3 py-2 text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700;
+      }
+      .sg-header-danger {
+        @apply bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400;
+      }
+      .sg-header-info {
+        @apply bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400;
+      }
+      .sg-header-primary {
+        @apply bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400;
+      }
+
+      /* Character panel */
+      .sg-character-panel {
+        @apply p-3;
+      }
+      .sg-portrait-frame {
+        @apply flex justify-center mb-3;
+      }
+      .sg-portrait-img {
+        @apply w-24 h-32 rounded-lg object-cover border-2 border-amber-400;
+      }
+      .sg-portrait-placeholder {
+        @apply w-24 h-32 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center border-2 border-gray-300 dark:border-gray-600;
+      }
+      .sg-character-info {
+        @apply text-center mb-4;
+      }
+      .sg-character-name {
+        @apply text-lg font-bold text-gray-800 dark:text-gray-100;
+      }
+      .sg-character-details {
+        @apply text-sm text-gray-500 dark:text-gray-400;
+      }
+
+      /* Section labels */
+      .sg-section-label {
+        @apply text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-2;
+      }
+
+      /* Needs bars */
+      .sg-needs-section {
+        @apply space-y-2 mb-4;
+      }
+      .sg-need-row {
+        @apply flex items-center space-x-2;
+      }
+      .sg-need-icon {
+        @apply text-sm w-5;
+      }
+      .sg-need-label {
+        @apply text-xs w-12 text-gray-500 dark:text-gray-400;
+      }
+      .sg-need-bar {
+        @apply flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden;
+      }
+      .sg-need-fill {
+        @apply h-full rounded transition-all duration-300;
+      }
+      .sg-need-value {
+        @apply text-xs w-8 text-right text-gray-600 dark:text-gray-400;
+      }
+
+      /* Color utility classes */
+      .sg-color-red { @apply text-red-500; }
+      .sg-color-yellow { @apply text-yellow-500; }
+      .sg-color-orange { @apply text-orange-500; }
+      .sg-color-green { @apply text-green-500; }
+      .sg-color-blue { @apply text-blue-500; }
+      .sg-color-purple { @apply text-purple-500; }
+
+      .sg-bg-red { @apply bg-red-500; }
+      .sg-bg-yellow { @apply bg-yellow-500; }
+      .sg-bg-orange { @apply bg-orange-500; }
+      .sg-bg-green { @apply bg-green-500; }
+      .sg-bg-blue { @apply bg-blue-500; }
+      .sg-bg-purple { @apply bg-purple-500; }
+      .sg-bg-gray { @apply bg-gray-500; }
+
+      .sg-border-red { @apply border-l-4 border-red-500; }
+      .sg-border-yellow { @apply border-l-4 border-yellow-500; }
+      .sg-border-green { @apply border-l-4 border-green-500; }
+
+      /* Location section */
+      .sg-location-section {
+        @apply mt-4 pt-4 border-t border-gray-200 dark:border-gray-700;
+      }
+      .sg-location-info {
+        @apply flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300;
+      }
+      .sg-terrain-icon {
+        @apply text-lg;
+      }
+      .sg-climate-info {
+        @apply text-xs text-gray-500 dark:text-gray-400 mt-1;
+      }
+
+      /* Panel footer */
+      .sg-panel-footer {
+        @apply mt-auto pt-3 border-t border-gray-200 dark:border-gray-700;
+      }
+
+      /* Buttons */
+      .sg-btn {
+        @apply px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center space-x-1 disabled:opacity-50;
+      }
+      .sg-btn-primary {
+        @apply sg-btn bg-blue-600 hover:bg-blue-500 text-white;
+      }
+      .sg-btn-action {
+        @apply sg-btn bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 w-full;
+      }
+      .sg-btn-small {
+        @apply px-2 py-1 text-xs rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400;
+      }
+
+      /* Situation panel */
+      .sg-situation-panel {
+        @apply p-3;
+      }
+      .sg-narrative {
+        @apply p-3 mb-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700;
+      }
+      .sg-narrative-text {
+        @apply text-sm italic text-amber-700 dark:text-amber-400 text-center;
+      }
+
+      /* Spatial grid */
+      .sg-grid-section {
+        @apply flex-1 flex flex-col items-center justify-center;
+      }
+      .sg-grid {
+        @apply flex flex-col gap-1;
+      }
+      .sg-grid-row {
+        @apply flex gap-1;
+      }
+      .sg-grid-cell {
+        @apply w-12 h-12 flex items-center justify-center text-lg rounded border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 cursor-pointer transition-all hover:scale-105 hover:bg-gray-200 dark:hover:bg-gray-700;
+      }
+      .sg-cell-current {
+        @apply bg-blue-200 dark:bg-blue-800 border-blue-400 dark:border-blue-600 ring-2 ring-blue-400;
+      }
+      .sg-cell-threat {
+        @apply bg-red-100 dark:bg-red-900/50 border-red-400 dark:border-red-700;
+      }
+      .sg-cell-person {
+        @apply bg-yellow-100 dark:bg-yellow-900/50 border-yellow-400 dark:border-yellow-700;
+      }
+
+      /* Grid legend */
+      .sg-grid-legend {
+        @apply flex flex-wrap justify-center gap-3 mt-3 text-xs text-gray-500 dark:text-gray-400;
+      }
+
+      /* Movement pad */
+      .sg-movement-controls {
+        @apply flex justify-center mt-4;
+      }
+      .sg-move-pad {
+        @apply flex flex-col items-center gap-1 p-2 bg-gray-100 dark:bg-gray-900 rounded-lg;
+      }
+      .sg-move-row {
+        @apply flex gap-1;
+      }
+      .sg-move-btn {
+        @apply w-10 h-10 flex items-center justify-center rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors cursor-pointer;
+      }
+      .sg-move-center {
+        @apply bg-blue-200 dark:bg-blue-800 cursor-default hover:bg-blue-200 dark:hover:bg-blue-800;
+      }
+
+      /* Threat radar */
+      .sg-threat-section {
+        @apply mb-4;
+      }
+      .sg-threat-card {
+        @apply p-3 rounded-lg bg-gray-50 dark:bg-gray-900 cursor-pointer transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 mb-2;
+      }
+      .sg-threat-header {
+        @apply flex items-center mb-2;
+      }
+      .sg-threat-icon {
+        @apply text-xl mr-2;
+      }
+      .sg-threat-info {
+        @apply flex-1;
+      }
+      .sg-threat-name {
+        @apply text-sm font-medium text-gray-800 dark:text-gray-200;
+      }
+      .sg-threat-type {
+        @apply text-xs text-gray-500 dark:text-gray-400;
+      }
+      .sg-threat-priority {
+        @apply font-bold text-sm;
+      }
+      .sg-priority-bar {
+        @apply h-1 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden;
+      }
+      .sg-priority-fill {
+        @apply h-full rounded;
+      }
+      .sg-no-threats {
+        @apply text-sm text-gray-400 dark:text-gray-500 text-center py-2;
+      }
+
+      /* Nearby people */
+      .sg-people-section {
+        @apply mb-4;
+      }
+      .sg-person-card {
+        @apply flex items-center p-2 rounded bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer mb-1;
+      }
+      .sg-person-icon {
+        @apply text-lg mr-2;
+      }
+      .sg-person-info {
+        @apply flex-1;
+      }
+      .sg-person-name {
+        @apply text-sm font-medium text-gray-800 dark:text-gray-200;
+      }
+      .sg-person-rel {
+        @apply text-xs text-gray-500 dark:text-gray-400;
+      }
+
+      /* Actions section */
+      .sg-actions-section {
+        @apply mb-4;
+      }
+      .sg-action-buttons {
+        @apply space-y-2 p-2;
+      }
+
+      /* Event log */
+      .sg-event-log {
+        @apply mt-auto pt-3 border-t border-gray-200 dark:border-gray-700;
+      }
+      .sg-events {
+        @apply space-y-1 max-h-32 overflow-y-auto;
+      }
+      .sg-event {
+        @apply text-xs p-1 rounded;
+      }
+      .sg-event-info {
+        @apply text-gray-600 dark:text-gray-400;
+      }
+      .sg-event-success {
+        @apply text-green-600 dark:text-green-400;
+      }
+      .sg-event-danger {
+        @apply text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30;
+      }
+
+      /* Empty state */
+      .sg-empty-state {
+        @apply flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500 text-center p-4;
+      }
+
+      /* Dialog overlay and modal */
+      .sg-dialog-overlay {
+        @apply fixed inset-0 z-50 flex items-center justify-center bg-black/50;
+      }
+      .sg-dialog {
+        @apply bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 flex flex-col max-h-[80vh];
+      }
+      .sg-dialog-chat {
+        @apply max-w-md h-[60vh];
+      }
+      .sg-dialog-header {
+        @apply flex items-center px-4 py-3 bg-blue-600 text-white rounded-t-lg;
+      }
+      .sg-dialog-close {
+        @apply ml-auto text-xl cursor-pointer hover:opacity-70;
+      }
+      .sg-dialog-content {
+        @apply flex-1 overflow-y-auto p-4;
+      }
+
+      /* Character selection grid */
+      .sg-character-grid {
+        @apply grid grid-cols-3 gap-3;
+      }
+      .sg-character-option {
+        @apply flex flex-col items-center p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 cursor-pointer transition-colors;
+      }
+      .sg-option-portrait {
+        @apply w-16 h-20 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden mb-2;
+      }
+      .sg-option-portrait img {
+        @apply w-full h-full object-cover;
+      }
+      .sg-option-name {
+        @apply text-sm font-medium text-gray-800 dark:text-gray-200 text-center;
+      }
+      .sg-option-info {
+        @apply text-xs text-gray-500 dark:text-gray-400;
+      }
+
+      /* Chat dialog */
+      .sg-chat-messages {
+        @apply flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50 dark:bg-gray-900;
+      }
+      .sg-chat-msg {
+        @apply max-w-[80%] rounded-lg px-3 py-2;
+      }
+      .sg-chat-user {
+        @apply ml-auto bg-blue-600 text-white;
+      }
+      .sg-chat-assistant {
+        @apply bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200;
+      }
+      .sg-chat-system {
+        @apply mx-auto bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 text-center text-sm;
+      }
+      .sg-chat-content {
+        @apply text-sm;
+      }
+      .sg-chat-input {
+        @apply flex gap-2 p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700;
+      }
+      .sg-chat-input input {
+        @apply flex-1 px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200;
+      }
+      .sg-chat-actions {
+        @apply flex justify-end p-3 border-t border-gray-200 dark:border-gray-700;
+      }
+
+      /* Save dialog */
+      .sg-save-list {
+        @apply space-y-2 mb-4;
+      }
+      .sg-save-item {
+        @apply flex items-center space-x-2 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer;
+      }
+      .sg-save-date {
+        @apply ml-auto text-xs text-gray-400;
+      }
+      .sg-no-saves {
+        @apply text-center text-gray-400 py-4;
+      }
+      .sg-new-save {
+        @apply flex gap-2 pt-4 border-t border-gray-200 dark:border-gray-700;
+      }
+      .sg-new-save input {
+        @apply flex-1 px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900;
+      }
+
+      /* ==========================================
          End Card Game Component Classes
          ========================================== */
 

@@ -264,7 +264,10 @@ public class OlioFieldNames {
 	public static final String FIELD_SPIRITUALITY = "spirituality";
 	public static final String FIELD_LUCK = "luck";
 	public static final String FIELD_PERCEPTION = "perception";
+	public static final String FIELD_HEALTH = "health";
+	public static final String FIELD_WILLPOWER = "willpower";
+	public static final String FIELD_STATE = "state";
 
-	
-	
+
+
 }

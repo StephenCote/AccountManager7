@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Game UI Concept - Fight Action</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+    <style>
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+        }
+        .glass-dark {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .combat-panel {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(0,0,0,0.3));
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .health-bar {
+            height: 12px;
+            border-radius: 6px;
+            background: rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+        .health-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+        .health-fill-you {
+            background: linear-gradient(90deg, #22c55e, #4ade80);
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
+        }
+        .health-fill-enemy {
+            background: linear-gradient(90deg, #ef4444, #f87171);
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+        }
+        .stamina-bar {
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(0,0,0,0.5);
+        }
+        .stamina-fill {
+            height: 100%;
+            border-radius: 4px;
+            background: linear-gradient(90deg, #eab308, #facc15);
+        }
+        .action-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: all 0.2s;
+        }
+        .action-btn:hover:not(:disabled) {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-2px);
+        }
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .action-btn.attack {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            border-color: #ef4444;
+        }
+        .action-btn.defend {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border-color: #3b82f6;
+        }
+        .action-btn.flee {
+            background: linear-gradient(135deg, #eab308, #ca8a04);
+            border-color: #eab308;
+        }
+        .portrait-frame-gold {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            padding: 3px;
+            border-radius: 12px;
+        }
+        .portrait-frame-red {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            padding: 3px;
+            border-radius: 12px;
+        }
+        .combat-log-entry {
+            border-left: 3px solid transparent;
+            padding-left: 8px;
+        }
+        .combat-log-you { border-color: #22c55e; }
+        .combat-log-enemy { border-color: #ef4444; }
+        .combat-log-system { border-color: #eab308; }
+        .stat-comparison {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 8px;
+            align-items: center;
+        }
+        .vs-badge {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .dice-roll {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #1e1e1e, #2d2d2d);
+            border: 2px solid #444;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .dice-roll.high { border-color: #22c55e; color: #4ade80; }
+        .dice-roll.low { border-color: #ef4444; color: #f87171; }
+        .dice-roll.mid { border-color: #eab308; color: #facc15; }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .shake { animation: shake 0.3s ease-in-out; }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+        }
+        .pulse-danger { animation: pulse-red 1.5s infinite; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="text-white p-4">
+    <!-- Header Bar - Combat Mode -->
+    <div class="glass-dark rounded-lg px-4 py-2 mb-4 flex items-center justify-between border border-red-500/30">
+        <div class="flex items-center space-x-4">
+            <div class="flex items-center space-x-2 bg-red-500/30 px-3 py-1 rounded-full pulse-danger">
+                <span class="material-symbols-outlined text-red-400">swords</span>
+                <span class="text-red-300 font-bold">COMBAT</span>
+            </div>
+            <div class="text-gray-400 text-sm">Round 3 of 10</div>
+            <div class="flex items-center space-x-1 text-yellow-400 text-sm">
+                <span class="material-symbols-outlined text-base">timer</span>
+                <span>Your Turn</span>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <button class="action-btn flee px-3 py-1 rounded-lg text-sm flex items-center space-x-1">
+                <span class="material-symbols-outlined text-base">directions_run</span>
+                <span>Attempt Flee</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Combat Area -->
+    <div class="grid grid-cols-12 gap-4" style="height: calc(100vh - 140px);">
+
+        <!-- Left Panel - Your Character -->
+        <div class="col-span-3 glass-panel p-4 flex flex-col border border-green-500/20">
+            <div class="text-xs font-semibold text-green-400 mb-3 text-center flex items-center justify-center space-x-1">
+                <span class="material-symbols-outlined text-base">person</span>
+                <span>YOU</span>
+            </div>
+
+            <!-- Portrait -->
+            <div class="flex justify-center mb-3">
+                <div class="portrait-frame-gold">
+                    <div class="w-28 h-36 bg-gray-700 rounded-lg flex items-center justify-center">
+                        <span class="material-symbols-outlined text-5xl text-gray-500">person</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mb-3">
+                <div class="text-xl font-bold">Alexandra Reed</div>
+                <div class="text-sm text-gray-400">Level 3 Artisan</div>
+            </div>
+
+            <!-- Health Bar -->
+            <div class="mb-3">
+                <div class="flex justify-between text-sm mb-1">
+                    <span class="text-green-400 flex items-center">
+                        <span class="material-symbols-outlined text-base mr-1">favorite</span>
+                        Health
+                    </span>
+                    <span class="font-bold">68 / 100</span>
+                </div>
+                <div class="health-bar">
+                    <div class="health-fill health-fill-you" style="width: 68%"></div>
+                </div>
+            </div>
+
+            <!-- Stamina Bar -->
+            <div class="mb-4">
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="text-yellow-400 flex items-center">
+                        <span class="material-symbols-outlined text-sm mr-1">bolt</span>
+                        Stamina
+                    </span>
+                    <span>45 / 60</span>
+                </div>
+                <div class="stamina-bar">
+                    <div class="stamina-fill" style="width: 75%"></div>
+                </div>
+            </div>
+
+            <!-- Combat Stats -->
+            <div class="glass-dark rounded-lg p-3 mb-3">
+                <div class="text-xs font-semibold text-gray-400 mb-2">Combat Stats</div>
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Attack:</span>
+                        <span class="text-red-400 font-bold">12</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Defense:</span>
+                        <span class="text-blue-400 font-bold">8</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Speed:</span>
+                        <span class="text-green-400 font-bold">14</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Luck:</span>
+                        <span class="text-purple-400 font-bold">6</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Equipped Weapon -->
+            <div class="glass-dark rounded-lg p-3">
+                <div class="text-xs font-semibold text-gray-400 mb-2">Weapon</div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-2xl">🗡️</span>
+                    <div>
+                        <div class="font-medium text-sm">Iron Knife</div>
+                        <div class="text-xs text-gray-400">+4 Attack • Fast</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status Effects -->
+            <div class="mt-3 flex flex-wrap gap-1">
+                <span class="text-xs bg-blue-500/30 text-blue-300 px-2 py-1 rounded-full">🛡️ Defending</span>
+            </div>
+        </div>
+
+        <!-- Center Panel - Combat Arena -->
+        <div class="col-span-6 combat-panel rounded-xl p-4 flex flex-col">
+            <!-- VS Display -->
+            <div class="flex items-center justify-center mb-4">
+                <div class="stat-comparison w-full max-w-md">
+                    <div class="text-right">
+                        <div class="text-2xl font-bold text-green-400">Alexandra</div>
+                        <div class="text-sm text-gray-400">68 HP</div>
+                    </div>
+                    <div class="vs-badge">VS</div>
+                    <div class="text-left">
+                        <div class="text-2xl font-bold text-red-400">Grey Wolf</div>
+                        <div class="text-sm text-gray-400">42 HP</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Combat Animation Area -->
+            <div class="flex-1 flex items-center justify-center relative mb-4">
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <!-- Combat visualization placeholder -->
+                    <div class="text-center">
+                        <div class="text-6xl mb-4">⚔️</div>
+                        <div class="text-lg text-yellow-400 font-medium">Choose your action!</div>
+                        <div class="text-sm text-gray-400 mt-1">The wolf circles, looking for an opening...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="glass-dark rounded-lg p-4">
+                <div class="text-xs font-semibold text-gray-400 mb-3 text-center">YOUR ACTIONS</div>
+                <div class="grid grid-cols-4 gap-3">
+                    <button class="action-btn attack py-4 rounded-lg flex flex-col items-center space-y-1">
+                        <span class="material-symbols-outlined text-3xl">swords</span>
+                        <span class="font-bold">Attack</span>
+                        <span class="text-xs opacity-70">12 + d20</span>
+                    </button>
+                    <button class="action-btn defend py-4 rounded-lg flex flex-col items-center space-y-1">
+                        <span class="material-symbols-outlined text-3xl">shield</span>
+                        <span class="font-bold">Defend</span>
+                        <span class="text-xs opacity-70">+5 Def</span>
+                    </button>
+                    <button class="action-btn py-4 rounded-lg flex flex-col items-center space-y-1">
+                        <span class="material-symbols-outlined text-3xl">health_and_safety</span>
+                        <span class="font-bold">Use Item</span>
+                        <span class="text-xs opacity-70">Potion x2</span>
+                    </button>
+                    <button class="action-btn py-4 rounded-lg flex flex-col items-center space-y-1">
+                        <span class="material-symbols-outlined text-3xl">psychology</span>
+                        <span class="font-bold">Special</span>
+                        <span class="text-xs opacity-70">15 Stamina</span>
+                    </button>
+                </div>
+
+                <!-- Special Moves (expandable) -->
+                <div class="mt-3 pt-3 border-t border-white/10">
+                    <div class="text-xs text-gray-400 mb-2">Special Moves:</div>
+                    <div class="flex flex-wrap gap-2">
+                        <button class="action-btn px-3 py-1 rounded text-xs flex items-center space-x-1">
+                            <span class="material-symbols-outlined text-sm text-orange-400">local_fire_department</span>
+                            <span>Power Strike (20 SP)</span>
+                        </button>
+                        <button class="action-btn px-3 py-1 rounded text-xs flex items-center space-x-1">
+                            <span class="material-symbols-outlined text-sm text-blue-400">speed</span>
+                            <span>Quick Dodge (10 SP)</span>
+                        </button>
+                        <button class="action-btn px-3 py-1 rounded text-xs flex items-center space-x-1 opacity-50" disabled>
+                            <span class="material-symbols-outlined text-sm text-purple-400">auto_fix_high</span>
+                            <span>Disarm (35 SP)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel - Enemy & Combat Log -->
+        <div class="col-span-3 flex flex-col space-y-4">
+            <!-- Enemy Info -->
+            <div class="glass-panel p-4 border border-red-500/20">
+                <div class="text-xs font-semibold text-red-400 mb-3 text-center flex items-center justify-center space-x-1">
+                    <span class="material-symbols-outlined text-base">warning</span>
+                    <span>ENEMY</span>
+                </div>
+
+                <!-- Portrait -->
+                <div class="flex justify-center mb-3">
+                    <div class="portrait-frame-red">
+                        <div class="w-24 h-28 bg-gray-800 rounded-lg flex items-center justify-center text-5xl">
+                            🐺
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-center mb-3">
+                    <div class="text-lg font-bold text-red-300">Grey Wolf</div>
+                    <div class="text-xs text-gray-400">Beast • Aggressive</div>
+                </div>
+
+                <!-- Enemy Health -->
+                <div class="mb-3">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="text-red-400">Health</span>
+                        <span class="font-bold">42 / 80</span>
+                    </div>
+                    <div class="health-bar">
+                        <div class="health-fill health-fill-enemy" style="width: 52%"></div>
+                    </div>
+                </div>
+
+                <!-- Enemy Stats -->
+                <div class="glass-dark rounded-lg p-2 text-xs">
+                    <div class="grid grid-cols-2 gap-1">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Attack:</span>
+                            <span class="text-red-400">15</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Defense:</span>
+                            <span class="text-blue-400">5</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Speed:</span>
+                            <span class="text-green-400">18</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Threat:</span>
+                            <span class="text-yellow-400">HIGH</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Enemy Status -->
+                <div class="mt-2 flex flex-wrap gap-1">
+                    <span class="text-xs bg-red-500/30 text-red-300 px-2 py-0.5 rounded-full">🩸 Wounded</span>
+                    <span class="text-xs bg-orange-500/30 text-orange-300 px-2 py-0.5 rounded-full">😤 Enraged</span>
+                </div>
+            </div>
+
+            <!-- Combat Log -->
+            <div class="glass-panel p-4 flex-1 flex flex-col">
+                <div class="text-xs font-semibold text-gray-400 mb-2 flex items-center">
+                    <span class="material-symbols-outlined text-base mr-1">history</span>
+                    COMBAT LOG
+                </div>
+
+                <div class="flex-1 overflow-y-auto space-y-2 text-xs">
+                    <!-- Round 3 -->
+                    <div class="text-gray-500 text-center">— Round 3 —</div>
+
+                    <!-- Round 2 entries -->
+                    <div class="combat-log-entry combat-log-you py-1">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-green-400">You</span>
+                            <span class="text-gray-400">attacked with Iron Knife</span>
+                        </div>
+                        <div class="flex items-center space-x-1 mt-1">
+                            <div class="dice-roll high">17</div>
+                            <span class="text-gray-400">+ 12 ATK =</span>
+                            <span class="text-green-400 font-bold">29 vs 5 DEF</span>
+                            <span class="text-red-400">→ 24 damage!</span>
+                        </div>
+                    </div>
+
+                    <div class="combat-log-entry combat-log-enemy py-1">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-red-400">Wolf</span>
+                            <span class="text-gray-400">lunged with Bite</span>
+                        </div>
+                        <div class="flex items-center space-x-1 mt-1">
+                            <div class="dice-roll mid">12</div>
+                            <span class="text-gray-400">+ 15 ATK =</span>
+                            <span class="text-red-400 font-bold">27 vs 13 DEF</span>
+                            <span class="text-red-400">→ 14 damage!</span>
+                        </div>
+                    </div>
+
+                    <div class="text-gray-500 text-center">— Round 2 —</div>
+
+                    <div class="combat-log-entry combat-log-you py-1">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-green-400">You</span>
+                            <span class="text-gray-400">chose to Defend</span>
+                        </div>
+                        <div class="text-blue-400 mt-1">+5 Defense this round</div>
+                    </div>
+
+                    <div class="combat-log-entry combat-log-enemy py-1">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-red-400">Wolf</span>
+                            <span class="text-gray-400">attacked with Claws</span>
+                        </div>
+                        <div class="flex items-center space-x-1 mt-1">
+                            <div class="dice-roll low">5</div>
+                            <span class="text-gray-400">+ 15 ATK =</span>
+                            <span class="text-yellow-400 font-bold">20 vs 13 DEF</span>
+                            <span class="text-yellow-400">→ 7 damage (reduced)</span>
+                        </div>
+                    </div>
+
+                    <div class="text-gray-500 text-center">— Round 1 —</div>
+
+                    <div class="combat-log-entry combat-log-system py-1">
+                        <span class="text-yellow-400">Combat initiated!</span>
+                        <span class="text-gray-400">Wolf attacks first (Speed 18 vs 14)</span>
+                    </div>
+
+                    <div class="combat-log-entry combat-log-enemy py-1">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-red-400">Wolf</span>
+                            <span class="text-gray-400">surprised you with Pounce</span>
+                        </div>
+                        <div class="text-red-400 mt-1">→ 11 damage!</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer - Combat Status -->
+    <div class="glass-dark rounded-lg px-4 py-3 mt-4 flex items-center justify-between border border-red-500/20">
+        <div class="flex items-center space-x-6">
+            <div class="flex items-center space-x-2">
+                <span class="material-symbols-outlined text-yellow-400">emoji_events</span>
+                <span class="text-sm">Win Chance: <span class="text-green-400 font-bold">67%</span></span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <span class="material-symbols-outlined text-blue-400">shield</span>
+                <span class="text-sm">Flee Chance: <span class="text-yellow-400 font-bold">45%</span></span>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-2 text-sm text-gray-400">
+            <span>Rewards if win:</span>
+            <span class="text-green-400">+25 XP</span>
+            <span class="text-yellow-400">• Wolf Pelt</span>
+            <span class="text-blue-400">• Wolf Meat x2</span>
+        </div>
+    </div>
+
+    <!-- Concept Notes -->
+    <div class="fixed bottom-4 right-4 glass-panel p-3 max-w-xs text-xs">
+        <div class="font-bold text-red-400 mb-1">Fight Action UI Notes:</div>
+        <ul class="text-gray-300 space-y-1">
+            <li>• <strong>Turn-based combat</strong> - Clear action selection</li>
+            <li>• <strong>Dice rolls visible</strong> - Transparent mechanics</li>
+            <li>• <strong>Combat log</strong> - Track what happened</li>
+            <li>• <strong>Status effects</strong> - Buffs/debuffs shown</li>
+            <li>• <strong>Win/flee chances</strong> - Informed decisions</li>
+        </ul>
+    </div>
+</body>
+</html>

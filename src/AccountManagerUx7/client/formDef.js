@@ -3633,6 +3633,12 @@
                 icon: 'auto_awesome',
                 function: 'reimage',
                 requiredAttribute: "objectId"
+            },
+            outfitBuilder: {
+                label: 'Outfit Builder',
+                icon: 'checkroom',
+                function: 'showOutfitBuilder',
+                requiredAttribute: "objectId"
             }
         },
         fields: {

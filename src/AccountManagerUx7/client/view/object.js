@@ -1527,6 +1527,12 @@
             }
         };
 
+        objectPage.showOutfitBuilder = async function(name, field, tableType, tableForm, props){
+            if(inst && page.components.dialog.showOutfitBuilder){
+                page.components.dialog.showOutfitBuilder(entity, inst);
+            }
+        };
+
         objectPage.loadApparelGallery = async function(name, field) {
             console.log("Load gallery");
             if(entity.gallery && entity.gallery.length) return entity.gallery;
