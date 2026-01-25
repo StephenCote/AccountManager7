@@ -624,61 +624,76 @@
         let galleryImages = images || [];
         let characterInstance = charInst;
 
-        // If charInst is provided, try to load all images from the portrait's group
+        // If charInst is provided, try to load all images from the appropriate source
         if(characterInstance && characterInstance.entity){
-            let profile = characterInstance.entity.profile;
-            let portrait = profile ? profile.portrait : null;
-            let profileObjectId = profile ? profile.objectId : null;
+            let entity = characterInstance.entity;
+            let entitySchema = entity[am7model.jsonModelKey] || entity.schema;
 
-            // If profile exists but portrait isn't loaded, or profile is just a reference,
-            // query for the profile with portrait attribute
-            if(profileObjectId && (!portrait || !portrait.groupId)){
-                let pq = am7view.viewQuery("identity.profile");
-                pq.field("objectId", profileObjectId);
-                pq.entity.request.push("portrait");
-                let pqr = await page.search(pq);
-                if(pqr && pqr.results && pqr.results.length){
-                    portrait = pqr.results[0].portrait;
-                    // Update the entity's profile portrait reference
-                    if(!characterInstance.entity.profile){
-                        characterInstance.entity.profile = pqr.results[0];
-                    } else {
-                        characterInstance.entity.profile.portrait = portrait;
-                    }
-                    if(!portrait){
-                        console.warn("imageGallery: Profile query returned but no portrait found");
-                    }
-                } else {
-                    console.warn("imageGallery: Profile query returned no results for objectId: " + profileObjectId);
-                }
-            } else if(!profileObjectId){
-                console.warn("imageGallery: No profile objectId available", profile);
-            }
-
-            if(portrait && portrait.groupId){
-                // Query for all images in the same group as the portrait
-                //let q = am7view.viewQuery(am7model.newInstance("data.data"));
-                let q = am7client.newQuery("data.data")
-                q.field("groupId", portrait.groupId);
-                //q.field("contentType", "image/%");
-                q.entity.request.push("id", "objectId", "name", "groupId", "groupPath", "contentType", "attributes", "tags");
-                
-                q.range(0, 200);
-                q.sort("createdDate");
-                q.order("descending");
-                let qr = await page.search(q);
-                if(qr && qr.results && qr.results.length){
+            // Check if this is an apparel entity (use gallery field directly)
+            if(entitySchema === "olio.apparel"){
+                let gallery = entity.gallery || [];
+                if(gallery.length > 0){
                     // Put any new images (passed in) at the beginning, avoiding duplicates
-                    let existingIds = new Set(qr.results.map(r => r.id));
+                    let existingIds = new Set(gallery.map(r => r.id));
                     let newImages = galleryImages.filter(img => !existingIds.has(img.id));
-                    galleryImages = [...newImages, ...qr.results];
-                } else {
-                    console.warn("imageGallery: No images found in group: " + portrait.groupId);
+                    galleryImages = [...newImages, ...gallery];
                 }
-            } else if(portrait && !portrait.groupId){
-                console.warn("imageGallery: Portrait exists but no groupId", portrait);
-            } else if(!portrait){
-                console.warn("imageGallery: No portrait available after all attempts");
+                // If we have images passed in, use those even if gallery is empty
+            }
+            // Otherwise, handle charPerson entities (use profile.portrait)
+            else {
+                let profile = entity.profile;
+                let portrait = profile ? profile.portrait : null;
+                let profileObjectId = profile ? profile.objectId : null;
+
+                // If profile exists but portrait isn't loaded, or profile is just a reference,
+                // query for the profile with portrait attribute
+                if(profileObjectId && (!portrait || !portrait.groupId)){
+                    let pq = am7view.viewQuery("identity.profile");
+                    pq.field("objectId", profileObjectId);
+                    pq.entity.request.push("portrait");
+                    let pqr = await page.search(pq);
+                    if(pqr && pqr.results && pqr.results.length){
+                        portrait = pqr.results[0].portrait;
+                        // Update the entity's profile portrait reference
+                        if(!characterInstance.entity.profile){
+                            characterInstance.entity.profile = pqr.results[0];
+                        } else {
+                            characterInstance.entity.profile.portrait = portrait;
+                        }
+                        if(!portrait){
+                            console.warn("imageGallery: Profile query returned but no portrait found");
+                        }
+                    } else {
+                        console.warn("imageGallery: Profile query returned no results for objectId: " + profileObjectId);
+                    }
+                } else if(!profileObjectId){
+                    console.warn("imageGallery: No profile objectId available", profile);
+                }
+
+                if(portrait && portrait.groupId){
+                    // Query for all images in the same group as the portrait
+                    let q = am7client.newQuery("data.data")
+                    q.field("groupId", portrait.groupId);
+                    q.entity.request.push("id", "objectId", "name", "groupId", "groupPath", "contentType", "attributes", "tags");
+
+                    q.range(0, 200);
+                    q.sort("createdDate");
+                    q.order("descending");
+                    let qr = await page.search(q);
+                    if(qr && qr.results && qr.results.length){
+                        // Put any new images (passed in) at the beginning, avoiding duplicates
+                        let existingIds = new Set(qr.results.map(r => r.id));
+                        let newImages = galleryImages.filter(img => !existingIds.has(img.id));
+                        galleryImages = [...newImages, ...qr.results];
+                    } else {
+                        console.warn("imageGallery: No images found in group: " + portrait.groupId);
+                    }
+                } else if(portrait && !portrait.groupId){
+                    console.warn("imageGallery: Portrait exists but no groupId", portrait);
+                } else if(!portrait){
+                    console.warn("imageGallery: No portrait available after all attempts");
+                }
             }
         } else {
             console.warn("imageGallery: No characterInstance or entity provided", characterInstance);

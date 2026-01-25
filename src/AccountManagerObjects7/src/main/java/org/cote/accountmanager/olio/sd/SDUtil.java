@@ -706,10 +706,32 @@ public class SDUtil {
 		int rando = Math.abs(rand.nextInt());
 		long useSeed = seed > 0 ? seed : Math.abs(rand.nextLong());
 
-		// Use sdConfig values or defaults
-		BaseRecord config = sdConfig != null ? sdConfig : randomSDConfig();
+		// Always start with a properly initialized config (with defaults), then merge any overrides
+		BaseRecord config = randomSDConfig();
+		if(sdConfig != null) {
+			// Copy any style-related values from the incoming config
+			String style = sdConfig.get("style");
+			if(style != null) config.setValue("style", style);
+			// Also copy hires, seed if provided
+			Object hiresObj = sdConfig.get("hires");
+			if(hiresObj != null) config.setValue("hires", hiresObj);
+		}
 
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+
+		// Get config values with fallbacks for required fields
+		Integer cfgSteps = config.get("steps");
+		String cfgModel = config.get("model");
+		String cfgScheduler = config.get("scheduler");
+		String cfgSampler = config.get("sampler");
+		Integer cfgCfg = config.get("cfg");
+
+		// Apply defaults if model schema defaults weren't applied
+		if(cfgSteps == null) cfgSteps = 20;
+		if(cfgModel == null) cfgModel = "sdXL_v10VAEFix.safetensors";
+		if(cfgScheduler == null) cfgScheduler = "normal";
+		if(cfgSampler == null) cfgSampler = "dpmpp_2m";
+		if(cfgCfg == null) cfgCfg = 7;
 
 		// Generate one image per cumulative level
 		for(WearLevelEnumType level : levels) {
@@ -721,12 +743,12 @@ public class SDUtil {
 			s2i.setNegativePrompt(negPrompt);
 			s2i.setWidth(512);
 			s2i.setHeight(768);
-			s2i.setSteps(config.get("steps"));
-			s2i.setModel(config.get("model"));
-			s2i.setScheduler(config.get("scheduler"));
-			s2i.setSampler(config.get("sampler"));
-			s2i.setCfgScale(config.get("cfg"));
-			s2i.setSeed((int)useSeed);
+			s2i.setSteps(cfgSteps);
+			s2i.setModel(cfgModel);
+			s2i.setScheduler(cfgScheduler);
+			s2i.setSampler(cfgSampler);
+			s2i.setCfgScale(cfgCfg);
+			s2i.setSeed((int)(useSeed & 0x7FFFFFFF));  // Ensure positive int
 			s2i.setImages(1);
 
 			if(hires && config.get("refinerModel") != null) {
@@ -746,10 +768,18 @@ public class SDUtil {
 			String name = apparelName + " - " + level.toString() + " - " + rando + " - " + useSeed;
 
 			try {
-				logger.info("Generating mannequin image: " + name);
+				logger.info("Generating mannequin image: " + name + " model=" + cfgModel + " steps=" + cfgSteps);
+				if(logger.isDebugEnabled()) {
+					logger.debug("Prompt: " + prompt);
+				}
 				SWImageResponse rep = txt2img(s2i);
-				if(rep == null || rep.getImages() == null || rep.getImages().isEmpty()) {
-					logger.error("No images returned for level " + level);
+				if(rep == null) {
+					logger.error("Null response from txt2img for level " + level + " - check SWarm server connection");
+					useSeed++;
+					continue;
+				}
+				if(rep.getImages() == null || rep.getImages().isEmpty()) {
+					logger.error("No images in response for level " + level);
 					useSeed++;
 					continue;
 				}

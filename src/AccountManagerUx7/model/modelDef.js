@@ -6602,7 +6602,7 @@
       "inherits": [
         "common.name",
         "common.groupExt",
-        "common.description",
+        "common.description2K",
         "common.baseLight"
       ],
       "group": "Apparel",
@@ -6655,6 +6655,14 @@
         {
           "name": "inuse",
           "type": "boolean"
+        },
+        {
+          "name": "gallery",
+          "type": "list",
+          "baseType": "model",
+          "baseModel": "data.data",
+          "foreign": true,
+          "description": "Gallery of images for this apparel at different wear levels"
         }
       ]
     },

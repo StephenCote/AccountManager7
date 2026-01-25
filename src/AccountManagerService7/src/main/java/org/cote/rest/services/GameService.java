@@ -1,6 +1,10 @@
 package org.cote.rest.services;
 
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -9,12 +13,19 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.CivilUtil;
+import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.PersonalityProfile;
+import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.ThreatEnumType;
+import org.cote.accountmanager.olio.ThreatUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -318,5 +329,322 @@ public class GameService {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/// Get the full situation for a character - location, nearby grid, threats, people, POIs, needs.
+	/// This is the single endpoint the card game uses to get everything it needs.
+	///
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/situation/{objectId:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getSituation(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		BaseRecord person = findCharacter(user, objectId);
+		if(person == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		BaseRecord state = person.get(FieldNames.FIELD_STATE);
+		if(state == null) {
+			return Response.status(500).entity("{\"error\":\"Character has no state\"}").build();
+		}
+
+		BaseRecord currentLoc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		if(currentLoc == null) {
+			return Response.status(500).entity("{\"error\":\"Character has no location\"}").build();
+		}
+
+		// Find the realm for this character
+		List<BaseRecord> realms = octx.getRealms();
+		BaseRecord realm = realms.isEmpty() ? null : realms.get(0);
+		if(realm == null) {
+			return Response.status(500).entity("{\"error\":\"No realm found\"}").build();
+		}
+
+		// Get total population and build profiles
+		List<BaseRecord> pop = octx.getRealmPopulation(realm);
+		Map<BaseRecord, PersonalityProfile> profiles = new HashMap<>();
+		for(BaseRecord p : pop) {
+			profiles.put(p, ProfileUtil.getProfile(octx, p));
+		}
+		PersonalityProfile playerProfile = profiles.get(person);
+
+		// Get nearby characters and cells
+		List<BaseRecord> adjacentCells = GeoLocationUtil.getAdjacentCells(octx, currentLoc, 3);
+		List<BaseRecord> nearbyPeople = GeoLocationUtil.limitToAdjacent(octx, pop, currentLoc);
+
+		// Evaluate threats
+		BaseRecord epoch = octx.clock().getEpoch();
+		Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(octx, realm, epoch, profiles, playerProfile);
+
+		// Build response as a Map
+		try {
+			Map<String, Object> result = new HashMap<>();
+			result.put("character", person);
+			result.put("state", state);
+			result.put("location", currentLoc);
+			result.put("nearbyPeople", nearbyPeople);
+			result.put("adjacentCells", adjacentCells);
+
+			// Convert threats map to JSON-friendly format
+			List<Map<String, Object>> threatList = new ArrayList<>();
+			if(threats != null) {
+				for(Map.Entry<ThreatEnumType, List<BaseRecord>> entry : threats.entrySet()) {
+					for(BaseRecord src : entry.getValue()) {
+						Map<String, Object> t = new HashMap<>();
+						t.put("type", entry.getKey().toString());
+						t.put("source", src.get(FieldNames.FIELD_OBJECT_ID));
+						t.put("sourceName", src.get(FieldNames.FIELD_NAME));
+						threatList.add(t);
+					}
+				}
+			}
+			result.put("threats", threatList);
+
+			// Get needs
+			Map<String, Double> needs = new HashMap<>();
+			needs.put("hunger", state.get("hunger"));
+			needs.put("thirst", state.get("thirst"));
+			needs.put("fatigue", state.get("fatigue"));
+			needs.put("health", state.get("health"));
+			needs.put("energy", state.get("energy"));
+			result.put("needs", needs);
+
+			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+		} catch(Exception e) {
+			logger.error("Failed to build situation response", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Resolve an action for a character. Checks for interrupts from higher-priority threats.
+	/// JSON body: { "targetId": "uuid", "actionType": "TALK" }
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/resolve/{objectId:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response resolveAction(@PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		BaseRecord person = findCharacter(user, objectId);
+		if(person == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String targetId = params.get("targetId");
+		String actionTypeStr = params.get("actionType");
+		if(targetId == null || actionTypeStr == null) {
+			return Response.status(400).entity("{\"error\":\"targetId and actionType required\"}").build();
+		}
+
+		BaseRecord target = findCharacter(user, targetId);
+		if(target == null) {
+			return Response.status(404).entity("{\"error\":\"Target not found\"}").build();
+		}
+
+		InteractionEnumType actionType;
+		try {
+			actionType = InteractionEnumType.valueOf(actionTypeStr.toUpperCase());
+		} catch(IllegalArgumentException e) {
+			return Response.status(400).entity("{\"error\":\"Invalid actionType\"}").build();
+		}
+
+		// Calculate chosen action priority
+		double chosenPriority = getActionPriority(actionType);
+
+		// Check for interrupts from pending threats
+		BaseRecord state = person.get(FieldNames.FIELD_STATE);
+		BaseRecord currentLoc = state != null ? state.get(OlioFieldNames.FIELD_CURRENT_LOCATION) : null;
+
+		List<BaseRecord> realms = octx.getRealms();
+		BaseRecord realm = realms.isEmpty() ? null : realms.get(0);
+
+		boolean interrupted = false;
+		String interruptType = null;
+		BaseRecord interruptSource = null;
+
+		if(realm != null && currentLoc != null) {
+			// Get nearby animals as potential interrupters
+			List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
+			if(zoo != null) {
+				List<BaseRecord> nearbyAnimals = GeoLocationUtil.limitToAdjacent(octx, zoo, currentLoc);
+				SecureRandom rand = new SecureRandom();
+				for(BaseRecord animal : nearbyAnimals) {
+					double threatPriority = 0.8; // ANIMAL_THREAT priority
+					double interruptChance = (threatPriority - chosenPriority) * 0.9;
+					if(rand.nextDouble() < interruptChance) {
+						interrupted = true;
+						interruptType = "ANIMAL_THREAT";
+						interruptSource = animal;
+						break;
+					}
+				}
+			}
+		}
+
+		try {
+			Map<String, Object> response = new HashMap<>();
+
+			if(interrupted) {
+				response.put("interrupted", true);
+				response.put("interruptType", interruptType);
+				response.put("interruptSource", interruptSource != null ? interruptSource.get(FieldNames.FIELD_NAME) : null);
+				response.put("result", null);
+			} else {
+				BaseRecord interaction = InteractionUtil.resolveInteraction(octx, person, target, actionType);
+				response.put("interrupted", false);
+				response.put("result", interaction);
+			}
+
+			return Response.status(200).entity(JSONUtil.exportObject(response)).build();
+		} catch(OlioException e) {
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Move character one cell in a direction (N, S, E, W).
+	/// JSON body: { "direction": "N" }
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/move/{objectId:[0-9A-Za-z\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response moveCharacter(@PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		BaseRecord person = findCharacter(user, objectId);
+		if(person == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String direction = params.get("direction");
+		if(direction == null) {
+			return Response.status(400).entity("{\"error\":\"direction required (N, S, E, W)\"}").build();
+		}
+
+		BaseRecord state = person.get(FieldNames.FIELD_STATE);
+		if(state == null) {
+			return Response.status(500).entity("{\"error\":\"Character has no state\"}").build();
+		}
+
+		// Get current position
+		int east = state.get("currentEast");
+		int north = state.get("currentNorth");
+
+		// Apply movement
+		switch(direction.toUpperCase()) {
+			case "N": north++; break;
+			case "S": north--; break;
+			case "E": east++; break;
+			case "W": east--; break;
+			default:
+				return Response.status(400).entity("{\"error\":\"Invalid direction: " + direction + "\"}").build();
+		}
+
+		// Update state
+		state.setValue("currentEast", east);
+		state.setValue("currentNorth", north);
+
+		// Apply fatigue cost for movement
+		double fatigue = state.get("fatigue");
+		state.setValue("fatigue", Math.min(1.0, fatigue + 0.01));
+
+		Queue.queueUpdate(state, new String[]{"currentEast", "currentNorth", "fatigue"});
+		Queue.processQueue(user);
+
+		// Return updated situation
+		return getSituation(objectId, request);
+	}
+
+	/// Generate a context-aware outfit for a character.
+	/// JSON body: { "characterId": "uuid", "techTier": 2, "climate": "TEMPERATE" }
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/outfit/generate")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response generateOutfit(String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String characterId = params.get("characterId");
+		if(characterId == null) {
+			return Response.status(400).entity("{\"error\":\"characterId required\"}").build();
+		}
+
+		BaseRecord person = findCharacter(user, characterId);
+		if(person == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		// Get tier and climate from params or defaults
+		int techTier = 2;
+		Object tierObj = params.get("techTier");
+		if(tierObj instanceof Number) {
+			techTier = ((Number)tierObj).intValue();
+		}
+
+		String climateStr = params.get("climate");
+		if(climateStr == null) {
+			climateStr = "TEMPERATE";
+		}
+
+		// Generate the outfit using string climate
+		BaseRecord apparel = ApparelUtil.contextApparel(octx, person, techTier, CivilUtil.getClimateForTerrain(climateStr));
+		if(apparel == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to generate apparel\"}").build();
+		}
+
+		return Response.status(200).entity(apparel.toFullString()).build();
+	}
+
+	private double getActionPriority(InteractionEnumType type) {
+		switch(type) {
+			case COMBAT: return 0.9;
+			case CONFLICT: return 0.85;
+			case DEFEND: return 0.8;
+			case THREATEN: return 0.6;
+			case NEGOTIATE: return 0.5;
+			case BARTER: return 0.4;
+			case COMMERCE: return 0.4;
+			case COMMUNICATE: return 0.3;
+			case HELP: return 0.35;
+			case INVESTIGATE: return 0.2;
+			case SOCIALIZE: return 0.25;
+			default: return 0.3;
+		}
 	}
 }
