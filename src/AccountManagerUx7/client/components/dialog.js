@@ -1673,7 +1673,7 @@
         let cloudView = {
             view: function(){
                 if(cloudMode){
-                    return m("div", {style: "padding: 20px; text-align: center; line-height: 1.4;"},
+                    return m("div", {style: "padding: 20px; text-align: center; line-height: 1.4; max-height: 60vh; overflow-y: auto;"},
                         stats.map(function(stat){
                             let size = fontSize(stat.count);
                             let bg = cloudColor(stat.count);
@@ -1713,7 +1713,7 @@
                         ]),
                         m("span", {style: "color: #666;"}, selectedStat.count + " member" + (selectedStat.count != 1 ? "s" : ""))
                     ]),
-                    m("div", {class: "cloud-members"},
+                    m("div", {class: "cloud-members", style: "max-height: 50vh; overflow-y: auto;"},
                         memberList.length == 0 ? m("em", "Loading members...") :
                         m("ul", {style: "list-style: none; padding: 0; margin: 0;"},
                             memberList.map(function(mem){

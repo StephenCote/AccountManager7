@@ -33,6 +33,7 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 
@@ -40,6 +41,7 @@ import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -125,8 +127,16 @@ public class GameService {
 			return Response.status(500).entity("{\"error\":\"Character has no state record\"}").build();
 		}
 
+		// Reset state values for a fresh start
 		state.setValue("playerControlled", true);
-		Queue.queueUpdate(state, new String[]{"playerControlled"});
+		state.setValue("health", 1.0);
+		state.setValue("energy", 1.0);
+		state.setValue("hunger", 0.0);
+		state.setValue("thirst", 0.0);
+		state.setValue("fatigue", 0.0);
+		state.setValue("alive", true);
+		state.setValue("awake", true);
+		Queue.queueUpdate(state, new String[]{"playerControlled", "health", "energy", "hunger", "thirst", "fatigue", "alive", "awake"});
 		Queue.processQueue(user);
 
 		return Response.status(200).entity(state.toFullString()).build();
@@ -450,6 +460,7 @@ public class GameService {
 	@RolesAllowed({"user"})
 	@POST
 	@Path("/resolve/{objectId:[0-9A-Za-z\\-]+}")
+	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response resolveAction(@PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -545,6 +556,7 @@ public class GameService {
 	@RolesAllowed({"user"})
 	@POST
 	@Path("/move/{objectId:[0-9A-Za-z\\-]+}")
+	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response moveCharacter(@PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -600,6 +612,87 @@ public class GameService {
 
 		// Return updated situation
 		return getSituation(objectId, request);
+	}
+
+	/// Investigate the current location. Reveals nearby entities based on perception.
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/investigate/{objectId:[0-9A-Za-z\\-]+}")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response investigateLocation(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		BaseRecord person = findCharacter(user, objectId);
+		if(person == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		BaseRecord state = person.get(FieldNames.FIELD_STATE);
+		if(state == null) {
+			return Response.status(500).entity("{\"error\":\"Character has no state\"}").build();
+		}
+
+		BaseRecord currentLoc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		if(currentLoc == null) {
+			return Response.status(500).entity("{\"error\":\"Character has no location\"}").build();
+		}
+
+		// Get character's perception stat for investigation quality
+		BaseRecord stats = person.get(OlioFieldNames.FIELD_STATISTICS);
+		int perception = stats != null ? stats.get("perception") : 10;
+
+		// Find realm
+		List<BaseRecord> realms = octx.getRealms();
+		BaseRecord realm = realms.isEmpty() ? null : realms.get(0);
+		if(realm == null) {
+			return Response.status(500).entity("{\"error\":\"No realm found\"}").build();
+		}
+
+		// Get population and nearby entities
+		List<BaseRecord> pop = octx.getRealmPopulation(realm);
+		List<BaseRecord> nearbyPeople = GeoLocationUtil.limitToAdjacent(octx, pop, currentLoc);
+
+		// Apply fatigue cost for investigation
+		double fatigue = state.get("fatigue");
+		state.setValue("fatigue", Math.min(1.0, fatigue + 0.02));
+		Queue.queueUpdate(state, new String[]{"fatigue"});
+		Queue.processQueue(user);
+
+		// Build investigation result
+		Map<String, Object> result = new HashMap<>();
+		result.put("location", currentLoc);
+		result.put("terrain", currentLoc.get("terrainType"));
+		result.put("perception", perception);
+
+		// Description of what was found
+		List<String> discoveries = new ArrayList<>();
+		String terrain = currentLoc.get("terrainType");
+		discoveries.add("You carefully examine the " + (terrain != null ? terrain.toLowerCase() : "area") + " around you.");
+
+		// Report nearby people based on perception
+		if(nearbyPeople.size() > 0) {
+			int detected = Math.min(nearbyPeople.size(), perception / 5 + 1);
+			discoveries.add("You notice " + detected + " " + (detected == 1 ? "person" : "people") + " nearby.");
+		} else {
+			discoveries.add("The area appears to be deserted.");
+		}
+
+		// Check for POIs in the area
+		List<BaseRecord> pois = octx.getPointsOfInterest();
+		if(pois != null && pois.size() > 0) {
+			discoveries.add("You spot some points of interest in the vicinity.");
+		}
+
+		result.put("discoveries", discoveries);
+		result.put("nearbyCount", nearbyPeople.size());
+
+		return Response.status(200).entity(JSONUtil.exportObject(result)).build();
 	}
 
 	/// Generate a context-aware outfit for a character.
@@ -956,7 +1049,7 @@ public class GameService {
 
 		try {
 			// Get or create the user's game saves group
-			BaseRecord saveDir = IOSystem.getActiveContext().getPathUtil().makePath(user, "DATA", "~/GameSaves", "auth.group", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			BaseRecord saveDir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/GameSaves", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			if(saveDir == null) {
 				return Response.status(200).entity("{\"saves\":[]}").build();
 			}
@@ -994,23 +1087,25 @@ public class GameService {
 	@POST
 	@Path("/save")
 	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	@SuppressWarnings("unchecked")
 	public Response saveGame(String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
-		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		Map<String, Object> params = JSONUtil.importObject(json, Map.class);
 		if(params == null) {
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
 
-		String saveName = params.get("name");
-		String characterId = params.get("characterId");
+		String saveName = (String) params.get("name");
+		String characterId = (String) params.get("characterId");
 		if(saveName == null || saveName.isEmpty()) {
 			saveName = "Save " + System.currentTimeMillis();
 		}
 
 		try {
 			// Get or create the user's game saves group
-			BaseRecord saveDir = IOSystem.getActiveContext().getPathUtil().makePath(user, "DATA", "~/GameSaves", "auth.group", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			BaseRecord saveDir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/GameSaves", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 
 			// Create save data
 			Map<String, Object> saveData = new HashMap<>();

@@ -420,13 +420,52 @@
                     " YOUR CHARACTER"
                 ]),
 
-                // Portrait
-                m("div", {class: "sg-portrait-frame"}, [
+                // Portrait with overlay buttons
+                m("div", {class: "sg-portrait-frame", style: "position: relative;"}, [
                     portrait ?
                         m("img", {src: portrait, class: "sg-portrait-img"}) :
                         m("div", {class: "sg-portrait-placeholder"}, [
                             m("span", {class: "material-symbols-outlined"}, "person")
+                        ]),
+                    // Overlay buttons on portrait
+                    m("div", {style: "position: absolute; bottom: 4px; right: 4px; display: flex; flex-direction: column; gap: 4px;"}, [
+                        // View/Edit button
+                        m("button", {
+                            class: "sg-btn sg-btn-small sg-btn-icon",
+                            style: "opacity: 0.8;",
+                            onclick: function(e) {
+                                e.stopPropagation();
+                                window.open("#/view/olio.charPerson/" + player.objectId, "_blank");
+                            },
+                            title: "View/Edit Character"
+                        }, [
+                            m("span", {class: "material-symbols-outlined"}, "open_in_new")
+                        ]),
+                        // Reimage button
+                        m("button", {
+                            class: "sg-btn sg-btn-small sg-btn-icon",
+                            style: "opacity: 0.8;",
+                            onclick: async function(e) {
+                                e.stopPropagation();
+                                page.toast("info", "Generating new portrait...");
+                                try {
+                                    await m.request({
+                                        method: 'GET',
+                                        url: g_application_path + "/rest/olio/charPerson/" + player.objectId + "/reimage/false",
+                                        withCredentials: true
+                                    });
+                                    page.toast("success", "Portrait regenerated!");
+                                    await loadSituation();
+                                    m.redraw();
+                                } catch (e) {
+                                    page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
+                                }
+                            },
+                            title: "Reimage Portrait"
+                        }, [
+                            m("span", {class: "material-symbols-outlined"}, "auto_awesome")
                         ])
+                    ])
                 ]),
 
                 // Name and info
@@ -452,58 +491,14 @@
                     m("div", {class: "sg-section-label"}, "LOCATION"),
                     m("div", {class: "sg-location-info"}, [
                         m("span", {class: "sg-terrain-icon"},
-                            TERRAIN_ICONS[situation.location.terrain] || TERRAIN_ICONS.UNKNOWN),
-                        m("span", situation.location.feature || situation.location.terrain || "Unknown")
+                            TERRAIN_ICONS[situation.location.terrainType] || TERRAIN_ICONS.UNKNOWN),
+                        m("span", situation.location.feature || situation.location.terrainType || "Unknown")
                     ]),
-                    situation.location.climate ?
+                    situation.climate ?
                         m("div", {class: "sg-climate-info"},
-                            situation.location.climate + " climate") : null
+                            situation.climate + " climate") : null
                 ]) : null,
 
-                // Character actions
-                m("div", {class: "sg-panel-footer"}, [
-                    m("button", {
-                        class: "sg-btn sg-btn-small sg-btn-icon",
-                        onclick: function() {
-                            // Navigate to character object view
-                            m.route.set("/app/object/olio.charPerson/" + player.objectId);
-                        },
-                        title: "View/Edit Character"
-                    }, [
-                        m("span", {class: "material-symbols-outlined"}, "open_in_new")
-                    ]),
-                    m("button", {
-                        class: "sg-btn sg-btn-small sg-btn-icon",
-                        onclick: async function() {
-                            // Reimage character using OlioService endpoint
-                            page.toast("info", "Generating new portrait...");
-                            try {
-                                await m.request({
-                                    method: 'GET',
-                                    url: g_application_path + "/rest/olio/charPerson/" + player.objectId + "/reimage/false",
-                                    withCredentials: true
-                                });
-                                page.toast("success", "Portrait regenerated!");
-                                // Reload the character to get new portrait
-                                await loadSituation();
-                                m.redraw();
-                            } catch (e) {
-                                page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
-                            }
-                        },
-                        title: "Reimage Portrait"
-                    }, [
-                        m("span", {class: "material-symbols-outlined"}, "auto_awesome")
-                    ]),
-                    m("button", {
-                        class: "sg-btn sg-btn-small",
-                        onclick: function() {
-                            characterSelectOpen = true;
-                            loadAvailableCharacters();
-                        },
-                        title: "Change Character"
-                    }, "Change")
-                ])
             ]);
         }
     };
@@ -592,7 +587,7 @@
                 if (hasPerson && !hasThreat) cellClass += " sg-cell-person";
 
                 // Determine what to display
-                let content = TERRAIN_ICONS[cell.terrain] || TERRAIN_ICONS.UNKNOWN;
+                let content = TERRAIN_ICONS[cell.terrainType] || TERRAIN_ICONS.UNKNOWN;
                 if (isCenter) content = "\u2B50"; // Star for player
                 else if (hasThreat && cell.occupants) {
                     let threat = cell.occupants.find(function(o) { return o.threatType; });
@@ -822,8 +817,7 @@
                         class: "sg-btn sg-btn-small sg-btn-icon",
                         onclick: function() {
                             let modelType = isPerson ? "olio.charPerson" : "olio.animal";
-                            let url = window.location.origin + g_application_path + "/#/app/object/" + modelType + "/" + entityId;
-                            window.open(url, "_blank");
+                            window.open("#/view/" + modelType + "/" + entityId, "_blank");
                         },
                         title: "View/Edit (new tab)"
                     }, [
@@ -877,9 +871,28 @@
 
     async function executeAction(actionType) {
         if (!player || !selectedEntity) {
-            // Some actions don't need a target
-            if (actionType === "INVESTIGATE" || actionType === "WATCH") {
-                addEvent("Looking around...", "info");
+            // Investigate and Watch don't need a target
+            if (actionType === "INVESTIGATE") {
+                try {
+                    let resp = await m.request({
+                        method: 'POST',
+                        url: g_application_path + "/rest/game/investigate/" + player.objectId,
+                        withCredentials: true
+                    });
+                    if (resp && resp.discoveries) {
+                        resp.discoveries.forEach(function(d) {
+                            addEvent(d, "info");
+                        });
+                    }
+                    await loadSituation();
+                } catch (e) {
+                    console.error("Failed to investigate", e);
+                    page.toast("error", "Investigation failed: " + e.message);
+                }
+                return;
+            }
+            if (actionType === "WATCH") {
+                addEvent("You keep watch over the area...", "info");
                 await loadSituation();
                 return;
             }
@@ -1065,7 +1078,7 @@
                     situation && situation.location ?
                         m("span", {class: "sg-header-item"}, [
                             m("span", {class: "material-symbols-outlined"}, "location_on"),
-                            " " + (situation.location.feature || situation.location.terrain || "Unknown")
+                            " " + (situation.location.feature || situation.location.terrainType || "Unknown")
                         ]) : null
                 ]),
                 m("div", {class: "sg-header-right"}, [
@@ -1097,6 +1110,12 @@
                 onclick: function() {
                     saveDialogOpen = true;
                     loadSavedGames();
+                    // Suggest a save name based on player and date
+                    if (player && player.name) {
+                        let d = new Date();
+                        let dateStr = (d.getMonth() + 1) + "/" + d.getDate();
+                        newSaveName = player.name + " - " + dateStr;
+                    }
                 }
             }, [
                 m("span", {class: "material-symbols-outlined material-icons-24"}, "folder_open"),

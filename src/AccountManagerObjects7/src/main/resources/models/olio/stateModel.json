@@ -70,6 +70,7 @@
 			"type": "double",
 			"minValue": 0,
 			"maxValue": 1,
+			"default": 0.0,
 			"description": "Hunger level (0 = sated, 1 = starving). Accumulates per increment, reduced by consuming food.",
 			"validateRange": true
 		},
@@ -78,6 +79,7 @@
 			"type": "double",
 			"minValue": 0,
 			"maxValue": 1,
+			"default": 0.0,
 			"description": "Thirst level (0 = hydrated, 1 = parched). Accumulates per increment, reduced by consuming water.",
 			"validateRange": true
 		},
@@ -86,6 +88,7 @@
 			"type": "double",
 			"minValue": 0,
 			"maxValue": 1,
+			"default": 0.0,
 			"description": "Fatigue level (0 = rested, 1 = exhausted). Accumulates with actions and wakefulness, reduced by sleep.",
 			"validateRange": true
 		},
