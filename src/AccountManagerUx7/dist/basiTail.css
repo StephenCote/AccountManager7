@@ -5724,19 +5724,6 @@ button.button-tab-active:hover:is(.dark *) {
 
 /* Panel footer */
 
-.sg-panel-footer {
-  margin-top: auto;
-  border-top-width: 1px;
-  --tw-border-opacity: 1;
-  border-color: rgb(229 231 235 / var(--tw-border-opacity, 1));
-  padding-top: 0.75rem;
-}
-
-.sg-panel-footer:is(.dark *) {
-  --tw-border-opacity: 1;
-  border-color: rgb(55 65 81 / var(--tw-border-opacity, 1));
-}
-
 /* Buttons */
 
 .sg-btn {
@@ -6289,6 +6276,15 @@ button.button-tab-active:hover:is(.dark *) {
   margin-right: 0.5rem;
   font-size: 1.125rem;
   line-height: 1.75rem;
+}
+
+.sg-person-portrait {
+  margin-right: 0.5rem;
+  height: 2.5rem;
+  width: 2.5rem;
+  border-radius: 9999px;
+  -o-object-fit: cover;
+     object-fit: cover;
 }
 
 .sg-person-info {

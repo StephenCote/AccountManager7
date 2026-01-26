@@ -1693,29 +1693,29 @@
                         })
                     );
                 }
-                // Detail view
-                return m("div", {style: "padding: 16px; position: relative;"}, [
+                // Detail view - grid layout filling horizontal space with larger previews
+                return m("div", {style: "padding: 16px; position: relative; display: flex; flex-direction: column; height: 100%;"}, [
                     previewSrc ? m("div", {
                         style: "position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 10; display: flex; align-items: center; justify-content: center; cursor: pointer;",
                         onclick: function(){ previewSrc = null; m.redraw(); }
                     }, [
                         m("img", {src: previewSrc, style: "max-width: 90%; max-height: 90%; object-fit: contain; border-radius: 4px; box-shadow: 0 4px 24px rgba(0,0,0,0.5);"})
                     ]) : "",
-                    m("div", {style: "margin-bottom: 12px;"}, [
-                        m("button", {class: "page-dialog-button", onclick: backToCloud}, [
+                    m("div", {style: "margin-bottom: 12px; display: flex; align-items: center; gap: 16px;"}, [
+                        m("button", {class: "page-dialog-button", style: "margin: 0;", onclick: backToCloud}, [
                             m("span", {class: "material-symbols-outlined md-18 mr-2"}, "arrow_back"),
                             "Back"
+                        ]),
+                        m("div", [
+                            m("h4", {style: "margin: 0 0 4px 0;"}, [
+                                m("a", {href: "#!/view/" + modelType + "/" + selectedStat.objectId, target: "_blank"}, selectedStat.name)
+                            ]),
+                            m("span", {style: "color: #666;"}, selectedStat.count + " member" + (selectedStat.count != 1 ? "s" : ""))
                         ])
                     ]),
-                    m("div", {style: "margin-bottom: 12px;"}, [
-                        m("h4", {style: "margin: 0 0 4px 0;"}, [
-                            m("a", {href: "#!/view/" + modelType + "/" + selectedStat.objectId, target: "_blank"}, selectedStat.name)
-                        ]),
-                        m("span", {style: "color: #666;"}, selectedStat.count + " member" + (selectedStat.count != 1 ? "s" : ""))
-                    ]),
-                    m("div", {class: "cloud-members", style: "max-height: 50vh; overflow-y: auto;"},
+                    m("div", {class: "cloud-members", style: "flex: 1; overflow-y: auto; width: 100%;"},
                         memberList.length == 0 ? m("em", "Loading members...") :
-                        m("ul", {style: "list-style: none; padding: 0; margin: 0;"},
+                        m("div", {style: "display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; padding: 8px;"},
                             memberList.map(function(mem){
                                 let memType = mem[am7model.jsonModelKey] || "unknown";
                                 let memName = mem.name || mem.objectId;
@@ -1725,18 +1725,20 @@
                                 if(memType == "olio.charPerson" && mem.profile && mem.profile.portrait && mem.profile.portrait.contentType){
                                     let pp = mem.profile.portrait;
                                     imgSrc = g_application_path + "/thumbnail/" + orgPath + "/data.data" + pp.groupPath + "/" + pp.name;
-                                    thumb = m("img", {height: 48, width: 48, style: "border-radius: 50%; object-fit: cover; margin-right: 8px; cursor: pointer;", src: imgSrc + "/48x48", onclick: function(e){ e.preventDefault(); previewSrc = imgSrc + "/512x512"; m.redraw(); }});
+                                    thumb = m("img", {style: "width: 100%; aspect-ratio: 1; border-radius: 8px; object-fit: cover; cursor: pointer;", src: imgSrc + "/256x256", onclick: function(e){ e.preventDefault(); previewSrc = imgSrc + "/512x512"; m.redraw(); }});
                                 } else if(memType == "olio.charPerson"){
-                                    thumb = m("span", {class: "material-symbols-outlined", style: "font-size: 48px; color: #999; margin-right: 8px;"}, "person");
+                                    thumb = m("div", {style: "width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: #f5f5f5; border-radius: 8px;"}, [
+                                        m("span", {class: "material-symbols-outlined", style: "font-size: 64px; color: #999;"}, "person")
+                                    ]);
                                 } else if(memType == "data.data" && mem.contentType && mem.contentType.match(/^image/)){
                                     imgSrc = g_application_path + "/thumbnail/" + orgPath + "/data.data" + mem.groupPath + "/" + mem.name;
-                                    thumb = m("img", {height: 48, width: 48, style: "object-fit: cover; border-radius: 4px; margin-right: 8px; cursor: pointer;", src: imgSrc + "/48x48", onclick: function(e){ e.preventDefault(); previewSrc = imgSrc + "/512x512"; m.redraw(); }});
+                                    thumb = m("img", {style: "width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; cursor: pointer;", src: imgSrc + "/256x256", onclick: function(e){ e.preventDefault(); previewSrc = imgSrc + "/512x512"; m.redraw(); }});
                                 }
-                                return m("li", {style: "padding: 4px 0; border-bottom: 1px solid #eee; display: flex; align-items: center;"}, [
+                                return m("div", {style: "background: #fafafa; border-radius: 12px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: box-shadow 0.2s;", onmouseenter: function(e){ e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)"; }, onmouseleave: function(e){ e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)"; }}, [
                                     thumb,
-                                    m("div", [
-                                        m("a", {href: "#!/view/" + memType + "/" + mem.objectId, target: "_blank"}, memName),
-                                        m("span", {style: "color: #999; margin-left: 8px; font-size: 0.85em;"}, memType)
+                                    m("div", {style: "margin-top: 8px; text-align: center;"}, [
+                                        m("a", {href: "#!/view/" + memType + "/" + mem.objectId, target: "_blank", style: "font-weight: 500; color: #333; text-decoration: none; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"}, memName),
+                                        m("span", {style: "color: #999; font-size: 0.75em;"}, memType.split('.').pop())
                                     ])
                                 ]);
                             })

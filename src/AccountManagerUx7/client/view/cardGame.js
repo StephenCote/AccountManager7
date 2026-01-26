@@ -188,17 +188,29 @@
 
     async function loadAvailableCharacters() {
         try {
-            let popDir = await page.findObject("auth.group", "data", gridPath + "/Population");
-            if (!popDir) return;
+            // Use newGame endpoint which returns characters with properly populated portraits
+            let resp = await m.request({
+                method: 'GET',
+                url: g_application_path + "/rest/game/newGame",
+                withCredentials: true
+            });
 
-            let q = am7view.viewQuery("olio.charPerson");
-            q.field("groupId", popDir.id);
-            q.range(0, 50);
-            q.entity.request.push("profile", "name", "gender", "objectId", "state", "age");
+            if (resp && resp.characters) {
+                availableCharacters = resp.characters;
+            } else {
+                // Fallback to direct query if newGame fails
+                let popDir = await page.findObject("auth.group", "data", gridPath + "/Population");
+                if (!popDir) return;
 
-            let qr = await page.search(q);
-            if (qr && qr.results) {
-                availableCharacters = qr.results;
+                let q = am7view.viewQuery("olio.charPerson");
+                q.field("groupId", popDir.id);
+                q.range(0, 50);
+                q.entity.request.push("profile", "name", "gender", "objectId", "state", "age");
+
+                let qr = await page.search(q);
+                if (qr && qr.results) {
+                    availableCharacters = qr.results;
+                }
             }
         } catch (e) {
             console.error("Failed to load characters", e);
@@ -412,7 +424,7 @@
 
             let needs = situation && situation.needs ? situation.needs : {};
             let portrait = getPortraitUrl(player, "256x256");
-
+    
             return m("div", {class: "sg-panel sg-character-panel"}, [
                 // Header
                 m("div", {class: "sg-panel-header"}, [
@@ -755,11 +767,14 @@
 
     function renderPersonCard(person) {
         let record = person.record || person;
+        let portrait = getPortraitUrl(record, "64x64");
         return m("div", {
             class: "sg-person-card",
             onclick: function() { selectEntity(record, 'person'); }
         }, [
-            m("span", {class: "sg-person-icon"}, "\u{1F464}"),
+            portrait ?
+                m("img", {src: portrait, class: "sg-person-portrait"}) :
+                m("span", {class: "sg-person-icon"}, "\u{1F464}"),
             m("div", {class: "sg-person-info"}, [
                 m("div", {class: "sg-person-name"}, record.name || "Unknown"),
                 m("div", {class: "sg-person-rel"},

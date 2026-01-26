@@ -74,7 +74,7 @@ public class GameService {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
 
-		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		if(params == null) {
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
@@ -229,7 +229,7 @@ public class GameService {
 			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
 		}
 
-		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		if(params == null) {
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
@@ -361,6 +361,20 @@ public class GameService {
 			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
 		}
 
+		// Populate player's profile.portrait for UI display
+		// First populate the profile field on the person
+		IOSystem.getActiveContext().getReader().populate(person, new String[] {FieldNames.FIELD_PROFILE});
+		BaseRecord playerProfile = person.get(FieldNames.FIELD_PROFILE);
+		if(playerProfile != null) {
+			// Then populate the portrait field on the profile
+			IOSystem.getActiveContext().getReader().populate(playerProfile, new String[] {"portrait"});
+			BaseRecord playerPortrait = playerProfile.get("portrait");
+			if(playerPortrait != null) {
+				// Finally populate the needed fields on the portrait
+				IOSystem.getActiveContext().getReader().populate(playerPortrait, new String[] {FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_NAME});
+			}
+		}
+
 		BaseRecord state = person.get(FieldNames.FIELD_STATE);
 		if(state == null) {
 			return Response.status(500).entity("{\"error\":\"Character has no state\"}").build();
@@ -382,6 +396,22 @@ public class GameService {
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
 		List<BaseRecord> adjacentCells = GeoLocationUtil.getAdjacentCells(octx, currentLoc, 3);
 		List<BaseRecord> nearbyPeople = GeoLocationUtil.limitToAdjacent(octx, pop, currentLoc);
+
+		// Populate profile.portrait for nearby people so UI can show portraits
+		for(BaseRecord np : nearbyPeople) {
+			// First populate the profile field on the person
+			IOSystem.getActiveContext().getReader().populate(np, new String[] {FieldNames.FIELD_PROFILE});
+			BaseRecord profile = np.get(FieldNames.FIELD_PROFILE);
+			if(profile != null) {
+				// Then populate the portrait field on the profile
+				IOSystem.getActiveContext().getReader().populate(profile, new String[] {"portrait"});
+				BaseRecord portrait = profile.get("portrait");
+				if(portrait != null) {
+					// Finally populate the needed fields on the portrait
+					IOSystem.getActiveContext().getReader().populate(portrait, new String[] {FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_NAME});
+				}
+			}
+		}
 
 		// Only compute profiles for nearby people + player (performance optimization)
 		Map<BaseRecord, PersonalityProfile> profiles = new HashMap<>();
@@ -474,7 +504,7 @@ public class GameService {
 			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
 		}
 
-		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		if(params == null) {
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
@@ -570,7 +600,8 @@ public class GameService {
 			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
 		}
 
-		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		// Parse simple JSON using unfiltered module for plain objects
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		if(params == null) {
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
@@ -684,9 +715,9 @@ public class GameService {
 		}
 
 		// Check for POIs in the area
-		List<BaseRecord> pois = octx.getPointsOfInterest();
+		List<BaseRecord> pois = org.cote.accountmanager.olio.PointOfInterestUtil.listPointsOfInterest(octx, currentLoc);
 		if(pois != null && pois.size() > 0) {
-			discoveries.add("You spot some points of interest in the vicinity.");
+			discoveries.add("You spot " + pois.size() + " point" + (pois.size() > 1 ? "s" : "") + " of interest nearby.");
 		}
 
 		result.put("discoveries", discoveries);
@@ -709,7 +740,7 @@ public class GameService {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
 
-		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		if(params == null) {
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
@@ -970,14 +1001,21 @@ public class GameService {
 				charInfo.put("gender", p.get("gender"));
 				charInfo.put("age", p.get("age"));
 
-				// Get portrait if available
+				// Get portrait if available - include full structure for UI compatibility
 				BaseRecord profile = p.get("profile");
 				if(profile != null) {
+					IOSystem.getActiveContext().getReader().populate(profile, new String[] {"portrait"});
 					BaseRecord portrait = profile.get("portrait");
 					if(portrait != null) {
-						// Also populate portrait to get its objectId
-						IOSystem.getActiveContext().getReader().populate(portrait, new String[] {FieldNames.FIELD_OBJECT_ID});
-						charInfo.put("portraitId", portrait.get(FieldNames.FIELD_OBJECT_ID));
+						// Build nested structure that UI expects
+						Map<String, Object> portraitInfo = new HashMap<>();
+						portraitInfo.put("objectId", portrait.get(FieldNames.FIELD_OBJECT_ID));
+						portraitInfo.put("groupPath", portrait.get(FieldNames.FIELD_GROUP_PATH));
+						portraitInfo.put("name", portrait.get(FieldNames.FIELD_NAME));
+
+						Map<String, Object> profileInfo = new HashMap<>();
+						profileInfo.put("portrait", portraitInfo);
+						charInfo.put("profile", profileInfo);
 					}
 				}
 				characters.add(charInfo);
