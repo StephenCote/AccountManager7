@@ -1628,9 +1628,16 @@
         let selectedStat = null;
         let memberList = [];
         let previewSrc = null;
+        let searchFilter = "";
 
         let minCount = Math.min(...stats.map(s => s.count));
         let maxCount = Math.max(...stats.map(s => s.count));
+
+        function getFilteredStats(){
+            if(!searchFilter || !searchFilter.length) return stats;
+            let lowerFilter = searchFilter.toLowerCase();
+            return stats.filter(s => s.name && s.name.toLowerCase().indexOf(lowerFilter) > -1);
+        }
 
         function fontSize(count){
             if(maxCount === minCount) return 1.5;
@@ -1673,25 +1680,37 @@
         let cloudView = {
             view: function(){
                 if(cloudMode){
-                    return m("div", {style: "padding: 20px; text-align: center; line-height: 1.4; max-height: 60vh; overflow-y: auto;"},
-                        stats.map(function(stat){
-                            let size = fontSize(stat.count);
-                            let bg = cloudColor(stat.count);
-                            let fg = cloudTextColor(stat.count);
-                            return m("span", {
-                                style: "font-size:" + size + "em; cursor:pointer; margin: 5px 6px; display:inline-block;" +
-                                    "background:" + bg + "; color:" + fg + ";" +
-                                    "padding: 4px 12px; border-radius: 20px;" +
-                                    "border: 1px solid " + fg + "20;" +
-                                    "transition: transform 0.15s, box-shadow 0.15s;" +
-                                    "box-shadow: 0 1px 3px rgba(0,0,0,0.08);",
-                                title: stat.name + " (" + stat.count + ")",
-                                onmouseenter: function(e){ e.target.style.transform = "scale(1.08)"; e.target.style.boxShadow = "0 3px 8px rgba(0,0,0,0.15)"; },
-                                onmouseleave: function(e){ e.target.style.transform = ""; e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.08)"; },
-                                onclick: function(){ selectStat(stat); }
-                            }, [stat.name, m("sup", {style: "margin-left:3px; font-size:0.65em; opacity:0.7;"}, stat.count)]);
-                        })
-                    );
+                    let filteredStats = getFilteredStats();
+                    return m("div", {style: "display: flex; flex-direction: column; max-height: 60vh;"}, [
+                        m("div", {style: "padding: 10px 20px; border-bottom: 1px solid #e0e0e0;"}, [
+                            m("input", {
+                                type: "text",
+                                placeholder: "Search tags...",
+                                value: searchFilter,
+                                oninput: function(e){ searchFilter = e.target.value; },
+                                style: "width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 20px; font-size: 14px; outline: none;"
+                            })
+                        ]),
+                        m("div", {style: "padding: 20px; text-align: center; line-height: 1.4; overflow-y: auto; flex: 1;"},
+                            filteredStats.length ? filteredStats.map(function(stat){
+                                let size = fontSize(stat.count);
+                                let bg = cloudColor(stat.count);
+                                let fg = cloudTextColor(stat.count);
+                                return m("span", {
+                                    style: "font-size:" + size + "em; cursor:pointer; margin: 5px 6px; display:inline-block;" +
+                                        "background:" + bg + "; color:" + fg + ";" +
+                                        "padding: 4px 12px; border-radius: 20px;" +
+                                        "border: 1px solid " + fg + "20;" +
+                                        "transition: transform 0.15s, box-shadow 0.15s;" +
+                                        "box-shadow: 0 1px 3px rgba(0,0,0,0.08);",
+                                    title: stat.name + " (" + stat.count + ")",
+                                    onmouseenter: function(e){ e.target.style.transform = "scale(1.08)"; e.target.style.boxShadow = "0 3px 8px rgba(0,0,0,0.15)"; },
+                                    onmouseleave: function(e){ e.target.style.transform = ""; e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.08)"; },
+                                    onclick: function(){ selectStat(stat); }
+                                }, [stat.name, m("sup", {style: "margin-left:3px; font-size:0.65em; opacity:0.7;"}, stat.count)]);
+                            }) : m("div", {style: "color: #888; padding: 20px;"}, "No tags match \"" + searchFilter + "\"")
+                        )
+                    ]);
                 }
                 // Detail view - grid layout filling horizontal space with larger previews
                 return m("div", {style: "padding: 16px; position: relative; display: flex; flex-direction: column; height: 100%;"}, [

@@ -196,6 +196,7 @@
                     (x.attrs.customTray ? x.attrs.customTray() : ""),
                     shuffleTray(),
                     m("div", { class: "flex-center2" }, [
+                        m(page.components.games.component),
                         m(page.components.emoji.component),
                         m("div", { class: "context-menu-container" }, [
                             profileContextButton(),

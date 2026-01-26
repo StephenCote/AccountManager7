@@ -55,6 +55,7 @@ const jsFiles = [
     'client/components/membership.js',
     'client/components/tableEntry.js',
     'client/components/emoji.js',
+    'client/components/games.js',
     'client/components/audio.js',
     'client/components/audioComponents.js',
     'client/components/camera.js',

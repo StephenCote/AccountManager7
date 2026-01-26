@@ -247,6 +247,13 @@ public class Actions {
 		params.setValue(OlioFieldNames.FIELD_QUANTITY, quantity);
 		return beginAction(ctx, evt, params, per1, null);
 	}
+
+	public static BaseRecord beginConsume(OlioContext ctx, BaseRecord evt, BaseRecord per1, String itemName, int quantity) throws OlioException {
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.PHYSIOLOGICAL, null, "consume", true);
+		params.setValue("itemName", itemName);
+		params.setValue(OlioFieldNames.FIELD_QUANTITY, quantity);
+		return beginAction(ctx, evt, params, per1, null);
+	}
 	public static BaseRecord beginMove(OlioContext ctx, BaseRecord evt, BaseRecord per1, DirectionEnumType dir) throws OlioException {
 		return beginMove(ctx, evt, per1, dir, 1.0);
 	}

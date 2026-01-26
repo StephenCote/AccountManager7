@@ -171,7 +171,7 @@
             let resp = await m.request({
                 method: 'POST',
                 url: g_application_path + "/rest/game/move/" + player.objectId,
-                body: { direction: direction },
+                body: { schema: "olio.actionParameters", direction: direction },
                 withCredentials: true
             });
 
@@ -638,25 +638,25 @@
         return m("div", {class: "sg-move-pad"}, [
             m("div", {class: "sg-move-row"}, [
                 m("div"), // spacer
-                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("N"); }}, [
+                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("NORTH"); }}, [
                     m("span", {class: "material-symbols-outlined"}, "arrow_upward")
                 ]),
                 m("div") // spacer
             ]),
             m("div", {class: "sg-move-row"}, [
-                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("W"); }}, [
+                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("WEST"); }}, [
                     m("span", {class: "material-symbols-outlined"}, "arrow_back")
                 ]),
                 m("button", {class: "sg-move-btn sg-move-center"}, [
                     m("span", {class: "material-symbols-outlined"}, "radio_button_checked")
                 ]),
-                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("E"); }}, [
+                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("EAST"); }}, [
                     m("span", {class: "material-symbols-outlined"}, "arrow_forward")
                 ])
             ]),
             m("div", {class: "sg-move-row"}, [
                 m("div"), // spacer
-                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("S"); }}, [
+                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("SOUTH"); }}, [
                     m("span", {class: "material-symbols-outlined"}, "arrow_downward")
                 ]),
                 m("div") // spacer
@@ -1264,6 +1264,7 @@
         },
         view: function() {
             return [
+                (fullMode ? "" : m(page.components.navigation)),
                 getOuterView(),
                 page.components.dialog.loadDialog(),
                 page.loadToast(),
