@@ -108,17 +108,23 @@
         if (eventLog.length > 50) eventLog.pop();
     }
 
+    // Helper to get character ID (handles both objectId and id fields)
+    function getCharId(char) {
+        return char ? (char.objectId || char.id) : null;
+    }
+
     // ==========================================
     // API Functions
     // ==========================================
 
     async function loadSituation() {
-        if (!player || !player.objectId) return;
+        let playerId = getCharId(player);
+        if (!playerId) return;
         isLoading = true;
         try {
             let resp = await m.request({
                 method: 'GET',
-                url: g_application_path + "/rest/game/situation/" + player.objectId,
+                url: g_application_path + "/rest/game/situation/" + playerId,
                 withCredentials: true
             });
             situation = resp;
@@ -131,12 +137,13 @@
     }
 
     async function resolveAction(targetId, actionType) {
-        if (!player || !player.objectId) return null;
+        let playerId = getCharId(player);
+        if (!playerId) return null;
         isLoading = true;
         try {
             let resp = await m.request({
                 method: 'POST',
-                url: g_application_path + "/rest/game/resolve/" + player.objectId,
+                url: g_application_path + "/rest/game/resolve/" + playerId,
                 body: { targetId: targetId, actionType: actionType },
                 withCredentials: true
             });
@@ -165,12 +172,13 @@
     }
 
     async function moveCharacter(direction) {
-        if (!player || !player.objectId) return;
+        let playerId = getCharId(player);
+        if (!playerId) return;
         isLoading = true;
         try {
             let resp = await m.request({
                 method: 'POST',
-                url: g_application_path + "/rest/game/move/" + player.objectId,
+                url: g_application_path + "/rest/game/move/" + playerId,
                 body: { schema: "olio.actionParameters", direction: direction },
                 withCredentials: true
             });
@@ -188,38 +196,41 @@
 
     async function loadAvailableCharacters() {
         try {
-            // Use newGame endpoint which returns characters with properly populated portraits
-            let resp = await m.request({
-                method: 'GET',
-                url: g_application_path + "/rest/game/newGame",
-                withCredentials: true
-            });
+            // Use AM7 query to get properly populated character data
+            let popDir = await page.findObject("auth.group", "data", gridPath + "/Population");
+            if (!popDir) {
+                console.warn("Population directory not found at " + gridPath + "/Population");
+                page.toast("warn", "Population directory not found - check gridPath");
+                return;
+            }
 
-            if (resp && resp.characters) {
-                am7model.updateListModel(resp.characters);
-                availableCharacters = resp.characters;
+            let q = am7view.viewQuery("olio.charPerson");
+            q.field("groupId", popDir.id);
+            q.range(0, 50);
+            // Request foreign model field - DO NOT use nested paths like "profile.portrait"
+            q.entity.request.push("profile");
+
+            let qr = await page.search(q);
+            if (qr && qr.results) {
+                am7model.updateListModel(qr.results);
+                availableCharacters = qr.results;
+                console.log("Loaded " + availableCharacters.length + " characters");
             } else {
-                // Fallback to direct query if newGame fails
-                let popDir = await page.findObject("auth.group", "data", gridPath + "/Population");
-                if (!popDir) return;
-
-                let q = am7view.viewQuery("olio.charPerson");
-                q.field("groupId", popDir.id);
-                q.range(0, 50);
-                q.entity.request.push("profile", "name", "gender", "objectId", "state", "age");
-
-                let qr = await page.search(q);
-                if (qr && qr.results) {
-                    availableCharacters = qr.results;
-                }
+                console.warn("No characters found in Population directory");
             }
         } catch (e) {
             console.error("Failed to load characters", e);
+            page.toast("error", "Failed to load characters: " + e.message);
         }
     }
 
     async function claimCharacter(char) {
         if (!char) return;
+        let charId = getCharId(char);
+        if (!charId) {
+            page.toast("error", "Character has no ID");
+            return;
+        }
         player = char;
         characterSelectOpen = false;
 
@@ -227,7 +238,7 @@
         try {
             await m.request({
                 method: 'POST',
-                url: g_application_path + "/rest/game/claim/" + char.objectId,
+                url: g_application_path + "/rest/game/claim/" + charId,
                 withCredentials: true
             });
         } catch (e) {
@@ -241,13 +252,14 @@
     }
 
     async function advanceTurn() {
-        if (!player || !player.objectId) return;
+        let playerId = getCharId(player);
+        if (!playerId) return;
         isLoading = true;
         try {
             // End turn updates needs and advances time
             let resp = await m.request({
                 method: 'POST',
-                url: g_application_path + "/rest/game/endTurn/" + player.objectId,
+                url: g_application_path + "/rest/game/endTurn/" + playerId,
                 withCredentials: true
             });
             if (resp && resp.situation) {
@@ -361,7 +373,7 @@
                 url: g_application_path + "/rest/game/save",
                 body: {
                     name: name,
-                    characterId: player.objectId,
+                    characterId: getCharId(player),
                     eventLog: eventLog.slice(0, 20)
                 },
                 withCredentials: true
@@ -455,7 +467,7 @@
                             style: "opacity: 0.8;",
                             onclick: function(e) {
                                 e.stopPropagation();
-                                window.open("#/view/olio.charPerson/" + player.objectId, "_blank");
+                                window.open("#/view/olio.charPerson/" + getCharId(player), "_blank");
                             },
                             title: "View/Edit Character"
                         }, [
@@ -471,7 +483,7 @@
                                 try {
                                     await m.request({
                                         method: 'GET',
-                                        url: g_application_path + "/rest/olio/charPerson/" + player.objectId + "/reimage/false",
+                                        url: g_application_path + "/rest/olio/charPerson/" + getCharId(player) + "/reimage/false",
                                         withCredentials: true
                                     });
                                     page.toast("success", "Portrait regenerated!");
@@ -899,7 +911,7 @@
                 try {
                     let resp = await m.request({
                         method: 'POST',
-                        url: g_application_path + "/rest/game/investigate/" + player.objectId,
+                        url: g_application_path + "/rest/game/investigate/" + getCharId(player),
                         withCredentials: true
                     });
                     if (resp && resp.discoveries) {
@@ -1198,21 +1210,10 @@
         // Clear any stored character selection
         sessionStorage.removeItem("olio_selected_character");
 
-        // Load fresh character list from server
-        try {
-            let resp = await m.request({
-                method: 'GET',
-                url: g_application_path + "/rest/game/newGame",
-                withCredentials: true
-            });
-            if (resp && resp.characters) {
-                am7model.updateListModel(resp.characters);
-                availableCharacters = resp.characters;
-                addEvent("New game started - " + resp.totalPopulation + " characters in " + resp.realmName, "info");
-            }
-        } catch (e) {
-            console.warn("newGame endpoint not available, falling back to direct query");
-            await loadAvailableCharacters();
+        // Load fresh character list using proper AM7 query
+        await loadAvailableCharacters();
+        if (availableCharacters.length > 0) {
+            addEvent("New game started - " + availableCharacters.length + " characters available", "info");
         }
 
         // Open character selection

@@ -622,14 +622,15 @@ console.log(person.store);       // populated BaseRecord
 let q = am7client.newQuery("olio.charPerson");
 q.field("objectId", objectId);
 
-// Add nested fields to request array:
+// Add foreign model fields to request array:
 q.entity.request.push("statistics");    // Foreign model
 q.entity.request.push("store");         // Foreign model
-q.entity.request.push("profile.portrait"); // Nested path
+q.entity.request.push("profile");       // Foreign model (includes portrait)
 
 let results = await am7client.search(q);
 let person = results.results[0];
 console.log(person.statistics);  // now populated
+console.log(person.profile.portrait);  // access nested data from returned object
 ```
 
 **Solution 3: Build query from form definition:**
@@ -646,15 +647,217 @@ let q = am7client.newQuery("olio.charPerson");
 q.entity.request = request;
 ```
 
-**Nested path syntax:**
+**IMPORTANT: No nested path syntax!**
+The server supports nested path syntax like "profile.portrait" on the record object only. All queries must use a hierarchical query plan or request the foreign model field and then access nested data from the returned object:
 ```javascript
-q.entity.request = [
-    "id", "name",
-    "statistics",              // Entire nested model
-    "profile.portrait",        // Get portrait from profile
-    "profile.portrait.groupPath"  // Even deeper nesting
-];
+// WRONG - will cause server error when used in a query:
+q.entity.request.push("profile.portrait");  // ERROR: Field not found!
+/// On server though, object.get("profile.portrait") is a valid operation, it only works on the individual record object though 
+// CORRECT - request the foreign model:
+q.entity.request.push("profile");  // Request the profile object
+// Then access nested data from result:
+let portrait = person.profile.portrait;  // Access after query returns
 ```
+
+## Client-Side Data Loading Patterns (IMPORTANT)
+
+**CRITICAL RULE: Always use client-side data loading patterns FIRST before considering server modifications.**
+
+### ALWAYS Check the Model Schema First!
+
+**Before requesting ANY field, ALWAYS look at the model definition in modelDef.js to verify:**
+1. The field actually exists on that model
+2. The correct field name (case-sensitive)
+3. The correct data type
+4. Whether the field is a foreign model reference or a direct property
+
+```javascript
+// Check what fields exist on a model:
+let model = am7model.getModel("olio.charPerson");
+let fields = am7model.getModelFields(model);
+console.log(fields.map(f => f.name));  // List all field names
+
+// Check a specific field:
+let field = am7model.getModelField(model, "profile");
+console.log(field);  // See field definition, type, etc.
+```
+
+**Common mistakes to avoid:**
+- Requesting fields that don't exist (causes server error)
+- Using nested paths like "profile.portrait" (NOT supported - request "profile" instead)
+- Misspelling field names
+- Assuming a field exists without checking the model
+
+When data appears to be missing or incomplete, the issue is almost always that:
+1. Foreign model fields weren't requested
+2. The field name is wrong or doesn't exist
+3. `updateListModel()` wasn't called after receiving list data
+
+**DO NOT** modify server endpoints to return additional data. The client has all the tools needed to fetch complete data.
+
+### Using am7view.viewQuery() vs am7client.newQuery()
+
+**Prefer `am7view.viewQuery()`** - it automatically populates request fields from:
+1. The model's `query` array (defined in modelDef.js)
+2. All inherited models' `query` arrays
+3. Base fields like id, objectId, name, groupId, etc.
+
+You typically only need to add **foreign model fields** that aren't in the defaults:
+
+```javascript
+// RECOMMENDED - uses model's default query fields
+let q = am7view.viewQuery("olio.charPerson");
+q.field("groupId", parentDir.id);
+q.range(0, 50);
+
+// Add foreign model fields you need (check modelDef.js first!)
+q.entity.request.push("profile", "state");
+
+let qr = await page.search(q);
+if (qr && qr.results) {
+    am7model.updateListModel(qr.results);  // ALWAYS call this!
+    // Access nested data from returned objects:
+    let portrait = qr.results[0].profile?.portrait;
+}
+```
+
+**Use `am7client.newQuery()`** when you need full control:
+
+```javascript
+let q = am7client.newQuery("olio.charPerson");
+// request array is auto-populated from model inheritance
+// but you may need to add nested fields manually
+```
+
+### Loading olio.charPerson with Complete Data
+
+Characters require explicit field requests for profile data. Check modelDef.js for exact field names:
+
+```javascript
+async function loadCharacters(groupId) {
+    // FIRST: Check what fields exist on the model!
+    // let model = am7model.getModel("olio.charPerson");
+    // console.log(am7model.getModelFields(model).map(f => f.name));
+
+    let q = am7view.viewQuery("olio.charPerson");
+    q.field("groupId", groupId);
+    q.range(0, 50);
+
+    // Add foreign model fields (NOT nested paths!)
+    // Only request fields that exist on olio.charPerson model
+    q.entity.request.push("profile");  // Foreign model - includes portrait
+
+    let qr = await page.search(q);
+    if (qr && qr.results) {
+        am7model.updateListModel(qr.results);
+        // Access nested data from returned objects:
+        // char.profile.portrait (if portrait exists)
+        return qr.results;
+    }
+    return [];
+}
+```
+
+### Common Model Field Requirements
+
+**ALWAYS check modelDef.js first to verify field names exist!**
+
+**olio.charPerson** - Character with profile:
+```javascript
+// Request foreign model, then access nested data from result
+request.push("profile");  // Portrait accessed via char.profile.portrait
+```
+
+**olio.item** - Item with thumbnail:
+```javascript
+request.push("store", "thumbnail", "name", "objectId");
+```
+
+**data.media** - Media with content:
+```javascript
+request.push("groupPath", "contentType", "name", "objectId");
+```
+
+### Handling ID Fields (objectId vs id)
+
+Server responses may use `objectId` or `id` depending on context. Always handle both:
+
+```javascript
+// Helper function pattern
+function getEntityId(entity) {
+    return entity ? (entity.objectId || entity.id) : null;
+}
+
+// Usage
+let charId = getEntityId(character);
+if (charId) {
+    await api.claimCharacter(charId);
+}
+```
+
+### Complete Pattern: Loading and Displaying Characters
+
+```javascript
+async function loadAvailableCharacters() {
+    try {
+        // 1. Find the population directory
+        let popDir = await page.findObject("auth.group", "data", gridPath + "/Population");
+        if (!popDir) {
+            console.warn("Population directory not found");
+            return [];
+        }
+
+        // 2. Build query with proper fields (check modelDef.js for valid field names!)
+        let q = am7view.viewQuery("olio.charPerson");
+        q.field("groupId", popDir.id);
+        q.range(0, 50);
+        // Only add foreign model fields that exist on olio.charPerson
+        q.entity.request.push("profile");  // Profile includes portrait
+
+        // 3. Execute query
+        let qr = await page.search(q);
+
+        // 4. ALWAYS restore schema on list items
+        if (qr && qr.results) {
+            am7model.updateListModel(qr.results);
+            // Access nested data: char.profile.portrait
+            return qr.results;
+        }
+    } catch (e) {
+        console.error("Failed to load characters", e);
+    }
+    return [];
+}
+```
+
+### Troubleshooting Missing Data
+
+If data appears as `null`, `undefined`, or displays incorrectly (e.g., "? • ?"):
+
+1. **Check the query request fields** - Are nested fields included?
+   ```javascript
+   console.log(q.entity.request);  // Verify fields are present
+   ```
+
+2. **Verify updateListModel was called** - Schema may be missing:
+   ```javascript
+   am7model.updateListModel(results);
+   console.log(results[1]?.schema);  // Should not be undefined
+   ```
+
+3. **Check field names match model** - Use exact field names from schema:
+   ```javascript
+   let model = am7model.getModel("olio.charPerson");
+   console.log(am7model.getModelFields(model).map(f => f.name));
+   ```
+
+4. **Use getFull() to verify data exists**:
+   ```javascript
+   let full = await am7client.getFull("olio.charPerson", objectId);
+   console.log(full);  // See all available fields
+   ```
+
+**REMEMBER**: If you think you need to modify the server to return more data, STOP and check if you can request that data client-side first. The answer is almost always YES.
 
 ### Search with Pagination
 
