@@ -78,6 +78,7 @@
         let aqr = await page.search(aq);
         let app;
         if(aqr && aqr.results && aqr.results.length){
+            am7model.updateListModel(aqr.results);
             app = aqr.results[0];
         }
         else{
@@ -107,6 +108,7 @@
             page.toast("error", "No wearables found in apparel " + app.name);
             return;
         }
+        am7model.updateListModel(qr.results);
         let wears = qr.results;
 
         

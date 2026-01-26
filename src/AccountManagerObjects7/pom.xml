@@ -70,9 +70,10 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestCombat</exclude>
+						
 						
 						-->
+						<exclude>**/TestCombat</exclude>
 						<exclude>**/TestOlioGameFeatures</exclude>
 						<exclude>**/TestSDStyles.java</exclude>
 						<exclude>**/TestData.java</exclude>

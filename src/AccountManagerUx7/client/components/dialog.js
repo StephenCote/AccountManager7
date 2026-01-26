@@ -37,7 +37,7 @@
                 aCPs.push(aC[0].systemCharacter.name);
             }
         }
-        else if(ref && ref[am7model.jsonModelKey] == "olio.charPerson" || ref[am7model.jsonModelKey] == "identity.person"){
+        else if(ref && (ref[am7model.jsonModelKey] == "olio.charPerson" || ref[am7model.jsonModelKey] == "identity.person")){
             aCPs.push(ref.name);
         }
         
@@ -82,10 +82,11 @@
     
             let qr = await page.search(q);
             if(qr && qr.results){
+                am7model.updateListModel(qr.results);
                 wset.push(...qr.results);
             }
         }
-        
+
         if(ref){
             wset.push(ref);
         }
@@ -302,6 +303,7 @@
             q.field("name", name);
             let qr = await page.search(q);
             if(qr && qr.results && qr.results.length){
+                am7model.updateListModel(qr.results);
                 let obj = qr.results[0];
                 if(obj.dataBytesStore && obj.dataBytesStore.length){
                     return JSON.parse(uwm.base64Decode(obj.dataBytesStore));
@@ -601,6 +603,7 @@
                     aq.field("objectId", sto.apparel[0].objectId);
                     let aqr = await page.search(aq);
                     if (aqr && aqr.results && aqr.results.length) {
+                        am7model.updateListModel(aqr.results);
                         let app = aqr.results[0];
                         if (app.wearables && app.wearables.length) {
                             let q = am7view.viewQuery("olio.wearable");
@@ -611,6 +614,7 @@
                             fld.comparator = "in";
                             let qr = await page.search(q);
                             if (qr && qr.results && qr.results.length) {
+                                am7model.updateListModel(qr.results);
                                 let wears = qr.results;
                                 let targetIdx = am7model.enums.wearLevelEnumType.indexOf(targetLevel);
                                 let patches = [];

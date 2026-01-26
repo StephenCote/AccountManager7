@@ -196,6 +196,7 @@
             });
 
             if (resp && resp.characters) {
+                am7model.updateListModel(resp.characters);
                 availableCharacters = resp.characters;
             } else {
                 // Fallback to direct query if newGame fails
@@ -375,14 +376,21 @@
     async function loadGame(save) {
         try {
             let resp = await m.request({
-                method: 'POST',
-                url: g_application_path + "/rest/game/load",
-                body: { name: save.name },
+                method: 'GET',
+                url: g_application_path + "/rest/game/load/" + save.objectId,
                 withCredentials: true
             });
-            if (resp && resp.character) {
-                player = resp.character;
-                eventLog = resp.eventLog || [];
+            if (resp && resp.saveData && resp.saveData.characterId) {
+                // Load the character from the saved characterId
+                let charResp = await m.request({
+                    method: 'GET',
+                    url: g_application_path + "/rest/game/situation/" + resp.saveData.characterId,
+                    withCredentials: true
+                });
+                if (charResp && charResp.character) {
+                    player = charResp.character;
+                }
+                eventLog = resp.saveData.eventLog || [];
                 await loadSituation();
                 currentSave = save;
                 page.toast("success", "Game loaded");
@@ -1198,6 +1206,7 @@
                 withCredentials: true
             });
             if (resp && resp.characters) {
+                am7model.updateListModel(resp.characters);
                 availableCharacters = resp.characters;
                 addEvent("New game started - " + resp.totalPopulation + " characters in " + resp.realmName, "info");
             }
