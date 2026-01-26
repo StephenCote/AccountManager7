@@ -5364,6 +5364,7 @@ button.button-tab-active:hover:is(.dark *) {
   gap: 0.5rem;
   overflow: hidden;
   padding: 0.5rem;
+  padding-bottom: 4rem;
 }
 
 .sg-col {

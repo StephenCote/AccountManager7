@@ -817,14 +817,15 @@
 
             if (entityId && (isPerson || isAnimal)) {
                 utilityButtons = m("div", {class: "sg-utility-buttons", style: "margin-top: 8px; display: flex; gap: 8px;"}, [
-                    // View/Edit button
+                    // View/Edit button - opens in new tab
                     m("button", {
                         class: "sg-btn sg-btn-small sg-btn-icon",
                         onclick: function() {
                             let modelType = isPerson ? "olio.charPerson" : "olio.animal";
-                            m.route.set("/app/object/" + modelType + "/" + entityId);
+                            let url = window.location.origin + g_application_path + "/#/app/object/" + modelType + "/" + entityId;
+                            window.open(url, "_blank");
                         },
-                        title: "View/Edit"
+                        title: "View/Edit (new tab)"
                     }, [
                         m("span", {class: "material-symbols-outlined"}, "open_in_new")
                     ]),
@@ -833,7 +834,6 @@
                         class: "sg-btn sg-btn-small sg-btn-icon",
                         onclick: async function() {
                             if (isPerson) {
-                                // Reimage person
                                 page.toast("info", "Generating new portrait...");
                                 try {
                                     await m.request({
@@ -848,7 +848,6 @@
                                     page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
                                 }
                             } else if (isAnimal) {
-                                // Reimage animal
                                 page.toast("info", "Generating animal image...");
                                 try {
                                     await m.request({
@@ -868,36 +867,6 @@
                         title: "Reimage"
                     }, [
                         m("span", {class: "material-symbols-outlined"}, "auto_awesome")
-                    ]),
-                    // Landscape button (generate landscape for current location)
-                    m("button", {
-                        class: "sg-btn sg-btn-small sg-btn-icon",
-                        onclick: async function() {
-                            if (!situation || !situation.location) {
-                                page.toast("warning", "No location available");
-                                return;
-                            }
-                            let locId = situation.location.objectId || situation.location.id;
-                            if (!locId) {
-                                page.toast("warning", "Location ID not available");
-                                return;
-                            }
-                            page.toast("info", "Generating landscape image...");
-                            try {
-                                await m.request({
-                                    method: 'POST',
-                                    url: g_application_path + "/rest/olio/landscape/" + locId + "/reimage",
-                                    body: {hires: false},
-                                    withCredentials: true
-                                });
-                                page.toast("success", "Landscape generated!");
-                            } catch (e) {
-                                page.toast("error", "Failed to generate landscape: " + (e.message || "Unknown error"));
-                            }
-                        },
-                        title: "Generate Landscape"
-                    }, [
-                        m("span", {class: "material-symbols-outlined"}, "landscape")
                     ])
                 ]);
             }

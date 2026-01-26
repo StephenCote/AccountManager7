@@ -188,11 +188,18 @@ public class OlioService {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
 		a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-		if(a1 != null) {
-			sdu.generateSDImages(octx, Arrays.asList(a1), "random", "professional photograph", "full body", null, 1, false, hires, -1);
-			octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
+		if(a1 == null) {
+			logger.error("Character not found: " + objectId);
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
 		}
+		// Update narrative before generating portrait image
+		NarrativeUtil.getCreateNarrative(octx, Arrays.asList(a1), "random");
+		sdu.generateSDImages(octx, Arrays.asList(a1), "random", "professional photograph", "full body", null, 1, false, hires, -1);
+		octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 		BaseRecord oi = a1.get("profile.portrait");
+		if(oi == null) {
+			return Response.status(200).entity("{\"message\":\"Image generated but portrait not linked\"}").build();
+		}
 
 		return Response.status(200).entity(oi.toFullString()).build();
 	}

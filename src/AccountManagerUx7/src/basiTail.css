@@ -1697,7 +1697,7 @@
 
       /* Main 3-column layout */
       .sg-main {
-        @apply flex-1 flex overflow-hidden p-2 gap-2;
+        @apply flex-1 flex overflow-hidden p-2 gap-2 pb-16;
       }
       .sg-col {
         @apply flex flex-col overflow-hidden;

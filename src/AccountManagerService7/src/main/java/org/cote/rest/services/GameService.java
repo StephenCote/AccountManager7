@@ -862,8 +862,13 @@ public class GameService {
 			List<BaseRecord> pop = octx.getRealmPopulation(realm);
 
 			// Build character list with basic info
+			// Note: getRealmPopulation uses FULL_PLAN_FILTER which excludes objectId,
+			// so we need to populate each record to get the objectId field
 			List<Map<String, Object>> characters = new ArrayList<>();
 			for(BaseRecord p : pop) {
+				// Populate to ensure objectId is available
+				IOSystem.getActiveContext().getReader().populate(p, new String[] {FieldNames.FIELD_OBJECT_ID});
+
 				Map<String, Object> charInfo = new HashMap<>();
 				charInfo.put("objectId", p.get(FieldNames.FIELD_OBJECT_ID));
 				charInfo.put("name", p.get(FieldNames.FIELD_NAME));
@@ -877,6 +882,8 @@ public class GameService {
 				if(profile != null) {
 					BaseRecord portrait = profile.get("portrait");
 					if(portrait != null) {
+						// Also populate portrait to get its objectId
+						IOSystem.getActiveContext().getReader().populate(portrait, new String[] {FieldNames.FIELD_OBJECT_ID});
 						charInfo.put("portraitId", portrait.get(FieldNames.FIELD_OBJECT_ID));
 					}
 				}
