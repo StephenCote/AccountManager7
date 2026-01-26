@@ -420,7 +420,14 @@ public class SDUtil {
 	public static String getSDConfigPrompt(BaseRecord cfg) {
 		StringBuilder buff = new StringBuilder();
 
+		if(cfg == null) {
+			return "(professional photograph).";
+		}
+
 		String style = cfg.get("style");
+		if(style == null) {
+			return "(professional photograph).";
+		}
 		buff.append("(");
 		if(style.equals("art")) {
 			buff.append("(" + (String)cfg.get("artStyle") + ")");

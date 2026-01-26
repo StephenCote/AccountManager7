@@ -25,30 +25,47 @@ public class SWUtil {
 	private static SecureRandom rand = new SecureRandom();
 	public static SWTxt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb, int steps, int seed) {
 		SWTxt2Img s2i = new SWTxt2Img();
-		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, sdConfig, setting, pictureType, bodyType, verb));
+
+		// Use provided config or create a random one if null
+		BaseRecord cfg = sdConfig != null ? sdConfig : org.cote.accountmanager.olio.sd.SDUtil.randomSDConfig();
+
+		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, cfg, setting, pictureType, bodyType, verb));
 		s2i.setNegativePrompt(NarrativeUtil.getSDNegativePrompt(person));
 		s2i.setSeed(Math.abs(rand.nextInt()));
-		s2i.setSteps(sdConfig.get("steps"));
-		s2i.setModel(sdConfig.get("model"));
-		s2i.setScheduler(sdConfig.get("scheduler"));
-		s2i.setSampler(sdConfig.get("sampler"));
-		s2i.setCfgScale(sdConfig.get("cfg"));
-		s2i.setSeed(sdConfig.get("seed"));
-		if((Boolean)sdConfig.get("hires") == true) {
-			s2i.setRefinerScheduler(sdConfig.get("refinerScheduler"));
-			s2i.setRefinerSampler(sdConfig.get("refinerSampler"));
-			s2i.setRefinerMethod(sdConfig.get("refinerMethod"));
-			s2i.setRefinerModel(sdConfig.get("refinerModel"));
-			s2i.setRefinerSteps(sdConfig.get("refinerSteps"));
-			s2i.setRefinerUpscale(sdConfig.get("refinerUpscale"));
-			s2i.setRefinerUpscaleMethod(sdConfig.get("refinerUpscaleMethod"));
-			s2i.setRefinerCfgScale(sdConfig.get("refinerCfg"));
-			s2i.setRefinerControlPercentage(sdConfig.get("refinerControlPercentage"));
+
+		// Get config values with null-safe defaults
+		Integer cfgSteps = cfg.get("steps");
+		String cfgModel = cfg.get("model");
+		String cfgScheduler = cfg.get("scheduler");
+		String cfgSampler = cfg.get("sampler");
+		Integer cfgCfg = cfg.get("cfg");
+		Integer cfgSeed = cfg.get("seed");
+		Boolean hires = cfg.get("hires");
+
+		s2i.setSteps(cfgSteps != null ? cfgSteps : 20);
+		s2i.setModel(cfgModel != null ? cfgModel : "sdXL_v10VAEFix.safetensors");
+		s2i.setScheduler(cfgScheduler != null ? cfgScheduler : "Karras");
+		s2i.setSampler(cfgSampler != null ? cfgSampler : "dpmpp_2m");
+		s2i.setCfgScale(cfgCfg != null ? cfgCfg : 7);
+		if(cfgSeed != null && cfgSeed > 0) {
+			s2i.setSeed(cfgSeed);
+		}
+
+		if(hires != null && hires == true) {
+			s2i.setRefinerScheduler(cfg.get("refinerScheduler"));
+			s2i.setRefinerSampler(cfg.get("refinerSampler"));
+			s2i.setRefinerMethod(cfg.get("refinerMethod"));
+			s2i.setRefinerModel(cfg.get("refinerModel"));
+			s2i.setRefinerSteps(cfg.get("refinerSteps"));
+			s2i.setRefinerUpscale(cfg.get("refinerUpscale"));
+			s2i.setRefinerUpscaleMethod(cfg.get("refinerUpscaleMethod"));
+			s2i.setRefinerCfgScale(cfg.get("refinerCfg"));
+			s2i.setRefinerControlPercentage(cfg.get("refinerControlPercentage"));
 		}
 		else {
 			s2i.setRefinerControlPercentage(0.0);
 		}
-		
+
 		return s2i;
 	}
 	
