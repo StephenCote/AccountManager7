@@ -179,7 +179,7 @@
             let resp = await m.request({
                 method: 'POST',
                 url: g_application_path + "/rest/game/move/" + playerId,
-                body: { schema: "olio.actionParameters", direction: direction },
+                body: { direction: direction },
                 withCredentials: true
             });
 
@@ -232,9 +232,16 @@
             page.toast("error", "Character has no ID");
             return;
         }
-        window.dbgChar = char;
-        player = char;
         characterSelectOpen = false;
+
+        // Load full character data with all nested models (state, store, statistics, etc.)
+        let fullChar = await am7client.getFull("olio.charPerson", charId);
+        if (!fullChar) {
+            page.toast("error", "Failed to load character data");
+            return;
+        }
+        player = fullChar;
+        window.dbgChar = player;
 
         // Mark as player controlled via state update
         try {
@@ -249,7 +256,7 @@
         }
 
         await loadSituation();
-        addEvent("Now playing as " + char.name, "success");
+        addEvent("Now playing as " + player.name, "success");
         page.toast("success", "Now playing as " + char.name);
     }
 
@@ -395,14 +402,13 @@
                 withCredentials: true
             });
             if (resp && resp.saveData && resp.saveData.characterId) {
-                // Load the character from the saved characterId
-                let charResp = await m.request({
-                    method: 'GET',
-                    url: g_application_path + "/rest/game/situation/" + resp.saveData.characterId,
-                    withCredentials: true
-                });
-                if (charResp && charResp.character) {
-                    player = charResp.character;
+                // Load full character data with all nested models
+                let fullChar = await am7client.getFull("olio.charPerson", resp.saveData.characterId);
+                if (fullChar) {
+                    player = fullChar;
+                } else {
+                    page.toast("error", "Failed to load character");
+                    return;
                 }
                 eventLog = resp.saveData.eventLog || [];
                 await loadSituation();
@@ -520,18 +526,31 @@
                     renderNeedBar("Fatigue", 1 - (needs.fatigue || 0), "bedtime", "purple")
                 ]),
 
-                // Location info
-                situation && situation.location ? m("div", {class: "sg-location-section"}, [
-                    m("div", {class: "sg-section-label"}, "LOCATION"),
-                    m("div", {class: "sg-location-info"}, [
-                        m("span", {class: "sg-terrain-icon"},
-                            TERRAIN_ICONS[situation.location.terrainType] || TERRAIN_ICONS.UNKNOWN),
-                        m("span", situation.location.feature || situation.location.terrainType || "Unknown")
-                    ]),
-                    situation.climate ?
-                        m("div", {class: "sg-climate-info"},
-                            situation.climate + " climate") : null
-                ]) : null,
+                // Location info - prefer situation.location, fall back to player.state.currentLocation
+                (function() {
+                    let loc = situation && situation.location ? situation.location : null;
+                    let playerLoc = player.state && player.state.currentLocation ? player.state.currentLocation : null;
+
+                    // Use situation location if available, otherwise use player's state.currentLocation
+                    let terrainType = loc ? loc.terrainType : (playerLoc ? playerLoc.terrainType : null);
+                    let locationName = loc ? (loc.feature || loc.name || loc.terrainType) :
+                                       (playerLoc ? (playerLoc.name || playerLoc.terrainType) : null);
+                    let climate = situation ? situation.climate : null;
+
+                    if (!terrainType && !locationName) return null;
+
+                    return m("div", {class: "sg-location-section"}, [
+                        m("div", {class: "sg-section-label"}, "LOCATION"),
+                        m("div", {class: "sg-location-info"}, [
+                            m("span", {class: "sg-terrain-icon"},
+                                TERRAIN_ICONS[terrainType] || TERRAIN_ICONS.UNKNOWN),
+                            m("span", locationName || "Unknown")
+                        ]),
+                        climate ?
+                            m("div", {class: "sg-climate-info"},
+                                climate + " climate") : null
+                    ]);
+                })(),
 
             ]);
         }

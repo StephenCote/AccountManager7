@@ -719,6 +719,208 @@ List<BaseRecord> population = ctx.getRealmPopulation(realm);
 Map<String, List<BaseRecord>> demographics = ctx.getDemographicMap(location);
 ```
 
+### Olio Map System (MGRS-Based)
+
+The Olio simulation uses a coordinate system inspired by **MGRS (Military Grid Reference System)** for spatial positioning. This enables hierarchical location tracking from large regions down to individual meter positions.
+
+**IMPORTANT Implementation Notes:**
+- The GZD (Grid Zone Designator) is **hardcoded as "30K"** - this represents a zone in the middle of the south Atlantic, chosen arbitrarily since it won't conflict with real geographic data
+- The `kident` (100Km square identification) is **randomly chosen** and may not represent a valid full 100Km square
+- Numerical locations use **100m square blocks** as the base unit with Eastings (meters from west edge) and Northings (meters from north edge)
+
+#### MGRS Structure
+
+```
+Full coordinate example: 30K AB 12345 67890
+                         │   │  │     │
+                         │   │  │     └─ Northings (meters from north, 0-99999)
+                         │   │  └─────── Eastings (meters from west, 0-99999)
+                         │   └────────── kident (100Km square: column letter + row letter)
+                         └────────────── GZD (Grid Zone Designator, always "30K")
+```
+
+**kident letters:**
+- Column: A-Z, omitting I and O
+- Row: A-V, omitting I and O
+
+#### Location Hierarchy
+
+Olio uses a 4-level hierarchy for locations (from largest to smallest):
+
+| Level | Model | Description | Scale |
+|-------|-------|-------------|-------|
+| GZD | - | Grid Zone Designator (hardcoded "30K") | ~100,000km² |
+| Admin2 | `olio.locAdmin2` | Administrative region (county-level) | Variable |
+| Feature | `olio.locFeature` | Geographic feature (town, landmark) | Variable |
+| Cell | `olio.locCell` | 100m x 100m grid cell | 100m² |
+
+#### Position Storage on Characters
+
+Character position is stored across multiple fields in `olio.charPerson.state`:
+
+```java
+// Grid-level position (100m cells)
+int eastings = state.get("eastings");        // Cell X coordinate (0-999 in kident)
+int northings = state.get("northings");      // Cell Y coordinate (0-999 in kident)
+
+// Cell reference (the actual cell object)
+BaseRecord currentLocation = state.get("currentLocation");  // olio.locCell
+
+// Meter-level position within cell (0-99 meters)
+int currentEast = state.get("currentEast");   // Position within cell (X)
+int currentNorth = state.get("currentNorth"); // Position within cell (Y)
+```
+
+**Full position calculation:**
+```
+Absolute X = (eastings * 100) + currentEast    // Total meters from west edge
+Absolute Y = (northings * 100) + currentNorth  // Total meters from north edge
+```
+
+#### Distance Calculations
+
+Use `GeoLocationUtil` for distance and direction calculations:
+
+```java
+import org.cote.accountmanager.olio.GeoLocationUtil;
+
+// Simple Pythagorean distance between two points
+double dist = GeoLocationUtil.distance(x1, y1, x2, y2);
+
+// Full distance between two character states (handles cell + meter position)
+double distance = GeoLocationUtil.getDistanceToState(state1, state2);
+
+// Get direction from one state to another
+DirectionEnumType direction = GeoLocationUtil.getDirectionFromState(fromState, toState);
+```
+
+#### Interaction Distances
+
+Key distance constants used throughout Olio:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `PROXIMATE_CONTACT_DISTANCE` | 1.5 meters | Close interaction range (touching, handing items) |
+| `MAXIMUM_CONTACT_DISTANCE` | 5 meters | Talk/communication range |
+| `MAXIMUM_OBSERVATION_DISTANCE` | 10 cells (~1km) | Maximum visibility/detection range |
+
+#### Direction System
+
+Olio uses 8 cardinal/ordinal directions (`DirectionEnumType`):
+
+```
+    NORTH
+      │
+WEST ─┼─ EAST
+      │
+    SOUTH
+
+Plus: NORTHEAST, NORTHWEST, SOUTHEAST, SOUTHWEST
+```
+
+#### Movement Mechanics
+
+**Walk action** - Move by direction and distance:
+```java
+// Walk.java - directional movement
+// Moves character in specified direction by specified distance
+// Handles cell boundary transitions automatically
+```
+
+**WalkTo action** - Move toward a target:
+```java
+// WalkTo.java - target-based movement
+// Moves character toward target location until within PROXIMATE_CONTACT_DISTANCE
+// Calculates direction automatically from current position
+```
+
+**Low-level movement** via `StateUtil`:
+```java
+import org.cote.accountmanager.olio.StateUtil;
+
+// Move by one meter in specified direction, handling cell boundaries
+StateUtil.moveByOneMeterInCell(state, direction);
+
+// This automatically:
+// - Updates currentEast/currentNorth
+// - Handles cell boundary crossing (updates eastings/northings)
+// - Updates currentLocation reference when entering new cell
+```
+
+#### Visibility and Observation
+
+Characters can observe entities within `MAXIMUM_OBSERVATION_DISTANCE` (10 cells ≈ 1km):
+
+```java
+// Get visible characters from current position
+List<BaseRecord> visible = CharacterUtil.getVisibleCharacters(ctx, observer);
+
+// Check if specific target is visible
+boolean canSee = GeoLocationUtil.getDistanceToState(observerState, targetState)
+                 <= (MAXIMUM_OBSERVATION_DISTANCE * 100);  // Convert cells to meters
+```
+
+#### Cell Features and Terrain
+
+Each `olio.locCell` can contain:
+- `terrainType`: Ground type (affects movement speed, visibility)
+- `features`: List of geographic features in the cell
+- `structures`: Buildings, shelters, etc.
+
+### Working with Individual Olio Objects
+
+**IMPORTANT:** Olio code expects fully and deeply populated objects with all nested foreign models resolved.
+
+### Query Planning for Full Data
+
+Use `OlioUtil.planMost(query)` when building queries for Olio objects:
+
+```java
+import org.cote.accountmanager.olio.OlioUtil;
+
+// Build query with full data planning
+Query q = QueryUtil.createQuery("olio.charPerson", FieldNames.FIELD_OBJECT_ID, objectId);
+OlioUtil.planMost(q);  // Plans for all nested foreign models
+BaseRecord person = IOSystem.getActiveContext().getSearch().findRecord(q);
+
+// Now all nested foreign models are populated:
+// - state.currentLocation
+// - statistics (all stat fields)
+// - store.apparel, store.items
+// - profile.portrait
+// - instinct, personality, etc.
+```
+
+### Utilities That Already Return Full Records
+
+**Note:** `GameUtil.findCharacter()` already calls `OlioUtil.planMost()` internally. Do NOT call `getFullRecord()` after utilities that already return full data:
+
+```java
+// CORRECT - findCharacter already returns full data
+BaseRecord person = GameUtil.findCharacter(objectId);
+// person already has all nested data
+
+// WRONG - redundant double-load
+BaseRecord person = GameUtil.findCharacter(objectId);
+person = OlioUtil.getFullRecord(person);  // Unnecessary!
+```
+
+### When to Use getFullRecord()
+
+Use `OlioUtil.getFullRecord(record)` only when you have a **partial** record and need full data:
+
+```java
+// When you have a partial record from a list or minimal query
+BaseRecord partial = someRecordWithMinimalData;
+BaseRecord full = OlioUtil.getFullRecord(partial);
+// full now has all nested foreign models populated
+```
+
+**How getFullRecord works:**
+- Creates a query from the record's id/objectId/urn
+- Applies `OlioUtil.planMost(query)` for Olio-specific query planning
+- Returns a new fully-populated record from the database
+
 ### Personality & Interaction System
 
 **Big 5 (OCEAN) personality traits:**
