@@ -683,6 +683,50 @@ POST /rest/model/search
 - List<model> fields return empty or IDs only
 - To get actual data, you must include the field in `request` or use `/full`
 
+## Working with Olio Objects
+
+**IMPORTANT:** Olio code expects fully and deeply populated objects with all nested foreign models resolved. Many Olio utilities already handle this internally.
+
+### Query Planning for Full Data
+
+Olio objects have deeply nested models (`state.currentLocation`, `profile.portrait`, `statistics`, `store.apparel`, etc.). Use `OlioUtil.planMost(query)` on queries to populate all relevant nested data:
+
+```java
+import org.cote.accountmanager.olio.OlioUtil;
+
+// When building custom queries, apply planMost for full data
+Query q = QueryUtil.createQuery("olio.charPerson", FieldNames.FIELD_OBJECT_ID, objectId);
+OlioUtil.planMost(q);  // Plans for all nested foreign models
+BaseRecord person = IOSystem.getActiveContext().getSearch().findRecord(q);
+```
+
+### GameUtil Already Returns Full Records
+
+**Note:** `GameUtil.findCharacter()` already calls `OlioUtil.planMost()` internally, so it returns fully populated records. Do NOT call `getFullRecord()` after `findCharacter()` - that would be redundant:
+
+```java
+// CORRECT - findCharacter already returns full data
+BaseRecord person = GameUtil.findCharacter(objectId);
+// person already has all nested data - no additional call needed
+
+// WRONG - redundant double-load
+BaseRecord person = GameUtil.findCharacter(objectId);
+person = OlioUtil.getFullRecord(person);  // Unnecessary!
+```
+
+### When to Use getFullRecord()
+
+Use `OlioUtil.getFullRecord(record)` only when you have a **partial** record (e.g., from a list query or minimal projection) and need the full data:
+
+```java
+// When you have a partial record from a list
+List<BaseRecord> people = someListWithMinimalData;
+for(BaseRecord partial : people) {
+    BaseRecord full = OlioUtil.getFullRecord(partial);
+    // Now full has all nested data
+}
+```
+
 ## Integration with AccountManagerObjects7
 
 The REST layer integrates with the objects layer through:
