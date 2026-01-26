@@ -196,7 +196,7 @@
 
     async function loadAvailableCharacters() {
         try {
-            // Use AM7 query to get properly populated character data
+            // Find the population directory
             let popDir = await page.findObject("auth.group", "data", gridPath + "/Population");
             if (!popDir) {
                 console.warn("Population directory not found at " + gridPath + "/Population");
@@ -204,17 +204,18 @@
                 return;
             }
 
+            // Query for characters - viewQuery includes "profile" from model's query array
             let q = am7view.viewQuery("olio.charPerson");
             q.field("groupId", popDir.id);
             q.range(0, 50);
-            // Request foreign model field - DO NOT use nested paths like "profile.portrait"
-            q.entity.request.push("profile");
+            // Add other foreign fields we need for display
+            q.entity.request.push("store", "statistics");
 
             let qr = await page.search(q);
-            if (qr && qr.results) {
+            if (qr && qr.results && qr.results.length) {
                 am7model.updateListModel(qr.results);
                 availableCharacters = qr.results;
-                console.log("Loaded " + availableCharacters.length + " characters");
+                console.log("Loaded " + availableCharacters.length + " characters with full data");
             } else {
                 console.warn("No characters found in Population directory");
             }
@@ -231,6 +232,7 @@
             page.toast("error", "Character has no ID");
             return;
         }
+        window.dbgChar = char;
         player = char;
         characterSelectOpen = false;
 

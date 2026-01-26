@@ -610,11 +610,33 @@ console.log(person.statistics);  // null or undefined!
 console.log(person.store);       // null or undefined!
 ```
 
-**Solution 1: Use getFull() for all nested data:**
+**Solution 1 (PREFERRED): Use getFull() for all nested data:**
+
+`getFull` loads the complete object with ALL nested foreign models populated. This is the simplest approach and avoids needing to figure out query plans or incrementally load child foreign references.
+
 ```javascript
 let person = await am7client.getFull("olio.charPerson", objectId);
 console.log(person.statistics);  // populated BaseRecord
 console.log(person.store);       // populated BaseRecord
+console.log(person.profile.portrait);  // nested data available
+```
+
+**When to use getFull vs queries:**
+- **getFull**: When you need complete object data with all nested foreign models (e.g., loading a character for display/editing)
+- **Queries**: When you need to filter/search large datasets and only need a few fields for large results, or multiple complex objects with query plans to retrieve all desired  data.  getFull on the client calls planMost(true) on the backend query.
+- Don't call getFull on a list of results, use a query plan for that
+
+**Pattern for loading a list with full data:**
+```javascript
+// 1. Get list of IDs from a directory
+let charList = await am7client.list("olio.charPerson", groupObjectId, null, 0, 50);
+
+// 2. Load each with getFull to get complete nested data
+let fullChars = [];
+for (let char of charList) {
+    let fullChar = await am7client.getFull("olio.charPerson", char.objectId);
+    if (fullChar) fullChars.push(fullChar);
+}
 ```
 
 **Solution 2: Add foreign fields to query request:**
