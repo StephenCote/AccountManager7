@@ -364,11 +364,11 @@ public class GameService {
 		// Populate player's profile.portrait for UI display
 		// First populate the profile field on the person
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {FieldNames.FIELD_PROFILE});
-		BaseRecord playerProfile = person.get(FieldNames.FIELD_PROFILE);
-		if(playerProfile != null) {
+		BaseRecord personProfile = person.get(FieldNames.FIELD_PROFILE);
+		if(personProfile != null) {
 			// Then populate the portrait field on the profile
-			IOSystem.getActiveContext().getReader().populate(playerProfile, new String[] {"portrait"});
-			BaseRecord playerPortrait = playerProfile.get("portrait");
+			IOSystem.getActiveContext().getReader().populate(personProfile, new String[] {"portrait"});
+			BaseRecord playerPortrait = personProfile.get("portrait");
 			if(playerPortrait != null) {
 				// Finally populate the needed fields on the portrait
 				IOSystem.getActiveContext().getReader().populate(playerPortrait, new String[] {FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_NAME});
@@ -990,8 +990,8 @@ public class GameService {
 			// so we need to populate each record to get the objectId field
 			List<Map<String, Object>> characters = new ArrayList<>();
 			for(BaseRecord p : pop) {
-				// Populate to ensure objectId is available
-				IOSystem.getActiveContext().getReader().populate(p, new String[] {FieldNames.FIELD_OBJECT_ID});
+				// Populate to ensure objectId and profile are available
+				IOSystem.getActiveContext().getReader().populate(p, new String[] {FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_PROFILE});
 
 				Map<String, Object> charInfo = new HashMap<>();
 				charInfo.put("objectId", p.get(FieldNames.FIELD_OBJECT_ID));
@@ -1002,11 +1002,13 @@ public class GameService {
 				charInfo.put("age", p.get("age"));
 
 				// Get portrait if available - include full structure for UI compatibility
-				BaseRecord profile = p.get("profile");
+				BaseRecord profile = p.get(FieldNames.FIELD_PROFILE);
 				if(profile != null) {
 					IOSystem.getActiveContext().getReader().populate(profile, new String[] {"portrait"});
 					BaseRecord portrait = profile.get("portrait");
 					if(portrait != null) {
+						// Populate portrait fields needed for thumbnail URL
+						IOSystem.getActiveContext().getReader().populate(portrait, new String[] {FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_NAME});
 						// Build nested structure that UI expects
 						Map<String, Object> portraitInfo = new HashMap<>();
 						portraitInfo.put("objectId", portrait.get(FieldNames.FIELD_OBJECT_ID));
