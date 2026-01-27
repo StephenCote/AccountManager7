@@ -126,10 +126,12 @@
             grid.push(row);
         }
 
-        // Get player's current cell coordinates
-        let playerState = player && player.state ? player.state : null;
-        let playerEast = playerState ? (playerState.eastings || 0) : 0;
-        let playerNorth = playerState ? (playerState.northings || 0) : 0;
+        // Get player's current cell coordinates from state.currentLocation (not state itself)
+        // state has currentEast/currentNorth (meters within cell)
+        // state.currentLocation has eastings/northings (grid coordinates)
+        let playerLoc = player && player.state && player.state.currentLocation ? player.state.currentLocation : null;
+        let playerEast = playerLoc ? (playerLoc.eastings || 0) : 0;
+        let playerNorth = playerLoc ? (playerLoc.northings || 0) : 0;
         let center = Math.floor(size / 2);
 
         // Place adjacent cells in grid relative to player position
@@ -152,14 +154,14 @@
             }
         }
 
-        // Place nearby people in grid
+        // Place nearby people in grid based on their cell's grid coordinates
         for (let person of nearbyPeople) {
             if (!person) continue;
-            let personState = person.state;
-            if (!personState) continue;
+            let personLoc = person.state && person.state.currentLocation ? person.state.currentLocation : null;
+            if (!personLoc) continue;
 
-            let personEast = personState.eastings || 0;
-            let personNorth = personState.northings || 0;
+            let personEast = personLoc.eastings || 0;
+            let personNorth = personLoc.northings || 0;
 
             let gridX = center + (personEast - playerEast);
             let gridY = center + (personNorth - playerNorth);
@@ -608,10 +610,18 @@
                 // Location info - use player.state.currentLocation
                 (function() {
                     let playerLoc = player.state && player.state.currentLocation ? player.state.currentLocation : null;
+                    let playerState = player.state || {};
                     let terrainType = playerLoc ? playerLoc.terrainType : null;
                     // terrainType is the display name (e.g., "FOREST"), name is MGRS coordinate
                     let terrainDisplay = terrainType ? terrainType.charAt(0) + terrainType.slice(1).toLowerCase() : null;
                     let climate = situation ? situation.climate : null;
+
+                    // Grid coordinates (cell position in grid)
+                    let cellEast = playerLoc ? playerLoc.eastings : null;
+                    let cellNorth = playerLoc ? playerLoc.northings : null;
+                    // Position within cell (meters from cell edge)
+                    let posEast = playerState.currentEast;
+                    let posNorth = playerState.currentNorth;
 
                     return m("div", {class: "sg-location-section"}, [
                         m("div", {class: "sg-section-label"}, "LOCATION"),
@@ -624,6 +634,12 @@
                         playerLoc && playerLoc.name ?
                             m("div", {class: "sg-location-coord", style: "font-size: 0.7em; opacity: 0.7;"},
                                 playerLoc.name) : null,
+                        // Show full coordinates: cell grid position + position within cell
+                        (cellEast !== null || posEast !== null) ?
+                            m("div", {class: "sg-location-coord", style: "font-size: 0.7em; opacity: 0.7; margin-top: 2px;"}, [
+                                "Cell: [" + (cellEast !== null ? cellEast : "?") + ", " + (cellNorth !== null ? cellNorth : "?") + "]",
+                                " Pos: [" + (posEast !== null && posEast >= 0 ? posEast : "?") + ", " + (posNorth !== null && posNorth >= 0 ? posNorth : "?") + "]m"
+                            ]) : null,
                         climate ?
                             m("div", {class: "sg-climate-info"},
                                 climate + " climate") : null
@@ -685,7 +701,12 @@
 
     function renderGrid() {
         // Server returns adjacentCells as flat list, convert to 2D grid
-        let adjacentCells = situation && situation.adjacentCells ? situation.adjacentCells : [];
+        // adjacentCells excludes the player's current cell, so add it from situation.location
+        let adjacentCells = situation && situation.adjacentCells ? situation.adjacentCells.slice() : [];
+        let playerCell = situation && situation.location ? situation.location : null;
+        if (playerCell) {
+            adjacentCells.push(playerCell);  // Add player's cell so it shows in grid
+        }
         let nearbyPeople = situation && situation.nearbyPeople ? situation.nearbyPeople : [];
         let threats = situation && situation.threats ? situation.threats : [];
         let size = GRID_SIZE;
