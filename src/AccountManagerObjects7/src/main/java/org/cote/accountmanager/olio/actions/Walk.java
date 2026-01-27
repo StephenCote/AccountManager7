@@ -75,7 +75,7 @@ public class Walk extends CommonAction implements IAction {
 		}
 
 		if(moved) {
-			StateUtil.queueUpdateLocation(context, actionResult.get(FieldNames.FIELD_STATE));
+			StateUtil.queueUpdateLocation(context, actor);
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);
 		}
 		else {

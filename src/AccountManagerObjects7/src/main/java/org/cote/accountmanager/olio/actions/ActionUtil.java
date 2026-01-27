@@ -81,7 +81,15 @@ public class ActionUtil {
 	}
 	public static BaseRecord getInAction(BaseRecord animal, String actionName) {
 		List<BaseRecord> iacts = getCurrentActions(animal, actionName, Arrays.asList(new ActionResultEnumType[] {ActionResultEnumType.PENDING, ActionResultEnumType.IN_PROGRESS}));
-		return (iacts.size() > 0 ? iacts.get(0) : null);
+		if(iacts.size() == 0) {
+			return null;
+		}
+		BaseRecord action = iacts.get(0);
+		// Ensure action is fully loaded (may be cached partial from list)
+		if(action.get(FieldNames.FIELD_STATE) == null) {
+			action = OlioUtil.getFullRecord(action);
+		}
+		return action;
 	}
 	public static boolean isInAction(BaseRecord animal, String actionName) {
 		return (getInAction(animal, actionName) != null);

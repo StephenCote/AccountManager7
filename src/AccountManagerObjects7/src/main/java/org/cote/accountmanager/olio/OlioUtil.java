@@ -510,6 +510,7 @@ public class OlioUtil {
 		else {
 			q.planMost(true);
 		}
+		q.setCache(false);  // Bypass cache to ensure full plan is applied
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	

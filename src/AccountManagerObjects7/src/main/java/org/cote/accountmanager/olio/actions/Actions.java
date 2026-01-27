@@ -18,6 +18,7 @@ import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.Overwatch.OverwatchEnumType;
 import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.olio.WearLevelEnumType;
@@ -153,7 +154,7 @@ public class Actions {
 		
 		actr.setValue(OlioFieldNames.FIELD_ACTOR, actor);
 		actr.setValue(OlioFieldNames.FIELD_ACTOR_TYPE, actor.getSchema());
-		
+
 		act.configureAction(context, actr, actor, interactor);
 		if(event != null) {
 			actr.setValue("actionStart", event.get(OlioFieldNames.FIELD_EVENT_PROGRESS));
@@ -193,7 +194,7 @@ public class Actions {
 		return executeAction(context, actionResult, actor, interactor);
 	}
 	
-	public static boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
+	public static boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord inActor, BaseRecord interactor) throws OlioException {
 		String actName = actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2);
 		if(actName == null) {
 			throw new OlioException("Unknown action name");
@@ -202,6 +203,8 @@ public class Actions {
 		if(action == null) {
 			throw new OlioException("Invalid action: " + actName);
 		}
+		
+		BaseRecord actor = OlioUtil.getFullRecord(inActor);
 		
 		Boolean narrate = actionResult.get("parameters.narrate");
 

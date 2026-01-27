@@ -27,6 +27,7 @@ public class GameUtil {
 	public static BaseRecord findCharacter(String objectId) {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		OlioUtil.planMost(q);
+		q.setCache(false);  // Bypass cache to ensure full plan is applied
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 

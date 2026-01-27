@@ -113,6 +113,82 @@
         return char ? (char.objectId || char.id) : null;
     }
 
+    // Build 2D grid from flat list of adjacent cells
+    // Server returns adjacentCells with eastings/northings, we need to position them relative to player
+    function buildGridFromCells(adjacentCells, nearbyPeople, threats, size) {
+        // Initialize empty grid
+        let grid = [];
+        for (let y = 0; y < size; y++) {
+            let row = [];
+            for (let x = 0; x < size; x++) {
+                row.push({ terrainType: "UNKNOWN", occupants: [], pois: [] });
+            }
+            grid.push(row);
+        }
+
+        // Get player's current cell coordinates
+        let playerState = player && player.state ? player.state : null;
+        let playerEast = playerState ? (playerState.eastings || 0) : 0;
+        let playerNorth = playerState ? (playerState.northings || 0) : 0;
+        let center = Math.floor(size / 2);
+
+        // Place adjacent cells in grid relative to player position
+        for (let cell of adjacentCells) {
+            if (!cell) continue;
+            let cellEast = cell.eastings || 0;
+            let cellNorth = cell.northings || 0;
+
+            // Calculate grid position (player is at center)
+            let gridX = center + (cellEast - playerEast);
+            let gridY = center + (cellNorth - playerNorth);
+
+            // Check bounds
+            if (gridX >= 0 && gridX < size && gridY >= 0 && gridY < size) {
+                grid[gridY][gridX] = {
+                    terrainType: cell.terrainType || "UNKNOWN",
+                    occupants: [],
+                    pois: cell.features || []
+                };
+            }
+        }
+
+        // Place nearby people in grid
+        for (let person of nearbyPeople) {
+            if (!person) continue;
+            let personState = person.state;
+            if (!personState) continue;
+
+            let personEast = personState.eastings || 0;
+            let personNorth = personState.northings || 0;
+
+            let gridX = center + (personEast - playerEast);
+            let gridY = center + (personNorth - playerNorth);
+
+            if (gridX >= 0 && gridX < size && gridY >= 0 && gridY < size) {
+                grid[gridY][gridX].occupants.push({
+                    type: 'person',
+                    name: person.name,
+                    objectId: person.objectId || person.id,
+                    record: person
+                });
+            }
+        }
+
+        // Place threats in grid (threats have source IDs, need to find positions)
+        for (let threat of threats) {
+            if (!threat || !threat.source) continue;
+            // Threats are already processed - they have source info but may not have position
+            // For now, add them to center if we don't have position info
+            // TODO: Look up threat source position from adjacentCells or nearbyPeople
+            if (threat.isAnimal) {
+                // Animals are threats - add to a random adjacent cell for now
+                // This is a simplification - real impl should track animal positions
+            }
+        }
+
+        return grid;
+    }
+
     // ==========================================
     // API Functions
     // ==========================================
@@ -175,21 +251,24 @@
         let playerId = getCharId(player);
         if (!playerId) return;
         isLoading = true;
+        console.log("Moving character:", playerId, "direction:", direction);
         try {
             let resp = await m.request({
                 method: 'POST',
                 url: g_application_path + "/rest/game/move/" + playerId,
+                headers: { "Content-Type": "application/json" },
                 body: { direction: direction },
                 withCredentials: true
             });
 
+            console.log("Move response:", resp);
             situation = resp;
             addEvent("Moved " + direction, "info");
             moveMode = false;
             m.redraw();
         } catch (e) {
-            console.error("Failed to move", e);
-            page.toast("error", "Movement failed: " + e.message);
+            console.error("Failed to move", e, "Response:", e.response);
+            page.toast("error", "Movement failed: " + (e.message || JSON.stringify(e)));
         }
         isLoading = false;
     }
@@ -526,26 +605,25 @@
                     renderNeedBar("Fatigue", 1 - (needs.fatigue || 0), "bedtime", "purple")
                 ]),
 
-                // Location info - prefer situation.location, fall back to player.state.currentLocation
+                // Location info - use player.state.currentLocation
                 (function() {
-                    let loc = situation && situation.location ? situation.location : null;
                     let playerLoc = player.state && player.state.currentLocation ? player.state.currentLocation : null;
-
-                    // Use situation location if available, otherwise use player's state.currentLocation
-                    let terrainType = loc ? loc.terrainType : (playerLoc ? playerLoc.terrainType : null);
-                    let locationName = loc ? (loc.feature || loc.name || loc.terrainType) :
-                                       (playerLoc ? (playerLoc.name || playerLoc.terrainType) : null);
+                    let terrainType = playerLoc ? playerLoc.terrainType : null;
+                    // terrainType is the display name (e.g., "FOREST"), name is MGRS coordinate
+                    let terrainDisplay = terrainType ? terrainType.charAt(0) + terrainType.slice(1).toLowerCase() : null;
                     let climate = situation ? situation.climate : null;
-
-                    if (!terrainType && !locationName) return null;
 
                     return m("div", {class: "sg-location-section"}, [
                         m("div", {class: "sg-section-label"}, "LOCATION"),
                         m("div", {class: "sg-location-info"}, [
                             m("span", {class: "sg-terrain-icon"},
                                 TERRAIN_ICONS[terrainType] || TERRAIN_ICONS.UNKNOWN),
-                            m("span", locationName || "Unknown")
+                            m("span", terrainDisplay || "Unknown terrain")
                         ]),
+                        // Show MGRS coordinate in smaller text
+                        playerLoc && playerLoc.name ?
+                            m("div", {class: "sg-location-coord", style: "font-size: 0.7em; opacity: 0.7;"},
+                                playerLoc.name) : null,
                         climate ?
                             m("div", {class: "sg-climate-info"},
                                 climate + " climate") : null
@@ -606,22 +684,16 @@
     };
 
     function renderGrid() {
-        let grid = situation && situation.nearby && situation.nearby.grid ?
-            situation.nearby.grid : [];
+        // Server returns adjacentCells as flat list, convert to 2D grid
+        let adjacentCells = situation && situation.adjacentCells ? situation.adjacentCells : [];
+        let nearbyPeople = situation && situation.nearbyPeople ? situation.nearbyPeople : [];
+        let threats = situation && situation.threats ? situation.threats : [];
         let size = GRID_SIZE;
         let center = Math.floor(size / 2);
 
-        // Create default empty grid if none provided
-        if (!grid.length) {
-            grid = [];
-            for (let y = 0; y < size; y++) {
-                let row = [];
-                for (let x = 0; x < size; x++) {
-                    row.push({ terrain: "UNKNOWN", occupants: [] });
-                }
-                grid.push(row);
-            }
-        }
+        // Build grid from adjacentCells - cells have eastings/northings
+        let grid = buildGridFromCells(adjacentCells, nearbyPeople, threats, size);
+
 
         return m("div", {class: "sg-grid"}, grid.map(function(row, y) {
             return m("div", {class: "sg-grid-row"}, row.map(function(cell, x) {
@@ -720,10 +792,8 @@
                 ]);
             }
 
-            let threats = situation && situation.nearby && situation.nearby.threats ?
-                situation.nearby.threats : [];
-            let people = situation && situation.nearby && situation.nearby.people ?
-                situation.nearby.people : [];
+            let threats = situation && situation.threats ? situation.threats : [];
+            let people = situation && situation.nearbyPeople ? situation.nearbyPeople : [];
 
             return m("div", {class: "sg-panel sg-action-panel"}, [
                 // Threat radar

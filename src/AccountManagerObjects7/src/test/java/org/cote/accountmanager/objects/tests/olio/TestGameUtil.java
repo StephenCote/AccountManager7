@@ -8,6 +8,7 @@ import static org.junit.Assume.assumeTrue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.BaseTest;
@@ -50,6 +51,32 @@ public class TestGameUtil extends BaseTest {
 		Queue.processQueue();
 	}
 
+	
+	@Test
+	public void TestStatistics() {
+		logger.info("Test Statistics");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> realms = octx.getRealms();
+		assumeTrue("No realms available - skipping test", realms.size() > 0);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population available - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		// These are actual test assertions - should FAIL if stats not loaded
+		//BaseRecord firstPerson = pop.stream().filter(p -> ((String)p.get("lastName")).equals("Bassitt")).collect(Collectors.toList()).get(0);
+		for(BaseRecord per : pop){
+		int speed = per.get(OlioFieldNames.FIELD_STATISTICS_SPEED);
+		assertNotNull("Statistics speed should not be null", speed);
+		assertTrue("Statistics speed should be > 0, got: " + speed, speed > 0);
+		logger.info("Speed: " + speed + " for " + per.get("name"));
+		}
+	}
+
 	@Test
 	public void TestFindCharacter() {
 		logger.info("Test GameUtil.findCharacter");
@@ -75,6 +102,47 @@ public class TestGameUtil extends BaseTest {
 
 		BaseRecord state = found.get(FieldNames.FIELD_STATE);
 		assertNotNull("State should be loaded", state);
+	}
+
+	@Test
+	public void TestFindCharacterWithFullStatistics() {
+		logger.info("Test GameUtil.findCharacter returns fully populated statistics");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population available - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		BaseRecord firstPerson = pop.get(0);
+		String objectId = firstPerson.get(FieldNames.FIELD_OBJECT_ID);
+		assumeTrue("ObjectId is null - skipping test", objectId != null);
+
+		// findCharacter should bypass cache and return fully populated statistics
+		BaseRecord found = GameUtil.findCharacter(objectId);
+		assertNotNull("Found character is null", found);
+
+		BaseRecord statistics = found.get(OlioFieldNames.FIELD_STATISTICS);
+		assertNotNull("Statistics should be loaded", statistics);
+
+		// Verify statistics has actual values, not just reference fields
+		// If only reference fields are returned, these will be null/0
+		Integer agility = statistics.get("agility");
+		Integer speed = statistics.get("speed");
+		Integer strength = statistics.get("strength");
+
+		assertNotNull("Statistics.agility should not be null (cache bypass failed?)", agility);
+		assertNotNull("Statistics.speed should not be null (cache bypass failed?)", speed);
+		assertNotNull("Statistics.strength should not be null (cache bypass failed?)", strength);
+
+		// Verify values are within expected ranges (stats are typically 1-20 or similar)
+		assertTrue("Statistics.agility should be > 0, got: " + agility, agility > 0);
+		assertTrue("Statistics.speed should be > 0, got: " + speed, speed > 0);
+		assertTrue("Statistics.strength should be > 0, got: " + strength, strength > 0);
+
+		logger.info("Statistics loaded successfully - agility: " + agility + ", speed: " + speed + ", strength: " + strength);
 	}
 
 	@Test
@@ -425,4 +493,5 @@ public class TestGameUtil extends BaseTest {
 		boolean deleted = GameUtil.deleteGame(saveId);
 		assertTrue("Should be deleted", deleted);
 	}
+	
 }

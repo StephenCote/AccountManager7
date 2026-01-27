@@ -338,18 +338,21 @@ public class GameService {
 			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
 		}
 
-		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-		if(params == null) {
+		@SuppressWarnings("unchecked")
+		Map<String, Object> params = JSONUtil.importObject(json, Map.class);
+		if(params == null || !params.containsKey("direction")) {
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
 
-		DirectionEnumType dir = params.getEnum("direction");
+		String dirStr = (String) params.get("direction");
+		DirectionEnumType dir = DirectionEnumType.valueOf(dirStr);
 		if(dir == null || dir == DirectionEnumType.UNKNOWN) {
 			return Response.status(400).entity("{\"error\":\"direction required (NORTH, SOUTH, EAST, WEST)\"}").build();
 		}
 
-		Double distance = params.get("distance");
-		if(distance == null || distance <= 0) {
+		Object distObj = params.get("distance");
+		Double distance = (distObj instanceof Number) ? ((Number) distObj).doubleValue() : 1.0;
+		if(distance <= 0) {
 			distance = 1.0;
 		}
 

@@ -345,6 +345,8 @@ public class AnimalUtil {
 		double speed = (double)(int)animal.get(OlioFieldNames.FIELD_STATISTICS_SPEED);
 		if(speed <= 0) {
 			logger.warn("Invalid speed for #" + animal.get(FieldNames.FIELD_ID) + " " + animal.get(FieldNames.FIELD_NAME) + ": Using default");
+			logger.error(animal.toFullString());
+			ErrorUtil.printStackTrace();
 			speed = defaultAnimalSpeed;
 		}
 		/// Average walking speed is 1.2 meters per second
