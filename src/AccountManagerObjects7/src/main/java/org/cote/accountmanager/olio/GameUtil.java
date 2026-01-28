@@ -1124,7 +1124,7 @@ public class GameUtil {
 				if (!realms.isEmpty()) {
 					BaseRecord realm = realms.get(0);
 					// For now, just log - full event attachment requires more context
-					logger.info("Interaction created for realm: {}", realm.get(FieldNames.FIELD_NAME));
+					logger.info("Interaction created for realm: {}", (String)realm.get(FieldNames.FIELD_NAME));
 				}
 			}
 
