@@ -37,7 +37,7 @@
     let newSaveName = '';
 
     // Grid display
-    const GRID_SIZE = 5;         // 5x5 grid display
+    const GRID_SIZE = 10;        // 10x10 grid display to match map
 
     // Action types with their icons and descriptions
     const ACTION_TYPES = {
@@ -53,19 +53,49 @@
         WATCH: { label: "Watch", icon: "visibility", color: "gray" }
     };
 
-    // Terrain icons
+    // Configuration: set to true to use PNG tile images instead of emoji
+    const USE_TILE_IMAGES = true;
+
+    // Terrain icons (emoji fallback)
     const TERRAIN_ICONS = {
+        CAVE: "\u{1F5FF}",        // Stone/cave
+        CLEAR: "\u{1F33F}",       // Herb/clear
+        DESERT: "\u{1F3DC}",      // Desert
+        DUNES: "\u{1F3DC}",       // Desert dunes
         FOREST: "\u{1F332}",      // Tree
+        GLACIER: "\u{1F9CA}",     // Ice
+        GRASS: "\u{1F33F}",       // Herb/grass
+        HILL: "\u{26F0}",         // Mountain
+        HILLS: "\u{26F0}",        // Mountains
+        JUNGLE: "\u{1F334}",      // Palm
+        LAKE: "\u{1F4A7}",        // Water
+        MARSH: "\u{1F344}",       // Mushroom
         MEADOW: "\u{1F33F}",      // Herb
         MOUNTAIN: "\u{1F3D4}",    // Mountain
-        DESERT: "\u{1F3DC}",      // Desert
-        WATER: "\u{1F4A7}",       // Water
-        JUNGLE: "\u{1F334}",      // Palm
-        TUNDRA: "\u{2744}",       // Snowflake
+        OASIS: "\u{1F334}",       // Palm/oasis
+        OCEAN: "\u{1F30A}",       // Wave
         PLAINS: "\u{1F33E}",      // Wheat
+        PLATEAU: "\u{1F3D4}",     // Mountain
+        POND: "\u{1F4A7}",        // Water
+        RIVER: "\u{1F4A7}",       // Water
+        SAVANNA: "\u{1F33E}",     // Wheat/grass
+        SHELTER: "\u{1F3E0}",     // House
+        SHORELINE: "\u{1F3D6}",   // Beach
+        STREAM: "\u{1F4A7}",      // Water
         SWAMP: "\u{1F344}",       // Mushroom
+        TUNDRA: "\u{2744}",       // Snowflake
+        VALLEY: "\u{1F3DE}",      // Valley
+        WATER: "\u{1F4A7}",       // Water (generic)
         UNKNOWN: "?"
     };
+
+    // Get tile URL for terrain type (served as static files from /dist/tiles/)
+    function getTileUrl(terrainType) {
+        if (!terrainType) return null;
+        let terrain = terrainType.toLowerCase();
+        if (terrain === "unknown") terrain = "clear";
+        return "/dist/tiles/" + terrain + ".png";
+    }
 
     // ==========================================
     // Utility Functions
@@ -126,10 +156,10 @@
             grid.push(row);
         }
 
-        // Get player's current cell coordinates from state.currentLocation (not state itself)
-        // state has currentEast/currentNorth (meters within cell)
-        // state.currentLocation has eastings/northings (grid coordinates)
-        let playerLoc = player && player.state && player.state.currentLocation ? player.state.currentLocation : null;
+        // Get player's current cell coordinates
+        // Use situation.location (simplified map with eastings/northings) or fallback to player.state.currentLocation
+        let playerLoc = (situation && situation.location) ||
+                        (player && player.state && player.state.currentLocation);
         let playerEast = playerLoc ? (playerLoc.eastings || 0) : 0;
         let playerNorth = playerLoc ? (playerLoc.northings || 0) : 0;
         let center = Math.floor(size / 2);
@@ -157,7 +187,8 @@
         // Place nearby people in grid based on their cell's grid coordinates
         for (let person of nearbyPeople) {
             if (!person) continue;
-            let personLoc = person.state && person.state.currentLocation ? person.state.currentLocation : null;
+            // Support both simplified structure (currentLocation) and full (state.currentLocation)
+            let personLoc = person.currentLocation || (person.state && person.state.currentLocation);
             if (!personLoc) continue;
 
             let personEast = personLoc.eastings || 0;
@@ -255,11 +286,13 @@
         isLoading = true;
         console.log("Moving character:", playerId, "direction:", direction);
         try {
+            // Move 1 meter per click for fine-grained control within the 100m x 100m cell
+            // currentEast/currentNorth track position 0-99 meters within the cell
             let resp = await m.request({
                 method: 'POST',
                 url: g_application_path + "/rest/game/move/" + playerId,
                 headers: { "Content-Type": "application/json" },
-                body: { direction: direction },
+                body: { direction: direction, distance: 1 },
                 withCredentials: true
             });
 
@@ -270,7 +303,15 @@
             m.redraw();
         } catch (e) {
             console.error("Failed to move", e, "Response:", e.response);
-            page.toast("error", "Movement failed: " + (e.message || JSON.stringify(e)));
+            // Mithril puts the response body in e.response for non-2xx responses
+            let errorMsg = "Movement failed";
+            if (e.response && e.response.error) {
+                errorMsg = e.response.error;
+            } else if (e.message) {
+                errorMsg = e.message;
+            }
+            page.toast("error", errorMsg);
+            addEvent(errorMsg, "warning");
         }
         isLoading = false;
     }
@@ -342,26 +383,25 @@
     }
 
     async function advanceTurn() {
-        let playerId = getCharId(player);
-        if (!playerId) return;
+        if (!player) return;
         isLoading = true;
         try {
-            // End turn updates needs and advances time
+            // Advance turn updates needs and advances time for player-controlled characters
             let resp = await m.request({
                 method: 'POST',
-                url: g_application_path + "/rest/game/endTurn/" + playerId,
+                url: g_application_path + "/rest/game/advance",
                 withCredentials: true
             });
-            if (resp && resp.situation) {
-                situation = resp.situation;
-            } else {
-                await loadSituation();
-            }
-            addEvent("Turn ended", "info");
-        } catch (e) {
-            console.error("Failed to end turn", e);
-            // Try just reloading situation
+            // Reload situation to get updated state
             await loadSituation();
+            if (resp && resp.updated !== undefined) {
+                addEvent("Turn advanced (" + resp.updated + " updated)", "info");
+            } else {
+                addEvent("Turn advanced", "info");
+            }
+        } catch (e) {
+            console.error("Failed to advance turn", e);
+            page.toast("error", "Failed to advance turn");
         }
         isLoading = false;
     }
@@ -607,13 +647,15 @@
                     renderNeedBar("Fatigue", 1 - (needs.fatigue || 0), "bedtime", "purple")
                 ]),
 
-                // Location info - use player.state.currentLocation
+                // Location info - use situation.location (simplified map with all fields)
                 (function() {
-                    let playerLoc = player.state && player.state.currentLocation ? player.state.currentLocation : null;
+                    let playerLoc = situation && situation.location ? situation.location : null;
                     let playerState = player.state || {};
                     let terrainType = playerLoc ? playerLoc.terrainType : null;
-                    // terrainType is the display name (e.g., "FOREST"), name is MGRS coordinate
-                    let terrainDisplay = terrainType ? terrainType.charAt(0) + terrainType.slice(1).toLowerCase() : null;
+                    // Normalize terrain type to uppercase for icon lookup
+                    let terrainKey = terrainType ? terrainType.toUpperCase() : null;
+                    // Display name is capitalized (e.g., "Desert")
+                    let terrainDisplay = terrainType ? terrainType.charAt(0).toUpperCase() + terrainType.slice(1).toLowerCase() : null;
                     let climate = situation ? situation.climate : null;
 
                     // Grid coordinates (cell position in grid)
@@ -627,7 +669,7 @@
                         m("div", {class: "sg-section-label"}, "LOCATION"),
                         m("div", {class: "sg-location-info"}, [
                             m("span", {class: "sg-terrain-icon"},
-                                TERRAIN_ICONS[terrainType] || TERRAIN_ICONS.UNKNOWN),
+                                TERRAIN_ICONS[terrainKey] || TERRAIN_ICONS.UNKNOWN),
                             m("span", terrainDisplay || "Unknown terrain")
                         ]),
                         // Show MGRS coordinate in smaller text
@@ -732,16 +774,51 @@
                 if (hasThreat) cellClass += " sg-cell-threat";
                 if (hasPerson && !hasThreat) cellClass += " sg-cell-person";
 
-                // Determine what to display
-                let content = TERRAIN_ICONS[cell.terrainType] || TERRAIN_ICONS.UNKNOWN;
-                if (isCenter) content = "\u2B50"; // Star for player
-                else if (hasThreat && cell.occupants) {
+                // Determine overlay icon (player, threat, person, POI)
+                let overlayIcon = null;
+                if (isCenter) {
+                    overlayIcon = "\u2B50"; // Star for player
+                } else if (hasThreat && cell.occupants) {
                     let threat = cell.occupants.find(function(o) { return o.threatType; });
-                    content = threat && threat.icon ? threat.icon : "\u{1F43A}"; // Wolf default
+                    overlayIcon = threat && threat.icon ? threat.icon : "\u{1F43A}"; // Wolf default
                 } else if (hasPerson && cell.occupants) {
-                    content = "\u{1F464}"; // Person
+                    overlayIcon = "\u{1F464}"; // Person
                 } else if (hasPOI) {
-                    content = "\u{1F3E0}"; // House/POI
+                    overlayIcon = "\u{1F3E0}"; // House/POI
+                }
+
+                // Build cell content
+                let cellContent = [];
+                let emojiIcon = TERRAIN_ICONS[cell.terrainType] || TERRAIN_ICONS.UNKNOWN;
+
+                // Background: tile image with emoji fallback
+                if (USE_TILE_IMAGES && cell.terrainType) {
+                    // Include both image and emoji - emoji is hidden by default, shown on img error
+                    cellContent.push(m("img", {
+                        src: getTileUrl(cell.terrainType),
+                        class: "sg-tile-img",
+                        alt: cell.terrainType,
+                        onerror: function(e) {
+                            // Hide broken image and show emoji fallback
+                            e.target.style.display = 'none';
+                            let fallback = e.target.nextElementSibling;
+                            if (fallback && fallback.classList.contains('sg-tile-fallback')) {
+                                fallback.style.display = 'flex';
+                            }
+                        }
+                    }));
+                    // Hidden emoji fallback
+                    cellContent.push(m("span", {
+                        class: "sg-tile-fallback",
+                        style: "display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; align-items: center; justify-content: center; font-size: 1.5rem;"
+                    }, emojiIcon));
+                } else {
+                    cellContent.push(emojiIcon);
+                }
+
+                // Overlay icon on top of tile
+                if (overlayIcon) {
+                    cellContent.push(m("span", {class: "sg-cell-overlay"}, overlayIcon));
                 }
 
                 return m("div", {
@@ -753,7 +830,7 @@
                             selectEntity(cell.pois[0], 'poi');
                         }
                     }
-                }, content);
+                }, cellContent);
             }));
         }));
     }
@@ -875,8 +952,13 @@
             typeLabel = threat.groupType || "ANIMAL";
         }
 
+        // Check if this threat is selected
+        let threatId = threat.source || threat.objectId || threat.id;
+        let selectedId = selectedEntity ? (selectedEntity.source || selectedEntity.objectId || selectedEntity.id) : null;
+        let isSelected = selectedEntityType === 'threat' && threatId && selectedId && threatId === selectedId;
+
         return m("div", {
-            class: "sg-threat-card sg-border-" + pColor,
+            class: "sg-threat-card sg-border-" + pColor + (isSelected ? " sg-card-selected" : ""),
             onclick: function() { selectEntity(threat, 'threat'); }
         }, [
             m("div", {class: "sg-threat-header"}, [
@@ -900,15 +982,42 @@
     function renderPersonCard(person) {
         let record = person.record || person;
         let portrait = getPortraitUrl(record, "64x64");
+
+        // Build display name from name, or fallback to gender/age description
+        let displayName = record.name;
+        if (!displayName) {
+            let gender = record.gender || "";
+            let age = record.age || 0;
+            if (gender && age) {
+                let isMale = gender.toLowerCase() === "male";
+                if (age < 13) {
+                    displayName = isMale ? "Boy" : "Girl";
+                } else if (age < 20) {
+                    displayName = isMale ? "Young man" : "Young woman";
+                } else if (age < 60) {
+                    displayName = isMale ? "Man" : "Woman";
+                } else {
+                    displayName = isMale ? "Old man" : "Old woman";
+                }
+            } else {
+                displayName = "Unknown person";
+            }
+        }
+
+        // Check if this person is selected
+        let personId = record.objectId || record.id;
+        let selectedId = selectedEntity ? (selectedEntity.objectId || selectedEntity.id) : null;
+        let isSelected = selectedEntityType === 'person' && personId && selectedId && personId === selectedId;
+
         return m("div", {
-            class: "sg-person-card",
+            class: "sg-person-card" + (isSelected ? " sg-card-selected" : ""),
             onclick: function() { selectEntity(record, 'person'); }
         }, [
             portrait ?
                 m("img", {src: portrait, class: "sg-person-portrait"}) :
                 m("span", {class: "sg-person-icon"}, "\u{1F464}"),
             m("div", {class: "sg-person-info"}, [
-                m("div", {class: "sg-person-name"}, record.name || "Unknown"),
+                m("div", {class: "sg-person-name"}, displayName),
                 m("div", {class: "sg-person-rel"},
                     (person.relationship || "neutral") + " \u2022 " + (person.distance || 0) + " cells")
             ])
@@ -957,8 +1066,22 @@
             let isAnimal = selectedEntityType === 'threat' && (selectedEntity.isAnimal || selectedEntity.animalType);
             let isPerson = selectedEntityType === 'person';
 
+            // Always show cancel button when something is selected
+            let cancelBtn = m("button", {
+                class: "sg-btn sg-btn-small",
+                onclick: function() {
+                    selectedEntity = null;
+                    selectedEntityType = null;
+                },
+                title: "Cancel selection"
+            }, [
+                m("span", {class: "material-symbols-outlined"}, "close"),
+                " Cancel"
+            ]);
+
             if (entityId && (isPerson || isAnimal)) {
                 utilityButtons = m("div", {class: "sg-utility-buttons", style: "margin-top: 8px; display: flex; gap: 8px;"}, [
+                    cancelBtn,
                     // View/Edit button - opens in new tab
                     m("button", {
                         class: "sg-btn sg-btn-small sg-btn-icon",
@@ -1009,6 +1132,11 @@
                     }, [
                         m("span", {class: "material-symbols-outlined"}, "auto_awesome")
                     ])
+                ]);
+            } else {
+                // Show just cancel button if no valid entityId
+                utilityButtons = m("div", {class: "sg-utility-buttons", style: "margin-top: 8px; display: flex; gap: 8px;"}, [
+                    cancelBtn
                 ]);
             }
         }
@@ -1342,7 +1470,48 @@
     // Component Export
     // ==========================================
 
+    // Keyboard handler for arrow key movement
+    function handleKeydown(e) {
+        // Only handle if not in an input field
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        let direction = null;
+        switch (e.key) {
+            case 'ArrowUp':
+            case 'w':
+            case 'W':
+                direction = 'NORTH';
+                break;
+            case 'ArrowDown':
+            case 's':
+            case 'S':
+                direction = 'SOUTH';
+                break;
+            case 'ArrowLeft':
+            case 'a':
+            case 'A':
+                direction = 'WEST';
+                break;
+            case 'ArrowRight':
+            case 'd':
+            case 'D':
+                direction = 'EAST';
+                break;
+        }
+
+        if (direction && player && !isLoading) {
+            e.preventDefault();
+            moveCharacter(direction);
+        }
+    }
+
     let cardGame = {
+        oncreate: function() {
+            document.addEventListener('keydown', handleKeydown);
+        },
+        onremove: function() {
+            document.removeEventListener('keydown', handleKeydown);
+        },
         oninit: async function(vnode) {
             // Check for character passed via route or sessionStorage
             let preSelectedCharId = null;

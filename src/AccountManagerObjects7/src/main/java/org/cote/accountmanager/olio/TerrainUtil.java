@@ -75,6 +75,20 @@ public class TerrainUtil {
 		Map<TerrainEnumType, Double> map = getTerrainTypesPerc(cells);
 		// fill in everything with the parent terrain type
 		TerrainEnumType tet = TerrainEnumType.valueOf((String)location.get(FieldNames.FIELD_TERRAIN_TYPE));
+
+		// If parent terrain is UNKNOWN, try to get it from grandparent or use CLEAR as default
+		if(tet == null || tet == TerrainEnumType.UNKNOWN) {
+			BaseRecord parent = GeoLocationUtil.getParentLocation(ctx, location);
+			if(parent != null) {
+				tet = TerrainEnumType.valueOf((String)parent.get(FieldNames.FIELD_TERRAIN_TYPE));
+			}
+			// If still UNKNOWN, default to CLEAR terrain
+			if(tet == null || tet == TerrainEnumType.UNKNOWN) {
+				logger.warn("Parent location " + location.get(FieldNames.FIELD_NAME) + " has UNKNOWN terrain - defaulting to CLEAR");
+				tet = TerrainEnumType.CLEAR;
+			}
+		}
+
 		for(BaseRecord l : cells) {
 			TerrainEnumType ctet = TerrainEnumType.valueOf((String)l.get(FieldNames.FIELD_TERRAIN_TYPE));
 			if(ctet == TerrainEnumType.UNKNOWN) {

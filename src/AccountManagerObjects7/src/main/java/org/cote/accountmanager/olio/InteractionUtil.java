@@ -657,12 +657,12 @@ public class InteractionUtil {
 		if(Math.abs(influenceDelta) > 0.01) {
 			BaseRecord actorInstinct = actor.get(OlioFieldNames.FIELD_INSTINCT);
 			if(actorInstinct != null) {
-				int cooperate = actorInstinct.get("cooperate");
-				int resist = actorInstinct.get("resist");
+				double cooperate = actorInstinct.get("cooperate");
+				double resist = actorInstinct.get("resist");
 				if(sameGroup && influenceDelta > 0) {
-					actorInstinct.setValue("cooperate", Math.min(100, cooperate + (int)(influenceDelta * 10)));
+					actorInstinct.setValue("cooperate", Math.min(100.0, cooperate + (influenceDelta * 10)));
 				} else if(sameGroup && influenceDelta < 0) {
-					actorInstinct.setValue("resist", Math.min(100, resist + (int)(Math.abs(influenceDelta) * 10)));
+					actorInstinct.setValue("resist", Math.min(100.0, resist + (Math.abs(influenceDelta) * 10)));
 				}
 				Queue.queue(actorInstinct);
 			}

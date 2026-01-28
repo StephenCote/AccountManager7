@@ -938,6 +938,39 @@ BaseRecord full = OlioUtil.getFullRecord(partial);
 
 **IMPORTANT:** Always check the model schema definition to understand a field's data type before attempting to read or manipulate values. The schema contains critical type information that determines the correct accessor method.
 
+### CRITICAL: Check Field Data Types Before Use
+
+**This is a common source of ClassCastException errors.** When reading fields from models, especially fields accessed dynamically by name, always verify the data type in the schema first.
+
+**Example - instinct model fields:**
+```json
+// In instinctModel.json - note these are DOUBLE, not int!
+{
+  "name": "cooperate",
+  "type": "double",   // <-- ALWAYS check this!
+  "minValue": -100,
+  "maxValue": 100
+}
+```
+
+**Incorrect (causes ClassCastException):**
+```java
+// WRONG - assumes int but schema defines double
+int cooperate = instinct.get("cooperate");  // ClassCastException!
+```
+
+**Correct:**
+```java
+// RIGHT - matches schema's "type": "double"
+double cooperate = instinct.get("cooperate");
+```
+
+**Before writing code that reads model fields:**
+1. Open the model JSON file in `src/main/resources/models/`
+2. Find the field definition
+3. Check the `type` property (string, int, long, double, boolean, enum, model, list, etc.)
+4. Use the correct Java type in your code
+
 ### Schema-Driven Type Information
 
 Each field in a model schema defines:
@@ -1398,3 +1431,38 @@ src/main/java/org/cote/accountmanager/
 ├── olio/             # Population simulation
 └── schema/           # FieldNames, ModelNames, enums
 ```
+
+## Development Guidelines
+
+### Unit Test Coverage for Server Code
+
+**IMPORTANT:** When modifying server-side code (especially in `AccountManagerObjects7` or `AccountManagerService7`), always ensure your changes are covered by unit tests.
+
+**Before submitting changes:**
+1. Identify which existing tests cover the modified code
+2. Run those tests to verify the changes work correctly
+3. If no tests exist, create new tests in the appropriate test class
+4. Verify tests pass before claiming the change is complete
+
+**Test location patterns:**
+- `AccountManagerObjects7` code → Tests in `src/test/java/org/cote/accountmanager/objects/tests/`
+- Olio-specific code → Tests in `src/test/java/org/cote/accountmanager/objects/tests/olio/`
+- GameUtil changes → `TestGameUtil.java`
+- InteractionUtil changes → Tests that exercise interactions (e.g., `TestGameUtil#TestInteract`)
+
+**Running specific tests:**
+```bash
+# Run a specific test class
+mvn test -Dtest=TestGameUtil
+
+# Run a specific test method
+mvn test -Dtest=TestGameUtil#TestInteract
+
+# Run with verbose output
+mvn test -Dtest=TestGameUtil -e
+```
+
+**Do NOT claim a change is working unless you have:**
+1. Compiled the code successfully (`mvn compile`)
+2. Run relevant unit tests (`mvn test -Dtest=...`)
+3. Verified the tests pass (check for `BUILD SUCCESS`)

@@ -6,6 +6,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assume.assumeTrue;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -40,9 +41,8 @@ public class TestGameUtil extends BaseTest {
 	private List<BaseRecord> getPopulation(OlioContext octx) {
 		List<BaseRecord> realms = octx.getRealms();
 		if (realms.isEmpty()) return null;
-		BaseRecord popGrp = realms.get(0).get(OlioFieldNames.FIELD_POPULATION);
-		if (popGrp == null) return null;
-		return OlioUtil.listGroupPopulation(octx, popGrp);
+		// Use getRealmPopulation which returns fully loaded records
+		return octx.getRealmPopulation(realms.get(0));
 	}
 
 	private void stagePopulation(OlioContext octx, List<BaseRecord> pop) {
@@ -131,18 +131,18 @@ public class TestGameUtil extends BaseTest {
 		// If only reference fields are returned, these will be null/0
 		Integer agility = statistics.get("agility");
 		Integer speed = statistics.get("speed");
-		Integer strength = statistics.get("strength");
+		Integer physicalStrength = statistics.get("physicalStrength");
 
 		assertNotNull("Statistics.agility should not be null (cache bypass failed?)", agility);
 		assertNotNull("Statistics.speed should not be null (cache bypass failed?)", speed);
-		assertNotNull("Statistics.strength should not be null (cache bypass failed?)", strength);
+		assertNotNull("Statistics.physicalStrength should not be null (cache bypass failed?)", physicalStrength);
 
 		// Verify values are within expected ranges (stats are typically 1-20 or similar)
 		assertTrue("Statistics.agility should be > 0, got: " + agility, agility > 0);
 		assertTrue("Statistics.speed should be > 0, got: " + speed, speed > 0);
-		assertTrue("Statistics.strength should be > 0, got: " + strength, strength > 0);
+		assertTrue("Statistics.physicalStrength should be > 0, got: " + physicalStrength, physicalStrength > 0);
 
-		logger.info("Statistics loaded successfully - agility: " + agility + ", speed: " + speed + ", strength: " + strength);
+		logger.info("Statistics loaded successfully - agility: " + agility + ", speed: " + speed + ", physicalStrength: " + physicalStrength);
 	}
 
 	@Test
@@ -213,6 +213,172 @@ public class TestGameUtil extends BaseTest {
 		assertNotNull("Fatigue missing from needs", needs.get("fatigue"));
 		assertNotNull("Health missing from needs", needs.get("health"));
 		assertNotNull("Energy missing from needs", needs.get("energy"));
+	}
+
+	@Test
+	public void TestGetSituationLocationFields() {
+		logger.info("Test GameUtil.getSituation returns location with eastings/northings/terrainType");
+
+		OlioContext octx = getOlioContext();
+		assertNotNull("Context should not be null", octx);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assertNotNull("Population should not be null", pop);
+		assertTrue("Population should not be empty", pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		BaseRecord person = pop.get(0);
+		logger.info("Testing with person: " + person.get(FieldNames.FIELD_NAME));
+
+		// Population records may not have objectId loaded - use id to get full record
+		long personId = person.get(FieldNames.FIELD_ID);
+		logger.info("Person id: " + personId);
+		assertTrue("Person ID should be > 0", personId > 0);
+
+		// Get full record using OlioUtil.getFullRecord
+		BaseRecord fullPerson = OlioUtil.getFullRecord(person);
+		assertNotNull("getFullRecord should return person", fullPerson);
+
+		String objectId = fullPerson.get(FieldNames.FIELD_OBJECT_ID);
+		logger.info("Person objectId: " + objectId);
+		assertNotNull("ObjectId should not be null after getFullRecord", objectId);
+
+		// Check if person has state and location
+		BaseRecord state = fullPerson.get(FieldNames.FIELD_STATE);
+		logger.info("Person state: " + (state != null ? "present" : "NULL"));
+		if (state != null) {
+			BaseRecord loc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+			logger.info("Person currentLocation: " + (loc != null ? "present" : "NULL"));
+		}
+
+		Map<String, Object> situation = GameUtil.getSituation(octx, fullPerson);
+		logger.info("Situation result: " + (situation != null ? "present" : "NULL"));
+		assertNotNull("Situation should not be null - check state and currentLocation", situation);
+
+		// Test location has required fields
+		@SuppressWarnings("unchecked")
+		Map<String, Object> location = (Map<String, Object>) situation.get("location");
+		assertNotNull("Location should be a Map", location);
+
+		// These are the fields the client needs
+		assertNotNull("Location.name should not be null", location.get("name"));
+		assertNotNull("Location.geoType should not be null", location.get("geoType"));
+		assertEquals("Location.geoType should be 'cell'", "cell", location.get("geoType"));
+
+		// Eastings/northings must exist (can be 0 but not null)
+		assertNotNull("Location.eastings should not be null", location.get("eastings"));
+		assertNotNull("Location.northings should not be null", location.get("northings"));
+
+		// TerrainType should exist
+		assertNotNull("Location.terrainType should not be null", location.get("terrainType"));
+
+		logger.info("Location: name=" + location.get("name") +
+				", geoType=" + location.get("geoType") +
+				", eastings=" + location.get("eastings") +
+				", northings=" + location.get("northings") +
+				", terrainType=" + location.get("terrainType"));
+	}
+
+	@Test
+	public void TestGetSituationAdjacentCellsFields() {
+		logger.info("Test GameUtil.getSituation returns adjacentCells with eastings/northings/terrainType");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		BaseRecord person = pop.get(0);
+		String objectId = person.get(FieldNames.FIELD_OBJECT_ID);
+		assumeTrue("ObjectId is null - skipping test", objectId != null);
+
+		BaseRecord fullPerson = GameUtil.findCharacter(objectId);
+		assumeTrue("Person not found - skipping test", fullPerson != null);
+
+		Map<String, Object> situation = GameUtil.getSituation(octx, fullPerson);
+		assumeTrue("Situation is null - skipping test", situation != null);
+
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> adjacentCells = (List<Map<String, Object>>) situation.get("adjacentCells");
+		assertNotNull("Adjacent cells should not be null", adjacentCells);
+
+		logger.info("Adjacent cells count: " + adjacentCells.size());
+
+		// Should have some adjacent cells (unless at world edge)
+		if (adjacentCells.size() > 0) {
+			Map<String, Object> firstCell = adjacentCells.get(0);
+
+			// Each cell should have these fields
+			assertNotNull("Cell.name should not be null", firstCell.get("name"));
+			assertNotNull("Cell.eastings should not be null", firstCell.get("eastings"));
+			assertNotNull("Cell.northings should not be null", firstCell.get("northings"));
+			assertNotNull("Cell.terrainType should not be null", firstCell.get("terrainType"));
+
+			logger.info("First adjacent cell: name=" + firstCell.get("name") +
+					", eastings=" + firstCell.get("eastings") +
+					", northings=" + firstCell.get("northings") +
+					", terrainType=" + firstCell.get("terrainType"));
+		}
+	}
+
+	@Test
+	public void TestGetSituationNearbyPeopleFields() {
+		logger.info("Test GameUtil.getSituation returns nearbyPeople with name/objectId/gender/age");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		BaseRecord person = pop.get(0);
+		String objectId = person.get(FieldNames.FIELD_OBJECT_ID);
+		assumeTrue("ObjectId is null - skipping test", objectId != null);
+
+		BaseRecord fullPerson = GameUtil.findCharacter(objectId);
+		assumeTrue("Person not found - skipping test", fullPerson != null);
+
+		Map<String, Object> situation = GameUtil.getSituation(octx, fullPerson);
+		assumeTrue("Situation is null - skipping test", situation != null);
+
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> nearbyPeople = (List<Map<String, Object>>) situation.get("nearbyPeople");
+		assertNotNull("Nearby people should not be null", nearbyPeople);
+
+		logger.info("Nearby people count: " + nearbyPeople.size());
+
+		if (nearbyPeople.size() > 0) {
+			Map<String, Object> firstPerson = nearbyPeople.get(0);
+
+			// Each person should have these fields for the UI
+			assertNotNull("Person.objectId should not be null", firstPerson.get("objectId"));
+
+			// Name might be null if never set, but gender and age should exist
+			// for the "Man/Woman/Boy/Girl" fallback display
+			assertNotNull("Person.gender should not be null", firstPerson.get("gender"));
+			assertNotNull("Person.age should not be null", firstPerson.get("age"));
+
+			logger.info("First nearby person: name=" + firstPerson.get("name") +
+					", objectId=" + firstPerson.get("objectId") +
+					", gender=" + firstPerson.get("gender") +
+					", age=" + firstPerson.get("age"));
+
+			// Current location should also be present for grid placement
+			@SuppressWarnings("unchecked")
+			Map<String, Object> personLoc = (Map<String, Object>) firstPerson.get("currentLocation");
+			if (personLoc != null) {
+				assertNotNull("Person.currentLocation.eastings should not be null", personLoc.get("eastings"));
+				assertNotNull("Person.currentLocation.northings should not be null", personLoc.get("northings"));
+				logger.info("Person location: eastings=" + personLoc.get("eastings") +
+						", northings=" + personLoc.get("northings"));
+			}
+		}
 	}
 
 	@Test
@@ -301,7 +467,10 @@ public class TestGameUtil extends BaseTest {
 		BaseRecord state = fullPerson.get(FieldNames.FIELD_STATE);
 		double initialHunger = state.get("hunger");
 
-		int updated = GameUtil.advanceTurn(octx, pop);
+		// Pass the claimed character (with playerControlled=true) not the original pop list
+		// which has stale state objects
+		List<BaseRecord> claimedPop = Arrays.asList(fullPerson);
+		int updated = GameUtil.advanceTurn(octx, claimedPop);
 		assertTrue("Expected at least 1 updated character", updated >= 1);
 
 		BaseRecord updatedPerson = GameUtil.findCharacter(objectId);
@@ -493,5 +662,94 @@ public class TestGameUtil extends BaseTest {
 		boolean deleted = GameUtil.deleteGame(saveId);
 		assertTrue("Should be deleted", deleted);
 	}
-	
+
+	/**
+	 * Test that simulates browser flow: repeatedly moving and re-loading character.
+	 * This test verifies that position changes persist across fresh loads,
+	 * identifying any caching issues that might cause position to reset.
+	 */
+	@Test
+	public void TestMarchCharacterStepByStep() {
+		logger.info("Test marching character step by step (simulating browser re-requests)");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		// Get initial character
+		BaseRecord person = pop.get(0);
+		String objectId = person.get(FieldNames.FIELD_OBJECT_ID);
+		assumeTrue("ObjectId is null - skipping test", objectId != null);
+
+		// Simulate browser: load character fresh
+		BaseRecord loadedPerson = GameUtil.findCharacter(objectId);
+		assumeTrue("Person not found - skipping test", loadedPerson != null);
+
+		BaseRecord state = loadedPerson.get(FieldNames.FIELD_STATE);
+		assumeTrue("State is null - skipping test", state != null);
+
+		BaseRecord currentLoc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		assumeTrue("CurrentLocation is null - skipping test", currentLoc != null);
+
+		int initialEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int initialNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+		logger.info("Initial position: E=" + initialEast + ", N=" + initialNorth);
+
+		// March 5 steps EAST, simulating browser re-requests each time
+		int stepsToTake = 5;
+		int expectedEast = initialEast;
+		int expectedNorth = initialNorth;
+
+		for (int step = 1; step <= stepsToTake; step++) {
+			logger.info("=== Step " + step + " ===");
+
+			// Simulate browser: load character fresh (this is what happens on each request)
+			BaseRecord freshPerson = GameUtil.findCharacter(objectId);
+			assertNotNull("Failed to load character on step " + step, freshPerson);
+
+			BaseRecord freshState = freshPerson.get(FieldNames.FIELD_STATE);
+			assertNotNull("State is null on step " + step, freshState);
+
+			int beforeEast = freshState.get(FieldNames.FIELD_CURRENT_EAST);
+			int beforeNorth = freshState.get(FieldNames.FIELD_CURRENT_NORTH);
+			logger.info("Before move (step " + step + "): E=" + beforeEast + ", N=" + beforeNorth);
+
+			// Verify position matches expected (from previous step)
+			assertEquals("Position E mismatch before step " + step + " - data not persisted from previous move?",
+					expectedEast, beforeEast);
+			assertEquals("Position N mismatch before step " + step + " - data not persisted from previous move?",
+					expectedNorth, beforeNorth);
+
+			// Move EAST
+			try {
+				GameUtil.moveCharacter(octx, freshPerson, DirectionEnumType.EAST, 1.0);
+				expectedEast = (expectedEast + 1) % 100; // Wrap at cell boundary
+				logger.info("Move succeeded, expected new position: E=" + expectedEast + ", N=" + expectedNorth);
+			} catch (OlioException e) {
+				logger.warn("Move failed on step " + step + ": " + e.getMessage());
+				// If movement fails (blocked), expected position stays the same
+			}
+
+			// Simulate browser: load character fresh AGAIN to verify persistence
+			BaseRecord verifyPerson = GameUtil.findCharacter(objectId);
+			assertNotNull("Failed to load character for verification on step " + step, verifyPerson);
+
+			BaseRecord verifyState = verifyPerson.get(FieldNames.FIELD_STATE);
+			int afterEast = verifyState.get(FieldNames.FIELD_CURRENT_EAST);
+			int afterNorth = verifyState.get(FieldNames.FIELD_CURRENT_NORTH);
+			logger.info("After move (step " + step + "): E=" + afterEast + ", N=" + afterNorth);
+
+			// This is the key assertion - after reloading, position should match expected
+			assertEquals("Position E not persisted after step " + step, expectedEast, afterEast);
+			assertEquals("Position N not persisted after step " + step, expectedNorth, afterNorth);
+		}
+
+		logger.info("Final position after " + stepsToTake + " steps: E=" + expectedEast + ", N=" + expectedNorth);
+		logger.info("Total movement: " + (expectedEast - initialEast) + " meters EAST");
+	}
+
 }

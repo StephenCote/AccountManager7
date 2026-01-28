@@ -12,6 +12,7 @@
         "/common",
         "/media",
         "/dist",
+        "/dist/tiles",
         "/node_modules/@fortawesome/fontawesome-free/webfonts",
         "/node_modules/audiomotion-analyzer/dist",
         "/node_modules/codemirror/addon/lint",

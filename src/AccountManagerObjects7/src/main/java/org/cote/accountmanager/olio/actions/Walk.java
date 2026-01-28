@@ -51,8 +51,8 @@ public class Walk extends CommonAction implements IAction {
 	
 	@Override
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		
-		
+
+
 		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
@@ -61,8 +61,9 @@ public class Walk extends CommonAction implements IAction {
 		if(dir == DirectionEnumType.UNKNOWN) {
 			throw new OlioException("Direction is unknown");
 		}
-		
+
 		double dist = params.get("distance");
+		logger.info("Walk.executeAction: distance parameter = " + dist + " for actor " + actor.get(FieldNames.FIELD_NAME));
 		if(dist == 0.0) {
 			dist = 1.0;
 		}

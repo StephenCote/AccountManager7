@@ -259,6 +259,16 @@ public class NeedsUtil {
             for (BaseRecord p : pop) {
                 String name = p.get(FieldNames.FIELD_NAME);
                 BaseRecord state = p.get(FieldNames.FIELD_STATE);
+                if (state == null) {
+                    continue;
+                }
+
+                // Skip player-controlled characters - their positions are managed directly
+                Boolean playerControlled = state.get("playerControlled");
+                if (playerControlled != null && playerControlled) {
+                    continue;
+                }
+
                 Boolean agitated = state.get("agitated");
                 if (!roam && agitated != null && agitated) {
                     continue;

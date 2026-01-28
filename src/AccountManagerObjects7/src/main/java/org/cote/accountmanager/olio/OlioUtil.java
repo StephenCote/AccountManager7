@@ -541,14 +541,23 @@ public class OlioUtil {
 	
 	public static void batchAddForeignList(OlioContext ctx, BaseRecord rec, String fieldName, List<BaseRecord> parts) {
 		List<BaseRecord> flist = rec.get(fieldName);
-		/// 
+		// Clear any pending queue items first to avoid batch compatibility issues
+		Queue.processQueue();
 		for(BaseRecord p : parts) {
 			flist.add(p);
 			Queue.queue(p);
 		}
 		Queue.processQueue();
 		for(BaseRecord p: parts) {
-			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), rec, fieldName, p));
+			long partId = p.get(FieldNames.FIELD_ID);
+			if(partId == 0L) {
+				logger.warn("Part " + p.getSchema() + " has no ID - skipping participation");
+				continue;
+			}
+			BaseRecord participation = ParticipationFactory.newParticipation(ctx.getOlioUser(), rec, fieldName, p);
+			if(participation != null) {
+				Queue.queue(participation);
+			}
 		}
 		Queue.processQueue();
 	}
@@ -626,7 +635,7 @@ public class OlioUtil {
 			FieldNames.FIELD_TAGS,
 			FieldNames.FIELD_ATTRIBUTES,
 			FieldNames.FIELD_CONTROLS,
-			FieldNames.FIELD_OBJECT_ID,
+			// Note: FIELD_OBJECT_ID removed - needed by game client for character identification
 			FieldNames.FIELD_URN,
 			FieldNames.FIELD_ORGANIZATION_ID,
 			FieldNames.FIELD_ORGANIZATION_PATH,

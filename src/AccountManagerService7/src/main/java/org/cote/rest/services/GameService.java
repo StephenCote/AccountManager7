@@ -1,5 +1,6 @@
 package org.cote.rest.services;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -7,6 +8,7 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.DirectionEnumType;
+import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.olio.GameUtil;
 import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.olio.OlioContext;
@@ -352,18 +354,16 @@ public class GameService {
 
 		Object distObj = params.get("distance");
 		Double distance = (distObj instanceof Number) ? ((Number) distObj).doubleValue() : 1.0;
+		logger.info("GameService.moveCharacter: received distance=" + distObj + ", parsed=" + distance);
 		if(distance <= 0) {
 			distance = 1.0;
 		}
 
 		try {
-			boolean success = GameUtil.moveCharacter(octx, person, dir, distance);
-			if(!success) {
-				return Response.status(400).entity("{\"error\":\"Movement failed - possibly blocked\"}").build();
-			}
+			GameUtil.moveCharacter(octx, person, dir, distance);
 		} catch(OlioException e) {
-			logger.error("Move action failed: " + e.getMessage());
-			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+			logger.warn("Move action failed: " + e.getMessage());
+			return Response.status(400).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
 		}
 
 		return getSituation(objectId, request);
@@ -391,6 +391,50 @@ public class GameService {
 		Map<String, Object> result = GameUtil.investigate(octx, person);
 		if(result == null) {
 			return Response.status(500).entity("{\"error\":\"Investigation failed - character may have no state or location\"}").build();
+		}
+
+		return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+	}
+
+	/// Chat with an NPC character.
+	/// JSON body: { "actorId": "uuid", "targetId": "uuid", "message": "hello" }
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/chat")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response chat(String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		@SuppressWarnings("unchecked")
+		Map<String, Object> params = JSONUtil.importObject(json, Map.class);
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String actorId = (String) params.get("actorId");
+		String targetId = (String) params.get("targetId");
+		String message = (String) params.get("message");
+
+		if(actorId == null || targetId == null || message == null) {
+			return Response.status(400).entity("{\"error\":\"actorId, targetId, and message required\"}").build();
+		}
+
+		BaseRecord actor = GameUtil.findCharacter(actorId);
+		BaseRecord target = GameUtil.findCharacter(targetId);
+
+		if(actor == null || target == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		Map<String, Object> result = GameUtil.chat(octx, actor, target, message);
+		if(result.containsKey("error")) {
+			return Response.status(500).entity(JSONUtil.exportObject(result)).build();
 		}
 
 		return Response.status(200).entity(JSONUtil.exportObject(result)).build();
@@ -585,5 +629,112 @@ public class GameService {
 		Map<String, Object> result = new HashMap<>();
 		result.put("deleted", true);
 		return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+	}
+
+	/// Conclude a chat session and create an interaction record based on LLM evaluation.
+	/// JSON body: {
+	///   "actorId": "uuid",
+	///   "targetId": "uuid",
+	///   "chatConfigId": "uuid" (optional),
+	///   "messages": [{"role": "user|assistant", "content": "..."}]
+	/// }
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/concludeChat")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response concludeChat(String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		@SuppressWarnings("unchecked")
+		Map<String, Object> params = JSONUtil.importObject(json, Map.class);
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String actorId = (String) params.get("actorId");
+		String targetId = (String) params.get("targetId");
+		@SuppressWarnings("unchecked")
+		List<Map<String, String>> messages = (List<Map<String, String>>) params.get("messages");
+
+		if(actorId == null || targetId == null || messages == null || messages.isEmpty()) {
+			return Response.status(400).entity("{\"error\":\"actorId, targetId, and messages are required\"}").build();
+		}
+
+		BaseRecord actor = GameUtil.findCharacter(actorId);
+		if(actor == null) {
+			return Response.status(404).entity("{\"error\":\"Actor not found\"}").build();
+		}
+
+		BaseRecord target = GameUtil.findCharacter(targetId);
+		if(target == null) {
+			return Response.status(404).entity("{\"error\":\"Target not found\"}").build();
+		}
+
+		// Optionally get chat config for model settings
+		BaseRecord chatConfig = null;
+		String chatConfigId = (String) params.get("chatConfigId");
+		if(chatConfigId != null) {
+			chatConfig = GameUtil.findCharacter(chatConfigId); // This should be a chatConfig lookup
+		}
+
+		Map<String, Object> result = GameUtil.concludeChat(octx, user, actor, target, messages, chatConfig);
+		if(result == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to evaluate chat\"}").build();
+		}
+
+		return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+	}
+
+	/// Get a terrain tile image.
+	/// Valid terrain types: cave, clear, desert, dunes, forest, glacier, grass, hill, hills,
+	/// jungle, lake, marsh, mountain, oasis, ocean, plains, plateau, pond, river, savanna,
+	/// shelter, shoreline, stream, swamp, tundra, valley
+	/// Note: PermitAll to allow image loading without auth (tiles are public static resources)
+	///
+	@jakarta.annotation.security.PermitAll
+	@GET
+	@Path("/tile/{terrain:[a-z]+}")
+	@Produces("image/png")
+	public Response getTile(@PathParam("terrain") String terrain, @Context HttpServletRequest request) {
+		// Get tile path from context parameter, default to relative path
+		String tilePath = context.getInitParameter("tile.path");
+		if(tilePath == null || tilePath.isEmpty()) {
+			tilePath = "./media/tiles";
+		}
+
+		// Sanitize terrain name - only allow lowercase letters
+		if(!terrain.matches("^[a-z]+$")) {
+			return Response.status(400).entity("Invalid terrain name").build();
+		}
+
+		// Map "unknown" terrain to "clear" as fallback
+		if("unknown".equals(terrain)) {
+			terrain = "clear";
+		}
+
+		String filePath = tilePath + File.separator + terrain + ".png";
+		byte[] imageData = FileUtil.getFile(filePath);
+
+		if(imageData == null || imageData.length == 0) {
+			// Fallback to clear tile if specific terrain not found
+			logger.warn("Tile not found: " + filePath + ", falling back to clear");
+			filePath = tilePath + File.separator + "clear.png";
+			imageData = FileUtil.getFile(filePath);
+		}
+
+		if(imageData == null || imageData.length == 0) {
+			logger.error("Fallback tile also not found: " + filePath);
+			return Response.status(404).entity("Tile not found").build();
+		}
+
+		return Response.ok(imageData, "image/png")
+			.header("Cache-Control", "public, max-age=86400") // Cache for 24 hours
+			.build();
 	}
 }

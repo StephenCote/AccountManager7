@@ -2,24 +2,40 @@ package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.Actions;
+import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.OpenAIMessage;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 
 public class GameUtil {
 	public static final Logger logger = LogManager.getLogger(GameUtil.class);
@@ -82,6 +98,19 @@ public class GameUtil {
 		if (currentLoc == null) {
 			return null;
 		}
+		// Ensure eastings/northings are populated and marked for serialization
+		IOSystem.getActiveContext().getReader().populate(currentLoc, new String[] {FieldNames.FIELD_EASTINGS, FieldNames.FIELD_NORTHINGS, FieldNames.FIELD_TERRAIN_TYPE, FieldNames.FIELD_GEOTYPE});
+		String geoType = currentLoc.get(FieldNames.FIELD_GEOTYPE);
+		Integer east = currentLoc.get(FieldNames.FIELD_EASTINGS);
+		Integer north = currentLoc.get(FieldNames.FIELD_NORTHINGS);
+		logger.info("Current location: geoType={}, eastings={}, northings={}", geoType, east, north);
+		try {
+			// Re-set values to ensure they're included in JSON output
+			if (east != null) currentLoc.set(FieldNames.FIELD_EASTINGS, east);
+			if (north != null) currentLoc.set(FieldNames.FIELD_NORTHINGS, north);
+		} catch (Exception e) {
+			logger.warn("Failed to set location coordinates: " + e.getMessage());
+		}
 
 		List<BaseRecord> realms = octx.getRealms();
 		BaseRecord realm = realms.isEmpty() ? null : realms.get(0);
@@ -91,7 +120,46 @@ public class GameUtil {
 
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
 		List<BaseRecord> adjacentCells = GeoLocationUtil.getAdjacentCells(octx, currentLoc, 3);
+		// Ensure eastings/northings/terrainType are populated and marked for serialization
+		for (BaseRecord cell : adjacentCells) {
+			IOSystem.getActiveContext().getReader().populate(cell, new String[] {FieldNames.FIELD_EASTINGS, FieldNames.FIELD_NORTHINGS, FieldNames.FIELD_TERRAIN_TYPE});
+			try {
+				cell.set(FieldNames.FIELD_EASTINGS, cell.get(FieldNames.FIELD_EASTINGS));
+				cell.set(FieldNames.FIELD_NORTHINGS, cell.get(FieldNames.FIELD_NORTHINGS));
+				cell.set(FieldNames.FIELD_TERRAIN_TYPE, cell.get(FieldNames.FIELD_TERRAIN_TYPE));
+			} catch (Exception e) {
+				logger.warn("Failed to set cell coordinates: " + e.getMessage());
+			}
+		}
 		List<BaseRecord> nearbyPeople = GeoLocationUtil.limitToAdjacent(octx, pop, currentLoc);
+		// Ensure name, objectId, gender, age and location are populated for nearby people
+		for (BaseRecord p : nearbyPeople) {
+			IOSystem.getActiveContext().getReader().populate(p, new String[] {
+				FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GENDER, FieldNames.FIELD_AGE
+			});
+			try {
+				// Re-set to ensure serialization
+				p.set(FieldNames.FIELD_NAME, p.get(FieldNames.FIELD_NAME));
+				p.set(FieldNames.FIELD_OBJECT_ID, p.get(FieldNames.FIELD_OBJECT_ID));
+				p.set(FieldNames.FIELD_GENDER, p.get(FieldNames.FIELD_GENDER));
+				p.set(FieldNames.FIELD_AGE, p.get(FieldNames.FIELD_AGE));
+			} catch (Exception e) {
+				logger.warn("Failed to set person fields: " + e.getMessage());
+			}
+			BaseRecord pState = p.get(FieldNames.FIELD_STATE);
+			if (pState != null) {
+				BaseRecord pLoc = pState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+				if (pLoc != null) {
+					IOSystem.getActiveContext().getReader().populate(pLoc, new String[] {FieldNames.FIELD_EASTINGS, FieldNames.FIELD_NORTHINGS});
+					try {
+						pLoc.set(FieldNames.FIELD_EASTINGS, pLoc.get(FieldNames.FIELD_EASTINGS));
+						pLoc.set(FieldNames.FIELD_NORTHINGS, pLoc.get(FieldNames.FIELD_NORTHINGS));
+					} catch (Exception e) {
+						// ignore
+					}
+				}
+			}
+		}
 
 		Map<BaseRecord, PersonalityProfile> profiles = new HashMap<>();
 		PersonalityProfile playerProfile = ProfileUtil.getProfile(octx, person);
@@ -115,9 +183,50 @@ public class GameUtil {
 		Map<String, Object> result = new HashMap<>();
 		result.put("character", person);
 		result.put("state", state);
-		result.put("location", currentLoc);
-		result.put("nearbyPeople", nearbyPeople);
-		result.put("adjacentCells", adjacentCells);
+
+		// Convert location to simple map to ensure all fields are serialized
+		Map<String, Object> locMap = new HashMap<>();
+		locMap.put("name", currentLoc.get(FieldNames.FIELD_NAME));
+		locMap.put("terrainType", currentLoc.get(FieldNames.FIELD_TERRAIN_TYPE));
+		locMap.put("eastings", currentLoc.get(FieldNames.FIELD_EASTINGS));
+		locMap.put("northings", currentLoc.get(FieldNames.FIELD_NORTHINGS));
+		locMap.put("geoType", currentLoc.get(FieldNames.FIELD_GEOTYPE));
+		result.put("location", locMap);
+
+		// Convert nearby people to simple maps
+		List<Map<String, Object>> peopleList = new ArrayList<>();
+		for (BaseRecord p : nearbyPeople) {
+			Map<String, Object> pm = new HashMap<>();
+			pm.put("name", p.get(FieldNames.FIELD_NAME));
+			pm.put("objectId", p.get(FieldNames.FIELD_OBJECT_ID));
+			pm.put("gender", p.get(FieldNames.FIELD_GENDER));
+			pm.put("age", p.get(FieldNames.FIELD_AGE));
+			// Get location coords from state
+			BaseRecord pState = p.get(FieldNames.FIELD_STATE);
+			if (pState != null) {
+				BaseRecord pLoc = pState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+				if (pLoc != null) {
+					Map<String, Object> pLocMap = new HashMap<>();
+					pLocMap.put("eastings", pLoc.get(FieldNames.FIELD_EASTINGS));
+					pLocMap.put("northings", pLoc.get(FieldNames.FIELD_NORTHINGS));
+					pm.put("currentLocation", pLocMap);
+				}
+			}
+			peopleList.add(pm);
+		}
+		result.put("nearbyPeople", peopleList);
+
+		// Convert adjacent cells to simple maps
+		List<Map<String, Object>> cellList = new ArrayList<>();
+		for (BaseRecord cell : adjacentCells) {
+			Map<String, Object> cm = new HashMap<>();
+			cm.put("name", cell.get(FieldNames.FIELD_NAME));
+			cm.put("terrainType", cell.get(FieldNames.FIELD_TERRAIN_TYPE));
+			cm.put("eastings", cell.get(FieldNames.FIELD_EASTINGS));
+			cm.put("northings", cell.get(FieldNames.FIELD_NORTHINGS));
+			cellList.add(cm);
+		}
+		result.put("adjacentCells", cellList);
 
 		List<Map<String, Object>> threatList = new ArrayList<>();
 		if (threats != null) {
@@ -154,8 +263,24 @@ public class GameUtil {
 	}
 
 	public static boolean moveCharacter(OlioContext octx, BaseRecord person, DirectionEnumType direction, double distance) throws OlioException {
-		if (octx == null || person == null || direction == null || direction == DirectionEnumType.UNKNOWN) {
-			return false;
+		if (octx == null) {
+			throw new OlioException("Context is null");
+		}
+		if (person == null) {
+			throw new OlioException("Character is null");
+		}
+		if (direction == null || direction == DirectionEnumType.UNKNOWN) {
+			throw new OlioException("Invalid direction");
+		}
+
+		// Validate character has required state for movement
+		BaseRecord state = person.get(FieldNames.FIELD_STATE);
+		if (state == null) {
+			throw new OlioException("Character has no state - cannot move");
+		}
+		BaseRecord currentLocation = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		if (currentLocation == null) {
+			throw new OlioException("Character has no current location - cannot move");
 		}
 
 		if (distance <= 0) {
@@ -171,7 +296,7 @@ public class GameUtil {
 
 		boolean success = Actions.executeAction(octx, actionResult);
 		if (!success) {
-			return false;
+			throw new OlioException("Movement blocked or failed");
 		}
 
 		Actions.concludeAction(octx, actionResult, person, null);
@@ -686,5 +811,381 @@ public class GameUtil {
 			logger.error("Failed to delete game: {}", e.getMessage());
 			return false;
 		}
+	}
+
+	/**
+	 * Load or create the interaction evaluation prompt configuration.
+	 * Looks for "Interaction Evaluation" in ~/Chat, or loads from resource file.
+	 */
+	public static BaseRecord getInteractionEvalPromptConfig(BaseRecord user) {
+		String promptName = "Interaction Evaluation";
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_NAME, promptName);
+		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		q.planMost(false);
+		BaseRecord existing = IOSystem.getActiveContext().getSearch().findRecord(q);
+
+		if (existing != null) {
+			return existing;
+		}
+
+		// Load from resource file
+		String resourceJson = ResourceUtil.getInstance().getResource("olio/llm/interactionEvalPrompt.json");
+		if (resourceJson == null || resourceJson.isEmpty()) {
+			logger.warn("Interaction evaluation prompt resource not found, using default");
+			resourceJson = getDefaultInteractionEvalPrompt();
+		}
+
+		BaseRecord template = JSONUtil.importObject(resourceJson, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		if (template == null) {
+			logger.error("Failed to parse interaction evaluation prompt template");
+			return null;
+		}
+
+		try {
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+			plist.parameter(FieldNames.FIELD_NAME, promptName);
+			BaseRecord rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, template, plist);
+			return IOSystem.getActiveContext().getAccessPoint().create(user, rec);
+		} catch (FactoryException e) {
+			logger.error("Failed to create interaction eval prompt config: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	private static String getDefaultInteractionEvalPrompt() {
+		return "{\n" +
+			"  \"name\": \"Interaction Evaluation\",\n" +
+			"  \"system\": [\n" +
+			"    \"You are an INTERACTION ANALYST evaluating a conversation between two characters.\",\n" +
+			"    \"Analyze the conversation and determine the outcome.\",\n" +
+			"    \"RESPOND WITH STRUCTURED JSON ONLY - no additional text.\"\n" +
+			"  ],\n" +
+			"  \"assistant\": [\"I will analyze this interaction.\"],\n" +
+			"  \"user\": [\"Evaluate the conversation.\"]\n" +
+			"}";
+	}
+
+	/**
+	 * Conclude a chat session by evaluating the conversation using an LLM
+	 * and creating an interaction record based on the results.
+	 *
+	 * @param octx The Olio context
+	 * @param user The user record
+	 * @param actor The actor (player character)
+	 * @param target The target (NPC or other character)
+	 * @param chatMessages List of chat messages in format [{role: "user"|"assistant", content: "..."}]
+	 * @param chatConfig The chat configuration used for the conversation
+	 * @return Map containing the evaluation results and created interaction
+	 */
+	public static Map<String, Object> concludeChat(OlioContext octx, BaseRecord user, BaseRecord actor, BaseRecord target,
+			List<Map<String, String>> chatMessages, BaseRecord chatConfig) {
+
+		if (octx == null || user == null || actor == null || target == null || chatMessages == null || chatMessages.isEmpty()) {
+			logger.warn("concludeChat: Missing required parameters");
+			return null;
+		}
+
+		Map<String, Object> result = new HashMap<>();
+
+		// Build the conversation transcript
+		StringBuilder transcript = new StringBuilder();
+		String actorName = actor.get(FieldNames.FIELD_FIRST_NAME);
+		String targetName = target.get(FieldNames.FIELD_FIRST_NAME);
+
+		for (Map<String, String> msg : chatMessages) {
+			String role = msg.get("role");
+			String content = msg.get("content");
+			String speaker = "assistant".equals(role) ? targetName : actorName;
+			transcript.append(speaker).append(": ").append(content).append("\n");
+		}
+
+		// Build context for the evaluation
+		String setting = chatConfig != null ? chatConfig.get("setting") : "unknown location";
+		String actorGender = actor.get(FieldNames.FIELD_GENDER);
+		int actorAge = actor.get(FieldNames.FIELD_AGE);
+		String targetGender = target.get(FieldNames.FIELD_GENDER);
+		int targetAge = target.get(FieldNames.FIELD_AGE);
+
+		// Build the evaluation prompt
+		String evalPrompt = buildEvaluationPrompt(actorName, actorAge, actorGender,
+				targetName, targetAge, targetGender, setting, transcript.toString());
+
+		// Get the evaluation prompt config
+		BaseRecord evalPromptConfig = getInteractionEvalPromptConfig(user);
+		if (evalPromptConfig == null) {
+			logger.error("Failed to get interaction evaluation prompt config");
+			result.put("error", "Failed to load evaluation prompt configuration");
+			return result;
+		}
+
+		// Create a simple chat request for evaluation
+		OpenAIRequest evalReq = new OpenAIRequest();
+		String model = chatConfig != null ? chatConfig.get("analyzeModel") : null;
+		if (model == null && chatConfig != null) {
+			model = chatConfig.get("model");
+		}
+		if (model == null) {
+			model = "gpt-4o-mini"; // default fallback
+		}
+		evalReq.setModel(model);
+		evalReq.setStream(false);
+
+		// Build system message from prompt config
+		List<String> systemParts = evalPromptConfig.get("system");
+		String systemPrompt = systemParts != null ? String.join("\n", systemParts) : "Evaluate this interaction.";
+
+		Chat chat = new Chat();
+		chat.newMessage(evalReq, "Ready to analyze.", Chat.userRole);
+		chat.newMessage(evalReq, "I will analyze the conversation and provide structured JSON.", Chat.assistantRole);
+		chat.newMessage(evalReq, evalPrompt, Chat.userRole);
+
+		// Execute the evaluation
+		OpenAIResponse evalResp = chat.chat(evalReq);
+
+		if (evalResp == null || evalResp.getMessage() == null) {
+			logger.error("Failed to get evaluation response from LLM");
+			result.put("error", "LLM evaluation failed");
+			return result;
+		}
+
+		String llmResponse = evalResp.getMessage().getContent();
+		result.put("llmResponse", llmResponse);
+
+		// Parse the LLM JSON response
+		Map<String, Object> evalResult = parseEvaluationResponse(llmResponse);
+		result.put("evaluation", evalResult);
+
+		// Create the interaction record
+		BaseRecord interaction = createInteractionFromEvaluation(octx, user, actor, target, evalResult);
+		if (interaction != null) {
+			result.put("interaction", interaction);
+			result.put("interactionId", interaction.get(FieldNames.FIELD_OBJECT_ID));
+
+			// Attach to current increment/event if available
+			BaseRecord epoch = octx.clock() != null ? octx.clock().getEpoch() : null;
+			if (epoch != null) {
+				attachInteractionToEvent(octx, interaction, epoch);
+			}
+		}
+
+		result.put("success", interaction != null);
+		return result;
+	}
+
+	private static String buildEvaluationPrompt(String actorName, int actorAge, String actorGender,
+			String targetName, int targetAge, String targetGender, String setting, String transcript) {
+
+		return "CHARACTERS:\n" +
+			"- Actor: " + actorName + " (" + actorAge + " year old " + actorGender + ")\n" +
+			"- Target: " + targetName + " (" + targetAge + " year old " + targetGender + ")\n\n" +
+			"SETTING: " + setting + "\n\n" +
+			"CONVERSATION TRANSCRIPT:\n" + transcript + "\n\n" +
+			"Evaluate this conversation and respond with JSON:\n" +
+			"{\n" +
+			"  \"outcome\": \"POSITIVE|NEGATIVE|NEUTRAL|MIXED\",\n" +
+			"  \"relationshipChange\": {\n" +
+			"    \"direction\": \"IMPROVED|WORSENED|UNCHANGED\",\n" +
+			"    \"magnitude\": 0.0 to 1.0\n" +
+			"  },\n" +
+			"  \"actorOutcome\": \"FAVORABLE|UNFAVORABLE|EQUILIBRIUM\",\n" +
+			"  \"targetOutcome\": \"FAVORABLE|UNFAVORABLE|EQUILIBRIUM\",\n" +
+			"  \"interactionType\": \"COMMUNICATE|SOCIALIZE|NEGOTIATE|COMMERCE|CONFLICT|HELP\",\n" +
+			"  \"trustChange\": -1.0 to 1.0,\n" +
+			"  \"summary\": \"Brief 1-2 sentence summary\"\n" +
+			"}";
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> parseEvaluationResponse(String llmResponse) {
+		Map<String, Object> evalResult = new HashMap<>();
+
+		try {
+			// Extract JSON from response (handle markdown code blocks)
+			String jsonStr = llmResponse;
+			if (jsonStr.contains("```json")) {
+				int start = jsonStr.indexOf("```json") + 7;
+				int end = jsonStr.indexOf("```", start);
+				if (end > start) {
+					jsonStr = jsonStr.substring(start, end).trim();
+				}
+			} else if (jsonStr.contains("```")) {
+				int start = jsonStr.indexOf("```") + 3;
+				int end = jsonStr.indexOf("```", start);
+				if (end > start) {
+					jsonStr = jsonStr.substring(start, end).trim();
+				}
+			}
+
+			evalResult = JSONUtil.importObject(jsonStr, Map.class);
+			if (evalResult == null) {
+				evalResult = new HashMap<>();
+				evalResult.put("parseError", "Failed to parse JSON response");
+				evalResult.put("rawResponse", llmResponse);
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to parse evaluation response: {}", e.getMessage());
+			evalResult.put("parseError", e.getMessage());
+			evalResult.put("rawResponse", llmResponse);
+		}
+
+		return evalResult;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static BaseRecord createInteractionFromEvaluation(OlioContext octx, BaseRecord user,
+			BaseRecord actor, BaseRecord target, Map<String, Object> evalResult) {
+
+		try {
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Interactions");
+			BaseRecord interaction = IOSystem.getActiveContext().getFactory().newInstance(
+					OlioModelNames.MODEL_INTERACTION, user, null, plist);
+
+			// Set actor/interactor
+			interaction.set("actorType", actor.getSchema());
+			interaction.set("actor", actor);
+			interaction.set("interactorType", target.getSchema());
+			interaction.set("interactor", target);
+
+			// Set description from summary
+			String summary = (String) evalResult.get("summary");
+			if (summary != null && summary.length() > 128) {
+				summary = summary.substring(0, 125) + "...";
+			}
+			interaction.set("description", summary);
+
+			// Set interaction type
+			String interTypeStr = (String) evalResult.get("interactionType");
+			InteractionEnumType interType = InteractionEnumType.COMMUNICATE;
+			if (interTypeStr != null) {
+				try {
+					interType = InteractionEnumType.valueOf(interTypeStr.toUpperCase());
+				} catch (IllegalArgumentException e) {
+					// Use default
+				}
+			}
+			interaction.set(FieldNames.FIELD_TYPE, interType);
+
+			// Set outcomes
+			String actorOutcomeStr = (String) evalResult.get("actorOutcome");
+			OutcomeEnumType actorOutcome = OutcomeEnumType.EQUILIBRIUM;
+			if (actorOutcomeStr != null) {
+				try {
+					actorOutcome = OutcomeEnumType.valueOf(actorOutcomeStr.toUpperCase());
+				} catch (IllegalArgumentException e) {
+					// Use default
+				}
+			}
+			interaction.set("actorOutcome", actorOutcome);
+
+			String targetOutcomeStr = (String) evalResult.get("targetOutcome");
+			OutcomeEnumType targetOutcome = OutcomeEnumType.EQUILIBRIUM;
+			if (targetOutcomeStr != null) {
+				try {
+					targetOutcome = OutcomeEnumType.valueOf(targetOutcomeStr.toUpperCase());
+				} catch (IllegalArgumentException e) {
+					// Use default
+				}
+			}
+			interaction.set("interactorOutcome", targetOutcome);
+
+			// Set state based on overall outcome
+			String outcomeStr = (String) evalResult.get("outcome");
+			ActionResultEnumType state = ActionResultEnumType.SUCCEEDED;
+			if ("NEGATIVE".equals(outcomeStr)) {
+				state = ActionResultEnumType.FAILED;
+			} else if ("MIXED".equals(outcomeStr)) {
+				state = ActionResultEnumType.PENDING;
+			}
+			interaction.set(FieldNames.FIELD_STATE, state);
+
+			// Set timestamps
+			interaction.set("interactionStart", new java.util.Date());
+			interaction.set("interactionEnd", new java.util.Date());
+
+			// Create the record
+			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, interaction);
+			return created;
+
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Failed to create interaction record: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	private static void attachInteractionToEvent(OlioContext octx, BaseRecord interaction, BaseRecord epoch) {
+		try {
+			// Get current event from epoch if available
+			BaseRecord currentEvent = epoch.get("currentEvent");
+			if (currentEvent == null) {
+				// Try to get or create an event for the current increment
+				List<BaseRecord> realms = octx.getRealms();
+				if (!realms.isEmpty()) {
+					BaseRecord realm = realms.get(0);
+					// For now, just log - full event attachment requires more context
+					logger.info("Interaction created for realm: {}", realm.get(FieldNames.FIELD_NAME));
+				}
+			}
+
+			// TODO: Attach interaction to chatConfig.interactions list if available
+			// This would require passing the chatConfig and updating it
+
+		} catch (Exception e) {
+			logger.warn("Failed to attach interaction to event: {}", e.getMessage());
+		}
+	}
+
+	/**
+	 * Simple chat method for game conversations between characters.
+	 * The target character (NPC) responds to the player's message.
+	 *
+	 * @param octx The Olio context
+	 * @param actor The player character
+	 * @param target The NPC character to talk to
+	 * @param message The player's message
+	 * @return Map containing the response
+	 */
+	public static Map<String, Object> chat(OlioContext octx, BaseRecord actor, BaseRecord target, String message) {
+		Map<String, Object> result = new HashMap<>();
+
+		if (octx == null || actor == null || target == null || message == null || message.trim().isEmpty()) {
+			result.put("error", "Missing required parameters");
+			return result;
+		}
+
+		String actorName = actor.get(FieldNames.FIELD_FIRST_NAME);
+		String targetName = target.get(FieldNames.FIELD_FIRST_NAME);
+		String targetGender = target.get(FieldNames.FIELD_GENDER);
+		int targetAge = target.get(FieldNames.FIELD_AGE);
+
+		// Build a simple prompt
+		String systemPrompt = "You are " + targetName + ", a " + targetAge + " year old " + targetGender + " character in a survival/adventure setting. " +
+				"Respond naturally and briefly (1-3 sentences) as this character would. " +
+				"Stay in character. Do not break the fourth wall.";
+
+		// Create chat request
+		OpenAIRequest req = new OpenAIRequest();
+		req.setModel("gpt-4o-mini"); // Use a fast model for game chat
+
+		Chat chat = new Chat();
+		chat.newMessage(req, systemPrompt, "system");
+		chat.newMessage(req, actorName + " says: " + message, "user");
+
+		try {
+			OpenAIResponse resp = chat.chat(req);
+			if (resp != null && resp.getMessage() != null) {
+				result.put("response", resp.getMessage());
+				result.put("speaker", targetName);
+			} else {
+				result.put("response", "*" + targetName + " doesn't respond*");
+				result.put("speaker", targetName);
+			}
+		} catch (Exception e) {
+			logger.error("Chat failed: " + e.getMessage());
+			result.put("error", "Chat service unavailable");
+		}
+
+		return result;
 	}
 }

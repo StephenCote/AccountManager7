@@ -1,0 +1,1 @@
+1) MapUtil has the ability to generate a minimap (all regions and intra region) with known people and threats on it.We can use this, or use that method to get all the cells to paint a mini worldmap in the browser

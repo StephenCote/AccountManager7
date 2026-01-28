@@ -56,14 +56,24 @@ On load, the game:
 Movement uses the `/rest/game/move/{characterId}` endpoint:
 
 ```javascript
-// Client sends:
-{ direction: "NORTH" }  // or SOUTH, EAST, WEST, NORTHEAST, etc.
+// Client sends distance in meters:
+{ direction: "NORTH", distance: 100 }  // Move one cell (100m)
 
-// Optional distance:
-{ direction: "EAST", distance: 2.0 }
+// Directions: NORTH, SOUTH, EAST, WEST, NORTHEAST, NORTHWEST, SOUTHEAST, SOUTHWEST
 ```
 
-Movement pad provides N/S/E/W directional buttons in the center panel.
+**Cell Dimensions:**
+- Each cell is 100m × 100m (defined by `Rules.MAP_EXTERIOR_CELL_WIDTH * MAP_EXTERIOR_CELL_MULTIPLIER`)
+- Grid shows 10×10 cells per feature
+- `currentEast/currentNorth` track position in meters within current cell (0-99)
+- `location.eastings/northings` track cell grid coordinates (0-9)
+
+**Movement Behavior:**
+- Arrow keys or WASD move one full cell (100 meters)
+- When reaching cell edge, character transitions to adjacent cell
+- If blocked (terrain, obstacle), movement fails
+
+Movement pad provides N/S/E/W directional buttons in the center panel, plus arrow key support.
 
 ### Situation Awareness
 
@@ -330,3 +340,112 @@ Also checks `sessionStorage.olio_selected_character` for pre-selection.
 
 The original focused on **card game mechanics** (draw, play, discard).
 The current focuses on **RPG-style spatial gameplay** (move, observe, interact).
+
+## Troubleshooting
+
+This section documents common issues and their solutions discovered during development.
+
+### Coordinate System
+
+The Olio coordinate system uses two levels of positioning:
+
+| Field | Model | Meaning |
+|-------|-------|---------|
+| `state.currentEast` | olio.state | Meters east within current cell (0 to cell width) |
+| `state.currentNorth` | olio.state | Meters north within current cell (0 to cell height) |
+| `state.currentLocation.eastings` | data.geoLocation | Cell's grid X coordinate |
+| `state.currentLocation.northings` | data.geoLocation | Cell's grid Y coordinate |
+
+**Client-side coordinate access:**
+```javascript
+// For situation API response (uses simple maps):
+let cellX = situation.location.eastings;
+let cellY = situation.location.northings;
+
+// For full character record:
+let cellX = player.state.currentLocation.eastings;
+let cellY = player.state.currentLocation.northings;
+let metersEast = player.state.currentEast;
+let metersNorth = player.state.currentNorth;
+```
+
+### JSON Serialization Issues
+
+**Problem:** BaseRecord objects don't serialize all fields to JSON by default. Fields may exist in the Java object but return `undefined` in the client.
+
+**Root Cause 1: Query Plan Filtering**
+
+The `OlioUtil.FULL_PLAN_FILTER` in [OlioUtil.java](AccountManagerObjects7/src/main/java/org/cote/accountmanager/olio/OlioUtil.java) defines fields excluded from queries using `planMost`. If a needed field is in this filter, it won't be returned.
+
+**Fix:** Remove required fields from the filter. For example, `FIELD_OBJECT_ID` was originally in the filter, causing `objectId` to be null for all characters:
+```java
+// OlioUtil.java - FIELD_OBJECT_ID was removed from FULL_PLAN_FILTER
+// because game client needs objectId for character identification
+public static List<String> FULL_PLAN_FILTER = Arrays.asList(new String[] {
+    FieldNames.FIELD_TAGS,
+    FieldNames.FIELD_ATTRIBUTES,
+    // FIELD_OBJECT_ID was here - removed!
+    ...
+});
+```
+
+**Root Cause 2: BaseRecord to JSON**
+
+Even when fields exist in BaseRecord, they may not serialize properly to JSON.
+
+**Fix:** Convert BaseRecords to simple `Map<String, Object>` before returning from REST endpoints:
+```java
+// GameUtil.getSituation() - convert location to simple map
+Map<String, Object> locMap = new HashMap<>();
+locMap.put("name", currentLoc.get(FieldNames.FIELD_NAME));
+locMap.put("terrainType", currentLoc.get(FieldNames.FIELD_TERRAIN_TYPE));
+locMap.put("eastings", currentLoc.get(FieldNames.FIELD_EASTINGS));
+locMap.put("northings", currentLoc.get(FieldNames.FIELD_NORTHINGS));
+result.put("location", locMap);
+```
+
+### Unit Tests for Situation API
+
+Three unit tests in [TestGameUtil.java](AccountManagerObjects7/src/test/java/org/cote/accountmanager/objects/tests/olio/TestGameUtil.java) validate the situation API response:
+
+| Test | Validates |
+|------|-----------|
+| `TestGetSituationLocationFields` | location has: name, geoType, eastings, northings, terrainType |
+| `TestGetSituationAdjacentCellsFields` | each cell has: name, eastings, northings, terrainType |
+| `TestGetSituationNearbyPeopleFields` | each person has: objectId, name, gender, age, currentLocation |
+
+**Running the tests:**
+```bash
+# From AccountManagerObjects7 directory
+mvn test -Dtest=TestGameUtil#TestGetSituationLocationFields
+mvn test -Dtest=TestGameUtil#TestGetSituationAdjacentCellsFields
+mvn test -Dtest=TestGameUtil#TestGetSituationNearbyPeopleFields
+```
+
+**Note:** Ensure `<skipTests>false</skipTests>` in pom.xml.
+
+### Common Issues
+
+| Symptom | Cause | Solution |
+|---------|-------|----------|
+| Terrain tiles show "?" | Cell terrainType not in response | Check FULL_PLAN_FILTER, use simple Maps |
+| Location shows "undefined, undefined" | Wrong coordinate path in JS | Use `situation.location.eastings/northings` |
+| People show "Unknown" | objectId/name not serialized | Remove FIELD_OBJECT_ID from filter, use Maps |
+| 404 on /rest/game/endTurn | Wrong endpoint name | Use `/rest/game/advance/{id}` |
+| Movement fails silently | Action already in progress | Check for existing PENDING/IN_PROGRESS action |
+
+### Debugging Checklist
+
+1. **Server-side:**
+   - Add logging in `GameUtil.getSituation()` to verify field values
+   - Run unit tests to validate response structure
+   - Check `OlioUtil.FULL_PLAN_FILTER` for excluded fields
+
+2. **Client-side:**
+   - Log the raw situation response: `console.log('situation:', JSON.stringify(situation, null, 2))`
+   - Verify coordinate paths match API response structure
+   - Check for null/undefined before accessing nested properties
+
+3. **General:**
+   - Create unit tests for new functionality before implementing UI
+   - Validate JSON serialization by comparing Java object fields to JSON output

@@ -9,7 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -23,6 +23,16 @@ public class StateUtil {
 	private static final SecureRandom random = new SecureRandom();
 	
 	public static void queueUpdateLocation(OlioContext context, BaseRecord obj) {
+		queueUpdateLocation(context, obj, false);
+	}
+
+	public static void queueUpdateLocation(OlioContext context, BaseRecord obj, boolean includeLocation) {
+		updateLocationImmediate(context, obj, includeLocation);
+	}
+
+	/// Immediately updates the state's location in the database without using the queue.
+	/// This avoids race conditions where stale data in other queued records could overwrite fresh updates.
+	public static void updateLocationImmediate(OlioContext context, BaseRecord obj, boolean includeLocation) {
 		BaseRecord state = obj;
 		if(state == null) {
 			logger.warn("State is null");
@@ -32,7 +42,30 @@ public class StateUtil {
 		if(!obj.getSchema().equals(OlioModelNames.MODEL_CHAR_STATE)) {
 			state = obj.get(FieldNames.FIELD_STATE);
 		}
-		Queue.queueUpdate(state, new String[] { OlioFieldNames.FIELD_CURRENT_LOCATION, FieldNames.FIELD_CURRENT_EAST, FieldNames.FIELD_CURRENT_NORTH });
+		long stateId = state.get(FieldNames.FIELD_ID);
+		int east = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int north = state.get(FieldNames.FIELD_CURRENT_NORTH);
+		BaseRecord loc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		long locId = loc != null ? loc.get(FieldNames.FIELD_ID) : 0L;
+		logger.info("Immediate location update - stateHash=" + System.identityHashCode(state) + ", stateId=" + stateId + ", locId=" + locId + ", E=" + east + ", N=" + north + ", includeLocation=" + includeLocation);
+		if(stateId == 0L) {
+			logger.error("State has no ID - update will fail!");
+			ErrorUtil.printStackTrace();
+			return;
+		}
+
+		// Create a copy with only the fields we want to update
+		String[] fields;
+		if(includeLocation) {
+			fields = new String[] { FieldNames.FIELD_ID, OlioFieldNames.FIELD_CURRENT_LOCATION, FieldNames.FIELD_CURRENT_EAST, FieldNames.FIELD_CURRENT_NORTH };
+		} else {
+			fields = new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_CURRENT_EAST, FieldNames.FIELD_CURRENT_NORTH };
+		}
+		BaseRecord updateRec = state.copyRecord(fields);
+
+		// Update directly in the database, bypassing the queue
+		boolean success = IOSystem.getActiveContext().getRecordUtil().updateRecord(updateRec);
+		logger.info("Immediate location update result: " + success + " for stateId=" + stateId + ", E=" + east + ", N=" + north);
 	}
 	
 	/*
@@ -80,27 +113,28 @@ public class StateUtil {
 			logger.warn("State currentLocation is null");
 			return false;
 		}
-		// logger.info("Moved " + x + ", " + y + " to " + (int)state.get(FieldNames.FIELD_CURRENT_EAST) + ", " + (int)state.get(FieldNames.FIELD_CURRENT_NORTH));
-		//Queue.queueUpdate(state, new String[] { OlioFieldNames.FIELD_CURRENT_LOCATION, FieldNames.FIELD_CURRENT_EAST, FieldNames.FIELD_CURRENT_NORTH });
-		
-		return (
-		x != (int)state.get(FieldNames.FIELD_CURRENT_EAST)
-		||
-		y != (int)state.get(FieldNames.FIELD_CURRENT_NORTH)
-		//	(long)nloc.get(FieldNames.FIELD_ID) == (long)loc.get(FieldNames.FIELD_ID)
-		);
-		
+		int newX = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int newY = state.get(FieldNames.FIELD_CURRENT_NORTH);
+		boolean moved = (x != newX) || (y != newY);
+		logger.info("moveByOneMeterInCell: stateHash=" + System.identityHashCode(state) + " original=(" + x + "," + y + ") new=(" + newX + "," + newY + ") moved=" + moved);
+		return moved;
 	}
 	
 	/// NOTE: Does not queue update
 	private static void moveByOne(OlioContext context, BaseRecord animal, List<BaseRecord> cells, int stateX, int stateY, boolean allowCrossCell, boolean allowCrossFeature) {
 		BaseRecord state = animal.get(FieldNames.FIELD_STATE);
 		if(state == null) {
+			logger.warn("moveByOne: state is null");
 			return;
 		}
 
+		int beforeEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int beforeNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+		logger.info("moveByOne: stateHash=" + System.identityHashCode(state) + " BEFORE - E=" + beforeEast + ", N=" + beforeNorth + ", targetX=" + stateX + ", targetY=" + stateY);
+
 		BaseRecord loc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
 		if(loc == null) {
+			logger.warn("moveByOne: loc is null");
 			return;
 		}
 		/*
@@ -123,14 +157,13 @@ public class StateUtil {
 		// logger.info("Find cell: " + stateX + ", " + stateY);
 		BaseRecord node = GeoLocationUtil.findCellToEdgePlusOne(context, state.get(OlioFieldNames.FIELD_CURRENT_LOCATION), cells, stateX, stateY, allowCrossFeature);
 		if(node == null) {
-			// logger.warn("Failed to find node at: " + x + ", " + y);
-			/// failed to find node.  don't move.  just bail
-			///
+			logger.warn("moveByOne: Failed to find node at " + stateX + ", " + stateY + " - no movement");
 			return;
 		}
 		else {
 			long nid = node.get(FieldNames.FIELD_ID);
 			if(!evaluateCanMoveTo(context, animal, node)) {
+				logger.warn("moveByOne: evaluateCanMoveTo returned false - no movement");
 				return;
 			}
 			/// different cell
@@ -174,9 +207,9 @@ public class StateUtil {
 			if(stateX >= 0 && stateX < xedge) {
 				state.setValue(FieldNames.FIELD_CURRENT_EAST, stateX);
 			}
-			// logger.info("Moved To: " + cellX + "." + stateX + ", " + cellY + "." + stateY);
-			// logger.info("Move " + x + ", " + y);
-			// Queue.queue(state.copyRecord(new String[] { FieldNames.FIELD_ID, OlioFieldNames.FIELD_CURRENT_LOCATION, FieldNames.FIELD_CURRENT_EAST, FieldNames.FIELD_CURRENT_NORTH }));
+			int afterEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+			int afterNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+			logger.info("moveByOne: AFTER - E=" + afterEast + ", N=" + afterNorth);
 		}
 	}
 	

@@ -20,17 +20,17 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 	public class CalculateMovementOddsOperation extends Operation {
 		private SecureRandom random = new SecureRandom();
-		
+
 		public CalculateMovementOddsOperation(IReader reader, ISearch search) {
 			super(reader, search);
 		}
-		
+
 		@Override
 		public <T> T read(BaseRecord sourceFact, BaseRecord referenceFact) {
 			// TODO Auto-generated method stub
 			return null;
 		}
-		
+
 		@Override
 		public OperationResponseEnumType operate(BaseRecord prt, BaseRecord prr, BaseRecord pattern, BaseRecord sourceFact, BaseRecord referenceFact) {
 			BaseRecord paramAnimal = FactUtil.getParameterValue(sourceFact, "animalActor");
@@ -38,7 +38,7 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 			if(paramAnimal == null) {
 				logger.info("Expected an 'animal' parameter");
 				return OperationResponseEnumType.ERROR;
-				
+
 			}
 			if(paramLocation == null) {
 				logger.info("Expected a 'location' parameter");
@@ -46,6 +46,11 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 			}
 
 			TerrainEnumType tet = paramLocation.getEnum(FieldNames.FIELD_TERRAIN_TYPE);
+			if(tet == null || tet == TerrainEnumType.UNKNOWN) {
+				logger.warn("Target location has UNKNOWN terrain type - defaulting to CLEAR");
+				tet = TerrainEnumType.CLEAR;
+			}
+
 			double movementOdds = Rules.getMovementOdds(tet);
 			if(paramAnimal.getSchema().equals(OlioModelNames.MODEL_ANIMAL)) {
 				List<String> habitat = paramAnimal.get(OlioFieldNames.FIELD_HABITAT);
@@ -64,13 +69,14 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 					}
 				}
 			}
-			/// Simple default rule - if odds of moving are greater than 50% then it's an automatic success
-			/// TODO: Apply movement modifiers (eg: floatation or skill for water, skill for mountain, etc)
-			/*
+
+			/// If odds of moving are greater than 50% then it's an automatic success
+			/// This prevents frustrating random failures in easy terrain
 			if(movementOdds > 0.50) {
-				return true;
+				PolicyUtil.addResponseMessage(prr, "Movement auto-success for " + paramAnimal.get(FieldNames.FIELD_NAME) + " in " + tet.toString() + " (odds: " + movementOdds + ")");
+				return OperationResponseEnumType.SUCCEEDED;
 			}
-			*/
+
 			OperationResponseEnumType ort = OperationResponseEnumType.FAILED;
 			double rand = random.nextDouble();
 			if(rand <= movementOdds) {

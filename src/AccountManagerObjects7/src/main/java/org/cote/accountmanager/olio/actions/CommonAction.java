@@ -154,9 +154,9 @@ public abstract class CommonAction implements IAction {
 			if (instinct != null) {
 				for (String pi : posInstincts) {
 					if (instinct.hasField(pi)) {
-						int current = instinct.get(pi);
-						int reduction = (int)(10 * outcomeMod);
-						instinct.setValue(pi, Math.max(-100, current - reduction));
+						double current = instinct.get(pi);
+						double reduction = 10 * outcomeMod;
+						instinct.setValue(pi, Math.max(-100.0, current - reduction));
 					}
 				}
 			}
@@ -169,8 +169,8 @@ public abstract class CommonAction implements IAction {
 			if (instinct != null) {
 				for (String ni : negInstincts) {
 					if (instinct.hasField(ni)) {
-						int current = instinct.get(ni);
-						instinct.setValue(ni, Math.min(100, current + 5));
+						double current = instinct.get(ni);
+						instinct.setValue(ni, Math.min(100.0, current + 5.0));
 					}
 				}
 			}

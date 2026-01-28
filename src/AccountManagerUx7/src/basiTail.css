@@ -1846,16 +1846,39 @@
 
       /* Spatial grid */
       .sg-grid-section {
-        @apply flex-1 flex flex-col items-center justify-center;
+        @apply flex-1 flex flex-col items-center justify-center p-2;
+        min-height: 0; /* Allow flex shrinking */
       }
       .sg-grid {
-        @apply flex flex-col gap-1;
+        display: grid;
+        grid-template-columns: repeat(10, 1fr);
+        gap: 0;
+        width: 100%;
+        max-width: min(100%, 500px);
+        aspect-ratio: 1;
       }
       .sg-grid-row {
-        @apply flex gap-1;
+        display: contents; /* Let cells flow into parent grid */
       }
       .sg-grid-cell {
-        @apply w-12 h-12 flex items-center justify-center text-lg rounded border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 cursor-pointer transition-all hover:scale-105 hover:bg-gray-200 dark:hover:bg-gray-700;
+        @apply flex items-center justify-center text-xl bg-gray-100 dark:bg-gray-800 cursor-pointer transition-all hover:brightness-110;
+        aspect-ratio: 1;
+        position: relative;
+        overflow: hidden;
+      }
+      .sg-tile-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+      .sg-cell-overlay {
+        position: absolute;
+        z-index: 10;
+        text-shadow: 0 0 3px rgba(0,0,0,0.8), 0 0 6px rgba(0,0,0,0.5);
+        font-size: 1.5rem;
       }
       .sg-cell-current {
         @apply bg-blue-200 dark:bg-blue-800 border-blue-400 dark:border-blue-600 ring-2 ring-blue-400;
@@ -1945,6 +1968,11 @@
       }
       .sg-person-rel {
         @apply text-xs text-gray-500 dark:text-gray-400;
+      }
+
+      /* Selected card state */
+      .sg-card-selected {
+        @apply ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/30;
       }
 
       /* Actions section */

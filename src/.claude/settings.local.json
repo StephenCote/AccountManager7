@@ -6,7 +6,8 @@
       "Bash(mvn clean compile:*)",
       "Bash(mvn test:*)",
       "Bash(node -c:*)",
-      "Bash(mvn test-compile:*)"
+      "Bash(mvn test-compile:*)",
+      "Bash(mvn:*)"
     ]
   }
 }

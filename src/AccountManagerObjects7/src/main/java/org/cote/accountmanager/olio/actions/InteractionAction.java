@@ -319,7 +319,7 @@ public class InteractionAction extends CommonAction {
 		if (posInstincts != null) {
 			for (String pi : posInstincts) {
 				if (instinct.hasField(pi)) {
-					int val = instinct.get(pi);
+					double val = instinct.get(pi);
 					mod += val / 50.0; // Range -100 to 100 → -2.0 to 2.0
 				}
 			}
@@ -330,7 +330,7 @@ public class InteractionAction extends CommonAction {
 		if (negInstincts != null) {
 			for (String ni : negInstincts) {
 				if (instinct.hasField(ni)) {
-					int val = instinct.get(ni);
+					double val = instinct.get(ni);
 					mod -= val / 50.0;
 				}
 			}
