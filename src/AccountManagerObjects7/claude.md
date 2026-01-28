@@ -719,62 +719,98 @@ List<BaseRecord> population = ctx.getRealmPopulation(realm);
 Map<String, List<BaseRecord>> demographics = ctx.getDemographicMap(location);
 ```
 
-### Olio Map System (MGRS-Based)
+### Olio Map System (MGRS-Inspired)
 
 The Olio simulation uses a coordinate system inspired by **MGRS (Military Grid Reference System)** for spatial positioning. This enables hierarchical location tracking from large regions down to individual meter positions.
 
-**IMPORTANT Implementation Notes:**
-- The GZD (Grid Zone Designator) is **hardcoded as "30K"** - this represents a zone in the middle of the south Atlantic, chosen arbitrarily since it won't conflict with real geographic data
-- The `kident` (100Km square identification) is **randomly chosen** and may not represent a valid full 100Km square
-- Numerical locations use **100m square blocks** as the base unit with Eastings (meters from west edge) and Northings (meters from north edge)
+**IMPORTANT:** Full coordinate resolution requires **both** the geolocation object (type='cell') **and** the state object. The cell identifies a 100m x 100m space, while state.currentEast/currentNorth identifies position within that cell at 1-meter resolution.
 
-#### MGRS Structure
+#### Default Map Setup
+
+**Grid Zone Designator (GZD):**
+- Hardcoded as **"30K"** - a zone in the middle of the south Atlantic, chosen arbitrarily to avoid conflict with real geographic data
+
+**kident Grid System:**
+- Column letters: `ABCDEFGHJKLMNPQRSTUVWXYZ` (24 letters, omitting I and O)
+- Row letters: `ABCDEFGHJKLMNPQRSTUV` (20 letters, omitting I and O)
+- A **random kident** is chosen to represent the initial 'world' region
+- The world can grow/move to adjacent kidents via dynamic population of cells
+
+#### Map Preparation Process
+
+**`prepareMapGrid()`** - Initializes the base grid:
+- Creates the GZD zone record
+- Populates all kident (100km²) grid squares as `admin2` type locations
+
+**`prepareK100()`** - Prepares a single kident (100km x 100km):
+- Creates `MAP_EXTERIOR_FEATURE_WIDTH` x `MAP_EXTERIOR_FEATURE_HEIGHT` (100 x 100) feature cells
+- Each feature cell = 1 square kilometer, identified as `admin2` type
+- Calls `connectRegions()` to blend terrain types and establish water dynamics (mountain to coast flow)
+- Uses `TerrainUtil.blastAndWalk()` for terrain generation
+
+**`prepareCells()`** - Prepares cells within a 1 sq km feature:
+- Creates `MAP_EXTERIOR_CELL_WIDTH` x `MAP_EXTERIOR_CELL_HEIGHT` (10 x 10) interior cells
+- Each cell = 100m x 100m (multiplied by `MAP_EXTERIOR_CELL_MULTIPLIER` = 10)
+- Applies terrain from parent feature via `TerrainUtil.blastCells()`
+- Paints points of interest via `PointOfInterestUtil`
+
+#### MGRS-Style Coordinate Structure
 
 ```
-Full coordinate example: 30K AB 12345 67890
-                         │   │  │     │
-                         │   │  │     └─ Northings (meters from north, 0-99999)
-                         │   │  └─────── Eastings (meters from west, 0-99999)
-                         │   └────────── kident (100Km square: column letter + row letter)
-                         └────────────── GZD (Grid Zone Designator, always "30K")
+Full coordinate example: 30K AB 12 34 056 078
+                         │   │  │  │  │   │
+                         │   │  │  │  │   └─ state.currentNorth (meters within cell, 0-99)
+                         │   │  │  │  └───── state.currentEast (meters within cell, 0-99)
+                         │   │  │  └──────── cell.northings (cell Y within feature, 0-9)
+                         │   │  └─────────── cell.eastings (cell X within feature, 0-9)
+                         │   └────────────── kident (100Km square: column letter + row letter)
+                         └────────────────── GZD (Grid Zone Designator, always "30K")
 ```
-
-**kident letters:**
-- Column: A-Z, omitting I and O
-- Row: A-V, omitting I and O
 
 #### Location Hierarchy
 
-Olio uses a 4-level hierarchy for locations (from largest to smallest):
-
-| Level | Model | Description | Scale |
-|-------|-------|-------------|-------|
-| GZD | - | Grid Zone Designator (hardcoded "30K") | ~100,000km² |
-| Admin2 | `olio.locAdmin2` | Administrative region (county-level) | Variable |
-| Feature | `olio.locFeature` | Geographic feature (town, landmark) | Variable |
-| Cell | `olio.locCell` | 100m x 100m grid cell | 100m² |
+| Level | Type/Model | Description | Scale | Code Reference |
+|-------|------------|-------------|-------|----------------|
+| GZD | `country` | Grid Zone Designator (hardcoded "30K") | ~100,000km² | `GeoLocationUtil.GZD` |
+| Kident | `admin2` | 100km x 100km grid square | 10,000 km² | `prepareMapGrid()` |
+| Feature | `feature` | 1km x 1km grid cell within kident | 1 km² | `prepareK100()` |
+| Cell | `cell` | 100m x 100m grid cell within feature | 10,000 m² | `prepareCells()` |
+| Intra-cell | state | 1m x 1m position within cell | 1 m² | `state.currentEast/North` |
 
 #### Position Storage on Characters
 
-Character position is stored across multiple fields in `olio.charPerson.state`:
+Character position requires **both** the `state.currentLocation` (cell reference) **and** `state.currentEast/currentNorth` (intra-cell position):
 
 ```java
-// Grid-level position (100m cells)
-int eastings = state.get("eastings");        // Cell X coordinate (0-999 in kident)
-int northings = state.get("northings");      // Cell Y coordinate (0-999 in kident)
+BaseRecord state = person.get("state");
 
-// Cell reference (the actual cell object)
-BaseRecord currentLocation = state.get("currentLocation");  // olio.locCell
+// Cell reference (the actual 100m x 100m cell object)
+BaseRecord cell = state.get("currentLocation");  // geolocation with type='cell'
+int cellEast = cell.get("eastings");             // Cell X within feature (0-9)
+int cellNorth = cell.get("northings");           // Cell Y within feature (0-9)
 
-// Meter-level position within cell (0-99 meters)
-int currentEast = state.get("currentEast");   // Position within cell (X)
-int currentNorth = state.get("currentNorth"); // Position within cell (Y)
+// Intra-cell position (meter-level precision within the 100m x 100m cell)
+int currentEast = state.get("currentEast");      // X within cell (0-99 meters)
+int currentNorth = state.get("currentNorth");    // Y within cell (0-99 meters)
 ```
 
-**Full position calculation:**
+**Finest Resolution:** 1 meter (currentEast/currentNorth range 0-99 within a 100m x 100m cell)
+
+**Full position calculation (within a feature):**
 ```
-Absolute X = (eastings * 100) + currentEast    // Total meters from west edge
-Absolute Y = (northings * 100) + currentNorth  // Total meters from north edge
+Absolute X = (cellEast * 100) + currentEast     // Total meters from west edge of feature
+Absolute Y = (cellNorth * 100) + currentNorth   // Total meters from north edge of feature
+```
+
+**Full position calculation (within a kident):**
+```java
+// GeoLocationUtil.getXCoordinateToState() does this calculation:
+int featureEast = parentFeature.get("eastings");  // Feature X within kident (0-99)
+int cellEast = cell.get("eastings");              // Cell X within feature (0-9)
+int stateEast = state.get("currentEast");         // Meters within cell (0-99)
+
+// Total meters from kident west edge:
+int absoluteX = (featureEast * 1000) + (cellEast * 100) + stateEast;
 ```
 
 #### Distance Calculations
