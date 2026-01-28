@@ -1,4 +1,4 @@
-package org.cote.accountmanager.objects.tests;
+package org.cote.accountmanager.objects.tests.olio;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -40,6 +40,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.factory.Factory;
 import org.junit.Test;
 

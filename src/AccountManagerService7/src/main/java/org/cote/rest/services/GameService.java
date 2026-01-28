@@ -208,8 +208,17 @@ public class GameService {
 			return Response.status(400).entity("{\"error\":\"Could not consume item\"}").build();
 		}
 
+		// Return state with sync data for client-side cache update
 		BaseRecord state = GameUtil.getCharacterState(person);
-		return Response.status(200).entity(state != null ? state.toFullString() : "{\"status\":\"consumed\"}").build();
+		if(state != null) {
+			BaseRecord currentLoc = state.get("currentLocation");
+			Map<String, Object> syncData = GameUtil.createStateSyncData(state, currentLoc, true);
+			syncData.put("consumed", true);
+			syncData.put("itemName", itemName);
+			syncData.put("quantity", quantity);
+			return Response.status(200).entity(JSONUtil.exportObject(syncData)).build();
+		}
+		return Response.status(200).entity("{\"status\":\"consumed\"}").build();
 	}
 
 	/// Advance time for player-controlled characters.

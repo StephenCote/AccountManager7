@@ -237,6 +237,12 @@
                 withCredentials: true
             });
             situation = resp;
+
+            // Sync all nested objects using generic sync helper
+            if (player && resp) {
+                am7client.syncFromResponse(player, resp, am7client.SYNC_MAPPINGS.situation);
+            }
+
             m.redraw();
         } catch (e) {
             console.error("Failed to load situation", e);
@@ -298,6 +304,12 @@
 
             console.log("Move response:", resp);
             situation = resp;
+
+            // Sync all nested objects using generic sync helper
+            if (player && resp) {
+                am7client.syncFromResponse(player, resp, am7client.SYNC_MAPPINGS.situation);
+            }
+
             addEvent("Moved " + direction, "info");
             moveMode = false;
             m.redraw();

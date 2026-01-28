@@ -71,8 +71,9 @@
 					<excludes>
 						<!--
 						
-						
+						<exclude>**/TestGameUtilSync</exclude>
 						-->
+						<exclude>**/TestGameUtil</exclude>
 						<exclude>**/TestCombat</exclude>
 						<exclude>**/TestOlioGameFeatures</exclude>
 						<exclude>**/TestSDStyles.java</exclude>

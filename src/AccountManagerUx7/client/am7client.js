@@ -752,6 +752,190 @@
 		return get(sOlio + "/compare/" + sObjectId1 + "/" + sObjectId2, fH);
 	}
 
+	/**
+	 * Apply patches to a cached object to keep it in sync with server state.
+	 * Patches are in the format: { path: "state.currentLocation", value: {...} }
+	 * @param {Object} obj - The object to patch
+	 * @param {Array} patches - Array of patch objects with 'path' and 'value' properties
+	 */
+	function applyPatches(obj, patches) {
+		if (!obj || !patches || !Array.isArray(patches)) return;
+
+		patches.forEach(function(patch) {
+			if (!patch.path || patch.value === undefined) return;
+
+			let pathParts = patch.path.split('.');
+			let target = obj;
+
+			// Navigate to parent of final property
+			for (let i = 0; i < pathParts.length - 1; i++) {
+				let part = pathParts[i];
+				if (target[part] === undefined || target[part] === null) {
+					target[part] = {};
+				}
+				target = target[part];
+			}
+
+			// Set the final property
+			let finalProp = pathParts[pathParts.length - 1];
+			target[finalProp] = patch.value;
+		});
+	}
+
+	/**
+	 * Refresh a nested object reference from the server.
+	 * Useful when a nested foreign reference becomes stale.
+	 * @param {Object} obj - The parent object containing the nested reference
+	 * @param {string} path - Dot-separated path to the nested object (e.g., "state.currentLocation")
+	 * @param {string} type - The schema type of the nested object (e.g., "data.geoLocation")
+	 * @param {boolean} full - Whether to fetch full object with all fields (default: true)
+	 * @returns {Promise} - Resolves with the refreshed nested object
+	 */
+	async function refreshNested(obj, path, type, full) {
+		if (!obj || !path || !type) return null;
+		if (full === undefined) full = true;
+
+		let pathParts = path.split('.');
+		let target = obj;
+
+		// Navigate to the nested object
+		for (let i = 0; i < pathParts.length; i++) {
+			if (target[pathParts[i]] === undefined || target[pathParts[i]] === null) {
+				return null;
+			}
+			target = target[pathParts[i]];
+		}
+
+		// Get the objectId of the nested object
+		let nestedId = target.objectId || target.id;
+		if (!nestedId) return null;
+
+		// Fetch fresh data from server - use full fetch by default to get all fields
+		let fresh = full ? await getFullByObjectId(type, nestedId) : await getByObjectId(type, nestedId);
+		if (!fresh) return null;
+
+		// Navigate to parent and update the reference
+		let parent = obj;
+		for (let i = 0; i < pathParts.length - 1; i++) {
+			parent = parent[pathParts[i]];
+		}
+		let finalProp = pathParts[pathParts.length - 1];
+		parent[finalProp] = fresh;
+
+		return fresh;
+	}
+
+	/**
+	 * Sync a cached object with a partial update from the server.
+	 * Merges the update into the cached object, preserving unaffected properties.
+	 * @param {Object} cached - The cached object to update
+	 * @param {Object} update - Partial update from the server
+	 * @param {boolean} deep - Whether to perform deep merge (default: true)
+	 */
+	function syncObject(cached, update, deep) {
+		if (!cached || !update) return cached;
+		deep = deep !== false;
+
+		Object.keys(update).forEach(function(key) {
+			if (deep && typeof update[key] === 'object' && update[key] !== null && !Array.isArray(update[key])) {
+				if (typeof cached[key] === 'object' && cached[key] !== null) {
+					syncObject(cached[key], update[key], deep);
+				} else {
+					cached[key] = update[key];
+				}
+			} else {
+				cached[key] = update[key];
+			}
+		});
+
+		return cached;
+	}
+
+	/**
+	 * Sync multiple nested paths on an object from a server response.
+	 * Handles the sync data format returned by GameUtil.createSyncData().
+	 *
+	 * @param {Object} obj - The cached object to sync (e.g., player character)
+	 * @param {Object} syncData - Server response containing sync data and optional patches
+	 * @param {Object} pathMapping - Optional mapping of response keys to object paths
+	 *                               e.g., { "stateSnapshot": "state", "statistics": "statistics" }
+	 *
+	 * Example usage:
+	 *   am7client.syncFromResponse(player, resp, {
+	 *     "stateSnapshot": "state",
+	 *     "location": "state.currentLocation",
+	 *     "statistics": "statistics",
+	 *     "profile": "profile"
+	 *   });
+	 */
+	function syncFromResponse(obj, syncData, pathMapping) {
+		if (!obj || !syncData) return;
+
+		// Apply patches if present (most precise method)
+		if (syncData.patches && Array.isArray(syncData.patches)) {
+			applyPatches(obj, syncData.patches);
+		}
+
+		// Apply mapped snapshots if no patches or as supplement
+		if (pathMapping) {
+			Object.keys(pathMapping).forEach(function(responseKey) {
+				if (syncData[responseKey]) {
+					let targetPath = pathMapping[responseKey];
+					let data = syncData[responseKey];
+
+					// Navigate to target and sync
+					let pathParts = targetPath.split('.');
+					let target = obj;
+					for (let i = 0; i < pathParts.length - 1; i++) {
+						if (!target[pathParts[i]]) {
+							target[pathParts[i]] = {};
+						}
+						target = target[pathParts[i]];
+					}
+
+					let finalKey = pathParts[pathParts.length - 1];
+					if (typeof data === 'object' && !Array.isArray(data)) {
+						if (!target[finalKey]) {
+							target[finalKey] = {};
+						}
+						syncObject(target[finalKey], data, true);
+					} else {
+						target[finalKey] = data;
+					}
+				}
+			});
+		}
+	}
+
+	/**
+	 * Standard path mappings for common Olio sync scenarios
+	 */
+	var SYNC_MAPPINGS = {
+		// For situation/move responses
+		situation: {
+			"stateSnapshot": "state",
+			"location": "state.currentLocation"
+		},
+		// For full character sync
+		full: {
+			"state": "state",
+			"statistics": "statistics",
+			"instinct": "instinct",
+			"store": "store",
+			"profile": "profile"
+		},
+		// For combat-related sync
+		combat: {
+			"stateSnapshot": "state",
+			"statistics": "statistics"
+		},
+		// For apparel/store sync
+		apparel: {
+			"store": "store",
+			"apparel": "store.apparel"
+		}
+	};
+
 	function getUserPersonObject(sId,fH){
 		return new Promise((res, rej) => {
 			if(!sId){
@@ -941,7 +1125,13 @@
 		getImageTags,
 		applyImageTags,
 		personalityProfile,
-		profileComparison
+		profileComparison,
+		// State synchronization helpers
+		applyPatches,
+		refreshNested,
+		syncObject,
+		syncFromResponse,
+		SYNC_MAPPINGS
 	};
 
 	

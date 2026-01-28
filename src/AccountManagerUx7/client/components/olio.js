@@ -92,8 +92,13 @@
         }
 
         let wear = app.wearables;
-        if(!wear || !wear.length){ 
+        if(!wear || !wear.length){
             page.toast("error", "No wearables found in apparel " + app.name);
+        }
+
+        // Restore schema on nested wearables array to prevent schema loss
+        if(wear && wear.length) {
+            am7model.updateListModel(wear);
         }
 
         let q = am7view.viewQuery("olio.wearable");
@@ -185,15 +190,25 @@
         patch.forEach((p) => {
             aP.push(page.patchObject(p));
         });
-        /*
+
+        // Execute all patches FIRST, then clear cache to prevent race condition
+        // where cache is cleared before patches complete, leaving orphaned mutations
+        await Promise.all(aP);
+
+        // Now clear cache after patches have successfully completed
         await am7client.clearCache("olio.wearable");
         await am7client.clearCache("olio.apparel");
         await am7client.clearCache("olio.store");
-        await am7client.clearCache("olio.charPerson");
-        await am7client.clearCache("olio.narrative");
-        */
-        await am7client.clearCache();
-        await Promise.all(aP);
+
+        // Sync the local wears array with freshly patched state
+        // This ensures the nested references match what was persisted
+        patch.forEach((p) => {
+            let w = wears.find(w => w.id === p.id);
+            if(w) {
+                w.inuse = p.inuse;
+            }
+        });
+
         return true;
     }
 

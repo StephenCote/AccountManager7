@@ -281,6 +281,22 @@ public class GameUtil {
 		position.put("cellNorthings", currentLoc.get(FieldNames.FIELD_NORTHINGS));
 		result.put("position", position);
 
+		// Add state snapshot for client-side sync of nested state references
+		// This allows clients to update their cached player.state without full refetch
+		// Values come directly from the state record - model already defines defaults
+		Map<String, Object> stateSnapshot = new HashMap<>();
+		stateSnapshot.put("currentEast", currentEast);
+		stateSnapshot.put("currentNorth", currentNorth);
+		stateSnapshot.put("energy", state.get("energy"));
+		stateSnapshot.put("health", state.get("health"));
+		stateSnapshot.put("hunger", state.get("hunger"));
+		stateSnapshot.put("thirst", state.get("thirst"));
+		stateSnapshot.put("fatigue", state.get("fatigue"));
+		stateSnapshot.put("alive", state.get("alive"));
+		stateSnapshot.put("awake", state.get("awake"));
+		stateSnapshot.put("playerControlled", state.get("playerControlled"));
+		result.put("stateSnapshot", stateSnapshot);
+
 		return result;
 	}
 
@@ -316,13 +332,15 @@ public class GameUtil {
 			throw new OlioException("Failed to create move action");
 		}
 
-		boolean success = Actions.executeAction(octx, actionResult);
-		if (!success) {
-			throw new OlioException("Movement blocked or failed");
+		// Route through Overwatch to enable preemption, reactions, and interaction spawning
+		try {
+			ActionResultEnumType result = octx.getOverwatch().processOne(actionResult);
+			if (result == ActionResultEnumType.FAILED || result == ActionResultEnumType.ERROR) {
+				throw new OlioException("Movement blocked or failed");
+			}
+		} catch (OverwatchException e) {
+			throw new OlioException("Movement failed: " + e.getMessage());
 		}
-
-		Actions.concludeAction(octx, actionResult, person, null);
-		Queue.processQueue();
 
 		return true;
 	}
@@ -343,15 +361,10 @@ public class GameUtil {
 				return false;
 			}
 
-			boolean success = Actions.executeAction(octx, actionResult);
-			if (!success) {
-				return false;
-			}
-
-			Actions.concludeAction(octx, actionResult, person, null);
-			Queue.processQueue();
-			return true;
-		} catch (OlioException e) {
+			// Route through Overwatch to enable preemption, reactions, and interaction spawning
+			ActionResultEnumType result = octx.getOverwatch().processOne(actionResult);
+			return result != ActionResultEnumType.FAILED && result != ActionResultEnumType.ERROR;
+		} catch (OlioException | OverwatchException e) {
 			logger.error("Failed to consume item: {}", e.getMessage());
 			return false;
 		}
@@ -1156,6 +1169,261 @@ public class GameUtil {
 		} catch (Exception e) {
 			logger.warn("Failed to attach interaction to event: {}", e.getMessage());
 		}
+	}
+
+	/**
+	 * Generate patches for tracking changes to nested object properties.
+	 * Used to help clients sync their cached objects with server state.
+	 *
+	 * @param basePath The base path for the patches (e.g., "state")
+	 * @param fields Map of field names to their new values
+	 * @return List of patch objects with path and value
+	 */
+	public static List<Map<String, Object>> generatePatches(String basePath, Map<String, Object> fields) {
+		List<Map<String, Object>> patches = new ArrayList<>();
+		if (fields == null || fields.isEmpty()) {
+			return patches;
+		}
+
+		String prefix = (basePath != null && !basePath.isEmpty()) ? basePath + "." : "";
+		for (Map.Entry<String, Object> entry : fields.entrySet()) {
+			Map<String, Object> patch = new HashMap<>();
+			patch.put("path", prefix + entry.getKey());
+			patch.put("value", entry.getValue());
+			patches.add(patch);
+		}
+		return patches;
+	}
+
+	/**
+	 * Generic method to extract a nested object by path and create sync data.
+	 * Works for any nested foreign model reference on a character.
+	 *
+	 * @param person The character record
+	 * @param path Dot-separated path to nested object (e.g., "state", "store.apparel", "profile.portrait")
+	 * @param fields Optional list of specific fields to include (null = all primitive fields)
+	 * @return Map containing the extracted data keyed by path segments
+	 */
+	public static Map<String, Object> extractNestedSync(BaseRecord person, String path, String[] fields) {
+		Map<String, Object> result = new HashMap<>();
+		if (person == null || path == null || path.isEmpty()) {
+			return result;
+		}
+
+		String[] pathParts = path.split("\\.");
+		Object current = person;
+
+		// Navigate to the nested object
+		for (String part : pathParts) {
+			if (current == null) {
+				return result;
+			}
+			if (current instanceof BaseRecord) {
+				current = ((BaseRecord) current).get(part);
+			} else {
+				return result;
+			}
+		}
+
+		if (current == null) {
+			return result;
+		}
+
+		// Extract data based on type
+		if (current instanceof BaseRecord) {
+			BaseRecord rec = (BaseRecord) current;
+			Map<String, Object> data = extractRecordFields(rec, fields);
+			result.put(pathParts[pathParts.length - 1], data);
+		} else if (current instanceof List) {
+			@SuppressWarnings("unchecked")
+			List<Object> list = (List<Object>) current;
+			List<Map<String, Object>> dataList = new ArrayList<>();
+			for (Object item : list) {
+				if (item instanceof BaseRecord) {
+					dataList.add(extractRecordFields((BaseRecord) item, fields));
+				}
+			}
+			result.put(pathParts[pathParts.length - 1], dataList);
+		}
+
+		return result;
+	}
+
+	/**
+	 * Extract specified fields from a record into a Map.
+	 * If fields is null, extracts all primitive (non-foreign) fields.
+	 */
+	private static Map<String, Object> extractRecordFields(BaseRecord rec, String[] fields) {
+		Map<String, Object> data = new HashMap<>();
+		if (rec == null) {
+			return data;
+		}
+
+		// Always include identity fields if they exist on the model
+		// Use hasField() to check before accessing to avoid FieldException
+		data.put("schema", rec.getSchema());
+		if (rec.hasField(FieldNames.FIELD_ID)) {
+			data.put("id", rec.get(FieldNames.FIELD_ID));
+		}
+		if (rec.hasField(FieldNames.FIELD_OBJECT_ID)) {
+			data.put("objectId", rec.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		if (rec.hasField(FieldNames.FIELD_NAME)) {
+			data.put("name", rec.get(FieldNames.FIELD_NAME));
+		}
+
+		if (fields != null) {
+			// Extract only specified fields
+			for (String field : fields) {
+				try {
+					if (rec.hasField(field)) {
+						Object val = rec.get(field);
+						if (val != null && !(val instanceof BaseRecord) && !(val instanceof List)) {
+							data.put(field, val);
+						}
+					}
+				} catch (Exception e) {
+					// Skip invalid field names
+				}
+			}
+		} else {
+			// Extract all set primitive fields from the record
+			// getFields() returns List<FieldType>, need to get name from each
+			for (org.cote.accountmanager.model.field.FieldType ft : rec.getFields()) {
+				try {
+					String fieldName = ft.getName();
+					Object val = rec.get(fieldName);
+					if (val != null && !(val instanceof BaseRecord) && !(val instanceof List)) {
+						data.put(fieldName, val);
+					}
+				} catch (Exception e) {
+					// Skip
+				}
+			}
+		}
+
+		return data;
+	}
+
+	/**
+	 * Create comprehensive sync data for a character, including multiple nested paths.
+	 * This is the generic replacement for createStateSyncData that works with any nested object.
+	 *
+	 * @param person The character record
+	 * @param paths Array of dot-separated paths to sync (e.g., ["state", "store", "statistics"])
+	 * @param includePatches Whether to generate patch array for client application
+	 * @return Map containing sync data for each path and optionally patches
+	 */
+	public static Map<String, Object> createSyncData(BaseRecord person, String[] paths, boolean includePatches) {
+		Map<String, Object> result = new HashMap<>();
+		List<Map<String, Object>> allPatches = new ArrayList<>();
+
+		if (person == null || paths == null) {
+			return result;
+		}
+
+		for (String path : paths) {
+			Map<String, Object> extracted = extractNestedSync(person, path, null);
+
+			// Add to result with path as key
+			String key = path.replace(".", "_"); // "state.currentLocation" -> "state_currentLocation"
+			if (!extracted.isEmpty()) {
+				// Get the innermost key (e.g., "currentLocation" from "state.currentLocation")
+				String[] parts = path.split("\\.");
+				String innerKey = parts[parts.length - 1];
+				Object data = extracted.get(innerKey);
+
+				result.put(key, data);
+
+				// Generate patches for this path
+				if (includePatches && data instanceof Map) {
+					@SuppressWarnings("unchecked")
+					Map<String, Object> dataMap = (Map<String, Object>) data;
+					List<Map<String, Object>> pathPatches = generatePatches(path, dataMap);
+					allPatches.addAll(pathPatches);
+				} else if (includePatches) {
+					// Single value patch
+					Map<String, Object> patch = new HashMap<>();
+					patch.put("path", path);
+					patch.put("value", data);
+					allPatches.add(patch);
+				}
+			}
+		}
+
+		if (includePatches && !allPatches.isEmpty()) {
+			result.put("patches", allPatches);
+		}
+
+		return result;
+	}
+
+	/**
+	 * Common sync paths for Olio characters - useful constants for endpoints
+	 */
+	public static final String[] SYNC_PATHS_STATE = { "state" };
+	public static final String[] SYNC_PATHS_FULL = { "state", "statistics", "instinct", "store", "profile" };
+	public static final String[] SYNC_PATHS_COMBAT = { "state", "statistics" };
+	public static final String[] SYNC_PATHS_SOCIAL = { "state", "profile" };
+
+	/**
+	 * Create a state snapshot for client sync, optionally including patches
+	 * for specific property paths. This is the specialized version for state.
+	 *
+	 * @param state The character state record
+	 * @param currentLoc The current location record
+	 * @param includePatches Whether to include patches array
+	 * @return Map containing stateSnapshot and optionally patches
+	 */
+	public static Map<String, Object> createStateSyncData(BaseRecord state, BaseRecord currentLoc, boolean includePatches) {
+		Map<String, Object> result = new HashMap<>();
+
+		if (state == null) {
+			return result;
+		}
+
+		int currentEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int currentNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		// State snapshot for direct object updates
+		// Values come directly from the state record - model already defines defaults
+		Map<String, Object> stateSnapshot = new HashMap<>();
+		stateSnapshot.put("currentEast", currentEast);
+		stateSnapshot.put("currentNorth", currentNorth);
+		stateSnapshot.put("energy", state.get("energy"));
+		stateSnapshot.put("health", state.get("health"));
+		stateSnapshot.put("hunger", state.get("hunger"));
+		stateSnapshot.put("thirst", state.get("thirst"));
+		stateSnapshot.put("fatigue", state.get("fatigue"));
+		stateSnapshot.put("alive", state.get("alive"));
+		stateSnapshot.put("awake", state.get("awake"));
+		stateSnapshot.put("playerControlled", state.get("playerControlled"));
+		result.put("stateSnapshot", stateSnapshot);
+
+		// Location data
+		if (currentLoc != null) {
+			Map<String, Object> locMap = new HashMap<>();
+			locMap.put("name", currentLoc.get(FieldNames.FIELD_NAME));
+			locMap.put("terrainType", currentLoc.get(FieldNames.FIELD_TERRAIN_TYPE));
+			locMap.put("eastings", currentLoc.get(FieldNames.FIELD_EASTINGS));
+			locMap.put("northings", currentLoc.get(FieldNames.FIELD_NORTHINGS));
+			locMap.put("geoType", currentLoc.get(FieldNames.FIELD_GEOTYPE));
+			result.put("location", locMap);
+		}
+
+		// Generate patches if requested
+		if (includePatches) {
+			List<Map<String, Object>> patches = generatePatches("state", stateSnapshot);
+			if (currentLoc != null) {
+				Map<String, Object> locPatch = new HashMap<>();
+				locPatch.put("path", "state.currentLocation");
+				locPatch.put("value", result.get("location"));
+				patches.add(locPatch);
+			}
+			result.put("patches", patches);
+		}
+
+		return result;
 	}
 
 	/**
