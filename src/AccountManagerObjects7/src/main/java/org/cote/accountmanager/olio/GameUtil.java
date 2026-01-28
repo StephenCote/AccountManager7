@@ -94,6 +94,23 @@ public class GameUtil {
 			return null;
 		}
 
+		// Refresh state from database to get latest currentEast/currentNorth values
+		long stateId = state.get(FieldNames.FIELD_ID);
+		if (stateId > 0) {
+			Query stateQuery = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_STATE, FieldNames.FIELD_ID, stateId);
+			stateQuery.setCache(false);
+			stateQuery.planMost(false);
+			BaseRecord freshState = IOSystem.getActiveContext().getSearch().findRecord(stateQuery);
+			if (freshState != null) {
+				int freshEast = freshState.get(FieldNames.FIELD_CURRENT_EAST);
+				int freshNorth = freshState.get(FieldNames.FIELD_CURRENT_NORTH);
+				logger.info("getSituation: Refreshed state from DB - stateId={}, currentEast={}, currentNorth={}", stateId, freshEast, freshNorth);
+				// Update the in-memory state with fresh values
+				state.setValue(FieldNames.FIELD_CURRENT_EAST, freshEast);
+				state.setValue(FieldNames.FIELD_CURRENT_NORTH, freshNorth);
+			}
+		}
+
 		BaseRecord currentLoc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
 		if (currentLoc == null) {
 			return null;
@@ -258,6 +275,17 @@ public class GameUtil {
 		needs.put("health", getDoubleOrDefault(state, "health", 1.0));
 		needs.put("energy", getDoubleOrDefault(state, "energy", 1.0));
 		result.put("needs", needs);
+
+		// Add player's position within the cell explicitly
+		Map<String, Object> position = new HashMap<>();
+		int currentEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int currentNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+		position.put("currentEast", currentEast);
+		position.put("currentNorth", currentNorth);
+		position.put("cellEastings", currentLoc.get(FieldNames.FIELD_EASTINGS));
+		position.put("cellNorthings", currentLoc.get(FieldNames.FIELD_NORTHINGS));
+		result.put("position", position);
+		logger.info("getSituation response: currentEast={}, currentNorth={}", currentEast, currentNorth);
 
 		return result;
 	}
