@@ -63,7 +63,6 @@ public class Walk extends CommonAction implements IAction {
 		}
 
 		double dist = params.get("distance");
-		logger.info("Walk.executeAction: distance parameter = " + dist + " for actor " + actor.get(FieldNames.FIELD_NAME));
 		if(dist == 0.0) {
 			dist = 1.0;
 		}
@@ -75,15 +74,11 @@ public class Walk extends CommonAction implements IAction {
 			}
 		}
 
-		logger.info("Walk.executeAction: moved=" + moved + " for actor " + actor.get(FieldNames.FIELD_NAME));
 		if(moved) {
-			logger.info("Walk.executeAction: Calling StateUtil.queueUpdateLocation for " + actor.get(FieldNames.FIELD_NAME));
 			StateUtil.queueUpdateLocation(context, actor);
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);
-			logger.info("Walk.executeAction: Location update completed");
 		}
 		else {
-			logger.warn("Walk.executeAction: Movement failed/blocked for " + actor.get(FieldNames.FIELD_NAME));
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.FAILED);
 		}
 		

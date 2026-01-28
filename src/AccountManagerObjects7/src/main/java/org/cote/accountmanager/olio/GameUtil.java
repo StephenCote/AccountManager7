@@ -102,12 +102,9 @@ public class GameUtil {
 			stateQuery.planMost(false);
 			BaseRecord freshState = IOSystem.getActiveContext().getSearch().findRecord(stateQuery);
 			if (freshState != null) {
-				int freshEast = freshState.get(FieldNames.FIELD_CURRENT_EAST);
-				int freshNorth = freshState.get(FieldNames.FIELD_CURRENT_NORTH);
-				logger.info("getSituation: Refreshed state from DB - stateId={}, currentEast={}, currentNorth={}", stateId, freshEast, freshNorth);
-				// Update the in-memory state with fresh values
-				state.setValue(FieldNames.FIELD_CURRENT_EAST, freshEast);
-				state.setValue(FieldNames.FIELD_CURRENT_NORTH, freshNorth);
+				// Update the in-memory state with fresh values from DB
+				state.setValue(FieldNames.FIELD_CURRENT_EAST, (int) freshState.get(FieldNames.FIELD_CURRENT_EAST));
+				state.setValue(FieldNames.FIELD_CURRENT_NORTH, (int) freshState.get(FieldNames.FIELD_CURRENT_NORTH));
 			}
 		}
 
@@ -117,10 +114,8 @@ public class GameUtil {
 		}
 		// Ensure eastings/northings are populated and marked for serialization
 		IOSystem.getActiveContext().getReader().populate(currentLoc, new String[] {FieldNames.FIELD_EASTINGS, FieldNames.FIELD_NORTHINGS, FieldNames.FIELD_TERRAIN_TYPE, FieldNames.FIELD_GEOTYPE});
-		String geoType = currentLoc.get(FieldNames.FIELD_GEOTYPE);
 		Integer east = currentLoc.get(FieldNames.FIELD_EASTINGS);
 		Integer north = currentLoc.get(FieldNames.FIELD_NORTHINGS);
-		logger.info("Current location: geoType={}, eastings={}, northings={}", geoType, east, north);
 		try {
 			// Re-set values to ensure they're included in JSON output
 			if (east != null) currentLoc.set(FieldNames.FIELD_EASTINGS, east);
@@ -285,7 +280,6 @@ public class GameUtil {
 		position.put("cellEastings", currentLoc.get(FieldNames.FIELD_EASTINGS));
 		position.put("cellNorthings", currentLoc.get(FieldNames.FIELD_NORTHINGS));
 		result.put("position", position);
-		logger.info("getSituation response: currentEast={}, currentNorth={}", currentEast, currentNorth);
 
 		return result;
 	}

@@ -52,15 +52,10 @@ public class Queue {
 	
 	public static void processQueue() {
 		if(queue.isEmpty()) {
-			logger.warn("Queue.processQueue called with empty queue!");
+			return;
 		}
 		queue.forEach((k, v) -> {
-			logger.info("Queue.processQueue: key=" + k + ", count=" + v.size());
-			for(BaseRecord rec : v) {
-				logger.info("  -> Updating record id=" + rec.get(FieldNames.FIELD_ID) + ": " + rec.toFullString());
-			}
-			int result = IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
-			logger.info("  -> updateRecords result: " + result + " records updated");
+			IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
 		});
 		queue.clear();
 	}

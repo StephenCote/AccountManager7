@@ -43,11 +43,6 @@ public class StateUtil {
 			state = obj.get(FieldNames.FIELD_STATE);
 		}
 		long stateId = state.get(FieldNames.FIELD_ID);
-		int east = state.get(FieldNames.FIELD_CURRENT_EAST);
-		int north = state.get(FieldNames.FIELD_CURRENT_NORTH);
-		BaseRecord loc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
-		long locId = loc != null ? loc.get(FieldNames.FIELD_ID) : 0L;
-		logger.info("Immediate location update - stateHash=" + System.identityHashCode(state) + ", stateId=" + stateId + ", locId=" + locId + ", E=" + east + ", N=" + north + ", includeLocation=" + includeLocation);
 		if(stateId == 0L) {
 			logger.error("State has no ID - update will fail!");
 			ErrorUtil.printStackTrace();
@@ -64,8 +59,7 @@ public class StateUtil {
 		BaseRecord updateRec = state.copyRecord(fields);
 
 		// Update directly in the database, bypassing the queue
-		boolean success = IOSystem.getActiveContext().getRecordUtil().updateRecord(updateRec);
-		logger.info("Immediate location update result: " + success + " for stateId=" + stateId + ", E=" + east + ", N=" + north);
+		IOSystem.getActiveContext().getRecordUtil().updateRecord(updateRec);
 	}
 	
 	/*
@@ -115,9 +109,7 @@ public class StateUtil {
 		}
 		int newX = state.get(FieldNames.FIELD_CURRENT_EAST);
 		int newY = state.get(FieldNames.FIELD_CURRENT_NORTH);
-		boolean moved = (x != newX) || (y != newY);
-		logger.info("moveByOneMeterInCell: stateHash=" + System.identityHashCode(state) + " original=(" + x + "," + y + ") new=(" + newX + "," + newY + ") moved=" + moved);
-		return moved;
+		return (x != newX) || (y != newY);
 	}
 	
 	/// NOTE: Does not queue update
@@ -127,10 +119,6 @@ public class StateUtil {
 			logger.warn("moveByOne: state is null");
 			return;
 		}
-
-		int beforeEast = state.get(FieldNames.FIELD_CURRENT_EAST);
-		int beforeNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
-		logger.info("moveByOne: stateHash=" + System.identityHashCode(state) + " BEFORE - E=" + beforeEast + ", N=" + beforeNorth + ", targetX=" + stateX + ", targetY=" + stateY);
 
 		BaseRecord loc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
 		if(loc == null) {
@@ -207,9 +195,6 @@ public class StateUtil {
 			if(stateX >= 0 && stateX < xedge) {
 				state.setValue(FieldNames.FIELD_CURRENT_EAST, stateX);
 			}
-			int afterEast = state.get(FieldNames.FIELD_CURRENT_EAST);
-			int afterNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
-			logger.info("moveByOne: AFTER - E=" + afterEast + ", N=" + afterNorth);
 		}
 	}
 	
