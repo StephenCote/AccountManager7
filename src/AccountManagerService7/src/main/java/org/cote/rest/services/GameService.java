@@ -378,6 +378,97 @@ public class GameService {
 		return getSituation(objectId, request);
 	}
 
+	/// Move towards a target position using proper angle-based direction calculation.
+	/// Supports diagonal movement along the slope to the destination.
+	/// JSON body: { "targetCellEast": 5, "targetCellNorth": 5, "targetPosEast": 50, "targetPosNorth": 50, "distance": 10 }
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/moveTo/{objectId:[0-9A-Za-z\\-]+}")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response moveToPosition(@PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		BaseRecord person = GameUtil.findCharacter(objectId);
+		if(person == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		@SuppressWarnings("unchecked")
+		Map<String, Object> params = JSONUtil.importObject(json, Map.class);
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		// Target cell coordinates (within kident grid, 0-9)
+		int targetCellEast = getIntParam(params, "targetCellEast", -1);
+		int targetCellNorth = getIntParam(params, "targetCellNorth", -1);
+		// Target position within cell (meters from edge, 0-99)
+		int targetPosEast = getIntParam(params, "targetPosEast", 50);
+		int targetPosNorth = getIntParam(params, "targetPosNorth", 50);
+		// Distance to move this step (meters)
+		double distance = getDoubleParam(params, "distance", 1.0);
+
+		if(targetCellEast < 0 || targetCellNorth < 0) {
+			return Response.status(400).entity("{\"error\":\"Target cell coordinates required\"}").build();
+		}
+
+		// Calculate remaining distance to target
+		double remainingDistance = GameUtil.getDistanceToPosition(person,
+			targetCellEast, targetCellNorth, targetPosEast, targetPosNorth);
+
+		if(remainingDistance <= 0) {
+			// Already at destination
+			Map<String, Object> result = new HashMap<>();
+			result.put("arrived", true);
+			result.put("remainingDistance", 0);
+			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+		}
+
+		// Cap distance to remaining distance
+		if(distance > remainingDistance) {
+			distance = remainingDistance;
+		}
+
+		try {
+			GameUtil.moveTowardsPosition(octx, person, targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, distance);
+		} catch(OlioException e) {
+			logger.warn("MoveTo action failed: " + e.getMessage());
+			return Response.status(400).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+
+		// Return situation with remaining distance
+		try {
+			Map<String, Object> situationMap = GameUtil.getSituation(octx, person);
+			situationMap.put("remainingDistance", GameUtil.getDistanceToPosition(person,
+				targetCellEast, targetCellNorth, targetPosEast, targetPosNorth));
+			situationMap.put("arrived", situationMap.get("remainingDistance") != null &&
+				((Double)situationMap.get("remainingDistance")) <= 1.0);
+			return Response.status(200).entity(JSONUtil.exportObject(situationMap)).build();
+		} catch(Exception e) {
+			return getSituation(objectId, request);
+		}
+	}
+
+	private int getIntParam(Map<String, Object> params, String key, int defaultValue) {
+		Object val = params.get(key);
+		if(val == null) return defaultValue;
+		if(val instanceof Number) return ((Number) val).intValue();
+		try { return Integer.parseInt(val.toString()); } catch(Exception e) { return defaultValue; }
+	}
+
+	private double getDoubleParam(Map<String, Object> params, String key, double defaultValue) {
+		Object val = params.get(key);
+		if(val == null) return defaultValue;
+		if(val instanceof Number) return ((Number) val).doubleValue();
+		try { return Double.parseDouble(val.toString()); } catch(Exception e) { return defaultValue; }
+	}
+
 	/// Investigate the current location. Reveals nearby entities based on perception.
 	///
 	@RolesAllowed({"user"})

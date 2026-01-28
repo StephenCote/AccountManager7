@@ -1895,6 +1895,133 @@
         @apply flex flex-wrap justify-center gap-3 mt-3 text-xs text-gray-500 dark:text-gray-400;
       }
 
+      /* Grid header with toggle */
+      .sg-grid-header {
+        @apply flex items-center justify-between w-full mb-2 px-2;
+      }
+      .sg-btn-toggle {
+        @apply text-xs py-1 px-2;
+      }
+
+      /* Clickable adjacent cells */
+      .sg-cell-clickable {
+        @apply cursor-pointer;
+      }
+      .sg-cell-clickable:hover {
+        @apply ring-2 ring-green-400 dark:ring-green-500;
+      }
+
+      /* Zoomed cell view (meter-level) */
+      .sg-zoomed-grid {
+        @apply w-full flex flex-col items-center;
+      }
+      .sg-zoomed-container {
+        display: grid;
+        grid-template-columns: repeat(10, 1fr);
+        gap: 1px;
+        flex: 1;
+        aspect-ratio: 1;
+        @apply bg-gray-300 dark:bg-gray-700 overflow-hidden;
+      }
+      .sg-zoomed-row {
+        display: contents;
+      }
+      .sg-zoomed-cell {
+        @apply flex items-center justify-center bg-gray-100/70 dark:bg-gray-800/70 cursor-pointer transition-all;
+        aspect-ratio: 1;
+        position: relative;
+      }
+      .sg-zoomed-cell:hover {
+        @apply bg-green-200/80 dark:bg-green-800/80;
+      }
+      .sg-cell-player {
+        @apply bg-blue-300/90 dark:bg-blue-700/90 ring-2 ring-blue-500;
+      }
+      .sg-cell-player:hover {
+        @apply bg-blue-300/90 dark:bg-blue-700/90;
+        cursor: default;
+      }
+      .sg-cell-poi {
+        @apply bg-amber-200/80 dark:bg-amber-800/80;
+      }
+      .sg-zoom-icon {
+        @apply text-sm;
+        text-shadow: 0 0 2px rgba(0,0,0,0.5);
+      }
+      .sg-zoom-player {
+        @apply text-base;
+      }
+      .sg-zoom-position {
+        @apply mt-2 text-xs text-gray-500 dark:text-gray-400;
+      }
+
+      /* Zoomed view wrapper with adjacent cell edges */
+      .sg-zoomed-wrapper {
+        @apply flex flex-col items-center w-full;
+        max-width: min(100%, 540px);
+      }
+      .sg-edge-row {
+        @apply flex w-full;
+      }
+      .sg-edge-row-top,
+      .sg-edge-row-bottom {
+        height: 20px;
+      }
+      .sg-edge-row-middle {
+        @apply flex-1;
+      }
+      .sg-edge-strip {
+        @apply flex items-center justify-center text-xs font-medium transition-colors;
+        background-color: var(--terrain-bg, #9ca3af);
+        color: var(--terrain-fg, #374151);
+      }
+      .sg-edge-north,
+      .sg-edge-south {
+        @apply flex-1;
+        height: 20px;
+      }
+      .sg-edge-west,
+      .sg-edge-east {
+        width: 20px;
+        @apply flex-col;
+      }
+      .sg-edge-corner {
+        @apply flex items-center justify-center text-xs transition-colors;
+        width: 20px;
+        height: 20px;
+        background-color: var(--terrain-bg, #9ca3af);
+      }
+      .sg-edge-clickable {
+        @apply cursor-pointer;
+      }
+      .sg-edge-clickable:hover {
+        @apply ring-2 ring-inset ring-green-400 dark:ring-green-500;
+        filter: brightness(1.1);
+      }
+      .sg-edge-void {
+        @apply bg-gray-400 dark:bg-gray-600 text-gray-500 dark:text-gray-400;
+      }
+      .sg-edge-void-icon {
+        @apply text-xs opacity-50;
+      }
+      .sg-zoomed-main {
+        @apply flex-1;
+      }
+
+      /* Move progress indicator */
+      .sg-move-progress {
+        @apply mt-2 w-full max-w-xs flex items-center gap-2;
+      }
+      .sg-progress-bar {
+        @apply flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden;
+      }
+      .sg-progress-fill {
+        @apply h-full bg-blue-500 dark:bg-blue-400 transition-all;
+      }
+      .sg-btn-danger {
+        @apply bg-red-500 hover:bg-red-600 text-white;
+      }
+
       /* Movement pad */
       .sg-movement-controls {
         @apply flex justify-center mt-4;
@@ -1910,6 +2037,64 @@
       }
       .sg-move-center {
         @apply bg-blue-200 dark:bg-blue-800 cursor-default hover:bg-blue-200 dark:hover:bg-blue-800;
+      }
+
+      /* Game clock */
+      .sg-clock-section {
+        @apply mb-4 p-3 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30;
+      }
+      .sg-header-clock {
+        @apply text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/50;
+      }
+      .sg-clock-display {
+        @apply text-center py-2;
+      }
+      .sg-clock-time {
+        @apply text-2xl font-bold text-indigo-700 dark:text-indigo-300;
+      }
+      .sg-clock-date {
+        @apply text-sm text-indigo-600 dark:text-indigo-400;
+      }
+      .sg-clock-epoch {
+        @apply text-xs text-purple-600 dark:text-purple-400 mt-1;
+      }
+      .sg-clock-remaining {
+        @apply text-xs text-gray-500 dark:text-gray-400 mt-1;
+      }
+
+      /* Interactions */
+      .sg-interactions-section {
+        @apply mb-4;
+      }
+      .sg-header-social {
+        @apply text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50;
+      }
+      .sg-interactions-list {
+        @apply space-y-1 p-2;
+      }
+      .sg-interaction-item {
+        @apply text-xs p-2 rounded bg-gray-50 dark:bg-gray-900;
+      }
+      .sg-interaction-type {
+        @apply font-medium text-green-600 dark:text-green-400;
+      }
+      .sg-interaction-with {
+        @apply text-gray-500 dark:text-gray-400;
+      }
+      .sg-interaction-name {
+        @apply font-medium text-gray-700 dark:text-gray-300;
+      }
+      .sg-interaction-state {
+        @apply text-xs ml-1;
+      }
+      .sg-state-pending {
+        @apply text-yellow-600 dark:text-yellow-400;
+      }
+      .sg-state-complete, .sg-state-completed {
+        @apply text-green-600 dark:text-green-400;
+      }
+      .sg-state-failed {
+        @apply text-red-600 dark:text-red-400;
       }
 
       /* Threat radar */
@@ -2006,6 +2191,24 @@
       /* Empty state */
       .sg-empty-state {
         @apply flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500 text-center p-4;
+      }
+
+      /* Initialization loading overlay */
+      .sg-init-overlay {
+        @apply fixed inset-0 z-[100] flex items-center justify-center bg-black/70;
+      }
+      .sg-init-dialog {
+        @apply bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8 flex flex-col items-center gap-4;
+      }
+      .sg-init-spinner {
+        @apply w-12 h-12 border-4 border-blue-200 dark:border-blue-900 border-t-blue-500 dark:border-t-blue-400 rounded-full;
+        animation: sg-spin 1s linear infinite;
+      }
+      @keyframes sg-spin {
+        to { transform: rotate(360deg); }
+      }
+      .sg-init-message {
+        @apply text-lg font-medium text-gray-700 dark:text-gray-200;
       }
 
       /* Dialog overlay and modal */

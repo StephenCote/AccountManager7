@@ -14,6 +14,9 @@
     let isLoading = false;
     let fullMode = false;
     let moveMode = false;        // Whether in movement selection mode
+    let zoomedView = false;       // Whether showing zoomed-in cell view (meter-level)
+    let pendingMove = null;       // Long-running move action that can be aborted
+    let moveProgress = 0;         // Progress of current move (0-100)
 
     // Chat dialog state
     let chatDialogOpen = false;
@@ -35,6 +38,10 @@
     let saveDialogOpen = false;
     let saveDialogMode = 'list';
     let newSaveName = '';
+
+    // Initialization state
+    let initializing = true;
+    let initMessage = "Loading...";
 
     // Grid display
     const GRID_SIZE = 10;        // 10x10 grid display to match map
@@ -738,17 +745,28 @@
                     m("div", {class: "sg-narrative-text"}, "\"" + narrative + "\"")
                 ]),
 
-                // Spatial grid
+                // Spatial grid with view toggle
                 m("div", {class: "sg-grid-section"}, [
-                    m("div", {class: "sg-section-label"}, "NEARBY AREA"),
-                    renderGrid(),
-                    renderGridLegend()
+                    m("div", {class: "sg-grid-header"}, [
+                        m("div", {class: "sg-section-label"}, zoomedView ? "CURRENT CELL (100m)" : "NEARBY AREA"),
+                        m("button", {
+                            class: "sg-btn sg-btn-small sg-btn-toggle",
+                            onclick: function() { zoomedView = !zoomedView; },
+                            title: zoomedView ? "Show area map" : "Zoom into current cell"
+                        }, [
+                            m("span", {class: "material-symbols-outlined"},
+                                zoomedView ? "zoom_out" : "zoom_in"),
+                            zoomedView ? " Area" : " Cell"
+                        ])
+                    ]),
+                    zoomedView ? renderZoomedCellView() : renderGrid(),
+                    zoomedView ? renderZoomedLegend() : renderGridLegend()
                 ]),
 
-                // Movement controls
-                m("div", {class: "sg-movement-controls"}, [
+                // Movement controls (only show in area view, zoomed view uses click-to-move)
+                !zoomedView ? m("div", {class: "sg-movement-controls"}, [
                     renderMovementPad()
-                ])
+                ]) : null
             ]);
         }
     };
@@ -833,13 +851,31 @@
                     cellContent.push(m("span", {class: "sg-cell-overlay"}, overlayIcon));
                 }
 
+                // Calculate cell coordinates for movement
+                let playerLoc = (situation && situation.location) || {};
+                let playerEastCell = playerLoc.eastings || 0;
+                let playerNorthCell = playerLoc.northings || 0;
+                let cellEast = playerEastCell + (x - center);
+                let cellNorth = playerNorthCell + (y - center);
+
+                // Check if this is an adjacent cell (within 1 cell of player)
+                let isAdjacent = !isCenter && Math.abs(x - center) <= 1 && Math.abs(y - center) <= 1;
+
                 return m("div", {
-                    class: cellClass,
+                    class: cellClass + (isAdjacent ? " sg-cell-clickable" : ""),
+                    title: isAdjacent && !isCenter ? "Move to cell [" + cellEast + ", " + cellNorth + "]" : "",
                     onclick: function() {
-                        if (!isCenter && cell.occupants && cell.occupants.length) {
+                        if (isCenter) {
+                            // Click on player's cell - switch to zoomed view
+                            zoomedView = true;
+                        } else if (cell.occupants && cell.occupants.length) {
+                            // Select entity for interaction
                             selectEntity(cell.occupants[0], hasThreat ? 'threat' : 'person');
                         } else if (hasPOI) {
                             selectEntity(cell.pois[0], 'poi');
+                        } else if (isAdjacent) {
+                            // Move to adjacent empty cell
+                            moveToAdjacentCell(cellEast, cellNorth);
                         }
                     }
                 }, cellContent);
@@ -853,8 +889,411 @@
             m("span", {class: "sg-color-red"}, "\u{1F43A} Threat"),
             m("span", {class: "sg-color-yellow"}, "\u{1F464} Person"),
             m("span", {class: "sg-color-blue"}, "\u{1F4A7} Water"),
-            m("span", {class: "sg-color-orange"}, "\u{1F525} Camp")
+            m("span", {class: "sg-color-orange"}, "\u{1F525} Camp"),
+            m("span", {class: "sg-color-gray", style: "font-size: 0.8em; opacity: 0.7;"}, "Click cell to move")
         ]);
+    }
+
+    function renderZoomedLegend() {
+        return m("div", {class: "sg-grid-legend"}, [
+            m("span", "\u2B50 You"),
+            m("span", {class: "sg-color-yellow"}, "\u{1F464} Person"),
+            m("span", {class: "sg-color-blue"}, "\u{1F3E0} POI"),
+            m("span", {class: "sg-color-gray", style: "font-size: 0.8em; opacity: 0.7;"}, "Click to move (10m blocks)")
+        ]);
+    }
+
+    // Zoomed-in cell view showing meter-level position within current 100m x 100m cell
+    // Includes narrow border strips showing adjacent cell terrain
+    function renderZoomedCellView() {
+        let playerState = player && player.state ? player.state : {};
+        let playerLoc = situation && situation.location ? situation.location : null;
+        let posEast = playerState.currentEast || 0;
+        let posNorth = playerState.currentNorth || 0;
+
+        // Get entities in the same cell
+        let nearbyPeople = situation && situation.nearbyPeople ? situation.nearbyPeople : [];
+        let pois = playerLoc && playerLoc.features ? playerLoc.features : [];
+
+        // Filter to only entities in the same cell as the player
+        let playerCellEast = playerLoc ? playerLoc.eastings : null;
+        let playerCellNorth = playerLoc ? playerLoc.northings : null;
+
+        // Build map of adjacent cells by relative position
+        let adjacentCells = situation && situation.adjacentCells ? situation.adjacentCells : [];
+        let adjacentMap = {};  // key: "dx,dy" -> cell
+        for (let cell of adjacentCells) {
+            if (!cell) continue;
+            let dx = (cell.eastings || 0) - (playerCellEast || 0);
+            let dy = (cell.northings || 0) - (playerCellNorth || 0);
+            adjacentMap[dx + "," + dy] = cell;
+        }
+
+        // Helper to get adjacent cell terrain
+        function getAdjacentTerrain(dx, dy) {
+            let cell = adjacentMap[dx + "," + dy];
+            return cell ? cell.terrainType : null;
+        }
+
+        let sameCellPeople = nearbyPeople.filter(function(p) {
+            let loc = p.currentLocation || (p.state && p.state.currentLocation);
+            if (!loc) return false;
+            return loc.eastings === playerCellEast && loc.northings === playerCellNorth;
+        });
+
+        // Create 10x10 grid representing the 100m cell (each sub-cell is 10m)
+        const ZOOM_SIZE = 10;
+        let grid = [];
+        for (let y = 0; y < ZOOM_SIZE; y++) {
+            let row = [];
+            for (let x = 0; x < ZOOM_SIZE; x++) {
+                row.push({
+                    x: x * 10,  // Meters 0-90 for start of each 10m block
+                    y: y * 10,
+                    occupants: [],
+                    pois: []
+                });
+            }
+            grid.push(row);
+        }
+
+        // Place player in grid (convert 0-99 meters to 0-9 grid position)
+        let playerGridX = Math.floor(posEast / 10);
+        let playerGridY = Math.floor(posNorth / 10);
+        if (playerGridX >= ZOOM_SIZE) playerGridX = ZOOM_SIZE - 1;
+        if (playerGridY >= ZOOM_SIZE) playerGridY = ZOOM_SIZE - 1;
+
+        // Place same-cell people in grid
+        for (let person of sameCellPeople) {
+            let pState = person.state || {};
+            let pEast = pState.currentEast || 0;
+            let pNorth = pState.currentNorth || 0;
+            let gx = Math.min(Math.floor(pEast / 10), ZOOM_SIZE - 1);
+            let gy = Math.min(Math.floor(pNorth / 10), ZOOM_SIZE - 1);
+            grid[gy][gx].occupants.push({
+                type: 'person',
+                name: person.name,
+                objectId: person.objectId || person.id,
+                record: person,
+                posEast: pEast,
+                posNorth: pNorth
+            });
+        }
+
+        // Place POIs in grid (POIs may have position within cell)
+        for (let poi of pois) {
+            let poiEast = poi.posEast || Math.floor(Math.random() * 100);
+            let poiNorth = poi.posNorth || Math.floor(Math.random() * 100);
+            let gx = Math.min(Math.floor(poiEast / 10), ZOOM_SIZE - 1);
+            let gy = Math.min(Math.floor(poiNorth / 10), ZOOM_SIZE - 1);
+            grid[gy][gx].pois.push(poi);
+        }
+
+        // Get terrain for background
+        let terrainType = playerLoc ? playerLoc.terrainType : "UNKNOWN";
+
+        // Helper to render an adjacent cell edge strip
+        function renderEdgeStrip(dx, dy, position) {
+            let adjTerrain = getAdjacentTerrain(dx, dy);
+            let adjCell = adjacentMap[dx + "," + dy];
+            let targetCellEast = (playerCellEast || 0) + dx;
+            let targetCellNorth = (playerCellNorth || 0) + dy;
+
+            let stripClass = "sg-edge-strip sg-edge-" + position;
+            let style = "";
+            if (USE_TILE_IMAGES && adjTerrain) {
+                style = "background-image: url('" + getTileUrl(adjTerrain) + "'); background-size: cover;";
+            }
+
+            let title = adjTerrain ?
+                (adjTerrain.charAt(0).toUpperCase() + adjTerrain.slice(1).toLowerCase()) + " [" + targetCellEast + "," + targetCellNorth + "]" :
+                "Edge of map";
+
+            return m("div", {
+                class: stripClass + (adjCell ? " sg-edge-clickable" : " sg-edge-void"),
+                style: style,
+                title: adjCell ? "Move to " + title : title,
+                onclick: function() {
+                    if (adjCell) {
+                        moveToAdjacentCell(targetCellEast, targetCellNorth);
+                    }
+                }
+            }, !adjTerrain ? m("span", {class: "sg-edge-void-icon"}, "\u2205") : null);
+        }
+
+        // Helper to render corner
+        function renderCorner(dx, dy, position) {
+            let adjTerrain = getAdjacentTerrain(dx, dy);
+            let adjCell = adjacentMap[dx + "," + dy];
+            let targetCellEast = (playerCellEast || 0) + dx;
+            let targetCellNorth = (playerCellNorth || 0) + dy;
+
+            let cornerClass = "sg-edge-corner sg-corner-" + position;
+            let style = "";
+            if (USE_TILE_IMAGES && adjTerrain) {
+                style = "background-image: url('" + getTileUrl(adjTerrain) + "'); background-size: cover;";
+            }
+
+            return m("div", {
+                class: cornerClass + (adjCell ? " sg-edge-clickable" : " sg-edge-void"),
+                style: style,
+                title: adjCell ? "Move diagonal" : "",
+                onclick: function() {
+                    if (adjCell) {
+                        moveToAdjacentCell(targetCellEast, targetCellNorth);
+                    }
+                }
+            });
+        }
+
+        return m("div", {class: "sg-zoomed-grid"}, [
+            // Grid with adjacent cell borders
+            m("div", {class: "sg-zoomed-wrapper"}, [
+                // Top row: NW corner, North edge, NE corner
+                m("div", {class: "sg-edge-row sg-edge-row-top"}, [
+                    renderCorner(-1, 1, "nw"),
+                    renderEdgeStrip(0, 1, "north"),
+                    renderCorner(1, 1, "ne")
+                ]),
+
+                // Middle row: West edge, Main grid, East edge
+                m("div", {class: "sg-edge-row sg-edge-row-middle"}, [
+                    renderEdgeStrip(-1, 0, "west"),
+
+                    // Main 10x10 grid - render north (high y) at top by reversing row order
+                    m("div", {
+                        class: "sg-zoomed-container",
+                        style: USE_TILE_IMAGES && terrainType ?
+                            "background-image: url('" + getTileUrl(terrainType) + "'); background-size: cover;" :
+                            ""
+                    }, grid.slice().reverse().map(function(row, visualY) {
+                        // visualY=0 is top of screen (north), visualY=9 is bottom (south)
+                        // Convert back to grid coordinates for position matching
+                        let gridY = ZOOM_SIZE - 1 - visualY;
+                        return m("div", {class: "sg-zoomed-row"}, row.map(function(cell, x) {
+                            let isPlayerCell = x === playerGridX && gridY === playerGridY;
+                            let hasPerson = cell.occupants.length > 0;
+                            let hasPOI = cell.pois.length > 0;
+                            let hasThreat = cell.occupants.some(function(o) { return o.type === 'threat'; });
+
+                            let cellClass = "sg-zoomed-cell";
+                            if (isPlayerCell) cellClass += " sg-cell-player";
+                            if (hasThreat) cellClass += " sg-cell-threat";
+                            if (hasPerson && !isPlayerCell) cellClass += " sg-cell-person";
+                            if (hasPOI) cellClass += " sg-cell-poi";
+
+                            // Determine what to show in cell
+                            let content = [];
+                            if (isPlayerCell) {
+                                content.push(m("span", {class: "sg-zoom-icon sg-zoom-player"}, "\u2B50"));
+                            }
+                            if (hasPerson && !isPlayerCell) {
+                                content.push(m("span", {class: "sg-zoom-icon sg-zoom-person"}, "\u{1F464}"));
+                            }
+                            if (hasPOI) {
+                                content.push(m("span", {class: "sg-zoom-icon sg-zoom-poi"}, "\u{1F3E0}"));
+                            }
+                            if (hasThreat) {
+                                content.push(m("span", {class: "sg-zoom-icon sg-zoom-threat"}, "\u{1F43A}"));
+                            }
+
+                            // Click handler - move to this position within cell
+                            // Use gridY (not visualY) for actual map coordinates
+                            let targetEast = x * 10 + 5;  // Center of the 10m block
+                            let targetNorth = gridY * 10 + 5;
+
+                            return m("div", {
+                                class: cellClass,
+                                title: "Move to [" + targetEast + ", " + targetNorth + "]m",
+                                onclick: function() {
+                                    if (!isPlayerCell) {
+                                        moveToPosition(targetEast, targetNorth);
+                                    }
+                                }
+                            }, content);
+                        }));
+                    })),
+
+                    renderEdgeStrip(1, 0, "east")
+                ]),
+
+                // Bottom row: SW corner, South edge, SE corner
+                m("div", {class: "sg-edge-row sg-edge-row-bottom"}, [
+                    renderCorner(-1, -1, "sw"),
+                    renderEdgeStrip(0, -1, "south"),
+                    renderCorner(1, -1, "se")
+                ])
+            ]),
+
+            // Position indicator
+            m("div", {class: "sg-zoom-position"}, [
+                "Position: [" + posEast + ", " + posNorth + "]m within cell [" +
+                (playerCellEast !== null ? playerCellEast : "?") + ", " +
+                (playerCellNorth !== null ? playerCellNorth : "?") + "]"
+            ]),
+
+            // Pending move indicator
+            pendingMove ? m("div", {class: "sg-move-progress"}, [
+                m("div", {class: "sg-progress-bar"}, [
+                    m("div", {
+                        class: "sg-progress-fill",
+                        style: "width: " + moveProgress + "%"
+                    })
+                ]),
+                m("button", {
+                    class: "sg-btn sg-btn-small sg-btn-danger",
+                    onclick: abortMove
+                }, [
+                    m("span", {class: "material-symbols-outlined"}, "stop"),
+                    " Abort"
+                ])
+            ]) : null
+        ]);
+    }
+
+    // Move to a specific position within the current cell using the moveTo endpoint
+    // This uses proper angle-based pathfinding (diagonal movement along the slope)
+    async function moveToPosition(targetEast, targetNorth) {
+        if (!player || isLoading || pendingMove) return;
+
+        let playerLoc = situation && situation.location ? situation.location : null;
+        if (!playerLoc) return;
+
+        // Target is in the same cell
+        let targetCellEast = playerLoc.eastings || 0;
+        let targetCellNorth = playerLoc.northings || 0;
+
+        await executeMoveTo(targetCellEast, targetCellNorth, targetEast, targetNorth, "Moving...");
+    }
+
+    // Move to an adjacent cell using the moveTo endpoint
+    async function moveToAdjacentCell(cellEast, cellNorth) {
+        if (!player || isLoading || pendingMove) return;
+
+        let playerLoc = situation && situation.location ? situation.location : null;
+        if (!playerLoc) return;
+
+        let currentCellEast = playerLoc.eastings || 0;
+        let currentCellNorth = playerLoc.northings || 0;
+
+        // Only allow movement to adjacent cells (delta of -1, 0, or 1)
+        let deltaEast = cellEast - currentCellEast;
+        let deltaNorth = cellNorth - currentCellNorth;
+        if (Math.abs(deltaEast) > 1 || Math.abs(deltaNorth) > 1) {
+            page.toast("warning", "Can only move to adjacent cells");
+            return;
+        }
+
+        // Target the center of the destination cell
+        await executeMoveTo(cellEast, cellNorth, 50, 50, "Moving to adjacent cell...");
+    }
+
+    // Execute movement towards a target using the moveTo endpoint
+    // This uses proper angle-based direction calculation on the backend
+    async function executeMoveTo(targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, message) {
+        if (pendingMove) return;
+
+        pendingMove = {
+            targetCellEast: targetCellEast,
+            targetCellNorth: targetCellNorth,
+            targetPosEast: targetPosEast,
+            targetPosNorth: targetPosNorth,
+            aborted: false
+        };
+        moveProgress = 0;
+        addEvent(message || "Moving...", "info");
+        m.redraw();
+
+        // Calculate initial distance for progress tracking
+        let playerState = player.state || {};
+        let playerLoc = situation && situation.location ? situation.location : {};
+        let currentX = (playerLoc.eastings || 0) * 100 + (playerState.currentEast || 0);
+        let currentY = (playerLoc.northings || 0) * 100 + (playerState.currentNorth || 0);
+        let targetX = targetCellEast * 100 + targetPosEast;
+        let targetY = targetCellNorth * 100 + targetPosNorth;
+        let totalDistance = Math.sqrt(Math.pow(targetX - currentX, 2) + Math.pow(targetY - currentY, 2));
+
+        if (totalDistance <= 0) {
+            pendingMove = null;
+            return;
+        }
+
+        // Move in chunks until at destination or aborted
+        let chunkSize = 10;  // Move up to 10m at a time
+
+        while (!pendingMove.aborted) {
+            try {
+                isLoading = true;
+                let resp = await m.request({
+                    method: 'POST',
+                    url: g_application_path + "/rest/game/moveTo/" + getCharId(player),
+                    headers: { "Content-Type": "application/json" },
+                    body: {
+                        targetCellEast: targetCellEast,
+                        targetCellNorth: targetCellNorth,
+                        targetPosEast: targetPosEast,
+                        targetPosNorth: targetPosNorth,
+                        distance: chunkSize
+                    },
+                    withCredentials: true
+                });
+
+                situation = resp;
+                if (player && resp) {
+                    am7client.syncFromResponse(player, resp, am7client.SYNC_MAPPINGS.situation);
+                }
+
+                // Update progress based on remaining distance
+                let remaining = resp.remainingDistance || 0;
+                moveProgress = Math.round(((totalDistance - remaining) / totalDistance) * 100);
+                m.redraw();
+
+                // Check if arrived
+                if (resp.arrived || remaining <= 1) {
+                    break;
+                }
+
+            } catch (e) {
+                console.error("MoveTo failed", e);
+                // Better error extraction - check response object, then message, then status
+                let errorMsg = "Unknown error";
+                if (e.response && e.response.error) {
+                    errorMsg = e.response.error;
+                } else if (e.message) {
+                    errorMsg = e.message;
+                } else if (e.code) {
+                    errorMsg = "HTTP " + e.code;
+                }
+                addEvent("Movement blocked: " + errorMsg, "warning");
+                pendingMove.aborted = true;
+                break;
+            } finally {
+                isLoading = false;
+            }
+
+            // Small delay for UI responsiveness
+            await new Promise(function(resolve) { setTimeout(resolve, 50); });
+        }
+
+        // Clean up
+        let wasAborted = pendingMove.aborted;
+        pendingMove = null;
+        moveProgress = 0;
+
+        if (!wasAborted) {
+            addEvent("Arrived at destination", "success");
+        } else {
+            addEvent("Movement aborted", "warning");
+        }
+
+        m.redraw();
+    }
+
+    // Abort a pending move
+    function abortMove() {
+        if (pendingMove) {
+            pendingMove.aborted = true;
+        }
     }
 
     function renderMovementPad() {
@@ -904,8 +1343,26 @@
 
             let threats = situation && situation.threats ? situation.threats : [];
             let people = situation && situation.nearbyPeople ? situation.nearbyPeople : [];
+            let clock = situation && situation.clock ? situation.clock : null;
+            let interactions = situation && situation.interactions ? situation.interactions : [];
 
             return m("div", {class: "sg-panel sg-action-panel"}, [
+                // Game clock
+                clock ? m("div", {class: "sg-clock-section"}, [
+                    m("div", {class: "sg-panel-header sg-header-clock"}, [
+                        m("span", {class: "material-symbols-outlined"}, "schedule"),
+                        " GAME TIME"
+                    ]),
+                    m("div", {class: "sg-clock-display"}, [
+                        m("div", {class: "sg-clock-time"}, clock.currentTime || "--:--"),
+                        m("div", {class: "sg-clock-date"}, clock.currentDate || "----"),
+                        clock.epoch ? m("div", {class: "sg-clock-epoch"}, "Year " + (clock.epoch.name || "?")) : null,
+                        m("div", {class: "sg-clock-remaining"}, [
+                            clock.remainingDays !== undefined ? clock.remainingDays + " days remaining" : ""
+                        ])
+                    ])
+                ]) : null,
+
                 // Threat radar
                 m("div", {class: "sg-threat-section"}, [
                     m("div", {class: "sg-panel-header sg-header-danger"}, [
@@ -923,6 +1380,22 @@
                         " NEARBY"
                     ]),
                     people.slice(0, 3).map(renderPersonCard)
+                ]) : null,
+
+                // Player interactions
+                interactions.length ? m("div", {class: "sg-interactions-section"}, [
+                    m("div", {class: "sg-panel-header sg-header-social"}, [
+                        m("span", {class: "material-symbols-outlined"}, "handshake"),
+                        " INTERACTIONS"
+                    ]),
+                    m("div", {class: "sg-interactions-list"}, interactions.slice(0, 5).map(function(inter) {
+                        return m("div", {class: "sg-interaction-item"}, [
+                            m("span", {class: "sg-interaction-type"}, inter.type || "?"),
+                            m("span", {class: "sg-interaction-with"}, " with "),
+                            m("span", {class: "sg-interaction-name"}, inter.interactorName || "someone"),
+                            inter.state ? m("span", {class: "sg-interaction-state sg-state-" + inter.state.toLowerCase()}, " [" + inter.state + "]") : null
+                        ]);
+                    }))
                 ]) : null,
 
                 // Available actions
@@ -1295,6 +1768,20 @@
         }
     };
 
+    // Initialization Loading Overlay
+    let InitLoadingOverlay = {
+        view: function() {
+            if (!initializing) return null;
+
+            return m("div", {class: "sg-init-overlay"}, [
+                m("div", {class: "sg-init-dialog"}, [
+                    m("div", {class: "sg-init-spinner"}),
+                    m("div", {class: "sg-init-message"}, initMessage)
+                ])
+            ]);
+        }
+    };
+
     // Save/Load Dialog
     let SaveGameDialog = {
         view: function() {
@@ -1525,44 +2012,61 @@
             document.removeEventListener('keydown', handleKeydown);
         },
         oninit: async function(vnode) {
-            // Check for character passed via route or sessionStorage
-            let preSelectedCharId = null;
+            // Show loading overlay during initialization
+            initializing = true;
+            initMessage = "Loading world...";
+            m.redraw();
 
-            // Check route params first
-            if (vnode.attrs && vnode.attrs.character) {
-                preSelectedCharId = vnode.attrs.character;
-            }
-            // Then check sessionStorage
-            if (!preSelectedCharId) {
-                preSelectedCharId = sessionStorage.getItem("olio_selected_character");
-                if (preSelectedCharId) {
-                    sessionStorage.removeItem("olio_selected_character");
+            try {
+                // Check for character passed via route or sessionStorage
+                let preSelectedCharId = null;
+
+                // Check route params first
+                if (vnode.attrs && vnode.attrs.character) {
+                    preSelectedCharId = vnode.attrs.character;
                 }
-            }
+                // Then check sessionStorage
+                if (!preSelectedCharId) {
+                    preSelectedCharId = sessionStorage.getItem("olio_selected_character");
+                    if (preSelectedCharId) {
+                        sessionStorage.removeItem("olio_selected_character");
+                    }
+                }
 
-            // Load available characters
-            await loadAvailableCharacters();
+                // Load available characters
+                initMessage = "Loading characters...";
+                m.redraw();
+                await loadAvailableCharacters();
 
-            // If we have a pre-selected character, find and claim them
-            if (preSelectedCharId && availableCharacters.length > 0) {
-                let targetChar = availableCharacters.find(c =>
-                    c.objectId === preSelectedCharId || c.id === preSelectedCharId
-                );
-                if (targetChar) {
-                    await claimCharacter(targetChar);
-                    return;
+                // If we have a pre-selected character, find and claim them
+                if (preSelectedCharId && availableCharacters.length > 0) {
+                    let targetChar = availableCharacters.find(c =>
+                        c.objectId === preSelectedCharId || c.id === preSelectedCharId
+                    );
+                    if (targetChar) {
+                        initMessage = "Claiming " + targetChar.name + "...";
+                        m.redraw();
+                        await claimCharacter(targetChar);
+                        initializing = false;
+                        return;
+                    } else {
+                        // Character not in available list - might need to be adopted
+                        page.toast("warn", "Selected character not found in world population");
+                    }
+                }
+
+                // Auto-select first character if available
+                if (availableCharacters.length > 0) {
+                    initMessage = "Starting as " + availableCharacters[0].name + "...";
+                    m.redraw();
+                    await claimCharacter(availableCharacters[0]);
                 } else {
-                    // Character not in available list - might need to be adopted
-                    page.toast("warn", "Selected character not found in world population");
+                    // No characters - show selection dialog
+                    characterSelectOpen = true;
                 }
-            }
-
-            // Auto-select first character if available
-            if (availableCharacters.length > 0) {
-                await claimCharacter(availableCharacters[0]);
-            } else {
-                // No characters - show selection dialog
-                characterSelectOpen = true;
+            } finally {
+                initializing = false;
+                m.redraw();
             }
         },
         view: function() {
@@ -1571,6 +2075,7 @@
                 getOuterView(),
                 page.components.dialog.loadDialog(),
                 page.loadToast(),
+                m(InitLoadingOverlay),
                 m(CharacterSelectDialog),
                 m(ChatDialog),
                 m(SaveGameDialog),

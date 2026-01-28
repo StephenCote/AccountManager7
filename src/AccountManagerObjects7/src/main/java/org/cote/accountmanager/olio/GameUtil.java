@@ -297,6 +297,92 @@ public class GameUtil {
 		stateSnapshot.put("playerControlled", state.get("playerControlled"));
 		result.put("stateSnapshot", stateSnapshot);
 
+		// Add clock/time information
+		Clock clock = octx.clock();
+		if (clock != null) {
+			Map<String, Object> clockData = new HashMap<>();
+			if (clock.getCurrent() != null) {
+				clockData.put("current", clock.getCurrent().toString());
+				clockData.put("currentDate", clock.getCurrent().toLocalDate().toString());
+				clockData.put("currentTime", clock.getCurrent().toLocalTime().toString());
+				clockData.put("hour", clock.getCurrent().getHour());
+				clockData.put("dayOfYear", clock.getCurrent().getDayOfYear());
+			}
+			if (clock.getStart() != null) {
+				clockData.put("start", clock.getStart().toString());
+			}
+			if (clock.getEnd() != null) {
+				clockData.put("end", clock.getEnd().toString());
+			}
+			clockData.put("remainingHours", clock.remainingHours());
+			clockData.put("remainingDays", clock.remainingDays());
+			clockData.put("cycle", clock.getCycle());
+
+			// Add epoch info
+			if (epoch != null) {
+				Map<String, Object> epochData = new HashMap<>();
+				epochData.put("name", epoch.get(FieldNames.FIELD_NAME));
+				epochData.put("objectId", epoch.get(FieldNames.FIELD_OBJECT_ID));
+				epochData.put("type", epoch.get(FieldNames.FIELD_TYPE));
+				clockData.put("epoch", epochData);
+			}
+
+			// Add current event info if available (realm-specific)
+			BaseRecord currentEvent = clock.getEvent();
+			if (currentEvent != null) {
+				Map<String, Object> eventData = new HashMap<>();
+				eventData.put("name", currentEvent.get(FieldNames.FIELD_NAME));
+				eventData.put("objectId", currentEvent.get(FieldNames.FIELD_OBJECT_ID));
+				eventData.put("type", currentEvent.get(FieldNames.FIELD_TYPE));
+				clockData.put("event", eventData);
+			}
+
+			// Add current increment info if available
+			BaseRecord currentIncrement = clock.getIncrement();
+			if (currentIncrement != null) {
+				Map<String, Object> incData = new HashMap<>();
+				incData.put("name", currentIncrement.get(FieldNames.FIELD_NAME));
+				incData.put("objectId", currentIncrement.get(FieldNames.FIELD_OBJECT_ID));
+				incData.put("type", currentIncrement.get(FieldNames.FIELD_TYPE));
+				clockData.put("increment", incData);
+			}
+
+			result.put("clock", clockData);
+		}
+
+		// Add player's interactions - query using IOSystem
+		List<Map<String, Object>> interactionList = new ArrayList<>();
+		try {
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_INTERACTION);
+			q.field("actor", person);
+			q.setRequestRange(0, 20);
+			q.planField(OlioFieldNames.FIELD_ACTOR, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID});
+			q.planField(OlioFieldNames.FIELD_INTERACTOR, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID});
+			QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
+			for (BaseRecord inter : qr.getResults()) {
+				Map<String, Object> interMap = new HashMap<>();
+				interMap.put("objectId", inter.get(FieldNames.FIELD_OBJECT_ID));
+				interMap.put("type", inter.get(FieldNames.FIELD_TYPE));
+				interMap.put("state", inter.get(FieldNames.FIELD_STATE));
+				interMap.put("description", inter.get(FieldNames.FIELD_DESCRIPTION));
+
+				BaseRecord actor = inter.get("actor");
+				if (actor != null) {
+					interMap.put("actorName", actor.get(FieldNames.FIELD_NAME));
+					interMap.put("actorId", actor.get(FieldNames.FIELD_OBJECT_ID));
+				}
+				BaseRecord interactor = inter.get("interactor");
+				if (interactor != null) {
+					interMap.put("interactorName", interactor.get(FieldNames.FIELD_NAME));
+					interMap.put("interactorId", interactor.get(FieldNames.FIELD_OBJECT_ID));
+				}
+				interactionList.add(interMap);
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to get interactions: {}", e.getMessage());
+		}
+		result.put("interactions", interactionList);
+
 		return result;
 	}
 
@@ -325,6 +411,11 @@ public class GameUtil {
 			distance = 1.0;
 		}
 
+		// Log position BEFORE move
+		int beforeEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int beforeNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+		logger.info("moveCharacter BEFORE: direction={} east={} north={}", direction, beforeEast, beforeNorth);
+
 		BaseRecord epoch = octx.clock() != null ? octx.clock().getEpoch() : null;
 
 		BaseRecord actionResult = Actions.beginMove(octx, epoch, person, direction, distance);
@@ -335,6 +426,7 @@ public class GameUtil {
 		// Route through Overwatch to enable preemption, reactions, and interaction spawning
 		try {
 			ActionResultEnumType result = octx.getOverwatch().processOne(actionResult);
+			logger.info("moveCharacter Overwatch result: {}", result);
 			if (result == ActionResultEnumType.FAILED || result == ActionResultEnumType.ERROR) {
 				throw new OlioException("Movement blocked or failed");
 			}
@@ -342,7 +434,114 @@ public class GameUtil {
 			throw new OlioException("Movement failed: " + e.getMessage());
 		}
 
+		// Log position AFTER move - refetch to see persisted values
+		BaseRecord freshPerson = findCharacter(person.get(FieldNames.FIELD_OBJECT_ID));
+		if (freshPerson != null) {
+			BaseRecord freshState = freshPerson.get(FieldNames.FIELD_STATE);
+			if (freshState != null) {
+				int afterEast = freshState.get(FieldNames.FIELD_CURRENT_EAST);
+				int afterNorth = freshState.get(FieldNames.FIELD_CURRENT_NORTH);
+				logger.info("moveCharacter AFTER: east={} north={} (changed: {})",
+					afterEast, afterNorth, (afterEast != beforeEast || afterNorth != beforeNorth));
+			}
+		}
+
 		return true;
+	}
+
+	/**
+	 * Move towards a target position using proper angle-based direction calculation.
+	 * Uses GeoLocationUtil to calculate the angle between current and target positions,
+	 * then moves in the appropriate direction (supports 8-directional movement).
+	 *
+	 * @param octx The Olio context
+	 * @param person The character to move
+	 * @param targetCellEast Target cell eastings (0-9 within kident)
+	 * @param targetCellNorth Target cell northings (0-9 within kident)
+	 * @param targetPosEast Target position within cell (0-99 meters from west edge)
+	 * @param targetPosNorth Target position within cell (0-99 meters from south edge)
+	 * @param distance Number of meters to move (default 1)
+	 * @return true if movement succeeded
+	 */
+	public static boolean moveTowardsPosition(OlioContext octx, BaseRecord person,
+			int targetCellEast, int targetCellNorth, int targetPosEast, int targetPosNorth, double distance) throws OlioException {
+
+		if (octx == null || person == null) {
+			throw new OlioException("Context and person are required");
+		}
+
+		BaseRecord state = person.get(FieldNames.FIELD_STATE);
+		if (state == null) {
+			throw new OlioException("Character has no state");
+		}
+
+		BaseRecord currentLocation = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		if (currentLocation == null) {
+			throw new OlioException("Character has no current location");
+		}
+
+		// Get current position
+		int currentCellEast = currentLocation.get(FieldNames.FIELD_EASTINGS);
+		int currentCellNorth = currentLocation.get(FieldNames.FIELD_NORTHINGS);
+		int currentPosEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int currentPosNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		// Calculate absolute coordinates (cell * 100 + position within cell)
+		int currentX = currentCellEast * 100 + currentPosEast;
+		int currentY = currentCellNorth * 100 + currentPosNorth;
+		int targetX = targetCellEast * 100 + targetPosEast;
+		int targetY = targetCellNorth * 100 + targetPosNorth;
+
+		// Check if already at destination
+		if (currentX == targetX && currentY == targetY) {
+			logger.info("Already at destination");
+			return true;
+		}
+
+		// Calculate angle using same approach as WalkTo
+		double deltaX = targetX - currentX;
+		double deltaY = targetY - currentY;
+		double angle = Math.atan2(deltaY, deltaX);
+		// Rotate 90 degrees to match compass orientation (North = 0)
+		angle += Math.PI / 2;
+		double degrees = Math.toDegrees(angle);
+		if (degrees < 0) degrees += 360;
+
+		DirectionEnumType direction = DirectionEnumType.getDirectionFromDegrees(degrees);
+		if (direction == DirectionEnumType.UNKNOWN) {
+			throw new OlioException("Could not determine direction to target");
+		}
+
+		logger.info("moveTowardsPosition: from [{},{}] to [{},{}], angle={}, direction={}",
+			currentX, currentY, targetX, targetY, degrees, direction);
+
+		// Use existing moveCharacter with calculated direction
+		return moveCharacter(octx, person, direction, distance);
+	}
+
+	/**
+	 * Calculate the distance between current position and target position in meters.
+	 */
+	public static double getDistanceToPosition(BaseRecord person,
+			int targetCellEast, int targetCellNorth, int targetPosEast, int targetPosNorth) {
+
+		BaseRecord state = person.get(FieldNames.FIELD_STATE);
+		if (state == null) return -1;
+
+		BaseRecord currentLocation = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		if (currentLocation == null) return -1;
+
+		int currentCellEast = currentLocation.get(FieldNames.FIELD_EASTINGS);
+		int currentCellNorth = currentLocation.get(FieldNames.FIELD_NORTHINGS);
+		int currentPosEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int currentPosNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		int currentX = currentCellEast * 100 + currentPosEast;
+		int currentY = currentCellNorth * 100 + currentPosNorth;
+		int targetX = targetCellEast * 100 + targetPosEast;
+		int targetY = targetCellNorth * 100 + targetPosNorth;
+
+		return Math.sqrt(Math.pow(targetX - currentX, 2) + Math.pow(targetY - currentY, 2));
 	}
 
 	public static boolean consumeItem(OlioContext octx, BaseRecord person, String itemName, int quantity) {

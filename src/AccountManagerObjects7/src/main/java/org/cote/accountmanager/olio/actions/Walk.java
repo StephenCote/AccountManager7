@@ -52,7 +52,6 @@ public class Walk extends CommonAction implements IAction {
 	@Override
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 
-
 		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
@@ -66,13 +65,26 @@ public class Walk extends CommonAction implements IAction {
 		if(dist == 0.0) {
 			dist = 1.0;
 		}
+
+		// Log actor state before move
+		BaseRecord state = actor.get(FieldNames.FIELD_STATE);
+		int beforeEast = state != null ? state.get(FieldNames.FIELD_CURRENT_EAST) : -1;
+		int beforeNorth = state != null ? state.get(FieldNames.FIELD_CURRENT_NORTH) : -1;
+		logger.info("Walk.executeAction BEFORE: dir={} east={} north={}", dir, beforeEast, beforeNorth);
+
 		boolean moved = false;
 		for(double i = 0; i < dist; i++) {
 			moved = StateUtil.moveByOneMeterInCell(context, actor, dir);
 			if(!moved) {
+				logger.warn("Walk.executeAction: moveByOneMeterInCell returned false at iteration {}", i);
 				break;
 			}
 		}
+
+		// Log actor state after move
+		int afterEast = state != null ? state.get(FieldNames.FIELD_CURRENT_EAST) : -1;
+		int afterNorth = state != null ? state.get(FieldNames.FIELD_CURRENT_NORTH) : -1;
+		logger.info("Walk.executeAction AFTER: moved={} east={} north={}", moved, afterEast, afterNorth);
 
 		if(moved) {
 			StateUtil.queueUpdateLocation(context, actor);
@@ -81,7 +93,7 @@ public class Walk extends CommonAction implements IAction {
 		else {
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.FAILED);
 		}
-		
+
 		return moved;
 	}
 	
