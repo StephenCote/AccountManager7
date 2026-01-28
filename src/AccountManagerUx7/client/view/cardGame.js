@@ -1412,7 +1412,8 @@
                     m("div", {class: "sg-clock-display"}, [
                         m("div", {class: "sg-clock-time"}, clock.currentTime || "--:--"),
                         m("div", {class: "sg-clock-date"}, clock.currentDate || "----"),
-                        clock.epoch ? m("div", {class: "sg-clock-epoch"}, "Year " + (clock.epoch.name || "?")) : null,
+                        // Show current increment (1-hour event) instead of epoch (1-year event)
+                        clock.increment ? m("div", {class: "sg-clock-increment"}, clock.increment.name || "Current hour") : null,
                         m("div", {class: "sg-clock-remaining"}, [
                             clock.remainingDays !== undefined ? clock.remainingDays + " days remaining" : ""
                         ])

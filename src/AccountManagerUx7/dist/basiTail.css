@@ -6507,17 +6507,18 @@ button.button-tab-active:hover:is(.dark *) {
   color: rgb(129 140 248 / var(--tw-text-opacity, 1));
 }
 
-.sg-clock-epoch {
+.sg-clock-increment {
   margin-top: 0.25rem;
   font-size: 0.75rem;
   line-height: 1rem;
+  font-style: italic;
   --tw-text-opacity: 1;
-  color: rgb(147 51 234 / var(--tw-text-opacity, 1));
+  color: rgb(217 119 6 / var(--tw-text-opacity, 1));
 }
 
-.sg-clock-epoch:is(.dark *) {
+.sg-clock-increment:is(.dark *) {
   --tw-text-opacity: 1;
-  color: rgb(192 132 252 / var(--tw-text-opacity, 1));
+  color: rgb(251 191 36 / var(--tw-text-opacity, 1));
 }
 
 .sg-clock-remaining {
