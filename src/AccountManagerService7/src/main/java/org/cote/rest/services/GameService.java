@@ -1,13 +1,16 @@
 package org.cote.rest.services;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.DirectionEnumType;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.olio.GameUtil;
 import org.cote.accountmanager.olio.InteractionEnumType;
@@ -573,7 +576,7 @@ public class GameService {
 	}
 
 	/// Chat with an NPC character.
-	/// JSON body: { "actorId": "uuid", "targetId": "uuid", "message": "hello" }
+	/// JSON body: { "actorId": "uuid", "targetId": "uuid", "chatConfigId": "uuid", "message": "hello" }
 	///
 	@RolesAllowed({"user"})
 	@POST
@@ -595,6 +598,7 @@ public class GameService {
 
 		String actorId = (String) params.get("actorId");
 		String targetId = (String) params.get("targetId");
+		String chatConfigId = (String) params.get("chatConfigId");
 		String message = (String) params.get("message");
 
 		if(actorId == null || targetId == null || message == null) {
@@ -608,12 +612,158 @@ public class GameService {
 			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
 		}
 
-		Map<String, Object> result = GameUtil.chat(octx, actor, target, message);
+		// Load chat config if provided
+		BaseRecord chatConfig = null;
+		if(chatConfigId != null && !chatConfigId.isEmpty()) {
+			chatConfig = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigId);
+			if(chatConfig == null) {
+				logger.warn("Chat config not found: " + chatConfigId);
+			}
+		}
+
+		Map<String, Object> result = GameUtil.chat(octx, actor, target, message, chatConfig);
 		if(result.containsKey("error")) {
 			return Response.status(500).entity(JSONUtil.exportObject(result)).build();
 		}
 
 		return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+	}
+
+	/// Get pending NPC chat requests for a player character.
+	/// JSON body: { "playerId": "uuid" }
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/chat/pending")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getPendingChatRequests(String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		@SuppressWarnings("unchecked")
+		Map<String, Object> params = JSONUtil.importObject(json, Map.class);
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String playerId = (String) params.get("playerId");
+		if(playerId == null) {
+			return Response.status(400).entity("{\"error\":\"playerId required\"}").build();
+		}
+
+		BaseRecord player = GameUtil.findCharacter(playerId);
+		if(player == null) {
+			return Response.status(404).entity("{\"error\":\"Player not found\"}").build();
+		}
+
+		List<BaseRecord> pending = GameUtil.getPendingChatRequests(octx, player);
+
+		// Build response with actor details
+		List<Map<String, Object>> results = new ArrayList<>();
+		for(BaseRecord interaction : pending) {
+			Map<String, Object> item = new HashMap<>();
+			BaseRecord actor = interaction.get("actor");
+			if(actor != null) {
+				item.put("npcId", actor.get("objectId"));
+				item.put("npcName", actor.get("name"));
+				item.put("npcFirstName", actor.get("firstName"));
+			}
+			item.put("interactionId", interaction.get("objectId"));
+			item.put("reason", interaction.get("description"));
+			item.put("timestamp", interaction.get("interactionStart"));
+			results.add(item);
+		}
+
+		Map<String, Object> response = new HashMap<>();
+		response.put("pending", results);
+		return Response.status(200).entity(JSONUtil.exportObject(response)).build();
+	}
+
+	/// Create an NPC-initiated chat request (for testing or admin use).
+	/// JSON body: { "npcId": "uuid", "playerId": "uuid", "reason": "greeting message" }
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/chat/request")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response createNpcChatRequest(String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		if(octx == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
+		}
+
+		@SuppressWarnings("unchecked")
+		Map<String, Object> params = JSONUtil.importObject(json, Map.class);
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String npcId = (String) params.get("npcId");
+		String playerId = (String) params.get("playerId");
+		String reason = (String) params.get("reason");
+
+		if(npcId == null || playerId == null) {
+			return Response.status(400).entity("{\"error\":\"npcId and playerId required\"}").build();
+		}
+
+		BaseRecord npc = GameUtil.findCharacter(npcId);
+		BaseRecord player = GameUtil.findCharacter(playerId);
+
+		if(npc == null || player == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		BaseRecord interaction = GameUtil.createNpcChatRequest(octx, npc, player, reason);
+		if(interaction == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to create chat request\"}").build();
+		}
+
+		Map<String, Object> response = new HashMap<>();
+		response.put("success", true);
+		response.put("interactionId", interaction.get("objectId"));
+		return Response.status(200).entity(JSONUtil.exportObject(response)).build();
+	}
+
+	/// Resolve a pending chat request (accept or dismiss).
+	/// JSON body: { "interactionId": "uuid", "accepted": true }
+	///
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/chat/resolve")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response resolveChatRequest(String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		@SuppressWarnings("unchecked")
+		Map<String, Object> params = JSONUtil.importObject(json, Map.class);
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String interactionId = (String) params.get("interactionId");
+		Boolean accepted = (Boolean) params.get("accepted");
+
+		if(interactionId == null || accepted == null) {
+			return Response.status(400).entity("{\"error\":\"interactionId and accepted required\"}").build();
+		}
+
+		BaseRecord interaction = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, OlioModelNames.MODEL_INTERACTION, interactionId);
+		if(interaction == null) {
+			return Response.status(404).entity("{\"error\":\"Interaction not found\"}").build();
+		}
+
+		boolean success = GameUtil.resolveChatRequest(interaction, accepted);
+
+		Map<String, Object> response = new HashMap<>();
+		response.put("success", success);
+		return Response.status(200).entity(JSONUtil.exportObject(response)).build();
 	}
 
 	/// Generate a context-aware outfit for a character.

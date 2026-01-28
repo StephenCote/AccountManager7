@@ -26,6 +26,10 @@
     let chatPending = false;
     let chatSession = null;
 
+    // NPC-initiated chat requests
+    let pendingNpcChats = [];
+    let npcChatPollTimer = null;
+
     // Action state
     let pendingAction = null;    // Action being set up
     let actionResult = null;     // Result of last action
@@ -416,6 +420,7 @@
         }
 
         await loadSituation();
+        startNpcChatPolling();
         addEvent("Now playing as " + player.name, "success");
         page.toast("success", "Now playing as " + char.name);
     }
@@ -451,12 +456,89 @@
     async function startChat(target) {
         if (!player || !target) return;
         chatMessages = [];
+        chatPending = true;
         chatDialogOpen = true;
-        chatSession = {
-            actor: player,
-            target: target
-        };
-        addEvent("Started conversation with " + target.name, "info");
+        m.redraw();
+
+        try {
+            // Load chat config from ~/Chat directory
+            let chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
+            if (!chatDir) {
+                addEvent("Chat directory ~/Chat not found", "error");
+                chatDialogOpen = false;
+                chatPending = false;
+                return;
+            }
+
+            // Find the "Open Chat" config template
+            let chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0);
+            let templateCfg = chatConfigs.find(c => c.name === "Open Chat");
+            if (!templateCfg) {
+                addEvent("Chat config 'Open Chat' not found in ~/Chat", "error");
+                chatDialogOpen = false;
+                chatPending = false;
+                return;
+            }
+
+            // Create unique chat config name for this character pair
+            let actorFirst = player.firstName || player.name.split(" ")[0];
+            let targetFirst = target.firstName || target.name.split(" ")[0];
+            let chatConfigName = "CardGame: " + actorFirst + " x " + targetFirst;
+
+            // Search for existing chatConfig by name
+            let chatCfg;
+            let q = am7view.viewQuery("olio.llm.chatConfig");
+            q.field("groupId", chatDir.id);
+            q.field("name", chatConfigName);
+            q.cache(false);
+            let qr = await page.search(q);
+
+            if (qr && qr.results && qr.results.length > 0) {
+                chatCfg = qr.results[0];
+            } else {
+                // Load full template and copy it
+                let fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
+                let newChatCfg = JSON.parse(JSON.stringify(fullTemplate));
+
+                // Clear identity fields
+                newChatCfg.objectId = undefined;
+                newChatCfg.id = undefined;
+                newChatCfg.urn = undefined;
+                delete newChatCfg.vaultId;
+                delete newChatCfg.vaulted;
+                delete newChatCfg.keyId;
+
+                // Set new location and name
+                newChatCfg.groupId = chatDir.id;
+                newChatCfg.groupPath = chatDir.path;
+                newChatCfg.name = chatConfigName;
+
+                // Assign characters: target = system (AI), player = user
+                newChatCfg.systemCharacter = { objectId: target.objectId };
+                newChatCfg.userCharacter = { objectId: player.objectId };
+
+                chatCfg = await page.createObject(newChatCfg);
+                if (!chatCfg) {
+                    addEvent("Failed to create chat config", "error");
+                    chatDialogOpen = false;
+                    chatPending = false;
+                    return;
+                }
+            }
+
+            chatSession = {
+                actor: player,
+                target: target,
+                chatConfigId: chatCfg.objectId
+            };
+            addEvent("Started conversation with " + target.name, "info");
+        } catch (e) {
+            console.error("Failed to setup chat:", e);
+            addEvent("Failed to setup chat: " + e.message, "error");
+            chatDialogOpen = false;
+        }
+
+        chatPending = false;
         m.redraw();
     }
 
@@ -473,6 +555,7 @@
                 body: {
                     actorId: chatSession.actor.objectId,
                     targetId: chatSession.target.objectId,
+                    chatConfigId: chatSession.chatConfigId,
                     message: text
                 },
                 withCredentials: true
@@ -514,6 +597,88 @@
         chatSession = null;
         chatMessages = [];
         await loadSituation();
+    }
+
+    // ==========================================
+    // NPC-Initiated Chat Functions
+    // ==========================================
+
+    async function pollPendingNpcChats() {
+        if (!player) return;
+
+        try {
+            let resp = await m.request({
+                method: 'POST',
+                url: g_application_path + "/rest/game/chat/pending",
+                body: { playerId: player.objectId },
+                withCredentials: true
+            });
+
+            if (resp && resp.pending) {
+                pendingNpcChats = resp.pending;
+                m.redraw();
+            }
+        } catch (e) {
+            // Silently ignore polling errors
+        }
+    }
+
+    function startNpcChatPolling() {
+        if (npcChatPollTimer) return;
+        npcChatPollTimer = setInterval(pollPendingNpcChats, 30000); // Poll every 30 seconds
+        pollPendingNpcChats(); // Initial poll
+    }
+
+    function stopNpcChatPolling() {
+        if (npcChatPollTimer) {
+            clearInterval(npcChatPollTimer);
+            npcChatPollTimer = null;
+        }
+    }
+
+    async function acceptNpcChat(npcChat) {
+        // Resolve the pending request
+        try {
+            await m.request({
+                method: 'POST',
+                url: g_application_path + "/rest/game/chat/resolve",
+                body: { interactionId: npcChat.interactionId, accepted: true },
+                withCredentials: true
+            });
+        } catch (e) {
+            console.log("Failed to resolve chat request");
+        }
+
+        // Remove from pending list
+        pendingNpcChats = pendingNpcChats.filter(c => c.interactionId !== npcChat.interactionId);
+
+        // Find the NPC and start chat with them
+        let npc = nearbyPeople.find(p => p.objectId === npcChat.npcId);
+        if (!npc) {
+            // Try to find in threats
+            npc = nearbyThreats.find(t => t.objectId === npcChat.npcId);
+        }
+        if (npc) {
+            await startChat(npc);
+        } else {
+            addEvent(npcChat.npcFirstName + " is no longer nearby", "warn");
+        }
+    }
+
+    async function dismissNpcChat(npcChat) {
+        try {
+            await m.request({
+                method: 'POST',
+                url: g_application_path + "/rest/game/chat/resolve",
+                body: { interactionId: npcChat.interactionId, accepted: false },
+                withCredentials: true
+            });
+        } catch (e) {
+            console.log("Failed to dismiss chat request");
+        }
+
+        pendingNpcChats = pendingNpcChats.filter(c => c.interactionId !== npcChat.interactionId);
+        m.redraw();
     }
 
     // ==========================================
@@ -1973,6 +2138,37 @@
         }
     };
 
+    // NPC Chat Request Notifications
+    let NpcChatNotifications = {
+        view: function() {
+            if (pendingNpcChats.length === 0) return null;
+
+            return m("div", {class: "sg-npc-chat-notifications"},
+                pendingNpcChats.map(function(npcChat) {
+                    return m("div", {class: "sg-npc-chat-notification", key: npcChat.interactionId}, [
+                        m("div", {class: "sg-npc-chat-icon"},
+                            m("span", {class: "material-symbols-outlined"}, "chat_bubble")
+                        ),
+                        m("div", {class: "sg-npc-chat-content"}, [
+                            m("div", {class: "sg-npc-chat-name"}, npcChat.npcFirstName || npcChat.npcName),
+                            m("div", {class: "sg-npc-chat-reason"}, npcChat.reason || "wants to talk")
+                        ]),
+                        m("div", {class: "sg-npc-chat-actions"}, [
+                            m("button", {
+                                class: "sg-btn sg-btn-sm sg-btn-primary",
+                                onclick: function() { acceptNpcChat(npcChat); }
+                            }, "Talk"),
+                            m("button", {
+                                class: "sg-btn sg-btn-sm",
+                                onclick: function() { dismissNpcChat(npcChat); }
+                            }, "Ignore")
+                        ])
+                    ]);
+                })
+            );
+        }
+    };
+
     // Initialization Loading Overlay
     let InitLoadingOverlay = {
         view: function() {
@@ -2283,6 +2479,7 @@
                 m(InitLoadingOverlay),
                 m(CharacterSelectDialog),
                 m(ChatDialog),
+                m(NpcChatNotifications),
                 m(SaveGameDialog),
                 m("div", {class: "cg-footer-fixed"}, getFooter())
             ];

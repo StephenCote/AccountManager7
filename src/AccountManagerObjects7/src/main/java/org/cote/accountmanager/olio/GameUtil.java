@@ -1,12 +1,15 @@
 package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import org.cote.accountmanager.record.RecordFactory;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -1658,6 +1661,21 @@ public class GameUtil {
 	 * @return Map containing the response
 	 */
 	public static Map<String, Object> chat(OlioContext octx, BaseRecord actor, BaseRecord target, String message) {
+		return chat(octx, actor, target, message, null);
+	}
+
+	/**
+	 * Chat method for game conversations with optional chat configuration.
+	 * The target character (NPC) responds to the player's message.
+	 *
+	 * @param octx The Olio context
+	 * @param actor The player character
+	 * @param target The NPC character to talk to
+	 * @param message The player's message
+	 * @param chatConfig Optional chat configuration with LLM settings
+	 * @return Map containing the response
+	 */
+	public static Map<String, Object> chat(OlioContext octx, BaseRecord actor, BaseRecord target, String message, BaseRecord chatConfig) {
 		Map<String, Object> result = new HashMap<>();
 
 		if (octx == null || actor == null || target == null || message == null || message.trim().isEmpty()) {
@@ -1675,11 +1693,22 @@ public class GameUtil {
 				"Respond naturally and briefly (1-3 sentences) as this character would. " +
 				"Stay in character. Do not break the fourth wall.";
 
-		// Create chat request
-		OpenAIRequest req = new OpenAIRequest();
-		req.setModel("gpt-4o-mini"); // Use a fast model for game chat
+		// Create chat with config if provided
+		Chat chat;
+		if (chatConfig != null) {
+			chat = new Chat(null, chatConfig, null);
+		} else {
+			chat = new Chat();
+		}
 
-		Chat chat = new Chat();
+		// Create chat request - use model from config or default
+		OpenAIRequest req = new OpenAIRequest();
+		String model = (chatConfig != null) ? chatConfig.get("model") : null;
+		if (model == null || model.isEmpty()) {
+			model = "gpt-4o-mini";
+		}
+		req.setModel(model);
+
 		chat.newMessage(req, systemPrompt, "system");
 		chat.newMessage(req, actorName + " says: " + message, "user");
 
@@ -1698,5 +1727,106 @@ public class GameUtil {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Create an NPC-initiated chat request to a player.
+	 * This stores an interaction record that the client can query.
+	 *
+	 * @param octx The Olio context
+	 * @param npc The NPC initiating the chat
+	 * @param player The player character being contacted
+	 * @param reason Optional reason/greeting for the chat request
+	 * @return The created interaction record, or null on failure
+	 */
+	public static BaseRecord createNpcChatRequest(OlioContext octx, BaseRecord npc, BaseRecord player, String reason) {
+		if (octx == null || npc == null || player == null) {
+			logger.warn("Missing required parameters for NPC chat request");
+			return null;
+		}
+
+		try {
+			BaseRecord interaction = RecordFactory.newInstance(OlioModelNames.MODEL_INTERACTION);
+			interaction.set(FieldNames.FIELD_TYPE, InteractionEnumType.COMMUNICATE);
+			interaction.set("state", ActionResultEnumType.PENDING);
+			interaction.set("actor", npc);
+			interaction.set("actorType", OlioModelNames.MODEL_CHAR_PERSON);
+			interaction.set("interactor", player);
+			interaction.set("interactorType", OlioModelNames.MODEL_CHAR_PERSON);
+			interaction.set("description", reason != null ? reason : "wants to talk");
+			interaction.set("interactionStart", ZonedDateTime.now());
+
+			// Store in the world's Interactions group
+			BaseRecord world = octx.getWorld();
+			BaseRecord interGroup = world.get("interactions");
+			if (interGroup != null) {
+				interaction.set(FieldNames.FIELD_GROUP_ID, interGroup.get(FieldNames.FIELD_ID));
+			}
+
+			IOSystem.getActiveContext().getRecordUtil().createRecord(interaction);
+			return interaction;
+		} catch (Exception e) {
+			logger.error("Failed to create NPC chat request: " + e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Get pending chat requests for a player character.
+	 *
+	 * @param octx The Olio context
+	 * @param player The player character
+	 * @return List of pending interaction records where NPCs want to chat
+	 */
+	public static List<BaseRecord> getPendingChatRequests(OlioContext octx, BaseRecord player) {
+		List<BaseRecord> pending = new ArrayList<>();
+		if (octx == null || player == null) {
+			return pending;
+		}
+
+		try {
+			BaseRecord world = octx.getWorld();
+			BaseRecord interGroup = world.get("interactions");
+			if (interGroup == null) {
+				return pending;
+			}
+
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_INTERACTION);
+			q.field(FieldNames.FIELD_GROUP_ID, interGroup.get(FieldNames.FIELD_ID));
+			q.field("interactor.id", player.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_TYPE, InteractionEnumType.COMMUNICATE);
+			q.field("state", ActionResultEnumType.PENDING);
+			q.planMost(true);
+
+			pending = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q));
+		} catch (Exception e) {
+			logger.error("Failed to get pending chat requests: " + e.getMessage());
+		}
+
+		return pending;
+	}
+
+	/**
+	 * Dismiss or accept a pending chat request.
+	 *
+	 * @param interaction The interaction to update
+	 * @param accepted True if accepted, false if dismissed
+	 * @return True if updated successfully
+	 */
+	public static boolean resolveChatRequest(BaseRecord interaction, boolean accepted) {
+		if (interaction == null) {
+			return false;
+		}
+
+		try {
+			interaction.set("state", accepted ? ActionResultEnumType.SUCCEEDED : ActionResultEnumType.FAILED);
+			interaction.set("interactionEnd", ZonedDateTime.now());
+			Queue.queueUpdate(interaction, new String[]{"state", "interactionEnd"});
+			Queue.processQueue();
+			return true;
+		} catch (Exception e) {
+			logger.error("Failed to resolve chat request: " + e.getMessage());
+			return false;
+		}
 	}
 }

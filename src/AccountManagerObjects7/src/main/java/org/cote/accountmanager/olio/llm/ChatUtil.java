@@ -1065,7 +1065,13 @@ public class ChatUtil {
 	///
 	public static String getMaxTokenField(BaseRecord cfg) {
 		String maxTokenField = "max_tokens";
+		if(cfg == null) {
+			return maxTokenField;
+		}
 		String modelName = cfg.get("model");
+		if(modelName == null) {
+			return maxTokenField;
+		}
 		if(modelName.startsWith("o")) {
 			maxTokenField = "max_completion_tokens";
 		}
@@ -1083,7 +1089,13 @@ public class ChatUtil {
 	
 	public static String getPresencePenaltyField(BaseRecord cfg) {
 		String presencePenField = "presence_penalty";
+		if(cfg == null) {
+			return presencePenField;
+		}
 		String modelName = cfg.get("model");
+		if(modelName == null) {
+			return presencePenField;
+		}
 		if(modelName.startsWith("gpt-5")) {
 			presencePenField = "";
 		}
