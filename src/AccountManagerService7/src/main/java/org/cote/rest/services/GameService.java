@@ -442,6 +442,8 @@ public class GameService {
 				double chunkSize = 10.0;  // Move 10m at a time
 				int maxIterations = 10000;  // Safety limit
 				int iterations = 0;
+				double previousDistance = remainingDistance;
+				int stallCount = 0;  // Circuit breaker: count iterations without progress
 
 				while(iterations++ < maxIterations) {
 					// Re-fetch person to get updated state/location after cell crossings
@@ -458,6 +460,22 @@ public class GameService {
 						arrived = true;
 						break;
 					}
+
+					// Circuit breaker: detect if we're not making progress
+					// Allow small tolerance for floating point comparison
+					if(remainingDistance >= previousDistance - 0.5) {
+						stallCount++;
+						logger.warn("Movement stall detected: iteration={} prev={} curr={} stallCount={}",
+							iterations, previousDistance, remainingDistance, stallCount);
+						if(stallCount >= 3) {
+							abortReason = "Movement stuck (no progress after " + stallCount + " attempts)";
+							break;
+						}
+					} else {
+						// Making progress, reset stall counter
+						stallCount = 0;
+					}
+					previousDistance = remainingDistance;
 
 					double moveDistance = Math.min(chunkSize, remainingDistance);
 					GameUtil.moveTowardsPosition(octx, person, targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, moveDistance);

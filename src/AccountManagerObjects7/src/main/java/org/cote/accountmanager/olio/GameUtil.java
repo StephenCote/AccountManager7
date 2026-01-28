@@ -480,11 +480,58 @@ public class GameUtil {
 			throw new OlioException("Character has no current location");
 		}
 
-		// Get current position
-		int currentCellEast = currentLocation.get(FieldNames.FIELD_EASTINGS);
-		int currentCellNorth = currentLocation.get(FieldNames.FIELD_NORTHINGS);
+		// Get the location ID - need to read it fresh from state since FK reference may be stale
+		// First, get state ID and read the state fresh to get current location FK
+		long stateId = state.get(FieldNames.FIELD_ID);
+		long locationId = 0L;
+		int currentCellEast = 0;
+		int currentCellNorth = 0;
 		int currentPosEast = state.get(FieldNames.FIELD_CURRENT_EAST);
 		int currentPosNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		if (stateId > 0L) {
+			// Read state fresh to get current location FK and position values
+			// planMost(false) ensures scalar fields like currentEast/currentNorth are included
+			Query stateQuery = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_STATE, FieldNames.FIELD_ID, stateId);
+			stateQuery.setCache(false);
+			stateQuery.planMost(false);
+			stateQuery.planField(OlioFieldNames.FIELD_CURRENT_LOCATION, new String[] {
+				FieldNames.FIELD_ID, FieldNames.FIELD_EASTINGS, FieldNames.FIELD_NORTHINGS
+			});
+			BaseRecord freshState = IOSystem.getActiveContext().getSearch().findRecord(stateQuery);
+			if (freshState != null) {
+				// Get position values from fresh state
+				currentPosEast = freshState.get(FieldNames.FIELD_CURRENT_EAST);
+				currentPosNorth = freshState.get(FieldNames.FIELD_CURRENT_NORTH);
+
+				BaseRecord freshLoc = freshState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+				if (freshLoc != null) {
+					locationId = freshLoc.get(FieldNames.FIELD_ID);
+					currentCellEast = freshLoc.get(FieldNames.FIELD_EASTINGS);
+					currentCellNorth = freshLoc.get(FieldNames.FIELD_NORTHINGS);
+					logger.debug("moveTowardsPosition: freshState locId={} cell[{},{}] pos[{},{}]",
+						locationId, currentCellEast, currentCellNorth, currentPosEast, currentPosNorth);
+				}
+			}
+		}
+
+		if (locationId <= 0L) {
+			// Fallback to reading location by ID from original reference
+			locationId = currentLocation.get(FieldNames.FIELD_ID);
+			if (locationId > 0L) {
+				Query locQuery = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_ID, locationId);
+				locQuery.setCache(false);
+				BaseRecord freshLocation = IOSystem.getActiveContext().getSearch().findRecord(locQuery);
+				if (freshLocation != null) {
+					currentCellEast = freshLocation.get(FieldNames.FIELD_EASTINGS);
+					currentCellNorth = freshLocation.get(FieldNames.FIELD_NORTHINGS);
+				} else {
+					throw new OlioException("Failed to read current location");
+				}
+			} else {
+				throw new OlioException("Current location has no ID");
+			}
+		}
 
 		// Calculate absolute coordinates (cell * 100 + position within cell)
 		int currentX = currentCellEast * 100 + currentPosEast;
@@ -521,6 +568,7 @@ public class GameUtil {
 
 	/**
 	 * Calculate the distance between current position and target position in meters.
+	 * Uses fresh DB reads to ensure accurate values after cell crossings.
 	 */
 	public static double getDistanceToPosition(BaseRecord person,
 			int targetCellEast, int targetCellNorth, int targetPosEast, int targetPosNorth) {
@@ -531,13 +579,41 @@ public class GameUtil {
 		BaseRecord currentLocation = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
 		if (currentLocation == null) return -1;
 
-		// Get position from state (these are always loaded)
+		// Read state fresh from DB to get current location FK and position values
+		// This is needed after cell crossings where the in-memory FK reference may be stale
+		long stateId = state.get(FieldNames.FIELD_ID);
+		int currentCellEast = 0;
+		int currentCellNorth = 0;
 		int currentPosEast = state.get(FieldNames.FIELD_CURRENT_EAST);
 		int currentPosNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
 
-		// Get cell coordinates from location (need to ensure populated)
-		int currentCellEast = currentLocation.get(FieldNames.FIELD_EASTINGS);
-		int currentCellNorth = currentLocation.get(FieldNames.FIELD_NORTHINGS);
+		if (stateId > 0L) {
+			// Query to get fresh state with all basic fields plus currentLocation FK populated
+			// planMost(false) ensures scalar fields like currentEast/currentNorth are included
+			// planField adds the FK subfields we need
+			Query stateQuery = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_STATE, FieldNames.FIELD_ID, stateId);
+			stateQuery.setCache(false);
+			stateQuery.planMost(false);
+			stateQuery.planField(OlioFieldNames.FIELD_CURRENT_LOCATION, new String[] {
+				FieldNames.FIELD_ID, FieldNames.FIELD_EASTINGS, FieldNames.FIELD_NORTHINGS
+			});
+			BaseRecord freshState = IOSystem.getActiveContext().getSearch().findRecord(stateQuery);
+			if (freshState != null) {
+				// Get position values from fresh state
+				currentPosEast = freshState.get(FieldNames.FIELD_CURRENT_EAST);
+				currentPosNorth = freshState.get(FieldNames.FIELD_CURRENT_NORTH);
+
+				// Get cell values from fresh location FK
+				BaseRecord freshLoc = freshState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+				if (freshLoc != null) {
+					currentCellEast = freshLoc.get(FieldNames.FIELD_EASTINGS);
+					currentCellNorth = freshLoc.get(FieldNames.FIELD_NORTHINGS);
+				}
+
+				logger.debug("getDistanceToPosition: fresh cell[{},{}] pos[{},{}]",
+					currentCellEast, currentCellNorth, currentPosEast, currentPosNorth);
+			}
+		}
 
 		int currentX = currentCellEast * 100 + currentPosEast;
 		int currentY = currentCellNorth * 100 + currentPosNorth;

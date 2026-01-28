@@ -17,6 +17,8 @@
     let zoomedView = false;       // Whether showing zoomed-in cell view (meter-level)
     let pendingMove = null;       // Long-running move action that can be aborted
     let moveProgress = 0;         // Progress of current move (0-100)
+    let moveProgressTimer = null; // Timer for animating progress bar
+    let actionInProgress = false; // True when any action is being executed (prevents multiple actions)
 
     // Chat dialog state
     let chatDialogOpen = false;
@@ -260,8 +262,12 @@
 
     async function resolveAction(targetId, actionType) {
         let playerId = getCharId(player);
-        if (!playerId) return null;
+        if (!playerId || actionInProgress) return null;
+
+        actionInProgress = true;
         isLoading = true;
+        m.redraw();
+
         try {
             let resp = await m.request({
                 method: 'POST',
@@ -288,16 +294,23 @@
             console.error("Failed to resolve action", e);
             page.toast("error", "Action failed: " + e.message);
             addEvent("Action failed: " + e.message, "danger");
+        } finally {
+            actionInProgress = false;
+            isLoading = false;
+            m.redraw();
         }
-        isLoading = false;
         return null;
     }
 
     async function moveCharacter(direction) {
         let playerId = getCharId(player);
-        if (!playerId) return;
+        if (!playerId || actionInProgress) return;
+
+        actionInProgress = true;
         isLoading = true;
+        m.redraw();
         console.log("Moving character:", playerId, "direction:", direction);
+
         try {
             // Move 1 meter per click for fine-grained control within the 100m x 100m cell
             // currentEast/currentNorth track position 0-99 meters within the cell
@@ -319,7 +332,6 @@
 
             addEvent("Moved " + direction, "info");
             moveMode = false;
-            m.redraw();
         } catch (e) {
             console.error("Failed to move", e, "Response:", e.response);
             // Mithril puts the response body in e.response for non-2xx responses
@@ -331,8 +343,11 @@
             }
             page.toast("error", errorMsg);
             addEvent(errorMsg, "warning");
+        } finally {
+            actionInProgress = false;
+            isLoading = false;
+            m.redraw();
         }
-        isLoading = false;
     }
 
     async function loadAvailableCharacters() {
@@ -1201,20 +1216,75 @@
         await executeMoveTo(cellEast, cellNorth, 50, 50, "Moving to cell...");
     }
 
+    // Calculate distance between two positions (in meters)
+    function calculateDistance(fromCellE, fromCellN, fromPosE, fromPosN, toCellE, toCellN, toPosE, toPosN) {
+        let fromX = fromCellE * 100 + fromPosE;
+        let fromY = fromCellN * 100 + fromPosN;
+        let toX = toCellE * 100 + toPosE;
+        let toY = toCellN * 100 + toPosN;
+        return Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+    }
+
+    // Start progress bar animation based on estimated time
+    function startProgressAnimation(estimatedSeconds) {
+        if (moveProgressTimer) {
+            clearInterval(moveProgressTimer);
+        }
+        moveProgress = 0;
+        let startTime = Date.now();
+        let totalMs = estimatedSeconds * 1000;
+
+        moveProgressTimer = setInterval(function() {
+            let elapsed = Date.now() - startTime;
+            // Cap at 95% until server responds
+            moveProgress = Math.min(95, (elapsed / totalMs) * 100);
+            m.redraw();
+        }, 100);
+    }
+
+    // Stop progress bar animation
+    function stopProgressAnimation() {
+        if (moveProgressTimer) {
+            clearInterval(moveProgressTimer);
+            moveProgressTimer = null;
+        }
+        moveProgress = 100;
+        m.redraw();
+    }
+
     // Execute movement towards a target using the moveTo endpoint
     // Server handles the full movement in a single call (fullMove: true)
     async function executeMoveTo(targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, message) {
-        if (pendingMove) return;
+        if (pendingMove || actionInProgress) return;
+
+        // Get current position
+        let playerLoc = situation && situation.location ? situation.location : null;
+        let playerState = player && player.state ? player.state : null;
+        let currentCellEast = playerLoc ? (playerLoc.eastings || 0) : 0;
+        let currentCellNorth = playerLoc ? (playerLoc.northings || 0) : 0;
+        let currentPosEast = playerState ? (playerState.currentEast || 50) : 50;
+        let currentPosNorth = playerState ? (playerState.currentNorth || 50) : 50;
+
+        // Calculate distance and estimate time (about 2 seconds per meter)
+        let distance = calculateDistance(
+            currentCellEast, currentCellNorth, currentPosEast, currentPosNorth,
+            targetCellEast, targetCellNorth, targetPosEast, targetPosNorth
+        );
+        let estimatedSeconds = Math.max(2, distance * 2); // Minimum 2 seconds
 
         pendingMove = {
             targetCellEast: targetCellEast,
             targetCellNorth: targetCellNorth,
             targetPosEast: targetPosEast,
             targetPosNorth: targetPosNorth,
-            aborted: false
+            aborted: false,
+            distance: distance
         };
-        moveProgress = 0;
-        addEvent(message || "Moving...", "info");
+        actionInProgress = true;
+
+        // Start progress animation
+        startProgressAnimation(estimatedSeconds);
+        addEvent((message || "Moving...") + " (" + Math.round(distance) + "m)", "info");
         m.redraw();
 
         try {
@@ -1262,10 +1332,12 @@
             addEvent("Movement blocked: " + errorMsg, "warning");
         } finally {
             isLoading = false;
+            stopProgressAnimation();
         }
 
         // Clean up
         pendingMove = null;
+        actionInProgress = false;
         moveProgress = 0;
         m.redraw();
     }
@@ -1278,28 +1350,31 @@
     }
 
     function renderMovementPad() {
+        let isDisabled = actionInProgress || isLoading || pendingMove;
+        let btnClass = "sg-move-btn" + (isDisabled ? " sg-btn-disabled" : "");
+
         return m("div", {class: "sg-move-pad"}, [
             m("div", {class: "sg-move-row"}, [
                 m("div"), // spacer
-                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("NORTH"); }}, [
+                m("button", {class: btnClass, disabled: isDisabled, onclick: function() { if (!isDisabled) moveCharacter("NORTH"); }}, [
                     m("span", {class: "material-symbols-outlined"}, "arrow_upward")
                 ]),
                 m("div") // spacer
             ]),
             m("div", {class: "sg-move-row"}, [
-                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("WEST"); }}, [
+                m("button", {class: btnClass, disabled: isDisabled, onclick: function() { if (!isDisabled) moveCharacter("WEST"); }}, [
                     m("span", {class: "material-symbols-outlined"}, "arrow_back")
                 ]),
                 m("button", {class: "sg-move-btn sg-move-center"}, [
                     m("span", {class: "material-symbols-outlined"}, "radio_button_checked")
                 ]),
-                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("EAST"); }}, [
+                m("button", {class: btnClass, disabled: isDisabled, onclick: function() { if (!isDisabled) moveCharacter("EAST"); }}, [
                     m("span", {class: "material-symbols-outlined"}, "arrow_forward")
                 ])
             ]),
             m("div", {class: "sg-move-row"}, [
                 m("div"), // spacer
-                m("button", {class: "sg-move-btn", onclick: function() { moveCharacter("SOUTH"); }}, [
+                m("button", {class: btnClass, disabled: isDisabled, onclick: function() { if (!isDisabled) moveCharacter("SOUTH"); }}, [
                     m("span", {class: "material-symbols-outlined"}, "arrow_downward")
                 ]),
                 m("div") // spacer
@@ -1513,12 +1588,14 @@
             actions.push({type: "WATCH"});
         }
 
-        // Action buttons
+        // Action buttons (disabled when action is in progress)
+        let isDisabled = actionInProgress || isLoading || pendingMove;
         let actionButtons = m("div", {class: "sg-action-buttons"}, actions.map(function(act) {
             let def = ACTION_TYPES[act.type] || {label: act.type, icon: "help", color: "gray"};
             return m("button", {
-                class: "sg-btn sg-btn-action" + (act.primary ? " sg-btn-primary" : ""),
-                onclick: function() { executeAction(act.type); }
+                class: "sg-btn sg-btn-action" + (act.primary ? " sg-btn-primary" : "") + (isDisabled ? " sg-btn-disabled" : ""),
+                disabled: isDisabled,
+                onclick: function() { if (!isDisabled) executeAction(act.type); }
             }, [
                 m("span", {class: "material-symbols-outlined"}, def.icon),
                 " " + def.label
