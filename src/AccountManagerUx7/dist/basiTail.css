@@ -6804,6 +6804,40 @@ button.button-tab-active:hover:is(.dark *) {
   color: rgb(156 163 175 / var(--tw-text-opacity, 1));
 }
 
+.sg-person-distance {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  --tw-text-opacity: 1;
+  color: rgb(37 99 235 / var(--tw-text-opacity, 1));
+}
+
+.sg-person-distance:is(.dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(96 165 250 / var(--tw-text-opacity, 1));
+}
+
+.sg-threat-distance {
+  white-space: nowrap;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  --tw-text-opacity: 1;
+  color: rgb(220 38 38 / var(--tw-text-opacity, 1));
+}
+
+.sg-threat-distance:is(.dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(248 113 113 / var(--tw-text-opacity, 1));
+}
+
+.sg-compass-arrow {
+  display: inline-block;
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 700;
+}
+
 /* Selected card state */
 
 .sg-card-selected {

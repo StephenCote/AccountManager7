@@ -2171,6 +2171,15 @@
       .sg-person-rel {
         @apply text-xs text-gray-500 dark:text-gray-400;
       }
+      .sg-person-distance {
+        @apply text-xs text-blue-600 dark:text-blue-400 font-medium;
+      }
+      .sg-threat-distance {
+        @apply text-xs text-red-600 dark:text-red-400 font-medium whitespace-nowrap;
+      }
+      .sg-compass-arrow {
+        @apply inline-block text-base font-bold;
+      }
 
       /* Selected card state */
       .sg-card-selected {

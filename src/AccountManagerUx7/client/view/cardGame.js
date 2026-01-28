@@ -1494,6 +1494,14 @@
             typeLabel = threat.groupType || "ANIMAL";
         }
 
+        // Calculate distance and direction from player to threat
+        let distDir = getDistanceAndDirection(threat.state, threat.currentLocation);
+        let distanceStr = distDir.distance >= 1000 ?
+            (distDir.distance / 1000).toFixed(1) + "km" :
+            distDir.distance + "m";
+        let compassArrow = distDir.direction ? distDir.direction.arrow : "";
+        let compassDir = distDir.direction ? distDir.direction.dir : "";
+
         // Check if this threat is selected
         let threatId = threat.source || threat.objectId || threat.id;
         let selectedId = selectedEntity ? (selectedEntity.source || selectedEntity.objectId || selectedEntity.id) : null;
@@ -1509,6 +1517,10 @@
                     m("div", {class: "sg-threat-name"}, name),
                     m("div", {class: "sg-threat-type"}, typeLabel)
                 ]),
+                m("div", {class: "sg-threat-distance"}, [
+                    m("span", {class: "sg-compass-arrow", title: compassDir}, compassArrow),
+                    " " + distanceStr
+                ]),
                 m("div", {class: "sg-threat-priority sg-color-" + pColor},
                     priority.toFixed(2))
             ]),
@@ -1519,6 +1531,63 @@
                 })
             ])
         ]);
+    }
+
+    // Convert angle (in degrees, 0=East, counter-clockwise) to 8-point compass direction
+    // Returns { direction: "NE", arrow: "↗" }
+    function angleToCompass(angleDeg) {
+        // Normalize angle to 0-360
+        while (angleDeg < 0) angleDeg += 360;
+        while (angleDeg >= 360) angleDeg -= 360;
+
+        // 8-point compass: each direction covers 45 degrees
+        // Arrows point in the direction of travel
+        const directions = [
+            { dir: "E",  arrow: "→" },   // 0 degrees (centered at 0)
+            { dir: "NE", arrow: "↗" },   // 45 degrees
+            { dir: "N",  arrow: "↑" },   // 90 degrees
+            { dir: "NW", arrow: "↖" },   // 135 degrees
+            { dir: "W",  arrow: "←" },   // 180 degrees
+            { dir: "SW", arrow: "↙" },   // 225 degrees
+            { dir: "S",  arrow: "↓" },   // 270 degrees
+            { dir: "SE", arrow: "↘" }    // 315 degrees
+        ];
+
+        // Each sector is 45 degrees, offset by 22.5 to center
+        let index = Math.round(angleDeg / 45) % 8;
+        return directions[index];
+    }
+
+    // Calculate distance and direction from player to a target
+    function getDistanceAndDirection(targetState, targetLocation) {
+        if (!player || !situation) return { distance: 0, direction: null };
+
+        let playerState = player.state || {};
+        let playerLoc = situation.location || {};
+
+        // Player absolute position
+        let playerAbsX = (playerLoc.eastings || 0) * 100 + (playerState.currentEast || 0);
+        let playerAbsY = (playerLoc.northings || 0) * 100 + (playerState.currentNorth || 0);
+
+        // Target absolute position
+        let targetLoc = targetLocation || (targetState && targetState.currentLocation) || {};
+        let targetAbsX = (targetLoc.eastings || 0) * 100 + ((targetState && targetState.currentEast) || 0);
+        let targetAbsY = (targetLoc.northings || 0) * 100 + ((targetState && targetState.currentNorth) || 0);
+
+        // Calculate distance
+        let dx = targetAbsX - playerAbsX;
+        let dy = targetAbsY - playerAbsY;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Calculate angle (atan2 gives radians, convert to degrees)
+        // atan2(dy, dx) gives angle where 0=East, positive=counter-clockwise
+        let angleRad = Math.atan2(dy, dx);
+        let angleDeg = angleRad * (180 / Math.PI);
+
+        return {
+            distance: Math.round(distance),
+            direction: angleToCompass(angleDeg)
+        };
     }
 
     function renderPersonCard(person) {
@@ -1546,6 +1615,14 @@
             }
         }
 
+        // Calculate distance and direction from player
+        let distDir = getDistanceAndDirection(record.state, record.currentLocation);
+        let distanceStr = distDir.distance >= 1000 ?
+            (distDir.distance / 1000).toFixed(1) + "km" :
+            distDir.distance + "m";
+        let compassArrow = distDir.direction ? distDir.direction.arrow : "";
+        let compassDir = distDir.direction ? distDir.direction.dir : "";
+
         // Check if this person is selected
         let personId = record.objectId || record.id;
         let selectedId = selectedEntity ? (selectedEntity.objectId || selectedEntity.id) : null;
@@ -1560,8 +1637,11 @@
                 m("span", {class: "sg-person-icon"}, "\u{1F464}"),
             m("div", {class: "sg-person-info"}, [
                 m("div", {class: "sg-person-name"}, displayName),
-                m("div", {class: "sg-person-rel"},
-                    (person.relationship || "neutral") + " \u2022 " + (person.distance || 0) + " cells")
+                m("div", {class: "sg-person-distance"}, [
+                    m("span", {class: "sg-compass-arrow", title: compassDir}, compassArrow),
+                    " " + distanceStr
+                ]),
+                m("div", {class: "sg-person-rel"}, person.relationship || "neutral")
             ])
         ]);
     }
