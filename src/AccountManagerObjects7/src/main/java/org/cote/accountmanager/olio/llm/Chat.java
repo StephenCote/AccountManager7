@@ -41,9 +41,9 @@ import jakarta.ws.rs.core.MediaType;
 
 public class Chat {
 
-	protected static String userRole = "user";
-	protected static String assistantRole = "assistant";
-	protected static String systemRole = "system";
+	public static final String userRole = "user";
+	public static final String assistantRole = "assistant";
+	public static final String systemRole = "system";
 	
 	protected IOContext ioContext = null;
 	public static final Logger logger = LogManager.getLogger(Chat.class);
