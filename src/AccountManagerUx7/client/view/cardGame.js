@@ -493,11 +493,25 @@
             q.cache(false);
             let qr = await page.search(q);
 
+            // Always load full template for LLM settings
+            let fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
+
             if (qr && qr.results && qr.results.length > 0) {
                 chatCfg = qr.results[0];
+                // Sync LLM settings from template in case they've changed
+                if (fullTemplate && (chatCfg.serverUrl !== fullTemplate.serverUrl ||
+                    chatCfg.serviceType !== fullTemplate.serviceType ||
+                    chatCfg.model !== fullTemplate.model)) {
+                    chatCfg.serverUrl = fullTemplate.serverUrl;
+                    chatCfg.serviceType = fullTemplate.serviceType;
+                    chatCfg.model = fullTemplate.model;
+                    chatCfg.apiKey = fullTemplate.apiKey;
+                    chatCfg.apiVersion = fullTemplate.apiVersion;
+                    await page.updateObject(chatCfg);
+                    console.log("Updated chat config LLM settings from template");
+                }
             } else {
-                // Load full template and copy it
-                let fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
+                // Copy full template
                 let newChatCfg = JSON.parse(JSON.stringify(fullTemplate));
 
                 // Clear identity fields

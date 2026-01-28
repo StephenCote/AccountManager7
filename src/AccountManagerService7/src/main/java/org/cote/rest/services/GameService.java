@@ -618,6 +618,10 @@ public class GameService {
 			chatConfig = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigId);
 			if(chatConfig == null) {
 				logger.warn("Chat config not found: " + chatConfigId);
+			} else {
+				// Ensure all needed fields are populated
+				IOSystem.getActiveContext().getReader().populate(chatConfig,
+					new String[]{"serverUrl", "apiKey", "model", "serviceType", "apiVersion", "chatOptions"});
 			}
 		}
 
