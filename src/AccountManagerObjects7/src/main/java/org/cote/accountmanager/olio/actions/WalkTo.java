@@ -67,7 +67,8 @@ public class WalkTo extends CommonAction implements IAction {
 		
 		boolean moved = StateUtil.moveByOneMeterInCell(context, actor, dir);
 		if(moved) {
-			StateUtil.queueUpdateLocation(context, actor.get(FieldNames.FIELD_STATE));
+			// Always include currentLocation in case a cell boundary was crossed
+			StateUtil.queueUpdateLocation(context, actor, true);
 		}
 		return moved;
 	}
