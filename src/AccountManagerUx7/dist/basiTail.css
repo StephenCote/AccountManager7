@@ -5748,6 +5748,22 @@ button.button-tab-active:hover:is(.dark *) {
   opacity: 0.5;
 }
 
+.sg-btn-unavailable {
+  --tw-bg-opacity: 1;
+  background-color: rgb(209 213 219 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(107 114 128 / var(--tw-text-opacity, 1));
+  text-decoration-line: line-through;
+  opacity: 0.4;
+}
+
+.sg-btn-unavailable:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(31 41 55 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(107 114 128 / var(--tw-text-opacity, 1));
+}
+
 .sg-btn-primary {
   display: flex;
   align-items: center;

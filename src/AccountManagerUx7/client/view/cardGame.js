@@ -51,6 +51,7 @@
     // Action types with their icons and descriptions
     const ACTION_TYPES = {
         TALK: { label: "Talk", icon: "forum", color: "blue" },
+        WALK_TO: { label: "Walk to", icon: "directions_walk", color: "green" },
         BEFRIEND: { label: "Befriend", icon: "handshake", color: "green" },
         BARTER: { label: "Trade", icon: "swap_horiz", color: "yellow" },
         COMBAT: { label: "Fight", icon: "swords", color: "red" },
@@ -61,6 +62,9 @@
         FLEE: { label: "Flee", icon: "directions_run", color: "yellow" },
         WATCH: { label: "Watch", icon: "visibility", color: "gray" }
     };
+
+    // Proximity threshold for social actions (in meters)
+    const TALK_DISTANCE_THRESHOLD = 10;
 
     // Configuration: set to true to use PNG tile images instead of emoji
     const USE_TILE_IMAGES = true;
@@ -1216,6 +1220,34 @@
         await executeMoveTo(cellEast, cellNorth, 50, 50, "Moving to cell...");
     }
 
+    // Walk to a selected entity (person or threat)
+    async function walkToEntity(entity) {
+        if (!player || isLoading || pendingMove || !entity) return;
+
+        // Get entity's location
+        let entityState = entity.state || {};
+        let entityLoc = entity.currentLocation || entityState.currentLocation || {};
+
+        let targetCellEast = entityLoc.eastings;
+        let targetCellNorth = entityLoc.northings;
+        let targetPosEast = entityState.currentEast;
+        let targetPosNorth = entityState.currentNorth;
+
+        // If we don't have precise position, target cell center
+        if (targetPosEast === undefined) targetPosEast = 50;
+        if (targetPosNorth === undefined) targetPosNorth = 50;
+
+        // If we don't have cell coordinates, can't navigate
+        if (targetCellEast === undefined || targetCellNorth === undefined) {
+            console.warn("Cannot walk to entity - missing location data", entity);
+            page.toast("error", "Cannot determine target location");
+            return;
+        }
+
+        let entityName = entity.name || entity.sourceName || entity.animalType || "target";
+        await executeMoveTo(targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, "Walking to " + entityName + "...");
+    }
+
     // Calculate distance between two positions (in meters)
     function calculateDistance(fromCellE, fromCellN, fromPosE, fromPosN, toCellE, toCellN, toPosE, toPosN) {
         let fromX = fromCellE * 100 + fromPosE;
@@ -1652,14 +1684,33 @@
 
         // If threat selected, show combat actions
         if (selectedEntityType === 'threat') {
-            actions.push({type: "COMBAT", primary: true});
+            // Calculate distance to threat
+            let distDir = getDistanceAndDirection(selectedEntity.state, selectedEntity.currentLocation);
+            let distanceToThreat = distDir.distance;
+
+            if (distanceToThreat > TALK_DISTANCE_THRESHOLD) {
+                actions.push({type: "WALK_TO", primary: true, target: selectedEntity});
+            }
+            actions.push({type: "COMBAT", primary: distanceToThreat <= TALK_DISTANCE_THRESHOLD});
             actions.push({type: "FLEE"});
             actions.push({type: "WATCH"});
         }
-        // If person selected, show social actions
+        // If person selected, show social actions based on distance
         else if (selectedEntityType === 'person') {
-            actions.push({type: "TALK", primary: true});
-            actions.push({type: "BARTER"});
+            // Calculate distance to selected person
+            let distDir = getDistanceAndDirection(selectedEntity.state, selectedEntity.currentLocation);
+            let distanceToPerson = distDir.distance;
+
+            // If too far away, primary action is "Walk to"
+            if (distanceToPerson > TALK_DISTANCE_THRESHOLD) {
+                actions.push({type: "WALK_TO", primary: true, target: selectedEntity});
+                // Show Talk as disabled hint
+                actions.push({type: "TALK", disabled: true, hint: "Get closer to talk (" + distanceToPerson + "m away)"});
+            } else {
+                // Close enough to interact
+                actions.push({type: "TALK", primary: true});
+                actions.push({type: "BARTER"});
+            }
             actions.push({type: "HELP"});
             actions.push({type: "COMBAT"});
         }
@@ -1669,14 +1720,29 @@
             actions.push({type: "WATCH"});
         }
 
-        // Action buttons (disabled when action is in progress)
-        let isDisabled = actionInProgress || isLoading || pendingMove;
+        // Action buttons (disabled when action is in progress or action-specific disabled)
+        let globalDisabled = actionInProgress || isLoading || pendingMove;
         let actionButtons = m("div", {class: "sg-action-buttons"}, actions.map(function(act) {
             let def = ACTION_TYPES[act.type] || {label: act.type, icon: "help", color: "gray"};
+            let isActDisabled = globalDisabled || act.disabled;
+            let tooltip = act.hint || def.label;
+
             return m("button", {
-                class: "sg-btn sg-btn-action" + (act.primary ? " sg-btn-primary" : "") + (isDisabled ? " sg-btn-disabled" : ""),
-                disabled: isDisabled,
-                onclick: function() { if (!isDisabled) executeAction(act.type); }
+                class: "sg-btn sg-btn-action" +
+                    (act.primary ? " sg-btn-primary" : "") +
+                    (isActDisabled ? " sg-btn-disabled" : "") +
+                    (act.disabled ? " sg-btn-unavailable" : ""),
+                disabled: isActDisabled,
+                title: tooltip,
+                onclick: function() {
+                    if (isActDisabled) return;
+                    if (act.type === "WALK_TO" && act.target) {
+                        // Walk to the selected entity
+                        walkToEntity(act.target);
+                    } else {
+                        executeAction(act.type);
+                    }
+                }
             }, [
                 m("span", {class: "material-symbols-outlined"}, def.icon),
                 " " + def.label
