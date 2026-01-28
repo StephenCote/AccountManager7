@@ -5738,6 +5738,13 @@ button.button-tab-active:hover:is(.dark *) {
 }
 
 .sg-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sg-btn-disabled {
+  pointer-events: none;
+  cursor: not-allowed;
   opacity: 0.5;
 }
 
@@ -5768,6 +5775,7 @@ button.button-tab-active:hover:is(.dark *) {
 }
 
 .sg-btn-primary:disabled {
+  cursor: not-allowed;
   opacity: 0.5;
 }
 
@@ -5810,6 +5818,7 @@ button.button-tab-active:hover:is(.dark *) {
 }
 
 .sg-btn-action:disabled {
+  cursor: not-allowed;
   opacity: 0.5;
 }
 

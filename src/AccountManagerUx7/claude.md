@@ -933,3 +933,112 @@ AccountManagerUx7/
 ├── styles/                   # CSS files
 └── node_modules/             # Dependencies
 ```
+
+## Server-Side Movement and Cell Crossing (GameUtil)
+
+### Coordinate System
+
+The Olio game uses a hierarchical coordinate system:
+- **Cells**: 10x10 grid with eastings (0-9) and northings (0-9)
+- **Position within cell**: 100m x 100m with currentEast (0-99) and currentNorth (0-99)
+- **Absolute coordinates**: `cellEast * 100 + currentEast`, `cellNorth * 100 + currentNorth`
+
+Example: Cell [1,2] position [35,50] = absolute [135, 250]
+
+### Cell Crossing Bug and Fix (January 2026)
+
+**Problem**: When a character crossed a cell boundary (e.g., east=95 → east=5), the movement loop would enter an infinite loop because the distance calculation was using stale cell values.
+
+**Root Cause**: The `state.currentLocation` FK (foreign key) reference contains:
+1. An `id` field pointing to the geo_location record
+2. In-memory `eastings`/`northings` values populated during queries
+
+After a cell crossing:
+- The Walk action updates the FK to point to a NEW location record (different ID)
+- The in-memory FK object's `id` is updated
+- BUT the in-memory `eastings`/`northings` values may be stale from query joins
+
+**Symptom**:
+```
+IN-MEMORY: locId=31974 cell[1,2]   // Correct values from query
+FRESH LOC from DB: locId=31974 cell[0,0]  // Location 31974 is actually cell[0,0]!
+```
+
+The FK ID pointed to the wrong location record in the database.
+
+**Failed Approaches**:
+1. `planField()` with FK subfields - didn't work reliably
+2. `planMost()` + `planField()` combined - FK values still stale
+3. Reading location by ID from the stale FK - reads wrong cell
+
+**Solution**: Use `IOSystem.getActiveContext().getReader().populate()` to explicitly refresh FK field values from the database:
+
+```java
+// In GameUtil.getDistanceToPosition() and moveTowardsPosition():
+BaseRecord currentLocation = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+
+// Explicitly populate FK fields from DB - this refreshes values based on the correct ID
+IOSystem.getActiveContext().getReader().populate(currentLocation,
+    new String[] {FieldNames.FIELD_EASTINGS, FieldNames.FIELD_NORTHINGS});
+
+// Now these values are accurate
+int currentCellEast = currentLocation.get(FieldNames.FIELD_EASTINGS);
+int currentCellNorth = currentLocation.get(FieldNames.FIELD_NORTHINGS);
+```
+
+**Key Insight**: The `populate()` method reads the FK reference's actual database record using its ID and updates the in-memory object's field values. This is more reliable than query planning because:
+1. It uses the FK's current ID (which IS correctly updated after cell crossing)
+2. It directly reads the referenced record's fields from the database
+3. It updates the in-memory object so subsequent reads work correctly
+
+**Pattern to Follow**: When reading FK reference values that may have been updated by another operation:
+```java
+// 1. Get the FK reference from the parent object
+BaseRecord fkRef = parent.get(FIELD_NAME);
+
+// 2. Populate the fields you need from the database
+IOSystem.getActiveContext().getReader().populate(fkRef,
+    new String[] { "field1", "field2" });
+
+// 3. Now read the values - they're fresh from DB
+Object value = fkRef.get("field1");
+```
+
+**Server-Side Circuit Breaker**: Also added to GameService.java to prevent infinite loops:
+```java
+// In fullMove loop
+if (remainingDistance >= previousDistance - 0.5) {
+    stallCount++;
+    if (stallCount >= 3) {
+        abortReason = "Movement stuck (no progress after " + stallCount + " attempts)";
+        break;
+    }
+} else {
+    stallCount = 0;
+}
+```
+
+### Client-Side Action Progress
+
+When executing long-running actions (like full movement), the client should:
+1. Disable action buttons during execution (`actionInProgress` flag)
+2. Show a progress bar with estimated duration
+3. Poll for completion or use the returned action duration
+
+```javascript
+// cardGame.js pattern
+let actionInProgress = false;
+
+async function executeAction() {
+    if (actionInProgress) return;
+    actionInProgress = true;
+
+    try {
+        startProgressAnimation(estimatedDurationMs);
+        await api.performAction(...);
+    } finally {
+        stopProgressAnimation();
+        actionInProgress = false;
+    }
+}
+```
