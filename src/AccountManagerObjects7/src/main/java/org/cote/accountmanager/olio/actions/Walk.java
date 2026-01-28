@@ -87,7 +87,8 @@ public class Walk extends CommonAction implements IAction {
 		logger.info("Walk.executeAction AFTER: moved={} east={} north={}", moved, afterEast, afterNorth);
 
 		if(moved) {
-			StateUtil.queueUpdateLocation(context, actor);
+			// Always include currentLocation in case a cell boundary was crossed
+			StateUtil.queueUpdateLocation(context, actor, true);
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);
 		}
 		else {
