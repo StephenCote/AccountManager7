@@ -883,6 +883,30 @@ StateUtil.moveByOneMeterInCell(state, direction);
 // - Updates currentLocation reference when entering new cell
 ```
 
+#### Cell Crossing Bug (Fixed January 2026)
+
+**Problem:** When a character crossed a cell boundary (e.g., east=95 → east=5), the movement loop would enter an infinite loop because absolute position calculations were incorrect after the crossing.
+
+**Root Cause:** In `Walk.java` and `WalkTo.java`, the call to `StateUtil.queueUpdateLocation()` was using the default `includeLocation=false` parameter. This meant:
+1. `moveByOne()` correctly updated the in-memory `currentLocation` FK to the new cell
+2. `moveByOne()` reset `currentEast`/`currentNorth` for the new cell (e.g., 95→0)
+3. But `updateLocationImmediate()` only saved `currentEast`/`currentNorth` to the database - NOT the new `currentLocation` FK
+4. Subsequent reads got the OLD cell FK from database with NEW position coordinates
+5. Absolute position was wrong: `oldCell.eastings * 100 + newPosition` instead of `newCell.eastings * 100 + newPosition`
+
+**Fix:** Always pass `includeLocation=true` when updating location after movement:
+```java
+// In Walk.java and WalkTo.java:
+StateUtil.queueUpdateLocation(context, actor, true);  // Always include currentLocation FK
+```
+
+**Key Files:**
+- [Walk.java](AccountManagerObjects7/src/main/java/org/cote/accountmanager/olio/actions/Walk.java) - Line 91
+- [WalkTo.java](AccountManagerObjects7/src/main/java/org/cote/accountmanager/olio/actions/WalkTo.java) - Line 70
+- [StateUtil.java](AccountManagerObjects7/src/main/java/org/cote/accountmanager/olio/StateUtil.java) - `updateLocationImmediate()` method
+
+**Pattern:** When calling `queueUpdateLocation()` after any operation that might change cells, always pass `true` for `includeLocation`.
+
 #### Visibility and Observation
 
 Characters can observe entities within `MAXIMUM_OBSERVATION_DISTANCE` (10 cells ≈ 1km):
