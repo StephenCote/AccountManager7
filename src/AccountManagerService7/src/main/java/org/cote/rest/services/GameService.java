@@ -380,7 +380,8 @@ public class GameService {
 
 	/// Move towards a target position using proper angle-based direction calculation.
 	/// Supports diagonal movement along the slope to the destination.
-	/// JSON body: { "targetCellEast": 5, "targetCellNorth": 5, "targetPosEast": 50, "targetPosNorth": 50, "distance": 10 }
+	/// JSON body: { "targetCellEast": 5, "targetCellNorth": 5, "targetPosEast": 50, "targetPosNorth": 50, "fullMove": true }
+	/// Set fullMove=true to move all the way to destination in a single call (server-side loop)
 	///
 	@RolesAllowed({"user"})
 	@POST
@@ -411,8 +412,10 @@ public class GameService {
 		// Target position within cell (meters from edge, 0-99)
 		int targetPosEast = getIntParam(params, "targetPosEast", 50);
 		int targetPosNorth = getIntParam(params, "targetPosNorth", 50);
-		// Distance to move this step (meters)
-		double distance = getDoubleParam(params, "distance", 1.0);
+		// Full move - move all the way to destination (server-side loop)
+		boolean fullMove = getBoolParam(params, "fullMove", false);
+		// Distance to move per step (meters) - only used if fullMove is false
+		double stepDistance = getDoubleParam(params, "distance", 10.0);
 
 		if(targetCellEast < 0 || targetCellNorth < 0) {
 			return Response.status(400).entity("{\"error\":\"Target cell coordinates required\"}").build();
@@ -430,29 +433,84 @@ public class GameService {
 			return Response.status(200).entity(JSONUtil.exportObject(result)).build();
 		}
 
-		// Cap distance to remaining distance
-		if(distance > remainingDistance) {
-			distance = remainingDistance;
-		}
+		boolean arrived = false;
+		String abortReason = null;
 
 		try {
-			GameUtil.moveTowardsPosition(octx, person, targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, distance);
+			if(fullMove) {
+				// Server-side movement loop - move until arrived
+				double chunkSize = 10.0;  // Move 10m at a time
+				int maxIterations = 10000;  // Safety limit
+				int iterations = 0;
+
+				while(iterations++ < maxIterations) {
+					// Re-fetch person to get updated state/location after cell crossings
+					person = GameUtil.findCharacter(objectId);
+					if(person == null) {
+						abortReason = "Character lost during movement";
+						break;
+					}
+
+					remainingDistance = GameUtil.getDistanceToPosition(person,
+						targetCellEast, targetCellNorth, targetPosEast, targetPosNorth);
+
+					if(remainingDistance <= 1.0) {
+						arrived = true;
+						break;
+					}
+
+					double moveDistance = Math.min(chunkSize, remainingDistance);
+					GameUtil.moveTowardsPosition(octx, person, targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, moveDistance);
+				}
+
+				if(iterations >= maxIterations) {
+					abortReason = "Movement timeout";
+				}
+
+				// Final re-fetch to ensure we return current state
+				person = GameUtil.findCharacter(objectId);
+			} else {
+				// Single step movement (legacy behavior)
+				double moveDistance = Math.min(stepDistance, remainingDistance);
+				GameUtil.moveTowardsPosition(octx, person, targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, moveDistance);
+
+				// Re-fetch to get updated state
+				person = GameUtil.findCharacter(objectId);
+				if(person != null) {
+					remainingDistance = GameUtil.getDistanceToPosition(person,
+						targetCellEast, targetCellNorth, targetPosEast, targetPosNorth);
+					arrived = remainingDistance <= 1.0;
+				}
+			}
 		} catch(OlioException e) {
 			logger.warn("MoveTo action failed: " + e.getMessage());
 			return Response.status(400).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
 		}
 
-		// Return situation with remaining distance
+		// Return situation with remaining distance and status
+		// The situation includes threats - client can check and handle accordingly
+		if(person == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found after movement\"}").build();
+		}
 		try {
 			Map<String, Object> situationMap = GameUtil.getSituation(octx, person);
 			situationMap.put("remainingDistance", GameUtil.getDistanceToPosition(person,
 				targetCellEast, targetCellNorth, targetPosEast, targetPosNorth));
-			situationMap.put("arrived", situationMap.get("remainingDistance") != null &&
-				((Double)situationMap.get("remainingDistance")) <= 1.0);
+			situationMap.put("arrived", arrived);
+			if(abortReason != null) {
+				situationMap.put("abortReason", abortReason);
+			}
 			return Response.status(200).entity(JSONUtil.exportObject(situationMap)).build();
 		} catch(Exception e) {
 			return getSituation(objectId, request);
 		}
+	}
+
+	private boolean getBoolParam(Map<String, Object> params, String key, boolean defaultValue) {
+		Object val = params.get(key);
+		if(val == null) return defaultValue;
+		if(val instanceof Boolean) return (Boolean) val;
+		return Boolean.parseBoolean(val.toString());
 	}
 
 	private int getIntParam(Map<String, Object> params, String key, int defaultValue) {

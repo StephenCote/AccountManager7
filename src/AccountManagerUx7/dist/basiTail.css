@@ -6099,8 +6099,9 @@ button.button-tab-active:hover:is(.dark *) {
   grid-template-columns: repeat(10, 1fr);
   grid-template-rows: repeat(10, 1fr);
   gap: 1px;
-  width: 400px;
-  height: 400px;
+  flex: 1;
+  aspect-ratio: 1;
+  min-width: 0;
   overflow: hidden;
   --tw-bg-opacity: 1;
   background-color: rgb(209 213 219 / var(--tw-bg-opacity, 1));
@@ -6206,9 +6207,9 @@ button.button-tab-active:hover:is(.dark *) {
 .sg-zoomed-wrapper {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  width: 448px;
-  /* 400px grid + 24px edges on each side */
+  align-items: stretch;
+  width: 100%;
+  max-width: 450px;
 }
 
 .sg-edge-row {
@@ -6225,7 +6226,6 @@ button.button-tab-active:hover:is(.dark *) {
 .sg-edge-row-middle {
   display: flex;
   align-items: stretch;
-  height: 400px;
 }
 
 .sg-edge-strip {

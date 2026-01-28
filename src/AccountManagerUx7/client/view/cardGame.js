@@ -858,19 +858,19 @@
                 let cellEast = playerEastCell + (x - center);
                 let cellNorth = playerNorthCell + (y - center);
 
-                // Check if this is an adjacent cell (within 1 cell of player)
-                let isAdjacent = !isCenter && Math.abs(x - center) <= 1 && Math.abs(y - center) <= 1;
+                // Any non-center cell is clickable for movement
+                let isClickable = !isCenter;
 
                 return m("div", {
-                    class: cellClass + (isAdjacent ? " sg-cell-clickable" : ""),
-                    title: isCenter ? "Click to zoom into cell" : (isAdjacent ? "Walk to cell [" + cellEast + ", " + cellNorth + "]" : ""),
+                    class: cellClass + (isClickable ? " sg-cell-clickable" : ""),
+                    title: isCenter ? "Click to zoom into cell" : "Walk to cell [" + cellEast + ", " + cellNorth + "]",
                     onclick: function() {
                         if (isCenter) {
                             // Click on player's cell - switch to zoomed view
                             zoomedView = true;
-                        } else if (isAdjacent) {
-                            // Walk to adjacent cell (use moveTo endpoint)
-                            moveToAdjacentCell(cellEast, cellNorth);
+                        } else {
+                            // Walk to target cell (use moveTo endpoint)
+                            moveToCell(cellEast, cellNorth);
                         }
                         // Entity selection only from threat radar and nearby list, not map
                     }
@@ -1039,7 +1039,7 @@
                 title: adjCell ? "Move to " + title : title,
                 onclick: function() {
                     if (adjCell) {
-                        moveToAdjacentCell(targetCellEast, targetCellNorth);
+                        moveToCell(targetCellEast, targetCellNorth);
                     }
                 }
             }, !adjTerrain ? m("span", {class: "sg-edge-void-icon"}, "\u2205") : null);
@@ -1064,7 +1064,7 @@
                 title: adjCell ? "Move diagonal" : "",
                 onclick: function() {
                     if (adjCell) {
-                        moveToAdjacentCell(targetCellEast, targetCellNorth);
+                        moveToCell(targetCellEast, targetCellNorth);
                     }
                 }
             });
@@ -1190,30 +1190,19 @@
         await executeMoveTo(targetCellEast, targetCellNorth, targetEast, targetNorth, "Moving...");
     }
 
-    // Move to an adjacent cell using the moveTo endpoint
-    async function moveToAdjacentCell(cellEast, cellNorth) {
+    // Move to any cell using the moveTo endpoint
+    async function moveToCell(cellEast, cellNorth) {
         if (!player || isLoading || pendingMove) return;
 
         let playerLoc = situation && situation.location ? situation.location : null;
         if (!playerLoc) return;
 
-        let currentCellEast = playerLoc.eastings || 0;
-        let currentCellNorth = playerLoc.northings || 0;
-
-        // Only allow movement to adjacent cells (delta of -1, 0, or 1)
-        let deltaEast = cellEast - currentCellEast;
-        let deltaNorth = cellNorth - currentCellNorth;
-        if (Math.abs(deltaEast) > 1 || Math.abs(deltaNorth) > 1) {
-            page.toast("warning", "Can only move to adjacent cells");
-            return;
-        }
-
         // Target the center of the destination cell
-        await executeMoveTo(cellEast, cellNorth, 50, 50, "Moving to adjacent cell...");
+        await executeMoveTo(cellEast, cellNorth, 50, 50, "Moving to cell...");
     }
 
     // Execute movement towards a target using the moveTo endpoint
-    // This uses proper angle-based direction calculation on the backend
+    // Server handles the full movement in a single call (fullMove: true)
     async function executeMoveTo(targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, message) {
         if (pendingMove) return;
 
@@ -1228,95 +1217,56 @@
         addEvent(message || "Moving...", "info");
         m.redraw();
 
-        // Calculate initial distance for progress tracking
-        let playerState = player.state || {};
-        let playerLoc = situation && situation.location ? situation.location : {};
-        let currentX = (playerLoc.eastings || 0) * 100 + (playerState.currentEast || 0);
-        let currentY = (playerLoc.northings || 0) * 100 + (playerState.currentNorth || 0);
-        let targetX = targetCellEast * 100 + targetPosEast;
-        let targetY = targetCellNorth * 100 + targetPosNorth;
-        let totalDistance = Math.sqrt(Math.pow(targetX - currentX, 2) + Math.pow(targetY - currentY, 2));
+        try {
+            isLoading = true;
+            let resp = await m.request({
+                method: 'POST',
+                url: g_application_path + "/rest/game/moveTo/" + getCharId(player),
+                headers: { "Content-Type": "application/json" },
+                body: {
+                    targetCellEast: targetCellEast,
+                    targetCellNorth: targetCellNorth,
+                    targetPosEast: targetPosEast,
+                    targetPosNorth: targetPosNorth,
+                    fullMove: true  // Server handles the full movement
+                },
+                withCredentials: true
+            });
 
-        if (totalDistance <= 0) {
-            pendingMove = null;
-            return;
-        }
-
-        // Move in chunks until at destination or aborted
-        let chunkSize = 10;  // Move up to 10m at a time
-
-        while (!pendingMove.aborted) {
-            try {
-                isLoading = true;
-                let resp = await m.request({
-                    method: 'POST',
-                    url: g_application_path + "/rest/game/moveTo/" + getCharId(player),
-                    headers: { "Content-Type": "application/json" },
-                    body: {
-                        targetCellEast: targetCellEast,
-                        targetCellNorth: targetCellNorth,
-                        targetPosEast: targetPosEast,
-                        targetPosNorth: targetPosNorth,
-                        distance: chunkSize
-                    },
-                    withCredentials: true
-                });
-
-                situation = resp;
-                if (player && resp) {
-                    am7client.syncFromResponse(player, resp, am7client.SYNC_MAPPINGS.situation);
-                }
-
-                // Update progress based on remaining distance
-                let remaining = resp.remainingDistance || 0;
-                moveProgress = Math.round(((totalDistance - remaining) / totalDistance) * 100);
-                m.redraw();
-
-                // Check for threats - abort movement if threat detected
-                if (resp.threats && resp.threats.length > 0) {
-                    addEvent("Threat detected! Movement stopped.", "danger");
-                    pendingMove.aborted = true;
-                    break;
-                }
-
-                // Check if arrived
-                if (resp.arrived || remaining <= 1) {
-                    break;
-                }
-
-            } catch (e) {
-                console.error("MoveTo failed", e);
-                // Better error extraction - check response object, then message, then status
-                let errorMsg = "Unknown error";
-                if (e.response && e.response.error) {
-                    errorMsg = e.response.error;
-                } else if (e.message) {
-                    errorMsg = e.message;
-                } else if (e.code) {
-                    errorMsg = "HTTP " + e.code;
-                }
-                addEvent("Movement blocked: " + errorMsg, "warning");
-                pendingMove.aborted = true;
-                break;
-            } finally {
-                isLoading = false;
+            situation = resp;
+            if (player && resp) {
+                am7client.syncFromResponse(player, resp, am7client.SYNC_MAPPINGS.situation);
             }
 
-            // Small delay for UI responsiveness
-            await new Promise(function(resolve) { setTimeout(resolve, 50); });
+            // Check result
+            if (resp.abortReason) {
+                addEvent("Movement stopped: " + resp.abortReason, "warning");
+            } else if (resp.threats && resp.threats.length > 0) {
+                addEvent("Arrived - threats nearby!", "danger");
+            } else if (resp.arrived) {
+                addEvent("Arrived at destination", "success");
+            } else {
+                addEvent("Movement complete", "info");
+            }
+
+        } catch (e) {
+            console.error("MoveTo failed", e);
+            let errorMsg = "Unknown error";
+            if (e.response && e.response.error) {
+                errorMsg = e.response.error;
+            } else if (e.message) {
+                errorMsg = e.message;
+            } else if (e.code) {
+                errorMsg = "HTTP " + e.code;
+            }
+            addEvent("Movement blocked: " + errorMsg, "warning");
+        } finally {
+            isLoading = false;
         }
 
         // Clean up
-        let wasAborted = pendingMove.aborted;
         pendingMove = null;
         moveProgress = 0;
-
-        if (!wasAborted) {
-            addEvent("Arrived at destination", "success");
-        } else {
-            addEvent("Movement aborted", "warning");
-        }
-
         m.redraw();
     }
 

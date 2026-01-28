@@ -1920,8 +1920,9 @@
         grid-template-columns: repeat(10, 1fr);
         grid-template-rows: repeat(10, 1fr);
         gap: 1px;
-        width: 400px;
-        height: 400px;
+        flex: 1;
+        aspect-ratio: 1;
+        min-width: 0;
         @apply bg-gray-300 dark:bg-gray-700 overflow-hidden;
       }
       .sg-zoomed-row {
@@ -1959,8 +1960,9 @@
 
       /* Zoomed view wrapper with adjacent cell edges */
       .sg-zoomed-wrapper {
-        @apply flex flex-col items-center;
-        width: 448px;  /* 400px grid + 24px edges on each side */
+        @apply flex flex-col items-stretch;
+        width: 100%;
+        max-width: 450px;
       }
       .sg-edge-row {
         @apply flex items-stretch;
@@ -1972,7 +1974,6 @@
       }
       .sg-edge-row-middle {
         @apply flex items-stretch;
-        height: 400px;
       }
       .sg-edge-strip {
         @apply flex items-center justify-center text-xs font-medium transition-colors;
@@ -1983,13 +1984,14 @@
       }
       .sg-edge-north,
       .sg-edge-south {
-        width: 400px;
+        flex: 1;
         height: 24px;
+        min-width: 0;
       }
       .sg-edge-west,
       .sg-edge-east {
         width: 24px;
-        height: 400px;
+        flex-shrink: 0;
       }
       .sg-edge-corner {
         @apply flex items-center justify-center text-xs transition-colors;

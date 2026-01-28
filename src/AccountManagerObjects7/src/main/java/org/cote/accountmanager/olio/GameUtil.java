@@ -531,10 +531,13 @@ public class GameUtil {
 		BaseRecord currentLocation = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
 		if (currentLocation == null) return -1;
 
-		int currentCellEast = currentLocation.get(FieldNames.FIELD_EASTINGS);
-		int currentCellNorth = currentLocation.get(FieldNames.FIELD_NORTHINGS);
+		// Get position from state (these are always loaded)
 		int currentPosEast = state.get(FieldNames.FIELD_CURRENT_EAST);
 		int currentPosNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		// Get cell coordinates from location (need to ensure populated)
+		int currentCellEast = currentLocation.get(FieldNames.FIELD_EASTINGS);
+		int currentCellNorth = currentLocation.get(FieldNames.FIELD_NORTHINGS);
 
 		int currentX = currentCellEast * 100 + currentPosEast;
 		int currentY = currentCellNorth * 100 + currentPosNorth;

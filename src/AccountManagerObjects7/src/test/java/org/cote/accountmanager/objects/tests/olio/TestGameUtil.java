@@ -752,4 +752,262 @@ public class TestGameUtil extends BaseTest {
 		logger.info("Total movement: " + (expectedEast - initialEast) + " meters EAST");
 	}
 
+	/**
+	 * Test that getDistanceToPosition correctly calculates distance across cells.
+	 * This verifies that the currentLocation foreign reference fields are properly populated.
+	 */
+	@Test
+	public void TestGetDistanceToPosition() {
+		logger.info("Test GameUtil.getDistanceToPosition");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		BaseRecord person = pop.get(0);
+		String objectId = person.get(FieldNames.FIELD_OBJECT_ID);
+		assumeTrue("ObjectId is null - skipping test", objectId != null);
+
+		BaseRecord fullPerson = GameUtil.findCharacter(objectId);
+		assumeTrue("Person not found - skipping test", fullPerson != null);
+
+		BaseRecord state = fullPerson.get(FieldNames.FIELD_STATE);
+		assumeTrue("State is null - skipping test", state != null);
+
+		BaseRecord currentLoc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		assumeTrue("CurrentLocation is null - skipping test", currentLoc != null);
+
+		int currentCellEast = currentLoc.get(FieldNames.FIELD_EASTINGS);
+		int currentCellNorth = currentLoc.get(FieldNames.FIELD_NORTHINGS);
+		int currentPosEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int currentPosNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		logger.info("Current position: cell[" + currentCellEast + "," + currentCellNorth +
+				"], pos[" + currentPosEast + "," + currentPosNorth + "]");
+
+		// Distance to same position should be 0
+		double distToSelf = GameUtil.getDistanceToPosition(fullPerson,
+				currentCellEast, currentCellNorth, currentPosEast, currentPosNorth);
+		assertEquals("Distance to same position should be 0", 0.0, distToSelf, 0.001);
+
+		// Distance to position 10 meters east should be 10
+		int targetPosEast = (currentPosEast + 10) % 100;
+		int targetCellEast = currentCellEast + (currentPosEast + 10) / 100;
+		double distEast = GameUtil.getDistanceToPosition(fullPerson,
+				targetCellEast, currentCellNorth, targetPosEast, currentPosNorth);
+		assertEquals("Distance 10m east should be 10", 10.0, distEast, 0.001);
+
+		// Distance to position in next cell (100m away) should be ~100
+		double distNextCell = GameUtil.getDistanceToPosition(fullPerson,
+				currentCellEast + 1, currentCellNorth, currentPosEast, currentPosNorth);
+		assertEquals("Distance to next cell should be 100", 100.0, distNextCell, 0.001);
+
+		logger.info("Distance calculations verified correctly");
+	}
+
+	/**
+	 * Test that getDistanceToPosition works correctly after re-fetching character.
+	 * This is the key test for the cell crossing bug fix.
+	 */
+	@Test
+	public void TestGetDistanceAfterRefetch() {
+		logger.info("Test getDistanceToPosition after re-fetching character");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		BaseRecord person = pop.get(0);
+		String objectId = person.get(FieldNames.FIELD_OBJECT_ID);
+		assumeTrue("ObjectId is null - skipping test", objectId != null);
+
+		// First fetch
+		BaseRecord person1 = GameUtil.findCharacter(objectId);
+		assumeTrue("Person not found - skipping test", person1 != null);
+
+		BaseRecord state1 = person1.get(FieldNames.FIELD_STATE);
+		BaseRecord loc1 = state1.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		int cell1East = loc1.get(FieldNames.FIELD_EASTINGS);
+		int cell1North = loc1.get(FieldNames.FIELD_NORTHINGS);
+		int pos1East = state1.get(FieldNames.FIELD_CURRENT_EAST);
+		int pos1North = state1.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		// Calculate absolute position
+		int abs1X = cell1East * 100 + pos1East;
+		int abs1Y = cell1North * 100 + pos1North;
+		logger.info("First fetch: cell[" + cell1East + "," + cell1North + "], pos[" + pos1East + "," + pos1North + "], abs[" + abs1X + "," + abs1Y + "]");
+
+		// Second fetch (simulating what happens in server loop after movement)
+		BaseRecord person2 = GameUtil.findCharacter(objectId);
+		assertNotNull("Re-fetch should not be null", person2);
+
+		BaseRecord state2 = person2.get(FieldNames.FIELD_STATE);
+		BaseRecord loc2 = state2.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		int cell2East = loc2.get(FieldNames.FIELD_EASTINGS);
+		int cell2North = loc2.get(FieldNames.FIELD_NORTHINGS);
+		int pos2East = state2.get(FieldNames.FIELD_CURRENT_EAST);
+		int pos2North = state2.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		// Calculate absolute position
+		int abs2X = cell2East * 100 + pos2East;
+		int abs2Y = cell2North * 100 + pos2North;
+		logger.info("Second fetch: cell[" + cell2East + "," + cell2North + "], pos[" + pos2East + "," + pos2North + "], abs[" + abs2X + "," + abs2Y + "]");
+
+		// Positions should be identical (no movement occurred)
+		assertEquals("Cell east should match between fetches", cell1East, cell2East);
+		assertEquals("Cell north should match between fetches", cell1North, cell2North);
+		assertEquals("Pos east should match between fetches", pos1East, pos2East);
+		assertEquals("Pos north should match between fetches", pos1North, pos2North);
+		assertEquals("Absolute X should match between fetches", abs1X, abs2X);
+		assertEquals("Absolute Y should match between fetches", abs1Y, abs2Y);
+
+		// Calculate distance using re-fetched person - this was the bug!
+		// If currentLocation fields aren't populated, cell values would be 0
+		double dist = GameUtil.getDistanceToPosition(person2,
+				cell2East + 1, cell2North, pos2East, pos2North);
+
+		// Distance to next cell should be exactly 100m
+		assertEquals("Distance to next cell should be 100m (not 0 or wrong value from unpopulated fields)",
+				100.0, dist, 0.001);
+
+		logger.info("Distance calculation after re-fetch verified: " + dist);
+	}
+
+	/**
+	 * Test moveTowardsPosition with distance calculation consistency.
+	 * This validates that distance calculations remain accurate across re-fetches
+	 * and after any movement that may occur.
+	 */
+	@Test
+	public void TestMoveTowardsPositionAcrossCells() {
+		logger.info("Test moveTowardsPosition with distance calculation consistency");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		BaseRecord person = pop.get(0);
+		String objectId = person.get(FieldNames.FIELD_OBJECT_ID);
+		assumeTrue("ObjectId is null - skipping test", objectId != null);
+
+		BaseRecord fullPerson = GameUtil.findCharacter(objectId);
+		assumeTrue("Person not found - skipping test", fullPerson != null);
+
+		BaseRecord state = fullPerson.get(FieldNames.FIELD_STATE);
+		BaseRecord currentLoc = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+
+		int startCellEast = currentLoc.get(FieldNames.FIELD_EASTINGS);
+		int startCellNorth = currentLoc.get(FieldNames.FIELD_NORTHINGS);
+		int startPosEast = state.get(FieldNames.FIELD_CURRENT_EAST);
+		int startPosNorth = state.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		int startAbsX = startCellEast * 100 + startPosEast;
+		int startAbsY = startCellNorth * 100 + startPosNorth;
+
+		logger.info("Start: cell[" + startCellEast + "," + startCellNorth +
+				"], pos[" + startPosEast + "," + startPosNorth + "], abs[" + startAbsX + "," + startAbsY + "]");
+
+		// Target: center of cell 2 cells east
+		int targetCellEast = startCellEast + 2;
+		int targetCellNorth = startCellNorth;
+		int targetPosEast = 50;
+		int targetPosNorth = startPosNorth;
+
+		int targetAbsX = targetCellEast * 100 + targetPosEast;
+		int targetAbsY = targetCellNorth * 100 + targetPosNorth;
+		double expectedInitialDist = Math.sqrt(Math.pow(targetAbsX - startAbsX, 2) + Math.pow(targetAbsY - startAbsY, 2));
+
+		logger.info("Target: cell[" + targetCellEast + "," + targetCellNorth +
+				"], pos[" + targetPosEast + "," + targetPosNorth + "], abs[" + targetAbsX + "," + targetAbsY +
+				"], expectedDist=" + expectedInitialDist);
+
+		// Verify initial distance calculation is correct
+		double calculatedDist = GameUtil.getDistanceToPosition(fullPerson,
+				targetCellEast, targetCellNorth, targetPosEast, targetPosNorth);
+		assertEquals("Initial distance calculation should match expected",
+				expectedInitialDist, calculatedDist, 1.0);
+
+		// Try to move - may be blocked by terrain, that's OK
+		int successfulMoves = 0;
+		int maxAttempts = 10;
+		double prevDistance = calculatedDist;
+
+		for (int i = 0; i < maxAttempts; i++) {
+			// Re-fetch person (simulating server loop)
+			BaseRecord freshPerson = GameUtil.findCharacter(objectId);
+			assertNotNull("Failed to re-fetch person on attempt " + i, freshPerson);
+
+			double remainingDist = GameUtil.getDistanceToPosition(freshPerson,
+					targetCellEast, targetCellNorth, targetPosEast, targetPosNorth);
+
+			// Key test: distance should be consistent or decreasing (not random/increasing wildly)
+			// Allow small increase due to diagonal movement rounding
+			assertTrue("Distance should not increase significantly (was " + prevDistance + ", now " + remainingDist + ")",
+					remainingDist <= prevDistance + 5.0);
+
+			if (remainingDist <= 1.0) {
+				logger.info("Arrived at target after " + (i + 1) + " attempts, remaining=" + remainingDist);
+				break;
+			}
+
+			logger.info("Attempt " + (i + 1) + ": remaining distance = " + remainingDist);
+
+			try {
+				boolean moved = GameUtil.moveTowardsPosition(octx, freshPerson,
+						targetCellEast, targetCellNorth, targetPosEast, targetPosNorth, 10.0);
+
+				if (moved) {
+					successfulMoves++;
+					prevDistance = remainingDist;  // Update only on successful move
+				} else {
+					logger.info("Move blocked on attempt " + (i + 1) + " - terrain/policy restriction");
+					break;  // Stop if blocked
+				}
+			} catch (OlioException e) {
+				logger.info("Move exception on attempt " + (i + 1) + ": " + e.getMessage());
+				break;
+			}
+		}
+
+		logger.info("Completed with " + successfulMoves + " successful moves");
+
+		// Final verification: distance calculation should still work correctly
+		BaseRecord finalPerson = GameUtil.findCharacter(objectId);
+		BaseRecord finalState = finalPerson.get(FieldNames.FIELD_STATE);
+		BaseRecord finalLoc = finalState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+
+		int endCellEast = finalLoc.get(FieldNames.FIELD_EASTINGS);
+		int endCellNorth = finalLoc.get(FieldNames.FIELD_NORTHINGS);
+		int endPosEast = finalState.get(FieldNames.FIELD_CURRENT_EAST);
+		int endPosNorth = finalState.get(FieldNames.FIELD_CURRENT_NORTH);
+
+		int endAbsX = endCellEast * 100 + endPosEast;
+		int endAbsY = endCellNorth * 100 + endPosNorth;
+
+		logger.info("End: cell[" + endCellEast + "," + endCellNorth +
+				"], pos[" + endPosEast + "," + endPosNorth + "], abs[" + endAbsX + "," + endAbsY + "]");
+
+		// Verify final distance calculation matches expected based on actual position
+		double actualFinalDist = Math.sqrt(Math.pow(targetAbsX - endAbsX, 2) + Math.pow(targetAbsY - endAbsY, 2));
+		double calculatedFinalDist = GameUtil.getDistanceToPosition(finalPerson,
+				targetCellEast, targetCellNorth, targetPosEast, targetPosNorth);
+
+		assertEquals("Final distance calculation should match actual distance",
+				actualFinalDist, calculatedFinalDist, 1.0);
+
+		logger.info("Distance calculation consistency verified successfully");
+	}
+
 }
