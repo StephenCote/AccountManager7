@@ -6097,10 +6097,10 @@ button.button-tab-active:hover:is(.dark *) {
 .sg-zoomed-container {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
+  grid-template-rows: repeat(10, 1fr);
   gap: 1px;
-  width: min(450px, calc(100% - 48px));
-  height: min(450px, calc(100% - 48px));
-  aspect-ratio: 1;
+  width: 400px;
+  height: 400px;
   overflow: hidden;
   --tw-bg-opacity: 1;
   background-color: rgb(209 213 219 / var(--tw-bg-opacity, 1));
@@ -6131,7 +6131,8 @@ button.button-tab-active:hover:is(.dark *) {
 }
 
 .sg-zoomed-cell {
-  aspect-ratio: 1;
+  min-width: 0;
+  min-height: 0;
   position: relative;
 }
 
@@ -6204,16 +6205,16 @@ button.button-tab-active:hover:is(.dark *) {
 
 .sg-zoomed-wrapper {
   display: flex;
-  width: 100%;
   flex-direction: column;
   align-items: center;
-  max-width: min(100%, 540px);
+  width: 448px;
+  /* 400px grid + 24px edges on each side */
 }
 
 .sg-edge-row {
   display: flex;
-  width: 100%;
   align-items: stretch;
+  width: 100%;
 }
 
 .sg-edge-row-top,
@@ -6224,7 +6225,7 @@ button.button-tab-active:hover:is(.dark *) {
 .sg-edge-row-middle {
   display: flex;
   align-items: stretch;
-  min-height: 400px;
+  height: 400px;
 }
 
 .sg-edge-strip {

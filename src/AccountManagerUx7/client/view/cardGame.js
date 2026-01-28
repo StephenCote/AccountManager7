@@ -1272,6 +1272,13 @@
                 moveProgress = Math.round(((totalDistance - remaining) / totalDistance) * 100);
                 m.redraw();
 
+                // Check for threats - abort movement if threat detected
+                if (resp.threats && resp.threats.length > 0) {
+                    addEvent("Threat detected! Movement stopped.", "danger");
+                    pendingMove.aborted = true;
+                    break;
+                }
+
                 // Check if arrived
                 if (resp.arrived || remaining <= 1) {
                     break;
