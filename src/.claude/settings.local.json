@@ -8,7 +8,8 @@
       "Bash(node -c:*)",
       "Bash(mvn test-compile:*)",
       "Bash(mvn:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

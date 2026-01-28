@@ -1622,7 +1622,7 @@
     }
 
     async function memberCloud(modelType, containerId){
-        let stats = await am7client.membershipStats(modelType, "any", containerId, 0);
+        let stats = await am7client.membershipStats(modelType, "any", containerId, 200);
         if(!stats || !stats.length){
             page.toast("info", "No membership data found");
             return;

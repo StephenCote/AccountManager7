@@ -6098,7 +6098,8 @@ button.button-tab-active:hover:is(.dark *) {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
   gap: 1px;
-  flex: 1;
+  width: min(450px, calc(100% - 48px));
+  height: min(450px, calc(100% - 48px));
   aspect-ratio: 1;
   overflow: hidden;
   --tw-bg-opacity: 1;
@@ -6212,15 +6213,18 @@ button.button-tab-active:hover:is(.dark *) {
 .sg-edge-row {
   display: flex;
   width: 100%;
+  align-items: stretch;
 }
 
 .sg-edge-row-top,
       .sg-edge-row-bottom {
-  height: 20px;
+  height: 24px;
 }
 
 .sg-edge-row-middle {
-  flex: 1 1 0%;
+  display: flex;
+  align-items: stretch;
+  min-height: 400px;
 }
 
 .sg-edge-strip {
@@ -6235,6 +6239,8 @@ button.button-tab-active:hover:is(.dark *) {
   transition-duration: 150ms;
   background-color: var(--terrain-bg, #9ca3af);
   color: var(--terrain-fg, #374151);
+  background-size: cover;
+  background-position: center;
 }
 
 .sg-edge-corner {
@@ -6246,9 +6252,12 @@ button.button-tab-active:hover:is(.dark *) {
   transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   background-color: var(--terrain-bg, #9ca3af);
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
 }
 
 .sg-edge-clickable {

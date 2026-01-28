@@ -863,20 +863,16 @@
 
                 return m("div", {
                     class: cellClass + (isAdjacent ? " sg-cell-clickable" : ""),
-                    title: isAdjacent && !isCenter ? "Move to cell [" + cellEast + ", " + cellNorth + "]" : "",
+                    title: isCenter ? "Click to zoom into cell" : (isAdjacent ? "Walk to cell [" + cellEast + ", " + cellNorth + "]" : ""),
                     onclick: function() {
                         if (isCenter) {
                             // Click on player's cell - switch to zoomed view
                             zoomedView = true;
-                        } else if (cell.occupants && cell.occupants.length) {
-                            // Select entity for interaction
-                            selectEntity(cell.occupants[0], hasThreat ? 'threat' : 'person');
-                        } else if (hasPOI) {
-                            selectEntity(cell.pois[0], 'poi');
                         } else if (isAdjacent) {
-                            // Move to adjacent empty cell
+                            // Walk to adjacent cell (use moveTo endpoint)
                             moveToAdjacentCell(cellEast, cellNorth);
                         }
+                        // Entity selection only from threat radar and nearby list, not map
                     }
                 }, cellContent);
             }));
@@ -897,6 +893,7 @@
     function renderZoomedLegend() {
         return m("div", {class: "sg-grid-legend"}, [
             m("span", "\u2B50 You"),
+            m("span", {class: "sg-color-red"}, "\u{1F43A} Threat"),
             m("span", {class: "sg-color-yellow"}, "\u{1F464} Person"),
             m("span", {class: "sg-color-blue"}, "\u{1F3E0} POI"),
             m("span", {class: "sg-color-gray", style: "font-size: 0.8em; opacity: 0.7;"}, "Click to move (10m blocks)")
@@ -913,6 +910,7 @@
 
         // Get entities in the same cell
         let nearbyPeople = situation && situation.nearbyPeople ? situation.nearbyPeople : [];
+        let threats = situation && situation.threats ? situation.threats : [];
         let pois = playerLoc && playerLoc.features ? playerLoc.features : [];
 
         // Filter to only entities in the same cell as the player
@@ -937,6 +935,13 @@
 
         let sameCellPeople = nearbyPeople.filter(function(p) {
             let loc = p.currentLocation || (p.state && p.state.currentLocation);
+            if (!loc) return false;
+            return loc.eastings === playerCellEast && loc.northings === playerCellNorth;
+        });
+
+        // Filter threats (animals) in the same cell
+        let sameCellThreats = threats.filter(function(t) {
+            let loc = t.currentLocation || (t.state && t.state.currentLocation);
             if (!loc) return false;
             return loc.eastings === playerCellEast && loc.northings === playerCellNorth;
         });
@@ -977,6 +982,25 @@
                 record: person,
                 posEast: pEast,
                 posNorth: pNorth
+            });
+        }
+
+        // Place same-cell threats (animals) in grid
+        for (let threat of sameCellThreats) {
+            let tState = threat.state || {};
+            let tEast = tState.currentEast || 0;
+            let tNorth = tState.currentNorth || 0;
+            let gx = Math.min(Math.floor(tEast / 10), ZOOM_SIZE - 1);
+            let gy = Math.min(Math.floor(tNorth / 10), ZOOM_SIZE - 1);
+            grid[gy][gx].occupants.push({
+                type: 'threat',
+                name: threat.name,
+                objectId: threat.objectId || threat.id,
+                record: threat,
+                posEast: tEast,
+                posNorth: tNorth,
+                threatType: threat.threatType || 'animal',
+                icon: threat.icon || "\u{1F43A}"
             });
         }
 

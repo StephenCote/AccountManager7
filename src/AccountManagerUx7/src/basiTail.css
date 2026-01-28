@@ -1919,7 +1919,8 @@
         display: grid;
         grid-template-columns: repeat(10, 1fr);
         gap: 1px;
-        flex: 1;
+        width: min(450px, calc(100% - 48px));
+        height: min(450px, calc(100% - 48px));
         aspect-ratio: 1;
         @apply bg-gray-300 dark:bg-gray-700 overflow-hidden;
       }
@@ -1961,35 +1962,41 @@
         max-width: min(100%, 540px);
       }
       .sg-edge-row {
-        @apply flex w-full;
+        @apply flex w-full items-stretch;
       }
       .sg-edge-row-top,
       .sg-edge-row-bottom {
-        height: 20px;
+        height: 24px;
       }
       .sg-edge-row-middle {
-        @apply flex-1;
+        @apply flex items-stretch;
+        min-height: 400px;
       }
       .sg-edge-strip {
         @apply flex items-center justify-center text-xs font-medium transition-colors;
         background-color: var(--terrain-bg, #9ca3af);
         color: var(--terrain-fg, #374151);
+        background-size: cover;
+        background-position: center;
       }
       .sg-edge-north,
       .sg-edge-south {
         @apply flex-1;
-        height: 20px;
+        height: 24px;
       }
       .sg-edge-west,
       .sg-edge-east {
-        width: 20px;
-        @apply flex-col;
+        width: 24px;
+        min-height: 100%;
       }
       .sg-edge-corner {
         @apply flex items-center justify-center text-xs transition-colors;
-        width: 20px;
-        height: 20px;
+        width: 24px;
+        height: 24px;
         background-color: var(--terrain-bg, #9ca3af);
+        background-size: cover;
+        background-position: center;
+        flex-shrink: 0;
       }
       .sg-edge-clickable {
         @apply cursor-pointer;
