@@ -1791,14 +1791,26 @@ public class GameUtil {
 				return pending;
 			}
 
+			long playerId = player.get(FieldNames.FIELD_ID);
+
+			// Query pending COMMUNICATE interactions, then filter by interactor
 			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_INTERACTION);
 			q.field(FieldNames.FIELD_GROUP_ID, interGroup.get(FieldNames.FIELD_ID));
-			q.field("interactor.id", player.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_TYPE, InteractionEnumType.COMMUNICATE);
 			q.field("state", ActionResultEnumType.PENDING);
 			q.planMost(true);
 
-			pending = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q));
+			BaseRecord[] results = IOSystem.getActiveContext().getSearch().findRecords(q);
+			// Filter by interactor matching player
+			for (BaseRecord rec : results) {
+				BaseRecord interactor = rec.get("interactor");
+				if (interactor != null) {
+					long interactorId = interactor.get(FieldNames.FIELD_ID);
+					if (interactorId == playerId) {
+						pending.add(rec);
+					}
+				}
+			}
 		} catch (Exception e) {
 			logger.error("Failed to get pending chat requests: " + e.getMessage());
 		}

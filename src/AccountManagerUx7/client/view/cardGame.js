@@ -1450,7 +1450,7 @@
             // Cap at 95% until server responds
             moveProgress = Math.min(95, (elapsed / totalMs) * 100);
             m.redraw();
-        }, 100);
+        }, 250); // 250ms for smoother performance with less server load
     }
 
     // Stop progress bar animation
@@ -2121,23 +2121,26 @@
                         ]);
                     })),
                     m("div", {class: "sg-chat-input"}, [
-                        m("input", {
-                            type: "text",
-                            placeholder: "Type a message...",
-                            disabled: chatPending,
-                            onkeydown: function(e) {
-                                if (e.key === "Enter" && e.target.value.trim()) {
-                                    sendChatMessage(e.target.value);
-                                    e.target.value = "";
+                        chatPending ?
+                            m("div", {class: "sg-chat-pending-bar"},
+                                m("div", {class: "sg-chat-pending-progress"})
+                            ) :
+                            m("input", {
+                                type: "text",
+                                placeholder: "Type a message...",
+                                onkeydown: function(e) {
+                                    if (e.key === "Enter" && e.target.value.trim()) {
+                                        sendChatMessage(e.target.value);
+                                        e.target.value = "";
+                                    }
                                 }
-                            }
-                        }),
+                            }),
                         m("button", {
                             class: "sg-btn sg-btn-primary",
                             disabled: chatPending,
                             onclick: function(e) {
                                 let input = e.target.parentElement.querySelector("input");
-                                if (input.value.trim()) {
+                                if (input && input.value.trim()) {
                                     sendChatMessage(input.value);
                                     input.value = "";
                                 }

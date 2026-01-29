@@ -2305,6 +2305,18 @@
       .sg-chat-input input {
         @apply flex-1 px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200;
       }
+      .sg-chat-pending-bar {
+        @apply flex-1 h-10 bg-gray-200 dark:bg-gray-700 rounded relative overflow-hidden;
+      }
+      .sg-chat-pending-progress {
+        @apply absolute top-0 left-0 h-full w-full rounded;
+        background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.7), transparent);
+        animation: sg-pending-slide 1.5s ease-in-out infinite;
+      }
+      @keyframes sg-pending-slide {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+      }
       .sg-chat-actions {
         @apply flex justify-end p-3 border-t border-gray-200 dark:border-gray-700;
       }
