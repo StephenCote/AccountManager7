@@ -788,7 +788,7 @@
             // Create unique chat config name for this character pair
             let actorFirst = player.firstName || player.name.split(" ")[0];
             let targetFirst = target.firstName || target.name.split(" ")[0];
-            let chatConfigName = "CardGame: " + actorFirst + " x " + targetFirst;
+            let chatConfigName = "CardGame - " + actorFirst + " x " + targetFirst;
 
             // Search for existing chatConfig by name
             let chatCfg;
@@ -870,22 +870,48 @@
                 }
 
                 if (promptCfg) {
-                    // Create ChatRequest for streaming
-                    let chatReqName = "CardGame: " + (player.firstName || player.name) + " x " + (target.firstName || target.name);
-                    let chatReqBody = {
-                        schema: "olio.llm.chatRequest",
-                        name: chatReqName,
-                        chatConfig: { objectId: chatCfg.objectId },
-                        promptConfig: { objectId: promptCfg.objectId },
-                        uid: page.uid()
-                    };
+                    // Find or create ChatRequest for streaming
+                    let chatReqName = "CardGame - " + actorFirst + " x " + targetFirst;
 
-                    let chatRequest = await m.request({
-                        method: 'POST',
-                        url: g_application_path + "/rest/chat/new",
-                        withCredentials: true,
-                        body: chatReqBody
-                    });
+                    // First, search for existing ChatRequest with this name
+                    let chatReqDir = await page.findObject("auth.group", "DATA", "~/ChatRequests");
+                    let existingChatRequest = null;
+
+                    if (chatReqDir) {
+                        let crq = am7view.viewQuery("olio.llm.chatRequest");
+                        crq.field("groupId", chatReqDir.id);
+                        crq.field("name", chatReqName);
+                        crq.cache(false);
+                        let crqr = await page.search(crq);
+                        if (crqr && crqr.results && crqr.results.length > 0) {
+                            existingChatRequest = crqr.results[0];
+                            console.log("Found existing ChatRequest:", existingChatRequest.objectId);
+                        }
+                    }
+
+                    let chatRequest = existingChatRequest;
+
+                    // Create new ChatRequest if none exists
+                    if (!chatRequest) {
+                        let chatReqBody = {
+                            schema: "olio.llm.chatRequest",
+                            name: chatReqName,
+                            chatConfig: { objectId: chatCfg.objectId },
+                            promptConfig: { objectId: promptCfg.objectId },
+                            uid: page.uid()
+                        };
+
+                        try {
+                            chatRequest = await m.request({
+                                method: 'POST',
+                                url: g_application_path + "/rest/chat/new",
+                                withCredentials: true,
+                                body: chatReqBody
+                            });
+                        } catch (createErr) {
+                            console.warn("Failed to create ChatRequest:", createErr.message);
+                        }
+                    }
 
                     if (chatRequest && chatRequest.objectId) {
                         chatSession.chatRequestId = chatRequest.objectId;
@@ -894,7 +920,7 @@
                         chatSession.streamEnabled = chatCfg.stream !== false;
                         console.log("CardGame chat streaming enabled, ChatRequest:", chatRequest.objectId);
                     } else {
-                        console.warn("Failed to create ChatRequest for streaming, falling back to REST");
+                        console.warn("No ChatRequest available for streaming, falling back to REST");
                     }
                 }
             }
@@ -971,21 +997,46 @@
     async function endChat() {
         if (!chatSession) return;
 
-        // Create interaction event from chat
+        // Conclude chat and create interaction record via LLM evaluation
         try {
-            await m.request({
-                method: 'POST',
-                url: g_application_path + "/rest/game/endChat",
-                body: {
-                    actorId: chatSession.actor.objectId,
-                    targetId: chatSession.target.objectId,
-                    messageCount: chatMessages.length
-                },
-                withCredentials: true
-            });
-            addEvent("Conversation ended with " + chatSession.target.name, "info");
+            // Convert chatMessages to the format expected by the server
+            let messages = chatMessages.filter(m => m.role !== 'system').map(m => ({
+                role: m.role,
+                content: m.content
+            }));
+
+            if (messages.length > 0) {
+                let result = await m.request({
+                    method: 'POST',
+                    url: g_application_path + "/rest/game/concludeChat",
+                    body: {
+                        actorId: chatSession.actor.objectId,
+                        targetId: chatSession.target.objectId,
+                        chatConfigId: chatSession.chatConfigId,
+                        messages: messages
+                    },
+                    withCredentials: true
+                });
+
+                // Log the evaluation results
+                if (result && result.evaluation) {
+                    let evaluation = result.evaluation;
+                    let outcomeMsg = "Conversation with " + chatSession.target.name + ": " +
+                        (evaluation.outcome || "unknown") + " outcome";
+                    if (evaluation.summary) {
+                        outcomeMsg += " - " + evaluation.summary;
+                    }
+                    addEvent(outcomeMsg, evaluation.outcome === "POSITIVE" ? "success" :
+                        evaluation.outcome === "NEGATIVE" ? "warning" : "info");
+                    console.log("Chat evaluation:", result.evaluation);
+                } else {
+                    addEvent("Conversation ended with " + chatSession.target.name, "info");
+                }
+            } else {
+                addEvent("Conversation ended with " + chatSession.target.name, "info");
+            }
         } catch (e) {
-            console.log("End chat endpoint not available");
+            console.log("Conclude chat failed:", e.message);
         }
 
         // Clean up streaming state if active
@@ -1014,12 +1065,13 @@
                 withCredentials: true
             });
 
-            if (resp && resp.pending) {
+            if (resp && Array.isArray(resp.pending)) {
                 pendingNpcChats = resp.pending;
                 m.redraw();
             }
         } catch (e) {
-            // Silently ignore polling errors
+            // Silently ignore polling errors - endpoint may not exist
+            console.debug("NPC chat polling error (may be expected):", e.message);
         }
     }
 
@@ -2544,11 +2596,11 @@
     // NPC Chat Request Notifications
     let NpcChatNotifications = {
         view: function() {
-            if (pendingNpcChats.length === 0) return null;
+            if (!pendingNpcChats || !Array.isArray(pendingNpcChats) || pendingNpcChats.length === 0) return null;
 
             return m("div", {class: "sg-npc-chat-notifications"},
-                pendingNpcChats.map(function(npcChat) {
-                    return m("div", {class: "sg-npc-chat-notification", key: npcChat.interactionId}, [
+                pendingNpcChats.filter(function(npcChat) { return npcChat != null; }).map(function(npcChat) {
+                    return m("div", {class: "sg-npc-chat-notification", key: npcChat.interactionId || Math.random()}, [
                         m("div", {class: "sg-npc-chat-icon"},
                             m("span", {class: "material-symbols-outlined"}, "chat_bubble")
                         ),
