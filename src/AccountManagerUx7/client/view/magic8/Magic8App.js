@@ -285,19 +285,24 @@
 
         // Biometric capture loop
         _startBiometricCapture() {
-            const interval = this.sessionConfig?.biometrics?.updateInterval || 500;
+            if (!page.components.camera) {
+                console.warn('Magic8App: page.components.camera not available');
+                return;
+            }
 
-            // Initialize camera if needed
-            if (page.components.camera) {
-                if (!page.components.camera.devices().length) {
-                    page.components.camera.initializeAndFindDevices((imageData) => {
-                        this._handleBiometricData(imageData);
-                    });
-                } else {
-                    page.components.camera.startCapture((imageData) => {
-                        this._handleBiometricData(imageData);
-                    });
-                }
+            const captureCallback = (imageData) => {
+                this._handleBiometricData(imageData);
+            };
+
+            const devices = page.components.camera.devices();
+            console.log('Magic8App: Camera devices found:', devices.length);
+
+            if (!devices.length) {
+                console.log('Magic8App: Initializing camera and finding devices...');
+                page.components.camera.initializeAndFindDevices(captureCallback);
+            } else {
+                console.log('Magic8App: Starting capture on existing device');
+                page.components.camera.startCapture(captureCallback);
             }
         },
 

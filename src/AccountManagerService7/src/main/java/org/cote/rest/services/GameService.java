@@ -17,9 +17,13 @@ import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 
@@ -1018,6 +1022,65 @@ public class GameService {
 			return Response.status(500).entity("{\"error\":\"Failed to evaluate chat\"}").build();
 		}
 
+		return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/interactions")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getInteractions(String json, @Context HttpServletRequest request) {
+		@SuppressWarnings("unchecked")
+		Map<String, Object> params = JSONUtil.importObject(json, Map.class);
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String actorId = (String) params.get("actorId");
+		String targetId = (String) params.get("targetId");
+		if(actorId == null || targetId == null) {
+			return Response.status(400).entity("{\"error\":\"actorId and targetId required\"}").build();
+		}
+
+		BaseRecord actor = GameUtil.findCharacter(actorId);
+		BaseRecord target = GameUtil.findCharacter(targetId);
+		if(actor == null || target == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+		}
+
+		List<Map<String, String>> results = new ArrayList<>();
+		try {
+			String actorName = actor.get(FieldNames.FIELD_FIRST_NAME);
+			String targetName = target.get(FieldNames.FIELD_FIRST_NAME);
+
+			// Query both directions
+			for (int dir = 0; dir < 2; dir++) {
+				Query q = QueryUtil.createQuery(OlioModelNames.MODEL_INTERACTION);
+				q.field("actor", dir == 0 ? actor : target);
+				q.field("interactor", dir == 0 ? target : actor);
+				q.setRequestRange(0, 10);
+				QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
+				if (qr != null) {
+					for (BaseRecord inter : qr.getResults()) {
+						Map<String, String> entry = new HashMap<>();
+						entry.put("type", String.valueOf(inter.get(FieldNames.FIELD_TYPE)));
+						entry.put("description", inter.get(FieldNames.FIELD_DESCRIPTION));
+						entry.put("state", String.valueOf(inter.get(FieldNames.FIELD_STATE)));
+						entry.put("actorOutcome", String.valueOf(inter.get("actorOutcome")));
+						entry.put("interactorOutcome", String.valueOf(inter.get("interactorOutcome")));
+						entry.put("actorName", dir == 0 ? actorName : targetName);
+						entry.put("interactorName", dir == 0 ? targetName : actorName);
+						results.add(entry);
+					}
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to query interactions: {}", e.getMessage());
+		}
+
+		Map<String, Object> result = new HashMap<>();
+		result.put("interactions", results);
 		return Response.status(200).entity(JSONUtil.exportObject(result)).build();
 	}
 

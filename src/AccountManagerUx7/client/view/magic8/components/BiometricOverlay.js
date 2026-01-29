@@ -2,6 +2,7 @@
  * BiometricOverlay - Animated floating labels showing face analysis data & color palette
  * Labels spawn at random positions with various animation effects:
  *   drift (slow movement), pulse (fade in/out), scale (grow/shrink), float (gentle bob)
+ * Uses requestAnimationFrame for smooth continuous animation.
  * Mithril.js component
  */
 const BiometricOverlay = {
@@ -9,10 +10,43 @@ const BiometricOverlay = {
         this.labels = [];
         this.nextId = 0;
         this.lastDataHash = '';
+        this._rafId = null;
+    },
+
+    oncreate(vnode) {
+        this._startAnimLoop();
     },
 
     onremove() {
+        this._stopAnimLoop();
         this.labels = [];
+    },
+
+    _startAnimLoop() {
+        const tick = () => {
+            this._rafId = requestAnimationFrame(tick);
+
+            // Prune expired labels
+            const now = Date.now();
+            const before = this.labels.length;
+            this.labels = this.labels.filter(l => {
+                const age = (now - l.born) / 1000;
+                return age < l.duration;
+            });
+
+            // Only redraw if there are active labels
+            if (this.labels.length > 0 || before > 0) {
+                m.redraw();
+            }
+        };
+        this._rafId = requestAnimationFrame(tick);
+    },
+
+    _stopAnimLoop() {
+        if (this._rafId) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
     },
 
     onupdate(vnode) {
@@ -25,6 +59,8 @@ const BiometricOverlay = {
             (biometricData.dominant_gender || '');
         if (hash === this.lastDataHash) return;
         this.lastDataHash = hash;
+
+        console.log('BiometricOverlay: New data -', hash);
 
         // Build label entries from biometric data
         const entries = this._extractEntries(biometricData, theme);
@@ -39,23 +75,22 @@ const BiometricOverlay = {
                 text: entry.text,
                 color: entry.color || null,
                 swatch: entry.swatch || null,
-                x: 5 + Math.random() * 85,       // 5-90% from left
-                y: 10 + Math.random() * 75,       // 10-85% from top
+                x: 5 + Math.random() * 85,
+                y: 10 + Math.random() * 75,
                 anim: animTypes[Math.floor(Math.random() * animTypes.length)],
-                size: 0.7 + Math.random() * 0.6,  // 0.7x - 1.3x
-                delay: Math.random() * 2,          // 0-2s stagger
-                duration: 6 + Math.random() * 8,   // 6-14s lifetime
-                driftX: (Math.random() - 0.5) * 40, // -20 to +20 vw drift
-                driftY: (Math.random() - 0.5) * 30, // -15 to +15 vh drift
+                size: 0.7 + Math.random() * 0.6,
+                delay: Math.random() * 2,
+                duration: 6 + Math.random() * 8,
+                driftX: (Math.random() - 0.5) * 40,
+                driftY: (Math.random() - 0.5) * 30,
                 born: now
             });
         }
 
-        // Prune old labels (keep max ~30)
-        const maxAge = 20000;
-        this.labels = this.labels
-            .filter(l => now - l.born < maxAge)
-            .slice(-30);
+        // Keep max ~30 labels
+        if (this.labels.length > 30) {
+            this.labels = this.labels.slice(-30);
+        }
     },
 
     /**
@@ -118,7 +153,7 @@ const BiometricOverlay = {
         return m('.biometric-overlay.absolute.inset-0.pointer-events-none.overflow-hidden', {
             style: { zIndex: 15 }
         }, this.labels.map(label => {
-            const age = (Date.now() - label.born) / 1000; // seconds alive
+            const age = (Date.now() - label.born) / 1000;
             // Fade in first 1s, hold, fade out in last 3s
             const fadeIn = Math.min(1, age / 1);
             const remaining = label.duration - age;
@@ -136,8 +171,7 @@ const BiometricOverlay = {
                 fontFamily: "'Courier New', monospace",
                 letterSpacing: '0.08em',
                 whiteSpace: 'nowrap',
-                willChange: 'transform, opacity',
-                transition: 'opacity 0.5s ease'
+                willChange: 'transform, opacity'
             };
 
             // Apply animation style

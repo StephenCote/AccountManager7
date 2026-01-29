@@ -149,50 +149,54 @@
     let capturing = false;
     async function captureAndSend(fCaptureHandler) {
         let videoEl = videoElement();
-        console.log("Capture and send triggered.");
         if (!videoEl || videoEl.paused || videoEl.ended) {
             return;
         }
         if(capturing){
-            console.log("Capture already in progress, skipping this interval.");
             return;
         }
         capturing = true;
-                
-        const canvas = document.createElement('canvas');
-        canvas.width = videoEl.videoWidth;
-        canvas.height = videoEl.videoHeight;
-        const context = canvas.getContext('2d');
-        context.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
 
-        const imageData = canvas.toDataURL('image/jpeg', 0.9); // 0.9 is quality
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoEl.videoWidth;
+            canvas.height = videoEl.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
 
-        let resp = await m.request({
-            method: 'POST',
-            url: API_ENDPOINT,
-            withCredentials: true,
-            headers: { 'Content-Type': 'application/json' },
-            body: { image_data: imageData }
-        });
-        if(fCaptureHandler && typeof fCaptureHandler === 'function') {
-            fCaptureHandler(resp);
+            const imageData = canvas.toDataURL('image/jpeg', 0.9);
+
+            let resp = await m.request({
+                method: 'POST',
+                url: API_ENDPOINT,
+                withCredentials: true,
+                headers: { 'Content-Type': 'application/json' },
+                body: { image_data: imageData }
+            });
+            if(fCaptureHandler && typeof fCaptureHandler === 'function') {
+                fCaptureHandler(resp);
+            }
+        } catch(err) {
+            console.error("Face analysis request failed:", err);
+        } finally {
+            capturing = false;
         }
-        // console.log("Capture and send complete:", resp);
-        capturing = false;
-        return resp;
     }
     let camera = {
         devices: ()=> videoDevices,
         deviceId: ()=> selectedDeviceId,
         startCapture,
         stopCapture: function(){
-            //console.log("Stopping camera capture.");
+            if (captureIntervalId) {
+                clearInterval(captureIntervalId);
+                captureIntervalId = 0;
+            }
             let videoEl = videoElement();
             if (videoEl && videoEl.srcObject) {
-             videoEl.srcObject.getTracks().forEach(track => track.stop());
+                videoEl.srcObject.getTracks().forEach(track => track.stop());
             }
             isCapturing = false;
-
+            capturing = false;
         },
         videoView: ()=>  m('video#facecam', { autoplay: true, muted: true, playsinline: true, class: "absolute top-0 left-0 opacity-0", style: "width: 1px; height: 1px;" }),
         cameraListView: () => m('select', {class: "select-field-full", onchange: e => { selectedDeviceId = e.target.value; }, disabled: isCapturing, value: selectedDeviceId},

@@ -2356,6 +2356,24 @@
       .sg-chat-header-portrait {
         @apply w-7 h-7 rounded-full object-cover border border-white/30;
       }
+      .sg-chat-history {
+        @apply mx-3 my-2 p-2 rounded border border-gray-600 bg-gray-800/50 text-xs text-gray-300;
+      }
+      .sg-chat-history-label {
+        @apply font-semibold text-gray-400 mb-1 pb-1 border-b border-gray-700 text-xs flex items-center;
+      }
+      .sg-chat-history-item {
+        @apply flex items-center gap-1.5 py-0.5;
+      }
+      .sg-chat-history-type {
+        @apply font-medium text-gray-300 capitalize;
+      }
+      .sg-chat-history-desc {
+        @apply text-gray-400 truncate;
+      }
+      .sg-chat-history-state {
+        @apply ml-auto text-gray-500 capitalize text-xs;
+      }
       .sg-chat-tag-selector {
         @apply flex flex-wrap gap-1 p-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 max-h-20 overflow-y-auto items-center;
       }

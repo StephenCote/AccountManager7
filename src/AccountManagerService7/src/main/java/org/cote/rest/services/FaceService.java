@@ -67,7 +67,7 @@ public class FaceService {
 			}
 		}
 		else {
-			fr = FaceAnalysis.postFaceRequest(req, "http://localhost:8003", "analyze");
+			fr = FaceAnalysis.postFaceRequest(req, context.getInitParameter("face.server"), "analyze");
 		}
 		return Response.status((fr != null ? 200 : 404)).entity(fr != null ? JSONUtil.exportObject(fr) : null).build();
 	}

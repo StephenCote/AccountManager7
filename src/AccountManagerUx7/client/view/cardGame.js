@@ -907,25 +907,42 @@
                     console.log("Updated chat config LLM settings from template");
                 }
             } else {
-                // Copy full template
-                let newChatCfg = JSON.parse(JSON.stringify(fullTemplate));
-
-                // Clear identity fields
-                newChatCfg.objectId = undefined;
-                newChatCfg.id = undefined;
-                newChatCfg.urn = undefined;
-                delete newChatCfg.vaultId;
-                delete newChatCfg.vaulted;
-                delete newChatCfg.keyId;
-
-                // Set new location and name
-                newChatCfg.groupId = chatDir.id;
-                newChatCfg.groupPath = chatDir.path;
-                newChatCfg.name = chatConfigName;
-
-                // Assign characters: target = system (AI), player = user
-                newChatCfg.systemCharacter = { objectId: target.objectId };
-                newChatCfg.userCharacter = { objectId: player.objectId };
+                // Build new chatConfig from template values (avoid cloning identity/org refs)
+                let t = fullTemplate;
+                let newChatCfg = {
+                    schema: "olio.llm.chatConfig",
+                    groupId: chatDir.id,
+                    groupPath: chatDir.path,
+                    name: chatConfigName,
+                    systemCharacter: { objectId: target.objectId },
+                    userCharacter: { objectId: player.objectId },
+                    model: t.model,
+                    analyzeModel: t.analyzeModel,
+                    serverUrl: t.serverUrl,
+                    serviceType: t.serviceType,
+                    apiKey: t.apiKey,
+                    apiVersion: t.apiVersion,
+                    rating: t.rating,
+                    setting: t.setting,
+                    assist: t.assist,
+                    stream: t.stream,
+                    prune: t.prune,
+                    useNLP: t.useNLP,
+                    useJailBreak: t.useJailBreak,
+                    startMode: t.startMode,
+                    remindEvery: t.remindEvery,
+                    keyframeEvery: t.keyframeEvery,
+                    messageTrim: t.messageTrim
+                };
+                // Copy chatOptions values without identity fields
+                if (t.chatOptions) {
+                    let co = {};
+                    let optKeys = ["min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
+                    for (let k of optKeys) {
+                        if (t.chatOptions[k] !== undefined) co[k] = t.chatOptions[k];
+                    }
+                    newChatCfg.chatOptions = co;
+                }
 
                 chatCfg = await page.createObject(newChatCfg);
                 if (!chatCfg) {
@@ -1014,6 +1031,26 @@
                         console.warn("No ChatRequest available for streaming, falling back to REST");
                     }
                 }
+            }
+
+            // Load previous interaction history
+            try {
+                let histResp = await m.request({
+                    method: 'POST',
+                    url: g_application_path + "/rest/game/interactions",
+                    body: { actorId: player.objectId, targetId: target.objectId },
+                    withCredentials: true
+                });
+                if (histResp && histResp.interactions && histResp.interactions.length > 0) {
+                    chatMessages.push({
+                        role: 'history',
+                        interactions: histResp.interactions,
+                        content: '',
+                        time: new Date()
+                    });
+                }
+            } catch (histErr) {
+                console.warn("Failed to load interaction history:", histErr);
             }
 
             addEvent("Started conversation with " + target.name, "info");
@@ -2707,14 +2744,6 @@
             let playerPortrait = getPortraitUrl(player, "64x64");
             let targetPortrait = getPortraitUrl(chatSession.target, "64x64");
 
-            // Build avatar vnodes
-            let playerAvatar = playerPortrait
-                ? m("img", {src: playerPortrait})
-                : m("span", {class: "material-symbols-outlined text-sm text-gray-500"}, "person");
-            let targetAvatar = targetPortrait
-                ? m("img", {src: targetPortrait})
-                : m("span", {class: "material-symbols-outlined text-sm text-gray-500"}, "person");
-
             // Image tag selector row
             let tagSelector = null;
             if (chatShowTagSelector && window.am7imageTokens) {
@@ -2738,13 +2767,8 @@
 
             return m("div", {class: "sg-dialog-overlay"}, [
                 m("div", {class: "sg-dialog sg-dialog-chat"}, [
-                    // Header with portraits
                     m("div", {class: "sg-dialog-header"}, [
-                        m("div", {class: "sg-chat-header-portraits"}, [
-                            playerPortrait ? m("img", {class: "sg-chat-header-portrait", src: playerPortrait}) : null,
-                            m("span", {class: "material-symbols-outlined"}, "forum"),
-                            targetPortrait ? m("img", {class: "sg-chat-header-portrait", src: targetPortrait}) : null
-                        ]),
+                        m("span", {class: "material-symbols-outlined"}, "forum"),
                         m("span", {style: "margin-left: 8px;"}, " Talking to " + (chatSession.target.firstName || chatSession.target.name || "Unknown")),
                         m("button", {
                             class: "sg-dialog-close",
@@ -2758,13 +2782,40 @@
                     }, onupdate: function(vnode) {
                         vnode.dom.scrollTop = vnode.dom.scrollHeight;
                     }}, chatMessages.map(function(msg) {
+                        // Render interaction history block
+                        if (msg.role === "history" && msg.interactions) {
+                            return m("div", {class: "sg-chat-history"}, [
+                                m("div", {class: "sg-chat-history-label"}, [
+                                    m("span", {class: "material-symbols-outlined", style: "font-size: 14px; vertical-align: middle; margin-right: 4px;"}, "history"),
+                                    "Previous interactions"
+                                ]),
+                                msg.interactions.map(function(inter, iidx) {
+                                    let outcomeIcon = "radio_button_unchecked";
+                                    let outcomeColor = "text-gray-400";
+                                    let actOut = (inter.actorOutcome || "").toLowerCase();
+                                    if (actOut === "favorable") { outcomeIcon = "arrow_upward"; outcomeColor = "text-green-400"; }
+                                    else if (actOut === "unfavorable") { outcomeIcon = "arrow_downward"; outcomeColor = "text-red-400"; }
+                                    let desc = inter.description || inter.type || "interaction";
+                                    let state = inter.state || "";
+                                    return m("div", {class: "sg-chat-history-item", key: "hist-" + iidx}, [
+                                        m("span", {class: "material-symbols-outlined " + outcomeColor, style: "font-size: 14px;"}, outcomeIcon),
+                                        m("span", {class: "sg-chat-history-type"}, (inter.type || "").replace(/_/g, " ")),
+                                        desc !== inter.type ? m("span", {class: "sg-chat-history-desc"}, desc) : null,
+                                        m("span", {class: "sg-chat-history-state"}, state.replace(/_/g, " "))
+                                    ]);
+                                })
+                            ]);
+                        }
+
                         let cnt = processChatContent(msg.content || "", msg.role);
                         if (!cnt) return null;
                         let rendered = (msg.role === "assistant" && typeof marked !== "undefined")
                             ? m.trust(marked.parse(cnt.replace(/\r/, "")))
                             : cnt;
                         let isUser = msg.role === "user";
-                        let avatar = isUser ? playerAvatar : targetAvatar;
+                        let msgAvatar = isUser
+                            ? (playerPortrait ? m("img", {src: playerPortrait}) : m("span", {class: "material-symbols-outlined text-sm text-gray-500"}, "person"))
+                            : (targetPortrait ? m("img", {src: targetPortrait}) : m("span", {class: "material-symbols-outlined text-sm text-gray-500"}, "person"));
                         let roleLabel = isUser
                             ? (player ? player.firstName || player.name : "You")
                             : (chatSession.target ? chatSession.target.firstName || chatSession.target.name : "NPC");
@@ -2776,7 +2827,7 @@
                         }
 
                         return m("div", {class: "sg-chat-msg-row" + (isUser ? " sg-chat-row-user" : "")}, [
-                            m("div", {class: "sg-chat-avatar"}, avatar),
+                            m("div", {class: "sg-chat-avatar"}, msgAvatar),
                             m("div", {class: "sg-chat-msg sg-chat-" + msg.role}, [
                                 m("div", {class: "sg-chat-role"}, roleLabel),
                                 m("div", {class: "sg-chat-content"}, rendered)
