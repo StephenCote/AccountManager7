@@ -172,6 +172,7 @@
         normalizePath,
         chatStream: undefined,
         audioStream: undefined,
+        gameStream: undefined,
         imageTags: (id) => {
             return am7client.getImageTags(id);
         },
@@ -440,6 +441,20 @@
                     return;
                 }
                 page.audioStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2]);
+            }
+            else if(c1.match(/^game\.action\./)){
+                // Game action messages (start, progress, complete, error, interrupt, cancel)
+                if(page.gameStream || window.gameStream){
+                    let gs = page.gameStream || window.gameStream;
+                    gs.routeActionMessage(c1, ...msg.chirps.slice(1));
+                }
+            }
+            else if(c1.match(/^game\./)){
+                // Game push messages (situation, state, threat, npc, interaction, time, event)
+                if(page.gameStream || window.gameStream){
+                    let gs = page.gameStream || window.gameStream;
+                    gs.routePushMessage(c1, ...msg.chirps.slice(1));
+                }
             }
             else{
                 //console.warn("Unhandled message type: " + c1);

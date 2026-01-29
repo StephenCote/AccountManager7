@@ -890,3 +890,34 @@ function routeGamePushMessage(type, args) {
 ## Deferred Items
 
 - **Game chat streaming**: Keep REST-based for now, implement WebSocket streaming after core actions are complete
+
+---
+
+## Implementation Status
+
+### Completed (Phase 1)
+
+| File | Status | Description |
+|------|--------|-------------|
+| `AccountManagerUx7/client/gameStream.js` | CREATED | Client-side game streaming module with action callbacks and push subscriptions |
+| `AccountManagerUx7/client/pageClient.js` | MODIFIED | Added game message routing in `routeMessage()`, added `page.gameStream` |
+| `AccountManagerService7/.../sockets/WebSocketService.java` | MODIFIED | Added routing for "game" messages to `handleGameRequest()` |
+| `AccountManagerService7/.../sockets/GameStreamHandler.java` | CREATED | Server-side game message handler with all action types |
+| `AccountManagerUx7/client/view/cardGame.js` | MODIFIED | Added `USE_WEBSOCKET_STREAMING` flag, updated `moveCharacter()`, `resolveAction()`, `advanceTurn()` |
+| `AccountManagerObjects7/.../olio/IGameEventHandler.java` | CREATED | Interface for game event callbacks |
+| `AccountManagerObjects7/.../olio/GameEventNotifier.java` | CREATED | Singleton notifier for push events from Overwatch |
+
+### Ready for Testing
+
+The WebSocket streaming infrastructure is complete. To test:
+
+1. Set `USE_WEBSOCKET_STREAMING = true` in cardGame.js (default)
+2. Ensure WebSocket connection is established (check browser console)
+3. Try movement, actions, and turn advancement
+4. Check browser console for streaming callbacks
+
+### Next Steps (Optional Enhancements)
+
+1. **Wire Overwatch to GameEventNotifier**: Add calls to `GameEventNotifier.getInstance().notifyXxx()` in Overwatch processing loops
+2. **Add progress callbacks to GameUtil**: Modify move/action methods to report intermediate progress
+3. **Implement action cancellation**: Handle cancel requests in GameStreamHandler

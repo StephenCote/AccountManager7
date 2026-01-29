@@ -209,11 +209,14 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 				BaseRecord smsg = msg.getMessage();
 				if(smsg != null){
 					if("chat".equals(smsg.get(FieldNames.FIELD_NAME))) {
-					
+
 						handleChatRequest(session, user, msg);
 					}
 					else if("audio".equals(smsg.get(FieldNames.FIELD_NAME))) {
 						handleAudioStream(session, user, msg);
+					}
+					else if("game".equals(smsg.get(FieldNames.FIELD_NAME))) {
+						handleGameRequest(session, user, msg);
 					}
 					else {
 						logger.warn("Unknown message type: " + smsg.get(FieldNames.FIELD_NAME));
@@ -246,6 +249,21 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			return;
 		}
 		listener.sendMessageToServer(user, chatReq);
+	}
+
+	private void handleGameRequest(Session session, BaseRecord user, SocketMessage msg) {
+		BaseRecord smsg = msg.getMessage();
+		if (smsg == null) {
+			logger.error("Game request message is null");
+			return;
+		}
+		String gameReqStr = new String((byte[])smsg.get("data"));
+		BaseRecord gameReq = JSONUtil.importObject(gameReqStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		if(gameReq == null) {
+			logger.error("Game request is null");
+			return;
+		}
+		GameStreamHandler.handleRequest(session, user, gameReq);
 	}
 
 	@OnClose

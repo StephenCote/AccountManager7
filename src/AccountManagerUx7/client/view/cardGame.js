@@ -73,6 +73,9 @@
     // Configuration: set to true to use PNG tile images instead of emoji
     const USE_TILE_IMAGES = true;
 
+    // Configuration: set to true to use WebSocket streaming instead of REST
+    const USE_WEBSOCKET_STREAMING = true;
+
     // Terrain icons (emoji fallback)
     const TERRAIN_ICONS = {
         CAVE: "\u{1F5FF}",        // Stone/cave
@@ -240,6 +243,94 @@
     }
 
     // ==========================================
+    // WebSocket Game Stream Functions
+    // ==========================================
+
+    function getGameStream() {
+        return page.gameStream || window.gameStream;
+    }
+
+    function initGameStream(charId) {
+        let gs = getGameStream();
+        if (!gs || !USE_WEBSOCKET_STREAMING) return;
+
+        // Subscribe to push events for this character
+        gs.subscribe(charId);
+
+        // Setup push event handlers
+        gs.subscriptions.onSituationUpdate = (receivedCharId, newSituation) => {
+            if (receivedCharId === charId) {
+                situation = newSituation;
+                if (player && newSituation) {
+                    am7client.syncFromResponse(player, newSituation, am7client.SYNC_MAPPINGS.situation);
+                }
+                m.redraw();
+            }
+        };
+
+        gs.subscriptions.onStateUpdate = (receivedCharId, statePatch) => {
+            if (receivedCharId === charId && situation) {
+                Object.assign(situation.state || {}, statePatch);
+                m.redraw();
+            }
+        };
+
+        gs.subscriptions.onThreatDetected = (receivedCharId, threat) => {
+            if (receivedCharId === charId) {
+                if (situation && situation.threats) {
+                    situation.threats.push(threat);
+                }
+                addEvent("Threat detected: " + (threat.name || "Unknown"), "danger");
+                page.toast("warn", "Threat detected nearby!");
+                m.redraw();
+            }
+        };
+
+        gs.subscriptions.onThreatRemoved = (receivedCharId, threatId) => {
+            if (receivedCharId === charId && situation && situation.threats) {
+                situation.threats = situation.threats.filter(t => (t.objectId || t.id) !== threatId);
+                m.redraw();
+            }
+        };
+
+        gs.subscriptions.onNpcMoved = (npcId, from, to) => {
+            // Update NPC position in nearbyPeople if visible
+            if (situation && situation.nearbyPeople) {
+                let npc = situation.nearbyPeople.find(p => (p.objectId || p.id) === npcId);
+                if (npc && npc.currentLocation) {
+                    npc.currentLocation = to;
+                    m.redraw();
+                }
+            }
+        };
+
+        gs.subscriptions.onTimeAdvanced = (clockData) => {
+            if (situation) {
+                situation.clock = clockData;
+                m.redraw();
+            }
+        };
+
+        gs.subscriptions.onEventOccurred = (event) => {
+            addEvent(event.description || "World event occurred", "info");
+            m.redraw();
+        };
+
+        console.log("Game stream initialized for character: " + charId);
+    }
+
+    function cleanupGameStream() {
+        let gs = getGameStream();
+        if (!gs) return;
+
+        let charId = getCharId(player);
+        if (charId) {
+            gs.unsubscribe(charId);
+        }
+        gs.clearActiveActions();
+    }
+
+    // ==========================================
     // API Functions
     // ==========================================
 
@@ -272,6 +363,76 @@
         let playerId = getCharId(player);
         if (!playerId || actionInProgress) return null;
 
+        let gs = getGameStream();
+
+        // Use WebSocket streaming if available
+        if (USE_WEBSOCKET_STREAMING && gs) {
+            return new Promise((resolve) => {
+                actionInProgress = true;
+                isLoading = true;
+                m.redraw();
+
+                gs.executeAction("resolve", {
+                    charId: playerId,
+                    targetId: targetId,
+                    actionType: actionType
+                }, {
+                    onStart: (id, data) => {
+                        console.log("Action started:", data);
+                        m.redraw();
+                    },
+                    onProgress: (id, data) => {
+                        console.log("Action progress:", data);
+                        // Could show combat rounds, skill checks, etc.
+                        if (data.event) {
+                            addEvent(data.event.description || "Action in progress...", "info");
+                        }
+                        m.redraw();
+                    },
+                    onComplete: (id, data) => {
+                        console.log("Action complete:", data);
+                        actionResult = data;
+
+                        if (data.situation) {
+                            situation = data.situation;
+                            if (player) {
+                                am7client.syncFromResponse(player, data.situation, am7client.SYNC_MAPPINGS.situation);
+                            }
+                        }
+
+                        // Log the result
+                        if (data.interrupted) {
+                            addEvent("Action interrupted by " + (data.interruptSource || "threat") + "!", "danger");
+                        } else if (data.result) {
+                            let outcome = data.result.outcome || data.result.type || "completed";
+                            addEvent(actionType + ": " + outcome,
+                                outcome === "POSITIVE" || outcome === "SUCCESS" ? "success" : "info");
+                        }
+
+                        actionInProgress = false;
+                        isLoading = false;
+                        m.redraw();
+                        resolve(data);
+                    },
+                    onError: (id, data) => {
+                        console.error("Action error:", data);
+                        page.toast("error", data.message || "Action failed");
+                        addEvent("Action failed: " + (data.message || "Unknown error"), "danger");
+                        actionInProgress = false;
+                        isLoading = false;
+                        m.redraw();
+                        resolve(null);
+                    },
+                    onInterrupt: (id, data) => {
+                        console.log("Action interrupted:", data);
+                        addEvent("Action interrupted!", "warning");
+                        m.redraw();
+                    }
+                });
+            });
+        }
+
+        // Fallback to REST
         actionInProgress = true;
         isLoading = true;
         m.redraw();
@@ -314,10 +475,68 @@
         let playerId = getCharId(player);
         if (!playerId || actionInProgress) return;
 
+        let gs = getGameStream();
+        console.log("Moving character:", playerId, "direction:", direction);
+
+        // Use WebSocket streaming if available
+        if (USE_WEBSOCKET_STREAMING && gs) {
+            actionInProgress = true;
+            isLoading = true;
+            moveProgress = 0;
+            m.redraw();
+
+            gs.executeAction("move", {
+                charId: playerId,
+                direction: direction,
+                distance: 1
+            }, {
+                onStart: (actionId, data) => {
+                    console.log("Move started:", actionId, data);
+                    moveProgress = 10;
+                    m.redraw();
+                },
+                onProgress: (actionId, data) => {
+                    console.log("Move progress:", data);
+                    moveProgress = data.progress || 50;
+                    if (data.currentState) {
+                        // Update position in real-time
+                        if (situation && situation.state) {
+                            Object.assign(situation.state, data.currentState);
+                        }
+                    }
+                    m.redraw();
+                },
+                onComplete: (actionId, data) => {
+                    console.log("Move complete:", data);
+                    if (data.situation) {
+                        situation = data.situation;
+                        if (player) {
+                            am7client.syncFromResponse(player, data.situation, am7client.SYNC_MAPPINGS.situation);
+                        }
+                    }
+                    addEvent("Moved " + direction, "info");
+                    moveMode = false;
+                    moveProgress = 100;
+                    actionInProgress = false;
+                    isLoading = false;
+                    m.redraw();
+                },
+                onError: (actionId, data) => {
+                    console.error("Move error:", data);
+                    page.toast("error", data.message || "Movement failed");
+                    addEvent(data.message || "Movement failed", "warning");
+                    actionInProgress = false;
+                    isLoading = false;
+                    m.redraw();
+                }
+            });
+            return;
+        }
+
+        // Fallback to REST
         actionInProgress = true;
         isLoading = true;
         m.redraw();
-        console.log("Moving character:", playerId, "direction:", direction);
 
         try {
             // Move 1 meter per click for fine-grained control within the 100m x 100m cell
@@ -419,6 +638,11 @@
             console.log("Claim endpoint not available, continuing...");
         }
 
+        // Initialize WebSocket game stream for push notifications
+        if (USE_WEBSOCKET_STREAMING) {
+            initGameStream(charId);
+        }
+
         await loadSituation();
         startNpcChatPolling();
         addEvent("Now playing as " + player.name, "success");
@@ -427,6 +651,42 @@
 
     async function advanceTurn() {
         if (!player) return;
+
+        let gs = getGameStream();
+
+        // Use WebSocket streaming if available
+        if (USE_WEBSOCKET_STREAMING && gs) {
+            isLoading = true;
+            m.redraw();
+
+            gs.executeAction("advance", {}, {
+                onStart: () => {
+                    console.log("Advance turn started");
+                },
+                onComplete: (id, data) => {
+                    console.log("Advance turn complete:", data);
+                    if (data.situation) {
+                        situation = data.situation;
+                        if (player) {
+                            am7client.syncFromResponse(player, data.situation, am7client.SYNC_MAPPINGS.situation);
+                        }
+                    }
+                    let updated = data.advanced || 0;
+                    addEvent("Turn advanced (" + updated + " updated)", "info");
+                    isLoading = false;
+                    m.redraw();
+                },
+                onError: (id, data) => {
+                    console.error("Advance turn error:", data);
+                    page.toast("error", data.message || "Failed to advance turn");
+                    isLoading = false;
+                    m.redraw();
+                }
+            });
+            return;
+        }
+
+        // Fallback to REST
         isLoading = true;
         try {
             // Advance turn updates needs and advances time for player-controlled characters
