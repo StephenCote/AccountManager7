@@ -17,6 +17,7 @@
         biometricThemer: null,
         imageGallery: null,
         textSequence: null,
+        voiceSequence: null,
         imageGenerator: null,
         sessionRecorder: null,
 
@@ -271,6 +272,38 @@
                 console.warn('Magic8App: Text enabled but no sourceObjectId selected');
             }
 
+            // Initialize voice sequence
+            if (cfg.voice?.enabled && cfg.voice?.sourceObjectId) {
+                this.voiceSequence = new Magic8.VoiceSequenceManager(this.audioEngine);
+                this.voiceSequence.loop = cfg.voice.loop !== false;
+
+                let voiceLineCount = 0;
+                if (cfg.voice.sourceType === 'note') {
+                    voiceLineCount = await this.voiceSequence.loadFromNote(cfg.voice.sourceObjectId);
+                } else {
+                    voiceLineCount = await this.voiceSequence.loadFromDataObject(cfg.voice.sourceObjectId);
+                }
+                console.log('Magic8App: Loaded', voiceLineCount, 'voice lines');
+
+                if (voiceLineCount > 0) {
+                    // Pre-synthesize all lines
+                    console.log('Magic8App: Synthesizing voice lines...');
+                    this.voiceSequence.onSynthesisProgress = (done, total) => {
+                        console.log(`Magic8App: Voice synthesis ${done}/${total}`);
+                    };
+                    await this.voiceSequence.synthesizeAll(cfg.voice.voiceProfileId);
+
+                    // Connect line change to overlay text display
+                    this.voiceSequence.onLineChange = (text) => {
+                        this.currentText = text;
+                        m.redraw();
+                    };
+
+                    this.voiceSequence.start();
+                    console.log('Magic8App: Voice sequence playback started');
+                }
+            }
+
             // Initialize recording
             if (cfg.recording?.enabled) {
                 this.sessionRecorder = new Magic8.SessionRecorder();
@@ -417,11 +450,13 @@
             if (this.phase === 'running') {
                 this.phase = 'paused';
                 this.textSequence?.pause();
+                this.voiceSequence?.pause();
                 this.imageGallery?.stop();
                 this._stopBreathing();
             } else if (this.phase === 'paused') {
                 this.phase = 'running';
                 this.textSequence?.resume();
+                this.voiceSequence?.resume();
                 this.imageGallery?.start();
                 this._startBreathing();
             }
@@ -494,6 +529,9 @@
 
             // Stop text
             this.textSequence?.dispose();
+
+            // Stop voice
+            this.voiceSequence?.dispose();
 
             // Stop gallery
             this.imageGallery?.dispose();
@@ -585,12 +623,6 @@
                 // Dark overlay for text readability
                 m('.absolute.inset-0.z-10.bg-black', {
                     style: { opacity: 0.3 }
-                }),
-
-                // Hypnotic text layer
-                this.sessionConfig?.text?.enabled && m(Magic8.HypnoticTextDisplay, {
-                    text: this.currentText,
-                    theme: this.currentTheme
                 }),
 
                 // Animated floating text labels, styled by biometric theme

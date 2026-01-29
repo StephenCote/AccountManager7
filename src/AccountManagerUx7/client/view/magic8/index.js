@@ -6,17 +6,18 @@
  *   1. utils/FullscreenManager.js
  *   2. utils/DynamicImageGallery.js
  *   3. audio/AudioEngine.js
- *   4. state/BiometricThemer.js
- *   5. video/SessionRecorder.js
- *   6. text/TextSequenceManager.js
- *   7. generation/ImageGenerationManager.js
- *   8. components/HypnoCanvas.js
- *   9. components/HypnoticTextDisplay.js
- *  10. components/ControlPanel.js
- *  11. components/BiometricOverlay.js
- *  12. components/SessionConfigEditor.js
- *  13. Magic8App.js
- *  14. index.js (this file)
+ *   4. audio/VoiceSequenceManager.js
+ *   5. state/BiometricThemer.js
+ *   6. video/SessionRecorder.js
+ *   7. text/TextSequenceManager.js
+ *   8. generation/ImageGenerationManager.js
+ *   9. components/HypnoCanvas.js
+ *  10. components/HypnoticTextDisplay.js
+ *  11. components/ControlPanel.js
+ *  12. components/BiometricOverlay.js
+ *  13. components/SessionConfigEditor.js
+ *  14. Magic8App.js
+ *  15. index.js (this file)
  */
 (function() {
 
@@ -80,6 +81,7 @@
             `${base}/utils/FullscreenManager.js`,
             `${base}/utils/DynamicImageGallery.js`,
             `${base}/audio/AudioEngine.js`,
+            `${base}/audio/VoiceSequenceManager.js`,
             `${base}/state/BiometricThemer.js`,
             `${base}/video/SessionRecorder.js`,
             `${base}/text/TextSequenceManager.js`,

@@ -15,6 +15,12 @@ const SessionConfigEditor = {
         this.newTextName = '';
         this.newTextContent = '';
         this.newTextSourceType = 'note';
+        this.voiceSources = [];
+        this.voiceProfiles = [];
+        this.createNewVoiceSource = false;
+        this.newVoiceName = '';
+        this.newVoiceContent = '';
+        this.newVoiceSourceType = 'note';
         this.isSaving = false;
 
         this._loadOptions();
@@ -77,6 +83,13 @@ const SessionConfigEditor = {
                 displayDuration: 5000,
                 loop: true
             },
+            voice: {
+                enabled: false,
+                sourceObjectId: null,
+                sourceType: 'note',
+                voiceProfileId: null,
+                loop: true
+            },
             recording: {
                 enabled: false,
                 autoStart: false,
@@ -95,6 +108,7 @@ const SessionConfigEditor = {
             await page.makePath("auth.group", "data", "~/Magic8/SDConfigs");
             await page.makePath("auth.group", "data", "~/Magic8/TextSequences");
             await page.makePath("auth.group", "data", "~/Magic8/Configs");
+            await page.makePath("auth.group", "data", "~/Magic8/VoiceSequences");
 
             // Load saved sessions from ~/Magic8/Configs
             this.savedSessions = await this._listDataInGroup('~/Magic8/Configs');
@@ -109,6 +123,17 @@ const SessionConfigEditor = {
                 ...notes.map(n => ({ ...n, sourceType: 'note' })),
                 ...textObjects.map(t => ({ ...t, sourceType: 'data' }))
             ];
+
+            // Load voice sources from ~/Magic8/VoiceSequences
+            const voiceNotes = await this._listNotesInGroup('~/Magic8/VoiceSequences');
+            const voiceData = await this._listDataInGroup('~/Magic8/VoiceSequences');
+            this.voiceSources = [
+                ...voiceNotes.map(n => ({ ...n, sourceType: 'note' })),
+                ...voiceData.map(t => ({ ...t, sourceType: 'data' }))
+            ];
+
+            // Load voice profiles
+            this.voiceProfiles = await this._listVoiceProfiles();
 
             // Pre-populate selected image groups from blender working set
             if (page.components.dnd && page.components.dnd.workingSet) {
@@ -167,6 +192,71 @@ const SessionConfigEditor = {
     },
 
     /**
+     * List available voice profiles (identity.voice objects)
+     * @returns {Promise<Array>}
+     * @private
+     */
+    async _listVoiceProfiles() {
+        try {
+            let q = am7view.viewQuery(am7model.newInstance("identity.voice"));
+            let qr = await page.search(q);
+            return qr?.results || [];
+        } catch (err) {
+            console.warn('SessionConfigEditor: Failed to list voice profiles:', err);
+            return [];
+        }
+    },
+
+    /**
+     * Save a new voice source object and select it
+     * @private
+     */
+    async _saveNewVoiceSource() {
+        if (this.isSaving || !this.newVoiceName.trim() || !this.newVoiceContent.trim()) return;
+        this.isSaving = true;
+        m.redraw();
+
+        try {
+            let dir = await page.findObject("auth.group", "DATA", "~/Magic8/VoiceSequences");
+            if (!dir || !dir.objectId) {
+                dir = await page.makePath("auth.group", "data", "~/Magic8/VoiceSequences");
+            }
+
+            let saved;
+            if (this.newVoiceSourceType === 'note') {
+                let obj = am7model.newPrimitive("data.note");
+                obj.name = this.newVoiceName.trim();
+                obj.groupId = dir.id;
+                obj.groupPath = dir.path;
+                obj.text = this.newVoiceContent.trim();
+                saved = await page.createObject(obj);
+            } else {
+                let obj = am7model.newPrimitive("data.data");
+                obj.name = this.newVoiceName.trim();
+                obj.contentType = "text/plain";
+                obj.groupId = dir.id;
+                obj.groupPath = dir.path;
+                obj.dataBytesStore = uwm.base64Encode(this.newVoiceContent.trim());
+                saved = await page.createObject(obj);
+            }
+
+            if (saved && saved.objectId) {
+                this.voiceSources.push({ ...saved, sourceType: this.newVoiceSourceType });
+                this.config.voice.sourceObjectId = saved.objectId;
+                this.config.voice.sourceType = this.newVoiceSourceType;
+                this.createNewVoiceSource = false;
+                this.newVoiceName = '';
+                this.newVoiceContent = '';
+            }
+        } catch (err) {
+            console.error('SessionConfigEditor: Failed to save voice source:', err);
+        }
+
+        this.isSaving = false;
+        m.redraw();
+    },
+
+    /**
      * Load a previously saved session config by objectId
      * @param {string} objectId
      * @private
@@ -199,6 +289,7 @@ const SessionConfigEditor = {
                 this.config.imageGeneration.sdInline = Object.assign({}, defaults.imageGeneration.sdInline, loaded.imageGeneration.sdInline);
             }
             this.config.text = Object.assign({}, defaults.text, loaded.text || {});
+            this.config.voice = Object.assign({}, defaults.voice, loaded.voice || {});
             this.config.recording = Object.assign({}, defaults.recording, loaded.recording || {});
 
             // Rebuild selectedImageGroups from loaded baseGroups
@@ -790,6 +881,126 @@ const SessionConfigEditor = {
                                 oninput: (e) => this.config.text.displayDuration = parseInt(e.target.value)
                             }),
                             m('span.w-16.text-right', `${this.config.text.displayDuration / 1000}s`)
+                        ])
+                    ])
+                ]),
+
+                // Voice Sequence Section
+                m('.config-section.mb-6.p-4.bg-gray-800.rounded-lg', [
+                    m('h3.text-lg.font-medium.mb-4', 'Voice Sequence'),
+                    m('label.flex.items-center.gap-3.cursor-pointer.mb-4', [
+                        m('input.w-5.h-5.rounded', {
+                            type: 'checkbox',
+                            checked: this.config.voice.enabled,
+                            onchange: (e) => this.config.voice.enabled = e.target.checked
+                        }),
+                        m('span', 'Enable voice sequence playback')
+                    ]),
+                    this.config.voice.enabled && m('.ml-8.space-y-4', [
+                        // Source toggle: existing vs create new
+                        m('.flex.gap-2.mb-4', [
+                            m('button', {
+                                class: 'px-3 py-1 rounded text-sm ' +
+                                    (!this.createNewVoiceSource ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300'),
+                                onclick: () => { this.createNewVoiceSource = false; }
+                            }, 'Select Existing'),
+                            m('button', {
+                                class: 'px-3 py-1 rounded text-sm ' +
+                                    (this.createNewVoiceSource ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300'),
+                                onclick: () => {
+                                    this.createNewVoiceSource = true;
+                                    this.config.voice.sourceObjectId = null;
+                                }
+                            }, 'Create New')
+                        ]),
+
+                        // Existing source selector
+                        !this.createNewVoiceSource && [
+                            m('label.block.mb-1', 'Voice Source'),
+                            this.voiceSources.length > 0
+                                ? m('select.w-full.p-2.bg-gray-700.rounded', {
+                                    value: this.config.voice.sourceObjectId || '',
+                                    onchange: (e) => {
+                                        const selected = this.voiceSources.find(t => t.objectId === e.target.value);
+                                        this.config.voice.sourceObjectId = e.target.value || null;
+                                        this.config.voice.sourceType = selected?.sourceType || 'note';
+                                    }
+                                }, [
+                                    m('option', { value: '' }, '-- Select Voice Source --'),
+                                    ...this.voiceSources.map(t =>
+                                        m('option', { value: t.objectId }, `${t.name} (${t.sourceType})`)
+                                    )
+                                ])
+                                : m('.p-3.bg-gray-700.rounded.text-gray-400.text-sm', [
+                                    m('span', 'No voice sources found in ~/Magic8/VoiceSequences.'),
+                                    m('br'),
+                                    m('span', 'Switch to '),
+                                    m('a.text-indigo-400.cursor-pointer', {
+                                        onclick: () => { this.createNewVoiceSource = true; this.config.voice.sourceObjectId = null; }
+                                    }, 'Create New'),
+                                    m('span', ' to add one.')
+                                ])
+                        ],
+
+                        // Inline new voice source editor
+                        this.createNewVoiceSource && [
+                            m('label.block.text-sm.text-gray-400.mb-1', 'Name'),
+                            m('input.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                type: 'text',
+                                placeholder: 'e.g. Guided Meditation',
+                                value: this.newVoiceName,
+                                oninput: (e) => this.newVoiceName = e.target.value
+                            }),
+
+                            m('label.block.text-sm.text-gray-400.mb-1.mt-3', 'Type'),
+                            m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                value: this.newVoiceSourceType,
+                                onchange: (e) => this.newVoiceSourceType = e.target.value
+                            }, [
+                                m('option', { value: 'note' }, 'Note (plain text lines)'),
+                                m('option', { value: 'data' }, 'Data (base64 text)')
+                            ]),
+
+                            m('label.block.text-sm.text-gray-400.mb-1.mt-3', 'Text (one phrase per line, each line synthesized separately)'),
+                            m('textarea.w-full.p-2.bg-gray-700.rounded.text-sm.font-mono', {
+                                rows: 6,
+                                placeholder: 'Close your eyes and relax\nTake a deep breath in\nHold it for a moment\nNow slowly exhale',
+                                value: this.newVoiceContent,
+                                oninput: (e) => this.newVoiceContent = e.target.value
+                            }),
+
+                            m('button', {
+                                class: 'mt-3 px-4 py-2 rounded text-sm font-medium ' +
+                                    (this.isSaving ? 'bg-gray-600 text-gray-400' : 'bg-green-600 text-white hover:bg-green-500'),
+                                disabled: this.isSaving || !this.newVoiceName.trim() || !this.newVoiceContent.trim(),
+                                onclick: () => this._saveNewVoiceSource()
+                            }, this.isSaving ? 'Saving...' : 'Save & Select')
+                        ],
+
+                        // Voice Profile selector
+                        m('label.block.mb-1.mt-4', 'Voice Profile'),
+                        this.voiceProfiles.length > 0
+                            ? m('select.w-full.p-2.bg-gray-700.rounded', {
+                                value: this.config.voice.voiceProfileId || '',
+                                onchange: (e) => this.config.voice.voiceProfileId = e.target.value || null
+                            }, [
+                                m('option', { value: '' }, '-- Default Voice (Piper Alba) --'),
+                                ...this.voiceProfiles.map(vp =>
+                                    m('option', { value: vp.objectId }, vp.name || `${vp.engine || 'piper'} - ${vp.speaker || 'default'}`)
+                                )
+                            ])
+                            : m('.p-2.bg-gray-700.rounded.text-gray-400.text-sm',
+                                'No voice profiles found. Default Piper voice will be used.'
+                            ),
+
+                        // Loop option
+                        m('label.flex.items-center.gap-3.cursor-pointer.mt-4', [
+                            m('input.w-5.h-5.rounded', {
+                                type: 'checkbox',
+                                checked: this.config.voice.loop,
+                                onchange: (e) => this.config.voice.loop = e.target.checked
+                            }),
+                            m('span', 'Loop voice sequence')
                         ])
                     ])
                 ]),

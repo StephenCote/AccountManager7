@@ -102,7 +102,7 @@ const BiometricOverlay = {
                 left: label.x + '%',
                 top: label.y + '%',
                 opacity: opacity,
-                fontSize: (label.size * 0.75) + 'rem',
+                fontSize: (label.size * 1.5) + 'rem',
                 fontFamily: "'Playfair Display', Georgia, serif",
                 letterSpacing: '0.05em',
                 lineHeight: '1.4',

@@ -110,11 +110,12 @@ class AudioEngine {
             // Build voice request
             const vprops = {
                 text: cleanContent,
-                speed: 1.2,
-                voiceProfileId: profileId
+                speed: 1.2
             };
 
-            if (!vprops.voiceProfileId) {
+            if (profileId) {
+                vprops.voiceProfileId = profileId;
+            } else {
                 vprops.engine = "piper";
                 vprops.speaker = "en_GB-alba-medium";
             }
