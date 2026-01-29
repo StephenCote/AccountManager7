@@ -1664,7 +1664,13 @@
         // Get terrain for background
         let terrainType = playerLoc ? playerLoc.terrainType : "UNKNOWN";
 
-        // Helper to render an adjacent cell edge strip
+        // Helper to format cell identifier
+        function getCellIdent(cellEast, cellNorth, adjCell) {
+            if (!adjCell) return "";
+            return cellEast + "," + cellNorth;
+        }
+
+        // Helper to render an adjacent cell edge strip with cell identifier
         function renderEdgeStrip(dx, dy, position) {
             let adjTerrain = getAdjacentTerrain(dx, dy);
             let adjCell = adjacentMap[dx + "," + dy];
@@ -1677,6 +1683,7 @@
                 style = "background-image: url('" + getTileUrl(adjTerrain) + "'); background-size: cover;";
             }
 
+            let cellIdent = getCellIdent(targetCellEast, targetCellNorth, adjCell);
             let title = adjTerrain ?
                 (adjTerrain.charAt(0).toUpperCase() + adjTerrain.slice(1).toLowerCase()) + " [" + targetCellEast + "," + targetCellNorth + "]" :
                 "Edge of map";
@@ -1690,10 +1697,10 @@
                         moveToCell(targetCellEast, targetCellNorth);
                     }
                 }
-            }, !adjTerrain ? m("span", {class: "sg-edge-void-icon"}, "\u2205") : null);
+            }, adjCell ? m("span", {class: "sg-edge-ident"}, cellIdent) : m("span", {class: "sg-edge-void-icon"}, "\u2205"));
         }
 
-        // Helper to render corner
+        // Helper to render corner with cell identifier
         function renderCorner(dx, dy, position) {
             let adjTerrain = getAdjacentTerrain(dx, dy);
             let adjCell = adjacentMap[dx + "," + dy];
@@ -1706,16 +1713,27 @@
                 style = "background-image: url('" + getTileUrl(adjTerrain) + "'); background-size: cover;";
             }
 
+            let cellIdent = getCellIdent(targetCellEast, targetCellNorth, adjCell);
+
             return m("div", {
                 class: cornerClass + (adjCell ? " sg-edge-clickable" : " sg-edge-void"),
                 style: style,
-                title: adjCell ? "Move diagonal" : "",
+                title: adjCell ? "Move to [" + targetCellEast + "," + targetCellNorth + "]" : "",
                 onclick: function() {
                     if (adjCell) {
                         moveToCell(targetCellEast, targetCellNorth);
                     }
                 }
-            });
+            }, adjCell ? m("span", {class: "sg-edge-ident"}, cellIdent) : null);
+        }
+
+        // Column headers 0-9
+        function renderColumnHeaders() {
+            let headers = [];
+            for (let i = 0; i < ZOOM_SIZE; i++) {
+                headers.push(m("div", {class: "sg-col-header"}, i));
+            }
+            return m("div", {class: "sg-col-header-row"}, headers);
         }
 
         return m("div", {class: "sg-zoomed-grid"}, [
@@ -1738,7 +1756,11 @@
                         style: USE_TILE_IMAGES && terrainType ?
                             "background-image: url('" + getTileUrl(terrainType) + "'); background-size: cover;" :
                             ""
-                    }, grid.slice().reverse().map(function(row, visualY) {
+                    }, [
+                        // Column headers row
+                        renderColumnHeaders()
+                        // Grid rows follow
+                    ].concat(grid.slice().reverse().map(function(row, visualY) {
                         // visualY=0 is top of screen (north), visualY=9 is bottom (south)
                         // Convert back to grid coordinates for position matching
                         let gridY = ZOOM_SIZE - 1 - visualY;
@@ -1784,7 +1806,7 @@
                                 }
                             }, content);
                         }));
-                    })),
+                    }))),
 
                     renderEdgeStrip(1, 0, "east")
                 ]),

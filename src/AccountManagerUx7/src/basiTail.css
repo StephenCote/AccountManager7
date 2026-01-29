@@ -2021,6 +2021,26 @@
       .sg-edge-void-icon {
         @apply text-xs opacity-50;
       }
+      .sg-edge-ident {
+        @apply text-xs font-mono font-bold;
+        text-shadow: 0 0 2px rgba(255,255,255,0.8);
+        color: #1f2937;
+      }
+      .dark .sg-edge-ident {
+        text-shadow: 0 0 2px rgba(0,0,0,0.8);
+        color: #f3f4f6;
+      }
+      .sg-col-header-row {
+        @apply flex;
+      }
+      .sg-col-header {
+        @apply flex items-center justify-center text-xs font-mono;
+        width: 10%;
+        height: 20px;
+        background: rgba(0,0,0,0.2);
+        color: #fff;
+        text-shadow: 0 0 2px rgba(0,0,0,0.5);
+      }
       .sg-zoomed-main {
         @apply flex-1;
       }

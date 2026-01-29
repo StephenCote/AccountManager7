@@ -6328,6 +6328,38 @@ button.button-tab-active:hover:is(.dark *) {
   opacity: 0.5;
 }
 
+.sg-edge-ident {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 700;
+  text-shadow: 0 0 2px rgba(255,255,255,0.8);
+  color: #1f2937;
+}
+
+.dark .sg-edge-ident {
+  text-shadow: 0 0 2px rgba(0,0,0,0.8);
+  color: #f3f4f6;
+}
+
+.sg-col-header-row {
+  display: flex;
+}
+
+.sg-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  width: 10%;
+  height: 20px;
+  background: rgba(0,0,0,0.2);
+  color: #fff;
+  text-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
 /* Move progress indicator */
 
 .sg-move-progress {
