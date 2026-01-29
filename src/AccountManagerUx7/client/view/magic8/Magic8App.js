@@ -450,7 +450,11 @@
 
         // Handle exit
         _handleExit() {
-            this._cleanup();
+            try {
+                this._cleanup();
+            } catch (err) {
+                console.error('Magic8App: Cleanup error during exit:', err);
+            }
 
             // Check if we came from chat
             if (this.chatContext) {
@@ -470,8 +474,11 @@
             }
         },
 
-        // Cleanup
+        // Cleanup (guarded against double-call from _handleExit + onremove)
         _cleanup() {
+            if (this._cleaned) return;
+            this._cleaned = true;
+
             clearInterval(this.biometricInterval);
             clearInterval(this.imageCycleInterval);
             clearInterval(this.imageGenInterval);
@@ -586,9 +593,9 @@
                     theme: this.currentTheme
                 }),
 
-                // Animated biometric data overlay
+                // Animated floating text labels, styled by biometric theme
                 m(Magic8.BiometricOverlay, {
-                    biometricData: this.biometricData,
+                    text: this.currentText,
                     theme: this.currentTheme
                 }),
 

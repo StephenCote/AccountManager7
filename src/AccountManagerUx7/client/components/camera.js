@@ -206,6 +206,16 @@
         ),
         cameraPickButton: () => m('button', {onclick: startCapture, disabled: isCapturing},'Start'),
         initializeAndFindDevices,
+        captureFrame: function() {
+            let videoEl = videoElement();
+            if (!videoEl || videoEl.paused || videoEl.ended) return null;
+            const canvas = document.createElement('canvas');
+            canvas.width = videoEl.videoWidth;
+            canvas.height = videoEl.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.9);
+        },
     };
 
     page.components.camera = camera;

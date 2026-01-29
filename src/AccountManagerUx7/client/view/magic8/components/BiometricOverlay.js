@@ -1,15 +1,15 @@
 /**
- * BiometricOverlay - Animated floating labels showing face analysis data & color palette
- * Labels spawn at random positions with various animation effects:
- *   drift (slow movement), pulse (fade in/out), scale (grow/shrink), float (gentle bob)
- * Uses requestAnimationFrame for smooth continuous animation.
+ * BiometricOverlay - Animated floating text labels styled by biometric theme
+ * Shows text sequence lines as floating labels with randomized positions and animations.
+ * Face analysis data drives the color palette applied to labels, not displayed as text.
+ * Animation types: drift, pulse, scale, float
  * Mithril.js component
  */
 const BiometricOverlay = {
     oninit(vnode) {
         this.labels = [];
         this.nextId = 0;
-        this.lastDataHash = '';
+        this.lastText = '';
         this._rafId = null;
     },
 
@@ -26,7 +26,6 @@ const BiometricOverlay = {
         const tick = () => {
             this._rafId = requestAnimationFrame(tick);
 
-            // Prune expired labels
             const now = Date.now();
             const before = this.labels.length;
             this.labels = this.labels.filter(l => {
@@ -34,7 +33,6 @@ const BiometricOverlay = {
                 return age < l.duration;
             });
 
-            // Only redraw if there are active labels
             if (this.labels.length > 0 || before > 0) {
                 m.redraw();
             }
@@ -50,115 +48,52 @@ const BiometricOverlay = {
     },
 
     onupdate(vnode) {
-        const { biometricData, theme } = vnode.attrs;
-        if (!biometricData) return;
+        const { text } = vnode.attrs;
+        if (!text || text === this.lastText) return;
+        this.lastText = text;
 
-        // Only spawn new labels when data changes
-        const hash = (biometricData.dominant_emotion || '') + '|' +
-            (biometricData.age || '') + '|' +
-            (biometricData.dominant_gender || '');
-        if (hash === this.lastDataHash) return;
-        this.lastDataHash = hash;
-
-        console.log('BiometricOverlay: New data -', hash);
-
-        // Build label entries from biometric data
-        const entries = this._extractEntries(biometricData, theme);
-
-        // Spawn labels with random positions & animation types
         const now = Date.now();
         const animTypes = ['drift', 'pulse', 'scale', 'float'];
 
-        for (const entry of entries) {
-            this.labels.push({
-                id: this.nextId++,
-                text: entry.text,
-                color: entry.color || null,
-                swatch: entry.swatch || null,
-                x: 5 + Math.random() * 85,
-                y: 10 + Math.random() * 75,
-                anim: animTypes[Math.floor(Math.random() * animTypes.length)],
-                size: 0.7 + Math.random() * 0.6,
-                delay: Math.random() * 2,
-                duration: 6 + Math.random() * 8,
-                driftX: (Math.random() - 0.5) * 40,
-                driftY: (Math.random() - 0.5) * 30,
-                born: now
-            });
+        this.labels.push({
+            id: this.nextId++,
+            text: text,
+            x: 5 + Math.random() * 85,
+            y: 10 + Math.random() * 75,
+            anim: animTypes[Math.floor(Math.random() * animTypes.length)],
+            size: 0.7 + Math.random() * 0.6,
+            duration: 8 + Math.random() * 10,
+            driftX: (Math.random() - 0.5) * 50,
+            driftY: (Math.random() - 0.5) * 40,
+            born: now
+        });
+
+        if (this.labels.length > 20) {
+            this.labels = this.labels.slice(-20);
         }
-
-        // Keep max ~30 labels
-        if (this.labels.length > 30) {
-            this.labels = this.labels.slice(-30);
-        }
-    },
-
-    /**
-     * Extract display entries from biometric data
-     * @private
-     */
-    _extractEntries(data, theme) {
-        const entries = [];
-
-        // Dominant emotion
-        if (data.dominant_emotion) {
-            entries.push({ text: data.dominant_emotion });
-        }
-
-        // Emotion scores (show top 3)
-        if (data.emotion_scores) {
-            const sorted = Object.entries(data.emotion_scores)
-                .map(([k, v]) => [k, parseFloat(v) || 0])
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 3);
-            for (const [emotion, score] of sorted) {
-                if (score > 0.05) {
-                    entries.push({ text: `${emotion} ${(score * 100).toFixed(0)}%` });
-                }
-            }
-        }
-
-        // Age
-        if (data.age) {
-            entries.push({ text: `age ${data.age}` });
-        }
-
-        // Gender
-        if (data.dominant_gender) {
-            entries.push({ text: data.dominant_gender.toLowerCase() });
-        }
-
-        // Color palette swatches from theme
-        if (theme) {
-            if (theme.bg) {
-                entries.push({ text: 'bg', swatch: theme.bg });
-            }
-            if (theme.accent) {
-                entries.push({ text: 'accent', swatch: theme.accent });
-            }
-            if (theme.glow) {
-                entries.push({ text: 'glow', swatch: theme.glow });
-            }
-            if (theme.particle) {
-                entries.push({ text: 'particle', swatch: theme.particle });
-            }
-        }
-
-        return entries;
     },
 
     view(vnode) {
         if (!this.labels.length) return null;
 
+        const theme = vnode.attrs.theme;
+
+        // Derive colors from biometric theme
+        const accentColor = theme?.accent
+            ? `rgb(${theme.accent.join(',')})`
+            : 'rgba(255,255,255,0.7)';
+        const glowColor = theme?.glow
+            ? `rgb(${theme.glow.join(',')})`
+            : 'rgba(255,255,255,0.3)';
+
         return m('.biometric-overlay.absolute.inset-0.pointer-events-none.overflow-hidden', {
             style: { zIndex: 15 }
         }, this.labels.map(label => {
             const age = (Date.now() - label.born) / 1000;
-            // Fade in first 1s, hold, fade out in last 3s
-            const fadeIn = Math.min(1, age / 1);
+            const fadeIn = Math.min(1, age / 1.5);
             const remaining = label.duration - age;
-            const fadeOut = remaining < 3 ? Math.max(0, remaining / 3) : 1;
-            const opacity = fadeIn * fadeOut * 0.55;
+            const fadeOut = remaining < 4 ? Math.max(0, remaining / 4) : 1;
+            const opacity = fadeIn * fadeOut * 0.45;
 
             if (opacity <= 0) return null;
 
@@ -168,18 +103,18 @@ const BiometricOverlay = {
                 top: label.y + '%',
                 opacity: opacity,
                 fontSize: (label.size * 0.75) + 'rem',
-                fontFamily: "'Courier New', monospace",
-                letterSpacing: '0.08em',
-                whiteSpace: 'nowrap',
+                fontFamily: "'Playfair Display', Georgia, serif",
+                letterSpacing: '0.05em',
+                lineHeight: '1.4',
+                maxWidth: '40%',
+                color: accentColor,
+                textShadow: `0 0 12px ${glowColor}, 0 0 24px ${glowColor}`,
                 willChange: 'transform, opacity'
             };
 
-            // Apply animation style
             if (label.anim === 'drift') {
                 const progress = age / label.duration;
-                const tx = label.driftX * progress;
-                const ty = label.driftY * progress;
-                style.transform = `translate(${tx}px, ${ty}px)`;
+                style.transform = `translate(${label.driftX * progress}px, ${label.driftY * progress}px)`;
             } else if (label.anim === 'pulse') {
                 const pulse = 0.5 + 0.5 * Math.sin(age * 1.5);
                 style.opacity = opacity * (0.3 + pulse * 0.7);
@@ -192,31 +127,7 @@ const BiometricOverlay = {
                 style.transform = `translate(${bobX}px, ${bobY}px)`;
             }
 
-            const textColor = label.swatch
-                ? `rgb(${label.swatch.join(',')})`
-                : 'rgba(255,255,255,0.7)';
-
-            return m('.bio-label', { key: label.id, style: style }, [
-                // Color swatch dot
-                label.swatch && m('span', {
-                    style: {
-                        display: 'inline-block',
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: `rgb(${label.swatch.join(',')})`,
-                        marginRight: '6px',
-                        verticalAlign: 'middle',
-                        boxShadow: `0 0 6px rgb(${label.swatch.join(',')})`
-                    }
-                }),
-                m('span', {
-                    style: {
-                        color: textColor,
-                        textShadow: `0 0 8px ${textColor}`
-                    }
-                }, label.text)
-            ]);
+            return m('.bio-label', { key: label.id, style: style }, label.text);
         }));
     }
 };

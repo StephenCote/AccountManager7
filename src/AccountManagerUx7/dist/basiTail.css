@@ -7329,22 +7329,6 @@ button.button-tab-active:hover:is(.dark *) {
   color: rgb(156 163 175 / var(--tw-text-opacity, 1));
 }
 
-.sg-chat-header-portraits {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.sg-chat-header-portrait {
-  height: 1.75rem;
-  width: 1.75rem;
-  border-radius: 9999px;
-  border-width: 1px;
-  border-color: rgb(255 255 255 / 0.3);
-  -o-object-fit: cover;
-     object-fit: cover;
-}
-
 .sg-chat-history {
   margin-left: 0.75rem;
   margin-right: 0.75rem;
