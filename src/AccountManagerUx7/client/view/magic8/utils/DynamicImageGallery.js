@@ -225,6 +225,30 @@ class DynamicImageGallery {
     }
 
     /**
+     * Show a specific image immediately (bypasses cycle rotation)
+     * Also adds it to the generated pool if not already present.
+     * @param {Object} imageData - Image data { url, objectId }
+     */
+    showImmediate(imageData) {
+        if (!imageData || !imageData.url) return;
+
+        // Add to generated pool if not already there
+        const exists = this.generatedImages.some(g => g.objectId === imageData.objectId);
+        if (!exists) {
+            this.spliceGeneratedImage(imageData);
+        }
+
+        // Trigger onImageChange directly to display this image now
+        if (this.onImageChange) {
+            this.onImageChange({
+                url: imageData.url,
+                objectId: imageData.objectId,
+                type: 'generated'
+            }, this.currentIndex, this.allImages.length);
+        }
+    },
+
+    /**
      * Manually trigger next image
      */
     next() {

@@ -199,9 +199,23 @@
                 maxGeneratedImages: cfg.imageGeneration?.maxGeneratedImages || 20
             });
 
-            if (cfg.images?.baseGroups?.length > 0) {
-                console.log('Magic8App: Loading base images from groups:', cfg.images.baseGroups);
-                const count = await this.imageGallery.loadBaseImages(cfg.images.baseGroups);
+            // Build group list, including generated images group when SD is enabled
+            const imageGroups = cfg.images?.baseGroups ? [...cfg.images.baseGroups] : [];
+            if (cfg.imageGeneration?.enabled) {
+                try {
+                    const genDir = await page.makePath("auth.group", "data", "~/Magic8/Generated");
+                    if (genDir && genDir.id && !imageGroups.includes(genDir.id)) {
+                        imageGroups.push(genDir.id);
+                        console.log('Magic8App: Added ~/Magic8/Generated group to image gallery:', genDir.id);
+                    }
+                } catch (e) {
+                    console.warn('Magic8App: Could not add generated images group:', e);
+                }
+            }
+
+            if (imageGroups.length > 0) {
+                console.log('Magic8App: Loading base images from groups:', imageGroups);
+                const count = await this.imageGallery.loadBaseImages(imageGroups);
                 console.log('Magic8App: Loaded', count, 'base images');
             } else {
                 console.warn('Magic8App: No base image groups configured');
@@ -241,7 +255,7 @@
                 await this.imageGenerator.loadConfig();
 
                 this.imageGenerator.onImageGenerated = (img) => {
-                    this.imageGallery.spliceGeneratedImage(img);
+                    this.imageGallery.showImmediate(img);
                 };
 
                 this._startImageGeneration();
@@ -356,6 +370,17 @@
         _startImageGeneration() {
             const interval = Math.max(this.sessionConfig?.imageGeneration?.captureInterval || 120000, 60000);
             console.log('Magic8App: Image generation interval:', interval, 'ms');
+
+            // Fire immediate first generation attempt
+            setTimeout(async () => {
+                if (page.components.camera && this.imageGenerator && this.biometricData) {
+                    console.log('Magic8App: Triggering initial image generation (face detected)');
+                    await this.imageGenerator.captureAndGenerate(
+                        page.components.camera,
+                        this.biometricData
+                    );
+                }
+            }, 5000); // Small delay to allow camera/biometrics to initialize
 
             this.imageGenInterval = setInterval(async () => {
                 if (page.components.camera && this.imageGenerator && this.biometricData) {
