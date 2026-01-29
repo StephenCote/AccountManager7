@@ -6,21 +6,28 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assume.assumeTrue;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.GameUtil;
+import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.StateUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -1008,6 +1015,217 @@ public class TestGameUtil extends BaseTest {
 				actualFinalDist, calculatedFinalDist, 1.0);
 
 		logger.info("Distance calculation consistency verified successfully");
+	}
+
+	/**
+	 * Test that getSituation() clears the population cache and returns fresh data.
+	 * This verifies the fix for: "Nearby list never updates, shows same people."
+	 *
+	 * The test poisons the population cache with a fake empty list, then calls
+	 * getSituation(). If the cache is properly cleared, getSituation() will
+	 * re-query the DB and return real population data (non-empty nearby list
+	 * or at least a valid result). If the cache is NOT cleared, it would use
+	 * the empty fake list and return 0 nearby people.
+	 */
+	@Test
+	public void TestSituationClearsPopulationCache() {
+		logger.info("Test that getSituation clears population cache");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> realms = octx.getRealms();
+		assumeTrue("No realms - skipping test", realms.size() > 0);
+		BaseRecord realm = realms.get(0);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		BaseRecord person = pop.get(0);
+		String objectId = person.get(FieldNames.FIELD_OBJECT_ID);
+		assumeTrue("ObjectId is null - skipping test", objectId != null);
+
+		BaseRecord fullPerson = GameUtil.findCharacter(objectId);
+		assumeTrue("Person not found - skipping test", fullPerson != null);
+
+		// First call: baseline - verify getSituation works normally
+		Map<String, Object> sit1 = GameUtil.getSituation(octx, fullPerson);
+		assumeTrue("Situation is null - skipping test", sit1 != null);
+
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> nearby1 = (List<Map<String, Object>>) sit1.get("nearbyPeople");
+		assertNotNull("nearbyPeople should not be null", nearby1);
+		int baselineCount = nearby1.size();
+		logger.info("Baseline nearby count: " + baselineCount);
+
+		// Poison the cache with a fake empty population list
+		long realmId = realm.get(FieldNames.FIELD_ID);
+		List<BaseRecord> fakePop = new ArrayList<>();
+		octx.getPopulationMap().put(realmId, fakePop);
+		logger.info("Poisoned population cache with empty list for realm " + realmId);
+
+		// Verify the cache IS poisoned
+		List<BaseRecord> cachedPop = octx.getPopulationMap().get(realmId);
+		assertEquals("Cache should contain our fake empty list", 0, cachedPop.size());
+
+		// Call getSituation - it should clear the poisoned cache and re-query DB
+		Map<String, Object> sit2 = GameUtil.getSituation(octx, fullPerson);
+		assumeTrue("Second situation is null - skipping test", sit2 != null);
+
+		// After getSituation, the cache should contain real population (not our fake list)
+		List<BaseRecord> refreshedPop = octx.getPopulationMap().get(realmId);
+		assertNotNull("Population should be re-cached after getSituation", refreshedPop);
+		assertTrue("Population cache should have been refreshed with real data (got " +
+				refreshedPop.size() + " records, expected > 0)", refreshedPop.size() > 0);
+
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> nearby2 = (List<Map<String, Object>>) sit2.get("nearbyPeople");
+		assertNotNull("nearbyPeople should not be null after cache refresh", nearby2);
+
+		logger.info("After cache refresh: nearby count = " + nearby2.size() +
+				", population count = " + refreshedPop.size());
+
+		// The nearby count should match the baseline (same location, same data)
+		assertEquals("Nearby count should match baseline after cache refresh",
+				baselineCount, nearby2.size());
+
+		logger.info("Population cache refresh test PASSED");
+	}
+
+	/**
+	 * Test that fresh population records loaded after cache clearing
+	 * reflect DB location changes (simulating Overwatch NPC movement).
+	 *
+	 * Updates an NPC's state.currentLocation FK in the database, clears the
+	 * population cache, re-queries, and verifies the fresh record has the
+	 * updated location.
+	 *
+	 * NOTE: MAXIMUM_OBSERVATION_DISTANCE=10 covers the entire 10x10 feature
+	 * grid, so all population members are always "nearby" in a single-feature
+	 * test world. This test verifies the underlying data refresh mechanism
+	 * rather than filtering behavior.
+	 */
+	@Test
+	public void TestPopulationCacheReflectsDBLocationChanges() {
+		logger.info("Test that fresh population records reflect DB location changes");
+
+		OlioContext octx = getOlioContext();
+		assumeTrue("Context is null - skipping test", octx != null);
+
+		List<BaseRecord> realms = octx.getRealms();
+		assumeTrue("No realms - skipping test", realms.size() > 0);
+		BaseRecord realm = realms.get(0);
+
+		List<BaseRecord> pop = getPopulation(octx);
+		assumeTrue("No population - skipping test", pop != null && pop.size() > 0);
+
+		stagePopulation(octx, pop);
+
+		// Pick an NPC to move
+		BaseRecord npcToMove = null;
+		for (BaseRecord p : pop) {
+			BaseRecord pState = p.get(FieldNames.FIELD_STATE);
+			if (pState != null) {
+				BaseRecord pLoc = pState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+				if (pLoc != null && ((long) pLoc.get(FieldNames.FIELD_ID)) > 0) {
+					npcToMove = p;
+					break;
+				}
+			}
+		}
+		assumeTrue("No NPC with valid state/location found - skipping test", npcToMove != null);
+
+		BaseRecord npcState = npcToMove.get(FieldNames.FIELD_STATE);
+		long npcStateId = npcState.get(FieldNames.FIELD_ID);
+		BaseRecord originalLoc = npcState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		long originalLocId = originalLoc.get(FieldNames.FIELD_ID);
+		String npcName = npcToMove.get(FieldNames.FIELD_NAME);
+		String npcOid = npcToMove.get(FieldNames.FIELD_OBJECT_ID);
+		logger.info("NPC to move: " + npcName + " (oid=" + npcOid +
+				", stateId=" + npcStateId + ", originalLocId=" + originalLocId + ")");
+
+		// Find a different cell to move the NPC to
+		BaseRecord playerLoc = pop.get(0).get("state.currentLocation");
+		assumeTrue("Player location is null - skipping test", playerLoc != null);
+		List<BaseRecord> allCells = GeoLocationUtil.getCells(octx,
+				GeoLocationUtil.getParentLocation(octx, playerLoc));
+		assumeTrue("No cells found - skipping test", allCells.size() > 1);
+
+		BaseRecord targetCell = null;
+		for (BaseRecord cell : allCells) {
+			if (((long) cell.get(FieldNames.FIELD_ID)) != originalLocId) {
+				targetCell = cell;
+				break;
+			}
+		}
+		assumeTrue("No different cell found - skipping test", targetCell != null);
+		long targetLocId = targetCell.get(FieldNames.FIELD_ID);
+		logger.info("Moving NPC to cell: " + targetCell.get(FieldNames.FIELD_NAME) +
+				" (id=" + targetLocId + ")");
+
+		// Update the NPC's location in the DB (simulating Overwatch)
+		try {
+			npcState.set(OlioFieldNames.FIELD_CURRENT_LOCATION, targetCell);
+			StateUtil.updateLocationImmediate(octx, npcToMove, true);
+		} catch (Exception e) {
+			logger.error("Failed to update NPC location: " + e.getMessage());
+			assumeTrue("Failed to update - skipping test", false);
+		}
+
+		// Verify the DB was actually updated by querying directly
+		Query stateQuery = QueryUtil.createQuery(
+				OlioModelNames.MODEL_CHAR_STATE, FieldNames.FIELD_ID, npcStateId);
+		stateQuery.setCache(false);
+		stateQuery.planMost(false);
+		BaseRecord dbState = IOSystem.getActiveContext().getSearch().findRecord(stateQuery);
+		assertNotNull("Should find state in DB", dbState);
+		BaseRecord dbLoc = dbState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		assertNotNull("DB state should have currentLocation", dbLoc);
+		long dbLocId = dbLoc.get(FieldNames.FIELD_ID);
+		logger.info("DB state currentLocation id: " + dbLocId + " (expected: " + targetLocId + ")");
+		assertEquals("DB should reflect the location update", targetLocId, dbLocId);
+
+		// Now clear the population cache and re-query
+		long realmId = realm.get(FieldNames.FIELD_ID);
+		octx.getPopulationMap().remove(realmId);
+		List<BaseRecord> freshPop = octx.getRealmPopulation(realm);
+		assertNotNull("Fresh population should not be null", freshPop);
+		assertTrue("Fresh population should not be empty", freshPop.size() > 0);
+
+		// Find the NPC in the fresh population and verify their location
+		BaseRecord freshNpc = null;
+		for (BaseRecord p : freshPop) {
+			String pOid = p.get(FieldNames.FIELD_OBJECT_ID);
+			if (npcOid != null && npcOid.equals(pOid)) {
+				freshNpc = p;
+				break;
+			}
+		}
+		assertNotNull("NPC should exist in fresh population", freshNpc);
+
+		BaseRecord freshState = freshNpc.get(FieldNames.FIELD_STATE);
+		assertNotNull("Fresh NPC should have state", freshState);
+		BaseRecord freshLoc = freshState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+		assertNotNull("Fresh NPC state should have currentLocation", freshLoc);
+		long freshLocId = freshLoc.get(FieldNames.FIELD_ID);
+		logger.info("Fresh population NPC location id: " + freshLocId +
+				" (expected: " + targetLocId + ", original: " + originalLocId + ")");
+
+		assertEquals("Fresh population record should have updated location from DB",
+				targetLocId, freshLocId);
+
+		logger.info("Population cache refresh correctly reflects DB location change");
+
+		// Cleanup: restore original location
+		try {
+			npcState.set(OlioFieldNames.FIELD_CURRENT_LOCATION, originalLoc);
+			StateUtil.updateLocationImmediate(octx, npcToMove, true);
+			logger.info("Restored NPC to original location");
+		} catch (Exception e) {
+			logger.warn("Failed to restore NPC location: " + e.getMessage());
+		}
 	}
 
 }

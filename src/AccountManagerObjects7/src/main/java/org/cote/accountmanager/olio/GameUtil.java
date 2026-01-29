@@ -50,6 +50,12 @@ public class GameUtil {
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 
+	public static BaseRecord findChatConfig(String objectId) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(false);
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	}
+
 	public static BaseRecord claimCharacter(BaseRecord person) {
 		if (person == null) {
 			return null;
@@ -133,33 +139,12 @@ public class GameUtil {
 			return null;
 		}
 
+		// Clear population cache to force fresh query from DB
+		// Cached records retain stale state.currentLocation references
+		// after Overwatch moves NPCs
+		long realmId = realm.get(FieldNames.FIELD_ID);
+		octx.getPopulationMap().remove(realmId);
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
-		// Refresh state.currentLocation for all population members before filtering
-		// This ensures we have current location data even if population is cached
-		// populate() doesn't overwrite existing values, so we need to query fresh data
-		for (BaseRecord p : pop) {
-			BaseRecord pState = p.get(FieldNames.FIELD_STATE);
-			if (pState != null) {
-				long pStateId = pState.get(FieldNames.FIELD_ID);
-				if (pStateId > 0) {
-					// Query fresh state to get current location
-					Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_STATE, FieldNames.FIELD_ID, pStateId);
-					sq.setCache(false);
-					sq.setRequest(new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_CURRENT_LOCATION});
-					BaseRecord freshState = IOSystem.getActiveContext().getSearch().findRecord(sq);
-					if (freshState != null) {
-						BaseRecord freshLoc = freshState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
-						if (freshLoc != null) {
-							try {
-								pState.set(OlioFieldNames.FIELD_CURRENT_LOCATION, freshLoc);
-							} catch (Exception e) {
-								// ignore
-							}
-						}
-					}
-				}
-			}
-		}
 		List<BaseRecord> adjacentCells = GeoLocationUtil.getAdjacentCells(octx, currentLoc, 3);
 		// Ensure eastings/northings/terrainType are populated and marked for serialization
 		for (BaseRecord cell : adjacentCells) {
@@ -1265,15 +1250,24 @@ public class GameUtil {
 			return result;
 		}
 
-		// Create a simple chat request for evaluation
-		OpenAIRequest evalReq = new OpenAIRequest();
+		// Create evaluation chat using chatConfig for server/model settings
+		Chat chat;
+		if (chatConfig != null) {
+			chat = new Chat(user, chatConfig, evalPromptConfig);
+		} else {
+			chat = new Chat();
+			logger.warn("concludeChat: No chatConfig available - LLM evaluation may fail");
+		}
+
 		String model = chatConfig != null ? chatConfig.get("analyzeModel") : null;
 		if (model == null && chatConfig != null) {
 			model = chatConfig.get("model");
 		}
 		if (model == null) {
-			model = "gpt-4o-mini"; // default fallback
+			model = "gpt-4o-mini";
 		}
+
+		OpenAIRequest evalReq = new OpenAIRequest();
 		evalReq.setModel(model);
 		evalReq.setStream(false);
 
@@ -1281,7 +1275,7 @@ public class GameUtil {
 		List<String> systemParts = evalPromptConfig.get("system");
 		String systemPrompt = systemParts != null ? String.join("\n", systemParts) : "Evaluate this interaction.";
 
-		Chat chat = new Chat();
+		chat.newMessage(evalReq, systemPrompt, Chat.systemRole);
 		chat.newMessage(evalReq, "Ready to analyze.", Chat.userRole);
 		chat.newMessage(evalReq, "I will analyze the conversation and provide structured JSON.", Chat.assistantRole);
 		chat.newMessage(evalReq, evalPrompt, Chat.userRole);
@@ -1737,6 +1731,73 @@ public class GameUtil {
 	}
 
 	/**
+	 * Query past interactions between two characters and format as context text.
+	 * Queries in both directions (actor/interactor swapped) and returns a formatted block.
+	 *
+	 * @param actor First character
+	 * @param target Second character
+	 * @return Formatted interaction history context, or empty string if none
+	 */
+	public static String getInteractionHistoryContext(BaseRecord actor, BaseRecord target) {
+		if (actor == null || target == null) return "";
+
+		List<BaseRecord> interactions = new ArrayList<>();
+		try {
+			// Query interactions where actor -> target
+			Query q1 = QueryUtil.createQuery(OlioModelNames.MODEL_INTERACTION);
+			q1.field("actor", actor);
+			q1.field("interactor", target);
+			q1.setRequestRange(0, 10);
+			q1.planField(OlioFieldNames.FIELD_ACTOR, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID});
+			q1.planField(OlioFieldNames.FIELD_INTERACTOR, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID});
+			QueryResult qr1 = IOSystem.getActiveContext().getSearch().find(q1);
+			if (qr1 != null) {
+				interactions.addAll(Arrays.asList(qr1.getResults()));
+			}
+
+			// Query interactions where target -> actor (reversed)
+			Query q2 = QueryUtil.createQuery(OlioModelNames.MODEL_INTERACTION);
+			q2.field("actor", target);
+			q2.field("interactor", actor);
+			q2.setRequestRange(0, 10);
+			q2.planField(OlioFieldNames.FIELD_ACTOR, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID});
+			q2.planField(OlioFieldNames.FIELD_INTERACTOR, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID});
+			QueryResult qr2 = IOSystem.getActiveContext().getSearch().find(q2);
+			if (qr2 != null) {
+				interactions.addAll(Arrays.asList(qr2.getResults()));
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to query interaction history: {}", e.getMessage());
+			return "";
+		}
+
+		if (interactions.isEmpty()) return "";
+
+		String actorName = actor.get(FieldNames.FIELD_FIRST_NAME);
+		String targetName = target.get(FieldNames.FIELD_FIRST_NAME);
+
+		StringBuilder sb = new StringBuilder();
+		sb.append("--- INTERACTION HISTORY ---\n");
+		sb.append("Previous interactions between ").append(actorName).append(" and ").append(targetName).append(":\n");
+
+		for (BaseRecord inter : interactions) {
+			String type = String.valueOf(inter.get(FieldNames.FIELD_TYPE));
+			String desc = inter.get(FieldNames.FIELD_DESCRIPTION);
+			String state = String.valueOf(inter.get(FieldNames.FIELD_STATE));
+			String actOutcome = String.valueOf(inter.get("actorOutcome"));
+			String intOutcome = String.valueOf(inter.get("interactorOutcome"));
+			if (desc == null || desc.isEmpty()) desc = type;
+			sb.append("- ").append(type).append(": ").append(desc);
+			sb.append(" (result: ").append(state);
+			sb.append(", ").append(actorName).append(": ").append(actOutcome);
+			sb.append(", ").append(targetName).append(": ").append(intOutcome).append(")\n");
+		}
+		sb.append("Use this history to inform the tone and content of the conversation.\n");
+		sb.append("--- END INTERACTION HISTORY ---");
+		return sb.toString();
+	}
+
+	/**
 	 * Simple chat method for game conversations between characters.
 	 * The target character (NPC) responds to the player's message.
 	 *
@@ -1778,6 +1839,12 @@ public class GameUtil {
 		String systemPrompt = "You are " + targetName + ", a " + targetAge + " year old " + targetGender + " character in a survival/adventure setting. " +
 				"Respond naturally and briefly (1-3 sentences) as this character would. " +
 				"Stay in character. Do not break the fourth wall.";
+
+		// Inject prior interaction history as context
+		String interactionContext = getInteractionHistoryContext(actor, target);
+		if (!interactionContext.isEmpty()) {
+			systemPrompt += "\n\n" + interactionContext;
+		}
 
 		// Create chat with config if provided
 		Chat chat;

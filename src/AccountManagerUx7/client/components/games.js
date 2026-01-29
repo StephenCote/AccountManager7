@@ -24,7 +24,8 @@
             m("div", { id: "gameContextMenu", class: "transition transition-0 context-menu-48" }, [
                 gameMenuButton("Card Game", "playing_cards", "/cardGame"),
                 gameMenuButton("Word Game", "match_word", "/game/wordGame"),
-                gameMenuButton("Tetris", "grid_on", "/game/tetris")
+                gameMenuButton("Tetris", "grid_on", "/game/tetris"),
+                gameMenuButton("Magic 8", "counter_8", "/magic8")
             ])
         ]);
     }

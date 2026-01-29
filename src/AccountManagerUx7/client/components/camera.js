@@ -86,6 +86,11 @@
             confirm: async function (data) {
                 let selectedLabel = data.entity.device;
                 console.log("Camera selected:", selectedLabel);
+                if (!selectedLabel || typeof selectedLabel !== 'string') {
+                    page.toast("error", "Please select a camera device.");
+                    page.components.dialog.endDialog();
+                    return;
+                }
                 let device = videoDevices.find(d => d.label.toLowerCase() === selectedLabel.toLowerCase());
                 if(device){
                     selectedDeviceId = device.deviceId;

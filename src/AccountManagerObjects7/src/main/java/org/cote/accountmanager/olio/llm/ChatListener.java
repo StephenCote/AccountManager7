@@ -11,6 +11,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.GameUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -108,19 +109,19 @@ public class ChatListener implements IChatListener {
 			logger.warn("Chat message is null for " + vChatReq.get(FieldNames.FIELD_NAME));
 		}
 		
-		Chat chat = ChatUtil.getChat(user, vChatReq, deferRemote);	
+		Chat chat = ChatUtil.getChat(user, vChatReq, deferRemote);
 		chat.setListener(this);
-		
+
 		asyncRequests.put(oid, req);
 		asyncRequestCount.put(oid, 0);
 		asyncRequestStop.put(oid, false);
 		asyncChats.put(oid, chat);
-		
+
 		String citDesc = "";
 		if(citRef.length() > 0) {
 			citDesc = PromptUtil.getUserCitationTemplate(chat.getPromptConfig(), chat.getChatConfig());
 			if(citDesc == null || citDesc.length() == 0) {
-				citDesc = 
+				citDesc =
 					"--- CITATION INSTRUCTIONS ---" + System.lineSeparator()
 					+ "Use any previous and the following citations to generate a response to the user request: \"" +  vChatReq.getMessage() + "\"" + System.lineSeparator()
 					+ "--- BEGIN CITATIONS ---" + System.lineSeparator() + citRef + System.lineSeparator() + "--- END CITATIONS ---"
@@ -135,7 +136,24 @@ public class ChatListener implements IChatListener {
 			}
 		}
 
-		chat.continueChat(req, citDesc + vChatReq.getMessage());
+		// Inject prior interaction history between the chat characters
+		String interactionCtx = "";
+		BaseRecord chatCfg = chat.getChatConfig();
+		if (chatCfg != null) {
+			BaseRecord sysChar = chatCfg.get("systemCharacter");
+			BaseRecord userChar = chatCfg.get("userCharacter");
+			if (sysChar != null && userChar != null) {
+				// Ensure characters are populated enough for history query and formatting
+				IOSystem.getActiveContext().getReader().populate(sysChar, new String[] {FieldNames.FIELD_FIRST_NAME, FieldNames.FIELD_OBJECT_ID});
+				IOSystem.getActiveContext().getReader().populate(userChar, new String[] {FieldNames.FIELD_FIRST_NAME, FieldNames.FIELD_OBJECT_ID});
+				interactionCtx = GameUtil.getInteractionHistoryContext(userChar, sysChar);
+				if (interactionCtx.length() > 0) {
+					interactionCtx = interactionCtx + System.lineSeparator() + System.lineSeparator();
+				}
+			}
+		}
+
+		chat.continueChat(req, interactionCtx + citDesc + vChatReq.getMessage());
 		
 		handlers.forEach(h -> h.onChatStart(user, chatReq, req));
 		

@@ -17,7 +17,8 @@
         "/game" : page.views.game,
         "/game/:name" : page.views.game,
         "/cardGame": page.views.cardGame,
-        "/hyp": page.views.hyp
+        "/hyp": page.views.hyp,
+        "/magic8": page.views.magic8
     };
     
     

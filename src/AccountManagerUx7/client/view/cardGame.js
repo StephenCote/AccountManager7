@@ -34,6 +34,92 @@
     let pendingNpcChats = [];
     let npcChatPollTimer = null;
 
+    // Reimage state
+    let reimaging = {};  // Track which entities are being reimaged by objectId
+
+    // Chat image token state
+    let chatShowTagSelector = false;
+    let chatSelectedImageTags = [];
+
+    function toggleChatImageTag(tag) {
+        let idx = chatSelectedImageTags.indexOf(tag);
+        if (idx > -1) {
+            chatSelectedImageTags.splice(idx, 1);
+        } else {
+            chatSelectedImageTags.push(tag);
+        }
+    }
+
+    function insertChatImageToken() {
+        if (!chatSelectedImageTags.length) return;
+        let token = "${image." + chatSelectedImageTags.join(",") + "}";
+        let input = document.querySelector(".sg-chat-input input");
+        if (input) {
+            input.value = (input.value ? input.value + " " : "") + token;
+        }
+        chatSelectedImageTags = [];
+        chatShowTagSelector = false;
+    }
+
+    // --- Chat token processing (same as chat.js) ---
+    function pruneTag(cnt, tag) {
+        let tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
+        let maxCheck = 20;
+        let check = 0;
+        while (tdx1 > -1) {
+            if (check++ >= maxCheck) break;
+            let tdx2 = cnt.toLowerCase().indexOf("</" + tag + ">");
+            if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
+                cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + tag.length + 3, cnt.length);
+            }
+            tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
+        }
+        return cnt;
+    }
+
+    function pruneToMark(cnt, mark) {
+        let idx = cnt.indexOf(mark);
+        if (idx > -1) {
+            cnt = cnt.substring(0, idx);
+        }
+        return cnt;
+    }
+
+    function pruneOut(cnt, start, end) {
+        let idx1 = cnt.indexOf(start);
+        let idx2 = cnt.indexOf(end);
+        if (idx1 > -1 && idx2 > -1 && idx2 > idx1) {
+            cnt = cnt.substring(0, idx1) + cnt.substring(idx2 + end.length, cnt.length);
+        }
+        return cnt;
+    }
+
+    function pruneOther(cnt) {
+        cnt = cnt.replace(/\[interrupted\]/g, "");
+        return cnt;
+    }
+
+    function processChatContent(cnt, role) {
+        if (!cnt) return "";
+        if (typeof cnt !== "string") cnt = String(cnt);
+        cnt = pruneOut(cnt, "--- CITATION", "END CITATIONS ---");
+        cnt = pruneToMark(cnt, "<|reserved_special_token");
+        cnt = pruneTag(cnt, "think");
+        cnt = pruneTag(cnt, "thought");
+        cnt = pruneOther(cnt);
+        if (role === "user") {
+            cnt = pruneToMark(cnt, "(Metrics");
+            cnt = pruneToMark(cnt, "(Reminder");
+            cnt = pruneToMark(cnt, "(KeyFrame");
+        }
+        if (role === "assistant") {
+            cnt = pruneToMark(cnt, "(Metrics");
+            cnt = pruneToMark(cnt, "(Reminder");
+            cnt = pruneToMark(cnt, "(KeyFrame");
+        }
+        return cnt.trim();
+    }
+
     // Action state
     let pendingAction = null;    // Action being set up
     let actionResult = null;     // Result of last action
@@ -564,13 +650,18 @@
             addEvent("Moved " + direction, "info");
             moveMode = false;
         } catch (e) {
-            console.error("Failed to move", e, "Response:", e.response);
-            // Mithril puts the response body in e.response for non-2xx responses
+            console.error("Failed to move", e);
             let errorMsg = "Movement failed";
-            if (e.response && e.response.error) {
+            if (typeof e === 'string') {
+                errorMsg = e;
+            } else if (e && e.error) {
+                errorMsg = e.error;
+            } else if (e && e.response && e.response.error) {
                 errorMsg = e.response.error;
-            } else if (e.message) {
+            } else if (e && e.message) {
                 errorMsg = e.message;
+            } else if (e) {
+                try { errorMsg = JSON.stringify(e); } catch(_) { errorMsg = String(e); }
             }
             page.toast("error", errorMsg);
             addEvent(errorMsg, "warning");
@@ -1255,6 +1346,11 @@
                         m("div", {class: "sg-portrait-placeholder"}, [
                             m("span", {class: "material-symbols-outlined"}, "person")
                         ]),
+                    // Reimage loading overlay
+                    reimaging[getCharId(player)] ? m("div", {class: "sg-reimage-overlay"}, [
+                        m("span", {class: "material-symbols-outlined sg-reimage-spinner"}, "progress_activity"),
+                        m("span", {class: "sg-reimage-label"}, "Generating...")
+                    ]) : null,
                     // Overlay buttons on portrait
                     m("div", {style: "position: absolute; bottom: 4px; right: 4px; display: flex; flex-direction: column; gap: 4px;"}, [
                         // View/Edit button
@@ -1273,20 +1369,25 @@
                         m("button", {
                             class: "sg-btn sg-btn-small sg-btn-icon",
                             style: "opacity: 0.8;",
+                            disabled: !!reimaging[getCharId(player)],
                             onclick: async function(e) {
                                 e.stopPropagation();
-                                page.toast("info", "Generating new portrait...");
+                                let charId = getCharId(player);
+                                reimaging[charId] = true;
+                                m.redraw();
                                 try {
                                     await m.request({
                                         method: 'GET',
-                                        url: g_application_path + "/rest/olio/charPerson/" + getCharId(player) + "/reimage/false",
+                                        url: g_application_path + "/rest/olio/charPerson/" + charId + "/reimage/false",
                                         withCredentials: true
                                     });
                                     page.toast("success", "Portrait regenerated!");
                                     await loadSituation();
-                                    m.redraw();
                                 } catch (e) {
                                     page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
+                                } finally {
+                                    delete reimaging[charId];
+                                    m.redraw();
                                 }
                             },
                             title: "Reimage Portrait"
@@ -1664,159 +1765,130 @@
         // Get terrain for background
         let terrainType = playerLoc ? playerLoc.terrainType : "UNKNOWN";
 
-        // Helper to format cell identifier
-        function getCellIdent(cellEast, cellNorth, adjCell) {
-            if (!adjCell) return "";
-            return cellEast + "," + cellNorth;
-        }
-
-        // Helper to render an adjacent cell edge strip with cell identifier
-        function renderEdgeStrip(dx, dy, position) {
-            let adjTerrain = getAdjacentTerrain(dx, dy);
+        // Helper: get adjacent cell info for a given offset
+        function adjInfo(dx, dy) {
             let adjCell = adjacentMap[dx + "," + dy];
-            let targetCellEast = (playerCellEast || 0) + dx;
-            let targetCellNorth = (playerCellNorth || 0) + dy;
-
-            let stripClass = "sg-edge-strip sg-edge-" + position;
+            let adjTerrain = getAdjacentTerrain(dx, dy);
+            let cellEast = (playerCellEast || 0) + dx;
+            let cellNorth = (playerCellNorth || 0) + dy;
+            let ident = adjCell ? (cellEast + "," + cellNorth) : "";
             let style = "";
             if (USE_TILE_IMAGES && adjTerrain) {
-                style = "background-image: url('" + getTileUrl(adjTerrain) + "'); background-size: cover;";
+                style = "background-image: url('" + getTileUrl(adjTerrain) + "'); background-size: cover; background-position: center;";
             }
-
-            let cellIdent = getCellIdent(targetCellEast, targetCellNorth, adjCell);
-            let title = adjTerrain ?
-                (adjTerrain.charAt(0).toUpperCase() + adjTerrain.slice(1).toLowerCase()) + " [" + targetCellEast + "," + targetCellNorth + "]" :
-                "Edge of map";
-
-            return m("div", {
-                class: stripClass + (adjCell ? " sg-edge-clickable" : " sg-edge-void"),
-                style: style,
-                title: adjCell ? "Move to " + title : title,
-                onclick: function() {
-                    if (adjCell) {
-                        moveToCell(targetCellEast, targetCellNorth);
-                    }
-                }
-            }, adjCell ? m("span", {class: "sg-edge-ident"}, cellIdent) : m("span", {class: "sg-edge-void-icon"}, "\u2205"));
+            return { cell: adjCell, terrain: adjTerrain, east: cellEast, north: cellNorth, ident: ident, style: style };
         }
 
-        // Helper to render corner with cell identifier
-        function renderCorner(dx, dy, position) {
-            let adjTerrain = getAdjacentTerrain(dx, dy);
-            let adjCell = adjacentMap[dx + "," + dy];
-            let targetCellEast = (playerCellEast || 0) + dx;
-            let targetCellNorth = (playerCellNorth || 0) + dy;
-
-            let cornerClass = "sg-edge-corner sg-corner-" + position;
-            let style = "";
-            if (USE_TILE_IMAGES && adjTerrain) {
-                style = "background-image: url('" + getTileUrl(adjTerrain) + "'); background-size: cover;";
-            }
-
-            let cellIdent = getCellIdent(targetCellEast, targetCellNorth, adjCell);
-
-            return m("div", {
-                class: cornerClass + (adjCell ? " sg-edge-clickable" : " sg-edge-void"),
-                style: style,
-                title: adjCell ? "Move to [" + targetCellEast + "," + targetCellNorth + "]" : "",
-                onclick: function() {
-                    if (adjCell) {
-                        moveToCell(targetCellEast, targetCellNorth);
-                    }
-                }
-            }, adjCell ? m("span", {class: "sg-edge-ident"}, cellIdent) : null);
+        // Helper: make a border cell (corner or edge) as a td
+        function borderTd(dx, dy, attrs) {
+            let info = adjInfo(dx, dy);
+            let cls = "sg-border-cell" + (info.cell ? " sg-edge-clickable" : " sg-edge-void");
+            let title = info.cell ? "Move to [" + info.east + "," + info.north + "]" : "";
+            return m("td", Object.assign({
+                class: cls,
+                style: info.style,
+                title: title,
+                onclick: function() { if (info.cell) moveToCell(info.east, info.north); }
+            }, attrs || {}));
         }
 
-        // Column headers 0-9
-        function renderColumnHeaders() {
-            let headers = [];
-            for (let i = 0; i < ZOOM_SIZE; i++) {
-                headers.push(m("div", {class: "sg-col-header"}, i));
-            }
-            return m("div", {class: "sg-col-header-row"}, headers);
+        // Build table rows
+        let tableRows = [];
+
+        // Row 0: NW corner | North edge (colspan 10) | NE corner
+        tableRows.push(m("tr", [
+            borderTd(-1, 1),
+            borderTd(0, 1, {colspan: 10}),
+            borderTd(1, 1)
+        ]));
+
+        // Row 1: West spacer (rowspan 11) | col headers 0-9 | East spacer (rowspan 11)
+        let colHeaderCells = [];
+        let westInfo = adjInfo(-1, 0);
+        colHeaderCells.push(m("td", {
+            class: "sg-border-cell" + (westInfo.cell ? " sg-edge-clickable" : " sg-edge-void"),
+            style: westInfo.style,
+            title: westInfo.cell ? "Move to [" + westInfo.east + "," + westInfo.north + "]" : "",
+            rowspan: 11,
+            onclick: function() { if (westInfo.cell) moveToCell(westInfo.east, westInfo.north); }
+        }));
+
+        for (let i = 0; i < ZOOM_SIZE; i++) {
+            colHeaderCells.push(m("td", {class: "sg-col-header"}, i));
+        }
+
+        let eastInfo = adjInfo(1, 0);
+        colHeaderCells.push(m("td", {
+            class: "sg-border-cell" + (eastInfo.cell ? " sg-edge-clickable" : " sg-edge-void"),
+            style: eastInfo.style,
+            title: eastInfo.cell ? "Move to [" + eastInfo.east + "," + eastInfo.north + "]" : "",
+            rowspan: 11,
+            onclick: function() { if (eastInfo.cell) moveToCell(eastInfo.east, eastInfo.north); }
+        }));
+
+        tableRows.push(m("tr", colHeaderCells));
+
+        // Rows 2-11: 10 grid rows (north at top)
+        let reversedGrid = grid.slice().reverse();
+        for (let visualY = 0; visualY < ZOOM_SIZE; visualY++) {
+            let gridY = ZOOM_SIZE - 1 - visualY;
+            let row = reversedGrid[visualY];
+            let rowCells = row.map(function(cell, x) {
+                let isPlayerCell = x === playerGridX && gridY === playerGridY;
+                let hasPerson = cell.occupants.length > 0;
+                let hasPOI = cell.pois.length > 0;
+                let hasThreat = cell.occupants.some(function(o) { return o.type === 'threat'; });
+
+                let cellClass = "sg-zoomed-cell";
+                if (isPlayerCell) cellClass += " sg-cell-player";
+                if (hasThreat) cellClass += " sg-cell-threat";
+                if (hasPerson && !isPlayerCell) cellClass += " sg-cell-person";
+                if (hasPOI) cellClass += " sg-cell-poi";
+
+                let content = [];
+                if (isPlayerCell) {
+                    content.push(m("span", {class: "sg-zoom-icon sg-zoom-player"}, "\u2B50"));
+                }
+                if (hasPerson && !isPlayerCell) {
+                    content.push(m("span", {class: "sg-zoom-icon sg-zoom-person"}, "\u{1F464}"));
+                }
+                if (hasPOI) {
+                    content.push(m("span", {class: "sg-zoom-icon sg-zoom-poi"}, "\u{1F3E0}"));
+                }
+                if (hasThreat) {
+                    content.push(m("span", {class: "sg-zoom-icon sg-zoom-threat"}, "\u{1F43A}"));
+                }
+
+                let targetEast = x * 10 + 5;
+                let targetNorth = gridY * 10 + 5;
+
+                return m("td", {
+                    class: cellClass,
+                    title: "Move to [" + targetEast + ", " + targetNorth + "]m",
+                    onclick: function() {
+                        if (!isPlayerCell) moveToPosition(targetEast, targetNorth);
+                    }
+                }, content);
+            });
+            // West and East cells are covered by rowspan from row 1
+            tableRows.push(m("tr", rowCells));
+        }
+
+        // Last row: SW corner | South edge (colspan 10) | SE corner
+        tableRows.push(m("tr", [
+            borderTd(-1, -1),
+            borderTd(0, -1, {colspan: 10}),
+            borderTd(1, -1)
+        ]));
+
+        let tableStyle = "";
+        if (USE_TILE_IMAGES && terrainType) {
+            tableStyle = "background-image: url('" + getTileUrl(terrainType) + "'); background-size: cover; background-position: center;";
         }
 
         return m("div", {class: "sg-zoomed-grid"}, [
-            // Grid with adjacent cell borders
-            m("div", {class: "sg-zoomed-wrapper"}, [
-                // Top row: NW corner, North edge, NE corner
-                m("div", {class: "sg-edge-row sg-edge-row-top"}, [
-                    renderCorner(-1, 1, "nw"),
-                    renderEdgeStrip(0, 1, "north"),
-                    renderCorner(1, 1, "ne")
-                ]),
-
-                // Middle row: West edge, Main grid, East edge
-                m("div", {class: "sg-edge-row sg-edge-row-middle"}, [
-                    renderEdgeStrip(-1, 0, "west"),
-
-                    // Main 10x10 grid - render north (high y) at top by reversing row order
-                    m("div", {
-                        class: "sg-zoomed-container",
-                        style: USE_TILE_IMAGES && terrainType ?
-                            "background-image: url('" + getTileUrl(terrainType) + "'); background-size: cover;" :
-                            ""
-                    }, [
-                        // Column headers row
-                        renderColumnHeaders()
-                        // Grid rows follow
-                    ].concat(grid.slice().reverse().map(function(row, visualY) {
-                        // visualY=0 is top of screen (north), visualY=9 is bottom (south)
-                        // Convert back to grid coordinates for position matching
-                        let gridY = ZOOM_SIZE - 1 - visualY;
-                        return m("div", {class: "sg-zoomed-row"}, row.map(function(cell, x) {
-                            let isPlayerCell = x === playerGridX && gridY === playerGridY;
-                            let hasPerson = cell.occupants.length > 0;
-                            let hasPOI = cell.pois.length > 0;
-                            let hasThreat = cell.occupants.some(function(o) { return o.type === 'threat'; });
-
-                            let cellClass = "sg-zoomed-cell";
-                            if (isPlayerCell) cellClass += " sg-cell-player";
-                            if (hasThreat) cellClass += " sg-cell-threat";
-                            if (hasPerson && !isPlayerCell) cellClass += " sg-cell-person";
-                            if (hasPOI) cellClass += " sg-cell-poi";
-
-                            // Determine what to show in cell
-                            let content = [];
-                            if (isPlayerCell) {
-                                content.push(m("span", {class: "sg-zoom-icon sg-zoom-player"}, "\u2B50"));
-                            }
-                            if (hasPerson && !isPlayerCell) {
-                                content.push(m("span", {class: "sg-zoom-icon sg-zoom-person"}, "\u{1F464}"));
-                            }
-                            if (hasPOI) {
-                                content.push(m("span", {class: "sg-zoom-icon sg-zoom-poi"}, "\u{1F3E0}"));
-                            }
-                            if (hasThreat) {
-                                content.push(m("span", {class: "sg-zoom-icon sg-zoom-threat"}, "\u{1F43A}"));
-                            }
-
-                            // Click handler - move to this position within cell
-                            // Use gridY (not visualY) for actual map coordinates
-                            let targetEast = x * 10 + 5;  // Center of the 10m block
-                            let targetNorth = gridY * 10 + 5;
-
-                            return m("div", {
-                                class: cellClass,
-                                title: "Move to [" + targetEast + ", " + targetNorth + "]m",
-                                onclick: function() {
-                                    if (!isPlayerCell) {
-                                        moveToPosition(targetEast, targetNorth);
-                                    }
-                                }
-                            }, content);
-                        }));
-                    }))),
-
-                    renderEdgeStrip(1, 0, "east")
-                ]),
-
-                // Bottom row: SW corner, South edge, SE corner
-                m("div", {class: "sg-edge-row sg-edge-row-bottom"}, [
-                    renderCorner(-1, -1, "sw"),
-                    renderEdgeStrip(0, -1, "south"),
-                    renderCorner(1, -1, "se")
-                ])
+            m("table", {class: "sg-cell-table", style: tableStyle}, [
+                m("tbody", tableRows)
             ]),
 
             // Position indicator
@@ -2011,12 +2083,18 @@
         } catch (e) {
             console.error("MoveTo failed", e);
             let errorMsg = "Unknown error";
-            if (e.response && e.response.error) {
+            if (typeof e === 'string') {
+                errorMsg = e;
+            } else if (e && e.error) {
+                errorMsg = e.error;
+            } else if (e && e.response && e.response.error) {
                 errorMsg = e.response.error;
-            } else if (e.message) {
+            } else if (e && e.message) {
                 errorMsg = e.message;
-            } else if (e.code) {
+            } else if (e && e.code) {
                 errorMsg = "HTTP " + e.code;
+            } else if (e) {
+                try { errorMsg = JSON.stringify(e); } catch(_) { errorMsg = String(e); }
             }
             addEvent("Movement blocked: " + errorMsg, "warning");
         } finally {
@@ -2087,9 +2165,19 @@
             }
 
             let threats = situation && situation.threats ? situation.threats : [];
-            let people = situation && situation.nearbyPeople ? situation.nearbyPeople : [];
+            let rawPeople = situation && situation.nearbyPeople ? situation.nearbyPeople : [];
             let clock = situation && situation.clock ? situation.clock : null;
             let interactions = situation && situation.interactions ? situation.interactions : [];
+
+            // Exclude the player and sort by distance (closest first)
+            let playerOid = player && player.objectId;
+            let people = rawPeople.filter(function(p) {
+                return p.objectId !== playerOid;
+            }).sort(function(a, b) {
+                let distA = getDistanceAndDirection(a.state, a.currentLocation).distance;
+                let distB = getDistanceAndDirection(b.state, b.currentLocation).distance;
+                return distA - distB;
+            });
 
             return m("div", {class: "sg-panel sg-action-panel"}, [
                 // Game clock
@@ -2145,13 +2233,14 @@
                         m("div", {class: "sg-no-threats"}, "No immediate threats")
                 ]),
 
-                // Nearby people
+                // Nearby people (sorted by distance, closest first)
                 people.length ? m("div", {class: "sg-people-section"}, [
                     m("div", {class: "sg-panel-header sg-header-info"}, [
                         m("span", {class: "material-symbols-outlined"}, "groups"),
-                        " NEARBY"
+                        " NEARBY",
+                        people.length > 3 ? m("span", {class: "sg-nearby-count"}, " (" + people.length + ")") : null
                     ]),
-                    people.slice(0, 3).map(renderPersonCard)
+                    people.slice(0, 5).map(renderPersonCard)
                 ]) : null,
 
                 // Player interactions
@@ -2475,24 +2564,19 @@
                     // Reimage button
                     m("button", {
                         class: "sg-btn sg-btn-small sg-btn-icon",
+                        disabled: !!reimaging[entityId],
                         onclick: async function() {
-                            if (isPerson) {
-                                page.toast("info", "Generating new portrait...");
-                                try {
+                            reimaging[entityId] = true;
+                            m.redraw();
+                            try {
+                                if (isPerson) {
                                     await m.request({
                                         method: 'GET',
                                         url: g_application_path + "/rest/olio/charPerson/" + entityId + "/reimage/false",
                                         withCredentials: true
                                     });
                                     page.toast("success", "Portrait regenerated!");
-                                    await loadSituation();
-                                    m.redraw();
-                                } catch (e) {
-                                    page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
-                                }
-                            } else if (isAnimal) {
-                                page.toast("info", "Generating animal image...");
-                                try {
+                                } else if (isAnimal) {
                                     await m.request({
                                         method: 'POST',
                                         url: g_application_path + "/rest/olio/animal/" + entityId + "/reimage",
@@ -2500,16 +2584,20 @@
                                         withCredentials: true
                                     });
                                     page.toast("success", "Animal image generated!");
-                                    await loadSituation();
-                                    m.redraw();
-                                } catch (e) {
-                                    page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
                                 }
+                                await loadSituation();
+                            } catch (e) {
+                                page.toast("error", "Failed to reimage: " + (e.message || "Unknown error"));
+                            } finally {
+                                delete reimaging[entityId];
+                                m.redraw();
                             }
                         },
                         title: "Reimage"
                     }, [
-                        m("span", {class: "material-symbols-outlined"}, "auto_awesome")
+                        reimaging[entityId]
+                            ? m("span", {class: "material-symbols-outlined sg-reimage-spinner"}, "progress_activity")
+                            : m("span", {class: "material-symbols-outlined"}, "auto_awesome")
                     ])
                 ]);
             } else {
@@ -2615,22 +2703,103 @@
         view: function() {
             if (!chatDialogOpen || !chatSession) return null;
 
+            let playerPortrait = getPortraitUrl(player, "64x64");
+            let targetPortrait = getPortraitUrl(chatSession.target, "64x64");
+
+            // Build avatar vnodes
+            let playerAvatar = playerPortrait
+                ? m("img", {src: playerPortrait})
+                : m("span", {class: "material-symbols-outlined text-sm text-gray-500"}, "person");
+            let targetAvatar = targetPortrait
+                ? m("img", {src: targetPortrait})
+                : m("span", {class: "material-symbols-outlined text-sm text-gray-500"}, "person");
+
+            // Image tag selector row
+            let tagSelector = null;
+            if (chatShowTagSelector && window.am7imageTokens) {
+                tagSelector = m("div", {class: "sg-chat-tag-selector"}, [
+                    window.am7imageTokens.tags.map(function(tag) {
+                        let isSelected = chatSelectedImageTags.indexOf(tag) > -1;
+                        return m("button", {
+                            class: "px-2 py-0.5 rounded-full text-xs " +
+                                (isSelected ? "bg-purple-600 text-white" : "bg-gray-500 text-gray-200 hover:bg-gray-400"),
+                            onclick: function() { toggleChatImageTag(tag); }
+                        }, tag);
+                    }),
+                    chatSelectedImageTags.length > 0
+                        ? m("button", {
+                            class: "ml-2 px-3 py-0.5 rounded bg-purple-600 text-white text-xs hover:bg-purple-700",
+                            onclick: function() { insertChatImageToken(); }
+                        }, "Insert " + chatSelectedImageTags.join(",") + " pic")
+                        : null
+                ]);
+            }
+
             return m("div", {class: "sg-dialog-overlay"}, [
                 m("div", {class: "sg-dialog sg-dialog-chat"}, [
+                    // Header with portraits
                     m("div", {class: "sg-dialog-header"}, [
-                        m("span", {class: "material-symbols-outlined"}, "forum"),
-                        " Talking to " + (chatSession.target.name || "Unknown"),
+                        m("div", {class: "sg-chat-header-portraits"}, [
+                            playerPortrait ? m("img", {class: "sg-chat-header-portrait", src: playerPortrait}) : null,
+                            m("span", {class: "material-symbols-outlined"}, "forum"),
+                            targetPortrait ? m("img", {class: "sg-chat-header-portrait", src: targetPortrait}) : null
+                        ]),
+                        m("span", {style: "margin-left: 8px;"}, " Talking to " + (chatSession.target.firstName || chatSession.target.name || "Unknown")),
                         m("button", {
                             class: "sg-dialog-close",
                             onclick: endChat
                         }, "\u00D7")
                     ]),
-                    m("div", {class: "sg-chat-messages"}, chatMessages.map(function(msg) {
-                        return m("div", {class: "sg-chat-msg sg-chat-" + msg.role}, [
-                            m("div", {class: "sg-chat-content"}, msg.content)
+
+                    // Messages with avatars
+                    m("div", {class: "sg-chat-messages", oncreate: function(vnode) {
+                        vnode.dom.scrollTop = vnode.dom.scrollHeight;
+                    }, onupdate: function(vnode) {
+                        vnode.dom.scrollTop = vnode.dom.scrollHeight;
+                    }}, chatMessages.map(function(msg) {
+                        let cnt = processChatContent(msg.content || "", msg.role);
+                        if (!cnt) return null;
+                        let rendered = (msg.role === "assistant" && typeof marked !== "undefined")
+                            ? m.trust(marked.parse(cnt.replace(/\r/, "")))
+                            : cnt;
+                        let isUser = msg.role === "user";
+                        let avatar = isUser ? playerAvatar : targetAvatar;
+                        let roleLabel = isUser
+                            ? (player ? player.firstName || player.name : "You")
+                            : (chatSession.target ? chatSession.target.firstName || chatSession.target.name : "NPC");
+
+                        if (msg.role === "system") {
+                            return m("div", {class: "sg-chat-msg sg-chat-system"}, [
+                                m("div", {class: "sg-chat-content"}, cnt)
+                            ]);
+                        }
+
+                        return m("div", {class: "sg-chat-msg-row" + (isUser ? " sg-chat-row-user" : "")}, [
+                            m("div", {class: "sg-chat-avatar"}, avatar),
+                            m("div", {class: "sg-chat-msg sg-chat-" + msg.role}, [
+                                m("div", {class: "sg-chat-role"}, roleLabel),
+                                m("div", {class: "sg-chat-content"}, rendered)
+                            ])
                         ]);
                     })),
+
+                    // Tag selector (shown when image button toggled)
+                    tagSelector,
+
+                    // Input area
                     m("div", {class: "sg-chat-input"}, [
+                        // Image token button
+                        window.am7imageTokens ? m("button", {
+                            class: "sg-btn sg-btn-small sg-btn-icon",
+                            style: chatShowTagSelector ? "color: #9333ea;" : "",
+                            onclick: function() {
+                                chatShowTagSelector = !chatShowTagSelector;
+                                if (!chatShowTagSelector) chatSelectedImageTags = [];
+                            },
+                            title: "Insert image token"
+                        }, [
+                            m("span", {class: "material-symbols-outlined"}, chatShowTagSelector ? "image" : "add_photo_alternate")
+                        ]) : null,
                         chatPending ?
                             m("div", {class: "sg-chat-pending-bar"},
                                 m("div", {class: "sg-chat-pending-progress"})
@@ -2649,7 +2818,7 @@
                             class: "sg-btn sg-btn-primary",
                             disabled: chatPending,
                             onclick: function(e) {
-                                let input = e.target.parentElement.querySelector("input");
+                                let input = e.target.closest(".sg-chat-input").querySelector("input");
                                 if (input && input.value.trim()) {
                                     sendChatMessage(input.value);
                                     input.value = "";

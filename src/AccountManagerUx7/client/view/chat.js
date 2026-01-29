@@ -85,7 +85,6 @@
 
     let camera = false;
     let audio = false;
-    let audioMagic8 = false;
 
     let hideThoughts = true;
     let editIndex = -1;
@@ -559,25 +558,20 @@
         page.components.audio.stopAllAudioSourceControllers();
       }
 
-      // Cycle through audio modes: Off -> Standard Audio -> Magic8 -> Off
-      if (audio && !audioMagic8) {
-        // Standard Audio -> Magic8
-        audio = false;
-        audioMagic8 = true;
-      }
-      else if (audioMagic8) {
-        // Magic8 -> Off
-        audio = false;
-        audioMagic8 = false;
-      }
-      else {
-        // Off -> Standard Audio
-        audio = true;
-        audioMagic8 = false;
-      }
-
-      // Trigger redraw to update the view with new audio mode
+      audio = !audio;
       m.redraw();
+    }
+
+    function sendToMagic8() {
+      const magic8Context = {
+        chatConfigId: chatCfg?.chat?.objectId,
+        chatHistory: chatCfg?.history?.messages || [],
+        systemCharacter: chatCfg?.system,
+        userCharacter: chatCfg?.user,
+        instanceId: inst?.api?.objectId()
+      };
+      sessionStorage.setItem('magic8Context', JSON.stringify(magic8Context));
+      m.route.set('/magic8', { context: 'chat' });
     }
     
     let faceProfile;
@@ -674,30 +668,6 @@
     function getResultsView() {
       if (!inst) {
         return "";
-      }
-      if (audioMagic8) {
-        // Use new Magic8Ball component
-        let sysUrl, usrUrl;
-        if (profile && chatCfg.system?.profile?.portrait) {
-          let pp = chatCfg.system.profile.portrait;
-          sysUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
-        }
-        if (profile && chatCfg.user?.profile?.portrait) {
-          let pp = chatCfg.user.profile.portrait;
-          usrUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
-        }
-
-        return m(page.components.audioComponents.Magic8Ball, {
-          instanceId: inst.api.objectId(),
-          messages: chatCfg.history?.messages || [],
-          systemProfileId: chatCfg?.system?.profile?.objectId,
-          userProfileId: chatCfg?.user?.profile?.objectId,
-          systemProfileImageUrl: sysUrl,
-          userProfileImageUrl: usrUrl,
-          useProfile: profile,
-          imageBaseGroups: [132, 1546, 1545, 1547],  // Hard-coded group IDs for background images
-          pruneContent: pruneAll
-        });
       }
       let c1g = "man";
       let c1l = "Nobody";
@@ -982,7 +952,8 @@
                 page.iconButton("button",  (camera ? "photo_camera" : "no_photography"), "", toggleCamera),
                 page.iconButton("button",  (showTagSelector ? "image" : "add_photo_alternate"), "", function() { showTagSelector = !showTagSelector; if (!showTagSelector) selectedImageTags = []; }),
                 page.iconButton("button",  (profile ? "account_circle" : "account_circle_off"), "", toggleProfile),
-                page.iconButton("button",  (audio ? "volume_up" : (audioMagic8 ? "counter_8" : "volume_mute")), "", toggleAudio),
+                page.iconButton("button",  (audio ? "volume_up" : "volume_mute"), "", toggleAudio),
+                page.iconButton("button",  "counter_8", "Send to Magic8", sendToMagic8),
                 page.iconButton("button",  "query_stats", "", chatInto),
                 page.iconButton("button",  "visibility" + (hideThoughts ? "" : "_off"), "", toggleThoughts),
                 page.components.audio.recordButton(),

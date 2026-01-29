@@ -1010,7 +1010,7 @@ public class GameService {
 		BaseRecord chatConfig = null;
 		String chatConfigId = (String) params.get("chatConfigId");
 		if(chatConfigId != null) {
-			chatConfig = GameUtil.findCharacter(chatConfigId); // This should be a chatConfig lookup
+			chatConfig = GameUtil.findChatConfig(chatConfigId);
 		}
 
 		Map<String, Object> result = GameUtil.concludeChat(octx, user, actor, target, messages, chatConfig);
