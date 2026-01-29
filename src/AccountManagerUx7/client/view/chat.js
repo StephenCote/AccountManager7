@@ -100,10 +100,23 @@
 
     // Patch a chat message to replace tag-only tokens with id+tag tokens (chat.js version)
     async function patchChatImageToken(msgIndex, newContent) {
+        // Always update local state first so the UI reflects the change immediately
+        // This prevents re-generation on redraw even if server patch fails
+        if (chatCfg.history?.messages?.[msgIndex]) {
+            chatCfg.history.messages[msgIndex].content = newContent;
+        }
+
+        // Then try to persist to server
         if (!inst) return;
         try {
-            let q = am7view.viewQuery(am7model.newInstance(inst.api.sessionType()));
-            q.field("id", inst.api.session().id);
+            let sessionType = inst.api.sessionType();
+            let session = inst.api.session();
+            if (!sessionType || !session || !session.id) {
+                console.warn("patchChatImageToken: No session available for server patch");
+                return;
+            }
+            let q = am7view.viewQuery(am7model.newInstance(sessionType));
+            q.field("id", session.id);
             let qr = await page.search(q);
             if (qr && qr.results && qr.results.length > 0) {
                 let req = qr.results[0];
@@ -112,12 +125,8 @@
                     await page.patchObject(req);
                 }
             }
-            // Update local history
-            if (chatCfg.history?.messages?.[msgIndex]) {
-                chatCfg.history.messages[msgIndex].content = newContent;
-            }
         } catch (e) {
-            console.error("patchChatImageToken error:", e);
+            console.error("patchChatImageToken server error (local state updated):", e);
         }
     }
 

@@ -25,6 +25,10 @@
     let chatMessages = [];
     let chatPending = false;
     let chatSession = null;
+    let chatStreaming = false;  // True when streaming response is in progress
+
+    // Configuration: set to true to use WebSocket streaming for chat (same as regular chat)
+    const USE_CHAT_STREAMING = true;
 
     // NPC-initiated chat requests
     let pendingNpcChats = [];
@@ -713,6 +717,47 @@
     // Chat Functions
     // ==========================================
 
+    // Create streaming callbacks for chat (same pattern as chat.js)
+    function newCardGameChatStream() {
+        return {
+            streamId: undefined,
+            onchatcomplete: function(id) {
+                console.log("CardGame chat completed: " + id);
+                clearChatStream();
+                m.redraw();
+            },
+            onchaterror: function(id, msg) {
+                console.error("CardGame chat error: " + msg);
+                chatMessages.push({ role: 'system', content: "Communication failed: " + msg, time: new Date() });
+                clearChatStream();
+                m.redraw();
+            },
+            onchatstart: function(id, req) {
+                chatMessages.push({ role: 'assistant', content: '', time: new Date() });
+                m.redraw();
+            },
+            onchatupdate: function(id, msg) {
+                if (!chatMessages.length) {
+                    console.error("Unexpected chat history state");
+                    return;
+                }
+                let lastMsg = chatMessages[chatMessages.length - 1];
+                if (lastMsg.role !== 'assistant') {
+                    console.error("Expected assistant message to be most recent");
+                    return;
+                }
+                lastMsg.content += msg;
+                m.redraw();
+            }
+        };
+    }
+
+    function clearChatStream() {
+        page.chatStream = undefined;
+        chatStreaming = false;
+        chatPending = false;
+    }
+
     async function startChat(target) {
         if (!player || !target) return;
         chatMessages = [];
@@ -803,8 +848,57 @@
             chatSession = {
                 actor: player,
                 target: target,
-                chatConfigId: chatCfg.objectId
+                chatConfigId: chatCfg.objectId,
+                chatConfig: chatCfg,
+                chatRequestId: null  // Will be set if using streaming
             };
+
+            // If using WebSocket streaming, create a ChatRequest for the streaming infrastructure
+            if (USE_CHAT_STREAMING) {
+                // Find or create a prompt config for game chat
+                let promptConfigs = await am7client.list("olio.llm.promptConfig", chatDir.objectId, null, 0, 0);
+                let promptCfg = promptConfigs.find(p => p.name === "CardGame Prompt") || promptConfigs[0];
+
+                if (!promptCfg && promptConfigs.length === 0) {
+                    // Create a basic prompt config if none exists
+                    let newPromptCfg = am7model.newInstance("olio.llm.promptConfig");
+                    newPromptCfg.api.groupId(chatDir.id);
+                    newPromptCfg.api.groupPath(chatDir.path);
+                    newPromptCfg.api.name("CardGame Prompt");
+                    newPromptCfg.entity.system = ["You are an AI character in a game world. Stay in character and respond naturally."];
+                    promptCfg = await page.createObject(newPromptCfg.entity);
+                }
+
+                if (promptCfg) {
+                    // Create ChatRequest for streaming
+                    let chatReqName = "CardGame: " + (player.firstName || player.name) + " x " + (target.firstName || target.name);
+                    let chatReqBody = {
+                        schema: "olio.llm.chatRequest",
+                        name: chatReqName,
+                        chatConfig: { objectId: chatCfg.objectId },
+                        promptConfig: { objectId: promptCfg.objectId },
+                        uid: page.uid()
+                    };
+
+                    let chatRequest = await m.request({
+                        method: 'POST',
+                        url: g_application_path + "/rest/chat/new",
+                        withCredentials: true,
+                        body: chatReqBody
+                    });
+
+                    if (chatRequest && chatRequest.objectId) {
+                        chatSession.chatRequestId = chatRequest.objectId;
+                        chatSession.chatRequest = chatRequest;
+                        // Check if the chatConfig has stream enabled
+                        chatSession.streamEnabled = chatCfg.stream !== false;
+                        console.log("CardGame chat streaming enabled, ChatRequest:", chatRequest.objectId);
+                    } else {
+                        console.warn("Failed to create ChatRequest for streaming, falling back to REST");
+                    }
+                }
+            }
+
             addEvent("Started conversation with " + target.name, "info");
         } catch (e) {
             console.error("Failed to setup chat:", e);
@@ -822,6 +916,33 @@
         chatMessages.push({ role: 'user', content: text, time: new Date() });
         m.redraw();
 
+        // Use WebSocket streaming if enabled and ChatRequest was created
+        if (USE_CHAT_STREAMING && chatSession.chatRequestId && chatSession.streamEnabled) {
+            try {
+                page.chatStream = newCardGameChatStream();
+                chatStreaming = true;
+
+                let chatReq = {
+                    schema: "olio.llm.chatRequest",
+                    objectId: chatSession.chatRequestId,
+                    uid: page.uid(),
+                    message: text
+                };
+
+                page.wss.send("chat", JSON.stringify(chatReq), undefined, "olio.llm.chatRequest");
+            } catch (e) {
+                console.error("Chat streaming failed, falling back to REST", e);
+                clearChatStream();
+                await sendChatMessageRest(text);
+            }
+        } else {
+            // Fall back to REST
+            await sendChatMessageRest(text);
+        }
+    }
+
+    // REST fallback for chat when streaming is unavailable
+    async function sendChatMessageRest(text) {
         try {
             let resp = await m.request({
                 method: 'POST',
@@ -865,6 +986,11 @@
             addEvent("Conversation ended with " + chatSession.target.name, "info");
         } catch (e) {
             console.log("End chat endpoint not available");
+        }
+
+        // Clean up streaming state if active
+        if (chatStreaming) {
+            clearChatStream();
         }
 
         chatDialogOpen = false;
@@ -2620,6 +2746,10 @@
         selectedEntity = null;
         selectedEntityType = null;
         eventLog = [];
+        // Clean up streaming state if active
+        if (chatStreaming) {
+            clearChatStream();
+        }
         chatMessages = [];
         chatSession = null;
         currentSave = null;
