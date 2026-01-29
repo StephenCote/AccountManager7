@@ -358,8 +358,8 @@
             console.log('Magic8App: Image generation interval:', interval, 'ms');
 
             this.imageGenInterval = setInterval(async () => {
-                if (page.components.camera && this.imageGenerator) {
-                    console.log('Magic8App: Triggering image generation capture');
+                if (page.components.camera && this.imageGenerator && this.biometricData) {
+                    console.log('Magic8App: Triggering image generation capture (face detected)');
                     await this.imageGenerator.captureAndGenerate(
                         page.components.camera,
                         this.biometricData
@@ -502,7 +502,7 @@
             } else {
                 // Navigate to home or previous view
                 if (m.route && m.route.set) {
-                    m.route.set('/home');
+                    m.route.set('/main');
                 } else {
                     window.history.back();
                 }
