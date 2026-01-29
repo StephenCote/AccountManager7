@@ -1074,7 +1074,8 @@
             });
 
             if (resp && resp.response) {
-                chatMessages.push({ role: 'assistant', content: resp.response, time: new Date() });
+                let content = (typeof resp.response === "object" && resp.response.content) ? resp.response.content : resp.response;
+                chatMessages.push({ role: 'assistant', content: content, time: new Date() });
             }
         } catch (e) {
             console.error("Chat failed", e);

@@ -1868,7 +1868,7 @@ public class GameUtil {
 		try {
 			OpenAIResponse resp = chat.chat(req);
 			if (resp != null && resp.getMessage() != null) {
-				result.put("response", resp.getMessage());
+				result.put("response", resp.getMessage().getContent());
 				result.put("speaker", targetName);
 			} else {
 				result.put("response", "*" + targetName + " doesn't respond*");

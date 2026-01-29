@@ -581,12 +581,11 @@
                     theme: this.currentTheme
                 }),
 
-                // Biometric clues (subtle display)
-                this.biometricData && m('.absolute.bottom-20.left-1/2.-translate-x-1/2.text-center.z-15', {
-                    class: 'text-xs text-white/40 space-y-1 pointer-events-none'
-                }, this._getBiometricClues().map(clue =>
-                    m('p', clue)
-                )),
+                // Animated biometric data overlay
+                m(Magic8.BiometricOverlay, {
+                    biometricData: this.biometricData,
+                    theme: this.currentTheme
+                }),
 
                 // Paused overlay (tappable for mobile resume)
                 this.phase === 'paused' && m('.absolute.inset-0.z-40.flex.items-center.justify-center.bg-black/50.cursor-pointer', {

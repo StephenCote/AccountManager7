@@ -13,9 +13,10 @@
  *   8. components/HypnoCanvas.js
  *   9. components/HypnoticTextDisplay.js
  *  10. components/ControlPanel.js
- *  11. components/SessionConfigEditor.js
- *  12. Magic8App.js
- *  13. index.js (this file)
+ *  11. components/BiometricOverlay.js
+ *  12. components/SessionConfigEditor.js
+ *  13. Magic8App.js
+ *  14. index.js (this file)
  */
 (function() {
 
@@ -86,6 +87,7 @@
             `${base}/components/HypnoCanvas.js`,
             `${base}/components/HypnoticTextDisplay.js`,
             `${base}/components/ControlPanel.js`,
+            `${base}/components/BiometricOverlay.js`,
             `${base}/components/SessionConfigEditor.js`,
             `${base}/Magic8App.js`,
             `${base}/index.js`

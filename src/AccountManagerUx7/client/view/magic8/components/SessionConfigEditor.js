@@ -532,7 +532,7 @@ const SessionConfigEditor = {
 
                         // Inline new config editor
                         this.createNewSdConfig && [
-                            m('.grid.grid-cols-1.sm:grid-cols-2.gap-4.mb-3', [
+                            m('.grid.gap-4.mb-3', { class: 'grid-cols-1 sm:grid-cols-2' }, [
                                 m('div', [
                                     m('label.block.text-sm.text-gray-400.mb-1', 'Model'),
                                     m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
@@ -573,7 +573,7 @@ const SessionConfigEditor = {
                                 oninput: (e) => this.config.imageGeneration.sdInline.negative_prompt = e.target.value
                             }),
 
-                            m('.grid.grid-cols-1.sm:grid-cols-2.gap-4.mt-3', [
+                            m('.grid.gap-4.mt-3', { class: 'grid-cols-1 sm:grid-cols-2' }, [
                                 m('div', [
                                     m('label.block.text-sm.text-gray-400.mb-1', 'Strength'),
                                     m('.flex.items-center.gap-2', [
@@ -624,7 +624,7 @@ const SessionConfigEditor = {
                                 ])
                             ]),
 
-                            m('.grid.grid-cols-1.sm:grid-cols-2.gap-4.mt-3', [
+                            m('.grid.gap-4.mt-3', { class: 'grid-cols-1 sm:grid-cols-2' }, [
                                 m('div', [
                                     m('label.block.text-sm.text-gray-400.mb-1', 'Width'),
                                     m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
@@ -808,11 +808,15 @@ const SessionConfigEditor = {
                 ]),
 
                 // Action Buttons
-                m('.flex.flex-col.sm:flex-row.gap-3.sm:gap-4.mt-8', [
-                    m('button.flex-1.py-3.px-6.bg-gray-700.rounded-lg.font-medium.hover:bg-gray-600.active:bg-gray-500.transition.min-h-[44px]', {
+                m('.flex.flex-col.gap-3.mt-8', { class: 'sm:flex-row sm:gap-4' }, [
+                    m('button.flex-1.py-3.px-6.bg-gray-700.rounded-lg.font-medium.transition', {
+                        class: 'hover:bg-gray-600 active:bg-gray-500',
+                        style: { minHeight: '44px' },
                         onclick: onCancel
                     }, 'Cancel'),
-                    m('button.flex-1.py-3.px-6.bg-indigo-600.rounded-lg.font-medium.hover:bg-indigo-500.active:bg-indigo-400.transition.min-h-[44px]', {
+                    m('button.flex-1.py-3.px-6.bg-indigo-600.rounded-lg.font-medium.transition', {
+                        class: 'hover:bg-indigo-500 active:bg-indigo-400',
+                        style: { minHeight: '44px' },
                         onclick: () => onSave && onSave(this.config)
                     }, 'Start Session')
                 ])
