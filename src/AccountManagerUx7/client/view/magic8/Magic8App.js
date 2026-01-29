@@ -204,9 +204,9 @@
             if (cfg.imageGeneration?.enabled) {
                 try {
                     const genDir = await page.makePath("auth.group", "data", "~/Magic8/Generated");
-                    if (genDir && genDir.id && !imageGroups.includes(genDir.id)) {
-                        imageGroups.push(genDir.id);
-                        console.log('Magic8App: Added ~/Magic8/Generated group to image gallery:', genDir.id);
+                    if (genDir && genDir.objectId && !imageGroups.includes(genDir.objectId)) {
+                        imageGroups.push(genDir.objectId);
+                        console.log('Magic8App: Added ~/Magic8/Generated group to image gallery:', genDir.objectId);
                     }
                 } catch (e) {
                     console.warn('Magic8App: Could not add generated images group:', e);

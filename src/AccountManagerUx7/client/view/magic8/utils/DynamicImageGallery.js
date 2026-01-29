@@ -37,14 +37,32 @@ class DynamicImageGallery {
         console.log('DynamicImageGallery: Loading images for group IDs:', groupIds);
 
         try {
-            // Load images from each group individually using list API
+            // Load images from each group using search (avoids loading dataBytesStore)
             let allResults = [];
             for (const gid of groupIds) {
-                console.log('DynamicImageGallery: Listing data.data in group', gid);
-                const items = await am7client.list("data.data", gid, null, 0, 0);
-                console.log('DynamicImageGallery: Group', gid, 'returned', items ? items.length : 0, 'items');
-                if (items && items.length) {
-                    allResults = allResults.concat(items);
+                try {
+                    console.log('DynamicImageGallery: Searching data.data in group', gid);
+                    // Resolve group objectId to numeric id
+                    let gq = am7view.viewQuery(am7model.newInstance("auth.group"));
+                    gq.field("objectId", gid);
+                    let gqr = await page.search(gq);
+                    if (!gqr?.results?.length) {
+                        console.warn('DynamicImageGallery: Group not found:', gid);
+                        continue;
+                    }
+                    const groupNumericId = gqr.results[0].id;
+
+                    // Search data.data by numeric groupId (won't load dataBytesStore)
+                    let q = am7view.viewQuery(am7model.newInstance("data.data"));
+                    q.field("groupId", groupNumericId);
+                    let qr = await page.search(q);
+                    const items = qr?.results || [];
+                    console.log('DynamicImageGallery: Group', gid, '(id:', groupNumericId, ') returned', items.length, 'items');
+                    if (items.length) {
+                        allResults = allResults.concat(items);
+                    }
+                } catch (groupErr) {
+                    console.warn('DynamicImageGallery: Failed to load group', gid, ':', groupErr);
                 }
             }
 
@@ -246,7 +264,7 @@ class DynamicImageGallery {
                 type: 'generated'
             }, this.currentIndex, this.allImages.length);
         }
-    },
+    }
 
     /**
      * Manually trigger next image
