@@ -288,7 +288,7 @@ public class NeedsUtil {
                 state.setValue("agitated", true);
 
                 String geoType = location.get(FieldNames.FIELD_GEOTYPE);
-                if (geoType.equals(FieldNames.FIELD_FEATURE)) {
+                if (geoType != null && geoType.equals(FieldNames.FIELD_FEATURE)) {
                     logger.warn("Feature placement detected: Move " + name);
                 } else {
                     List<String> upf = new ArrayList<>();

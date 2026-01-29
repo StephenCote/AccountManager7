@@ -2033,10 +2033,28 @@
         @apply flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden;
       }
       .sg-progress-fill {
-        @apply h-full bg-blue-500 dark:bg-blue-400 transition-all;
+        @apply h-full bg-blue-500 dark:bg-blue-400;
+        transition: width 0.08s linear;
       }
       .sg-btn-danger {
         @apply bg-red-500 hover:bg-red-600 text-white;
+      }
+
+      /* Action progress section (shown in action panel during movement) */
+      .sg-action-progress-section {
+        @apply mb-4 p-3 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30;
+      }
+      .sg-header-action {
+        @apply text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/50;
+      }
+      .sg-action-progress {
+        @apply mt-2;
+      }
+      .sg-progress-bar-large {
+        @apply w-full h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden;
+      }
+      .sg-progress-info {
+        @apply flex items-center justify-between mt-2 text-sm;
       }
 
       /* Movement pad */
@@ -2129,6 +2147,9 @@
       }
       .sg-threat-icon {
         @apply text-xl mr-2;
+      }
+      .sg-threat-portrait {
+        @apply w-10 h-10 rounded-full object-cover mr-2;
       }
       .sg-threat-info {
         @apply flex-1;

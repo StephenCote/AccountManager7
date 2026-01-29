@@ -134,6 +134,32 @@ public class GameUtil {
 		}
 
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
+		// Refresh state.currentLocation for all population members before filtering
+		// This ensures we have current location data even if population is cached
+		// populate() doesn't overwrite existing values, so we need to query fresh data
+		for (BaseRecord p : pop) {
+			BaseRecord pState = p.get(FieldNames.FIELD_STATE);
+			if (pState != null) {
+				long pStateId = pState.get(FieldNames.FIELD_ID);
+				if (pStateId > 0) {
+					// Query fresh state to get current location
+					Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_STATE, FieldNames.FIELD_ID, pStateId);
+					sq.setCache(false);
+					sq.setRequest(new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_CURRENT_LOCATION});
+					BaseRecord freshState = IOSystem.getActiveContext().getSearch().findRecord(sq);
+					if (freshState != null) {
+						BaseRecord freshLoc = freshState.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
+						if (freshLoc != null) {
+							try {
+								pState.set(OlioFieldNames.FIELD_CURRENT_LOCATION, freshLoc);
+							} catch (Exception e) {
+								// ignore
+							}
+						}
+					}
+				}
+			}
+		}
 		List<BaseRecord> adjacentCells = GeoLocationUtil.getAdjacentCells(octx, currentLoc, 3);
 		// Ensure eastings/northings/terrainType are populated and marked for serialization
 		for (BaseRecord cell : adjacentCells) {
@@ -147,11 +173,22 @@ public class GameUtil {
 			}
 		}
 		List<BaseRecord> nearbyPeople = GeoLocationUtil.limitToAdjacent(octx, pop, currentLoc);
-		// Ensure name, objectId, gender, age and location are populated for nearby people
+		// Ensure name, objectId, gender, age, profile and location are populated for nearby people
 		for (BaseRecord p : nearbyPeople) {
 			IOSystem.getActiveContext().getReader().populate(p, new String[] {
-				FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GENDER, FieldNames.FIELD_AGE
+				FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GENDER, FieldNames.FIELD_AGE, "profile"
 			});
+			// Populate portrait within profile
+			BaseRecord pProf = p.get("profile");
+			if (pProf != null) {
+				IOSystem.getActiveContext().getReader().populate(pProf, new String[] {"portrait"});
+				BaseRecord portrait = pProf.get("portrait");
+				if (portrait != null) {
+					IOSystem.getActiveContext().getReader().populate(portrait, new String[] {
+						FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_NAME
+					});
+				}
+			}
 			try {
 				// Re-set to ensure serialization
 				p.set(FieldNames.FIELD_NAME, p.get(FieldNames.FIELD_NAME));
@@ -227,6 +264,19 @@ public class GameUtil {
 					pm.put("currentLocation", pLocMap);
 				}
 			}
+			// Add profile/portrait info for client-side portrait display
+			BaseRecord pProfile = p.get("profile");
+			if (pProfile != null) {
+				Map<String, Object> profileMap = new HashMap<>();
+				BaseRecord portrait = pProfile.get("portrait");
+				if (portrait != null) {
+					Map<String, Object> portraitMap = new HashMap<>();
+					portraitMap.put("groupPath", portrait.get(FieldNames.FIELD_GROUP_PATH));
+					portraitMap.put("name", portrait.get(FieldNames.FIELD_NAME));
+					profileMap.put("portrait", portraitMap);
+				}
+				pm.put("profile", profileMap);
+			}
 			peopleList.add(pm);
 		}
 		result.put("nearbyPeople", peopleList);
@@ -259,6 +309,24 @@ public class GameUtil {
 						t.put("groupType", src.get("groupName"));
 					} else {
 						t.put("isAnimal", false);
+						// Populate and add profile/portrait for person threats
+						IOSystem.getActiveContext().getReader().populate(src, new String[] {"profile"});
+						BaseRecord srcProfile = src.get("profile");
+						if (srcProfile != null) {
+							IOSystem.getActiveContext().getReader().populate(srcProfile, new String[] {"portrait"});
+							Map<String, Object> profileMap = new HashMap<>();
+							BaseRecord portrait = srcProfile.get("portrait");
+							if (portrait != null) {
+								IOSystem.getActiveContext().getReader().populate(portrait, new String[] {
+									FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_NAME
+								});
+								Map<String, Object> portraitMap = new HashMap<>();
+								portraitMap.put("groupPath", portrait.get(FieldNames.FIELD_GROUP_PATH));
+								portraitMap.put("name", portrait.get(FieldNames.FIELD_NAME));
+								profileMap.put("portrait", portraitMap);
+							}
+							t.put("profile", profileMap);
+						}
 					}
 					threatList.add(t);
 				}
@@ -331,7 +399,16 @@ public class GameUtil {
 			}
 
 			// Add current event info if available (realm-specific)
+			// Try clock first, then fall back to realm's currentEvent
 			BaseRecord currentEvent = clock.getEvent();
+			if (currentEvent == null && realm != null) {
+				currentEvent = realm.get(OlioFieldNames.FIELD_CURRENT_EVENT);
+				if (currentEvent != null) {
+					IOSystem.getActiveContext().getReader().populate(currentEvent, new String[] {
+						FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE
+					});
+				}
+			}
 			if (currentEvent != null) {
 				Map<String, Object> eventData = new HashMap<>();
 				eventData.put("name", currentEvent.get(FieldNames.FIELD_NAME));
@@ -340,8 +417,17 @@ public class GameUtil {
 				clockData.put("event", eventData);
 			}
 
-			// Add current increment info if available
+			// Add current increment info - this is the 1-hour block updated by Overwatch
+			// Try clock first, then fall back to realm's currentIncrement
 			BaseRecord currentIncrement = clock.getIncrement();
+			if (currentIncrement == null && realm != null) {
+				currentIncrement = realm.get(OlioFieldNames.FIELD_CURRENT_INCREMENT);
+				if (currentIncrement != null) {
+					IOSystem.getActiveContext().getReader().populate(currentIncrement, new String[] {
+						FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE
+					});
+				}
+			}
 			if (currentIncrement != null) {
 				Map<String, Object> incData = new HashMap<>();
 				incData.put("name", currentIncrement.get(FieldNames.FIELD_NAME));

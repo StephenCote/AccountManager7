@@ -1144,10 +1144,22 @@
                 url: g_application_path + "/rest/game/saves",
                 withCredentials: true
             });
-            savedGames = resp || [];
+            // Server returns {saves: [...]}
+            savedGames = (resp && resp.saves) ? resp.saves : (Array.isArray(resp) ? resp : []);
         } catch (e) {
             savedGames = [];
         }
+    }
+
+    function getMostRecentSave() {
+        if (!savedGames || savedGames.length === 0) return null;
+        // Sort by modifiedDate descending
+        let sorted = savedGames.slice().sort(function(a, b) {
+            let dateA = a.modifiedDate ? new Date(a.modifiedDate) : new Date(0);
+            let dateB = b.modifiedDate ? new Date(b.modifiedDate) : new Date(0);
+            return dateB - dateA;
+        });
+        return sorted[0];
     }
 
     async function saveGame(name) {
@@ -1885,10 +1897,12 @@
 
         moveProgressTimer = setInterval(function() {
             let elapsed = Date.now() - startTime;
-            // Cap at 95% until server responds
-            moveProgress = Math.min(95, (elapsed / totalMs) * 100);
+            // Cap at 90% until server responds, use easeOut curve for visual effect
+            let linearProgress = elapsed / totalMs;
+            // Ease-out curve: starts fast, slows down as it approaches end
+            moveProgress = Math.min(90, linearProgress * (2 - linearProgress) * 100);
             m.redraw();
-        }, 250); // 250ms for smoother performance with less server load
+        }, 50); // 50ms for smooth animation
     }
 
     // Stop progress bar animation
@@ -1914,12 +1928,16 @@
         let currentPosEast = playerState ? (playerState.currentEast || 50) : 50;
         let currentPosNorth = playerState ? (playerState.currentNorth || 50) : 50;
 
-        // Calculate distance and estimate time (about 2 seconds per meter)
+        // Calculate distance and estimate time
+        // Server typically responds in 0.5-2 seconds, so estimate based on that
+        // not actual walking time (which would be much longer)
         let distance = calculateDistance(
             currentCellEast, currentCellNorth, currentPosEast, currentPosNorth,
             targetCellEast, targetCellNorth, targetPosEast, targetPosNorth
         );
-        let estimatedSeconds = Math.max(2, distance * 2); // Minimum 2 seconds
+        // Estimate 1.5-4 seconds for server response, scale slightly with distance
+        // Minimum 1.5s so progress bar is visible, max 4s for long distances
+        let estimatedSeconds = Math.min(4, Math.max(1.5, 1 + distance / 200));
 
         pendingMove = {
             targetCellEast: targetCellEast,
@@ -2061,10 +2079,36 @@
                     m("div", {class: "sg-clock-display"}, [
                         m("div", {class: "sg-clock-time"}, clock.currentTime || "--:--"),
                         m("div", {class: "sg-clock-date"}, clock.currentDate || "----"),
-                        // Show current increment (1-hour event) instead of epoch (1-year event)
-                        clock.increment ? m("div", {class: "sg-clock-increment"}, clock.increment.name || "Current hour") : null,
+                        // Show current increment (1-hour block) - changes with Overwatch processing
+                        clock.increment ? m("div", {class: "sg-clock-increment"}, clock.increment.name || "") : null,
                         m("div", {class: "sg-clock-remaining"}, [
                             clock.remainingDays !== undefined ? clock.remainingDays + " days remaining" : ""
+                        ])
+                    ])
+                ]) : null,
+
+                // Action progress bar (shown when movement or action is in progress)
+                pendingMove ? m("div", {class: "sg-action-progress-section"}, [
+                    m("div", {class: "sg-panel-header sg-header-action"}, [
+                        m("span", {class: "material-symbols-outlined"}, "directions_walk"),
+                        " MOVING"
+                    ]),
+                    m("div", {class: "sg-action-progress"}, [
+                        m("div", {class: "sg-progress-bar-large"}, [
+                            m("div", {
+                                class: "sg-progress-fill",
+                                style: "width: " + moveProgress + "%"
+                            })
+                        ]),
+                        m("div", {class: "sg-progress-info"}, [
+                            m("span", Math.round(pendingMove.distance || 0) + "m"),
+                            m("button", {
+                                class: "sg-btn sg-btn-small sg-btn-danger",
+                                onclick: abortMove
+                            }, [
+                                m("span", {class: "material-symbols-outlined"}, "stop"),
+                                " Stop"
+                            ])
                         ])
                     ])
                 ]) : null,
@@ -2131,6 +2175,7 @@
         let icon = threat.icon || "\u26A0"; // Default warning
         let name = threat.sourceName || threat.name || threat.type || "Threat";
         let typeLabel = threat.threatType || threat.type || "THREAT";
+        let portrait = null;
 
         if (threat.isAnimal) {
             icon = "\u{1F43E}"; // Paw print for animals
@@ -2141,6 +2186,9 @@
                 }
             }
             typeLabel = threat.groupType || "ANIMAL";
+        } else {
+            // Try to get portrait for person threats
+            portrait = getPortraitUrl(threat, "64x64");
         }
 
         // Calculate distance and direction from player to threat
@@ -2161,7 +2209,9 @@
             onclick: function() { selectEntity(threat, 'threat'); }
         }, [
             m("div", {class: "sg-threat-header"}, [
-                m("span", {class: "sg-threat-icon"}, icon),
+                portrait ?
+                    m("img", {src: portrait, class: "sg-threat-portrait"}) :
+                    m("span", {class: "sg-threat-icon"}, icon),
                 m("div", {class: "sg-threat-info"}, [
                     m("div", {class: "sg-threat-name"}, name),
                     m("div", {class: "sg-threat-type"}, typeLabel)
@@ -2893,37 +2943,49 @@
                     }
                 }
 
-                // Load available characters
-                initMessage = "Loading characters...";
-                m.redraw();
-                await loadAvailableCharacters();
+                // If we have a pre-selected character, load characters and claim
+                if (preSelectedCharId) {
+                    initMessage = "Loading characters...";
+                    m.redraw();
+                    await loadAvailableCharacters();
 
-                // If we have a pre-selected character, find and claim them
-                if (preSelectedCharId && availableCharacters.length > 0) {
-                    let targetChar = availableCharacters.find(c =>
-                        c.objectId === preSelectedCharId || c.id === preSelectedCharId
-                    );
-                    if (targetChar) {
-                        initMessage = "Claiming " + targetChar.name + "...";
-                        m.redraw();
-                        await claimCharacter(targetChar);
-                        initializing = false;
-                        return;
-                    } else {
-                        // Character not in available list - might need to be adopted
-                        page.toast("warn", "Selected character not found in world population");
+                    if (availableCharacters.length > 0) {
+                        let targetChar = availableCharacters.find(c =>
+                            c.objectId === preSelectedCharId || c.id === preSelectedCharId
+                        );
+                        if (targetChar) {
+                            initMessage = "Claiming " + targetChar.name + "...";
+                            m.redraw();
+                            await claimCharacter(targetChar);
+                            initializing = false;
+                            return;
+                        } else {
+                            page.toast("warn", "Selected character not found in world population");
+                        }
                     }
                 }
 
-                // Auto-select first character if available
-                if (availableCharacters.length > 0) {
-                    initMessage = "Starting as " + availableCharacters[0].name + "...";
+                // Check for saved games first
+                initMessage = "Checking for saved games...";
+                m.redraw();
+                await loadSavedGames();
+
+                let mostRecent = getMostRecentSave();
+                if (mostRecent) {
+                    // Auto-load the most recent save
+                    initMessage = "Loading saved game: " + mostRecent.name + "...";
                     m.redraw();
-                    await claimCharacter(availableCharacters[0]);
-                } else {
-                    // No characters - show selection dialog
-                    characterSelectOpen = true;
+                    await loadGame(mostRecent);
+                    initializing = false;
+                    return;
                 }
+
+                // No saved games - open the new game dialog
+                initMessage = "Loading characters...";
+                m.redraw();
+                await loadAvailableCharacters();
+                characterSelectOpen = true;
+
             } finally {
                 initializing = false;
                 m.redraw();

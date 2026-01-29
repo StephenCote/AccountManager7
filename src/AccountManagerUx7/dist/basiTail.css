@@ -6357,14 +6357,15 @@ button.button-tab-active:hover:is(.dark *) {
   height: 100%;
   --tw-bg-opacity: 1;
   background-color: rgb(59 130 246 / var(--tw-bg-opacity, 1));
-  transition-property: all;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 150ms;
 }
 
 .sg-progress-fill:is(.dark *) {
   --tw-bg-opacity: 1;
   background-color: rgb(96 165 250 / var(--tw-bg-opacity, 1));
+}
+
+.sg-progress-fill {
+  transition: width 0.08s linear;
 }
 
 .sg-btn-danger {
@@ -6377,6 +6378,66 @@ button.button-tab-active:hover:is(.dark *) {
 .sg-btn-danger:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(220 38 38 / var(--tw-bg-opacity, 1));
+}
+
+/* Action progress section (shown in action panel during movement) */
+
+.sg-action-progress-section {
+  margin-bottom: 1rem;
+  border-radius: 0.5rem;
+  background-image: linear-gradient(to right, var(--tw-gradient-stops));
+  --tw-gradient-from: #fffbeb var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(255 251 235 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+  --tw-gradient-to: #fff7ed var(--tw-gradient-to-position);
+  padding: 0.75rem;
+}
+
+.sg-action-progress-section:is(.dark *) {
+  --tw-gradient-from: rgb(120 53 15 / 0.3) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(120 53 15 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+  --tw-gradient-to: rgb(124 45 18 / 0.3) var(--tw-gradient-to-position);
+}
+
+.sg-header-action {
+  --tw-bg-opacity: 1;
+  background-color: rgb(254 243 199 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(217 119 6 / var(--tw-text-opacity, 1));
+}
+
+.sg-header-action:is(.dark *) {
+  background-color: rgb(120 53 15 / 0.5);
+  --tw-text-opacity: 1;
+  color: rgb(251 191 36 / var(--tw-text-opacity, 1));
+}
+
+.sg-action-progress {
+  margin-top: 0.5rem;
+}
+
+.sg-progress-bar-large {
+  height: 0.75rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  --tw-bg-opacity: 1;
+  background-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
+}
+
+.sg-progress-bar-large:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(55 65 81 / var(--tw-bg-opacity, 1));
+}
+
+.sg-progress-info {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 /* Movement pad */
@@ -6674,6 +6735,15 @@ button.button-tab-active:hover:is(.dark *) {
   margin-right: 0.5rem;
   font-size: 1.25rem;
   line-height: 1.75rem;
+}
+
+.sg-threat-portrait {
+  margin-right: 0.5rem;
+  height: 2.5rem;
+  width: 2.5rem;
+  border-radius: 9999px;
+  -o-object-fit: cover;
+     object-fit: cover;
 }
 
 .sg-threat-info {

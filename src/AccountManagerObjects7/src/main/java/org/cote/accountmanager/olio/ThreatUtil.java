@@ -245,7 +245,7 @@ public class ThreatUtil {
 				continue;
 			}
 			String geoType = location.get(FieldNames.FIELD_GEOTYPE);
-			if(geoType.equals(FieldNames.FIELD_FEATURE)) {
+			if(geoType != null && geoType.equals(FieldNames.FIELD_FEATURE)) {
 				logger.warn("Feature placement detected: Move " + name);
 			}
 			else {
