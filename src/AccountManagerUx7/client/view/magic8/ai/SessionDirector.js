@@ -483,6 +483,11 @@
                 lines.push('Recent Voice: "' + state.recentVoiceLines.join('" | "') + '"');
             }
 
+            // Injected voice lines (so the LLM knows what it already said)
+            if (state.injectedVoiceLines && state.injectedVoiceLines.length > 0) {
+                lines.push('Your Injected Lines: "' + state.injectedVoiceLines.join('" | "') + '"');
+            }
+
             // Current text
             if (state.currentText) {
                 lines.push('Current Text: "' + state.currentText + '"');

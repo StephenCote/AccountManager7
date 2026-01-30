@@ -758,8 +758,10 @@
                 this.sessionRecorder.dispose();
             }
 
-            // Stop session director
+            // Stop session director and clear session data
             this.sessionDirector?.dispose();
+            this.sessionLabels = [];
+            this.sessionVoiceLines = [];
 
             // Stop biometric themer
             this.biometricThemer?.dispose();
@@ -1031,6 +1033,9 @@
                     denoisingStrength: this.imageGenerator.sdConfig.denoisingStrength,
                     cfg: this.imageGenerator.sdConfig.cfg
                 } : null,
+                injectedVoiceLines: this.sessionVoiceLines.length > 0
+                    ? this.sessionVoiceLines.slice(-3)
+                    : [],
                 elapsedMinutes: this._sessionStartTime
                     ? (Date.now() - this._sessionStartTime) / 60000
                     : 0

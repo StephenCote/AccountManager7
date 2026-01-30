@@ -230,6 +230,10 @@ class ImageGenerationManager {
             }
 
             if (response && response.objectId) {
+                // Rename to distinguish from captures
+                if (response.name && !response.name.startsWith('generated-')) {
+                    response.name = 'generated-' + Date.now() + '.' + (response.name.split('.').pop() || 'png');
+                }
                 // Move generated image to ~/Magic8/Generated
                 const movedImage = await this._moveToGeneratedGroup(response);
                 const imageUrl = `${g_application_path}/media/Public/data.data${encodeURI(movedImage.groupPath)}/${encodeURIComponent(movedImage.name)}`;
