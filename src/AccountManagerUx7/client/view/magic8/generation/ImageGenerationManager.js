@@ -68,11 +68,12 @@ class ImageGenerationManager {
      */
     _getDefaultConfig() {
         return {
-            prompt: "ethereal dreamlike portrait, soft lighting, mystical atmosphere",
-            negative_prompt: "blurry, distorted, ugly, deformed, nsfw",
-            strength: 0.65,
+            style: "art",
+            description: "ethereal dreamlike portrait, soft lighting, mystical atmosphere",
+            imageAction: "posing in a surreal setting",
+            denoisingStrength: 0.65,
             steps: 30,
-            cfg_scale: 7.5,
+            cfg: 7,
             seed: -1,
             captureInterval: 30000,
             emotionPromptMapping: {
@@ -127,25 +128,19 @@ class ImageGenerationManager {
                 base64Image = imageData.split(',')[1];
             }
 
-            // Build prompt with emotion awareness
-            let prompt = this.sdConfig.prompt;
+            // Build description with emotion awareness
+            let description = this.sdConfig.description || "";
             if (biometricData && biometricData.dominant_emotion) {
                 const emotionPrompt = this.sdConfig.emotionPromptMapping?.[biometricData.dominant_emotion];
                 if (emotionPrompt) {
-                    prompt = `${emotionPrompt}, ${prompt}`;
+                    description = `${emotionPrompt}, ${description}`;
                 }
             }
 
-            // Build generation request (internal format)
-            const genRequest = {
-                prompt: prompt,
-                negative_prompt: this.sdConfig.negative_prompt || "",
-                init_image: base64Image,
-                strength: this.sdConfig.strength || 0.65,
-                steps: this.sdConfig.steps || 30,
-                cfg_scale: this.sdConfig.cfg_scale || 7.5,
-                seed: this.sdConfig.seed || -1
-            };
+            // Build generation request using real olio.sd.config field names
+            const genRequest = { ...this.sdConfig };
+            genRequest.description = description;
+            genRequest.init_image = base64Image;
 
             return this.queueGeneration(genRequest);
 
@@ -358,13 +353,14 @@ class ImageGenerationManager {
 
         let entity = Object.assign({}, this._baseEntity);
 
-        // Map internal config fields to olio.sd.config entity fields
-        if (request.prompt) entity.description = request.prompt;
-        if (request.negative_prompt) entity.negativePrompt = request.negative_prompt;
-        if (request.strength != null) entity.denoisingStrength = request.strength;
-        if (request.steps) entity.steps = request.steps;
-        if (request.cfg_scale) entity.cfg = request.cfg_scale;
-        if (request.seed != null) entity.seed = request.seed;
+        // Apply config fields directly (already using real olio.sd.config field names)
+        // Skip internal-only fields that aren't part of the server entity
+        const skipFields = new Set(['init_image', 'captureInterval', 'emotionPromptMapping']);
+        for (const [key, value] of Object.entries(request)) {
+            if (!skipFields.has(key) && value != null) {
+                entity[key] = value;
+            }
+        }
 
         // Set reference image for img2img
         entity.referenceImageId = referenceImageId;

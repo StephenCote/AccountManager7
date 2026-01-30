@@ -53,7 +53,9 @@ class DynamicImageGallery {
                     const groupNumericId = gqr.results[0].id;
 
                     // Search data.data by numeric groupId (won't load dataBytesStore)
-                    let q = am7view.viewQuery(am7model.newInstance("data.data"));
+                    //let q = am7view.viewQuery(am7model.newInstance("data.data"));
+                    let q = am7client.newQuery("data.data");
+                    q.range(0, 0);
                     q.field("groupId", groupNumericId);
                     let qr = await page.search(q);
                     const items = qr?.results || [];

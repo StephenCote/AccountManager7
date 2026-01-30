@@ -147,7 +147,7 @@
                     let existing = qr.results[0];
                     existing.dataBytesStore = encoded;
                     existing.compressionType = "none";
-                    saved = await page.updateObject(existing);
+                    saved = await page.patchObject(existing);
                     console.log('Magic8App: Session config updated:', existing.objectId);
                 } else {
                     // Create new record
