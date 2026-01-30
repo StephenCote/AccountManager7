@@ -323,15 +323,19 @@ const HypnoCanvas = {
         const brightness = (r + g + b) / 3;
         const useHueCycle = brightness < 50;
 
+        // Scale mandala to fill the screen (reach corners)
+        const maxExtent = Math.sqrt(w * w + h * h) / 2;
+        const layerSpacing = maxExtent / (layers + 1);
+
         ctx.save();
         ctx.translate(centerX, centerY);
         ctx.scale(pulse, pulse);
         ctx.rotate(rotation);
 
         for (let layer = 0; layer < layers; layer++) {
-            const radius = 60 + layer * 30;
-            const petalLength = 30 + layer * 10;
-            const petalWidth = 12;
+            const radius = layerSpacing * (layer + 1);
+            const petalLength = layerSpacing * 0.4;
+            const petalWidth = layerSpacing * 0.15;
 
             for (let i = 0; i < petals; i++) {
                 const angle = (i * 2 * Math.PI) / petals;
@@ -377,7 +381,7 @@ const HypnoCanvas = {
     _drawTunnel(ctx, w, h) {
         const centerX = w / 2;
         const centerY = h / 2;
-        const maxRadius = Math.max(w, h) * 0.7;
+        const maxRadius = Math.sqrt(w * w + h * h) / 2;
         const rings = this.tunnelRings;
         const { r, g, b } = this.accentColor;
 

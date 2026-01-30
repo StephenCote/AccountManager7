@@ -27,6 +27,8 @@ const SessionConfigEditor = {
         this.directorTestResults = null;
         this.selectedSdDetails = null;
         this.loadingSdDetails = false;
+        this.fetchingRandomSd = false;
+        this.randomSdExtras = null;  // style-specific fields from randomImageConfig
 
         this._loadOptions();
     },
@@ -102,9 +104,9 @@ const SessionConfigEditor = {
                     denoisingStrength: 0.65,
                     steps: 30,
                     cfg: 7,
+                    sampler: 'dpmpp_2m',
                     width: 512,
-                    height: 512,
-                    sampler: 'euler_a'
+                    height: 512
                 }
             },
             text: {
@@ -281,6 +283,69 @@ const SessionConfigEditor = {
     },
 
     /**
+     * Fetch a randomized SD config from the server and populate inline fields.
+     * Style-specific fields (camera, artStyle, etc.) are stored in randomSdExtras
+     * and passed through to the generation config.
+     * @private
+     */
+    async _fetchRandomSdConfig() {
+        this.fetchingRandomSd = true;
+        m.redraw();
+        try {
+            const cfg = await m.request({
+                method: 'GET',
+                url: `${g_application_path}/rest/olio/randomImageConfig`,
+                withCredentials: true
+            });
+            if (cfg) {
+                const sd = this.config.imageGeneration.sdInline;
+                // Map core fields into inline config
+                if (cfg.style) sd.style = cfg.style;
+                if (cfg.description) sd.description = cfg.description;
+                if (cfg.imageAction) sd.imageAction = cfg.imageAction;
+                if (cfg.model) sd.model = cfg.model;
+                if (cfg.refinerModel) sd.refiner = cfg.refinerModel;
+                if (cfg.sampler) sd.sampler = cfg.sampler;
+                if (cfg.steps) sd.steps = cfg.steps;
+                if (cfg.cfg) sd.cfg = cfg.cfg;
+                if (cfg.denoisingStrength) sd.denoisingStrength = cfg.denoisingStrength;
+                if (cfg.width) sd.width = cfg.width;
+                if (cfg.height) sd.height = cfg.height;
+
+                // Collect style-specific fields for preview and passthrough
+                const coreKeys = new Set([
+                    'schema', 'objectId', 'id', 'ownerId', 'groupId', 'groupPath', 'organizationId',
+                    'name', 'description', 'imageAction', 'model', 'refinerModel', 'sampler',
+                    'scheduler', 'refinerSampler', 'refinerScheduler', 'steps', 'refinerSteps',
+                    'cfg', 'refinerCfg', 'seed', 'width', 'height', 'denoisingStrength',
+                    'style', 'imageCount', 'hires', 'refinerMethod', 'refinerUpscaleMethod',
+                    'refinerUpscale', 'refinerControlPercentage', 'bodyStyle', 'customPrompt',
+                    'shared', 'referenceImageId', 'imageSetting', 'contentType', 'compressionType'
+                ]);
+                const extras = {};
+                for (const [key, value] of Object.entries(cfg)) {
+                    if (!coreKeys.has(key) && value != null && value !== '') {
+                        extras[key] = value;
+                    }
+                }
+                this.randomSdExtras = Object.keys(extras).length > 0 ? extras : null;
+
+                // Merge style-specific fields into sdInline so they pass through to generation
+                if (this.randomSdExtras) {
+                    Object.assign(sd, this.randomSdExtras);
+                }
+
+                console.log('SessionConfigEditor: Fetched random SD config, style:', cfg.style,
+                    'extras:', this.randomSdExtras);
+            }
+        } catch (err) {
+            console.warn('SessionConfigEditor: Failed to fetch random SD config:', err);
+        }
+        this.fetchingRandomSd = false;
+        m.redraw();
+    },
+
+    /**
      * Save a new voice source object and select it
      * @private
      */
@@ -369,6 +434,15 @@ const SessionConfigEditor = {
             if (!this.config.imageGeneration.sdConfigId && loaded.imageGeneration?.sdInline) {
                 this.createNewSdConfig = true;
                 this.selectedSdDetails = null;
+                // Restore style-specific extras preview from saved sdInline
+                const defaultKeys = new Set(Object.keys(defaults.imageGeneration.sdInline));
+                const extras = {};
+                for (const [key, value] of Object.entries(this.config.imageGeneration.sdInline)) {
+                    if (!defaultKeys.has(key) && value != null && value !== '') {
+                        extras[key] = value;
+                    }
+                }
+                this.randomSdExtras = Object.keys(extras).length > 0 ? extras : null;
             } else {
                 this.createNewSdConfig = false;
                 // Load details for the selected config
@@ -1040,14 +1114,42 @@ const SessionConfigEditor = {
                                 ])
                             ]),
 
-                            m('label.block.text-sm.text-gray-400.mb-1', 'Style'),
-                            m('input.w-full.p-2.bg-gray-700.rounded.text-sm', {
-                                type: 'text',
-                                value: this.config.imageGeneration.sdInline.style,
-                                oninput: (e) => this.config.imageGeneration.sdInline.style = e.target.value
-                            }),
+                            m('.flex.items-end.gap-3.mb-3', [
+                                m('.flex-1', [
+                                    m('label.block.text-sm.text-gray-400.mb-1', 'Style'),
+                                    m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                        value: this.config.imageGeneration.sdInline.style,
+                                        onchange: (e) => {
+                                            this.config.imageGeneration.sdInline.style = e.target.value;
+                                            this.randomSdExtras = null; // clear stale extras on manual style change
+                                        }
+                                    }, [
+                                        ...['art','photograph','movie','selfie','anime','portrait','comic','digitalArt','fashion','vintage','custom'].map(s =>
+                                            m('option', { value: s }, s.charAt(0).toUpperCase() + s.slice(1))
+                                        )
+                                    ])
+                                ]),
+                                m('button', {
+                                    class: 'px-3 py-2 rounded text-sm font-medium whitespace-nowrap ' +
+                                        (this.fetchingRandomSd ? 'bg-gray-600 text-gray-400' : 'bg-indigo-600 text-white hover:bg-indigo-500'),
+                                    disabled: this.fetchingRandomSd,
+                                    onclick: () => this._fetchRandomSdConfig(),
+                                    title: 'Fetch a randomized config from the server with style-specific fields'
+                                }, this.fetchingRandomSd ? 'Fetching...' : 'Randomize')
+                            ]),
 
-                            m('label.block.text-sm.text-gray-400.mb-1.mt-3', 'Description'),
+                            // Style-specific fields preview (from randomize)
+                            this.randomSdExtras && m('.mb-3.p-3.bg-gray-700/50.rounded.text-sm', [
+                                m('.text-gray-400.font-medium.mb-2', 'Style Details (' + this.config.imageGeneration.sdInline.style + ')'),
+                                ...Object.entries(this.randomSdExtras).map(([key, value]) =>
+                                    m('.flex.gap-2', { key: key }, [
+                                        m('span.text-gray-500.w-36', key.replace(/([A-Z])/g, ' $1').trim() + ':'),
+                                        m('span.text-gray-300', String(value))
+                                    ])
+                                )
+                            ]),
+
+                            m('label.block.text-sm.text-gray-400.mb-1', 'Description'),
                             m('textarea.w-full.p-2.bg-gray-700.rounded.text-sm', {
                                 rows: 2,
                                 value: this.config.imageGeneration.sdInline.description,
@@ -1101,6 +1203,7 @@ const SessionConfigEditor = {
                                         value: this.config.imageGeneration.sdInline.sampler,
                                         onchange: (e) => this.config.imageGeneration.sdInline.sampler = e.target.value
                                     }, [
+                                        m('option', { value: 'dpmpp_2m' }, 'DPM++ 2M'),
                                         m('option', { value: 'euler_a' }, 'Euler A'),
                                         m('option', { value: 'euler' }, 'Euler'),
                                         m('option', { value: 'dpm_2' }, 'DPM 2'),
@@ -1118,7 +1221,7 @@ const SessionConfigEditor = {
                                     m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
                                         value: this.config.imageGeneration.sdInline.width,
                                         onchange: (e) => this.config.imageGeneration.sdInline.width = parseInt(e.target.value)
-                                    }, [256, 384, 512, 640, 768].map(v =>
+                                    }, [256, 384, 512, 640, 768, 1024].map(v =>
                                         m('option', { value: v }, v + 'px')
                                     ))
                                 ]),
@@ -1127,7 +1230,7 @@ const SessionConfigEditor = {
                                     m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
                                         value: this.config.imageGeneration.sdInline.height,
                                         onchange: (e) => this.config.imageGeneration.sdInline.height = parseInt(e.target.value)
-                                    }, [256, 384, 512, 640, 768].map(v =>
+                                    }, [256, 384, 512, 640, 768, 1024].map(v =>
                                         m('option', { value: v }, v + 'px')
                                     ))
                                 ])

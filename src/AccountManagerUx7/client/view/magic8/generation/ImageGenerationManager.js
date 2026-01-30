@@ -76,6 +76,10 @@ class ImageGenerationManager {
             steps: 30,
             cfg: 7,
             seed: -1,
+            sampler: "dpmpp_2m",
+            scheduler: "Karras",
+            width: 512,
+            height: 512,
             captureInterval: 30000,
             emotionPromptMapping: {
                 happy: "joyful radiant golden light",
