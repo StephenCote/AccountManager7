@@ -37,7 +37,12 @@
         // Session director
         sessionDirector: null,
         sessionLabels: [],
+        sessionVoiceLines: [],
         _sessionStartTime: null,
+
+        // Debug console (test mode)
+        debugMessages: [],
+        _debugMinimized: false,
 
         // Ambient breathing state
         ambientOpacity: 0.15,
@@ -333,10 +338,26 @@
                 if (voiceLineCount > 0) {
                     // Pre-synthesize all lines
                     console.log('Magic8App: Synthesizing voice lines...');
+                    if (cfg.director?.testMode) {
+                        this._debugLog('Voice: synthesizing ' + voiceLineCount + ' lines...', 'voice');
+                    }
                     this.voiceSequence.onSynthesisProgress = (done, total) => {
                         console.log(`Magic8App: Voice synthesis ${done}/${total}`);
+                        if (cfg.director?.testMode && (done === total || done % 5 === 0)) {
+                            this._debugLog('Voice synth: ' + done + '/' + total, 'voice');
+                        }
                     };
                     await this.voiceSequence.synthesizeAll(cfg.voice.voiceProfileId);
+
+                    // Log individual voice lines in test mode
+                    if (cfg.director?.testMode && this.voiceSequence.lines) {
+                        for (let i = 0; i < Math.min(this.voiceSequence.lines.length, 5); i++) {
+                            this._debugLog('Voice line: "' + this.voiceSequence.lines[i] + '"', 'voice');
+                        }
+                        if (this.voiceSequence.lines.length > 5) {
+                            this._debugLog('... +' + (this.voiceSequence.lines.length - 5) + ' more voice lines', 'voice');
+                        }
+                    }
 
                     this.voiceSequence.start();
                     console.log('Magic8App: Voice sequence playback started');
@@ -363,8 +384,24 @@
 
                 this.sessionDirector = new Magic8.SessionDirector();
                 this.sessionDirector.stateProvider = () => this._gatherDirectorState();
-                this.sessionDirector.onDirective = (d) => this._applyDirective(d);
-                this.sessionDirector.onError = (err) => console.warn('SessionDirector error:', err);
+                this.sessionDirector.onDirective = (d) => {
+                    this._applyDirective(d);
+                    if (this.sessionConfig?.director?.testMode) {
+                        if (d.audio) this._debugLog('Audio: ' + JSON.stringify(d.audio), 'directive');
+                        if (d.visuals) this._debugLog('Visual: ' + (d.visuals.effect || JSON.stringify(d.visuals)), 'directive');
+                        if (d.labels?.add?.length) this._debugLog('+ Labels: ' + d.labels.add.join(', '), 'label');
+                        if (d.labels?.remove?.length) this._debugLog('- Labels: ' + d.labels.remove.join(', '), 'label');
+                        if (d.generateImage) this._debugLog('Image: ' + (d.generateImage.description || '').substring(0, 80), 'directive');
+                        if (d.voiceLine) this._debugLog('Voice inject: "' + d.voiceLine + '"', 'voice');
+                        if (d.commentary) this._debugLog('LLM: ' + d.commentary, 'info');
+                    }
+                };
+                this.sessionDirector.onError = (err) => {
+                    console.warn('SessionDirector error:', err);
+                    if (this.sessionConfig?.director?.testMode) {
+                        this._debugLog('Error: ' + (err.message || err), 'error');
+                    }
+                };
                 await this.sessionDirector.initialize(cfg.director.command, cfg.director.intervalMs || 60000);
 
                 if (cfg.director.testMode) {
@@ -372,23 +409,37 @@
                     // Each pass sends different biometric state to the LLM,
                     // applies the returned directive synchronously, then
                     // runDiagnostics verifies the state actually changed via stateProvider
-                    console.log('Magic8App: Director test mode - running behavioral diagnostics');
+                    this._debugLog('Starting behavioral diagnostics...', 'info');
                     const self = this;
                     let passCount = 0;
 
                     const results = await this.sessionDirector.runDiagnostics(
                         cfg.director.command,
                         (directive, passIndex, passName) => {
-                            // Apply synchronously so state updates before verification
                             passCount++;
-                            console.log(`Magic8App: Applying test directive [${passName}]`);
+                            self._debugLog('Applying directive [' + passName + ']', 'directive');
+                            if (directive.labels?.add?.length) {
+                                self._debugLog('+ Labels: ' + directive.labels.add.join(', '), 'label');
+                            }
+                            if (directive.generateImage) {
+                                self._debugLog('Image: ' + (directive.generateImage.description || '').substring(0, 80), 'directive');
+                            }
+                            if (directive.commentary) {
+                                self._debugLog('LLM: ' + directive.commentary, 'info');
+                            }
                             self._applyDirective(directive);
+                        },
+                        (entry) => {
+                            self._debugLog(
+                                (entry.pass ? 'PASS' : 'FAIL') + ': ' + entry.name + (entry.detail ? ' - ' + entry.detail : ''),
+                                entry.pass ? 'pass' : 'fail'
+                            );
                         }
                     );
 
                     const passed = results.filter(r => r.pass).length;
                     const total = results.length;
-                    console.log(`Magic8App: Behavioral diagnostics ${passed}/${total} passed (${passCount} directives applied)`);
+                    this._debugLog('Diagnostics complete: ' + passed + '/' + total + ' passed (' + passCount + ' directives applied)', passed === total ? 'pass' : 'fail');
                 }
 
                 this.sessionDirector.start();
@@ -534,23 +585,52 @@
         },
 
         async _stopRecording() {
-            if (!this.sessionRecorder || !this.isRecording) return;
+            const recorder = this.sessionRecorder;
+            if (!recorder || !this.isRecording) return;
 
             try {
-                const blob = await this.sessionRecorder.stopRecording();
+                const blob = await recorder.stopRecording();
                 this.isRecording = false;
 
-                // Download locally (server upload endpoint not available)
-                this.sessionRecorder.downloadLocally(blob);
-                const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
-                console.log(`Magic8App: Recording saved locally (${sizeMB} MB)`);
-                if (page.toast) page.toast('info', `Recording saved (${sizeMB} MB)`);
+                if (blob && blob.size > 0) {
+                    recorder.downloadLocally(blob);
+                    const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
+                    console.log(`Magic8App: Recording saved locally (${sizeMB} MB)`);
+                    if (page.toast) page.toast('info', `Recording saved (${sizeMB} MB)`);
+                } else {
+                    console.warn('Magic8App: Recording blob is empty');
+                    if (page.toast) page.toast('warn', 'Recording was empty');
+                }
 
                 m.redraw();
             } catch (err) {
                 console.error('Magic8App: Failed to stop recording:', err);
                 this.isRecording = false;
                 if (page.toast) page.toast('error', 'Recording failed: ' + err.message);
+            }
+        },
+
+        /**
+         * Stop recording and dispose the recorder (used during cleanup to avoid race)
+         * @param {Object} recorder - SessionRecorder instance
+         * @private
+         */
+        async _stopRecordingAndDispose(recorder) {
+            try {
+                const blob = await recorder.stopRecording();
+                this.isRecording = false;
+
+                if (blob && blob.size > 0) {
+                    recorder.downloadLocally(blob);
+                    const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
+                    console.log(`Magic8App: Recording saved on exit (${sizeMB} MB)`);
+                    if (page.toast) page.toast('info', `Recording saved (${sizeMB} MB)`);
+                }
+            } catch (err) {
+                console.warn('Magic8App: Could not save recording on exit:', err);
+                this.isRecording = false;
+            } finally {
+                recorder.dispose();
             }
         },
 
@@ -669,11 +749,14 @@
             // Stop generation
             this.imageGenerator?.dispose();
 
-            // Stop recording
+            // Stop recording - async download must complete before dispose
             if (this.isRecording && this.sessionRecorder) {
-                this._stopRecording();
+                const recorder = this.sessionRecorder;
+                this.sessionRecorder = null; // prevent double-dispose
+                this._stopRecordingAndDispose(recorder);
+            } else if (this.sessionRecorder) {
+                this.sessionRecorder.dispose();
             }
-            this.sessionRecorder?.dispose();
 
             // Stop session director
             this.sessionDirector?.dispose();
@@ -818,6 +901,82 @@
                 page.components.camera && (this.sessionConfig?.biometrics?.enabled || this.sessionConfig?.director?.enabled || this.sessionConfig?.imageGeneration?.enabled)
                     ? page.components.camera.videoView()
                     : null,
+
+                // On-screen debug console (test mode only)
+                this.sessionConfig?.director?.testMode && this.debugMessages.length > 0 &&
+                    m('.magic8-debug-console', {
+                        style: {
+                            position: 'fixed',
+                            bottom: '10px',
+                            right: '10px',
+                            width: '440px',
+                            maxHeight: this._debugMinimized ? '32px' : '40vh',
+                            backgroundColor: 'rgba(0, 0, 0, 0.88)',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(100, 255, 100, 0.2)',
+                            zIndex: 200,
+                            fontFamily: "'Consolas', 'Monaco', monospace",
+                            fontSize: '11px',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            pointerEvents: 'auto'
+                        }
+                    }, [
+                        // Header bar
+                        m('.debug-header', {
+                            style: {
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '4px 10px',
+                                borderBottom: this._debugMinimized ? 'none' : '1px solid rgba(100, 255, 100, 0.15)',
+                                cursor: 'pointer',
+                                flexShrink: 0,
+                                userSelect: 'none'
+                            },
+                            onclick: () => { this._debugMinimized = !this._debugMinimized; }
+                        }, [
+                            m('span', { style: { color: '#6f6', fontWeight: 'bold', letterSpacing: '0.5px' } }, 'DEBUG'),
+                            m('span', { style: { color: '#666', fontSize: '10px' } },
+                                this.debugMessages.length + ' msgs'),
+                            m('span', { style: { color: '#888', fontSize: '14px' } },
+                                this._debugMinimized ? '+' : '\u2212')
+                        ]),
+                        // Message list
+                        !this._debugMinimized && m('.debug-messages', {
+                            style: {
+                                overflowY: 'auto',
+                                padding: '4px 8px',
+                                flex: 1
+                            },
+                            oncreate: (vn) => { vn.dom.scrollTop = vn.dom.scrollHeight; },
+                            onupdate: (vn) => { vn.dom.scrollTop = vn.dom.scrollHeight; }
+                        }, this.debugMessages.map((msg, i) => {
+                            const colors = {
+                                info: '#aaa',
+                                directive: '#6bf',
+                                label: '#fb4',
+                                voice: '#d8f',
+                                pass: '#6f6',
+                                fail: '#f66',
+                                error: '#f66'
+                            };
+                            const t = new Date(msg.time);
+                            const ts = t.getHours().toString().padStart(2, '0') + ':'
+                                + t.getMinutes().toString().padStart(2, '0') + ':'
+                                + t.getSeconds().toString().padStart(2, '0');
+                            return m('.debug-msg', {
+                                key: i,
+                                style: {
+                                    color: colors[msg.type] || '#aaa',
+                                    padding: '1px 0',
+                                    lineHeight: '1.4',
+                                    wordBreak: 'break-word'
+                                }
+                            }, '[' + ts + '] ' + msg.text);
+                        }))
+                    ]),
 
                 // Dialog support
                 page.components.dialog ? page.components.dialog.loadDialog() : null
@@ -984,10 +1143,45 @@
                 });
             }
 
+            // Apply voice line injection
+            if (directive.voiceLine && this.voiceSequence) {
+                const insertAt = this.voiceSequence.currentIndex;
+                this.sessionVoiceLines.push(directive.voiceLine);
+                this.voiceSequence.injectLine(
+                    directive.voiceLine,
+                    insertAt,
+                    this.sessionConfig?.voice?.voiceProfileId
+                ).then(ok => {
+                    if (ok) {
+                        console.log('Magic8App: Injected voice line at index', insertAt, ':', directive.voiceLine);
+                    } else {
+                        console.warn('Magic8App: Failed to inject voice line');
+                    }
+                });
+            }
+
             if (directive.commentary) {
                 console.log('SessionDirector commentary:', directive.commentary);
             }
 
+            m.redraw();
+        },
+
+        /**
+         * Log a message to the on-screen debug console (test mode only)
+         * @param {string} text - Message text
+         * @param {string} [type='info'] - Message type: info, directive, label, voice, pass, fail, error
+         * @private
+         */
+        _debugLog(text, type) {
+            this.debugMessages.push({
+                time: Date.now(),
+                type: type || 'info',
+                text: text
+            });
+            if (this.debugMessages.length > 300) {
+                this.debugMessages = this.debugMessages.slice(-300);
+            }
             m.redraw();
         },
 

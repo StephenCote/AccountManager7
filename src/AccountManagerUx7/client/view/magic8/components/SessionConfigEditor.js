@@ -25,6 +25,8 @@ const SessionConfigEditor = {
         this.loadingSession = false;
         this.directorTestRunning = false;
         this.directorTestResults = null;
+        this.selectedSdDetails = null;
+        this.loadingSdDetails = false;
 
         this._loadOptions();
     },
@@ -243,6 +245,42 @@ const SessionConfigEditor = {
     },
 
     /**
+     * Load full SD config details for preview
+     * @param {string} objectId - SD config objectId
+     * @private
+     */
+    async _loadSdConfigDetails(objectId) {
+        if (!objectId) {
+            this.selectedSdDetails = null;
+            return;
+        }
+        this.loadingSdDetails = true;
+        m.redraw();
+        try {
+            let q = am7view.viewQuery(am7model.newInstance("data.data"));
+            q.entity.request.push("dataBytesStore");
+            q.field("objectId", objectId);
+            let qr = await page.search(q);
+            if (qr && qr.results && qr.results.length) {
+                am7model.updateListModel(qr.results);
+                const obj = qr.results[0];
+                if (obj.dataBytesStore && obj.dataBytesStore.length) {
+                    this.selectedSdDetails = JSON.parse(uwm.base64Decode(obj.dataBytesStore));
+                } else {
+                    this.selectedSdDetails = null;
+                }
+            } else {
+                this.selectedSdDetails = null;
+            }
+        } catch (err) {
+            console.warn('SessionConfigEditor: Failed to load SD config details:', err);
+            this.selectedSdDetails = null;
+        }
+        this.loadingSdDetails = false;
+        m.redraw();
+    },
+
+    /**
      * Save a new voice source object and select it
      * @private
      */
@@ -326,6 +364,17 @@ const SessionConfigEditor = {
             this.config.imageGeneration = Object.assign({}, defaults.imageGeneration, loaded.imageGeneration || {});
             if (loaded.imageGeneration?.sdInline) {
                 this.config.imageGeneration.sdInline = Object.assign({}, defaults.imageGeneration.sdInline, loaded.imageGeneration.sdInline);
+            }
+            // Restore SD config UI mode: if no saved config ID but inline values were customized, show inline editor
+            if (!this.config.imageGeneration.sdConfigId && loaded.imageGeneration?.sdInline) {
+                this.createNewSdConfig = true;
+                this.selectedSdDetails = null;
+            } else {
+                this.createNewSdConfig = false;
+                // Load details for the selected config
+                if (this.config.imageGeneration.sdConfigId) {
+                    this._loadSdConfigDetails(this.config.imageGeneration.sdConfigId);
+                }
             }
             this.config.text = Object.assign({}, defaults.text, loaded.text || {});
             this.config.voice = Object.assign({}, defaults.voice, loaded.voice || {});
@@ -905,7 +954,10 @@ const SessionConfigEditor = {
                             this.sdConfigs.length > 0
                                 ? m('select.w-full.p-2.bg-gray-700.rounded', {
                                     value: this.config.imageGeneration.sdConfigId || '',
-                                    onchange: (e) => this.config.imageGeneration.sdConfigId = e.target.value || null
+                                    onchange: (e) => {
+                                        this.config.imageGeneration.sdConfigId = e.target.value || null;
+                                        this._loadSdConfigDetails(e.target.value || null);
+                                    }
                                 }, [
                                     m('option', { value: '' }, '-- Default Config --'),
                                     ...this.sdConfigs.map(c =>
@@ -920,7 +972,43 @@ const SessionConfigEditor = {
                                         onclick: () => { this.createNewSdConfig = true; this.config.imageGeneration.sdConfigId = null; }
                                     }, 'Create New'),
                                     m('span', '.')
+                                ]),
+
+                            // SD config detail preview
+                            this.loadingSdDetails && m('.mt-3.p-3.bg-gray-700.rounded.text-sm.text-gray-400', 'Loading config details...'),
+                            !this.loadingSdDetails && this.selectedSdDetails && this.config.imageGeneration.sdConfigId && m('.mt-3.p-3.bg-gray-700.rounded.text-sm.space-y-2', [
+                                m('.text-gray-400.font-medium.mb-2', 'Config Preview'),
+                                this.selectedSdDetails.style && m('.flex.gap-2', [
+                                    m('span.text-gray-500.w-28', 'Style:'),
+                                    m('span', this.selectedSdDetails.style)
+                                ]),
+                                this.selectedSdDetails.description && m('.flex.gap-2', [
+                                    m('span.text-gray-500.w-28', 'Description:'),
+                                    m('span.text-gray-300', this.selectedSdDetails.description.length > 80
+                                        ? this.selectedSdDetails.description.substring(0, 80) + '...'
+                                        : this.selectedSdDetails.description)
+                                ]),
+                                this.selectedSdDetails.imageAction && m('.flex.gap-2', [
+                                    m('span.text-gray-500.w-28', 'Image Action:'),
+                                    m('span', this.selectedSdDetails.imageAction)
+                                ]),
+                                this.selectedSdDetails.model && m('.flex.gap-2', [
+                                    m('span.text-gray-500.w-28', 'Model:'),
+                                    m('span.text-gray-300', this.selectedSdDetails.model)
+                                ]),
+                                m('.flex.flex-wrap.gap-x-6.gap-y-1.mt-1', [
+                                    this.selectedSdDetails.denoisingStrength != null && m('span.text-gray-400',
+                                        `Denoising: ${this.selectedSdDetails.denoisingStrength}`),
+                                    this.selectedSdDetails.cfg != null && m('span.text-gray-400',
+                                        `CFG: ${this.selectedSdDetails.cfg}`),
+                                    this.selectedSdDetails.steps != null && m('span.text-gray-400',
+                                        `Steps: ${this.selectedSdDetails.steps}`),
+                                    this.selectedSdDetails.sampler && m('span.text-gray-400',
+                                        `Sampler: ${this.selectedSdDetails.sampler}`),
+                                    (this.selectedSdDetails.width || this.selectedSdDetails.height) && m('span.text-gray-400',
+                                        `Size: ${this.selectedSdDetails.width || '?'}x${this.selectedSdDetails.height || '?'}`)
                                 ])
+                            ])
                         ],
 
                         // Inline new config editor

@@ -322,6 +322,7 @@
                 "  visuals: { effect: \"particles\" or \"spiral\" or \"mandala\" or \"tunnel\", transitionDuration: 2000 }",
                 "  labels: { add: [\"short poetic phrase\"], remove: [\"exact label text\"] }",
                 "  generateImage: { description: \"scene description\", style: \"art style keyword\", imageAction: \"what the subject is doing\", denoisingStrength: 0.3-0.9, cfg: 3-15 }",
+                "  voiceLine: \"short sentence to be spoken next via text-to-speech\"",
                 "  commentary: \"your reasoning (not displayed to user)\"",
                 "",
                 "Example response for a calm neutral state:",
@@ -338,6 +339,7 @@
                 "- For generateImage: adapt description/style/imageAction to the detected face emotion",
                 "- denoisingStrength controls transformation intensity (0.3=subtle, 0.7=dramatic, 0.9=extreme)",
                 "- cfg controls prompt adherence (low=creative/loose, high=strict/literal)",
+                "- voiceLine is synthesized and injected as the next spoken line - keep it natural, 1-2 sentences",
                 "- Respond with ONLY the JSON object, no markdown fences, no explanation text"
             ];
         }
@@ -412,8 +414,20 @@
 
                 console.log('SessionDirector: Tick #' + (this.callCount + 1) + ', sending state to LLM');
 
-                // Call the LLM
-                const response = await am7chat.chat(this.chatRequest, userMessage);
+                // Call the LLM - m.request can reject with null/undefined on server errors
+                let response;
+                try {
+                    response = await am7chat.chat(this.chatRequest, userMessage);
+                } catch (reqErr) {
+                    const detail = reqErr?.message || reqErr?.statusText || (reqErr == null ? 'server returned empty error (check LLM server connectivity)' : String(reqErr));
+                    throw new Error('LLM request failed: ' + detail);
+                }
+
+                if (!response) {
+                    console.warn('SessionDirector: Null response from LLM');
+                    return;
+                }
+
                 this.callCount++;
 
                 // Extract assistant content from response
@@ -434,8 +448,8 @@
                     }
                 }
             } catch (err) {
-                this.lastError = err.message;
-                console.error('SessionDirector: Tick error:', err);
+                this.lastError = err.message || String(err);
+                console.error('SessionDirector: Tick error:', err.message || err);
                 if (this.onError) this.onError(err);
             }
         }
@@ -636,6 +650,10 @@
                     if (Object.keys(valid.generateImage).length === 0) delete valid.generateImage;
                 }
 
+                if (typeof directive.voiceLine === 'string' && directive.voiceLine.trim().length > 0) {
+                    valid.voiceLine = directive.voiceLine.trim();
+                }
+
                 if (typeof directive.commentary === 'string') {
                     valid.commentary = directive.commentary;
                 }
@@ -724,9 +742,10 @@
          * Uses dedicated "Magic8 Diagnostics" configs to avoid modifying live session state.
          * @param {string} [command] - Optional command override for testing
          * @param {Function} [onDirective] - Called with each parsed directive for live application
+         * @param {Function} [onLog] - Called with each log entry for live display
          * @returns {Promise<Array<{name: string, pass: boolean, detail: string, directive?: Object}>>}
          */
-        async runDiagnostics(command, onDirective) {
+        async runDiagnostics(command, onDirective, onLog) {
             const results = [];
             const testCommand = command || this.command || 'Diagnostic test session';
 
@@ -735,6 +754,7 @@
                 if (directive) entry.directive = directive;
                 results.push(entry);
                 console.log(`SessionDirector [TEST] ${pass ? 'PASS' : 'FAIL'}: ${name}${detail ? ' - ' + detail : ''}`);
+                if (onLog) onLog(entry);
             };
 
             // === INFRASTRUCTURE TESTS ===

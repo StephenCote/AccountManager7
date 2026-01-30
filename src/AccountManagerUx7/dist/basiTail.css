@@ -8029,6 +8029,10 @@ button.button-tab-active:hover:is(.dark *) {
   margin-top: 2rem;
 }
 
+.mt-1 {
+  margin-top: 0.25rem;
+}
+
 .block {
   display: block;
 }
@@ -8221,6 +8225,10 @@ button.button-tab-active:hover:is(.dark *) {
   width: 100vw;
 }
 
+.w-28 {
+  width: 7rem;
+}
+
 .max-w-2xl {
   max-width: 42rem;
 }
@@ -8405,6 +8413,15 @@ button.button-tab-active:hover:is(.dark *) {
   gap: 1rem;
 }
 
+.gap-x-6 {
+  -moz-column-gap: 1.5rem;
+       column-gap: 1.5rem;
+}
+
+.gap-y-1 {
+  row-gap: 0.25rem;
+}
+
 .space-x-4 > :not([hidden]) ~ :not([hidden]) {
   --tw-space-x-reverse: 0;
   margin-right: calc(1rem * var(--tw-space-x-reverse));
@@ -8421,6 +8438,12 @@ button.button-tab-active:hover:is(.dark *) {
   --tw-space-y-reverse: 0;
   margin-top: calc(1rem * calc(1 - var(--tw-space-y-reverse)));
   margin-bottom: calc(1rem * var(--tw-space-y-reverse));
+}
+
+.space-y-2 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.5rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.5rem * var(--tw-space-y-reverse));
 }
 
 .self-center {
@@ -9041,6 +9064,10 @@ button.button-tab-active:hover:is(.dark *) {
 
 .capitalize {
   text-transform: capitalize;
+}
+
+.italic {
+  font-style: italic;
 }
 
 .text-black {

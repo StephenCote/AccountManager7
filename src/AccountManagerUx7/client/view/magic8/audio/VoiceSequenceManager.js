@@ -289,6 +289,52 @@ class VoiceSequenceManager {
     }
 
     /**
+     * Inject a new voice line at the given position, synthesize it, and
+     * shift existing entries so playback picks it up naturally.
+     * @param {string} text - Line text to synthesize
+     * @param {number} atIndex - Position to insert at (typically currentIndex)
+     * @param {string} [voiceProfileId] - Override voice profile (defaults to stored)
+     * @returns {Promise<boolean>} true if successfully injected and synthesized
+     */
+    async injectLine(text, atIndex, voiceProfileId) {
+        if (!text || atIndex < 0) return false;
+        const idx = Math.min(atIndex, this.sequences.length);
+
+        // Insert text into sequences
+        this.sequences.splice(idx, 0, text);
+
+        // Shift synthesized hashes for all entries at or after the insertion point
+        const newHashes = new Map();
+        for (const [k, v] of this.synthesizedHashes) {
+            if (k >= idx) {
+                newHashes.set(k + 1, v);
+            } else {
+                newHashes.set(k, v);
+            }
+        }
+        this.synthesizedHashes = newHashes;
+
+        // If currentIndex is at or past the insertion point, bump it so
+        // the currently playing clip isn't disrupted
+        if (this.currentIndex > idx) {
+            this.currentIndex++;
+        }
+
+        // Synthesize the new line
+        try {
+            const profileId = voiceProfileId || this.voiceProfileId;
+            const source = await this.audioEngine.createVoiceSource(text, profileId);
+            if (source) {
+                this.synthesizedHashes.set(idx, source.id);
+                return true;
+            }
+        } catch (err) {
+            console.warn('VoiceSequenceManager: Failed to synthesize injected line:', err);
+        }
+        return false;
+    },
+
+    /**
      * Get current progress
      * @returns {Object} { current, total, percentage }
      */

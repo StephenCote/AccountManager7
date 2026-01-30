@@ -150,6 +150,15 @@ const BiometricOverlay = {
                 willChange: 'transform, opacity'
             };
 
+            // LLM session labels get stylistic emphasis
+            if (label.isSession) {
+                style.fontStyle = 'italic';
+                style.letterSpacing = '0.12em';
+                style.textShadow = `0 0 18px ${glowColor}, 0 0 36px ${glowColor}, 0 0 56px ${glowColor}`;
+                style.borderBottom = `1px solid ${glowColor}`;
+                style.paddingBottom = '2px';
+            }
+
             if (label.anim === 'drift') {
                 const progress = age / label.duration;
                 style.transform = `translate(${label.driftX * progress}px, ${label.driftY * progress}px)`;
