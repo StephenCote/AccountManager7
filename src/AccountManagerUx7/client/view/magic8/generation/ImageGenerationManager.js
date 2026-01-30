@@ -19,6 +19,7 @@ class ImageGenerationManager {
 
         // Cached server resources
         this._captureDir = null;
+        this._generatedDir = null;
         this._baseEntity = null;
     }
 
@@ -228,13 +229,14 @@ class ImageGenerationManager {
             });
 
             if (response && response.objectId) {
-                // Response IS the generated image (already saved by server)
-                const imageUrl = `${g_application_path}/media/Public/data.data${encodeURI(response.groupPath)}/${encodeURIComponent(response.name)}`;
+                // Move generated image to ~/Magic8/Generated
+                const movedImage = await this._moveToGeneratedGroup(response);
+                const imageUrl = `${g_application_path}/media/Public/data.data${encodeURI(movedImage.groupPath)}/${encodeURIComponent(movedImage.name)}`;
 
                 const savedImage = {
-                    objectId: response.objectId,
+                    objectId: movedImage.objectId,
                     url: imageUrl,
-                    name: response.name
+                    name: movedImage.name
                 };
 
                 pendingJob.status = 'complete';
@@ -303,6 +305,32 @@ class ImageGenerationManager {
         obj.dataBytesStore = base64Image;
 
         return await page.createObject(obj);
+    }
+
+    /**
+     * Move a generated image to ~/Magic8/Generated group
+     * @param {Object} imageObj - data.data object returned from reimage API
+     * @returns {Promise<Object>} Updated object with new groupPath
+     * @private
+     */
+    async _moveToGeneratedGroup(imageObj) {
+        if (!this._generatedDir) {
+            this._generatedDir = await page.findObject("auth.group", "DATA", "~/Magic8/Generated");
+            if (!this._generatedDir || !this._generatedDir.objectId) {
+                this._generatedDir = await page.makePath("auth.group", "data", "~/Magic8/Generated");
+            }
+        }
+
+        // If already in the right group, skip
+        if (imageObj.groupId === this._generatedDir.id) {
+            return imageObj;
+        }
+
+        imageObj.groupId = this._generatedDir.id;
+        imageObj.groupPath = this._generatedDir.path;
+        const updated = await page.updateObject(imageObj);
+        console.log('ImageGenerationManager: Moved generated image to ~/Magic8/Generated:', imageObj.objectId);
+        return updated || imageObj;
     }
 
     /**
@@ -403,6 +431,7 @@ class ImageGenerationManager {
         this.generatedImages = [];
         this.sdConfig = null;
         this._captureDir = null;
+        this._generatedDir = null;
         this._baseEntity = null;
         this.onImageGenerated = null;
         this.onGenerationStarted = null;
