@@ -71,6 +71,23 @@ const jsFiles = [
     'client/view/game.js',
     'client/view/hyp.js',
 
+    // Magic8 module (order matches index.js loading order)
+    'client/view/magic8/utils/FullscreenManager.js',
+    'client/view/magic8/utils/DynamicImageGallery.js',
+    'client/view/magic8/audio/AudioEngine.js',
+    'client/view/magic8/audio/VoiceSequenceManager.js',
+    'client/view/magic8/state/BiometricThemer.js',
+    'client/view/magic8/video/SessionRecorder.js',
+    'client/view/magic8/text/TextSequenceManager.js',
+    'client/view/magic8/generation/ImageGenerationManager.js',
+    'client/view/magic8/components/HypnoCanvas.js',
+    'client/view/magic8/components/HypnoticTextDisplay.js',
+    'client/view/magic8/components/ControlPanel.js',
+    'client/view/magic8/components/BiometricOverlay.js',
+    'client/view/magic8/components/SessionConfigEditor.js',
+    'client/view/magic8/Magic8App.js',
+    'client/view/magic8/index.js',
+
     // Router (must be last)
     'client/applicationRouter.js'
 ];
