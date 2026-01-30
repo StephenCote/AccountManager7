@@ -326,11 +326,11 @@ class ImageGenerationManager {
             return imageObj;
         }
 
+        await page.moveObject(imageObj, this._generatedDir);
         imageObj.groupId = this._generatedDir.id;
         imageObj.groupPath = this._generatedDir.path;
-        const updated = await page.updateObject(imageObj);
         console.log('ImageGenerationManager: Moved generated image to ~/Magic8/Generated:', imageObj.objectId);
-        return updated || imageObj;
+        return imageObj;
     }
 
     /**
