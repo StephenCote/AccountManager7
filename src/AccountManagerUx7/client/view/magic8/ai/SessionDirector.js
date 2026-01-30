@@ -191,8 +191,9 @@
                     chatCfg.serverUrl = fullTemplate.serverUrl;
                     chatCfg.serviceType = fullTemplate.serviceType;
                     chatCfg.model = fullTemplate.model;
-                    chatCfg.apiKey = fullTemplate.apiKey;
                     chatCfg.apiVersion = fullTemplate.apiVersion;
+                    // Remove apiKey before patching - EncryptFieldProvider errors on null values
+                    delete chatCfg.apiKey;
                     await page.patchObject(chatCfg);
                     console.log('SessionDirector: Updated chat config LLM settings');
                 }
@@ -209,7 +210,6 @@
                 model: t.model,
                 serverUrl: t.serverUrl,
                 serviceType: t.serviceType,
-                apiKey: t.apiKey,
                 apiVersion: t.apiVersion,
                 rating: t.rating,
                 setting: t.setting,
@@ -221,8 +221,10 @@
                 remindEvery: t.remindEvery,
                 keyframeEvery: t.keyframeEvery
             };
+            // Only include apiKey if non-null to avoid encryption provider errors
+            if (t.apiKey) newChatCfg.apiKey = t.apiKey;
             if (t.chatOptions) {
-                const co = {};
+                const co = { schema: "olio.llm.chatOptions" };
                 const optKeys = ["min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
                 for (const k of optKeys) {
                     if (t.chatOptions[k] !== undefined) co[k] = t.chatOptions[k];
@@ -254,11 +256,15 @@
                 chatCfg.serverUrl = fullTemplate.serverUrl;
                 chatCfg.serviceType = fullTemplate.serviceType;
                 chatCfg.model = fullTemplate.model;
-                chatCfg.apiKey = fullTemplate.apiKey;
                 chatCfg.apiVersion = fullTemplate.apiVersion;
-                // Ensure diagnostic-specific chatOptions
-                chatCfg.chatOptions = chatCfg.chatOptions || {};
-                chatCfg.chatOptions.temperature = 0.8;
+                // Remove apiKey before patching - EncryptFieldProvider errors on null values
+                delete chatCfg.apiKey;
+                // Preserve existing chatOptions schema metadata, only update temperature
+                if (chatCfg.chatOptions) {
+                    chatCfg.chatOptions.temperature = 0.8;
+                } else {
+                    chatCfg.chatOptions = { schema: "olio.llm.chatOptions", temperature: 0.8 };
+                }
                 await page.patchObject(chatCfg);
                 return chatCfg;
             }
@@ -272,7 +278,6 @@
                 model: t.model,
                 serverUrl: t.serverUrl,
                 serviceType: t.serviceType,
-                apiKey: t.apiKey,
                 apiVersion: t.apiVersion,
                 rating: t.rating,
                 setting: t.setting,
@@ -284,8 +289,10 @@
                 remindEvery: t.remindEvery,
                 keyframeEvery: t.keyframeEvery
             };
+            // Only include apiKey if non-null to avoid encryption provider errors
+            if (t.apiKey) newChatCfg.apiKey = t.apiKey;
             // Copy chatOptions from template but set higher temperature for test diversity
-            const co = {};
+            const co = { schema: "olio.llm.chatOptions" };
             if (t.chatOptions) {
                 const optKeys = ["min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
                 for (const k of optKeys) {
@@ -314,7 +321,7 @@
                 "  audio: { sweepStart: 1-15, sweepTrough: 1-15, sweepEnd: 1-15, isochronicEnabled: true/false, isochronicRate: 2-15 }",
                 "  visuals: { effect: \"particles\" or \"spiral\" or \"mandala\" or \"tunnel\", transitionDuration: 2000 }",
                 "  labels: { add: [\"short poetic phrase\"], remove: [\"exact label text\"] }",
-                "  generateImage: { description: \"scene description for image generation\" }",
+                "  generateImage: { description: \"scene description\", style: \"art style keyword\", imageAction: \"what the subject is doing\", denoisingStrength: 0.3-0.9, cfg: 3-15 }",
                 "  commentary: \"your reasoning (not displayed to user)\"",
                 "",
                 "Example response for a calm neutral state:",
@@ -328,6 +335,9 @@
                 "- React to emotion changes: adjust audio frequencies and visual effects to match or guide mood",
                 "- Labels should be poetic, under 8 words, aligned with session intent",
                 "- Lower sweep frequencies (1-4 Hz) for deep relaxation, higher (8-15 Hz) for alertness",
+                "- For generateImage: adapt description/style/imageAction to the detected face emotion",
+                "- denoisingStrength controls transformation intensity (0.3=subtle, 0.7=dramatic, 0.9=extreme)",
+                "- cfg controls prompt adherence (low=creative/loose, high=strict/literal)",
                 "- Respond with ONLY the JSON object, no markdown fences, no explanation text"
             ];
         }
@@ -476,6 +486,12 @@
                 lines.push(`Current Visual: ${v.mode || 'single'} mode, effects=[${(v.effects || []).join(',')}]`);
             }
 
+            // SD image generation config
+            if (state.sdConfig) {
+                const sd = state.sdConfig;
+                lines.push(`Current SD: style=${sd.style || '?'}, denoising=${sd.denoisingStrength || '?'}, cfg=${sd.cfg || '?'}, desc="${(sd.description || '').substring(0, 60)}"`);
+            }
+
             // Elapsed time
             if (state.elapsedMinutes != null) {
                 lines.push('Elapsed: ' + Math.round(state.elapsedMinutes) + ' min');
@@ -548,13 +564,29 @@
             try {
                 directive = JSON.parse(jsonStr);
             } catch (strictErr) {
-                // Local LLMs often return JS-like objects: unquoted keys, single-quoted strings
+                // Local LLMs often return JS-like objects: unquoted keys, single-quoted strings, trailing commas
                 try {
-                    let fixed = jsonStr
-                        // Quote unquoted keys: word followed by colon
-                        .replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":')
-                        // Replace single-quoted strings with double-quoted
-                        .replace(/'([^']*?)'/g, '"$1"');
+                    let fixed = jsonStr;
+
+                    // Step 1: Protect existing double-quoted strings from regex modification
+                    const preserved = [];
+                    fixed = fixed.replace(/"(?:[^"\\]|\\.)*"/g, (match) => {
+                        preserved.push(match);
+                        return '"__P' + (preserved.length - 1) + '__"';
+                    });
+
+                    // Step 2: Quote unquoted keys (word followed by colon, after { , or [)
+                    fixed = fixed.replace(/([{,\[]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":');
+
+                    // Step 3: Convert single-quoted strings to double-quoted
+                    fixed = fixed.replace(/'([^']*?)'/g, '"$1"');
+
+                    // Step 4: Remove trailing commas before } or ]
+                    fixed = fixed.replace(/,\s*([}\]])/g, '$1');
+
+                    // Step 5: Restore preserved double-quoted strings
+                    fixed = fixed.replace(/"__P(\d+)__"/g, (_, i) => preserved[parseInt(i)]);
+
                     directive = JSON.parse(fixed);
                     console.log('SessionDirector: Parsed directive using lenient JS-object mode');
                 } catch (lenientErr) {
@@ -594,9 +626,14 @@
                 }
 
                 if (directive.generateImage && typeof directive.generateImage === 'object') {
-                    if (typeof directive.generateImage.description === 'string') {
-                        valid.generateImage = { description: directive.generateImage.description };
-                    }
+                    valid.generateImage = {};
+                    if (typeof directive.generateImage.description === 'string') valid.generateImage.description = directive.generateImage.description;
+                    if (typeof directive.generateImage.style === 'string') valid.generateImage.style = directive.generateImage.style;
+                    if (typeof directive.generateImage.imageAction === 'string') valid.generateImage.imageAction = directive.generateImage.imageAction;
+                    if (typeof directive.generateImage.denoisingStrength === 'number') valid.generateImage.denoisingStrength = directive.generateImage.denoisingStrength;
+                    if (typeof directive.generateImage.cfg === 'number') valid.generateImage.cfg = directive.generateImage.cfg;
+                    // Only keep if at least one field was set
+                    if (Object.keys(valid.generateImage).length === 0) delete valid.generateImage;
                 }
 
                 if (typeof directive.commentary === 'string') {

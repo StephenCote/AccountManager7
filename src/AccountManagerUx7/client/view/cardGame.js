@@ -901,9 +901,10 @@
                     chatCfg.serverUrl = fullTemplate.serverUrl;
                     chatCfg.serviceType = fullTemplate.serviceType;
                     chatCfg.model = fullTemplate.model;
-                    chatCfg.apiKey = fullTemplate.apiKey;
                     chatCfg.apiVersion = fullTemplate.apiVersion;
-                    await page.updateObject(chatCfg);
+                    // Remove apiKey before patching - EncryptFieldProvider errors on null values
+                    delete chatCfg.apiKey;
+                    await page.patchObject(chatCfg);
                     console.log("Updated chat config LLM settings from template");
                 }
             } else {

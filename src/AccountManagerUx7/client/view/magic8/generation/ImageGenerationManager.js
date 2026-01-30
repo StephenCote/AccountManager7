@@ -301,6 +301,7 @@ class ImageGenerationManager {
         let obj = am7model.newPrimitive("data.data");
         obj.name = `capture-${Date.now()}.png`;
         obj.contentType = 'image/png';
+        obj.compressionType = 'none';
         obj.groupId = this._captureDir.id;
         obj.groupPath = this._captureDir.path;
         obj.dataBytesStore = base64Image;

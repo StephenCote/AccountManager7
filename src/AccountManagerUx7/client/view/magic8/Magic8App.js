@@ -159,6 +159,7 @@
                     let obj = am7model.newPrimitive("data.data");
                     obj.name = configName;
                     obj.contentType = "application/json";
+                    obj.compressionType = "none";
                     obj.groupId = dir.id;
                     obj.groupPath = dir.path;
                     obj.dataBytesStore = encoded;
@@ -407,15 +408,29 @@
                 this._handleBiometricData(imageData);
             };
 
-            const devices = page.components.camera.devices();
-            console.log('Magic8App: Camera devices found:', devices.length);
+            // Ensure video element is in DOM before requesting camera
+            const tryStart = () => {
+                const devices = page.components.camera.devices();
+                console.log('Magic8App: Camera devices found:', devices.length);
 
-            if (!devices.length) {
-                console.log('Magic8App: Initializing camera and finding devices...');
-                page.components.camera.initializeAndFindDevices(captureCallback);
+                if (!devices.length) {
+                    console.log('Magic8App: Initializing camera and finding devices...');
+                    page.components.camera.initializeAndFindDevices(captureCallback);
+                } else {
+                    console.log('Magic8App: Starting capture on existing device');
+                    page.components.camera.startCapture(captureCallback);
+                }
+            };
+
+            // Defer to ensure #facecam video element is rendered in DOM
+            if (!document.querySelector('#facecam')) {
+                console.log('Magic8App: Waiting for #facecam element...');
+                requestAnimationFrame(() => {
+                    m.redraw.sync();
+                    setTimeout(tryStart, 50);
+                });
             } else {
-                console.log('Magic8App: Starting capture on existing device');
-                page.components.camera.startCapture(captureCallback);
+                tryStart();
             }
         },
 
@@ -475,10 +490,11 @@
             this._breatheTransitionMs = halfCycleMs;
 
             if (goingUp) {
-                // Random upper bound between 0.3 and 0.6
-                this.ambientOpacity = 0.3 + Math.random() * 0.3;
+                // Random upper bound between 0.5 and 0.85
+                this.ambientOpacity = 0.5 + Math.random() * 0.35;
             } else {
-                this.ambientOpacity = 0.15;
+                // Dim phase
+                this.ambientOpacity = 0.1;
             }
             m.redraw();
 
@@ -522,12 +538,19 @@
 
             try {
                 const blob = await this.sessionRecorder.stopRecording();
-                await this.sessionRecorder.saveToServer(blob, this.sessionConfig);
                 this.isRecording = false;
+
+                // Download locally (server upload endpoint not available)
+                this.sessionRecorder.downloadLocally(blob);
+                const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
+                console.log(`Magic8App: Recording saved locally (${sizeMB} MB)`);
+                if (page.toast) page.toast('info', `Recording saved (${sizeMB} MB)`);
+
                 m.redraw();
             } catch (err) {
                 console.error('Magic8App: Failed to stop recording:', err);
                 this.isRecording = false;
+                if (page.toast) page.toast('error', 'Recording failed: ' + err.message);
             }
         },
 
@@ -724,12 +747,17 @@
                     })
                 ]),
 
-                // Visual effects canvas layer
-                m(Magic8.HypnoCanvas, {
+                // Visual effects canvas layer (breathing opacity synced with background)
+                m('.absolute.inset-0.z-5.pointer-events-none', {
+                    style: {
+                        opacity: this.ambientOpacity != null ? Math.min(1, this.ambientOpacity + 0.4) : 0.7,
+                        transition: `opacity ${this._breatheTransitionMs || 2000}ms ease-in-out`
+                    }
+                }, m(Magic8.HypnoCanvas, {
                     theme: this.currentTheme,
                     visuals: this.sessionConfig?.visuals,
-                    class: 'absolute inset-0 z-5 pointer-events-none'
-                }),
+                    class: 'absolute inset-0'
+                })),
 
                 // Audio visualizer overlay (between effects and dark overlay)
                 this.sessionConfig?.audio?.visualizerEnabled && this.audioEngine &&
@@ -786,8 +814,8 @@
                     onExit: () => this._handleExit()
                 }),
 
-                // Hidden camera view
-                page.components.camera && this.sessionConfig?.biometrics?.enabled
+                // Hidden camera view (needed for biometrics AND director/image generation)
+                page.components.camera && (this.sessionConfig?.biometrics?.enabled || this.sessionConfig?.director?.enabled || this.sessionConfig?.imageGeneration?.enabled)
                     ? page.components.camera.videoView()
                     : null,
 
@@ -836,6 +864,13 @@
                 visuals: visuals ? {
                     effects: visuals.effects,
                     mode: visuals.mode
+                } : null,
+                sdConfig: this.imageGenerator?.sdConfig ? {
+                    style: this.imageGenerator.sdConfig.style,
+                    description: this.imageGenerator.sdConfig.description,
+                    imageAction: this.imageGenerator.sdConfig.imageAction,
+                    denoisingStrength: this.imageGenerator.sdConfig.denoisingStrength,
+                    cfg: this.imageGenerator.sdConfig.cfg
                 } : null,
                 elapsedMinutes: this._sessionStartTime
                     ? (Date.now() - this._sessionStartTime) / 60000
@@ -919,23 +954,34 @@
                 }
             }
 
-            // Apply image generation
-            if (directive.generateImage && this.imageGenerator && this.biometricData) {
-                const origDesc = this.imageGenerator.sdConfig?.description;
-                if (this.imageGenerator.sdConfig && directive.generateImage.description) {
-                    this.imageGenerator.sdConfig.description = directive.generateImage.description;
-                }
-                if (page.components.camera) {
-                    this.imageGenerator.captureAndGenerate(
-                        page.components.camera,
-                        this.biometricData
-                    ).then(() => {
-                        // Restore original description after generation
-                        if (this.imageGenerator.sdConfig && origDesc !== undefined) {
-                            this.imageGenerator.sdConfig.description = origDesc;
+            // Apply image generation with temporary SD config overrides
+            if (directive.generateImage && this.imageGenerator && page.components.camera) {
+                const sdKeys = ['description', 'style', 'imageAction', 'denoisingStrength', 'cfg'];
+                const origValues = {};
+
+                // Save originals and apply directive overrides
+                if (this.imageGenerator.sdConfig) {
+                    for (const key of sdKeys) {
+                        origValues[key] = this.imageGenerator.sdConfig[key];
+                        if (directive.generateImage[key] != null) {
+                            this.imageGenerator.sdConfig[key] = directive.generateImage[key];
                         }
-                    });
+                    }
                 }
+
+                this.imageGenerator.captureAndGenerate(
+                    page.components.camera,
+                    this.biometricData || null
+                ).then(() => {
+                    // Restore original SD config values after generation
+                    if (this.imageGenerator.sdConfig) {
+                        for (const key of sdKeys) {
+                            if (origValues[key] !== undefined) {
+                                this.imageGenerator.sdConfig[key] = origValues[key];
+                            }
+                        }
+                    }
+                });
             }
 
             if (directive.commentary) {

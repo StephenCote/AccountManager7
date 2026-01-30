@@ -291,9 +291,12 @@ const HypnoCanvas = {
         let angle = 0;
         ctx.moveTo(centerX, centerY);
 
-        const maxPoints = Math.min(2000, Math.max(w, h) * 2);
+        // Scale spiral to fill the full screen (reach corners)
+        const cornerDist = Math.sqrt(w * w + h * h) / 2;
+        const maxPoints = 2500;
+        const radiusGrowth = cornerDist / maxPoints;
         for (let i = 0; i < maxPoints; i++) {
-            const radius = i * 0.1 * pulse;
+            const radius = i * radiusGrowth * pulse;
             angle += 0.02;
             const x = centerX + radius * Math.cos(angle + this.frame * speed);
             const y = centerY + radius * Math.sin(angle + this.frame * speed);
