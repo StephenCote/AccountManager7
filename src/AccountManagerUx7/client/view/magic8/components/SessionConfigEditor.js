@@ -125,7 +125,7 @@ const SessionConfigEditor = {
             },
             recording: {
                 enabled: false,
-                autoStart: false,
+                autoStart: true,
                 maxDurationMin: 30
             },
             director: {
@@ -1604,6 +1604,30 @@ const SessionConfigEditor = {
                             onchange: (e) => this.config.recording.enabled = e.target.checked
                         }),
                         m('span', 'Enable video recording')
+                    ]),
+
+                    // Sub-options shown when recording is enabled
+                    this.config.recording.enabled && m('.mt-4.ml-2.space-y-4', [
+                        m('label.flex.items-center.gap-3.cursor-pointer', [
+                            m('input.w-5.h-5.rounded', {
+                                type: 'checkbox',
+                                checked: this.config.recording.autoStart,
+                                onchange: (e) => this.config.recording.autoStart = e.target.checked
+                            }),
+                            m('span', 'Auto-start when session begins')
+                        ]),
+                        m('.space-y-1', [
+                            m('label.text-sm.text-gray-400', 'Max duration: ' + this.config.recording.maxDurationMin + ' min'),
+                            m('input.w-full', {
+                                type: 'range',
+                                min: 5,
+                                max: 120,
+                                step: 5,
+                                value: this.config.recording.maxDurationMin,
+                                oninput: (e) => this.config.recording.maxDurationMin = parseInt(e.target.value)
+                            })
+                        ]),
+                        m('p.text-xs.text-gray-500', 'Recording can also be toggled via the control bar during a session.')
                     ])
                 ]),
 
