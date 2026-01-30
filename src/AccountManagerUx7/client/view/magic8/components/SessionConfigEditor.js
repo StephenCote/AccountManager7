@@ -22,6 +22,7 @@ const SessionConfigEditor = {
         this.newVoiceContent = '';
         this.newVoiceSourceType = 'note';
         this.isSaving = false;
+        this.loadingSession = false;
 
         this._loadOptions();
     },
@@ -433,15 +434,18 @@ const SessionConfigEditor = {
                 this.savedSessions.length > 0 && m('.config-section.mb-6.p-4.bg-gray-800.rounded-lg', [
                     m('h3.text-lg.font-medium.mb-3', 'Load Saved Session'),
                     m('select.w-full.p-3.bg-gray-700.rounded-lg.text-white', {
-                        value: '',
-                        onchange: (e) => {
-                            if (e.target.value) {
-                                this._loadSavedSession(e.target.value);
-                                e.target.value = '';
-                            }
+                        disabled: this.loadingSession,
+                        onchange: async (e) => {
+                            const objectId = e.target.value;
+                            if (!objectId) return;
+                            this.loadingSession = true;
+                            m.redraw();
+                            await this._loadSavedSession(objectId);
+                            this.loadingSession = false;
+                            m.redraw();
                         }
                     }, [
-                        m('option', { value: '' }, '-- Select a saved session --'),
+                        m('option', { value: '', selected: true }, this.loadingSession ? 'Loading...' : '-- Select a saved session --'),
                         ...this.savedSessions.map(s =>
                             m('option', { value: s.objectId }, s.name)
                         )

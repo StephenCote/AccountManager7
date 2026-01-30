@@ -18,7 +18,7 @@ class ImageGenerationManager {
         this.onQueueChanged = null;
 
         // Cached server resources
-        this._genDir = null;
+        this._captureDir = null;
         this._baseEntity = null;
     }
 
@@ -205,7 +205,7 @@ class ImageGenerationManager {
         }
 
         try {
-            // Step 1: Save camera frame to ~/Magic8/Generated
+            // Step 1: Save camera frame to ~/Magic8/Captures
             const captureObj = await this._saveCameraFrame(
                 pendingJob.request.init_image,
                 pendingJob.id
@@ -281,25 +281,25 @@ class ImageGenerationManager {
     }
 
     /**
-     * Save camera frame as data.data in ~/Magic8/Generated
+     * Save camera frame as data.data in ~/Magic8/Captures
      * @param {string} base64Image - Base64 encoded image data
      * @param {string} jobId - Job ID for naming
      * @returns {Promise<Object>} Saved data.data object
      * @private
      */
     async _saveCameraFrame(base64Image, jobId) {
-        if (!this._genDir) {
-            this._genDir = await page.findObject("auth.group", "DATA", "~/Magic8/Generated");
-            if (!this._genDir || !this._genDir.objectId) {
-                this._genDir = await page.makePath("auth.group", "data", "~/Magic8/Generated");
+        if (!this._captureDir) {
+            this._captureDir = await page.findObject("auth.group", "DATA", "~/Magic8/Captures");
+            if (!this._captureDir || !this._captureDir.objectId) {
+                this._captureDir = await page.makePath("auth.group", "data", "~/Magic8/Captures");
             }
         }
 
         let obj = am7model.newPrimitive("data.data");
         obj.name = `capture-${Date.now()}.png`;
         obj.contentType = 'image/png';
-        obj.groupId = this._genDir.id;
-        obj.groupPath = this._genDir.path;
+        obj.groupId = this._captureDir.id;
+        obj.groupPath = this._captureDir.path;
         obj.dataBytesStore = base64Image;
 
         return await page.createObject(obj);
@@ -402,7 +402,7 @@ class ImageGenerationManager {
         this.pendingGenerations = [];
         this.generatedImages = [];
         this.sdConfig = null;
-        this._genDir = null;
+        this._captureDir = null;
         this._baseEntity = null;
         this.onImageGenerated = null;
         this.onGenerationStarted = null;

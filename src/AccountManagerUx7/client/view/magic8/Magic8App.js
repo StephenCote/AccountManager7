@@ -136,17 +136,19 @@
 
                 // Check for existing config with same name in the group
                 let q = am7view.viewQuery(am7model.newInstance("data.data"));
+                q.entity.request.push("dataBytesStore");
                 q.field("name", configName);
                 q.field("groupId", dir.id);
                 let qr = await page.search(q);
 
                 let saved;
                 if (qr?.results?.length) {
-                    // Update existing record
-                    let od = { id: qr.results[0].id, dataBytesStore: encoded };
-                    od[am7model.jsonModelKey] = "data.data";
-                    saved = await page.patchObject(od);
-                    console.log('Magic8App: Session config updated:', qr.results[0].objectId);
+                    // Update existing record with full object
+                    let existing = qr.results[0];
+                    existing.dataBytesStore = encoded;
+                    existing.compressionType = "none";
+                    saved = await page.updateObject(existing);
+                    console.log('Magic8App: Session config updated:', existing.objectId);
                 } else {
                     // Create new record
                     let obj = am7model.newPrimitive("data.data");
