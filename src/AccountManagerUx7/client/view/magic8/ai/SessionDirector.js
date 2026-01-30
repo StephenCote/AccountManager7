@@ -333,7 +333,7 @@
                 "",
                 "Guidelines:",
                 "- Evolve gradually based on biometric emotion, elapsed time, and session intent",
-                "- React to emotion changes: adjust audio frequencies and visual effects to match or guide mood",
+                "- When an 'Emotion Shift' is reported, adapt your directives to acknowledge the transition (e.g. sad→happy: brighten visuals, raise frequencies; happy→fear: add grounding labels, lower sweep)",
                 "- Labels should be poetic, under 8 words, aligned with session intent",
                 "- Lower sweep frequencies (1-4 Hz) for deep relaxation, higher (8-15 Hz) for alertness",
                 "- For generateImage: adapt description/style/imageAction to the detected face emotion",
@@ -471,6 +471,12 @@
                 lines.push('Biometric: no face data');
             }
 
+            // Emotion transition (recent change within 30s)
+            if (state.emotionTransition) {
+                const t = state.emotionTransition;
+                lines.push(`Emotion Shift: ${t.from} → ${t.to} (${t.secsAgo}s ago)`);
+            }
+
             // Session labels
             if (state.labels && state.labels.length > 0) {
                 lines.push('Session Labels: [' + state.labels.join(', ') + ']');
@@ -570,13 +576,20 @@
 
             // Find the first { to last } block
             const firstBrace = jsonStr.indexOf('{');
-            const lastBrace = jsonStr.lastIndexOf('}');
-            if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+            if (firstBrace === -1) {
                 console.warn('SessionDirector: No JSON object found in response');
                 return null;
             }
 
-            jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+            const lastBrace = jsonStr.lastIndexOf('}');
+            if (lastBrace !== -1 && lastBrace > firstBrace) {
+                jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+            } else {
+                jsonStr = jsonStr.substring(firstBrace);
+            }
+
+            // Repair unbalanced braces/brackets (truncated LLM responses)
+            jsonStr = this._repairTruncatedJson(jsonStr);
 
             // Try strict JSON first, then lenient JS-object parsing
             let directive;
@@ -586,6 +599,10 @@
                 // Local LLMs often return JS-like objects: unquoted keys, single-quoted strings, trailing commas
                 try {
                     let fixed = jsonStr;
+
+                    // Step 0: Strip JS-style comments
+                    fixed = fixed.replace(/\/\/[^\n]*/g, '');
+                    fixed = fixed.replace(/\/\*[\s\S]*?\*\//g, '');
 
                     // Step 1: Protect existing double-quoted strings from regex modification
                     const preserved = [];
@@ -603,8 +620,14 @@
                     // Step 4: Remove trailing commas before } or ]
                     fixed = fixed.replace(/,\s*([}\]])/g, '$1');
 
-                    // Step 5: Restore preserved double-quoted strings
+                    // Step 5: Remove leading commas after { or [
+                    fixed = fixed.replace(/([{\[]\s*),/g, '$1');
+
+                    // Step 6: Restore preserved double-quoted strings
                     fixed = fixed.replace(/"__P(\d+)__"/g, (_, i) => preserved[parseInt(i)]);
+
+                    // Step 7: Repair any remaining unbalanced braces
+                    fixed = this._repairTruncatedJson(fixed);
 
                     directive = JSON.parse(fixed);
                     console.log('SessionDirector: Parsed directive using lenient JS-object mode');
@@ -668,6 +691,44 @@
                 console.warn('SessionDirector: Failed to parse JSON directive:', err.message);
                 return null;
             }
+        }
+
+        /**
+         * Repair truncated JSON by closing unbalanced braces/brackets and
+         * trimming any trailing incomplete key-value pair
+         * @param {string} json - Potentially truncated JSON string
+         * @returns {string} Repaired JSON string
+         * @private
+         */
+        _repairTruncatedJson(json) {
+            // Remove trailing incomplete value (after last comma or colon outside strings)
+            json = json.replace(/,\s*[a-zA-Z_"'][^{}[\]]*$/, '');
+            json = json.replace(/:\s*$/, ': null');
+
+            let openBraces = 0, openBrackets = 0;
+            let inString = false, escape = false, stringChar = '';
+            for (const ch of json) {
+                if (escape) { escape = false; continue; }
+                if (ch === '\\') { escape = true; continue; }
+                if (!inString && (ch === '"' || ch === "'")) { inString = true; stringChar = ch; continue; }
+                if (inString && ch === stringChar) { inString = false; continue; }
+                if (inString) continue;
+                if (ch === '{') openBraces++;
+                else if (ch === '}') openBraces--;
+                else if (ch === '[') openBrackets++;
+                else if (ch === ']') openBrackets--;
+            }
+
+            // Close unclosed strings (if truncated mid-string)
+            if (inString) json += stringChar;
+
+            if (openBrackets > 0 || openBraces > 0) {
+                for (let i = 0; i < openBrackets; i++) json += ']';
+                for (let i = 0; i < openBraces; i++) json += '}';
+                console.log('SessionDirector: Repaired truncated JSON (added ' + openBraces + ' braces, ' + openBrackets + ' brackets)');
+            }
+
+            return json;
         }
 
         /**

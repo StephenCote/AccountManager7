@@ -39,6 +39,7 @@
         sessionLabels: [],
         sessionVoiceLines: [],
         _sessionStartTime: null,
+        _emotionHistory: [],   // [{emotion, timestamp}] — only stores actual changes
 
         // Debug console (test mode)
         debugMessages: [],
@@ -288,6 +289,9 @@
                     cfg.imageGeneration.sdConfigId,
                     cfg.imageGeneration.sdConfigId ? null : cfg.imageGeneration.sdInline
                 );
+                // Name session subgroup with config name + timestamp
+                const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+                this.imageGenerator.sessionName = (cfg.name || 'Session') + ' ' + ts;
                 await this.imageGenerator.loadConfig();
 
                 this.imageGenerator.onImageGenerated = (img) => {
@@ -492,6 +496,21 @@
                 console.log('Magic8App: Face analysis result:', data);
                 this.biometricData = data;
 
+                // Track emotion transitions (only store actual changes)
+                const emotion = data.dominant_emotion;
+                if (emotion) {
+                    const last = this._emotionHistory.length > 0
+                        ? this._emotionHistory[this._emotionHistory.length - 1]
+                        : null;
+                    if (!last || last.emotion !== emotion) {
+                        this._emotionHistory.push({ emotion, timestamp: Date.now() });
+                        // Keep only the last 10 transitions
+                        if (this._emotionHistory.length > 10) {
+                            this._emotionHistory = this._emotionHistory.slice(-10);
+                        }
+                    }
+                }
+
                 if (this.biometricThemer) {
                     this.biometricThemer.updateFromBiometrics(data);
                 }
@@ -568,19 +587,24 @@
             const canvas = this.containerElement?.querySelector('.hypno-canvas');
             if (!canvas) {
                 console.warn('Magic8App: Canvas not found for recording');
+                this._debugLog('Recording: canvas not found', 'warn');
                 return;
             }
 
             const audioDestination = this.audioEngine?.getDestination();
+            console.log('Magic8App: Starting recording, canvas:', canvas.width + 'x' + canvas.height,
+                'audio:', audioDestination ? 'yes' : 'no');
 
             try {
                 await this.sessionRecorder.startRecording(canvas, audioDestination, {
                     maxDurationMin: this.sessionConfig?.recording?.maxDurationMin || 30
                 });
                 this.isRecording = true;
+                this._debugLog('Recording started', 'info');
                 m.redraw();
             } catch (err) {
                 console.error('Magic8App: Failed to start recording:', err);
+                this._debugLog('Recording failed: ' + err.message, 'error');
             }
         },
 
@@ -691,7 +715,10 @@
         },
 
         // Handle exit
-        _handleExit() {
+        async _handleExit() {
+            // Save recording BEFORE cleanup/navigation so the blob download completes
+            await this._finalizeRecording();
+
             try {
                 this._cleanup();
             } catch (err) {
@@ -716,6 +743,39 @@
             }
         },
 
+        /**
+         * Stop recording and download the file before exit.
+         * Awaited by _handleExit so the blob download completes before navigation.
+         * @private
+         */
+        async _finalizeRecording() {
+            if (!this.isRecording || !this.sessionRecorder) return;
+
+            const recorder = this.sessionRecorder;
+            this.sessionRecorder = null; // prevent _cleanup from re-processing
+            this.isRecording = false;
+
+            try {
+                console.log('Magic8App: Finalizing recording before exit...');
+                const blob = await recorder.stopRecording();
+
+                if (blob && blob.size > 0) {
+                    recorder.downloadLocally(blob);
+                    const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
+                    console.log(`Magic8App: Recording saved on exit (${sizeMB} MB)`);
+                    if (page.toast) page.toast('info', `Recording saved (${sizeMB} MB)`);
+                    // Brief delay to let the browser register the download
+                    await new Promise(r => setTimeout(r, 300));
+                } else {
+                    console.warn('Magic8App: Recording blob was empty on exit');
+                }
+            } catch (err) {
+                console.warn('Magic8App: Could not save recording on exit:', err);
+            } finally {
+                recorder.dispose();
+            }
+        },
+
         // Cleanup (guarded against double-call from _handleExit + onremove)
         _cleanup() {
             if (this._cleaned) return;
@@ -728,6 +788,17 @@
                 clearInterval(this._initialGenCheck);
             }
             this._stopBreathing();
+
+            // Stop recording FIRST (before audio disposal kills its tracks)
+            // If _finalizeRecording already ran (via _handleExit), sessionRecorder is null
+            if (this.isRecording && this.sessionRecorder) {
+                const recorder = this.sessionRecorder;
+                this.sessionRecorder = null;
+                this._stopRecordingAndDispose(recorder);
+            } else if (this.sessionRecorder) {
+                this.sessionRecorder.dispose();
+                this.sessionRecorder = null;
+            }
 
             // Stop camera
             if (page.components.camera) {
@@ -748,15 +819,6 @@
 
             // Stop generation
             this.imageGenerator?.dispose();
-
-            // Stop recording - async download must complete before dispose
-            if (this.isRecording && this.sessionRecorder) {
-                const recorder = this.sessionRecorder;
-                this.sessionRecorder = null; // prevent double-dispose
-                this._stopRecordingAndDispose(recorder);
-            } else if (this.sessionRecorder) {
-                this.sessionRecorder.dispose();
-            }
 
             // Stop session director and clear session data
             this.sessionDirector?.dispose();
@@ -1006,12 +1068,29 @@
                 }
             }
 
+            // Compute recent emotion transition (within last 30s)
+            let emotionTransition = null;
+            if (this._emotionHistory.length >= 2) {
+                const now = Date.now();
+                const current = this._emotionHistory[this._emotionHistory.length - 1];
+                const previous = this._emotionHistory[this._emotionHistory.length - 2];
+                const secsSinceChange = (now - current.timestamp) / 1000;
+                if (secsSinceChange <= 30) {
+                    emotionTransition = {
+                        from: previous.emotion,
+                        to: current.emotion,
+                        secsAgo: Math.round(secsSinceChange)
+                    };
+                }
+            }
+
             return {
                 biometric: bio ? {
                     emotion: bio.dominant_emotion,
                     age: bio.age,
                     gender: bio.dominant_gender
                 } : null,
+                emotionTransition: emotionTransition,
                 labels: [...this.sessionLabels],
                 recentVoiceLines: recentVoiceLines,
                 currentText: this.currentText,

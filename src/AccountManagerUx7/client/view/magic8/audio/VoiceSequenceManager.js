@@ -332,7 +332,7 @@ class VoiceSequenceManager {
             console.warn('VoiceSequenceManager: Failed to synthesize injected line:', err);
         }
         return false;
-    },
+    }
 
     /**
      * Get current progress

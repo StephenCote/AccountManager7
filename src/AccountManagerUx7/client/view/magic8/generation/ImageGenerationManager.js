@@ -11,6 +11,7 @@ class ImageGenerationManager {
         this.generatedImages = [];
         this.maxPendingJobs = 3;
         this.isProcessing = false;
+        this.sessionName = null;
 
         this.onImageGenerated = null;
         this.onGenerationStarted = null;
@@ -106,8 +107,11 @@ class ImageGenerationManager {
             await this.loadConfig();
         }
 
-        if (this.pendingGenerations.length >= this.maxPendingJobs) {
-            console.warn('ImageGenerationManager: Max pending jobs reached');
+        const activeJobs = this.pendingGenerations.filter(
+            j => j.status === 'pending' || j.status === 'processing'
+        ).length;
+        if (activeJobs >= this.maxPendingJobs) {
+            console.warn('ImageGenerationManager: Max pending jobs reached (' + activeJobs + ' active)');
             return null;
         }
 
@@ -296,9 +300,12 @@ class ImageGenerationManager {
      */
     async _saveCameraFrame(base64Image, jobId) {
         if (!this._captureDir) {
-            this._captureDir = await page.findObject("auth.group", "DATA", "~/Magic8/Captures");
+            const capturePath = this.sessionName
+                ? '~/Magic8/Captures/' + this.sessionName
+                : '~/Magic8/Captures';
+            this._captureDir = await page.findObject("auth.group", "DATA", capturePath);
             if (!this._captureDir || !this._captureDir.objectId) {
-                this._captureDir = await page.makePath("auth.group", "data", "~/Magic8/Captures");
+                this._captureDir = await page.makePath("auth.group", "data", capturePath);
             }
         }
 
@@ -321,9 +328,12 @@ class ImageGenerationManager {
      */
     async _moveToGeneratedGroup(imageObj) {
         if (!this._generatedDir) {
-            this._generatedDir = await page.findObject("auth.group", "DATA", "~/Magic8/Generated");
+            const genPath = this.sessionName
+                ? '~/Magic8/Generated/' + this.sessionName
+                : '~/Magic8/Generated';
+            this._generatedDir = await page.findObject("auth.group", "DATA", genPath);
             if (!this._generatedDir || !this._generatedDir.objectId) {
-                this._generatedDir = await page.makePath("auth.group", "data", "~/Magic8/Generated");
+                this._generatedDir = await page.makePath("auth.group", "data", genPath);
             }
         }
 
