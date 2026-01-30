@@ -131,16 +131,34 @@
                     dir = await page.makePath("auth.group", "data", "~/Magic8/Configs");
                 }
 
-                let obj = am7model.newPrimitive("data.data");
-                obj.name = config.name || 'Magic8 Session';
-                obj.contentType = "application/json";
-                obj.groupId = dir.id;
-                obj.groupPath = dir.path;
-                obj.dataBytesStore = uwm.base64Encode(JSON.stringify(config));
-                let saved = await page.createObject(obj);
+                const configName = config.name || 'Magic8 Session';
+                const encoded = uwm.base64Encode(JSON.stringify(config));
 
-                if (saved && saved.objectId) {
-                    console.log('Magic8App: Session config saved:', saved.objectId);
+                // Check for existing config with same name in the group
+                let q = am7view.viewQuery(am7model.newInstance("data.data"));
+                q.field("name", configName);
+                q.field("groupId", dir.id);
+                let qr = await page.search(q);
+
+                let saved;
+                if (qr?.results?.length) {
+                    // Update existing record
+                    let od = { id: qr.results[0].id, dataBytesStore: encoded };
+                    od[am7model.jsonModelKey] = "data.data";
+                    saved = await page.patchObject(od);
+                    console.log('Magic8App: Session config updated:', qr.results[0].objectId);
+                } else {
+                    // Create new record
+                    let obj = am7model.newPrimitive("data.data");
+                    obj.name = configName;
+                    obj.contentType = "application/json";
+                    obj.groupId = dir.id;
+                    obj.groupPath = dir.path;
+                    obj.dataBytesStore = encoded;
+                    saved = await page.createObject(obj);
+                    if (saved && saved.objectId) {
+                        console.log('Magic8App: Session config saved:', saved.objectId);
+                    }
                 }
 
                 this.sessionConfig = config;
@@ -307,12 +325,6 @@
                     };
                     await this.voiceSequence.synthesizeAll(cfg.voice.voiceProfileId);
 
-                    // Connect line change to overlay text display
-                    this.voiceSequence.onLineChange = (text) => {
-                        this.currentText = text;
-                        m.redraw();
-                    };
-
                     this.voiceSequence.start();
                     console.log('Magic8App: Voice sequence playback started');
                 }
@@ -371,16 +383,18 @@
             const interval = Math.max(this.sessionConfig?.imageGeneration?.captureInterval || 120000, 60000);
             console.log('Magic8App: Image generation interval:', interval, 'ms');
 
-            // Fire immediate first generation attempt
-            setTimeout(async () => {
+            // Poll for biometric data availability, then fire first generation
+            this._initialGenCheck = setInterval(async () => {
                 if (page.components.camera && this.imageGenerator && this.biometricData) {
+                    clearInterval(this._initialGenCheck);
+                    this._initialGenCheck = null;
                     console.log('Magic8App: Triggering initial image generation (face detected)');
                     await this.imageGenerator.captureAndGenerate(
                         page.components.camera,
                         this.biometricData
                     );
                 }
-            }, 5000); // Small delay to allow camera/biometrics to initialize
+            }, 5000);
 
             this.imageGenInterval = setInterval(async () => {
                 if (page.components.camera && this.imageGenerator && this.biometricData) {
@@ -542,6 +556,9 @@
             clearInterval(this.biometricInterval);
             clearInterval(this.imageCycleInterval);
             clearInterval(this.imageGenInterval);
+            if (this._initialGenCheck) {
+                clearInterval(this._initialGenCheck);
+            }
             this._stopBreathing();
 
             // Stop camera

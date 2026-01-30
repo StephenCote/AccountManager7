@@ -1,6 +1,6 @@
 /**
  * ImageGenerationManager - Stable Diffusion img2img generation from camera captures
- * Captures user images and transforms them using AI image generation
+ * Captures user images and transforms them using the olio reimage API
  */
 class ImageGenerationManager {
     constructor(sdConfigObjectId = null, inlineConfig = null) {
@@ -16,6 +16,10 @@ class ImageGenerationManager {
         this.onGenerationStarted = null;
         this.onGenerationFailed = null;
         this.onQueueChanged = null;
+
+        // Cached server resources
+        this._genDir = null;
+        this._baseEntity = null;
     }
 
     /**
@@ -68,9 +72,6 @@ class ImageGenerationManager {
             strength: 0.65,
             steps: 30,
             cfg_scale: 7.5,
-            width: 512,
-            height: 512,
-            sampler: "euler_a",
             seed: -1,
             captureInterval: 30000,
             emotionPromptMapping: {
@@ -134,7 +135,7 @@ class ImageGenerationManager {
                 }
             }
 
-            // Build generation request
+            // Build generation request (internal format)
             const genRequest = {
                 prompt: prompt,
                 negative_prompt: this.sdConfig.negative_prompt || "",
@@ -142,9 +143,6 @@ class ImageGenerationManager {
                 strength: this.sdConfig.strength || 0.65,
                 steps: this.sdConfig.steps || 30,
                 cfg_scale: this.sdConfig.cfg_scale || 7.5,
-                width: this.sdConfig.width || 512,
-                height: this.sdConfig.height || 512,
-                sampler: this.sdConfig.sampler || "euler_a",
                 seed: this.sdConfig.seed || -1
             };
 
@@ -189,7 +187,8 @@ class ImageGenerationManager {
     }
 
     /**
-     * Process the generation queue
+     * Process the generation queue using olio reimage API
+     * Flow: save camera frame -> build SD config -> call reimage -> handle response
      * @private
      */
     async _processQueue() {
@@ -206,21 +205,41 @@ class ImageGenerationManager {
         }
 
         try {
+            // Step 1: Save camera frame to ~/Magic8/Generated
+            const captureObj = await this._saveCameraFrame(
+                pendingJob.request.init_image,
+                pendingJob.id
+            );
+            if (!captureObj || !captureObj.objectId) {
+                throw new Error('Failed to save camera capture');
+            }
+            console.log('ImageGenerationManager: Camera frame saved:', captureObj.objectId);
+
+            // Step 2: Build olio.sd.config entity for the reimage API
+            const sdEntity = await this._buildSdConfigEntity(pendingJob.request, captureObj.objectId);
+
+            // Step 3: Call reimage endpoint (same API used by dialog.js)
+            console.log('ImageGenerationManager: Calling reimage for', captureObj.objectId);
             const response = await m.request({
                 method: 'POST',
-                url: `${g_application_path}/rest/sd/img2img`,
+                url: `${g_application_path}/rest/olio/data.data/${captureObj.objectId}/reimage`,
                 withCredentials: true,
-                body: pendingJob.request
+                body: sdEntity
             });
 
-            if (response.images && response.images.length > 0) {
-                // Save generated image to server
-                const savedImage = await this._saveGeneratedImage(response.images[0], pendingJob.id);
+            if (response && response.objectId) {
+                // Response IS the generated image (already saved by server)
+                const imageUrl = `${g_application_path}/media/Public/data.data${encodeURI(response.groupPath)}/${encodeURIComponent(response.name)}`;
+
+                const savedImage = {
+                    objectId: response.objectId,
+                    url: imageUrl,
+                    name: response.name
+                };
 
                 pendingJob.status = 'complete';
                 pendingJob.result = savedImage;
 
-                // Add to generated images list
                 this.generatedImages.push({
                     id: pendingJob.id,
                     url: savedImage.url,
@@ -228,18 +247,17 @@ class ImageGenerationManager {
                     timestamp: Date.now()
                 });
 
-                // Notify listeners
                 if (this.onImageGenerated) {
                     this.onImageGenerated(savedImage);
                 }
             } else {
-                throw new Error('No images returned from generation');
+                throw new Error('No image returned from generation');
             }
 
         } catch (err) {
             console.error('ImageGenerationManager: Generation failed:', err);
             pendingJob.status = 'failed';
-            pendingJob.error = err.message;
+            pendingJob.error = err.message || String(err);
 
             if (this.onGenerationFailed) {
                 this.onGenerationFailed(pendingJob.id, err);
@@ -263,41 +281,67 @@ class ImageGenerationManager {
     }
 
     /**
-     * Save generated image to server
-     * @param {string} base64Image - Base64 encoded image
+     * Save camera frame as data.data in ~/Magic8/Generated
+     * @param {string} base64Image - Base64 encoded image data
      * @param {string} jobId - Job ID for naming
-     * @returns {Promise<Object>} Saved image info
+     * @returns {Promise<Object>} Saved data.data object
      * @private
      */
-    async _saveGeneratedImage(base64Image, jobId) {
-        try {
-            const response = await m.request({
-                method: 'POST',
-                url: `${g_application_path}/rest/media/upload/base64`,
-                withCredentials: true,
-                body: {
-                    data: base64Image,
-                    name: `generated-${jobId}.png`,
-                    contentType: 'image/png',
-                    groupPath: '~/Magic8/Generated'
-                }
-            });
-
-            return {
-                objectId: response.objectId,
-                url: response.url || `${g_application_path}/media/Public/data.data${response.groupPath}/${response.name}`,
-                name: response.name
-            };
-
-        } catch (err) {
-            console.error('ImageGenerationManager: Failed to save image:', err);
-            // Return a data URL as fallback
-            return {
-                objectId: null,
-                url: `data:image/png;base64,${base64Image}`,
-                name: `generated-${jobId}.png`
-            };
+    async _saveCameraFrame(base64Image, jobId) {
+        if (!this._genDir) {
+            this._genDir = await page.findObject("auth.group", "DATA", "~/Magic8/Generated");
+            if (!this._genDir || !this._genDir.objectId) {
+                this._genDir = await page.makePath("auth.group", "data", "~/Magic8/Generated");
+            }
         }
+
+        let obj = am7model.newPrimitive("data.data");
+        obj.name = `capture-${Date.now()}.png`;
+        obj.contentType = 'image/png';
+        obj.groupId = this._genDir.id;
+        obj.groupPath = this._genDir.path;
+        obj.dataBytesStore = base64Image;
+
+        return await page.createObject(obj);
+    }
+
+    /**
+     * Build an olio.sd.config entity for the reimage API
+     * Maps internal config fields to the server entity format
+     * @param {Object} request - Internal generation request
+     * @param {string} referenceImageId - ObjectId of the saved camera frame
+     * @returns {Promise<Object>} SD config entity
+     * @private
+     */
+    async _buildSdConfigEntity(request, referenceImageId) {
+        // Fetch base entity structure from server (cached)
+        if (!this._baseEntity) {
+            try {
+                this._baseEntity = await m.request({
+                    method: 'GET',
+                    url: `${g_application_path}/rest/olio/randomImageConfig`,
+                    withCredentials: true
+                });
+            } catch (e) {
+                console.warn('ImageGenerationManager: Could not fetch randomImageConfig:', e);
+                this._baseEntity = {};
+            }
+        }
+
+        let entity = Object.assign({}, this._baseEntity);
+
+        // Map internal config fields to olio.sd.config entity fields
+        if (request.prompt) entity.description = request.prompt;
+        if (request.negative_prompt) entity.negativePrompt = request.negative_prompt;
+        if (request.strength != null) entity.denoisingStrength = request.strength;
+        if (request.steps) entity.steps = request.steps;
+        if (request.cfg_scale) entity.cfg = request.cfg_scale;
+        if (request.seed != null) entity.seed = request.seed;
+
+        // Set reference image for img2img
+        entity.referenceImageId = referenceImageId;
+
+        return entity;
     }
 
     /**
@@ -358,6 +402,8 @@ class ImageGenerationManager {
         this.pendingGenerations = [];
         this.generatedImages = [];
         this.sdConfig = null;
+        this._genDir = null;
+        this._baseEntity = null;
         this.onImageGenerated = null;
         this.onGenerationStarted = null;
         this.onGenerationFailed = null;

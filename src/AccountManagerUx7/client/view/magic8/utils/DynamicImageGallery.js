@@ -256,6 +256,12 @@ class DynamicImageGallery {
             this.spliceGeneratedImage(imageData);
         }
 
+        // Reset cycle timer so this image gets a full display period
+        const wasRunning = !!this.intervalId;
+        if (wasRunning) {
+            this.stop();
+        }
+
         // Trigger onImageChange directly to display this image now
         if (this.onImageChange) {
             this.onImageChange({
@@ -263,6 +269,11 @@ class DynamicImageGallery {
                 objectId: imageData.objectId,
                 type: 'generated'
             }, this.currentIndex, this.allImages.length);
+        }
+
+        // Restart cycling so the image stays for a full interval
+        if (wasRunning) {
+            this.start();
         }
     }
 
