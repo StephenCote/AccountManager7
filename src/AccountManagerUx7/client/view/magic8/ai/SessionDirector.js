@@ -322,6 +322,7 @@
                 "  visuals: { effect: \"particles\" or \"spiral\" or \"mandala\" or \"tunnel\", transitionDuration: 2000 }",
                 "  labels: { add: [\"short poetic phrase\"], remove: [\"exact label text\"] }",
                 "  generateImage: { description: \"scene description\", style: \"art style keyword\", imageAction: \"what the subject is doing\", denoisingStrength: 0.3-0.9, cfg: 3-15 }",
+                "  opacity: { labels: 0.15-1.0, images: 0.15-1.0, visualizer: 0.15-1.0, visuals: 0.15-1.0 }",
                 "  voiceLine: \"short sentence to be spoken next via text-to-speech\"",
                 "  commentary: \"your reasoning (not displayed to user)\"",
                 "",
@@ -339,6 +340,7 @@
                 "- For generateImage: adapt description/style/imageAction to the detected face emotion",
                 "- denoisingStrength controls transformation intensity (0.3=subtle, 0.7=dramatic, 0.9=extreme)",
                 "- cfg controls prompt adherence (low=creative/loose, high=strict/literal)",
+                "- opacity controls layer visibility (0.15=barely visible, 1.0=full) — changes transition gradually over ~20s",
                 "- voiceLine is synthesized and injected as the next spoken line - keep it natural, 1-2 sentences",
                 "- Respond with ONLY the JSON object, no markdown fences, no explanation text"
             ];
@@ -517,6 +519,12 @@
                 lines.push(`Current SD: style=${sd.style || '?'}, denoising=${sd.denoisingStrength || '?'}, cfg=${sd.cfg || '?'}, desc="${(sd.description || '').substring(0, 60)}"`);
             }
 
+            // Layer opacity
+            if (state.layerOpacity) {
+                const o = state.layerOpacity;
+                lines.push(`Layer Opacity: labels=${o.labels}, images=${o.images}, visualizer=${o.visualizer}, visuals=${o.visuals}`);
+            }
+
             // Elapsed time
             if (state.elapsedMinutes != null) {
                 lines.push('Elapsed: ' + Math.round(state.elapsedMinutes) + ' min');
@@ -678,6 +686,16 @@
                     if (Object.keys(valid.generateImage).length === 0) delete valid.generateImage;
                 }
 
+                if (directive.opacity && typeof directive.opacity === 'object') {
+                    valid.opacity = {};
+                    for (const layer of ['labels', 'images', 'visualizer', 'visuals']) {
+                        if (typeof directive.opacity[layer] === 'number') {
+                            valid.opacity[layer] = Math.max(0.15, Math.min(1, directive.opacity[layer]));
+                        }
+                    }
+                    if (Object.keys(valid.opacity).length === 0) delete valid.opacity;
+                }
+
                 if (typeof directive.voiceLine === 'string' && directive.voiceLine.trim().length > 0) {
                     valid.voiceLine = directive.voiceLine.trim();
                 }
@@ -704,6 +722,8 @@
             // Remove trailing incomplete value (after last comma or colon outside strings)
             json = json.replace(/,\s*[a-zA-Z_"'][^{}[\]]*$/, '');
             json = json.replace(/:\s*$/, ': null');
+            // Remove naked trailing comma (truncated mid-object/array)
+            json = json.replace(/,\s*$/, '');
 
             let openBraces = 0, openBrackets = 0;
             let inString = false, escape = false, stringChar = '';
@@ -725,6 +745,8 @@
             if (openBrackets > 0 || openBraces > 0) {
                 for (let i = 0; i < openBrackets; i++) json += ']';
                 for (let i = 0; i < openBraces; i++) json += '}';
+                // Clean up trailing commas before the newly added closing braces/brackets
+                json = json.replace(/,\s*([}\]])/g, '$1');
                 console.log('SessionDirector: Repaired truncated JSON (added ' + openBraces + ' braces, ' + openBrackets + ' brackets)');
             }
 

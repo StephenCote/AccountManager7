@@ -50,6 +50,14 @@
         _breatheTransitionMs: 120000,
         _breatheTimeout: null,
 
+        // Layer opacity (director-controlled, gradual transitions)
+        _layerOpacity: { labels: 1, images: 1, visualizer: 1, visuals: 1 },
+        _layerOpacityTarget: { labels: 1, images: 1, visualizer: 1, visuals: 1 },
+        _layerOpacityStart: { labels: 1, images: 1, visualizer: 1, visuals: 1 },
+        _layerTransitionStart: {},
+        _opacityTransitionMs: 20000,  // 20s gradual transition
+        _opacityRafId: null,
+
         // Intervals
         biometricInterval: null,
         imageCycleInterval: null,
@@ -397,6 +405,7 @@
                         if (d.labels?.remove?.length) this._debugLog('- Labels: ' + d.labels.remove.join(', '), 'label');
                         if (d.generateImage) this._debugLog('Image: ' + (d.generateImage.description || '').substring(0, 80), 'directive');
                         if (d.voiceLine) this._debugLog('Voice inject: "' + d.voiceLine + '"', 'voice');
+                        if (d.opacity) this._debugLog('Opacity: ' + JSON.stringify(d.opacity), 'directive');
                         if (d.commentary) this._debugLog('LLM: ' + d.commentary, 'info');
                     }
                 };
@@ -788,6 +797,10 @@
                 clearInterval(this._initialGenCheck);
             }
             this._stopBreathing();
+            if (this._opacityRafId) {
+                cancelAnimationFrame(this._opacityRafId);
+                this._opacityRafId = null;
+            }
 
             // Stop recording FIRST (before audio disposal kills its tracks)
             // If _finalizeRecording already ran (via _handleExit), sessionRecorder is null
@@ -868,10 +881,10 @@
                     transition: 'background 1s ease'
                 }
             }, [
-                // Background image container - ambient breathing controls overall opacity
+                // Background image container - ambient breathing controls overall opacity, director can dim
                 m('.magic8-bg-container.absolute.inset-0', {
                     style: {
-                        opacity: this.ambientOpacity,
+                        opacity: this.ambientOpacity * this._layerOpacity.images,
                         transition: `opacity ${this._breatheTransitionMs}ms ease-in-out`,
                         zIndex: 1
                     }
@@ -894,10 +907,10 @@
                     })
                 ]),
 
-                // Visual effects canvas layer (breathing opacity synced with background)
+                // Visual effects canvas layer (breathing opacity synced with background, director can dim)
                 m('.absolute.inset-0.z-5.pointer-events-none', {
                     style: {
-                        opacity: this.ambientOpacity != null ? Math.min(1, this.ambientOpacity + 0.4) : 0.7,
+                        opacity: (this.ambientOpacity != null ? Math.min(1, this.ambientOpacity + 0.4) : 0.7) * this._layerOpacity.visuals,
                         transition: `opacity ${this._breatheTransitionMs || 2000}ms ease-in-out`
                     }
                 }, m(Magic8.HypnoCanvas, {
@@ -906,11 +919,11 @@
                     class: 'absolute inset-0'
                 })),
 
-                // Audio visualizer overlay (between effects and dark overlay)
+                // Audio visualizer overlay (between effects and dark overlay, director can dim)
                 this.sessionConfig?.audio?.visualizerEnabled && this.audioEngine &&
                     m(Magic8.AudioVisualizerOverlay, {
                         audioEngine: this.audioEngine,
-                        opacity: this.sessionConfig.audio.visualizerOpacity || 0.35,
+                        opacity: (this.sessionConfig.audio.visualizerOpacity || 0.35) * this._layerOpacity.visualizer,
                         gradient: this.sessionConfig.audio.visualizerGradient || 'prism',
                         mode: this.sessionConfig.audio.visualizerMode || 2
                     }),
@@ -920,11 +933,12 @@
                     style: { opacity: 0.3 }
                 }),
 
-                // Animated floating text labels, styled by biometric theme
+                // Animated floating text labels, styled by biometric theme (director can dim)
                 m(Magic8.BiometricOverlay, {
                     text: this.currentText,
                     theme: this.currentTheme,
-                    sessionLabels: this.sessionLabels
+                    sessionLabels: this.sessionLabels,
+                    opacity: this._layerOpacity.labels
                 }),
 
                 // Paused overlay (tappable for mobile resume)
@@ -1112,6 +1126,12 @@
                     denoisingStrength: this.imageGenerator.sdConfig.denoisingStrength,
                     cfg: this.imageGenerator.sdConfig.cfg
                 } : null,
+                layerOpacity: {
+                    labels: Math.round(this._layerOpacity.labels * 100) / 100,
+                    images: Math.round(this._layerOpacity.images * 100) / 100,
+                    visualizer: Math.round(this._layerOpacity.visualizer * 100) / 100,
+                    visuals: Math.round(this._layerOpacity.visuals * 100) / 100
+                },
                 injectedVoiceLines: this.sessionVoiceLines.length > 0
                     ? this.sessionVoiceLines.slice(-3)
                     : [],
@@ -1244,6 +1264,15 @@
                 });
             }
 
+            // Apply layer opacity changes (gradual transition)
+            if (directive.opacity && typeof directive.opacity === 'object') {
+                for (const layer of ['labels', 'images', 'visualizer', 'visuals']) {
+                    if (typeof directive.opacity[layer] === 'number') {
+                        this._setLayerOpacity(layer, directive.opacity[layer]);
+                    }
+                }
+            }
+
             if (directive.commentary) {
                 console.log('SessionDirector commentary:', directive.commentary);
             }
@@ -1267,6 +1296,69 @@
                 this.debugMessages = this.debugMessages.slice(-300);
             }
             m.redraw();
+        },
+
+        /**
+         * Set a layer opacity target and start the gradual transition.
+         * @param {string} layer - 'labels' | 'images' | 'visualizer' | 'visuals'
+         * @param {number} value - Target opacity (clamped to 0.15–1.0)
+         * @private
+         */
+        _setLayerOpacity(layer, value) {
+            const clamped = Math.max(0.15, Math.min(1, value));
+            if (Math.abs(clamped - this._layerOpacityTarget[layer]) < 0.01) return;
+
+            this._layerOpacityStart[layer] = this._layerOpacity[layer];
+            this._layerOpacityTarget[layer] = clamped;
+            this._layerTransitionStart[layer] = Date.now();
+            this._startOpacityAnimation();
+        },
+
+        /**
+         * Start the rAF loop that gradually transitions layer opacities.
+         * @private
+         */
+        _startOpacityAnimation() {
+            if (this._opacityRafId) return;
+            this._opacityRafId = requestAnimationFrame(() => this._animateOpacity());
+        },
+
+        /**
+         * rAF tick: ease each transitioning layer toward its target.
+         * @private
+         */
+        _animateOpacity() {
+            const now = Date.now();
+            let anyActive = false;
+
+            for (const layer of ['labels', 'images', 'visualizer', 'visuals']) {
+                const startTime = this._layerTransitionStart[layer];
+                if (startTime == null) continue;
+
+                const progress = Math.min(1, (now - startTime) / this._opacityTransitionMs);
+                // Ease in-out quad
+                const eased = progress < 0.5
+                    ? 2 * progress * progress
+                    : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+                this._layerOpacity[layer] = this._layerOpacityStart[layer] +
+                    (this._layerOpacityTarget[layer] - this._layerOpacityStart[layer]) * eased;
+
+                if (progress >= 1) {
+                    this._layerOpacity[layer] = this._layerOpacityTarget[layer];
+                    delete this._layerTransitionStart[layer];
+                } else {
+                    anyActive = true;
+                }
+            }
+
+            m.redraw();
+
+            if (anyActive) {
+                this._opacityRafId = requestAnimationFrame(() => this._animateOpacity());
+            } else {
+                this._opacityRafId = null;
+            }
         },
 
         /**

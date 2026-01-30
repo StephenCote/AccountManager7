@@ -126,8 +126,10 @@ const BiometricOverlay = {
 
         if (!visibleLabels.length) return null;
 
+        const layerOpacity = vnode.attrs.opacity != null ? vnode.attrs.opacity : 1;
+
         return m('.biometric-overlay.absolute.inset-0.pointer-events-none.overflow-hidden', {
-            style: { zIndex: 15 }
+            style: { zIndex: 15, opacity: layerOpacity }
         }, visibleLabels.map(label => {
             const age = (Date.now() - label.born) / 1000;
             const fadeIn = Math.min(1, age / 1.5);

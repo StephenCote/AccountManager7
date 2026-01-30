@@ -97,7 +97,7 @@ const SessionConfigEditor = {
                 maxGeneratedImages: 20,
                 sdInline: {
                     model: '',
-                    refiner: '',
+                    refinerModel: '',
                     style: 'art',
                     description: 'ethereal dreamlike portrait, soft lighting, mystical atmosphere',
                     imageAction: 'posing in a surreal setting',
@@ -304,7 +304,7 @@ const SessionConfigEditor = {
                 if (cfg.description) sd.description = cfg.description;
                 if (cfg.imageAction) sd.imageAction = cfg.imageAction;
                 if (cfg.model) sd.model = cfg.model;
-                if (cfg.refinerModel) sd.refiner = cfg.refinerModel;
+                if (cfg.refinerModel) sd.refinerModel = cfg.refinerModel;
                 if (cfg.sampler) sd.sampler = cfg.sampler;
                 if (cfg.steps) sd.steps = cfg.steps;
                 if (cfg.cfg) sd.cfg = cfg.cfg;
@@ -1103,8 +1103,8 @@ const SessionConfigEditor = {
                                 m('div', [
                                     m('label.block.text-sm.text-gray-400.mb-1', 'Refiner'),
                                     m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
-                                        value: this.config.imageGeneration.sdInline.refiner,
-                                        onchange: (e) => this.config.imageGeneration.sdInline.refiner = e.target.value
+                                        value: this.config.imageGeneration.sdInline.refinerModel,
+                                        onchange: (e) => this.config.imageGeneration.sdInline.refinerModel = e.target.value
                                     }, [
                                         m('option', { value: '' }, '-- None --'),
                                         ...['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors','lustifySDXLNSFW_endgame.safetensors','ponyRealism_V22.safetensors','sdXL_v10VAEFix'].map(v =>
