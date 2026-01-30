@@ -49,27 +49,57 @@ const BiometricOverlay = {
 
     onupdate(vnode) {
         const { text } = vnode.attrs;
-        if (!text || text === this.lastText) return;
-        this.lastText = text;
+        if (text && text !== this.lastText) {
+            this.lastText = text;
 
-        const now = Date.now();
-        const animTypes = ['drift', 'pulse', 'scale', 'float'];
+            const now = Date.now();
+            const animTypes = ['drift', 'pulse', 'scale', 'float'];
 
-        this.labels.push({
-            id: this.nextId++,
-            text: text,
-            x: 5 + Math.random() * 85,
-            y: 10 + Math.random() * 75,
-            anim: animTypes[Math.floor(Math.random() * animTypes.length)],
-            size: 0.7 + Math.random() * 0.6,
-            duration: 8 + Math.random() * 10,
-            driftX: (Math.random() - 0.5) * 50,
-            driftY: (Math.random() - 0.5) * 40,
-            born: now
-        });
+            this.labels.push({
+                id: this.nextId++,
+                text: text,
+                x: 5 + Math.random() * 85,
+                y: 10 + Math.random() * 75,
+                anim: animTypes[Math.floor(Math.random() * animTypes.length)],
+                size: 0.7 + Math.random() * 0.6,
+                duration: 8 + Math.random() * 10,
+                driftX: (Math.random() - 0.5) * 50,
+                driftY: (Math.random() - 0.5) * 40,
+                born: now
+            });
 
-        if (this.labels.length > 20) {
-            this.labels = this.labels.slice(-20);
+            if (this.labels.length > 20) {
+                this.labels = this.labels.slice(-20);
+            }
+        }
+
+        // Handle session labels from director
+        const sessionLabels = vnode.attrs.sessionLabels;
+        if (sessionLabels && sessionLabels.length > 0) {
+            const existing = new Set(this.labels.filter(l => l.isSession).map(l => l.text));
+            const animTypes = ['drift', 'pulse', 'scale', 'float'];
+            for (const label of sessionLabels) {
+                if (!existing.has(label)) {
+                    this.labels.push({
+                        id: this.nextId++,
+                        text: label,
+                        x: 5 + Math.random() * 85,
+                        y: 10 + Math.random() * 75,
+                        anim: animTypes[Math.floor(Math.random() * 4)],
+                        size: 0.5 + Math.random() * 0.4,
+                        duration: 120,
+                        driftX: (Math.random() - 0.5) * 30,
+                        driftY: (Math.random() - 0.5) * 20,
+                        born: Date.now(),
+                        isSession: true
+                    });
+                }
+            }
+            // Remove session labels no longer in the list
+            this.labels = this.labels.filter(l => !l.isSession || sessionLabels.includes(l.text));
+        } else {
+            // If no session labels provided, remove any existing session labels
+            this.labels = this.labels.filter(l => !l.isSession);
         }
     },
 
@@ -86,16 +116,24 @@ const BiometricOverlay = {
             ? `rgb(${theme.glow.join(',')})`
             : 'rgba(255,255,255,0.3)';
 
+        // Filter expired labels before rendering to avoid Mithril key mismatch
+        const visibleLabels = this.labels.filter(label => {
+            const age = (Date.now() - label.born) / 1000;
+            const remaining = label.duration - age;
+            const fadeOut = remaining < 4 ? Math.max(0, remaining / 4) : 1;
+            return Math.min(1, age / 1.5) * fadeOut * 0.45 > 0;
+        });
+
+        if (!visibleLabels.length) return null;
+
         return m('.biometric-overlay.absolute.inset-0.pointer-events-none.overflow-hidden', {
             style: { zIndex: 15 }
-        }, this.labels.map(label => {
+        }, visibleLabels.map(label => {
             const age = (Date.now() - label.born) / 1000;
             const fadeIn = Math.min(1, age / 1.5);
             const remaining = label.duration - age;
             const fadeOut = remaining < 4 ? Math.max(0, remaining / 4) : 1;
             const opacity = fadeIn * fadeOut * 0.45;
-
-            if (opacity <= 0) return null;
 
             const style = {
                 position: 'absolute',

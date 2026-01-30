@@ -23,6 +23,8 @@ const SessionConfigEditor = {
         this.newVoiceSourceType = 'note';
         this.isSaving = false;
         this.loadingSession = false;
+        this.directorTestRunning = false;
+        this.directorTestResults = null;
 
         this._loadOptions();
     },
@@ -50,14 +52,39 @@ const SessionConfigEditor = {
                 baseFreq: 440,
                 minBeat: 2,
                 maxBeat: 8,
+                sweepStart: 8,
+                sweepTrough: 2,
+                sweepEnd: 8,
                 sweepDurationMin: 5,
-                toneEnabled: false
+                fadeInSec: 2,
+                fadeOutSec: 3,
+                panEnabled: false,
+                panSpeed: 0.1,
+                panDepth: 0.8,
+                isochronicEnabled: false,
+                isochronicFreq: 200,
+                isochronicRate: 6,
+                isochronicVolume: 0.15,
+                visualizerEnabled: false,
+                visualizerOpacity: 0.35,
+                visualizerMode: 2,
+                visualizerGradient: 'prism'
             },
             images: {
                 baseGroups: [],
                 cycleInterval: 5000,
                 crossfadeDuration: 1000,
                 includeGenerated: true
+            },
+            visuals: {
+                effects: ['particles'],
+                mode: 'single',
+                transitionInterval: 30000,
+                transitionDuration: 2000,
+                particleCount: 100,
+                spiralSpeed: 0.01,
+                mandalaLayers: 4,
+                tunnelRings: 12
             },
             imageGeneration: {
                 enabled: false,
@@ -67,11 +94,12 @@ const SessionConfigEditor = {
                 sdInline: {
                     model: '',
                     refiner: '',
-                    prompt: 'ethereal dreamlike portrait, soft lighting, mystical atmosphere',
-                    negative_prompt: 'blurry, distorted, ugly, deformed, nsfw',
-                    strength: 0.65,
+                    style: 'art',
+                    description: 'ethereal dreamlike portrait, soft lighting, mystical atmosphere',
+                    imageAction: 'posing in a surreal setting',
+                    denoisingStrength: 0.65,
                     steps: 30,
-                    cfg_scale: 7.5,
+                    cfg: 7,
                     width: 512,
                     height: 512,
                     sampler: 'euler_a'
@@ -95,6 +123,12 @@ const SessionConfigEditor = {
                 enabled: false,
                 autoStart: false,
                 maxDurationMin: 30
+            },
+            director: {
+                enabled: false,
+                command: '',
+                intervalMs: 60000,
+                testMode: false
             }
         };
     },
@@ -285,6 +319,10 @@ const SessionConfigEditor = {
             this.config.biometrics = Object.assign({}, defaults.biometrics, loaded.biometrics || {});
             this.config.audio = Object.assign({}, defaults.audio, loaded.audio || {});
             this.config.images = Object.assign({}, defaults.images, loaded.images || {});
+            this.config.visuals = Object.assign({}, defaults.visuals, loaded.visuals || {});
+            if (loaded.visuals?.effects) {
+                this.config.visuals.effects = [...loaded.visuals.effects];
+            }
             this.config.imageGeneration = Object.assign({}, defaults.imageGeneration, loaded.imageGeneration || {});
             if (loaded.imageGeneration?.sdInline) {
                 this.config.imageGeneration.sdInline = Object.assign({}, defaults.imageGeneration.sdInline, loaded.imageGeneration.sdInline);
@@ -292,6 +330,7 @@ const SessionConfigEditor = {
             this.config.text = Object.assign({}, defaults.text, loaded.text || {});
             this.config.voice = Object.assign({}, defaults.voice, loaded.voice || {});
             this.config.recording = Object.assign({}, defaults.recording, loaded.recording || {});
+            this.config.director = Object.assign({}, defaults.director, loaded.director || {});
 
             // Rebuild selectedImageGroups from loaded baseGroups
             this.selectedImageGroups = [];
@@ -478,6 +517,8 @@ const SessionConfigEditor = {
                 // Audio Section
                 m('.config-section.mb-6.p-4.bg-gray-800.rounded-lg', [
                     m('h3.text-lg.font-medium.mb-4', 'Audio'),
+
+                    // Binaural beats
                     m('label.flex.items-center.gap-3.cursor-pointer.mb-4', [
                         m('input.w-5.h-5.rounded', {
                             type: 'checkbox',
@@ -486,21 +527,173 @@ const SessionConfigEditor = {
                         }),
                         m('span', 'Enable binaural beats')
                     ]),
-                    this.config.audio.binauralEnabled && m('.ml-8.space-y-4', [
+                    this.config.audio.binauralEnabled && m('.ml-8.space-y-4.mb-6', [
                         m('.flex.items-center.gap-4', [
-                            m('label.w-32', 'Base Frequency'),
+                            m('label.w-36', 'Base Frequency'),
                             m('input.flex-1', {
-                                type: 'range',
-                                min: 200,
-                                max: 600,
+                                type: 'range', min: 200, max: 600,
                                 value: this.config.audio.baseFreq,
                                 oninput: (e) => this.config.audio.baseFreq = parseInt(e.target.value)
                             }),
                             m('span.w-16.text-right', `${this.config.audio.baseFreq} Hz`)
                         ]),
+                        m('.text-sm.text-gray-400.mb-2', 'Sweep Shape (beat frequency over each cycle)'),
                         m('.flex.items-center.gap-4', [
-                            m('label.w-32', 'Beat Range'),
-                            m('span', `${this.config.audio.minBeat} - ${this.config.audio.maxBeat} Hz`)
+                            m('label.w-36', 'Sweep Start'),
+                            m('input.flex-1', {
+                                type: 'range', min: 1, max: 15, step: 0.5,
+                                value: this.config.audio.sweepStart,
+                                oninput: (e) => this.config.audio.sweepStart = parseFloat(e.target.value)
+                            }),
+                            m('span.w-16.text-right', `${this.config.audio.sweepStart} Hz`)
+                        ]),
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Sweep Trough'),
+                            m('input.flex-1', {
+                                type: 'range', min: 1, max: 15, step: 0.5,
+                                value: this.config.audio.sweepTrough,
+                                oninput: (e) => this.config.audio.sweepTrough = parseFloat(e.target.value)
+                            }),
+                            m('span.w-16.text-right', `${this.config.audio.sweepTrough} Hz`)
+                        ]),
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Sweep End'),
+                            m('input.flex-1', {
+                                type: 'range', min: 1, max: 15, step: 0.5,
+                                value: this.config.audio.sweepEnd,
+                                oninput: (e) => this.config.audio.sweepEnd = parseFloat(e.target.value)
+                            }),
+                            m('span.w-16.text-right', `${this.config.audio.sweepEnd} Hz`)
+                        ]),
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Sweep Duration'),
+                            m('input.flex-1', {
+                                type: 'range', min: 1, max: 20, step: 1,
+                                value: this.config.audio.sweepDurationMin,
+                                oninput: (e) => this.config.audio.sweepDurationMin = parseInt(e.target.value)
+                            }),
+                            m('span.w-16.text-right', `${this.config.audio.sweepDurationMin} min`)
+                        ]),
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Fade In'),
+                            m('input.flex-1', {
+                                type: 'range', min: 0.5, max: 10, step: 0.5,
+                                value: this.config.audio.fadeInSec,
+                                oninput: (e) => this.config.audio.fadeInSec = parseFloat(e.target.value)
+                            }),
+                            m('span.w-16.text-right', `${this.config.audio.fadeInSec}s`)
+                        ]),
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Fade Out'),
+                            m('input.flex-1', {
+                                type: 'range', min: 0.5, max: 10, step: 0.5,
+                                value: this.config.audio.fadeOutSec,
+                                oninput: (e) => this.config.audio.fadeOutSec = parseFloat(e.target.value)
+                            }),
+                            m('span.w-16.text-right', `${this.config.audio.fadeOutSec}s`)
+                        ])
+                    ]),
+
+                    // Q-Sound Panning
+                    this.config.audio.binauralEnabled && [
+                        m('label.flex.items-center.gap-3.cursor-pointer.mb-4', [
+                            m('input.w-5.h-5.rounded', {
+                                type: 'checkbox',
+                                checked: this.config.audio.panEnabled,
+                                onchange: (e) => this.config.audio.panEnabled = e.target.checked
+                            }),
+                            m('span', 'Q-Sound spatial panning')
+                        ]),
+                        this.config.audio.panEnabled && m('.ml-8.space-y-4.mb-6', [
+                            m('.flex.items-center.gap-4', [
+                                m('label.w-36', 'Pan Speed'),
+                                m('input.flex-1', {
+                                    type: 'range', min: 0.02, max: 0.5, step: 0.02,
+                                    value: this.config.audio.panSpeed,
+                                    oninput: (e) => this.config.audio.panSpeed = parseFloat(e.target.value)
+                                }),
+                                m('span.w-16.text-right', this.config.audio.panSpeed.toFixed(2))
+                            ]),
+                            m('.flex.items-center.gap-4', [
+                                m('label.w-36', 'Pan Depth'),
+                                m('input.flex-1', {
+                                    type: 'range', min: 0.1, max: 1.0, step: 0.1,
+                                    value: this.config.audio.panDepth,
+                                    oninput: (e) => this.config.audio.panDepth = parseFloat(e.target.value)
+                                }),
+                                m('span.w-16.text-right', this.config.audio.panDepth.toFixed(1))
+                            ])
+                        ])
+                    ],
+
+                    // Isochronic Tones
+                    m('label.flex.items-center.gap-3.cursor-pointer.mb-4', [
+                        m('input.w-5.h-5.rounded', {
+                            type: 'checkbox',
+                            checked: this.config.audio.isochronicEnabled,
+                            onchange: (e) => this.config.audio.isochronicEnabled = e.target.checked
+                        }),
+                        m('span', 'Isochronic tones')
+                    ]),
+                    this.config.audio.isochronicEnabled && m('.ml-8.space-y-4.mb-6', [
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Tone Frequency'),
+                            m('input.flex-1', {
+                                type: 'range', min: 100, max: 500, step: 10,
+                                value: this.config.audio.isochronicFreq,
+                                oninput: (e) => this.config.audio.isochronicFreq = parseInt(e.target.value)
+                            }),
+                            m('span.w-16.text-right', `${this.config.audio.isochronicFreq} Hz`)
+                        ]),
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Pulse Rate'),
+                            m('input.flex-1', {
+                                type: 'range', min: 2, max: 15, step: 0.5,
+                                value: this.config.audio.isochronicRate,
+                                oninput: (e) => this.config.audio.isochronicRate = parseFloat(e.target.value)
+                            }),
+                            m('span.w-16.text-right', `${this.config.audio.isochronicRate} Hz`)
+                        ]),
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Volume'),
+                            m('input.flex-1', {
+                                type: 'range', min: 0.05, max: 0.5, step: 0.05,
+                                value: this.config.audio.isochronicVolume,
+                                oninput: (e) => this.config.audio.isochronicVolume = parseFloat(e.target.value)
+                            }),
+                            m('span.w-16.text-right', this.config.audio.isochronicVolume.toFixed(2))
+                        ])
+                    ]),
+
+                    // Audio Visualizer Overlay
+                    m('label.flex.items-center.gap-3.cursor-pointer.mb-4', [
+                        m('input.w-5.h-5.rounded', {
+                            type: 'checkbox',
+                            checked: this.config.audio.visualizerEnabled,
+                            onchange: (e) => this.config.audio.visualizerEnabled = e.target.checked
+                        }),
+                        m('span', 'Audio visualizer overlay')
+                    ]),
+                    this.config.audio.visualizerEnabled && m('.ml-8.space-y-4', [
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Opacity'),
+                            m('input.flex-1', {
+                                type: 'range', min: 0.1, max: 0.6, step: 0.05,
+                                value: this.config.audio.visualizerOpacity,
+                                oninput: (e) => this.config.audio.visualizerOpacity = parseFloat(e.target.value)
+                            }),
+                            m('span.w-16.text-right', `${Math.round(this.config.audio.visualizerOpacity * 100)}%`)
+                        ]),
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Gradient'),
+                            m('select.flex-1.p-2.bg-gray-700.rounded.text-sm', {
+                                value: this.config.audio.visualizerGradient,
+                                onchange: (e) => this.config.audio.visualizerGradient = e.target.value
+                            }, [
+                                m('option', { value: 'prism' }, 'Prism'),
+                                m('option', { value: 'rainbow' }, 'Rainbow'),
+                                m('option', { value: 'classic' }, 'Classic')
+                            ])
                         ])
                     ])
                 ]),
@@ -569,6 +762,111 @@ const SessionConfigEditor = {
                             }),
                             m('span.text-sm', 'Include AI-generated images in rotation')
                         ])
+                    ])
+                ]),
+
+                // Visual Effects Section
+                m('.config-section.mb-6.p-4.bg-gray-800.rounded-lg', [
+                    m('h3.text-lg.font-medium.mb-4', 'Visual Effects'),
+                    m('.text-sm.text-gray-400.mb-3', 'Select which effects to render on the canvas overlay'),
+
+                    // Effect checkboxes
+                    m('.grid.gap-2.mb-4', { class: 'grid-cols-2 sm:grid-cols-4' },
+                        ['particles', 'spiral', 'mandala', 'tunnel'].map(effect =>
+                            m('label.flex.items-center.gap-2.cursor-pointer.p-2.bg-gray-700.rounded', [
+                                m('input.w-4.h-4.rounded', {
+                                    type: 'checkbox',
+                                    checked: this.config.visuals.effects.includes(effect),
+                                    onchange: (e) => {
+                                        if (e.target.checked) {
+                                            if (!this.config.visuals.effects.includes(effect)) {
+                                                this.config.visuals.effects.push(effect);
+                                            }
+                                        } else {
+                                            this.config.visuals.effects = this.config.visuals.effects.filter(ef => ef !== effect);
+                                            if (this.config.visuals.effects.length === 0) {
+                                                this.config.visuals.effects.push('particles');
+                                                e.target.checked = true;
+                                            }
+                                        }
+                                    }
+                                }),
+                                m('span.text-sm.capitalize', effect)
+                            ])
+                        )
+                    ),
+
+                    // Mode selector
+                    m('.flex.items-center.gap-4.mb-4', [
+                        m('label.w-24', 'Mode'),
+                        m('select.flex-1.p-2.bg-gray-700.rounded.text-sm', {
+                            value: this.config.visuals.mode,
+                            onchange: (e) => this.config.visuals.mode = e.target.value
+                        }, [
+                            m('option', { value: 'single' }, 'Single (first selected)'),
+                            m('option', { value: 'cycle' }, 'Cycle (rotate through selected)'),
+                            m('option', { value: 'combined' }, 'Combined (overlay all selected)')
+                        ])
+                    ]),
+
+                    // Cycle mode settings
+                    this.config.visuals.mode === 'cycle' && m('.ml-8.space-y-4.mb-4', [
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Transition Interval'),
+                            m('input.flex-1', {
+                                type: 'range', min: 10, max: 120, step: 5,
+                                value: this.config.visuals.transitionInterval / 1000,
+                                oninput: (e) => this.config.visuals.transitionInterval = parseInt(e.target.value) * 1000
+                            }),
+                            m('span.w-16.text-right', `${this.config.visuals.transitionInterval / 1000}s`)
+                        ]),
+                        m('.flex.items-center.gap-4', [
+                            m('label.w-36', 'Transition Duration'),
+                            m('input.flex-1', {
+                                type: 'range', min: 1, max: 5, step: 0.5,
+                                value: this.config.visuals.transitionDuration / 1000,
+                                oninput: (e) => this.config.visuals.transitionDuration = parseFloat(e.target.value) * 1000
+                            }),
+                            m('span.w-16.text-right', `${(this.config.visuals.transitionDuration / 1000).toFixed(1)}s`)
+                        ])
+                    ]),
+
+                    // Per-effect settings
+                    this.config.visuals.effects.includes('particles') && m('.flex.items-center.gap-4.mb-2', [
+                        m('label.w-36.text-sm.text-gray-400', 'Particle Count'),
+                        m('input.flex-1', {
+                            type: 'range', min: 50, max: 200, step: 10,
+                            value: this.config.visuals.particleCount,
+                            oninput: (e) => this.config.visuals.particleCount = parseInt(e.target.value)
+                        }),
+                        m('span.w-16.text-right.text-sm', this.config.visuals.particleCount)
+                    ]),
+                    this.config.visuals.effects.includes('spiral') && m('.flex.items-center.gap-4.mb-2', [
+                        m('label.w-36.text-sm.text-gray-400', 'Spiral Speed'),
+                        m('input.flex-1', {
+                            type: 'range', min: 0.005, max: 0.03, step: 0.001,
+                            value: this.config.visuals.spiralSpeed,
+                            oninput: (e) => this.config.visuals.spiralSpeed = parseFloat(e.target.value)
+                        }),
+                        m('span.w-16.text-right.text-sm', this.config.visuals.spiralSpeed.toFixed(3))
+                    ]),
+                    this.config.visuals.effects.includes('mandala') && m('.flex.items-center.gap-4.mb-2', [
+                        m('label.w-36.text-sm.text-gray-400', 'Mandala Layers'),
+                        m('input.flex-1', {
+                            type: 'range', min: 2, max: 6, step: 1,
+                            value: this.config.visuals.mandalaLayers,
+                            oninput: (e) => this.config.visuals.mandalaLayers = parseInt(e.target.value)
+                        }),
+                        m('span.w-16.text-right.text-sm', this.config.visuals.mandalaLayers)
+                    ]),
+                    this.config.visuals.effects.includes('tunnel') && m('.flex.items-center.gap-4.mb-2', [
+                        m('label.w-36.text-sm.text-gray-400', 'Tunnel Rings'),
+                        m('input.flex-1', {
+                            type: 'range', min: 8, max: 20, step: 1,
+                            value: this.config.visuals.tunnelRings,
+                            oninput: (e) => this.config.visuals.tunnelRings = parseInt(e.target.value)
+                        }),
+                        m('span.w-16.text-right.text-sm', this.config.visuals.tunnelRings)
                     ])
                 ]),
 
@@ -654,41 +952,48 @@ const SessionConfigEditor = {
                                 ])
                             ]),
 
-                            m('label.block.text-sm.text-gray-400.mb-1', 'Prompt'),
-                            m('textarea.w-full.p-2.bg-gray-700.rounded.text-sm', {
-                                rows: 2,
-                                value: this.config.imageGeneration.sdInline.prompt,
-                                oninput: (e) => this.config.imageGeneration.sdInline.prompt = e.target.value
+                            m('label.block.text-sm.text-gray-400.mb-1', 'Style'),
+                            m('input.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                type: 'text',
+                                value: this.config.imageGeneration.sdInline.style,
+                                oninput: (e) => this.config.imageGeneration.sdInline.style = e.target.value
                             }),
 
-                            m('label.block.text-sm.text-gray-400.mb-1.mt-3', 'Negative Prompt'),
+                            m('label.block.text-sm.text-gray-400.mb-1.mt-3', 'Description'),
                             m('textarea.w-full.p-2.bg-gray-700.rounded.text-sm', {
                                 rows: 2,
-                                value: this.config.imageGeneration.sdInline.negative_prompt,
-                                oninput: (e) => this.config.imageGeneration.sdInline.negative_prompt = e.target.value
+                                value: this.config.imageGeneration.sdInline.description,
+                                oninput: (e) => this.config.imageGeneration.sdInline.description = e.target.value
+                            }),
+
+                            m('label.block.text-sm.text-gray-400.mb-1.mt-3', 'Image Action'),
+                            m('input.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                type: 'text',
+                                value: this.config.imageGeneration.sdInline.imageAction,
+                                oninput: (e) => this.config.imageGeneration.sdInline.imageAction = e.target.value
                             }),
 
                             m('.grid.gap-4.mt-3', { class: 'grid-cols-1 sm:grid-cols-2' }, [
                                 m('div', [
-                                    m('label.block.text-sm.text-gray-400.mb-1', 'Strength'),
+                                    m('label.block.text-sm.text-gray-400.mb-1', 'Denoising Strength'),
                                     m('.flex.items-center.gap-2', [
                                         m('input.flex-1', {
                                             type: 'range', min: 0.1, max: 1.0, step: 0.05,
-                                            value: this.config.imageGeneration.sdInline.strength,
-                                            oninput: (e) => this.config.imageGeneration.sdInline.strength = parseFloat(e.target.value)
+                                            value: this.config.imageGeneration.sdInline.denoisingStrength,
+                                            oninput: (e) => this.config.imageGeneration.sdInline.denoisingStrength = parseFloat(e.target.value)
                                         }),
-                                        m('span.text-sm.w-10.text-right', this.config.imageGeneration.sdInline.strength.toFixed(2))
+                                        m('span.text-sm.w-10.text-right', this.config.imageGeneration.sdInline.denoisingStrength.toFixed(2))
                                     ])
                                 ]),
                                 m('div', [
-                                    m('label.block.text-sm.text-gray-400.mb-1', 'CFG Scale'),
+                                    m('label.block.text-sm.text-gray-400.mb-1', 'CFG'),
                                     m('.flex.items-center.gap-2', [
                                         m('input.flex-1', {
                                             type: 'range', min: 1, max: 20, step: 0.5,
-                                            value: this.config.imageGeneration.sdInline.cfg_scale,
-                                            oninput: (e) => this.config.imageGeneration.sdInline.cfg_scale = parseFloat(e.target.value)
+                                            value: this.config.imageGeneration.sdInline.cfg,
+                                            oninput: (e) => this.config.imageGeneration.sdInline.cfg = parseFloat(e.target.value)
                                         }),
-                                        m('span.text-sm.w-10.text-right', this.config.imageGeneration.sdInline.cfg_scale)
+                                        m('span.text-sm.w-10.text-right', this.config.imageGeneration.sdInline.cfg)
                                     ])
                                 ]),
                                 m('div', [
@@ -1006,6 +1311,95 @@ const SessionConfigEditor = {
                             }),
                             m('span', 'Loop voice sequence')
                         ])
+                    ])
+                ]),
+
+                // AI Session Director Section
+                m('.config-section.mb-6.p-4.bg-gray-800.rounded-lg', [
+                    m('h3.text-lg.font-medium.mb-4', 'AI Session Director'),
+                    m('label.flex.items-center.gap-3.cursor-pointer.mb-3', [
+                        m('input.w-5.h-5.rounded', {
+                            type: 'checkbox',
+                            checked: this.config.director.enabled,
+                            onchange: (e) => this.config.director.enabled = e.target.checked
+                        }),
+                        m('span', 'Enable AI Session Director')
+                    ]),
+                    m('p.text-xs.text-gray-400.mb-3', 'LLM-powered orchestration that adjusts audio, visuals, and labels based on session state. Requires \'Open Chat\' config in ~/Chat.'),
+                    this.config.director.enabled && m('.space-y-4.mt-3.pl-2.border-l-2.border-gray-700', [
+                        m('.config-field', [
+                            m('label.block.text-sm.font-medium.mb-1', 'Session Command / Intent'),
+                            m('textarea.w-full.bg-gray-900.rounded.px-3.py-2.text-sm', {
+                                rows: 3,
+                                placeholder: 'Guide me through a deep relaxation journey...',
+                                value: this.config.director.command,
+                                oninput: (e) => this.config.director.command = e.target.value
+                            })
+                        ]),
+                        m('.config-field', [
+                            m('label.block.text-sm.font-medium.mb-1',
+                                'Check-in Interval: ' + Math.round(this.config.director.intervalMs / 1000) + 's'
+                            ),
+                            m('input.w-full', {
+                                type: 'range',
+                                min: 30000,
+                                max: 300000,
+                                step: 15000,
+                                value: this.config.director.intervalMs,
+                                oninput: (e) => this.config.director.intervalMs = parseInt(e.target.value)
+                            })
+                        ]),
+
+                        // Test mode toggle
+                        m('label.flex.items-center.gap-3.cursor-pointer', [
+                            m('input.w-4.h-4.rounded', {
+                                type: 'checkbox',
+                                checked: this.config.director.testMode,
+                                onchange: (e) => this.config.director.testMode = e.target.checked
+                            }),
+                            m('span.text-sm', 'Test Mode'),
+                            m('span.text-xs.text-gray-500.ml-1', '(run diagnostics on session start, apply test directive)')
+                        ]),
+
+                        // Test button
+                        m('.config-field.mt-2', [
+                            m('button', {
+                                class: 'px-4 py-2 rounded text-sm font-medium ' +
+                                    (this.directorTestRunning
+                                        ? 'bg-gray-600 text-gray-400'
+                                        : 'bg-yellow-600 text-white hover:bg-yellow-500'),
+                                disabled: this.directorTestRunning,
+                                onclick: async () => {
+                                    this.directorTestRunning = true;
+                                    this.directorTestResults = null;
+                                    m.redraw();
+                                    try {
+                                        const director = new Magic8.SessionDirector();
+                                        this.directorTestResults = await director.runDiagnostics(
+                                            this.config.director.command || 'Diagnostic test'
+                                        );
+                                        director.dispose();
+                                    } catch (err) {
+                                        this.directorTestResults = [{ name: 'Test runner', pass: false, detail: err.message }];
+                                    }
+                                    this.directorTestRunning = false;
+                                    m.redraw();
+                                }
+                            }, this.directorTestRunning ? 'Testing...' : 'Test Director'),
+                            m('span.text-xs.text-gray-500.ml-2', 'Runs all checks including a live LLM call')
+                        ]),
+
+                        // Test results
+                        this.directorTestResults && m('.mt-3.p-3.bg-gray-900.rounded.text-sm.font-mono.space-y-1',
+                            this.directorTestResults.map(r =>
+                                m('.flex.items-start.gap-2', [
+                                    m('span', { style: { color: r.pass ? '#4ade80' : '#f87171', minWidth: '20px' } },
+                                        r.pass ? 'OK' : 'XX'),
+                                    m('span.text-gray-300', r.name),
+                                    r.detail && m('span.text-gray-500', ' - ' + r.detail)
+                                ])
+                            )
+                        )
                     ])
                 ]),
 

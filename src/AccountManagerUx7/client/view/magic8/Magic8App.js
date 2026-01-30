@@ -34,6 +34,11 @@
         currentText: '',
         biometricData: null,
 
+        // Session director
+        sessionDirector: null,
+        sessionLabels: [],
+        _sessionStartTime: null,
+
         // Ambient breathing state
         ambientOpacity: 0.15,
         _breatheTransitionMs: 120000,
@@ -194,6 +199,11 @@
                 this.audioEnabled = true;
             }
 
+            // Start isochronic tones if enabled
+            if (cfg.audio?.isochronicEnabled) {
+                this.audioEngine.startIsochronic(cfg.audio);
+            }
+
             // Initialize biometric themer
             if (cfg.biometrics?.enabled) {
                 this.biometricThemer = new Magic8.BiometricThemer();
@@ -339,6 +349,48 @@
                     // Delay to allow canvas to be rendered
                     setTimeout(() => this._startRecording(), 1000);
                 }
+            }
+
+            // Initialize session director
+            this._sessionStartTime = Date.now();
+            if (cfg.director?.enabled && cfg.director?.command) {
+                // Ensure camera is running for face data, even if biometric theming is disabled
+                if (!cfg.biometrics?.enabled) {
+                    console.log('Magic8App: Starting biometric capture for session director');
+                    this._startBiometricCapture();
+                }
+
+                this.sessionDirector = new Magic8.SessionDirector();
+                this.sessionDirector.stateProvider = () => this._gatherDirectorState();
+                this.sessionDirector.onDirective = (d) => this._applyDirective(d);
+                this.sessionDirector.onError = (err) => console.warn('SessionDirector error:', err);
+                await this.sessionDirector.initialize(cfg.director.command, cfg.director.intervalMs || 60000);
+
+                if (cfg.director.testMode) {
+                    // Test mode: run multi-pass behavioral diagnostics
+                    // Each pass sends different biometric state to the LLM,
+                    // applies the returned directive synchronously, then
+                    // runDiagnostics verifies the state actually changed via stateProvider
+                    console.log('Magic8App: Director test mode - running behavioral diagnostics');
+                    const self = this;
+                    let passCount = 0;
+
+                    const results = await this.sessionDirector.runDiagnostics(
+                        cfg.director.command,
+                        (directive, passIndex, passName) => {
+                            // Apply synchronously so state updates before verification
+                            passCount++;
+                            console.log(`Magic8App: Applying test directive [${passName}]`);
+                            self._applyDirective(directive);
+                        }
+                    );
+
+                    const passed = results.filter(r => r.pass).length;
+                    const total = results.length;
+                    console.log(`Magic8App: Behavioral diagnostics ${passed}/${total} passed (${passCount} directives applied)`);
+                }
+
+                this.sessionDirector.start();
             }
 
             m.redraw();
@@ -493,26 +545,37 @@
                 this.textSequence?.pause();
                 this.voiceSequence?.pause();
                 this.imageGallery?.stop();
+                this.audioEngine?.stopIsochronic();
                 this._stopBreathing();
+                this.sessionDirector?.pause();
             } else if (this.phase === 'paused') {
                 this.phase = 'running';
                 this.textSequence?.resume();
                 this.voiceSequence?.resume();
                 this.imageGallery?.start();
+                if (this.sessionConfig?.audio?.isochronicEnabled && this.audioEnabled) {
+                    this.audioEngine?.startIsochronic(this.sessionConfig.audio);
+                }
                 this._startBreathing();
+                this.sessionDirector?.resume();
             }
             m.redraw();
         },
 
         _toggleAudio() {
             this.audioEnabled = !this.audioEnabled;
+            const cfg = this.sessionConfig;
 
             if (this.audioEnabled) {
-                if (this.sessionConfig?.audio?.binauralEnabled) {
-                    this.audioEngine?.startBinaural(this.sessionConfig.audio);
+                if (cfg?.audio?.binauralEnabled) {
+                    this.audioEngine?.startBinaural(cfg.audio);
+                }
+                if (cfg?.audio?.isochronicEnabled) {
+                    this.audioEngine?.startIsochronic(cfg.audio);
                 }
             } else {
                 this.audioEngine?.stopBinaural();
+                this.audioEngine?.stopIsochronic();
             }
 
             m.redraw();
@@ -589,6 +652,9 @@
             }
             this.sessionRecorder?.dispose();
 
+            // Stop session director
+            this.sessionDirector?.dispose();
+
             // Stop biometric themer
             this.biometricThemer?.dispose();
 
@@ -658,11 +724,21 @@
                     })
                 ]),
 
-                // Particle canvas layer
+                // Visual effects canvas layer
                 m(Magic8.HypnoCanvas, {
                     theme: this.currentTheme,
+                    visuals: this.sessionConfig?.visuals,
                     class: 'absolute inset-0 z-5 pointer-events-none'
                 }),
+
+                // Audio visualizer overlay (between effects and dark overlay)
+                this.sessionConfig?.audio?.visualizerEnabled && this.audioEngine &&
+                    m(Magic8.AudioVisualizerOverlay, {
+                        audioEngine: this.audioEngine,
+                        opacity: this.sessionConfig.audio.visualizerOpacity || 0.35,
+                        gradient: this.sessionConfig.audio.visualizerGradient || 'prism',
+                        mode: this.sessionConfig.audio.visualizerMode || 2
+                    }),
 
                 // Dark overlay for text readability
                 m('.absolute.inset-0.z-10.bg-black', {
@@ -672,7 +748,8 @@
                 // Animated floating text labels, styled by biometric theme
                 m(Magic8.BiometricOverlay, {
                     text: this.currentText,
-                    theme: this.currentTheme
+                    theme: this.currentTheme,
+                    sessionLabels: this.sessionLabels
                 }),
 
                 // Paused overlay (tappable for mobile resume)
@@ -717,6 +794,155 @@
                 // Dialog support
                 page.components.dialog ? page.components.dialog.loadDialog() : null
             ]);
+        },
+
+        /**
+         * Gather current session state for the director LLM
+         * @returns {Object}
+         * @private
+         */
+        _gatherDirectorState() {
+            const bio = this.biometricData;
+            const audio = this.sessionConfig?.audio;
+            const visuals = this.sessionConfig?.visuals;
+
+            // Get recent voice lines
+            let recentVoiceLines = [];
+            if (this.voiceSequence) {
+                const seqs = this.voiceSequence.sequences;
+                const idx = this.voiceSequence.currentIndex;
+                if (seqs && seqs.length > 0 && idx > 0) {
+                    const start = Math.max(0, idx - 3);
+                    recentVoiceLines = seqs.slice(start, idx);
+                }
+            }
+
+            return {
+                biometric: bio ? {
+                    emotion: bio.dominant_emotion,
+                    age: bio.age,
+                    gender: bio.dominant_gender
+                } : null,
+                labels: [...this.sessionLabels],
+                recentVoiceLines: recentVoiceLines,
+                currentText: this.currentText,
+                audio: audio ? {
+                    sweepStart: audio.sweepStart,
+                    sweepTrough: audio.sweepTrough,
+                    sweepEnd: audio.sweepEnd,
+                    isochronicEnabled: audio.isochronicEnabled,
+                    isochronicRate: audio.isochronicRate
+                } : null,
+                visuals: visuals ? {
+                    effects: visuals.effects,
+                    mode: visuals.mode
+                } : null,
+                elapsedMinutes: this._sessionStartTime
+                    ? (Date.now() - this._sessionStartTime) / 60000
+                    : 0
+            };
+        },
+
+        /**
+         * Apply a directive from the session director
+         * @param {Object} directive - Parsed directive from LLM
+         * @private
+         */
+        _applyDirective(directive) {
+            if (!directive) return;
+            const cfg = this.sessionConfig;
+
+            // Apply audio changes
+            if (directive.audio && cfg?.audio && this.audioEngine && this.audioEnabled) {
+                let audioChanged = false;
+                for (const key of ['sweepStart', 'sweepTrough', 'sweepEnd']) {
+                    if (directive.audio[key] != null && directive.audio[key] !== cfg.audio[key]) {
+                        cfg.audio[key] = directive.audio[key];
+                        audioChanged = true;
+                    }
+                }
+                if (audioChanged) {
+                    this.audioEngine.stopBinaural();
+                    this.audioEngine.startBinaural(cfg.audio);
+                }
+
+                if (directive.audio.isochronicEnabled != null &&
+                    directive.audio.isochronicEnabled !== cfg.audio.isochronicEnabled) {
+                    cfg.audio.isochronicEnabled = directive.audio.isochronicEnabled;
+                    if (cfg.audio.isochronicEnabled) {
+                        this.audioEngine.startIsochronic(cfg.audio);
+                    } else {
+                        this.audioEngine.stopIsochronic();
+                    }
+                }
+                if (directive.audio.isochronicRate != null) {
+                    cfg.audio.isochronicRate = directive.audio.isochronicRate;
+                    if (cfg.audio.isochronicEnabled) {
+                        this.audioEngine.stopIsochronic();
+                        this.audioEngine.startIsochronic(cfg.audio);
+                    }
+                }
+            }
+
+            // Apply visual changes
+            if (directive.visuals && cfg?.visuals) {
+                if (directive.visuals.effect) {
+                    // Create new object to trigger HypnoCanvas identity check
+                    this.sessionConfig.visuals = {
+                        ...cfg.visuals,
+                        effects: [directive.visuals.effect],
+                        mode: 'single'
+                    };
+                    if (directive.visuals.transitionDuration != null) {
+                        this.sessionConfig.visuals.transitionDuration = directive.visuals.transitionDuration;
+                    }
+                }
+            }
+
+            // Apply label changes
+            if (directive.labels) {
+                if (directive.labels.add && directive.labels.add.length > 0) {
+                    for (const label of directive.labels.add) {
+                        if (!this.sessionLabels.includes(label)) {
+                            this.sessionLabels.push(label);
+                        }
+                    }
+                    // Cap at 10
+                    if (this.sessionLabels.length > 10) {
+                        this.sessionLabels = this.sessionLabels.slice(-10);
+                    }
+                }
+                if (directive.labels.remove && directive.labels.remove.length > 0) {
+                    this.sessionLabels = this.sessionLabels.filter(
+                        l => !directive.labels.remove.includes(l)
+                    );
+                }
+            }
+
+            // Apply image generation
+            if (directive.generateImage && this.imageGenerator && this.biometricData) {
+                const origDesc = this.imageGenerator.sdConfig?.description;
+                if (this.imageGenerator.sdConfig && directive.generateImage.description) {
+                    this.imageGenerator.sdConfig.description = directive.generateImage.description;
+                }
+                if (page.components.camera) {
+                    this.imageGenerator.captureAndGenerate(
+                        page.components.camera,
+                        this.biometricData
+                    ).then(() => {
+                        // Restore original description after generation
+                        if (this.imageGenerator.sdConfig && origDesc !== undefined) {
+                            this.imageGenerator.sdConfig.description = origDesc;
+                        }
+                    });
+                }
+            }
+
+            if (directive.commentary) {
+                console.log('SessionDirector commentary:', directive.commentary);
+            }
+
+            m.redraw();
         },
 
         /**

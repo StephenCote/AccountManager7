@@ -11,13 +11,15 @@
  *   6. video/SessionRecorder.js
  *   7. text/TextSequenceManager.js
  *   8. generation/ImageGenerationManager.js
- *   9. components/HypnoCanvas.js
- *  10. components/HypnoticTextDisplay.js
- *  11. components/ControlPanel.js
- *  12. components/BiometricOverlay.js
- *  13. components/SessionConfigEditor.js
- *  14. Magic8App.js
- *  15. index.js (this file)
+ *   9. ai/SessionDirector.js
+ *  10. components/HypnoCanvas.js
+ *  11. components/AudioVisualizerOverlay.js
+ *  12. components/HypnoticTextDisplay.js
+ *  13. components/ControlPanel.js
+ *  14. components/BiometricOverlay.js
+ *  15. components/SessionConfigEditor.js
+ *  16. Magic8App.js
+ *  17. index.js (this file)
  */
 (function() {
 
@@ -86,7 +88,9 @@
             `${base}/video/SessionRecorder.js`,
             `${base}/text/TextSequenceManager.js`,
             `${base}/generation/ImageGenerationManager.js`,
+            `${base}/ai/SessionDirector.js`,
             `${base}/components/HypnoCanvas.js`,
+            `${base}/components/AudioVisualizerOverlay.js`,
             `${base}/components/HypnoticTextDisplay.js`,
             `${base}/components/ControlPanel.js`,
             `${base}/components/BiometricOverlay.js`,

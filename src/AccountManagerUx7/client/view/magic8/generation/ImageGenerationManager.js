@@ -215,13 +215,19 @@ class ImageGenerationManager {
             const sdEntity = await this._buildSdConfigEntity(pendingJob.request, captureObj.objectId);
 
             // Step 3: Call reimage endpoint (same API used by dialog.js)
+            const reimageUrl = `${g_application_path}/rest/olio/data.data/${captureObj.objectId}/reimage`;
             console.log('ImageGenerationManager: Calling reimage for', captureObj.objectId);
-            const response = await m.request({
-                method: 'POST',
-                url: `${g_application_path}/rest/olio/data.data/${captureObj.objectId}/reimage`,
-                withCredentials: true,
-                body: sdEntity
-            });
+            let response;
+            try {
+                response = await m.request({
+                    method: 'POST',
+                    url: reimageUrl,
+                    withCredentials: true,
+                    body: sdEntity
+                });
+            } catch (reqErr) {
+                throw new Error(`Reimage request failed (${reimageUrl}): ${reqErr?.message || reqErr || 'server returned error'}`);
+            }
 
             if (response && response.objectId) {
                 // Move generated image to ~/Magic8/Generated

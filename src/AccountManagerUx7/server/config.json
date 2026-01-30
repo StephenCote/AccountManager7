@@ -8,6 +8,7 @@
         "/client/components",
         "/client/view",
         "/client/view/magic8",
+        "/client/view/magic8/ai",
         "/client/view/magic8/audio",
         "/client/view/magic8/components",
         "/client/view/magic8/generation",
