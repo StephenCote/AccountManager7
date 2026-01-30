@@ -1603,7 +1603,7 @@ function renderToolbar() {
         // Dedicated Magic8 button
         page.iconButton("button",
             "magic_button",  // or "auto_awesome" or custom icon
-            "Send to Magic8",
+            "",
             sendToMagic8
         ),
 

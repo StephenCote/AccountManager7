@@ -953,7 +953,7 @@
                 page.iconButton("button",  (showTagSelector ? "image" : "add_photo_alternate"), "", function() { showTagSelector = !showTagSelector; if (!showTagSelector) selectedImageTags = []; }),
                 page.iconButton("button",  (profile ? "account_circle" : "account_circle_off"), "", toggleProfile),
                 page.iconButton("button",  (audio ? "volume_up" : "volume_mute"), "", toggleAudio),
-                page.iconButton("button",  "counter_8", "Send to Magic8", sendToMagic8),
+                page.iconButton("button",  "counter_8", "", sendToMagic8),
                 page.iconButton("button",  "query_stats", "", chatInto),
                 page.iconButton("button",  "visibility" + (hideThoughts ? "" : "_off"), "", toggleThoughts),
                 page.components.audio.recordButton(),
