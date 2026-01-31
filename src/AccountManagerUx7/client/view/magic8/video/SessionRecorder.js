@@ -195,8 +195,13 @@ class SessionRecorder {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => {
-                // Strip the data URL prefix (e.g. "data:video/webm;base64,")
-                const base64 = reader.result.split(',')[1];
+                // Find ";base64," delimiter — can't split on comma because
+                // MIME types like "video/webm;codecs=vp9,opus" contain commas
+                const marker = ';base64,';
+                const idx = reader.result.indexOf(marker);
+                const base64 = idx >= 0
+                    ? reader.result.substring(idx + marker.length)
+                    : reader.result;
                 resolve(base64);
             };
             reader.onerror = reject;
