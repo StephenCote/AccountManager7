@@ -13,7 +13,114 @@ class AudioEngine {
         this.destinationNode = null;
         this.analyserNode = null;
         this.isInitialized = false;
+        this.currentBandLabel = null;
     }
+
+    /**
+     * Brainwave frequency band definitions
+     */
+    static BRAINWAVE_BANDS = {
+        delta:      { label: 'Delta (Deep Sleep)',             min: 0.5, max: 4,    mid: 2,    desc: 'Deep dreamless sleep, healing, unconscious' },
+        theta:      { label: 'Theta (Meditation)',             min: 4,   max: 7.5,  mid: 5.5,  desc: 'Hypnosis, deep meditation, REM, subconscious' },
+        alphaTheta: { label: 'Alpha-Theta Border (Hypnotic)',  min: 7,   max: 8,    mid: 7.5,  desc: 'Visualization, mind programming, conscious creation' },
+        alpha:      { label: 'Alpha (Relaxation)',             min: 7.5, max: 14,   mid: 10,   desc: 'Relaxation, learning, imagination, intuition' },
+        beta:       { label: 'Beta (Waking)',                  min: 14,  max: 40,   mid: 20,   desc: 'Alertness, logic, focus, can cause stress' },
+        gamma:      { label: 'Gamma (Insight)',                min: 40,  max: 100,  mid: 40,   desc: 'High-level processing, bursts of insight' }
+    };
+
+    /**
+     * Solfeggio carrier frequency definitions
+     */
+    static SOLFEGGIO_FREQS = {
+        174:  { label: '174 Hz \u2014 Foundation',       desc: 'Pain relief, sense of security' },
+        285:  { label: '285 Hz \u2014 Restoration',      desc: 'Healing tissue, energy field repair' },
+        396:  { label: '396 Hz \u2014 Liberation',       desc: 'Releasing guilt and fear' },
+        417:  { label: '417 Hz \u2014 Change',           desc: 'Facilitating change, undoing situations' },
+        432:  { label: '432 Hz \u2014 Spiritual Tuning', desc: 'Natural alignment, spiritual attunement' },
+        528:  { label: '528 Hz \u2014 Love',             desc: 'Transformation, love frequency, DNA repair' },
+        639:  { label: '639 Hz \u2014 Connection',       desc: 'Heart opening, relationships, harmonizing' },
+        741:  { label: '741 Hz \u2014 Expression',       desc: 'Self-expression, solutions, creative awakening' },
+        852:  { label: '852 Hz \u2014 Intuition',        desc: 'Third eye activation, spiritual sight' },
+        963:  { label: '963 Hz \u2014 Divine',           desc: 'Crown chakra, pineal gland, divine consciousness' }
+    };
+
+    /**
+     * Named frequency combination presets (solfeggio carrier + brainwave band transitions)
+     */
+    static FREQUENCY_PRESETS = {
+        goddessEnergy: {
+            label: 'Goddess Energy',
+            desc: 'Spiritual femininity, divine feminine through meditative states',
+            baseFreq: 432,
+            startBand: 'alpha', troughBand: 'alphaTheta', endBand: 'theta'
+        },
+        heartOpening: {
+            label: 'Heart Opening',
+            desc: 'Connection, compassion, relational harmony',
+            baseFreq: 639,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'alpha'
+        },
+        loveFrequency: {
+            label: 'Love Frequency',
+            desc: 'Transformation, cellular healing, unconditional love',
+            baseFreq: 528,
+            startBand: 'alpha', troughBand: 'alphaTheta', endBand: 'alpha'
+        },
+        deepHealing: {
+            label: 'Deep Healing',
+            desc: 'Physical restoration, deep regeneration',
+            baseFreq: 174,
+            startBand: 'theta', troughBand: 'delta', endBand: 'theta'
+        },
+        lettingGo: {
+            label: 'Letting Go',
+            desc: 'Releasing guilt, fear, and emotional blockages',
+            baseFreq: 396,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'alphaTheta'
+        },
+        transformation: {
+            label: 'Transformation',
+            desc: 'Facilitating change, breaking old patterns',
+            baseFreq: 417,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'theta'
+        },
+        creativeFlow: {
+            label: 'Creative Flow',
+            desc: 'Self-expression, artistic solutions, inspired work',
+            baseFreq: 741,
+            startBand: 'alpha', troughBand: 'alphaTheta', endBand: 'alpha'
+        },
+        thirdEye: {
+            label: 'Third Eye Awakening',
+            desc: 'Intuition, spiritual sight, inner knowing',
+            baseFreq: 852,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'alphaTheta'
+        },
+        crownConnection: {
+            label: 'Crown Connection',
+            desc: 'Divine consciousness, universal awareness',
+            baseFreq: 963,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'gamma'
+        },
+        regeneration: {
+            label: 'Regeneration',
+            desc: 'Deep tissue repair, energy field restoration',
+            baseFreq: 285,
+            startBand: 'theta', troughBand: 'delta', endBand: 'theta'
+        },
+        deepHypnosis: {
+            label: 'Deep Hypnosis',
+            desc: 'Hypnotic induction, subconscious programming, visualization',
+            baseFreq: 432,
+            startBand: 'alpha', troughBand: 'alphaTheta', endBand: 'delta'
+        },
+        lucidDream: {
+            label: 'Lucid Dreaming',
+            desc: 'Conscious dream state, REM activation',
+            baseFreq: 528,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'delta'
+        }
+    };
 
     /**
      * Get or create the AudioContext (singleton pattern)
@@ -606,6 +713,213 @@ class AudioEngine {
         if (this.masterGain) {
             this.masterGain.gain.value = Math.max(0, Math.min(1, volume));
         }
+    }
+
+    /**
+     * Start binaural beats from a named preset
+     * @param {string} presetName - Key from FREQUENCY_PRESETS
+     * @param {Object} [overrides] - Optional config overrides
+     */
+    startBinauralFromPreset(presetName, overrides) {
+        const preset = AudioEngine.FREQUENCY_PRESETS[presetName];
+        if (!preset) {
+            console.warn('AudioEngine: Unknown preset:', presetName);
+            return;
+        }
+        this.startBinauralFromBands({ ...preset, ...overrides });
+    }
+
+    /**
+     * Start binaural beats using named brainwave bands
+     * @param {Object} config
+     * @param {string} config.startBand - Starting band name
+     * @param {string} config.troughBand - Trough band name
+     * @param {string} config.endBand - End band name
+     * @param {string} [config.secondTransition] - Optional 2nd transition band
+     * @param {string} [config.thirdTransition] - Optional 3rd transition band
+     * @param {number} [config.baseFreq=200] - Carrier frequency (Hz)
+     * @param {number} [config.sweepDurationMin=5] - Full sweep cycle (minutes)
+     * @param {number} [config.fadeInSec=2] - Fade-in duration (seconds)
+     * @param {number} [config.fadeOutSec=3] - Fade-out duration (seconds)
+     */
+    startBinauralFromBands(config) {
+        const bands = AudioEngine.BRAINWAVE_BANDS;
+        const start = bands[config.startBand] || bands.alpha;
+        const trough = bands[config.troughBand] || bands.theta;
+        const end = bands[config.endBand] || bands.alpha;
+
+        // Build waypoints: [start, trough, optional2, optional3, end]
+        const waypoints = [start.mid, trough.mid];
+        if (config.secondTransition && bands[config.secondTransition]) {
+            waypoints.push(bands[config.secondTransition].mid);
+        }
+        if (config.thirdTransition && bands[config.thirdTransition]) {
+            waypoints.push(bands[config.thirdTransition].mid);
+        }
+        waypoints.push(end.mid);
+
+        this.currentBandLabel = start.label;
+
+        this.startBinauralMultiPoint({
+            baseFreq: config.baseFreq || 200,
+            waypoints: waypoints,
+            sweepDurationMin: config.sweepDurationMin || 5,
+            fadeInSec: config.fadeInSec || 2,
+            fadeOutSec: config.fadeOutSec || 3,
+            panEnabled: config.panEnabled || false,
+            panSpeed: config.panSpeed || 0.1,
+            panDepth: config.panDepth || 0.8
+        });
+    }
+
+    /**
+     * Start binaural beats with multi-point frequency waypoints
+     * Instead of the 3-point sweep, schedules N-segment linear ramps
+     * @param {Object} config
+     * @param {number} config.baseFreq - Carrier frequency
+     * @param {Array<number>} config.waypoints - Beat frequency waypoints (Hz)
+     * @param {number} [config.sweepDurationMin=5] - Full cycle duration (minutes)
+     * @param {number} [config.fadeInSec=2] - Fade-in (seconds)
+     * @param {number} [config.fadeOutSec=3] - Fade-out (seconds)
+     */
+    startBinauralMultiPoint(config) {
+        if (this.binauralEngine) {
+            this.stopBinaural();
+        }
+
+        const ctx = this.getContext();
+        const baseFreq = config.baseFreq || 200;
+        const waypoints = config.waypoints || [10, 5.5, 10];
+        const sweepDurationMin = config.sweepDurationMin || 5;
+        const fadeInSec = config.fadeInSec || 2;
+        const fadeOutSec = config.fadeOutSec || 3;
+        const panEnabled = config.panEnabled || false;
+        const panSpeed = config.panSpeed || 0.1;
+        const panDepth = config.panDepth || 0.8;
+
+        // Create oscillators and nodes (same infrastructure as startBinaural)
+        this.binauralEngine = {
+            leftOsc: ctx.createOscillator(),
+            rightOsc: ctx.createOscillator(),
+            leftGain: ctx.createGain(),
+            rightGain: ctx.createGain(),
+            binauralGain: ctx.createGain(),
+            merger: ctx.createChannelMerger(2),
+            dcBlocker: ctx.createBiquadFilter(),
+            panner: null,
+            panAnimFrame: null,
+            baseFreq,
+            waypoints,
+            sweepDurationMin,
+            fadeInSec,
+            fadeOutSec,
+            panEnabled,
+            panSpeed,
+            panDepth,
+            sweepInterval: null
+        };
+
+        const be = this.binauralEngine;
+
+        // Configure DC blocker
+        be.dcBlocker.type = "highpass";
+        be.dcBlocker.frequency.value = 20;
+
+        // Set initial gain to 0 for smooth ramp-up
+        be.binauralGain.gain.setValueAtTime(0, ctx.currentTime);
+
+        // Build audio graph
+        be.leftOsc.connect(be.leftGain).connect(be.merger, 0, 0);
+        be.rightOsc.connect(be.rightGain).connect(be.merger, 0, 1);
+
+        if (panEnabled) {
+            be.panner = ctx.createStereoPanner();
+            be.panner.pan.value = 0;
+            be.merger.connect(be.panner);
+            be.panner.connect(be.binauralGain);
+        } else {
+            be.merger.connect(be.binauralGain);
+        }
+
+        be.binauralGain.connect(be.dcBlocker);
+        be.dcBlocker.connect(this.masterGain);
+
+        // Set initial frequencies
+        be.leftOsc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+        be.rightOsc.frequency.setValueAtTime(baseFreq + waypoints[0], ctx.currentTime);
+
+        // Start oscillators
+        be.leftOsc.start();
+        be.rightOsc.start();
+
+        // Smooth fade-in
+        const targetVolume = 0.35;
+        const delay = 0.05;
+        const startTime = ctx.currentTime + delay;
+
+        be.binauralGain.gain.cancelScheduledValues(ctx.currentTime);
+        be.binauralGain.gain.setValueAtTime(0, ctx.currentTime);
+        be.binauralGain.gain.linearRampToValueAtTime(targetVolume, startTime + fadeInSec);
+
+        // Schedule multi-point sweep
+        this._scheduleMultiPointSweep();
+        be.sweepInterval = setInterval(
+            () => this._scheduleMultiPointSweep(),
+            sweepDurationMin * 60 * 1000
+        );
+
+        // Start Q-sound panning if enabled
+        if (panEnabled) {
+            this._startPanAnimation();
+        }
+
+        console.log('AudioEngine: Multi-point binaural started — base:', baseFreq,
+            'Hz, waypoints:', waypoints.map(w => w.toFixed(1)).join('→'), 'Hz, cycle:', sweepDurationMin, 'min');
+    }
+
+    /**
+     * Schedule multi-point frequency sweep across waypoints
+     * Divides sweep duration equally among (waypoints.length - 1) segments
+     * @private
+     */
+    _scheduleMultiPointSweep() {
+        if (!this.binauralEngine || !this.binauralEngine.waypoints) return;
+
+        const be = this.binauralEngine;
+        const ctx = this.context;
+        const now = ctx.currentTime;
+        const totalDuration = be.sweepDurationMin * 60; // in seconds
+        const segments = be.waypoints.length - 1;
+        const segmentDuration = totalDuration / segments;
+
+        be.rightOsc.frequency.cancelScheduledValues(now);
+        be.rightOsc.frequency.setValueAtTime(be.baseFreq + be.waypoints[0], now);
+
+        for (let i = 1; i < be.waypoints.length; i++) {
+            const targetTime = now + (i * segmentDuration);
+            be.rightOsc.frequency.linearRampToValueAtTime(
+                be.baseFreq + be.waypoints[i],
+                targetTime
+            );
+        }
+
+        // Update band label for state reporting
+        this.currentBandLabel = this.getBandForFrequency(be.waypoints[0]);
+    }
+
+    /**
+     * Get the brainwave band name for a given beat frequency
+     * @param {number} hz - Beat frequency in Hz
+     * @returns {string} Band label (e.g., "Alpha (Relaxation)")
+     */
+    getBandForFrequency(hz) {
+        const bands = AudioEngine.BRAINWAVE_BANDS;
+        for (const [name, band] of Object.entries(bands)) {
+            if (hz >= band.min && hz <= band.max) {
+                return band.label;
+            }
+        }
+        return hz + ' Hz';
     }
 
     /**

@@ -16,10 +16,12 @@
  *  11. components/AudioVisualizerOverlay.js
  *  12. components/HypnoticTextDisplay.js
  *  13. components/ControlPanel.js
- *  14. components/BiometricOverlay.js
- *  15. components/SessionConfigEditor.js
- *  16. Magic8App.js
- *  17. index.js (this file)
+ *  14. components/MoodEmojiDisplay.js
+ *  15. components/MoodRingButton.js
+ *  16. components/BiometricOverlay.js
+ *  17. components/SessionConfigEditor.js
+ *  18. Magic8App.js
+ *  19. index.js (this file)
  */
 (function() {
 
@@ -93,6 +95,8 @@
             `${base}/components/AudioVisualizerOverlay.js`,
             `${base}/components/HypnoticTextDisplay.js`,
             `${base}/components/ControlPanel.js`,
+            `${base}/components/MoodEmojiDisplay.js`,
+            `${base}/components/MoodRingButton.js`,
             `${base}/components/BiometricOverlay.js`,
             `${base}/components/SessionConfigEditor.js`,
             `${base}/Magic8App.js`,

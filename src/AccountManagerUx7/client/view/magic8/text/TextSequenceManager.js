@@ -328,6 +328,23 @@ class TextSequenceManager {
     }
 
     /**
+     * Inject a text line at a specific index, shifting existing entries.
+     * Used by SessionDirector to interleave LLM-generated labels into the text sequence.
+     * @param {string} text - Text to inject
+     * @param {number} atIndex - Position to insert at (typically currentIndex)
+     * @returns {boolean} true if injected
+     */
+    injectText(text, atIndex) {
+        if (!text || !text.trim() || atIndex < 0) return false;
+        const idx = Math.min(atIndex, this.sequences.length);
+        this.sequences.splice(idx, 0, text.trim());
+        if (this.currentIndex > idx) {
+            this.currentIndex++;
+        }
+        return true;
+    }
+
+    /**
      * Remove a text line by index
      * @param {number} index - Index to remove
      */

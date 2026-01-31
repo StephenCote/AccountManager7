@@ -74,6 +74,7 @@ const ControlPanel = {
             onToggleRecording,
             onToggleAudio,
             onToggleFullscreen,
+            onToggleMoodRing,
             onOpenConfig,
             onExit
         } = vnode.attrs;
@@ -150,6 +151,29 @@ const ControlPanel = {
                 ),
                 m('span.hidden.sm:inline', isFullscreen ? 'Exit' : 'Fullscreen')
             ]),
+
+            // Mood ring toggle button
+            (config?.biometrics?.enabled || config?.director?.enabled) && (() => {
+                const BiometricThemer = window.Magic8?.BiometricThemer;
+                const displayEmotion = state?.suggestedEmotion || state?.emotion || 'neutral';
+                const displayGender = state?.suggestedGender || state?.gender || null;
+                const emotionEmoji = BiometricThemer?.emotionEmojis?.[displayEmotion] || '\u{1F610}';
+                const genderEmoji = displayGender ? (BiometricThemer?.genderEmojis?.[displayGender] || '') : '';
+                return m('button.control-btn', {
+                    class: `
+                        flex items-center gap-2 px-4 py-2 rounded-full
+                        ${state?.moodRingEnabled ? 'bg-purple-700/80' : 'bg-gray-800/80'}
+                        hover:bg-gray-700 transition-colors
+                        text-white font-medium
+                    `,
+                    onclick: onToggleMoodRing,
+                    title: state?.moodRingEnabled ? 'Disable Mood Ring' : 'Enable Mood Ring'
+                }, [
+                    m('span', { style: { fontSize: '20px', lineHeight: '1' } }, emotionEmoji),
+                    genderEmoji && m('span', { style: { fontSize: '20px', lineHeight: '1' } }, genderEmoji),
+                    m('span.hidden.sm:inline', state?.moodRingEnabled ? 'Mood On' : 'Mood Ring')
+                ]);
+            })(),
 
             // Config button
             m('button.control-btn', {

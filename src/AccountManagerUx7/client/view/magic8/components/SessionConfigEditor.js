@@ -661,42 +661,146 @@ const SessionConfigEditor = {
                         m('span', 'Enable binaural beats')
                     ]),
                     this.config.audio.binauralEnabled && m('.ml-8.space-y-4.mb-6', [
+                        // Frequency preset selector
                         m('.flex.items-center.gap-4', [
-                            m('label.w-36', 'Base Frequency'),
-                            m('input.flex-1', {
-                                type: 'range', min: 200, max: 600,
-                                value: this.config.audio.baseFreq,
-                                oninput: (e) => this.config.audio.baseFreq = parseInt(e.target.value)
-                            }),
-                            m('span.w-16.text-right', `${this.config.audio.baseFreq} Hz`)
+                            m('label.w-36', 'Preset'),
+                            m('select.flex-1.bg-gray-700.rounded.p-2.text-sm', {
+                                value: this.config.audio.preset || '',
+                                onchange: (e) => {
+                                    const presetName = e.target.value;
+                                    this.config.audio.preset = presetName || null;
+                                    if (presetName && Magic8.AudioEngine.FREQUENCY_PRESETS[presetName]) {
+                                        const p = Magic8.AudioEngine.FREQUENCY_PRESETS[presetName];
+                                        const bands = Magic8.AudioEngine.BRAINWAVE_BANDS;
+                                        this.config.audio.baseFreq = p.baseFreq;
+                                        this.config.audio.startBand = p.startBand;
+                                        this.config.audio.troughBand = p.troughBand;
+                                        this.config.audio.endBand = p.endBand;
+                                        this.config.audio.sweepStart = bands[p.startBand]?.mid || 10;
+                                        this.config.audio.sweepTrough = bands[p.troughBand]?.mid || 5.5;
+                                        this.config.audio.sweepEnd = bands[p.endBand]?.mid || 10;
+                                    }
+                                }
+                            }, [
+                                m('option', { value: '' }, '(Custom)'),
+                                Object.entries(Magic8.AudioEngine.FREQUENCY_PRESETS).map(([key, p]) =>
+                                    m('option', { value: key }, p.label)
+                                )
+                            ])
                         ]),
-                        m('.text-sm.text-gray-400.mb-2', 'Sweep Shape (beat frequency over each cycle)'),
+                        this.config.audio.preset && Magic8.AudioEngine.FREQUENCY_PRESETS[this.config.audio.preset] &&
+                            m('.text-sm.text-gray-400.ml-40', Magic8.AudioEngine.FREQUENCY_PRESETS[this.config.audio.preset].desc),
+
+                        // Solfeggio carrier frequency selector
                         m('.flex.items-center.gap-4', [
-                            m('label.w-36', 'Sweep Start'),
-                            m('input.flex-1', {
-                                type: 'range', min: 1, max: 15, step: 0.5,
-                                value: this.config.audio.sweepStart,
-                                oninput: (e) => this.config.audio.sweepStart = parseFloat(e.target.value)
-                            }),
-                            m('span.w-16.text-right', `${this.config.audio.sweepStart} Hz`)
+                            m('label.w-36', 'Carrier Frequency'),
+                            m('select.flex-1.bg-gray-700.rounded.p-2.text-sm', {
+                                value: this.config.audio.baseFreq || 200,
+                                onchange: (e) => {
+                                    this.config.audio.baseFreq = parseInt(e.target.value);
+                                    this.config.audio.preset = null;
+                                }
+                            }, [
+                                Object.entries(Magic8.AudioEngine.SOLFEGGIO_FREQS).map(([freq, info]) =>
+                                    m('option', { value: freq }, info.label)
+                                ),
+                                m('option', { value: 200 }, '200 Hz (Standard)'),
+                                m('option', { value: 440 }, '440 Hz (Concert A)')
+                            ])
                         ]),
-                        m('.flex.items-center.gap-4', [
-                            m('label.w-36', 'Sweep Trough'),
-                            m('input.flex-1', {
-                                type: 'range', min: 1, max: 15, step: 0.5,
-                                value: this.config.audio.sweepTrough,
-                                oninput: (e) => this.config.audio.sweepTrough = parseFloat(e.target.value)
-                            }),
-                            m('span.w-16.text-right', `${this.config.audio.sweepTrough} Hz`)
+                        Magic8.AudioEngine.SOLFEGGIO_FREQS[this.config.audio.baseFreq] &&
+                            m('.text-sm.text-gray-400.ml-40', Magic8.AudioEngine.SOLFEGGIO_FREQS[this.config.audio.baseFreq].desc),
+
+                        // Brainwave band selectors
+                        m('.text-sm.text-gray-400.mb-2', 'Brainwave Band Transitions'),
+                        m('.grid.gap-2', { style: 'grid-template-columns: 1fr 1fr 1fr' }, [
+                            m('.flex.flex-col.gap-1', [
+                                m('label.text-xs.text-gray-500', 'Start Band'),
+                                m('select.bg-gray-700.rounded.p-2.text-sm', {
+                                    value: this.config.audio.startBand || 'alpha',
+                                    onchange: (e) => {
+                                        this.config.audio.startBand = e.target.value;
+                                        this.config.audio.sweepStart = Magic8.AudioEngine.BRAINWAVE_BANDS[e.target.value]?.mid || 10;
+                                        this.config.audio.preset = null;
+                                    }
+                                }, Object.entries(Magic8.AudioEngine.BRAINWAVE_BANDS).map(([key, b]) =>
+                                    m('option', { value: key }, b.label)
+                                ))
+                            ]),
+                            m('.flex.flex-col.gap-1', [
+                                m('label.text-xs.text-gray-500', 'Trough Band'),
+                                m('select.bg-gray-700.rounded.p-2.text-sm', {
+                                    value: this.config.audio.troughBand || 'theta',
+                                    onchange: (e) => {
+                                        this.config.audio.troughBand = e.target.value;
+                                        this.config.audio.sweepTrough = Magic8.AudioEngine.BRAINWAVE_BANDS[e.target.value]?.mid || 5.5;
+                                        this.config.audio.preset = null;
+                                    }
+                                }, Object.entries(Magic8.AudioEngine.BRAINWAVE_BANDS).map(([key, b]) =>
+                                    m('option', { value: key }, b.label)
+                                ))
+                            ]),
+                            m('.flex.flex-col.gap-1', [
+                                m('label.text-xs.text-gray-500', 'End Band'),
+                                m('select.bg-gray-700.rounded.p-2.text-sm', {
+                                    value: this.config.audio.endBand || 'alpha',
+                                    onchange: (e) => {
+                                        this.config.audio.endBand = e.target.value;
+                                        this.config.audio.sweepEnd = Magic8.AudioEngine.BRAINWAVE_BANDS[e.target.value]?.mid || 10;
+                                        this.config.audio.preset = null;
+                                    }
+                                }, Object.entries(Magic8.AudioEngine.BRAINWAVE_BANDS).map(([key, b]) =>
+                                    m('option', { value: key }, b.label)
+                                ))
+                            ])
                         ]),
-                        m('.flex.items-center.gap-4', [
-                            m('label.w-36', 'Sweep End'),
-                            m('input.flex-1', {
-                                type: 'range', min: 1, max: 15, step: 0.5,
-                                value: this.config.audio.sweepEnd,
-                                oninput: (e) => this.config.audio.sweepEnd = parseFloat(e.target.value)
+
+                        // Advanced toggle for raw Hz controls
+                        m('label.flex.items-center.gap-2.cursor-pointer.mt-2', [
+                            m('input.w-4.h-4.rounded', {
+                                type: 'checkbox',
+                                checked: this._showAdvancedAudio || false,
+                                onchange: (e) => this._showAdvancedAudio = e.target.checked
                             }),
-                            m('span.w-16.text-right', `${this.config.audio.sweepEnd} Hz`)
+                            m('span.text-sm.text-gray-400', 'Show advanced (raw Hz)')
+                        ]),
+                        this._showAdvancedAudio && m('.mt-2.space-y-2.border-l-2.border-gray-600.pl-4', [
+                            m('.flex.items-center.gap-4', [
+                                m('label.w-36', 'Base Frequency'),
+                                m('input.flex-1', {
+                                    type: 'range', min: 100, max: 963,
+                                    value: this.config.audio.baseFreq,
+                                    oninput: (e) => { this.config.audio.baseFreq = parseInt(e.target.value); this.config.audio.preset = null; }
+                                }),
+                                m('span.w-16.text-right', `${this.config.audio.baseFreq} Hz`)
+                            ]),
+                            m('.flex.items-center.gap-4', [
+                                m('label.w-36', 'Sweep Start'),
+                                m('input.flex-1', {
+                                    type: 'range', min: 0.5, max: 100, step: 0.5,
+                                    value: this.config.audio.sweepStart,
+                                    oninput: (e) => { this.config.audio.sweepStart = parseFloat(e.target.value); this.config.audio.preset = null; }
+                                }),
+                                m('span.w-16.text-right', `${this.config.audio.sweepStart} Hz`)
+                            ]),
+                            m('.flex.items-center.gap-4', [
+                                m('label.w-36', 'Sweep Trough'),
+                                m('input.flex-1', {
+                                    type: 'range', min: 0.5, max: 100, step: 0.5,
+                                    value: this.config.audio.sweepTrough,
+                                    oninput: (e) => { this.config.audio.sweepTrough = parseFloat(e.target.value); this.config.audio.preset = null; }
+                                }),
+                                m('span.w-16.text-right', `${this.config.audio.sweepTrough} Hz`)
+                            ]),
+                            m('.flex.items-center.gap-4', [
+                                m('label.w-36', 'Sweep End'),
+                                m('input.flex-1', {
+                                    type: 'range', min: 0.5, max: 100, step: 0.5,
+                                    value: this.config.audio.sweepEnd,
+                                    oninput: (e) => { this.config.audio.sweepEnd = parseFloat(e.target.value); this.config.audio.preset = null; }
+                                }),
+                                m('span.w-16.text-right', `${this.config.audio.sweepEnd} Hz`)
+                            ])
                         ]),
                         m('.flex.items-center.gap-4', [
                             m('label.w-36', 'Sweep Duration'),
@@ -905,7 +1009,7 @@ const SessionConfigEditor = {
 
                     // Effect checkboxes
                     m('.grid.gap-2.mb-4', { class: 'grid-cols-2 sm:grid-cols-4' },
-                        ['particles', 'spiral', 'mandala', 'tunnel'].map(effect =>
+                        ['particles', 'spiral', 'mandala', 'tunnel', 'hypnoDisc'].map(effect =>
                             m('label.flex.items-center.gap-2.cursor-pointer.p-2.bg-gray-700.rounded', [
                                 m('input.w-4.h-4.rounded', {
                                     type: 'checkbox',

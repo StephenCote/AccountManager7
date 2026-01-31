@@ -29,6 +29,9 @@
             this.lastError = null;
             this.callCount = 0;
 
+            // Mood ring mode
+            this.moodRingMode = false;
+
             // Callbacks
             this.onDirective = null;
             this.onError = null;
@@ -69,7 +72,9 @@
                 }
 
                 // 4. Create or update prompt config with current command
-                const systemPrompt = this._buildSystemPrompt(command);
+                const systemPrompt = this.moodRingMode
+                    ? this._buildMoodRingPrompt(command)
+                    : this._buildSystemPrompt(command);
                 this.promptConfig = await this._ensurePromptConfig(chatDir, systemPrompt);
                 if (!this.promptConfig) {
                     throw new Error("Failed to create prompt config");
@@ -323,25 +328,36 @@
                 "You MUST always respond with a valid JSON object containing at least one directive field.",
                 "",
                 "Directive fields (include what you want to change):",
-                "  audio: { sweepStart: 1-15, sweepTrough: 1-15, sweepEnd: 1-15, isochronicEnabled: true/false, isochronicRate: 2-15 }",
-                "  visuals: { effect: \"particles\" or \"spiral\" or \"mandala\" or \"tunnel\", transitionDuration: 2000 }",
+                "  audio: { preset: \"goddessEnergy\"|\"heartOpening\"|\"loveFrequency\"|\"deepHealing\"|\"lettingGo\"|\"transformation\"|\"creativeFlow\"|\"thirdEye\"|\"crownConnection\"|\"regeneration\"|\"deepHypnosis\"|\"lucidDream\"",
+                "           OR band: \"delta\"|\"theta\"|\"alphaTheta\"|\"alpha\"|\"beta\"|\"gamma\" with optional troughBand, endBand, secondTransition, thirdTransition,",
+                "              baseFreq: carrier Hz (174|285|396|417|432|528|639|741|852|963),",
+                "           isochronicEnabled: true/false, isochronicBand: \"band_name\" }",
+                "  Preset meanings: goddessEnergy=432Hz alpha→alphaTheta→theta (spiritual femininity, divine feminine), heartOpening=639Hz alpha→theta→alpha (connection, compassion),",
+                "    loveFrequency=528Hz (transformation, cellular healing), deepHealing=174Hz theta→delta→theta, lettingGo=396Hz (releasing guilt/fear),",
+                "    transformation=417Hz (breaking patterns), creativeFlow=741Hz (self-expression), thirdEye=852Hz (intuition),",
+                "    crownConnection=963Hz alpha→theta→gamma (divine consciousness), regeneration=285Hz (tissue repair), deepHypnosis=432Hz alpha→alphaTheta→delta, lucidDream=528Hz alpha→theta→delta",
+                "  Brainwave bands: delta=0.5-4Hz (deep sleep), theta=4-7.5Hz (meditation/hypnosis), alphaTheta=7-8Hz (hypnotic border), alpha=7.5-14Hz (relaxation), beta=14-40Hz (alertness), gamma=40+Hz (insight)",
+                "  Solfeggio carriers: 174Hz (security), 285Hz (healing), 396Hz (liberation), 417Hz (change), 432Hz (spiritual tuning), 528Hz (love), 639Hz (connection), 741Hz (expression), 852Hz (intuition), 963Hz (divine)",
+                "  visuals: { effect: \"particles\" or \"spiral\" or \"mandala\" or \"tunnel\" or \"hypnoDisc\", transitionDuration: 2000 }",
                 "  labels: { add: [\"short poetic phrase\"], remove: [\"exact label text\"] }",
                 "  generateImage: { description: \"scene description\", style: \"art style keyword\", imageAction: \"what the subject is doing\", denoisingStrength: 0.3-0.9, cfg: 3-15 }",
                 "  opacity: { labels: 0.15-1.0, images: 0.15-1.0, visualizer: 0.15-1.0, visuals: 0.15-1.0 }",
                 "  voiceLine: \"short sentence to be spoken next via text-to-speech\"",
+                "  suggestMood: { emotion: \"happy\"|\"sad\"|\"angry\"|\"fear\"|\"surprise\"|\"disgust\"|\"neutral\", gender: \"Man\"|\"Woman\" }",
                 "  commentary: \"your reasoning (not displayed to user)\"",
                 "",
                 "Example response for a calm neutral state:",
-                "{\"audio\":{\"sweepStart\":6,\"sweepTrough\":2,\"sweepEnd\":7},\"visuals\":{\"effect\":\"spiral\"},\"labels\":{\"add\":[\"waves of calm\"]},\"commentary\":\"easing into relaxation\"}",
+                "{\"audio\":{\"preset\":\"goddessEnergy\"},\"visuals\":{\"effect\":\"spiral\"},\"labels\":{\"add\":[\"waves of calm\"]},\"commentary\":\"easing into relaxation with 432Hz divine feminine\"}",
                 "",
                 "Example response for a happy energetic state:",
-                "{\"audio\":{\"sweepStart\":10,\"sweepTrough\":4,\"sweepEnd\":10,\"isochronicEnabled\":true},\"visuals\":{\"effect\":\"particles\"},\"labels\":{\"add\":[\"light flows freely\"]},\"commentary\":\"matching upbeat energy\"}",
+                "{\"audio\":{\"band\":\"alpha\",\"troughBand\":\"alphaTheta\",\"endBand\":\"alpha\",\"baseFreq\":528,\"isochronicEnabled\":true},\"visuals\":{\"effect\":\"particles\"},\"labels\":{\"add\":[\"light flows freely\"]},\"commentary\":\"matching upbeat energy with love frequency\"}",
                 "",
                 "Guidelines:",
+                "- Prefer named presets for common therapeutic goals; use band/baseFreq for custom combinations",
                 "- Evolve gradually based on biometric emotion, elapsed time, and session intent",
                 "- When an 'Emotion Shift' is reported, adapt your directives to acknowledge the transition (e.g. sad→happy: brighten visuals, raise frequencies; happy→fear: add grounding labels, lower sweep)",
                 "- Labels should be poetic, under 8 words, aligned with session intent",
-                "- Lower sweep frequencies (1-4 Hz) for deep relaxation, higher (8-15 Hz) for alertness",
+                "- Use theta/delta bands for deep relaxation, alpha for gentle awareness, beta/gamma for alertness",
                 "- For generateImage: adapt description/style/imageAction to the detected face emotion",
                 "- denoisingStrength controls transformation intensity (0.3=subtle, 0.7=dramatic, 0.9=extreme)",
                 "- cfg controls prompt adherence (low=creative/loose, high=strict/literal)",
@@ -349,6 +365,62 @@
                 "- voiceLine is synthesized and injected as the next spoken line - keep it natural, 1-2 sentences",
                 "- Respond with ONLY the JSON object, no markdown fences, no explanation text"
             ];
+        }
+
+        /**
+         * Build a trimmed system prompt for mood ring mode
+         * Only requests suggestMood + commentary (no labels, voice, images, audio, opacity)
+         * @param {string} command - Session intent
+         * @returns {Array<string>}
+         * @private
+         */
+        _buildMoodRingPrompt(command) {
+            return [
+                "You are the Mood Ring advisor for Magic8, an immersive audiovisual experience.",
+                "SESSION INTENT: " + command,
+                "You receive periodic biometric state snapshots and must return a JSON object.",
+                "You MUST always respond with a valid JSON object.",
+                "",
+                "Directive fields:",
+                "  suggestMood: { emotion: \"happy\"|\"sad\"|\"angry\"|\"fear\"|\"surprise\"|\"disgust\"|\"neutral\", gender: \"Man\"|\"Woman\" }",
+                "  commentary: \"your reasoning (not displayed to user)\"",
+                "",
+                "Your role: observe the user's detected emotion and suggest what mood they might be feeling or transitioning toward.",
+                "Consider the session intent, elapsed time, and emotion history to provide insightful mood suggestions.",
+                "The suggested mood drives a visual mood ring color effect.",
+                "",
+                "Example: {\"suggestMood\":{\"emotion\":\"happy\",\"gender\":\"Woman\"},\"commentary\":\"user shows warmth\"}",
+                "",
+                "- Respond with ONLY the JSON object, no markdown fences, no explanation text"
+            ];
+        }
+
+        /**
+         * Format state for mood ring mode — only biometric data + emotion transition + elapsed time
+         * @param {Object} state - Session state
+         * @returns {string}
+         * @private
+         */
+        _formatMoodRingState(state) {
+            const lines = ['Mood Ring State:'];
+
+            if (state.biometric) {
+                const b = state.biometric;
+                lines.push(`Biometric: emotion=${b.emotion || 'unknown'}, age=${b.age || 'unknown'}, gender=${b.gender || 'unknown'}`);
+            } else {
+                lines.push('Biometric: no face data');
+            }
+
+            if (state.emotionTransition) {
+                const t = state.emotionTransition;
+                lines.push(`Emotion Shift: ${t.from} → ${t.to} (${t.secsAgo}s ago)`);
+            }
+
+            if (state.elapsedMinutes != null) {
+                lines.push(`Elapsed: ${Math.round(state.elapsedMinutes)} min`);
+            }
+
+            return lines.join('\n');
         }
 
         /**
@@ -417,7 +489,9 @@
                 const state = this.stateProvider ? this.stateProvider() : {};
 
                 // Format the user message with state data
-                const userMessage = this._formatStateMessage(state);
+                const userMessage = this.moodRingMode
+                    ? this._formatMoodRingState(state)
+                    : this._formatStateMessage(state);
 
                 console.log('SessionDirector: Tick #' + (this.callCount + 1) + ', sending state to LLM');
 
@@ -506,10 +580,14 @@
                 lines.push('Current Text: "' + state.currentText + '"');
             }
 
-            // Audio state
+            // Audio state — prefer band labels over raw Hz
             if (state.audio) {
                 const a = state.audio;
-                lines.push(`Current Audio: sweep ${a.sweepStart || '?'}→${a.sweepTrough || '?'}→${a.sweepEnd || '?'} Hz, isochronic=${a.isochronicEnabled ? 'on' : 'off'}`);
+                if (a.bandLabel) {
+                    lines.push(`Current Audio: band=${a.bandLabel}, carrier=${a.baseFreq || '?'} Hz, isochronic=${a.isochronicEnabled ? 'on' : 'off'}`);
+                } else {
+                    lines.push(`Current Audio: sweep ${a.sweepStart || '?'}→${a.sweepTrough || '?'}→${a.sweepEnd || '?'} Hz, isochronic=${a.isochronicEnabled ? 'on' : 'off'}`);
+                }
             }
 
             // Visual state
@@ -657,11 +735,36 @@
 
                 if (directive.audio && typeof directive.audio === 'object') {
                     valid.audio = {};
+                    // Named preset
+                    if (typeof directive.audio.preset === 'string') valid.audio.preset = directive.audio.preset;
+                    // Named band with optional transitions
+                    const validBands = ['delta', 'theta', 'alphaTheta', 'alpha', 'beta', 'gamma'];
+                    if (typeof directive.audio.band === 'string' && validBands.includes(directive.audio.band)) {
+                        valid.audio.band = directive.audio.band;
+                    }
+                    if (typeof directive.audio.troughBand === 'string' && validBands.includes(directive.audio.troughBand)) {
+                        valid.audio.troughBand = directive.audio.troughBand;
+                    }
+                    if (typeof directive.audio.endBand === 'string' && validBands.includes(directive.audio.endBand)) {
+                        valid.audio.endBand = directive.audio.endBand;
+                    }
+                    if (typeof directive.audio.secondTransition === 'string' && validBands.includes(directive.audio.secondTransition)) {
+                        valid.audio.secondTransition = directive.audio.secondTransition;
+                    }
+                    if (typeof directive.audio.thirdTransition === 'string' && validBands.includes(directive.audio.thirdTransition)) {
+                        valid.audio.thirdTransition = directive.audio.thirdTransition;
+                    }
+                    if (typeof directive.audio.baseFreq === 'number') valid.audio.baseFreq = directive.audio.baseFreq;
+                    // Legacy raw Hz sweep (backwards compatible)
                     if (typeof directive.audio.sweepStart === 'number') valid.audio.sweepStart = directive.audio.sweepStart;
                     if (typeof directive.audio.sweepTrough === 'number') valid.audio.sweepTrough = directive.audio.sweepTrough;
                     if (typeof directive.audio.sweepEnd === 'number') valid.audio.sweepEnd = directive.audio.sweepEnd;
+                    // Isochronic
                     if (typeof directive.audio.isochronicEnabled === 'boolean') valid.audio.isochronicEnabled = directive.audio.isochronicEnabled;
                     if (typeof directive.audio.isochronicRate === 'number') valid.audio.isochronicRate = directive.audio.isochronicRate;
+                    if (typeof directive.audio.isochronicBand === 'string' && validBands.includes(directive.audio.isochronicBand)) {
+                        valid.audio.isochronicBand = directive.audio.isochronicBand;
+                    }
                 }
 
                 if (directive.visuals && typeof directive.visuals === 'object') {
@@ -707,6 +810,20 @@
 
                 if (typeof directive.commentary === 'string') {
                     valid.commentary = directive.commentary;
+                }
+
+                // Validate suggestMood
+                if (directive.suggestMood && typeof directive.suggestMood === 'object') {
+                    const validEmotions = ['neutral', 'happy', 'sad', 'angry', 'fear', 'surprise', 'disgust'];
+                    const validGenders = ['Man', 'Woman'];
+                    valid.suggestMood = {};
+                    if (typeof directive.suggestMood.emotion === 'string' && validEmotions.includes(directive.suggestMood.emotion)) {
+                        valid.suggestMood.emotion = directive.suggestMood.emotion;
+                    }
+                    if (typeof directive.suggestMood.gender === 'string' && validGenders.includes(directive.suggestMood.gender)) {
+                        valid.suggestMood.gender = directive.suggestMood.gender;
+                    }
+                    if (Object.keys(valid.suggestMood).length === 0) delete valid.suggestMood;
                 }
 
                 return valid;

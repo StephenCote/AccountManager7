@@ -72,35 +72,6 @@ const BiometricOverlay = {
                 this.labels = this.labels.slice(-20);
             }
         }
-
-        // Handle session labels from director
-        const sessionLabels = vnode.attrs.sessionLabels;
-        if (sessionLabels && sessionLabels.length > 0) {
-            const existing = new Set(this.labels.filter(l => l.isSession).map(l => l.text));
-            const animTypes = ['drift', 'pulse', 'scale', 'float'];
-            for (const label of sessionLabels) {
-                if (!existing.has(label)) {
-                    this.labels.push({
-                        id: this.nextId++,
-                        text: label,
-                        x: 5 + Math.random() * 85,
-                        y: 10 + Math.random() * 75,
-                        anim: animTypes[Math.floor(Math.random() * 4)],
-                        size: 0.5 + Math.random() * 0.4,
-                        duration: 120,
-                        driftX: (Math.random() - 0.5) * 30,
-                        driftY: (Math.random() - 0.5) * 20,
-                        born: Date.now(),
-                        isSession: true
-                    });
-                }
-            }
-            // Remove session labels no longer in the list
-            this.labels = this.labels.filter(l => !l.isSession || sessionLabels.includes(l.text));
-        } else {
-            // If no session labels provided, remove any existing session labels
-            this.labels = this.labels.filter(l => !l.isSession);
-        }
     },
 
     view(vnode) {
@@ -151,15 +122,6 @@ const BiometricOverlay = {
                 textShadow: `0 0 12px ${glowColor}, 0 0 24px ${glowColor}`,
                 willChange: 'transform, opacity'
             };
-
-            // LLM session labels get stylistic emphasis
-            if (label.isSession) {
-                style.fontStyle = 'italic';
-                style.letterSpacing = '0.12em';
-                style.textShadow = `0 0 18px ${glowColor}, 0 0 36px ${glowColor}, 0 0 56px ${glowColor}`;
-                style.borderBottom = `1px solid ${glowColor}`;
-                style.paddingBottom = '2px';
-            }
 
             if (label.anim === 'drift') {
                 const progress = age / label.duration;

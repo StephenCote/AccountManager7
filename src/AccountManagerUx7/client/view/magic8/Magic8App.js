@@ -41,6 +41,12 @@
         _sessionStartTime: null,
         _emotionHistory: [],   // [{emotion, timestamp}] — only stores actual changes
 
+        // Mood suggestion state (test mode emojis + mood ring)
+        _suggestedEmotion: null,
+        _suggestedGender: null,
+        moodRingEnabled: false,
+        moodRingColor: null,
+
         // Debug console (test mode)
         debugMessages: [],
         _debugMinimized: false,
@@ -210,7 +216,19 @@
             this.audioEngine = new Magic8.AudioEngine();
 
             if (cfg.audio?.binauralEnabled) {
-                this.audioEngine.startBinaural(cfg.audio);
+                if (cfg.audio.preset && Magic8.AudioEngine.FREQUENCY_PRESETS[cfg.audio.preset]) {
+                    this.audioEngine.startBinauralFromPreset(cfg.audio.preset);
+                } else if (cfg.audio.startBand) {
+                    this.audioEngine.startBinauralFromBands({
+                        startBand: cfg.audio.startBand,
+                        troughBand: cfg.audio.troughBand || cfg.audio.startBand,
+                        endBand: cfg.audio.endBand || cfg.audio.startBand,
+                        baseFreq: cfg.audio.baseFreq || 200,
+                        sweepDurationMin: cfg.audio.sweepDurationMin || 5
+                    });
+                } else {
+                    this.audioEngine.startBinaural(cfg.audio);
+                }
                 this.audioEnabled = true;
             }
 
@@ -334,6 +352,18 @@
                 console.warn('Magic8App: Text enabled but no sourceObjectId selected');
             }
 
+            // LLM-only text mode: create empty manager when director is enabled
+            if (!this.textSequence && cfg.director?.enabled) {
+                this.textSequence = new Magic8.TextSequenceManager();
+                this.textSequence.loop = true;
+                this.textSequence.displayDuration = cfg.text?.displayDuration || 8000;
+                this.textSequence.onTextChange = (text) => {
+                    this.currentText = text;
+                    m.redraw();
+                };
+                console.log('Magic8App: Created empty text manager for LLM-only mode');
+            }
+
             // Initialize voice sequence
             if (cfg.voice?.enabled && cfg.voice?.sourceObjectId) {
                 this.voiceSequence = new Magic8.VoiceSequenceManager(this.audioEngine);
@@ -376,6 +406,13 @@
                 }
             }
 
+            // LLM-only voice mode: create empty manager when director + voice enabled
+            if (!this.voiceSequence && cfg.director?.enabled && cfg.voice?.enabled) {
+                this.voiceSequence = new Magic8.VoiceSequenceManager(this.audioEngine);
+                this.voiceSequence.loop = cfg.voice?.loop !== false;
+                console.log('Magic8App: Created empty voice manager for LLM-only mode');
+            }
+
             // Initialize recording
             if (cfg.recording?.enabled) {
                 this.sessionRecorder = new Magic8.SessionRecorder();
@@ -406,6 +443,7 @@
                         if (d.generateImage) this._debugLog('Image: ' + (d.generateImage.description || '').substring(0, 80), 'directive');
                         if (d.voiceLine) this._debugLog('Voice inject: "' + d.voiceLine + '"', 'voice');
                         if (d.opacity) this._debugLog('Opacity: ' + JSON.stringify(d.opacity), 'directive');
+                        if (d.suggestMood) this._debugLog('Mood: ' + JSON.stringify(d.suggestMood), 'directive');
                         if (d.commentary) this._debugLog('LLM: ' + d.commentary, 'info');
                     }
                 };
@@ -865,7 +903,19 @@
 
             if (this.audioEnabled) {
                 if (cfg?.audio?.binauralEnabled) {
-                    this.audioEngine?.startBinaural(cfg.audio);
+                    if (cfg.audio.preset && Magic8.AudioEngine.FREQUENCY_PRESETS[cfg.audio.preset]) {
+                        this.audioEngine?.startBinauralFromPreset(cfg.audio.preset);
+                    } else if (cfg.audio.startBand) {
+                        this.audioEngine?.startBinauralFromBands({
+                            startBand: cfg.audio.startBand,
+                            troughBand: cfg.audio.troughBand || cfg.audio.startBand,
+                            endBand: cfg.audio.endBand || cfg.audio.startBand,
+                            baseFreq: cfg.audio.baseFreq || 200,
+                            sweepDurationMin: cfg.audio.sweepDurationMin || 5
+                        });
+                    } else {
+                        this.audioEngine?.startBinaural(cfg.audio);
+                    }
                 }
                 if (cfg?.audio?.isochronicEnabled) {
                     this.audioEngine?.startIsochronic(cfg.audio);
@@ -1099,7 +1149,6 @@
                 m(Magic8.BiometricOverlay, {
                     text: this.currentText,
                     theme: this.currentTheme,
-                    sessionLabels: this.sessionLabels,
                     opacity: this._layerOpacity.labels
                 }),
 
@@ -1124,12 +1173,22 @@
                     state: {
                         isRecording: this.isRecording,
                         audioEnabled: this.audioEnabled,
-                        isFullscreen: this.isFullscreen
+                        isFullscreen: this.isFullscreen,
+                        moodRingEnabled: this.moodRingEnabled
                     },
                     autoHideDelay: this.sessionConfig?.display?.controlsAutoHide || 5000,
                     onToggleRecording: () => this._toggleRecording(),
                     onToggleAudio: () => this._toggleAudio(),
                     onToggleFullscreen: () => this._toggleFullscreen(),
+                    onToggleMoodRing: () => {
+                        this.moodRingEnabled = !this.moodRingEnabled;
+                        if (this.sessionDirector) {
+                            this.sessionDirector.moodRingMode = this.moodRingEnabled;
+                        }
+                        if (!this.moodRingEnabled) {
+                            this.moodRingColor = null;
+                        }
+                    },
                     onOpenConfig: () => {
                         this.phase = 'config';
                         m.redraw();
@@ -1141,6 +1200,35 @@
                 page.components.camera && (this.sessionConfig?.biometrics?.enabled || this.sessionConfig?.director?.enabled || this.sessionConfig?.imageGeneration?.enabled)
                     ? page.components.camera.videoView()
                     : null,
+
+                // Mood ring button (top-right, shown when biometrics or director is enabled)
+                (this.sessionConfig?.biometrics?.enabled || this.sessionConfig?.director?.enabled) &&
+                    m(Magic8.MoodRingButton, {
+                        enabled: this.moodRingEnabled,
+                        emotion: this.biometricData?.dominant_emotion || 'neutral',
+                        gender: this.biometricData?.dominant_gender || null,
+                        suggestedEmotion: this._suggestedEmotion,
+                        suggestedGender: this._suggestedGender,
+                        moodColor: this.moodRingColor,
+                        onclick: () => {
+                            this.moodRingEnabled = !this.moodRingEnabled;
+                            if (this.sessionDirector) {
+                                this.sessionDirector.moodRingMode = this.moodRingEnabled;
+                            }
+                            if (!this.moodRingEnabled) {
+                                this.moodRingColor = null;
+                            }
+                        }
+                    }),
+
+                // Test mode emoji display (top-left)
+                this.sessionConfig?.director?.testMode && this.biometricData &&
+                    m(Magic8.MoodEmojiDisplay, {
+                        emotion: this.biometricData?.dominant_emotion || 'neutral',
+                        gender: this.biometricData?.dominant_gender || null,
+                        suggestedEmotion: this._suggestedEmotion,
+                        suggestedGender: this._suggestedGender
+                    }),
 
                 // On-screen debug console (test mode only)
                 this.sessionConfig?.director?.testMode && this.debugMessages.length > 0 &&
@@ -1274,6 +1362,8 @@
                     sweepStart: audio.sweepStart,
                     sweepTrough: audio.sweepTrough,
                     sweepEnd: audio.sweepEnd,
+                    baseFreq: audio.baseFreq,
+                    bandLabel: this.audioEngine?.currentBandLabel || null,
                     isochronicEnabled: audio.isochronicEnabled,
                     isochronicRate: audio.isochronicRate
                 } : null,
@@ -1312,18 +1402,44 @@
             if (!directive) return;
             const cfg = this.sessionConfig;
 
-            // Apply audio changes
+            // Apply audio changes (preset > band > raw Hz)
             if (directive.audio && cfg?.audio && this.audioEngine && this.audioEnabled) {
-                let audioChanged = false;
-                for (const key of ['sweepStart', 'sweepTrough', 'sweepEnd']) {
-                    if (directive.audio[key] != null && directive.audio[key] !== cfg.audio[key]) {
-                        cfg.audio[key] = directive.audio[key];
-                        audioChanged = true;
-                    }
-                }
-                if (audioChanged) {
+                let audioHandled = false;
+
+                // Named preset takes priority
+                if (directive.audio.preset) {
                     this.audioEngine.stopBinaural();
-                    this.audioEngine.startBinaural(cfg.audio);
+                    this.audioEngine.startBinauralFromPreset(directive.audio.preset);
+                    audioHandled = true;
+                }
+                // Named band with optional transitions
+                else if (directive.audio.band) {
+                    this.audioEngine.stopBinaural();
+                    this.audioEngine.startBinauralFromBands({
+                        startBand: directive.audio.band,
+                        troughBand: directive.audio.troughBand || directive.audio.band,
+                        endBand: directive.audio.endBand || directive.audio.band,
+                        secondTransition: directive.audio.secondTransition,
+                        thirdTransition: directive.audio.thirdTransition,
+                        baseFreq: directive.audio.baseFreq || cfg.audio.baseFreq || 200,
+                        sweepDurationMin: cfg.audio.sweepDurationMin || 5
+                    });
+                    audioHandled = true;
+                }
+
+                // Legacy raw Hz sweep (backwards compatible)
+                if (!audioHandled) {
+                    let audioChanged = false;
+                    for (const key of ['sweepStart', 'sweepTrough', 'sweepEnd']) {
+                        if (directive.audio[key] != null && directive.audio[key] !== cfg.audio[key]) {
+                            cfg.audio[key] = directive.audio[key];
+                            audioChanged = true;
+                        }
+                    }
+                    if (audioChanged) {
+                        this.audioEngine.stopBinaural();
+                        this.audioEngine.startBinaural(cfg.audio);
+                    }
                 }
 
                 if (directive.audio.isochronicEnabled != null &&
@@ -1359,17 +1475,26 @@
                 }
             }
 
-            // Apply label changes
+            // Apply label changes — inject into text sequence for sequential display
             if (directive.labels) {
                 if (directive.labels.add && directive.labels.add.length > 0) {
                     for (const label of directive.labels.add) {
+                        // Track in sessionLabels for LLM state reporting
                         if (!this.sessionLabels.includes(label)) {
                             this.sessionLabels.push(label);
                         }
+                        // Inject into text sequence at current position
+                        if (this.textSequence) {
+                            this.textSequence.injectText(label, this.textSequence.currentIndex);
+                        }
                     }
-                    // Cap at 10
+                    // Cap sessionLabels at 10 for state reporting
                     if (this.sessionLabels.length > 10) {
                         this.sessionLabels = this.sessionLabels.slice(-10);
+                    }
+                    // Auto-start text sequence if it was empty (LLM-only mode)
+                    if (this.textSequence && !this.textSequence.isPlaying && this.textSequence.sequences.length > 0) {
+                        this.textSequence.start();
                     }
                 }
                 if (directive.labels.remove && directive.labels.remove.length > 0) {
@@ -1413,6 +1538,11 @@
             if (directive.voiceLine && this.voiceSequence) {
                 const insertAt = this.voiceSequence.currentIndex;
                 this.sessionVoiceLines.push(directive.voiceLine);
+                if (this.sessionConfig?.director?.testMode) {
+                    this._debugLog('Voice inject at idx=' + insertAt +
+                        ', sequences=' + this.voiceSequence.sequences.length +
+                        ', hashes=' + this.voiceSequence.synthesizedHashes.size, 'voice');
+                }
                 this.voiceSequence.injectLine(
                     directive.voiceLine,
                     insertAt,
@@ -1420,8 +1550,18 @@
                 ).then(ok => {
                     if (ok) {
                         console.log('Magic8App: Injected voice line at index', insertAt, ':', directive.voiceLine);
+                        if (this.sessionConfig?.director?.testMode) {
+                            this._debugLog('Voice injected OK, total=' + this.voiceSequence.sequences.length, 'pass');
+                        }
+                        // Auto-start voice sequence if it was empty (LLM-only mode)
+                        if (!this.voiceSequence.isPlaying && this.voiceSequence.sequences.length > 0) {
+                            this.voiceSequence.start();
+                        }
                     } else {
                         console.warn('Magic8App: Failed to inject voice line');
+                        if (this.sessionConfig?.director?.testMode) {
+                            this._debugLog('Voice inject FAILED', 'fail');
+                        }
                     }
                 });
             }
@@ -1431,6 +1571,23 @@
                 for (const layer of ['labels', 'images', 'visualizer', 'visuals']) {
                     if (typeof directive.opacity[layer] === 'number') {
                         this._setLayerOpacity(layer, directive.opacity[layer]);
+                    }
+                }
+            }
+
+            // Apply mood suggestion
+            if (directive.suggestMood) {
+                if (directive.suggestMood.emotion) {
+                    this._suggestedEmotion = directive.suggestMood.emotion;
+                }
+                if (directive.suggestMood.gender) {
+                    this._suggestedGender = directive.suggestMood.gender;
+                }
+                // Update mood ring color when enabled
+                if (this.moodRingEnabled && this._suggestedEmotion) {
+                    const theme = Magic8.BiometricThemer.emotionThemes[this._suggestedEmotion];
+                    if (theme) {
+                        this.moodRingColor = theme.accent;
                     }
                 }
             }

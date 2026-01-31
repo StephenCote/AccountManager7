@@ -49,6 +49,22 @@ class BiometricThemer {
     };
 
     /**
+     * Emoji representations for emotions
+     */
+    static emotionEmojis = {
+        neutral: '\u{1F610}', happy: '\u{1F60A}', sad: '\u{1F622}',
+        angry: '\u{1F621}', fear: '\u{1F628}', surprise: '\u{1F632}',
+        disgust: '\u{1F922}'
+    };
+
+    /**
+     * Emoji representations for gender
+     */
+    static genderEmojis = {
+        Man: '\u{1F468}', Woman: '\u{1F469}'
+    };
+
+    /**
      * Process biometric data and update theme
      * @param {Object} biometricData - Facial analysis data
      */

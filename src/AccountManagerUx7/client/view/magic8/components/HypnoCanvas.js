@@ -222,6 +222,9 @@ const HypnoCanvas = {
             case 'tunnel':
                 this._drawTunnel(ctx, w, h);
                 break;
+            case 'hypnoDisc':
+                this._drawHypnoDisc(ctx, w, h);
+                break;
         }
     },
 
@@ -419,6 +422,56 @@ const HypnoCanvas = {
 
         ctx.restore();
         ctx.shadowBlur = 0;
+    },
+
+    /**
+     * Draw hypnotic disc spiral effect (concentric half-circles with alternating colors)
+     * Based on nested-circle CSS technique — alternating even/odd ring colors at varying
+     * radii create a moiré spiral illusion when rotated.
+     * @private
+     */
+    _drawHypnoDisc(ctx, w, h) {
+        const cx = w / 2, cy = h / 2;
+        const maxR = Math.sqrt(w * w + h * h) / 2;
+        const totalRings = 50;
+        // ~60s full rotation: frame * (2*PI / (60fps * 60s)) ≈ 0.00175
+        const rotation = this.frame * 0.00175;
+        const { r, g, b } = this.accentColor;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rotation);
+
+        // Draw outermost to innermost (painter's algorithm)
+        for (let i = 1; i <= totalRings; i++) {
+            const rank = (totalRings + 1) - i;
+            const isEven = (rank % 2 === 0);
+            const percentage = rank / totalRings;
+            const invertPct = 1 - percentage;
+            const opacity = Math.min(1, invertPct + 0.3);
+            const radius = (i / totalRings) * maxR;
+            const borderW = Math.max(1, 7 * percentage);
+
+            // Top half — primary color for even rings, inverted for odd
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI);
+            ctx.lineWidth = borderW;
+            ctx.strokeStyle = isEven
+                ? `rgba(${r}, ${g}, ${b}, ${opacity})`
+                : `rgba(${255 - r}, ${255 - g}, ${255 - b}, ${opacity * 0.7})`;
+            ctx.stroke();
+
+            // Bottom half — opposite coloring
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, Math.PI, 2 * Math.PI);
+            ctx.lineWidth = borderW;
+            ctx.strokeStyle = isEven
+                ? `rgba(${255 - r}, ${255 - g}, ${255 - b}, ${opacity * 0.7})`
+                : `rgba(${r}, ${g}, ${b}, ${opacity})`;
+            ctx.stroke();
+        }
+
+        ctx.restore();
     },
 
     /**
