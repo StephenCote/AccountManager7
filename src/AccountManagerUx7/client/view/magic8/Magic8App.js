@@ -593,33 +593,192 @@
         async _startRecording() {
             if (!this.sessionRecorder) return;
 
-            const canvas = this.containerElement?.querySelector('.hypno-canvas');
-            if (!canvas) {
-                console.warn('Magic8App: Canvas not found for recording');
-                this._debugLog('Recording: canvas not found', 'warn');
+            const container = this.containerElement;
+            if (!container) {
+                console.warn('Magic8App: Container not found for recording');
+                this._debugLog('Recording: container not found', 'warn');
                 return;
             }
 
+            // Create compositing canvas at container size
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            const compCanvas = document.createElement('canvas');
+            compCanvas.width = w;
+            compCanvas.height = h;
+            this._recCanvas = compCanvas;
+            this._recCtx = compCanvas.getContext('2d');
+
+            // Pre-load current background image
+            this._recImage = new Image();
+            this._recImage.crossOrigin = 'anonymous';
+            this._recImageUrl = '';
+            this._recPrevImage = new Image();
+            this._recPrevImage.crossOrigin = 'anonymous';
+            if (this.currentImage?.url) {
+                this._recImage.src = this.currentImage.url;
+                this._recImageUrl = this.currentImage.url;
+            }
+
+            // Start compositing loop
+            this._recCompositing = true;
+            this._compositeFrame();
+
+            // Capture stream from compositing canvas + audio
             const audioDestination = this.audioEngine?.getDestination();
-            console.log('Magic8App: Starting recording, canvas:', canvas.width + 'x' + canvas.height,
+            console.log('Magic8App: Starting recording, composite:', w + 'x' + h,
                 'audio:', audioDestination ? 'yes' : 'no');
 
             try {
-                await this.sessionRecorder.startRecording(canvas, audioDestination, {
+                await this.sessionRecorder.startRecording(compCanvas, audioDestination, {
                     maxDurationMin: this.sessionConfig?.recording?.maxDurationMin || 30
                 });
                 this.isRecording = true;
-                this._debugLog('Recording started', 'info');
+                this._debugLog('Recording started (composite)', 'info');
                 m.redraw();
             } catch (err) {
+                this._recCompositing = false;
                 console.error('Magic8App: Failed to start recording:', err);
                 this._debugLog('Recording failed: ' + err.message, 'error');
             }
         },
 
+        /**
+         * Compositing loop — draws all visual layers onto the recording canvas each frame
+         * @private
+         */
+        _compositeFrame() {
+            if (!this._recCompositing) return;
+
+            const ctx = this._recCtx;
+            const w = this._recCanvas.width;
+            const h = this._recCanvas.height;
+
+            // 1. Background color
+            const bg = this.currentTheme?.bg || [20, 20, 30];
+            ctx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
+            ctx.fillRect(0, 0, w, h);
+
+            // 2. Background image (cover-style with ambient + director opacity)
+            const imgUrl = this.currentImage?.url || '';
+            if (imgUrl && imgUrl !== this._recImageUrl) {
+                // Image changed — shift current to prev for crossfade
+                this._recPrevImage.src = this._recImageUrl;
+                this._recImage.src = imgUrl;
+                this._recImageUrl = imgUrl;
+            }
+
+            const imgAlpha = (this.ambientOpacity || 1) * (this._layerOpacity?.images || 1);
+            // Draw previous image at full opacity during crossfade
+            if (this._recPrevImage.complete && this._recPrevImage.naturalWidth > 0 && this.imageOpacity < 1) {
+                ctx.globalAlpha = imgAlpha;
+                this._drawCover(ctx, this._recPrevImage, w, h);
+            }
+            // Draw current image at crossfade opacity
+            if (this._recImage.complete && this._recImage.naturalWidth > 0) {
+                ctx.globalAlpha = imgAlpha * (this.imageOpacity != null ? this.imageOpacity : 1);
+                this._drawCover(ctx, this._recImage, w, h);
+            }
+            ctx.globalAlpha = 1;
+
+            // 3. HypnoCanvas visual effects
+            const hypnoCanvas = this.containerElement?.querySelector('.hypno-canvas');
+            if (hypnoCanvas && hypnoCanvas.width > 0) {
+                const visAlpha = (this.ambientOpacity != null ? Math.min(1, this.ambientOpacity + 0.4) : 0.7)
+                    * (this._layerOpacity?.visuals || 1);
+                ctx.globalAlpha = visAlpha;
+                ctx.drawImage(hypnoCanvas, 0, 0, w, h);
+                ctx.globalAlpha = 1;
+            }
+
+            // 4. Audio visualizer canvas (screen blend)
+            const vizCanvas = this.containerElement?.querySelector('.audio-visualizer-overlay canvas');
+            if (vizCanvas && vizCanvas.width > 0) {
+                const vizAlpha = (this.sessionConfig?.audio?.visualizerOpacity || 0.35)
+                    * (this._layerOpacity?.visualizer || 1);
+                ctx.globalAlpha = vizAlpha;
+                ctx.globalCompositeOperation = 'screen';
+                ctx.drawImage(vizCanvas, 0, 0, w, h);
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 1;
+            }
+
+            // 5. Dark overlay for text readability
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillRect(0, 0, w, h);
+
+            // 6. Text labels — read from DOM to capture exact positions and styling
+            const labelEls = this.containerElement?.querySelectorAll('.bio-label');
+            if (labelEls && labelEls.length > 0) {
+                const cRect = this.containerElement.getBoundingClientRect();
+                const layerAlpha = this._layerOpacity?.labels || 1;
+                labelEls.forEach(el => {
+                    const rect = el.getBoundingClientRect();
+                    const x = rect.left - cRect.left;
+                    const y = rect.top - cRect.top;
+                    const style = getComputedStyle(el);
+                    const opacity = (parseFloat(style.opacity) || 0) * layerAlpha;
+                    if (opacity < 0.01) return;
+
+                    ctx.globalAlpha = opacity;
+                    ctx.fillStyle = style.color || 'rgba(255,255,255,0.7)';
+                    ctx.font = style.fontSize + ' ' + (style.fontFamily || 'Georgia, serif');
+
+                    // Approximate text shadow as glow
+                    const glow = this.currentTheme?.glow;
+                    if (glow) {
+                        ctx.shadowColor = `rgba(${glow[0]},${glow[1]},${glow[2]},0.5)`;
+                        ctx.shadowBlur = 16;
+                    }
+                    ctx.fillText(el.textContent, x, y + rect.height * 0.75);
+                    ctx.shadowBlur = 0;
+                });
+                ctx.globalAlpha = 1;
+            }
+
+            requestAnimationFrame(() => this._compositeFrame());
+        },
+
+        /**
+         * Draw an image cover-style (CSS background-size: cover equivalent)
+         * @private
+         */
+        _drawCover(ctx, img, cw, ch) {
+            const imgRatio = img.naturalWidth / img.naturalHeight;
+            const canvasRatio = cw / ch;
+            let sx, sy, sw, sh;
+            if (imgRatio > canvasRatio) {
+                sh = img.naturalHeight;
+                sw = sh * canvasRatio;
+                sx = (img.naturalWidth - sw) / 2;
+                sy = 0;
+            } else {
+                sw = img.naturalWidth;
+                sh = sw / canvasRatio;
+                sx = 0;
+                sy = (img.naturalHeight - sh) / 2;
+            }
+            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
+        },
+
+        /**
+         * Stop the compositing loop and release the recording canvas
+         * @private
+         */
+        _stopCompositing() {
+            this._recCompositing = false;
+            this._recCanvas = null;
+            this._recCtx = null;
+            this._recImage = null;
+            this._recPrevImage = null;
+            this._recImageUrl = '';
+        },
+
         async _stopRecording() {
             const recorder = this.sessionRecorder;
             if (!recorder || !this.isRecording) return;
+
+            this._stopCompositing();
 
             try {
                 const blob = await recorder.stopRecording();
@@ -650,6 +809,7 @@
          * @private
          */
         async _stopRecordingAndDispose(recorder) {
+            this._stopCompositing();
             try {
                 const blob = await recorder.stopRecording();
                 this.isRecording = false;
@@ -761,6 +921,7 @@
         async _finalizeRecording() {
             if (!this.isRecording || !this.sessionRecorder) return;
 
+            this._stopCompositing();
             const recorder = this.sessionRecorder;
             this.sessionRecorder = null; // prevent _cleanup from re-processing
             this.isRecording = false;
@@ -797,6 +958,7 @@
                 clearInterval(this._initialGenCheck);
             }
             this._stopBreathing();
+            this._stopCompositing();
             if (this._opacityRafId) {
                 cancelAnimationFrame(this._opacityRafId);
                 this._opacityRafId = null;
