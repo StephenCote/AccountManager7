@@ -626,9 +626,10 @@
                 this.isRecording = false;
 
                 if (blob && blob.size > 0) {
-                    recorder.downloadLocally(blob);
                     const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
-                    console.log(`Magic8App: Recording saved locally (${sizeMB} MB)`);
+                    if (page.toast) page.toast('info', `Saving recording (${sizeMB} MB)...`);
+                    await recorder.saveToServer(blob, this.sessionConfig?.name);
+                    console.log(`Magic8App: Recording saved to server (${sizeMB} MB)`);
                     if (page.toast) page.toast('info', `Recording saved (${sizeMB} MB)`);
                 } else {
                     console.warn('Magic8App: Recording blob is empty');
@@ -654,10 +655,10 @@
                 this.isRecording = false;
 
                 if (blob && blob.size > 0) {
-                    recorder.downloadLocally(blob);
                     const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
-                    console.log(`Magic8App: Recording saved on exit (${sizeMB} MB)`);
-                    if (page.toast) page.toast('info', `Recording saved (${sizeMB} MB)`);
+                    console.log(`Magic8App: Saving recording on exit (${sizeMB} MB)`);
+                    await recorder.saveToServer(blob, this.sessionConfig?.name);
+                    console.log(`Magic8App: Recording saved to server (${sizeMB} MB)`);
                 }
             } catch (err) {
                 console.warn('Magic8App: Could not save recording on exit:', err);
@@ -769,12 +770,11 @@
                 const blob = await recorder.stopRecording();
 
                 if (blob && blob.size > 0) {
-                    recorder.downloadLocally(blob);
                     const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
-                    console.log(`Magic8App: Recording saved on exit (${sizeMB} MB)`);
+                    console.log(`Magic8App: Saving recording before exit (${sizeMB} MB)`);
+                    await recorder.saveToServer(blob, this.sessionConfig?.name);
+                    console.log(`Magic8App: Recording saved to server (${sizeMB} MB)`);
                     if (page.toast) page.toast('info', `Recording saved (${sizeMB} MB)`);
-                    // Brief delay to let the browser register the download
-                    await new Promise(r => setTimeout(r, 300));
                 } else {
                     console.warn('Magic8App: Recording blob was empty on exit');
                 }

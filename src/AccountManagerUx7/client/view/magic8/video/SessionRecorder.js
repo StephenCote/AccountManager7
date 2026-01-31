@@ -145,35 +145,40 @@ class SessionRecorder {
     }
 
     /**
-     * Save the recorded video to the server
+     * Save the recorded video to the server as a data.data object
      * @param {Blob} blob - Video blob
-     * @param {Object} sessionConfig - Session configuration for metadata
-     * @returns {Promise<Object>} Server response
+     * @param {string} [sessionName] - Session name for the recording filename
+     * @returns {Promise<Object>} Created server object
      */
-    async saveToServer(blob, sessionConfig = {}) {
-        const formData = new FormData();
-        const filename = `session-${Date.now()}.webm`;
-
-        formData.append('file', blob, filename);
-        formData.append('groupPath', '~/Magic8/Recordings');
-        formData.append('contentType', 'video/webm');
-
-        if (sessionConfig) {
-            formData.append('sessionConfig', JSON.stringify(sessionConfig));
-        }
-
+    async saveToServer(blob, sessionName) {
         try {
-            const response = await fetch(`${g_application_path}/rest/media/upload`, {
-                method: 'POST',
-                body: formData,
-                credentials: 'include'
-            });
-
-            if (!response.ok) {
-                throw new Error(`Upload failed: ${response.status}`);
+            // Ensure ~/Magic8/Recordings directory exists
+            let dir = await page.findObject("auth.group", "DATA", "~/Magic8/Recordings");
+            if (!dir || !dir.objectId) {
+                dir = await page.makePath("auth.group", "data", "~/Magic8/Recordings");
             }
 
-            return await response.json();
+            // Convert blob to base64
+            const base64Data = await this._blobToBase64(blob);
+
+            // Build filename from session name + timestamp
+            const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+            const name = sessionName
+                ? sessionName + ' ' + ts + '.webm'
+                : 'session-' + ts + '.webm';
+
+            // Create data.data object
+            let obj = am7model.newPrimitive("data.data");
+            obj.name = name;
+            obj.contentType = blob.type || 'video/webm';
+            obj.compressionType = 'none';
+            obj.groupId = dir.id;
+            obj.groupPath = dir.path;
+            obj.dataBytesStore = base64Data;
+
+            const saved = await page.createObject(obj);
+            console.log('SessionRecorder: Saved to server as', name);
+            return saved;
         } catch (err) {
             console.error('SessionRecorder: Failed to save to server:', err);
             throw err;
@@ -181,22 +186,22 @@ class SessionRecorder {
     }
 
     /**
-     * Download the recorded video locally
-     * @param {Blob} blob - Video blob
-     * @param {string} filename - Filename (optional)
+     * Convert a Blob to a base64 string
+     * @param {Blob} blob
+     * @returns {Promise<string>}
+     * @private
      */
-    downloadLocally(blob, filename = null) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = filename || `magic8-session-${Date.now()}.webm`;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }, 100);
+    _blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                // Strip the data URL prefix (e.g. "data:video/webm;base64,")
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
     }
 
     /**

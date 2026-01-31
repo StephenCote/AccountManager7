@@ -414,7 +414,17 @@ const SessionConfigEditor = {
                 console.warn('SessionConfigEditor: Saved session has no data');
                 return;
             }
-            const loaded = JSON.parse(uwm.base64Decode(obj.dataBytesStore));
+            let decoded = uwm.base64Decode(obj.dataBytesStore);
+            // JSON.stringify produces single-line output, so any literal control
+            // characters in the decoded string are encode/decode corruption.
+            // Re-escape them so JSON.parse doesn't choke.
+            decoded = decoded.replace(/[\x00-\x1f]/g, (ch) => {
+                if (ch === '\n') return '\\n';
+                if (ch === '\r') return '\\r';
+                if (ch === '\t') return '\\t';
+                return '';
+            });
+            const loaded = JSON.parse(decoded);
             // Merge with defaults to ensure all keys exist
             const defaults = this._getDefaultConfig();
             this.config = Object.assign({}, defaults, loaded);
