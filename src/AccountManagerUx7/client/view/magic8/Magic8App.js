@@ -415,7 +415,7 @@
                         this._debugLog('Error: ' + (err.message || err), 'error');
                     }
                 };
-                await this.sessionDirector.initialize(cfg.director.command, cfg.director.intervalMs || 60000);
+                await this.sessionDirector.initialize(cfg.director.command, cfg.director.intervalMs || 60000, cfg.name);
 
                 if (cfg.director.testMode) {
                     // Test mode: run multi-pass behavioral diagnostics

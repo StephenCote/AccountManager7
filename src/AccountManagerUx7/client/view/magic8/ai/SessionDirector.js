@@ -39,10 +39,12 @@
          * Initialize the LLM connection following the cardGame.js pattern
          * @param {string} command - User's session intent/theme text
          * @param {number} [intervalMs=60000] - Polling interval in ms
+         * @param {string} [sessionName] - Session name for unique conversation history
          */
-        async initialize(command, intervalMs) {
+        async initialize(command, intervalMs, sessionName) {
             this.command = command || '';
             this.intervalMs = intervalMs || 60000;
+            this.sessionName = sessionName || '';
 
             try {
                 this._setStatus('initializing');
@@ -80,7 +82,10 @@
                 }
 
                 // 6. Create chat request
-                this.chatRequest = await am7chat.getChatRequest("Magic8 Director", this.chatConfig, this.promptConfig);
+                const requestName = this.sessionName
+                    ? 'Magic8 Director - ' + this.sessionName
+                    : 'Magic8 Director';
+                this.chatRequest = await am7chat.getChatRequest(requestName, this.chatConfig, this.promptConfig);
                 if (!this.chatRequest) {
                     throw new Error("Failed to create chat request");
                 }
