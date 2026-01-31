@@ -48,6 +48,7 @@ const SessionConfigEditor = {
             },
             biometrics: {
                 enabled: true,
+                captureInterval: 5,
                 updateInterval: 500,
                 smoothingFactor: 0.1
             },
@@ -372,6 +373,7 @@ const SessionConfigEditor = {
                 let obj = am7model.newPrimitive("data.data");
                 obj.name = this.newVoiceName.trim();
                 obj.contentType = "text/plain";
+                obj.compressionType = "none";
                 obj.groupId = dir.id;
                 obj.groupPath = dir.path;
                 obj.dataBytesStore = uwm.base64Encode(this.newVoiceContent.trim());
@@ -506,6 +508,7 @@ const SessionConfigEditor = {
             let obj = am7model.newPrimitive("data.data");
             obj.name = this.config.name + ' SD Config';
             obj.contentType = "application/json";
+            obj.compressionType = "none";
             obj.groupId = dir.id;
             obj.groupPath = dir.path;
             obj.dataBytesStore = uwm.base64Encode(JSON.stringify(sdInline));
@@ -551,6 +554,7 @@ const SessionConfigEditor = {
                 let obj = am7model.newPrimitive("data.data");
                 obj.name = this.newTextName.trim();
                 obj.contentType = "text/plain";
+                obj.compressionType = "none";
                 obj.groupId = dir.id;
                 obj.groupPath = dir.path;
                 obj.dataBytesStore = uwm.base64Encode(this.newTextContent.trim());
@@ -644,6 +648,17 @@ const SessionConfigEditor = {
                             onchange: (e) => this.config.biometrics.enabled = e.target.checked
                         }),
                         m('span', 'Enable facial analysis color adaptation')
+                    ]),
+                    this.config.biometrics.enabled && m('.mt-4', [
+                        m('label.block.text-sm.text-gray-400.mb-1', 'Face Scan Interval (seconds)'),
+                        m('.flex.items-center.gap-2', [
+                            m('input.flex-1', {
+                                type: 'range', min: 2, max: 30, step: 1,
+                                value: this.config.biometrics.captureInterval,
+                                oninput: (e) => this.config.biometrics.captureInterval = parseInt(e.target.value)
+                            }),
+                            m('span.text-sm.w-10.text-right', this.config.biometrics.captureInterval + 's')
+                        ])
                     ])
                 ]),
 
@@ -1256,7 +1271,7 @@ const SessionConfigEditor = {
                             this.randomSdExtras && m('.mb-3.p-3.bg-gray-700/50.rounded.text-sm', [
                                 m('.text-gray-400.font-medium.mb-2', 'Style Details (' + this.config.imageGeneration.sdInline.style + ')'),
                                 ...Object.entries(this.randomSdExtras).map(([key, value]) =>
-                                    m('.flex.gap-2', { key: key }, [
+                                    m('.flex.gap-2', [
                                         m('span.text-gray-500.w-36', key.replace(/([A-Z])/g, ' $1').trim() + ':'),
                                         m('span.text-gray-300', String(value))
                                     ])

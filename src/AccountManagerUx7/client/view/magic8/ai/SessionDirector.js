@@ -72,9 +72,7 @@
                 }
 
                 // 4. Create or update prompt config with current command
-                const systemPrompt = this.moodRingMode
-                    ? this._buildMoodRingPrompt(command)
-                    : this._buildSystemPrompt(command);
+                const systemPrompt = this._buildSystemPrompt(command);
                 this.promptConfig = await this._ensurePromptConfig(chatDir, systemPrompt);
                 if (!this.promptConfig) {
                     throw new Error("Failed to create prompt config");
@@ -331,7 +329,8 @@
                 "  audio: { preset: \"goddessEnergy\"|\"heartOpening\"|\"loveFrequency\"|\"deepHealing\"|\"lettingGo\"|\"transformation\"|\"creativeFlow\"|\"thirdEye\"|\"crownConnection\"|\"regeneration\"|\"deepHypnosis\"|\"lucidDream\"",
                 "           OR band: \"delta\"|\"theta\"|\"alphaTheta\"|\"alpha\"|\"beta\"|\"gamma\" with optional troughBand, endBand, secondTransition, thirdTransition,",
                 "              baseFreq: carrier Hz (174|285|396|417|432|528|639|741|852|963),",
-                "           isochronicEnabled: true/false, isochronicBand: \"band_name\" }",
+                "           isochronicEnabled: true/false, isochronicBand: \"delta\"|\"theta\"|\"alphaTheta\"|\"alpha\"|\"beta\"|\"gamma\" }",
+                "  Isochronic tones pulse at the brainwave band rate to entrain focus. Use isochronicBand with a brainwave band name (e.g. \"theta\" for 5.5 Hz pulsing, \"alpha\" for 10 Hz). Combine with binaural presets for layered entrainment.",
                 "  Preset meanings: goddessEnergy=432Hz alpha→alphaTheta→theta (spiritual femininity, divine feminine), heartOpening=639Hz alpha→theta→alpha (connection, compassion),",
                 "    loveFrequency=528Hz (transformation, cellular healing), deepHealing=174Hz theta→delta→theta, lettingGo=396Hz (releasing guilt/fear),",
                 "    transformation=417Hz (breaking patterns), creativeFlow=741Hz (self-expression), thirdEye=852Hz (intuition),",
@@ -363,6 +362,7 @@
                 "- cfg controls prompt adherence (low=creative/loose, high=strict/literal)",
                 "- opacity controls layer visibility (0.15=barely visible, 1.0=full) — changes transition gradually over ~20s",
                 "- voiceLine is synthesized and injected as the next spoken line - keep it natural, 1-2 sentences",
+                "- When 'Mood Ring: ACTIVE' appears in the state, ALWAYS include suggestMood in your response based on the biometric emotion, session intent, and elapsed time. The mood ring drives a visual color effect on the user's display.",
                 "- Respond with ONLY the JSON object, no markdown fences, no explanation text"
             ];
         }
@@ -489,9 +489,7 @@
                 const state = this.stateProvider ? this.stateProvider() : {};
 
                 // Format the user message with state data
-                const userMessage = this.moodRingMode
-                    ? this._formatMoodRingState(state)
-                    : this._formatStateMessage(state);
+                const userMessage = this._formatStateMessage(state);
 
                 console.log('SessionDirector: Tick #' + (this.callCount + 1) + ', sending state to LLM');
 
@@ -606,6 +604,11 @@
             if (state.layerOpacity) {
                 const o = state.layerOpacity;
                 lines.push(`Layer Opacity: labels=${o.labels}, images=${o.images}, visualizer=${o.visualizer}, visuals=${o.visuals}`);
+            }
+
+            // Mood ring status
+            if (state.moodRingEnabled) {
+                lines.push('Mood Ring: ACTIVE — include suggestMood in your response');
             }
 
             // Elapsed time

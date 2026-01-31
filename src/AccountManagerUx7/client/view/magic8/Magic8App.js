@@ -315,9 +315,8 @@
                     cfg.imageGeneration.sdConfigId,
                     cfg.imageGeneration.sdConfigId ? null : cfg.imageGeneration.sdInline
                 );
-                // Name session subgroup with config name + timestamp
-                const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-                this.imageGenerator.sessionName = (cfg.name || 'Session') + ' ' + ts;
+                // Name session subgroup after session name for replayability
+                this.imageGenerator.sessionName = cfg.name || 'Session';
                 await this.imageGenerator.loadConfig();
 
                 this.imageGenerator.onImageGenerated = (img) => {
@@ -509,6 +508,12 @@
             const captureCallback = (imageData) => {
                 this._handleBiometricData(imageData);
             };
+
+            // Apply configured capture interval (default camera is 5s)
+            const captureIntervalSec = this.sessionConfig?.biometrics?.captureInterval;
+            if (captureIntervalSec && captureIntervalSec > 0) {
+                page.components.camera.setCaptureInterval(captureIntervalSec);
+            }
 
             // Ensure video element is in DOM before requesting camera
             const tryStart = () => {
@@ -1182,9 +1187,6 @@
                     onToggleFullscreen: () => this._toggleFullscreen(),
                     onToggleMoodRing: () => {
                         this.moodRingEnabled = !this.moodRingEnabled;
-                        if (this.sessionDirector) {
-                            this.sessionDirector.moodRingMode = this.moodRingEnabled;
-                        }
                         if (!this.moodRingEnabled) {
                             this.moodRingColor = null;
                         }
@@ -1212,9 +1214,6 @@
                         moodColor: this.moodRingColor,
                         onclick: () => {
                             this.moodRingEnabled = !this.moodRingEnabled;
-                            if (this.sessionDirector) {
-                                this.sessionDirector.moodRingMode = this.moodRingEnabled;
-                            }
                             if (!this.moodRingEnabled) {
                                 this.moodRingColor = null;
                             }
@@ -1387,6 +1386,7 @@
                 injectedVoiceLines: this.sessionVoiceLines.length > 0
                     ? this.sessionVoiceLines.slice(-3)
                     : [],
+                moodRingEnabled: this.moodRingEnabled,
                 elapsedMinutes: this._sessionStartTime
                     ? (Date.now() - this._sessionStartTime) / 60000
                     : 0
@@ -1449,6 +1449,14 @@
                         this.audioEngine.startIsochronic(cfg.audio);
                     } else {
                         this.audioEngine.stopIsochronic();
+                    }
+                }
+                // Resolve isochronicBand to isochronicRate
+                if (directive.audio.isochronicBand) {
+                    const bands = Magic8.AudioEngine.BRAINWAVE_BANDS;
+                    const band = bands[directive.audio.isochronicBand];
+                    if (band) {
+                        directive.audio.isochronicRate = band.mid;
                     }
                 }
                 if (directive.audio.isochronicRate != null) {

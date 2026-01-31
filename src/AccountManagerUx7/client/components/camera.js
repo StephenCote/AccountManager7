@@ -158,6 +158,9 @@
         capturing = true;
 
         try {
+            if (!videoEl.videoWidth || !videoEl.videoHeight) {
+                return;
+            }
             const canvas = document.createElement('canvas');
             canvas.width = videoEl.videoWidth;
             canvas.height = videoEl.videoHeight;
@@ -177,7 +180,7 @@
                 fCaptureHandler(resp);
             }
         } catch(err) {
-            console.error("Face analysis request failed:", err);
+            console.warn("Face analysis request failed:", err?.message || err);
         } finally {
             capturing = false;
         }
@@ -185,6 +188,9 @@
     let camera = {
         devices: ()=> videoDevices,
         deviceId: ()=> selectedDeviceId,
+        setCaptureInterval: function(seconds) {
+            if (seconds > 0) CAPTURE_INTERVAL_SECONDS = seconds;
+        },
         startCapture,
         stopCapture: function(){
             if (captureIntervalId) {

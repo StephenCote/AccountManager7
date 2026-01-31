@@ -16,7 +16,14 @@
     let faceProfile = null;
     let initializing = false;
     let lastTickTime = 0;
-    let TICK_INTERVAL_MS = 15000;
+    let TICK_INTERVAL_MS = 60000;
+
+    // Crossfade state: displayed values lag behind target values during transition
+    let displayedEmotion = 'neutral';
+    let displayedGender = null;
+    let emojiOpacity = 1;
+    let fadeTimeout = null;
+    let llmSuggested = false;
 
     const emotionEmojis = {
         neutral: '\u{1F610}', happy: '\u{1F60A}', sad: '\u{1F622}',
@@ -53,14 +60,36 @@
 
     const VALID_EMOTIONS = ['neutral', 'happy', 'sad', 'angry', 'fear', 'surprise', 'disgust'];
 
+    /**
+     * Crossfade: fade out (300ms) → swap displayed emoji → fade in (300ms)
+     */
+    function crossfadeTo(newEmotion, newGender) {
+        if (newEmotion === displayedEmotion && newGender === displayedGender) return;
+        if (emojiOpacity < 1) return; // already mid-fade
+        emojiOpacity = 0;
+        m.redraw();
+        if (fadeTimeout) clearTimeout(fadeTimeout);
+        fadeTimeout = setTimeout(function () {
+            displayedEmotion = newEmotion;
+            displayedGender = newGender;
+            emojiOpacity = 1;
+            m.redraw();
+        }, 300);
+    }
+
     async function initialize() {
         if (initializing || chatSession) return;
         initializing = true;
         try {
             chatConfig = await am7chat.makeChat("MoodRing", null, null, null);
+            console.log("MoodRing: chatConfig", chatConfig);
             promptConfig = await am7chat.makePrompt("MoodRingObserver", MOOD_RING_SYSTEM_PROMPT);
+            console.log("MoodRing: promptConfig", promptConfig);
             if (chatConfig && promptConfig) {
                 chatSession = await am7chat.getChatRequest("MoodRingSession", chatConfig, promptConfig);
+                console.log("MoodRing: chatSession", chatSession);
+            } else {
+                console.error("MoodRing: Failed to create chatConfig or promptConfig");
             }
         } catch (e) {
             console.error("MoodRing: Failed to initialize chat session", e);
@@ -70,24 +99,42 @@
     }
 
     function handleCapture(imageData) {
+        console.log("MoodRing: capture", imageData?.results?.length || 0, "faces", imageData?.results?.[0]);
         if (imageData?.results?.length) {
             let result = imageData.results[0];
             faceProfile = {
                 emotion: result.dominant_emotion,
                 emotions: result.emotion_scores || {},
+                gender: result.dominant_gender,
                 race: result.dominant_race
             };
             let rawEmotion = (faceProfile.emotion || 'neutral').toLowerCase();
             if (VALID_EMOTIONS.indexOf(rawEmotion) > -1) {
                 emotion = rawEmotion;
             }
+            // Map face API gender to our format
+            if (faceProfile.gender) {
+                let g = faceProfile.gender.toLowerCase();
+                if (g === 'man' || g === 'male') gender = 'Man';
+                else if (g === 'woman' || g === 'female') gender = 'Woman';
+            }
             moodColor = emotionColors[emotion] || emotionColors.neutral;
+            llmSuggested = false;
+            crossfadeTo(emotion, gender);
             m.redraw();
         }
     }
 
     async function tick() {
-        if (!enabled || !chatSession || !faceProfile) return;
+        if (!enabled) return;
+        if (!chatSession) {
+            console.log("MoodRing tick: no chatSession, skipping");
+            return;
+        }
+        if (!faceProfile) {
+            console.log("MoodRing tick: no faceProfile yet, skipping");
+            return;
+        }
         let now = Date.now();
         if (now - lastTickTime < TICK_INTERVAL_MS) return;
         lastTickTime = now;
@@ -102,6 +149,7 @@
                 currentMood: emotion,
                 timestamp: new Date().toISOString()
             });
+            console.log("MoodRing: sending LLM tick", msg);
 
             let resp = await am7chat.chat(chatSession, msg);
             if (resp?.messages?.length) {
@@ -120,6 +168,8 @@
                         if (parsed.gender === 'Man' || parsed.gender === 'Woman') {
                             gender = parsed.gender;
                         }
+                        llmSuggested = true;
+                        crossfadeTo(emotion, gender);
                     } catch (e) {
                         // Non-JSON response, ignore
                     }
@@ -164,18 +214,23 @@
             }
             page.components.camera.stopCapture();
             removeVideoElement();
+            if (fadeTimeout) { clearTimeout(fadeTimeout); fadeTimeout = null; }
             emotion = 'neutral';
             gender = null;
             moodColor = null;
             faceProfile = null;
             lastTickTime = 0;
+            displayedEmotion = 'neutral';
+            displayedGender = null;
+            emojiOpacity = 1;
+            llmSuggested = false;
         }
         m.redraw();
     }
 
     function renderMoodRingButton() {
-        let emojiChar = emotionEmojis[emotion] || emotionEmojis.neutral;
-        let genderChar = gender ? (genderEmojis[gender] || '') : '';
+        let emojiChar = emotionEmojis[displayedEmotion] || emotionEmojis.neutral;
+        let genderChar = displayedGender ? (genderEmojis[displayedGender] || '') : '';
         let bgStyle = "transition: background-color 1s ease-in-out, border-color 0.3s ease;";
         let btnClass = "context-menu-button";
         if (enabled) {
@@ -187,14 +242,17 @@
             btnClass += " active";
         }
 
+        let glow = llmSuggested ? " filter: drop-shadow(0 0 6px rgba(255,255,255,0.7));" : "";
+        let emojiStyle = "font-size: 20px; line-height: 1; opacity: " + emojiOpacity + "; transition: opacity 300ms ease-in-out, filter 0.5s ease;" + glow;
+
         return m("button", {
             class: btnClass,
             style: bgStyle,
             onclick: toggle,
             title: enabled ? "Mood Ring: " + emotion + " (click to disable)" : "Enable Mood Ring"
         }, [
-            m("span", { style: "font-size: 20px; line-height: 1;" }, emojiChar),
-            genderChar && m("span", { style: "font-size: 20px; line-height: 1;" }, genderChar)
+            m("span", { style: emojiStyle }, emojiChar),
+            genderChar && m("span", { style: emojiStyle }, genderChar)
         ]);
     }
 
