@@ -571,8 +571,11 @@
         });
     }
     async function cleanup(){
+        page.toast("info", "Cleaning up ...", 0);
         await am7client.cleanup();
-        await am7client.clearCache();
+        await am7client.clearCache();       
+        page.clearToast();
+        page.toast("success", "Cleaned up!");
     }
     function clearPageCache(){
         
