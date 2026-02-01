@@ -12,6 +12,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
@@ -52,11 +53,25 @@ public class ModelService {
 	@Path("/cleanup")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response cleanupOrphans(@Context HttpServletRequest request, @Context HttpServletResponse response){
-
+		CacheService.clearAuthorizationCache(request);
+		CacheService.clearCaches();
 		RecordFactory.cleanupOrphans(null);
+		DBUtil util = IOSystem.getActiveContext().getDbUtil();
+		util.vacuum();
 		return Response.status(200).entity(true).build();
 	}
 	
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/vacuum")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response vacuum(@Context HttpServletRequest request, @Context HttpServletResponse response){
+		CacheService.clearAuthorizationCache(request);
+		CacheService.clearCaches();
+		DBUtil util = IOSystem.getActiveContext().getDbUtil();
+		util.vacuum();
+		return Response.status(200).entity(true).build();
+	}
 	
 	@RolesAllowed({"user"})
 	@GET

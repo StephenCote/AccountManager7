@@ -121,6 +121,22 @@ $$;""";
 	public ConnectionEnumType getConnectionType() {
 		return connectionType;
 	}
+	
+	public void vacuum() {
+		try (Connection con = dataSource.getConnection();
+			   	Statement st = con.createStatement();
+		){
+			if(connectionType == ConnectionEnumType.POSTGRE) {
+				logger.info("Vacuuming ...");
+
+				st.execute("vacuum(full, analyze, verbose);");
+				
+			}
+		}
+		catch (SQLException e) {
+			logger.error(e);
+	    }
+	}
 
 	protected void applyDataSource() {
 		StatementUtil.setModelMode(true);

@@ -124,21 +124,8 @@ public class AdminAction extends CommonAction implements IAction {
 				RecordFactory.cleanupOrphans(null);
 				if(IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
 					DBUtil util = IOSystem.getActiveContext().getDbUtil();
-					
-					try (Connection con = util.getDataSource().getConnection();
-					   	Statement st = con.createStatement();
-					){
-						if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
-							logger.info("Vacuuming ...");
-	
-							st.execute("vacuum(full, analyze, verbose);");
-							
-						}
-						
-					}
-					catch (SQLException e) {
-						logger.error(e);
-				    }
+					util.vacuum();
+
 				}
 			}
 			if(cmd.hasOption("refreshViews")) {

@@ -59,13 +59,17 @@ public class CacheService {
 	
 	private static final Logger logger = LogManager.getLogger(CacheService.class);
 	
-	protected static void clearCaches() {
+	public static void clearCaches() {
 		ChatUtil.clearCache();
 		CacheUtil.clearCache();
 		ServiceUtil.clearCache();
 		StreamUtil.clearAllUnboxedStreams();
 		OlioUtil.clearCache();
 		VoiceService.clearCache();
+	}
+	
+	public static void clearAuthorizationCache(HttpServletRequest request) {
+		((CachePolicyUtil)IOSystem.getActiveContext().getPolicyUtil()).clearCache();
 	}
 	
 	@RolesAllowed({"admin","user"})
@@ -83,9 +87,9 @@ public class CacheService {
 	@GET
 	@Path("/clearAuthorization")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response clearAuthorizationCache(@Context HttpServletRequest request){
+	public Response clearAuthorizationCacheService(@Context HttpServletRequest request){
 		logger.info("Request to clear authorization cache");
-		((CachePolicyUtil)IOSystem.getActiveContext().getPolicyUtil()).clearCache();
+		
 		return Response.status(200).entity(true).build();
 	}
 	
