@@ -9,6 +9,13 @@ const ControlPanel = {
         this.autoHideDelay = vnode.attrs.autoHideDelay || 5000;
         this.mouseInside = false;
 
+        // Mood ring crossfade state
+        this._moodEmotion = 'neutral';
+        this._moodGender = null;
+        this._moodOpacity = 1;
+        this._moodLlmGlow = false;
+        this._moodFadeTimeout = null;
+
         // Start auto-hide timer
         this._scheduleHide();
     },
@@ -36,8 +43,36 @@ const ControlPanel = {
         if (this.hideTimeout) {
             clearTimeout(this.hideTimeout);
         }
+        if (this._moodFadeTimeout) {
+            clearTimeout(this._moodFadeTimeout);
+        }
         document.removeEventListener('mousemove', this._mouseMoveHandler);
         document.removeEventListener('touchstart', this._touchHandler);
+    },
+
+    /**
+     * Crossfade mood emoji: fade out → swap displayed values → fade in
+     * @private
+     */
+    _crossfadeMood(targetEmotion, targetGender, isLlm) {
+        if (targetEmotion === this._moodEmotion && targetGender === this._moodGender) {
+            // Values unchanged, just update glow if needed
+            if (isLlm !== this._moodLlmGlow) {
+                this._moodLlmGlow = isLlm;
+            }
+            return;
+        }
+        if (this._moodOpacity < 1) return; // already mid-fade
+
+        this._moodOpacity = 0;
+        if (this._moodFadeTimeout) clearTimeout(this._moodFadeTimeout);
+        this._moodFadeTimeout = setTimeout(() => {
+            this._moodEmotion = targetEmotion;
+            this._moodGender = targetGender;
+            this._moodLlmGlow = isLlm;
+            this._moodOpacity = 1;
+            m.redraw();
+        }, 300);
     },
 
     /**
@@ -152,25 +187,61 @@ const ControlPanel = {
                 m('span.hidden.sm:inline', isFullscreen ? 'Exit' : 'Fullscreen')
             ]),
 
-            // Mood ring toggle button
+            // Mood ring toggle button with crossfade animation
             (config?.biometrics?.enabled || config?.director?.enabled) && (() => {
                 const BiometricThemer = window.Magic8?.BiometricThemer;
-                const displayEmotion = state?.suggestedEmotion || state?.emotion || 'neutral';
-                const displayGender = state?.suggestedGender || state?.gender || null;
-                const emotionEmoji = BiometricThemer?.emotionEmojis?.[displayEmotion] || '\u{1F610}';
-                const genderEmoji = displayGender ? (BiometricThemer?.genderEmojis?.[displayGender] || '') : '';
+
+                // Target values: prefer LLM-suggested over raw biometric
+                const targetEmotion = state?.suggestedEmotion || state?.emotion || 'neutral';
+                const targetGender = state?.suggestedGender || state?.gender || null;
+                const isLlm = !!(state?.suggestedEmotion || state?.suggestedGender);
+
+                // Trigger crossfade if target changed
+                this._crossfadeMood(targetEmotion, targetGender, isLlm);
+
+                // Render uses displayed (lagged) values for emojis
+                const emotionEmoji = BiometricThemer?.emotionEmojis?.[this._moodEmotion] || '\u{1F610}';
+                const genderEmoji = this._moodGender ? (BiometricThemer?.genderEmojis?.[this._moodGender] || '') : '';
+
+                // Mood-colored background when enabled with color data
+                let bgStyle = {};
+                if (state?.moodRingEnabled && state?.moodColor) {
+                    const [r, g, b] = state.moodColor;
+                    bgStyle = {
+                        backgroundColor: `rgba(${r}, ${g}, ${b}, 0.6)`,
+                        borderColor: `rgba(${r}, ${g}, ${b}, 0.8)`,
+                        borderWidth: '2px',
+                        borderStyle: 'solid',
+                        transition: 'background-color 1s ease-in-out, border-color 1s ease-in-out'
+                    };
+                }
+
+                const glowFilter = this._moodLlmGlow
+                    ? 'drop-shadow(0 0 6px rgba(255,255,255,0.7))'
+                    : 'none';
+
+                const emojiStyle = {
+                    fontSize: '20px',
+                    lineHeight: '1',
+                    opacity: this._moodOpacity,
+                    filter: glowFilter,
+                    transition: 'opacity 300ms ease-in-out, filter 0.5s ease'
+                };
+
                 return m('button.control-btn', {
                     class: `
                         flex items-center gap-2 px-4 py-2 rounded-full
-                        ${state?.moodRingEnabled ? 'bg-purple-700/80' : 'bg-gray-800/80'}
+                        ${state?.moodRingEnabled && !state?.moodColor ? 'bg-purple-700/80' : ''}
+                        ${!state?.moodRingEnabled ? 'bg-gray-800/80' : ''}
                         hover:bg-gray-700 transition-colors
                         text-white font-medium
                     `,
+                    style: bgStyle,
                     onclick: onToggleMoodRing,
-                    title: state?.moodRingEnabled ? 'Disable Mood Ring' : 'Enable Mood Ring'
+                    title: state?.moodRingEnabled ? 'Mood Ring: ' + this._moodEmotion + ' (click to disable)' : 'Enable Mood Ring'
                 }, [
-                    m('span', { style: { fontSize: '20px', lineHeight: '1' } }, emotionEmoji),
-                    genderEmoji && m('span', { style: { fontSize: '20px', lineHeight: '1' } }, genderEmoji),
+                    m('span', { style: emojiStyle }, emotionEmoji),
+                    genderEmoji && m('span', { style: emojiStyle }, genderEmoji),
                     m('span.hidden.sm:inline', state?.moodRingEnabled ? 'Mood On' : 'Mood Ring')
                 ]);
             })(),

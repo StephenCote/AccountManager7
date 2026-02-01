@@ -28,6 +28,7 @@
             this.lastDirective = null;
             this.lastError = null;
             this.callCount = 0;
+            this.consecutiveErrors = 0;
 
             // Mood ring mode
             this.moodRingMode = false;
@@ -338,7 +339,7 @@
                 "  Brainwave bands: delta=0.5-4Hz (deep sleep), theta=4-7.5Hz (meditation/hypnosis), alphaTheta=7-8Hz (hypnotic border), alpha=7.5-14Hz (relaxation), beta=14-40Hz (alertness), gamma=40+Hz (insight)",
                 "  Solfeggio carriers: 174Hz (security), 285Hz (healing), 396Hz (liberation), 417Hz (change), 432Hz (spiritual tuning), 528Hz (love), 639Hz (connection), 741Hz (expression), 852Hz (intuition), 963Hz (divine)",
                 "  visuals: { effect: \"particles\" or \"spiral\" or \"mandala\" or \"tunnel\" or \"hypnoDisc\", transitionDuration: 2000 }",
-                "  labels: { add: [\"short poetic phrase\"], remove: [\"exact label text\"] }",
+                "  labels: { add: [\"1-3 word phrase\"], remove: [\"exact label text\"] }",
                 "  generateImage: { description: \"scene description\", style: \"art style keyword\", imageAction: \"what the subject is doing\", denoisingStrength: 0.3-0.9, cfg: 3-15 }",
                 "  opacity: { labels: 0.15-1.0, images: 0.15-1.0, visualizer: 0.15-1.0, visuals: 0.15-1.0 }",
                 "  voiceLine: \"short sentence to be spoken next via text-to-speech\"",
@@ -346,16 +347,16 @@
                 "  commentary: \"your reasoning (not displayed to user)\"",
                 "",
                 "Example response for a calm neutral state:",
-                "{\"audio\":{\"preset\":\"goddessEnergy\"},\"visuals\":{\"effect\":\"spiral\"},\"labels\":{\"add\":[\"waves of calm\"]},\"commentary\":\"easing into relaxation with 432Hz divine feminine\"}",
+                "{\"audio\":{\"preset\":\"goddessEnergy\"},\"visuals\":{\"effect\":\"spiral\"},\"labels\":{\"add\":[\"soft calm\"]},\"commentary\":\"easing into relaxation with 432Hz divine feminine\"}",
                 "",
                 "Example response for a happy energetic state:",
-                "{\"audio\":{\"band\":\"alpha\",\"troughBand\":\"alphaTheta\",\"endBand\":\"alpha\",\"baseFreq\":528,\"isochronicEnabled\":true},\"visuals\":{\"effect\":\"particles\"},\"labels\":{\"add\":[\"light flows freely\"]},\"commentary\":\"matching upbeat energy with love frequency\"}",
+                "{\"audio\":{\"band\":\"alpha\",\"troughBand\":\"alphaTheta\",\"endBand\":\"alpha\",\"baseFreq\":528,\"isochronicEnabled\":true},\"visuals\":{\"effect\":\"particles\"},\"labels\":{\"add\":[\"radiant light\"]},\"commentary\":\"matching upbeat energy with love frequency\"}",
                 "",
                 "Guidelines:",
                 "- Prefer named presets for common therapeutic goals; use band/baseFreq for custom combinations",
                 "- Evolve gradually based on biometric emotion, elapsed time, and session intent",
                 "- When an 'Emotion Shift' is reported, adapt your directives to acknowledge the transition (e.g. sad→happy: brighten visuals, raise frequencies; happy→fear: add grounding labels, lower sweep)",
-                "- Labels should be poetic, under 8 words, aligned with session intent",
+                "- Labels must be 1-3 words only (e.g. \"deep calm\", \"warm glow\", \"breathe\"). Keep them poetic and aligned with session intent.",
                 "- Use theta/delta bands for deep relaxation, alpha for gentle awareness, beta/gamma for alertness",
                 "- For generateImage: adapt description/style/imageAction to the detected face emotion",
                 "- denoisingStrength controls transformation intensity (0.3=subtle, 0.7=dramatic, 0.9=extreme)",
@@ -508,6 +509,7 @@
                 }
 
                 this.callCount++;
+                this.consecutiveErrors = 0;
 
                 // Extract assistant content from response
                 const content = this._extractContent(response);
@@ -527,8 +529,12 @@
                     }
                 }
             } catch (err) {
+                this.consecutiveErrors++;
                 this.lastError = err.message || String(err);
-                console.error('SessionDirector: Tick error:', err.message || err);
+                // Only log every error the first 3 times, then every 5th to reduce spam
+                if (this.consecutiveErrors <= 3 || this.consecutiveErrors % 5 === 0) {
+                    console.error('SessionDirector: Tick error (' + this.consecutiveErrors + ' consecutive):', err.message || err);
+                }
                 if (this.onError) this.onError(err);
             }
         }

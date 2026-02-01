@@ -14,7 +14,7 @@ Magic8 is a full-screen immersive experience platform combining biometric-respon
 - **AI image generation** via Stable Diffusion img2img from camera captures
 - **Scripted text and voice sequences** loaded from server objects, with LLM-only mode
 - **Multi-effect visual canvas** - particles, spiral, mandala, tunnel, hypnoDisc with theme-responsive colors
-- **Mood ring mode** - emotion-colored button with simplified LLM mood tracking
+- **Mood ring mode** - emotion-colored button in control bar with crossfade animation, LLM glow, and both emotion+gender emojis
 - **Test mode emojis** - large emoji display for detected/suggested emotion and gender
 - **Composite video recording** with server-side storage
 - **Chat integration** - launchable from chat with context handoff
@@ -103,7 +103,9 @@ All modules use the IIFE pattern:
 
 3. **Paused** - Subsystems paused via `_togglePause()`. Text, voice, images, isochronic, breathing, and director all pause/resume.
 
-4. **Exit** - `_handleExit()` finalizes recording (saves to server), runs `_cleanup()` (disposes all subsystems), then navigates back.
+4. **Audio Off** - `_toggleAudio()` stops binaural beats, stops isochronic tones, pauses voice sequence, and sets master gain to 0 (belt-and-suspenders muting). Re-enabling restarts all audio sources and resumes voice playback. Voice auto-start from LLM injection is also gated by `audioEnabled`.
+
+5. **Exit** - `_handleExit()` finalizes recording (saves to server), runs `_cleanup()` (disposes all subsystems), then navigates back.
 
 ### LLM-Only Mode
 
@@ -129,10 +131,9 @@ Layers are composited in DOM order (lowest z-index first):
 | 12 | Hypnotic text | `HypnoticTextDisplay` | CSS transition fade |
 | 15 | Floating labels | `BiometricOverlay` | `layerOpacity.labels` |
 | 20 | Recording indicator | `RecordingIndicator` | Fixed |
-| 30 | Control panel | `ControlPanel` | Auto-hide after 5s |
+| 30 | Control panel | `ControlPanel` | Auto-hide after 5s. Includes mood ring toggle with crossfade emojis + mood-colored bg |
 | 40 | Debug console | Conditional | Only when `director.testMode` |
 | 45 | Mood emojis | `MoodEmojiDisplay` | Test mode only, crossfade on change |
-| 50 | Mood ring button | `MoodRingButton` | When biometrics or director enabled |
 
 ### Director Opacity Control
 
@@ -154,7 +155,7 @@ Singleton `AudioContext` management with:
 - **Named presets**: `startBinauralFromPreset(name)` uses combinations of solfeggio carrier frequencies and brainwave band transitions
 - **Band-based configuration**: `startBinauralFromBands({startBand, troughBand, endBand, secondTransition, thirdTransition, baseFreq})`
 - **Multi-point sweep**: `startBinauralMultiPoint({baseFreq, waypoints, sweepDurationMin})` schedules N-segment linear ramps across waypoints
-- **Isochronic tones**: Amplitude-modulated mono tone at configurable pulse rate
+- **Isochronic tones**: Amplitude-modulated mono tone at configurable pulse rate. LLM can set `isochronicBand` by brainwave band name (e.g. "theta" resolves to 5.5 Hz pulsing)
 - **Voice synthesis**: Cached audio sources via `/rest/voice/{profileId}` API. Content hashed for deduplication
 - **Master gain**: All audio routed through `masterGain` → `MediaStreamAudioDestinationNode` for recording
 - **Analyser**: `AnalyserNode` (fftSize 2048) for `AudioVisualizerOverlay`
@@ -229,7 +230,7 @@ LLM-powered session orchestration:
        baseFreq: 432,  // Solfeggio carrier
        // Legacy raw Hz (backwards compatible):
        sweepStart, sweepTrough, sweepEnd,
-       isochronicEnabled, isochronicRate, isochronicBand
+       isochronicEnabled, isochronicRate, isochronicBand  // Band name resolves to mid Hz
      },
      visuals: { effect: "particles"|"spiral"|"mandala"|"tunnel"|"hypnoDisc", transitionDuration },
      labels: { add: [...], remove: [...] },
@@ -241,13 +242,17 @@ LLM-powered session orchestration:
    }
    ```
 
-6. **Mood ring mode**: When `moodRingMode` is true, uses a trimmed prompt that only requests `suggestMood` + `commentary`, and sends only biometric data + emotion transitions + elapsed time.
+6. **Mood ring integration**: When `moodRingEnabled` is reported in session state, the director adds "Mood Ring: ACTIVE" to the state message. The system prompt instructs the LLM to always include `suggestMood` when mood ring is active. The full director prompt is always used (no separate mood ring prompt).
 
-7. **Diagnostics**: Multi-pass test mode sends 4 emotional states (neutral, happy+early, anxious+mid, calm+late) and validates LLM responses.
+7. **Error resilience**: Consecutive LLM failures are counted; log output reduces after 3 failures (every 5th logged) to avoid console spam. The tick loop continues running through transient failures.
+
+8. **Diagnostics**: Multi-pass test mode sends 4 emotional states (neutral, happy+early, anxious+mid, calm+late) and validates LLM responses.
 
 ### Label and Voice Interleaving
 
-LLM-generated labels are injected into `TextSequenceManager` at the current playback index via `injectText()`, so they appear one-at-a-time interleaved with pre-loaded text data rather than all displaying simultaneously. Labels are also tracked in `sessionLabels[]` for LLM state reporting.
+LLM-generated labels are injected into `TextSequenceManager` at the current playback index via `injectText()`, so they appear one-at-a-time interleaved with pre-loaded text data rather than all displaying simultaneously. Labels are also tracked in `sessionLabels[]` for LLM state reporting. The LLM is instructed to keep labels to **1-3 words** (e.g. "deep calm", "warm glow", "breathe").
+
+The `BiometricOverlay` displays at most **2 floating labels** at a time — the one fading out and the one fading in — preventing visual clutter from accumulated labels.
 
 Voice lines from the LLM are injected via `VoiceSequenceManager.injectLine()` at the current index. Both text and voice sequences persist injected content across loop cycles.
 
@@ -260,15 +265,16 @@ Test-mode emoji display:
 - Crossfade animation (300ms fade-out → swap → 300ms fade-in) when values change
 - Suggested values show with drop-shadow glow effect
 
-### MoodRingButton (`components/MoodRingButton.js`)
+### Mood Ring in ControlPanel
 
-Mood ring toggle button:
+The mood ring toggle is integrated into the bottom control bar (not rendered as a separate top-right button). Features:
 
-- Fixed top-right, z-50, pill-shaped with two 32px emojis
-- When enabled: background color from suggested emotion theme accent (rgba 0.6 alpha, 1s CSS transition)
-- When disabled: dark semi-transparent background
-- Toggle sets `sessionDirector.moodRingMode` for simplified LLM prompting
-- Shown when biometrics or director is enabled
+- Shows both emotion and gender emojis with crossfade animation (300ms fade-out → swap → fade-in)
+- LLM-suggested emotions display with white drop-shadow glow effect
+- Background color from mood (rgba with 0.6 alpha, 1s CSS transition on background-color and border-color)
+- When disabled: standard gray control button appearance
+- Toggling mood ring sets `moodRingEnabled` in session state (reported to SessionDirector via state provider)
+- The SessionDirector uses the **full Magic8 prompt** (not a stripped-down mood ring prompt) and adds "Mood Ring: ACTIVE" to state messages when enabled, instructing the LLM to include `suggestMood` directives
 
 ### HypnoCanvas — HypnoDisc Effect
 
@@ -334,6 +340,7 @@ Records sessions as WebM video:
 Image gallery with AI splicing:
 
 - Loads base images from server media groups via search query
+- Also loads from session-specific `~/Magic8/Generated/{sessionName}` subgroup for session replay (previously generated images appear on re-launch)
 - Random shuffle with crossfade cycling (configurable interval)
 - Generated images splice into rotation at next-in-queue position
 - `showImmediate()` for instant display of newly generated images
@@ -366,6 +373,7 @@ Text-to-speech playback:
   },
   biometrics: {
     enabled: true,
+    captureInterval: 5,       // Camera face analysis interval (seconds, 2-30)
     updateInterval: 500,
     smoothingFactor: 0.1,
     themeEnabled: true
@@ -450,8 +458,9 @@ Text-to-speech playback:
 ├── TextSequences/    Text sequence notes and data objects
 ├── VoiceSequences/   Voice sequence notes and data objects
 ├── Generated/        AI-generated images (session-named subgroups)
-│   └── {SessionName} {timestamp}/
+│   └── {SessionName}/    Stable name (no timestamp) for session replay
 ├── Captures/         Camera capture reference images
+│   └── {SessionName}/
 └── Recordings/       Session video recordings (WebM)
 ```
 
@@ -488,9 +497,11 @@ Magic8.launchWithConfig(sessionConfigId);  // Load saved config
 - **Mithril.js components** with `oninit`/`oncreate`/`onupdate`/`onremove`/`view` lifecycle
 - **Callback-based events** (`onThemeChange`, `onDirective`, `onImageChange`, etc.)
 - **Double-call guards** on cleanup (`_cleaned` flag)
-- **Base64 dataBytesStore** for config persistence via `am7model.newPrimitive("data.data")` + `page.createObject()`
+- **Base64 dataBytesStore** for config persistence via `am7model.newPrimitive("data.data")` + `page.createObject()`. Must set `compressionType: 'none'` when writing `dataBytesStore` to prevent server-side GZIP decompression errors
 - **Graceful degradation** (iOS fullscreen fallback, MIME type detection, optional subsystems)
 - **rAF-based animations** for opacity transitions, breathing, biometric theme lerp
 - **Static class definitions** for frequency data (`BRAINWAVE_BANDS`, `SOLFEGGIO_FREQS`, `FREQUENCY_PRESETS`)
 - **Preset-first audio configuration** with fallback to named bands then raw Hz
 - **Sequential label injection** into text sequence rather than simultaneous overlay display
+- **Session replay**: Session names are stable (no timestamps), so generated images persist in `~/Magic8/Generated/{sessionName}` and appear on re-launch. Gallery loads both parent and session-specific subgroups.
+- **Audio mute safety**: Audio toggle stops all sources (binaural, isochronic, voice) AND zeros master gain for belt-and-suspenders muting

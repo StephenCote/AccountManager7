@@ -266,7 +266,15 @@
             const imageGroups = cfg.images?.baseGroups ? [...cfg.images.baseGroups] : [];
             if (cfg.imageGeneration?.enabled) {
                 try {
-                    const genDir = await page.makePath("auth.group", "data", "~/Magic8/Generated");
+                    // Add session-specific generated subgroup (where images are actually saved)
+                    const sessionName = cfg.name || 'Session';
+                    const sessionGenDir = await page.findObject("auth.group", "DATA", "~/Magic8/Generated/" + sessionName);
+                    if (sessionGenDir && sessionGenDir.objectId) {
+                        imageGroups.push(sessionGenDir.objectId);
+                        console.log('Magic8App: Added session generated group to gallery:', sessionGenDir.objectId);
+                    }
+                    // Also add parent ~/Magic8/Generated for any ungrouped images
+                    const genDir = await page.findObject("auth.group", "DATA", "~/Magic8/Generated");
                     if (genDir && genDir.objectId && !imageGroups.includes(genDir.objectId)) {
                         imageGroups.push(genDir.objectId);
                         console.log('Magic8App: Added ~/Magic8/Generated group to image gallery:', genDir.objectId);
@@ -907,6 +915,9 @@
             const cfg = this.sessionConfig;
 
             if (this.audioEnabled) {
+                // Restore master volume
+                this.audioEngine?.setVolume(1.0);
+                // Restart binaural
                 if (cfg?.audio?.binauralEnabled) {
                     if (cfg.audio.preset && Magic8.AudioEngine.FREQUENCY_PRESETS[cfg.audio.preset]) {
                         this.audioEngine?.startBinauralFromPreset(cfg.audio.preset);
@@ -922,12 +933,20 @@
                         this.audioEngine?.startBinaural(cfg.audio);
                     }
                 }
+                // Restart isochronic
                 if (cfg?.audio?.isochronicEnabled) {
                     this.audioEngine?.startIsochronic(cfg.audio);
                 }
+                // Resume voice playback
+                this.voiceSequence?.resume();
             } else {
+                // Stop all audio sources
                 this.audioEngine?.stopBinaural();
                 this.audioEngine?.stopIsochronic();
+                // Pause voice so it doesn't advance while muted
+                this.voiceSequence?.pause();
+                // Mute master gain as safety net
+                this.audioEngine?.setVolume(0);
             }
 
             m.redraw();
@@ -1179,7 +1198,12 @@
                         isRecording: this.isRecording,
                         audioEnabled: this.audioEnabled,
                         isFullscreen: this.isFullscreen,
-                        moodRingEnabled: this.moodRingEnabled
+                        moodRingEnabled: this.moodRingEnabled,
+                        emotion: this.biometricData?.dominant_emotion || 'neutral',
+                        gender: this.biometricData?.dominant_gender || null,
+                        suggestedEmotion: this._suggestedEmotion,
+                        suggestedGender: this._suggestedGender,
+                        moodColor: this.moodRingColor
                     },
                     autoHideDelay: this.sessionConfig?.display?.controlsAutoHide || 5000,
                     onToggleRecording: () => this._toggleRecording(),
@@ -1202,23 +1226,6 @@
                 page.components.camera && (this.sessionConfig?.biometrics?.enabled || this.sessionConfig?.director?.enabled || this.sessionConfig?.imageGeneration?.enabled)
                     ? page.components.camera.videoView()
                     : null,
-
-                // Mood ring button (top-right, shown when biometrics or director is enabled)
-                (this.sessionConfig?.biometrics?.enabled || this.sessionConfig?.director?.enabled) &&
-                    m(Magic8.MoodRingButton, {
-                        enabled: this.moodRingEnabled,
-                        emotion: this.biometricData?.dominant_emotion || 'neutral',
-                        gender: this.biometricData?.dominant_gender || null,
-                        suggestedEmotion: this._suggestedEmotion,
-                        suggestedGender: this._suggestedGender,
-                        moodColor: this.moodRingColor,
-                        onclick: () => {
-                            this.moodRingEnabled = !this.moodRingEnabled;
-                            if (!this.moodRingEnabled) {
-                                this.moodRingColor = null;
-                            }
-                        }
-                    }),
 
                 // Test mode emoji display (top-left)
                 this.sessionConfig?.director?.testMode && this.biometricData &&
@@ -1561,8 +1568,8 @@
                         if (this.sessionConfig?.director?.testMode) {
                             this._debugLog('Voice injected OK, total=' + this.voiceSequence.sequences.length, 'pass');
                         }
-                        // Auto-start voice sequence if it was empty (LLM-only mode)
-                        if (!this.voiceSequence.isPlaying && this.voiceSequence.sequences.length > 0) {
+                        // Auto-start voice sequence if it was empty (LLM-only mode) and audio is on
+                        if (!this.voiceSequence.isPlaying && this.voiceSequence.sequences.length > 0 && this.audioEnabled) {
                             this.voiceSequence.start();
                         }
                     } else {

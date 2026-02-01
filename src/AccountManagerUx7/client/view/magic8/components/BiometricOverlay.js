@@ -68,8 +68,9 @@ const BiometricOverlay = {
                 born: now
             });
 
-            if (this.labels.length > 20) {
-                this.labels = this.labels.slice(-20);
+            // Keep at most 2 labels: the one fading out and the one fading in
+            if (this.labels.length > 2) {
+                this.labels = this.labels.slice(-2);
             }
         }
     },

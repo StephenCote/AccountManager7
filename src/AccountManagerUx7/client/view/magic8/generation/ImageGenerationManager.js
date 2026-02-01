@@ -234,7 +234,9 @@ class ImageGenerationManager {
                     body: sdEntity
                 });
             } catch (reqErr) {
-                throw new Error(`Reimage request failed (${reimageUrl}): ${reqErr?.message || reqErr || 'server returned error'}`);
+                const detail = reqErr?.message || (reqErr != null ? JSON.stringify(reqErr) : 'server returned null/empty error');
+                console.warn('ImageGenerationManager: reimage response error:', reqErr);
+                throw new Error(`Reimage request failed (${reimageUrl}): ${detail}`);
             }
 
             if (response && response.objectId) {
@@ -372,8 +374,11 @@ class ImageGenerationManager {
                 });
             } catch (e) {
                 console.warn('ImageGenerationManager: Could not fetch randomImageConfig:', e);
-                this._baseEntity = {};
+                this._baseEntity = null;
             }
+        }
+        if (!this._baseEntity) {
+            throw new Error('No SD config template available (randomImageConfig endpoint failed)');
         }
 
         let entity = Object.assign({}, this._baseEntity);
