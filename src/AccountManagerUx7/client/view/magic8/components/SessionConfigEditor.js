@@ -102,12 +102,26 @@ const SessionConfigEditor = {
                     style: 'art',
                     description: 'ethereal dreamlike portrait, soft lighting, mystical atmosphere',
                     imageAction: 'posing in a surreal setting',
+                    negativePrompt: 'Washed out colors, illogical, disgusting, bad anatomy, errors, glitches, mistakes, low resolution, pixilated, blurry, out of focus, low res, mutated, distorted, melting, cropped, disproportionate, wonky, low quality, compressed, muddy colors, overexposed, mosaic, rotten, fake, low poly, lacking detail, watermark, malformed, failed, failure, extra fingers, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face',
                     denoisingStrength: 0.65,
                     steps: 30,
                     cfg: 7,
                     sampler: 'dpmpp_2m',
+                    scheduler: 'Karras',
+                    seed: -1,
                     width: 512,
-                    height: 512
+                    height: 512,
+                    hires: false,
+                    bodyStyle: 'full body',
+                    imageSetting: 'random',
+                    refinerSteps: 20,
+                    refinerScheduler: 'Karras',
+                    refinerSampler: 'dpmpp_2m',
+                    refinerCfg: 7,
+                    refinerMethod: 'PostApply',
+                    refinerUpscale: 2,
+                    refinerUpscaleMethod: 'pixel-lanczos',
+                    refinerControlPercentage: 0.2
                 }
             },
             text: {
@@ -1293,6 +1307,14 @@ const SessionConfigEditor = {
                                 oninput: (e) => this.config.imageGeneration.sdInline.imageAction = e.target.value
                             }),
 
+                            m('label.block.text-sm.text-gray-400.mb-1.mt-3', 'Negative Prompt'),
+                            m('textarea.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                rows: 2,
+                                placeholder: 'Leave empty for default quality exclusions',
+                                value: this.config.imageGeneration.sdInline.negativePrompt,
+                                oninput: (e) => this.config.imageGeneration.sdInline.negativePrompt = e.target.value
+                            }),
+
                             m('.grid.gap-4.mt-3', { class: 'grid-cols-1 sm:grid-cols-2' }, [
                                 m('div', [
                                     m('label.block.text-sm.text-gray-400.mb-1', 'Denoising Strength'),
@@ -1342,6 +1364,19 @@ const SessionConfigEditor = {
                                         m('option', { value: 'heun' }, 'Heun'),
                                         m('option', { value: 'ddim' }, 'DDIM')
                                     ])
+                                ]),
+                                m('div', [
+                                    m('label.block.text-sm.text-gray-400.mb-1', 'Scheduler'),
+                                    m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                        value: this.config.imageGeneration.sdInline.scheduler,
+                                        onchange: (e) => this.config.imageGeneration.sdInline.scheduler = e.target.value
+                                    }, [
+                                        m('option', { value: 'Karras' }, 'Karras'),
+                                        m('option', { value: 'Normal' }, 'Normal'),
+                                        m('option', { value: 'Exponential' }, 'Exponential'),
+                                        m('option', { value: 'Simple' }, 'Simple'),
+                                        m('option', { value: 'DDIMUniform' }, 'DDIM Uniform')
+                                    ])
                                 ])
                             ]),
 
@@ -1363,6 +1398,149 @@ const SessionConfigEditor = {
                                     }, [256, 384, 512, 640, 768, 1024].map(v =>
                                         m('option', { value: v }, v + 'px')
                                     ))
+                                ])
+                            ]),
+
+                            // Seed, Body Style, Image Setting
+                            m('.grid.gap-4.mt-3', { class: 'grid-cols-1 sm:grid-cols-3' }, [
+                                m('div', [
+                                    m('label.block.text-sm.text-gray-400.mb-1', 'Seed'),
+                                    m('input.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                        type: 'number',
+                                        placeholder: '-1 for random',
+                                        value: this.config.imageGeneration.sdInline.seed,
+                                        oninput: (e) => this.config.imageGeneration.sdInline.seed = parseInt(e.target.value) || -1
+                                    })
+                                ]),
+                                m('div', [
+                                    m('label.block.text-sm.text-gray-400.mb-1', 'Body Style'),
+                                    m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                        value: this.config.imageGeneration.sdInline.bodyStyle,
+                                        onchange: (e) => this.config.imageGeneration.sdInline.bodyStyle = e.target.value
+                                    }, [
+                                        m('option', { value: 'full body' }, 'Full Body'),
+                                        m('option', { value: 'upper body' }, 'Upper Body'),
+                                        m('option', { value: 'portrait' }, 'Portrait'),
+                                        m('option', { value: 'close-up' }, 'Close-up')
+                                    ])
+                                ]),
+                                m('div', [
+                                    m('label.block.text-sm.text-gray-400.mb-1', 'Image Setting'),
+                                    m('input.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                        type: 'text',
+                                        placeholder: 'random, or describe setting',
+                                        value: this.config.imageGeneration.sdInline.imageSetting,
+                                        oninput: (e) => this.config.imageGeneration.sdInline.imageSetting = e.target.value
+                                    })
+                                ])
+                            ]),
+
+                            // Hires / Refiner toggle
+                            m('label.flex.items-center.gap-3.cursor-pointer.mt-4.mb-2', [
+                                m('input[type=checkbox]', {
+                                    checked: this.config.imageGeneration.sdInline.hires,
+                                    onchange: (e) => this.config.imageGeneration.sdInline.hires = e.target.checked
+                                }),
+                                m('span.text-sm.text-gray-300', 'Enable Refiner (Hi-Res)')
+                            ]),
+
+                            // Refiner panel (shown only when hires is true)
+                            this.config.imageGeneration.sdInline.hires && m('.p-3.bg-gray-700/50.rounded.mb-3', [
+                                m('.text-gray-400.font-medium.mb-3.text-sm', 'Refiner Settings'),
+                                m('.grid.gap-4', { class: 'grid-cols-1 sm:grid-cols-2' }, [
+                                    m('div', [
+                                        m('label.block.text-sm.text-gray-400.mb-1', 'Refiner Steps'),
+                                        m('.flex.items-center.gap-2', [
+                                            m('input.flex-1', {
+                                                type: 'range', min: 1, max: 100, step: 1,
+                                                value: this.config.imageGeneration.sdInline.refinerSteps,
+                                                oninput: (e) => this.config.imageGeneration.sdInline.refinerSteps = parseInt(e.target.value)
+                                            }),
+                                            m('span.text-sm.w-10.text-right', this.config.imageGeneration.sdInline.refinerSteps)
+                                        ])
+                                    ]),
+                                    m('div', [
+                                        m('label.block.text-sm.text-gray-400.mb-1', 'Refiner CFG'),
+                                        m('.flex.items-center.gap-2', [
+                                            m('input.flex-1', {
+                                                type: 'range', min: 1, max: 20, step: 0.5,
+                                                value: this.config.imageGeneration.sdInline.refinerCfg,
+                                                oninput: (e) => this.config.imageGeneration.sdInline.refinerCfg = parseFloat(e.target.value)
+                                            }),
+                                            m('span.text-sm.w-10.text-right', this.config.imageGeneration.sdInline.refinerCfg)
+                                        ])
+                                    ]),
+                                    m('div', [
+                                        m('label.block.text-sm.text-gray-400.mb-1', 'Refiner Scheduler'),
+                                        m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                            value: this.config.imageGeneration.sdInline.refinerScheduler,
+                                            onchange: (e) => this.config.imageGeneration.sdInline.refinerScheduler = e.target.value
+                                        }, [
+                                            m('option', { value: 'Karras' }, 'Karras'),
+                                            m('option', { value: 'Normal' }, 'Normal'),
+                                            m('option', { value: 'Exponential' }, 'Exponential'),
+                                            m('option', { value: 'Simple' }, 'Simple'),
+                                            m('option', { value: 'DDIMUniform' }, 'DDIM Uniform')
+                                        ])
+                                    ]),
+                                    m('div', [
+                                        m('label.block.text-sm.text-gray-400.mb-1', 'Refiner Sampler'),
+                                        m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                            value: this.config.imageGeneration.sdInline.refinerSampler,
+                                            onchange: (e) => this.config.imageGeneration.sdInline.refinerSampler = e.target.value
+                                        }, [
+                                            m('option', { value: 'dpmpp_2m' }, 'DPM++ 2M'),
+                                            m('option', { value: 'euler_a' }, 'Euler A'),
+                                            m('option', { value: 'euler' }, 'Euler'),
+                                            m('option', { value: 'dpm_2' }, 'DPM 2'),
+                                            m('option', { value: 'dpm_2_a' }, 'DPM 2 A'),
+                                            m('option', { value: 'lms' }, 'LMS'),
+                                            m('option', { value: 'heun' }, 'Heun'),
+                                            m('option', { value: 'ddim' }, 'DDIM')
+                                        ])
+                                    ]),
+                                    m('div', [
+                                        m('label.block.text-sm.text-gray-400.mb-1', 'Refiner Method'),
+                                        m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                            value: this.config.imageGeneration.sdInline.refinerMethod,
+                                            onchange: (e) => this.config.imageGeneration.sdInline.refinerMethod = e.target.value
+                                        }, [
+                                            m('option', { value: 'PostApply' }, 'PostApply'),
+                                            m('option', { value: 'StepSwap' }, 'StepSwap')
+                                        ])
+                                    ]),
+                                    m('div', [
+                                        m('label.block.text-sm.text-gray-400.mb-1', 'Control %'),
+                                        m('.flex.items-center.gap-2', [
+                                            m('input.flex-1', {
+                                                type: 'range', min: 0.01, max: 1.0, step: 0.01,
+                                                value: this.config.imageGeneration.sdInline.refinerControlPercentage,
+                                                oninput: (e) => this.config.imageGeneration.sdInline.refinerControlPercentage = parseFloat(e.target.value)
+                                            }),
+                                            m('span.text-sm.w-10.text-right', this.config.imageGeneration.sdInline.refinerControlPercentage.toFixed(2))
+                                        ])
+                                    ]),
+                                    m('div', [
+                                        m('label.block.text-sm.text-gray-400.mb-1', 'Upscale'),
+                                        m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                            value: this.config.imageGeneration.sdInline.refinerUpscale,
+                                            onchange: (e) => this.config.imageGeneration.sdInline.refinerUpscale = parseInt(e.target.value)
+                                        }, [
+                                            m('option', { value: 1 }, '1x'),
+                                            m('option', { value: 2 }, '2x')
+                                        ])
+                                    ]),
+                                    m('div', [
+                                        m('label.block.text-sm.text-gray-400.mb-1', 'Upscale Method'),
+                                        m('select.w-full.p-2.bg-gray-700.rounded.text-sm', {
+                                            value: this.config.imageGeneration.sdInline.refinerUpscaleMethod,
+                                            onchange: (e) => this.config.imageGeneration.sdInline.refinerUpscaleMethod = e.target.value
+                                        }, [
+                                            m('option', { value: 'pixel-lanczos' }, 'Pixel Lanczos'),
+                                            m('option', { value: 'pixel-nearest' }, 'Pixel Nearest'),
+                                            m('option', { value: 'pixel-bilinear' }, 'Pixel Bilinear')
+                                        ])
+                                    ])
                                 ])
                             ]),
 

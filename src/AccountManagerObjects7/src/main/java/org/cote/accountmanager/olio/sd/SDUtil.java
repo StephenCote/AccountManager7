@@ -601,6 +601,10 @@ public class SDUtil {
 
 		SWTxt2Img s2i = new SWTxt2Img();
 		s2i.setPrompt(prompt);
+		String negPrompt = sdConfig.get("negativePrompt");
+		if(negPrompt != null && negPrompt.length() > 0) {
+			s2i.setNegativePrompt(negPrompt);
+		}
 		s2i.setSteps(sdConfig.get("steps"));
 		s2i.setModel(sdConfig.get("model"));
 		s2i.setScheduler(sdConfig.get("scheduler"));

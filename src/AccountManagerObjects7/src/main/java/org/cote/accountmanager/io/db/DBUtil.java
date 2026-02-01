@@ -128,9 +128,8 @@ $$;""";
 		){
 			if(connectionType == ConnectionEnumType.POSTGRE) {
 				logger.info("Vacuuming ...");
-
 				st.execute("vacuum(full, analyze, verbose);");
-				
+				logger.info("... Vacuumed");
 			}
 		}
 		catch (SQLException e) {

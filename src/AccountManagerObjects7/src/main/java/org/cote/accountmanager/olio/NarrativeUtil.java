@@ -1797,6 +1797,17 @@ public class NarrativeUtil {
 		return buff.toString();
 	}
 
+	/// Get a default negative prompt for general image generation (no person-specific exclusions).
+	/// Covers quality and anatomy exclusions suitable for any subject type.
+	public static String getDefaultNegativePrompt() {
+		return "Washed out colors, illogical, disgusting, bad anatomy, errors, glitches, mistakes, "
+			+ "low resolution, pixilated, blurry, out of focus, low res, mutated, distorted, melting, "
+			+ "cropped, disproportionate, wonky, low quality, compressed, muddy colors, overexposed, "
+			+ "mosaic, rotten, fake, low poly, lacking detail, watermark, malformed, failed, failure, "
+			+ "extra fingers, cloned face, missing legs, extra arms, fused fingers, too many fingers, "
+			+ "poorly drawn face";
+	}
+
 	/// Get negative prompt for animal generation
 	public static String getAnimalNegativePrompt() {
 		return "humans, people, person, text, watermark, signature, logo, " +

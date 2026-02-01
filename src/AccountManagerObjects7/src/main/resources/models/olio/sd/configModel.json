@@ -272,6 +272,11 @@
 			"minValue": 0.0,
 			"maxValue": 1.0,
 			"default": 0.75
+		},
+		{
+			"name": "negativePrompt",
+			"type": "string",
+			"description": "Negative prompt for image generation. Quality exclusions applied by default when empty."
 		}
 	]
 }

@@ -571,7 +571,7 @@
         });
     }
     async function cleanup(){
-        page.toast("info", "Cleaning up ...", 0);
+        page.toast("info", "Cleaning up ...", -1);
         await am7client.cleanup();
         await am7client.clearCache();       
         page.clearToast();
