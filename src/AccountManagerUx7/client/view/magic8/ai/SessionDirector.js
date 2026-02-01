@@ -8,7 +8,7 @@
 (function() {
 
     class SessionDirector {
-        static PROMPT_TEMPLATE_PATH = 'view/magic8/media/prompts/magic8DirectorPrompt.json';
+        static PROMPT_TEMPLATE_PATH = 'media/prompts/magic8DirectorPrompt.json';
         static _cachedTemplate = null;
 
         constructor() {
@@ -242,7 +242,7 @@
             if (t.apiKey) newChatCfg.apiKey = t.apiKey;
             if (t.chatOptions) {
                 const co = { schema: "olio.llm.chatOptions" };
-                const optKeys = ["min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
+                const optKeys = ["max_tokens", "min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
                 for (const k of optKeys) {
                     if (t.chatOptions[k] !== undefined) co[k] = t.chatOptions[k];
                 }
@@ -311,7 +311,7 @@
             // Copy chatOptions from template but set higher temperature for test diversity
             const co = { schema: "olio.llm.chatOptions" };
             if (t.chatOptions) {
-                const optKeys = ["min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
+                const optKeys = ["max_tokens", "min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
                 for (const k of optKeys) {
                     if (t.chatOptions[k] !== undefined) co[k] = t.chatOptions[k];
                 }
@@ -688,6 +688,16 @@
                 lines.push(`Layer Opacity: labels=${o.labels}, images=${o.images}, visualizer=${o.visualizer}, visuals=${o.visuals}`);
             }
 
+            // User response from interactive mode
+            if (state.userResponse) {
+                lines.push('User Response: "' + state.userResponse + '"');
+            }
+
+            // Interactive mode indicator
+            if (state.interactiveEnabled) {
+                lines.push('Interactive: ENABLED — you may use askUser to pose questions');
+            }
+
             // Mood ring status
             if (state.moodRingEnabled) {
                 lines.push('Mood Ring: ACTIVE — include suggestMood in your response');
@@ -789,6 +799,17 @@
 
                     // Step 2: Quote unquoted keys (word followed by colon, after { , or [)
                     fixed = fixed.replace(/([{,\[]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":');
+
+                    // Step 2.5: Quote bare identifier values (word after colon, not true/false/null)
+                    fixed = fixed.replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*([,}\]])/g, (match, val, term) => {
+                        if (val === 'true' || val === 'false' || val === 'null') return match;
+                        return ': "' + val + '"' + term;
+                    });
+                    // Also handle bare identifiers inside arrays: [word, word]
+                    fixed = fixed.replace(/([[,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=[,\]])/g, (match, prefix, val) => {
+                        if (val === 'true' || val === 'false' || val === 'null') return match;
+                        return prefix + '"' + val + '"';
+                    });
 
                     // Step 3: Convert single-quoted strings to double-quoted
                     fixed = fixed.replace(/'([^']*?)'/g, '"$1"');
@@ -923,6 +944,15 @@
                         valid.suggestMood.genderPct = Math.max(0, Math.min(100, Math.round(directive.suggestMood.genderPct)));
                     }
                     if (Object.keys(valid.suggestMood).length === 0) delete valid.suggestMood;
+                }
+
+                // Validate askUser
+                if (directive.askUser && typeof directive.askUser === 'object') {
+                    if (typeof directive.askUser.question === 'string' && directive.askUser.question.trim().length > 0) {
+                        valid.askUser = {
+                            question: directive.askUser.question.trim()
+                        };
+                    }
                 }
 
                 return valid;
@@ -1215,6 +1245,20 @@
                         visuals: { mode: 'single', effects: ['mandala'] },
                         elapsedMinutes: 12
                     }
+                },
+                {
+                    name: 'Pass 5: Interactive + user response',
+                    state: {
+                        biometric: { emotion: 'happy', age: 30, gender: 'female' },
+                        labels: [],
+                        recentVoiceLines: [],
+                        currentText: '',
+                        audio: { sweepStart: 8, sweepTrough: 4, sweepEnd: 8, isochronicEnabled: false },
+                        visuals: { mode: 'single', effects: ['particles'] },
+                        interactiveEnabled: true,
+                        userResponse: 'I feel calm and centered',
+                        elapsedMinutes: 8
+                    }
                 }
             ];
 
@@ -1277,6 +1321,7 @@
                         if (directive.labels?.add?.length) parts.push('+' + directive.labels.add.length + ' labels');
                         if (directive.labels?.remove?.length) parts.push('-' + directive.labels.remove.length + ' labels');
                         if (directive.generateImage) parts.push('img:yes');
+                        if (directive.askUser) parts.push('askUser:"' + directive.askUser.question.substring(0, 30) + '"');
                         if (directive.commentary) parts.push('note:' + directive.commentary.substring(0, 40));
 
                         log(scenario.name, true, parts.join(' | ') || 'empty directive', directive);
@@ -1327,9 +1372,12 @@
                 const hasAudioChange = validDirectives.some(d => d.audio && Object.keys(d.audio).length > 0);
                 const hasVisualChange = validDirectives.some(d => d.visuals?.effect);
 
+                const hasAskUser = validDirectives.some(d => d.askUser);
+
                 log('Coverage: labels', hasLabelActivity, hasLabelActivity ? 'LLM generated labels' : 'No labels across all passes');
                 log('Coverage: audio', hasAudioChange, hasAudioChange ? 'LLM adjusted audio' : 'No audio changes across all passes');
                 log('Coverage: visuals', hasVisualChange, hasVisualChange ? 'LLM changed visuals' : 'No visual changes across all passes');
+                log('Coverage: askUser', hasAskUser, hasAskUser ? 'LLM used askUser directive' : 'No askUser across all passes (may be expected if interactive scenario was not reached)');
             } else if (validDirectives.length === 1) {
                 log('Adaptation check', true, 'Only 1 valid directive - cannot compare adaptation');
             } else {

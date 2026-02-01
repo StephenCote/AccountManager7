@@ -12,6 +12,9 @@
       "Bash(npm run build:*)",
       "Bash(ls:*)",
       "WebFetch(domain:codepen.io)"
+    ],
+    "additionalDirectories": [
+      "c:\\Projects\\GitHub\\AccountManager7\\src"
     ]
   }
 }

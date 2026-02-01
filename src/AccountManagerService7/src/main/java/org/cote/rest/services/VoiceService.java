@@ -153,9 +153,9 @@ public class VoiceService {
 	
 	@RolesAllowed({"admin","user"})
 	@POST
-	@Path("/tts")
+	@Path("/stt")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response textToSpeach(String json, @Context HttpServletRequest request){
+	public Response speechToText(String json, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		
 		

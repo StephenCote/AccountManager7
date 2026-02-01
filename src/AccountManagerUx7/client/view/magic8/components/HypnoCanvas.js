@@ -13,8 +13,8 @@ const HypnoCanvas = {
     frame: 0,
 
     // Effect configuration
-    effectMode: 'particles',
-    effects: ['particles'],
+    effectMode: null,
+    effects: [],
     visuals: null,
 
     // Transition state
@@ -135,7 +135,7 @@ const HypnoCanvas = {
         if (!visuals) return;
         this.visuals = visuals;
 
-        if (visuals.effects?.length) {
+        if (Array.isArray(visuals.effects)) {
             this.effects = visuals.effects;
         }
         if (visuals.spiralSpeed) this.spiralSpeed = visuals.spiralSpeed;
@@ -143,10 +143,12 @@ const HypnoCanvas = {
         if (visuals.tunnelRings) this.tunnelRings = visuals.tunnelRings;
         if (visuals.transitionDuration) this.transitionDuration = visuals.transitionDuration;
 
-        // Set initial mode
-        if (visuals.mode === 'combined') {
+        // Set initial mode (null when no effects selected — director can still enable later)
+        if (this.effects.length === 0) {
+            this.effectMode = null;
+        } else if (visuals.mode === 'combined') {
             this.effectMode = 'combined';
-        } else if (this.effects.length > 0) {
+        } else {
             this.effectMode = this.effects[0];
         }
 
@@ -507,6 +509,8 @@ const HypnoCanvas = {
             if (progress >= 1) {
                 this.prevEffectMode = null;
             }
+        } else if (!this.effectMode) {
+            // No effect selected — canvas stays clear (director can still enable dynamically)
         } else if (this.effectMode === 'combined' && this.effects.length > 0) {
             // Combined mode: layer all active effects
             const alpha = 1 / this.effects.length;
@@ -620,8 +624,8 @@ function createHypnoCanvas() {
         animationFrame: null,
         isInitialized: false,
         frame: 0,
-        effectMode: 'particles',
-        effects: ['particles'],
+        effectMode: null,
+        effects: [],
         visuals: null,
         prevEffectMode: null,
         cycleIndex: 0,

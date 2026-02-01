@@ -51,6 +51,19 @@
         // Generated image emphasis animation
         _imageAnimation: null, // { transform, transition } for current image
 
+        // Test mode thumbnails (last capture + last generated)
+        _lastCaptureObj: null,    // {objectId, groupPath, name}
+        _lastGeneratedObj: null,  // {objectId, groupPath, name}
+
+        // Interactive director state (askUser)
+        _pendingQuestion: null,     // {question: string} from LLM askUser directive
+        _userResponse: null,        // captured text response (consumed on next tick)
+        _userInputText: '',         // live text in input field (STT or typed)
+        _sttMediaStream: null,      // getUserMedia stream for server-side STT
+        _sttMediaRecorder: null,    // MediaRecorder instance for server-side STT
+        _responseTimeoutId: null,   // auto-submit timeout handle
+        _voicePausedForInteraction: false, // voice sequence paused while waiting for user
+
         // Debug console (test mode)
         debugMessages: [],
         _debugMinimized: false,
@@ -318,8 +331,10 @@
                     if (this._imageAnimation) {
                         // Start with 'from' transform, then after a frame switch to 'to'
                         requestAnimationFrame(() => {
-                            this._imageAnimation._phase = 'to';
-                            m.redraw();
+                            if (this._imageAnimation) {
+                                this._imageAnimation._phase = 'to';
+                                m.redraw();
+                            }
                         });
                     }
                     m.redraw();
@@ -349,6 +364,12 @@
 
                 this.imageGenerator.onImageGenerated = (img) => {
                     this.imageGallery.showImmediate(img);
+                    this._lastGeneratedObj = img;
+                };
+
+                this.imageGenerator.onCaptureCreated = (capture) => {
+                    this._lastCaptureObj = capture;
+                    m.redraw();
                 };
 
                 this._startImageGeneration();
@@ -1127,6 +1148,23 @@
             // Stop generation
             this.imageGenerator?.dispose();
 
+            // Stop interactive STT if active
+            if (this._sttMediaRecorder) {
+                try { this._sttMediaRecorder.stop(); } catch (e) { /* ignore */ }
+                this._sttMediaRecorder = null;
+            }
+            if (this._sttMediaStream) {
+                this._sttMediaStream.getTracks().forEach(t => t.stop());
+                this._sttMediaStream = null;
+            }
+            page.audioStream = undefined;
+            if (this._responseTimeoutId) {
+                clearTimeout(this._responseTimeoutId);
+                this._responseTimeoutId = null;
+            }
+            this._pendingQuestion = null;
+            this._voicePausedForInteraction = false;
+
             // Stop session director and clear session data
             this.sessionDirector?.dispose();
             this.sessionLabels = [];
@@ -1238,9 +1276,11 @@
                 }),
 
                 // Gender confidence bar (only when mood ring is enabled)
-                this.moodRingEnabled && m('.absolute.inset-x-0.bottom-0.pointer-events-none', {
+                this.moodRingEnabled && m('.absolute.inset-x-0.pointer-events-none', {
                     style: {
                         height: '33vh',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
                         opacity: 0.25,
                         zIndex: 11,
                         background: 'linear-gradient(to right, rgba(255,182,193,' + ((100 - this._genderMalePct) / 100) + '), rgba(135,206,235,' + (this._genderMalePct / 100) + '))',
@@ -1270,6 +1310,31 @@
                     recorder: this.sessionRecorder
                 }),
 
+                // Interactive director overlay (askUser)
+                this._pendingQuestion && m('.fixed.inset-x-0.bottom-20.z-[200].flex.justify-center.px-4', [
+                    m('.bg-gray-900/95.backdrop-blur.rounded-2xl.p-5.max-w-lg.w-full.shadow-2xl.border.border-cyan-500/30', [
+                        // Question text
+                        m('.text-cyan-300.text-lg.font-medium.mb-4.text-center', this._pendingQuestion.question),
+                        // Mic indicator
+                        m('.flex.items-center.justify-center.gap-2.mb-3.text-sm.text-gray-400', [
+                            m('span.material-symbols-outlined.text-red-400.animate-pulse', 'mic'),
+                            'Listening... speak or type below'
+                        ]),
+                        // Text input + submit
+                        m('.flex.gap-2', [
+                            m('input.flex-1.bg-gray-800.text-white.rounded-lg.px-4.py-3.border.border-gray-600.focus\\:border-cyan-400.outline-none', {
+                                placeholder: 'Type your response...',
+                                value: this._userInputText,
+                                oninput: (e) => { this._userInputText = e.target.value; },
+                                onkeydown: (e) => { if (e.key === 'Enter') this._submitUserResponse(); }
+                            }),
+                            m('button.bg-cyan-600.hover\\:bg-cyan-500.text-white.px-5.py-3.rounded-lg.font-medium.transition-colors', {
+                                onclick: () => this._submitUserResponse()
+                            }, 'Send')
+                        ])
+                    ])
+                ]),
+
                 // Control panel
                 m(Magic8.ControlPanel, {
                     config: this.sessionConfig,
@@ -1278,6 +1343,7 @@
                         audioEnabled: this.audioEnabled,
                         isFullscreen: this.isFullscreen,
                         moodRingEnabled: this.moodRingEnabled,
+                        testMode: this.sessionConfig?.director?.testMode || false,
                         emotion: this.biometricData?.dominant_emotion || 'neutral',
                         gender: this.biometricData?.dominant_gender || null,
                         suggestedEmotion: this._suggestedEmotion,
@@ -1292,6 +1358,14 @@
                         this.moodRingEnabled = !this.moodRingEnabled;
                         if (!this.moodRingEnabled) {
                             this.moodRingColor = null;
+                        }
+                    },
+                    onToggleTestMode: () => {
+                        if (!this.sessionConfig) return;
+                        if (!this.sessionConfig.director) this.sessionConfig.director = {};
+                        this.sessionConfig.director.testMode = !this.sessionConfig.director.testMode;
+                        if (this.sessionConfig.director.testMode) {
+                            this._debugLog('Test mode enabled via control panel', 'info');
                         }
                     },
                     onOpenConfig: () => {
@@ -1391,6 +1465,72 @@
                         }))
                     ]),
 
+                // Test mode thumbnails (last capture + last generated)
+                this.sessionConfig?.director?.testMode && (this._lastCaptureObj || this._lastGeneratedObj) &&
+                    m('.magic8-test-thumbnails', {
+                        style: {
+                            position: 'fixed',
+                            top: '60px',
+                            right: '10px',
+                            zIndex: 190,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            pointerEvents: 'none'
+                        }
+                    }, [
+                        this._lastCaptureObj && m('.test-thumb', {
+                            style: {
+                                width: '160px',
+                                borderRadius: '8px',
+                                border: '2px solid rgba(100, 200, 255, 0.5)',
+                                overflow: 'hidden',
+                                backgroundColor: 'rgba(0,0,0,0.6)'
+                            }
+                        }, [
+                            m('img', {
+                                src: g_application_path + '/thumbnail/' +
+                                    am7client.dotPath(am7client.currentOrganization) +
+                                    '/data.data' + this._lastCaptureObj.groupPath + '/' +
+                                    this._lastCaptureObj.name + '/160x160',
+                                style: { width: '100%', height: '160px', objectFit: 'cover', display: 'block' },
+                                onerror: function() { this.style.display = 'none'; }
+                            }),
+                            m('div', {
+                                style: {
+                                    fontSize: '10px', textAlign: 'center',
+                                    color: 'rgba(100,200,255,0.8)', padding: '2px 0',
+                                    background: 'rgba(0,0,0,0.5)'
+                                }
+                            }, 'Capture')
+                        ]),
+                        this._lastGeneratedObj && m('.test-thumb', {
+                            style: {
+                                width: '160px',
+                                borderRadius: '8px',
+                                border: '2px solid rgba(100, 255, 100, 0.5)',
+                                overflow: 'hidden',
+                                backgroundColor: 'rgba(0,0,0,0.6)'
+                            }
+                        }, [
+                            m('img', {
+                                src: g_application_path + '/thumbnail/' +
+                                    am7client.dotPath(am7client.currentOrganization) +
+                                    '/data.data' + (this._lastGeneratedObj.groupPath || '') + '/' +
+                                    (this._lastGeneratedObj.name || '') + '/160x160',
+                                style: { width: '100%', height: '160px', objectFit: 'cover', display: 'block' },
+                                onerror: function() { this.style.display = 'none'; }
+                            }),
+                            m('div', {
+                                style: {
+                                    fontSize: '10px', textAlign: 'center',
+                                    color: 'rgba(100,255,100,0.8)', padding: '2px 0',
+                                    background: 'rgba(0,0,0,0.5)'
+                                }
+                            }, 'Generated')
+                        ])
+                    ]),
+
                 // Dialog support
                 page.components.dialog ? page.components.dialog.loadDialog() : null
             ]);
@@ -1433,7 +1573,7 @@
                 }
             }
 
-            return {
+            const state = {
                 biometric: bio ? {
                     emotion: bio.dominant_emotion,
                     age: bio.age,
@@ -1473,10 +1613,16 @@
                     ? this.sessionVoiceLines.slice(-3)
                     : [],
                 moodRingEnabled: this.moodRingEnabled,
+                userResponse: this._userResponse || null,
+                interactiveEnabled: !!(this.sessionConfig?.director?.interactive),
                 elapsedMinutes: this._sessionStartTime
                     ? (Date.now() - this._sessionStartTime) / 60000
                     : 0
             };
+
+            // Consume the user response after gathering (one-shot)
+            this._userResponse = null;
+            return state;
         },
 
         /**
@@ -1789,8 +1935,225 @@
                 }
             }
 
+            // Handle askUser directive (interactive mode)
+            if (directive.askUser && this.sessionConfig?.director?.interactive) {
+                this._startUserInteraction(directive.askUser.question);
+            }
+
             if (directive.commentary) {
                 console.log('SessionDirector commentary:', directive.commentary);
+            }
+
+            m.redraw();
+        },
+
+        /**
+         * Start interactive user interaction (askUser directive)
+         * Displays question on screen, speaks it via voice synth,
+         * pauses subsequent voice playback, starts STT, shows input overlay.
+         * @param {string} question - The question from the LLM
+         * @private
+         */
+        _startUserInteraction(question) {
+            if (this._pendingQuestion) return; // already waiting
+
+            this._pendingQuestion = { question };
+            this._userInputText = '';
+            this._voicePausedForInteraction = false;
+
+            // Pause director tick cycle while waiting
+            this.sessionDirector?.pause();
+            this._debugLog('askUser: "' + question + '"', 'directive');
+
+            // Display question as on-screen text
+            if (this.textSequence) {
+                this.textSequence.injectText(question, this.textSequence.currentIndex);
+                if (!this.textSequence.isPlaying && this.textSequence.sequences.length > 0) {
+                    this.textSequence.start();
+                }
+            }
+            this.currentText = question;
+
+            // Speak question via voice synth, then pause voice sequence
+            if (this.voiceSequence && this.audioEnabled) {
+                const insertAt = this.voiceSequence.currentIndex;
+                this.voiceSequence.injectLine(
+                    question,
+                    insertAt,
+                    this.sessionConfig?.voice?.voiceProfileId
+                ).then(ok => {
+                    if (!ok || !this._pendingQuestion) return;
+
+                    // Pause the voice sequence so it doesn't auto-advance
+                    this.voiceSequence.pause();
+                    this._voicePausedForInteraction = true;
+
+                    // Manually play just the question clip
+                    const hash = this.voiceSequence.synthesizedHashes.get(insertAt);
+                    if (hash) {
+                        const source = this.audioEngine?.sources.get(hash);
+                        if (source && source.buffer) {
+                            source.play();
+                        }
+                    }
+                });
+            }
+
+            // Test mode: simulate STT with canned response after delay
+            if (this.sessionConfig?.director?.testMode) {
+                const cannedResponses = [
+                    'I feel calm and centered',
+                    'Things are going well, thank you',
+                    'I would like to go deeper',
+                    'That sounds good to me',
+                    'I am feeling relaxed and open'
+                ];
+                const canned = cannedResponses[Math.floor(Math.random() * cannedResponses.length)];
+                this._debugLog('Test mode: will simulate STT → "' + canned + '"', 'info');
+
+                // Simulate typing effect over 2s, then auto-submit after 5s
+                let charIdx = 0;
+                const typeInterval = setInterval(() => {
+                    if (!this._pendingQuestion || charIdx >= canned.length) {
+                        clearInterval(typeInterval);
+                        return;
+                    }
+                    charIdx += 2;
+                    this._userInputText = canned.substring(0, charIdx);
+                    m.redraw();
+                }, 80);
+
+                this._responseTimeoutId = setTimeout(() => {
+                    clearInterval(typeInterval);
+                    this._userInputText = canned;
+                    this._submitUserResponse();
+                }, 5000);
+            } else {
+                // Production mode: Use server-side STT via WebSocket streaming
+                // Capture microphone, stream audio chunks to server, receive transcription
+                navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+                }).then(mediaStream => {
+                    if (!this._pendingQuestion) {
+                        // Interaction was cancelled before mic was ready
+                        mediaStream.getTracks().forEach(t => t.stop());
+                        return;
+                    }
+
+                    let mediaRecorder;
+                    try {
+                        mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm;codecs=opus' });
+                    } catch (e) {
+                        try {
+                            mediaRecorder = new MediaRecorder(mediaStream);
+                        } catch (e2) {
+                            console.warn('Magic8: MediaRecorder not supported:', e2);
+                            mediaStream.getTracks().forEach(t => t.stop());
+                            return;
+                        }
+                    }
+
+                    this._sttMediaStream = mediaStream;
+                    this._sttMediaRecorder = mediaRecorder;
+
+                    // Set up audio stream handler for receiving STT results from server
+                    page.audioStream = {
+                        onaudioupdate: () => {},
+                        onaudiosttupdate: (text) => {
+                            if (this._pendingQuestion && text) {
+                                this._userInputText = text;
+                                m.redraw();
+                            }
+                        },
+                        onaudiouerror: () => {}
+                    };
+
+                    // Convert blob to base64 for WebSocket transmission
+                    const blobToBase64 = async (blob) => {
+                        try {
+                            const buff = await blob.arrayBuffer();
+                            return btoa(new Uint8Array(buff).reduce((data, val) => data + String.fromCharCode(val), ''));
+                        } catch (e) {
+                            console.error('Magic8: Error converting audio to base64:', e);
+                            return null;
+                        }
+                    };
+
+                    // Stream audio chunks to server via WebSocket for real-time STT
+                    mediaRecorder.ondataavailable = async (event) => {
+                        if (event.data && event.data.size > 0 && page.wss) {
+                            const b64 = await blobToBase64(event.data);
+                            if (b64) {
+                                page.wss.send("audio", b64);
+                            }
+                        }
+                    };
+
+                    // Start recording in 2-second chunks
+                    try {
+                        mediaRecorder.start(2000);
+                        this._debugLog('STT: microphone recording started (server-side)', 'info');
+                    } catch (e) {
+                        console.warn('Magic8: Error starting recorder:', e);
+                    }
+                }).catch(err => {
+                    console.warn('Magic8: Microphone access error:', err.message);
+                });
+
+                // Set auto-submit timeout: max(director interval, 30s)
+                const directorInterval = this.sessionDirector?.intervalMs || 60000;
+                const timeout = Math.max(directorInterval, 30000);
+                this._responseTimeoutId = setTimeout(() => {
+                    this._submitUserResponse();
+                }, timeout);
+            }
+
+            m.redraw();
+        },
+
+        /**
+         * Submit the user's response (called by button, Enter key, or timeout)
+         * Stores response, stops STT, resumes director with immediate tick
+         * @private
+         */
+        _submitUserResponse() {
+            if (!this._pendingQuestion) return;
+
+            // Capture response
+            this._userResponse = this._userInputText.trim() || '(no response)';
+            this._debugLog('User response: "' + this._userResponse + '"', 'info');
+
+            // Stop server-side STT recording
+            if (this._sttMediaRecorder) {
+                try { this._sttMediaRecorder.stop(); } catch (e) { /* ignore */ }
+                this._sttMediaRecorder = null;
+            }
+            if (this._sttMediaStream) {
+                this._sttMediaStream.getTracks().forEach(t => t.stop());
+                this._sttMediaStream = null;
+            }
+            page.audioStream = undefined;
+
+            // Clear timeout
+            if (this._responseTimeoutId) {
+                clearTimeout(this._responseTimeoutId);
+                this._responseTimeoutId = null;
+            }
+
+            // Resume voice sequence if we paused it
+            if (this._voicePausedForInteraction && this.voiceSequence) {
+                this.voiceSequence.resume();
+                this._voicePausedForInteraction = false;
+            }
+
+            // Clear UI state
+            this._pendingQuestion = null;
+            this._userInputText = '';
+
+            // Resume director and force immediate tick
+            if (this.sessionDirector) {
+                this.sessionDirector.resume();
+                this.sessionDirector._tick();
             }
 
             m.redraw();

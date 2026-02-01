@@ -17,6 +17,7 @@ class ImageGenerationManager {
         this.onGenerationStarted = null;
         this.onGenerationFailed = null;
         this.onQueueChanged = null;
+        this.onCaptureCreated = null;
 
         // Cached server resources
         this._captureDir = null;
@@ -251,7 +252,8 @@ class ImageGenerationManager {
                 const savedImage = {
                     objectId: movedImage.objectId,
                     url: imageUrl,
-                    name: movedImage.name
+                    name: movedImage.name,
+                    groupPath: movedImage.groupPath
                 };
 
                 pendingJob.status = 'complete';
@@ -323,7 +325,17 @@ class ImageGenerationManager {
         obj.groupPath = this._captureDir.path;
         obj.dataBytesStore = base64Image;
 
-        return await page.createObject(obj);
+        const created = await page.createObject(obj);
+
+        if (created && this.onCaptureCreated) {
+            this.onCaptureCreated({
+                objectId: created.objectId,
+                groupPath: created.groupPath || this._captureDir.path,
+                name: created.name || obj.name
+            });
+        }
+
+        return created;
     }
 
     /**
@@ -392,10 +404,87 @@ class ImageGenerationManager {
             }
         }
 
+        // If a refiner model is configured, force hires mode
+        if (entity.refinerModel) {
+            entity.hires = true;
+        }
+
+        // Fill null style-specific fields with random defaults
+        this._fillStyleDefaults(entity);
+
         // Set reference image for img2img
         entity.referenceImageId = referenceImageId;
 
         return entity;
+    }
+
+    /**
+     * Fill null style-specific fields with random fallback values.
+     * Prevents "(null)" from appearing in server-built prompts when
+     * randomImageConfig omits style-specific fields.
+     * @param {Object} entity - SD config entity
+     * @private
+     */
+    _fillStyleDefaults(entity) {
+        const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+        const style = entity.style;
+        if (!style) return;
+
+        // Fallback lists (subset of olio/sd/sdConfigData.json)
+        const data = ImageGenerationManager._SD_FALLBACKS;
+
+        switch (style) {
+            case 'photograph':
+                if (!entity.stillCamera) entity.stillCamera = pick(data.stillCameras);
+                if (!entity.film) entity.film = pick(data.films);
+                if (!entity.lens) entity.lens = pick(data.lenses);
+                if (!entity.colorProcess) entity.colorProcess = pick(data.colorProcesses);
+                if (!entity.photographer) entity.photographer = pick(data.photographers);
+                break;
+            case 'movie':
+                if (!entity.movieCamera) entity.movieCamera = pick(data.movieCameras);
+                if (!entity.movieFilm) entity.movieFilm = pick(data.movieFilms);
+                if (!entity.colorProcess) entity.colorProcess = pick(data.colorProcesses);
+                if (!entity.director) entity.director = pick(data.directors);
+                break;
+            case 'selfie':
+                if (!entity.selfiePhone) entity.selfiePhone = pick(data.selfiePhones);
+                if (!entity.selfieAngle) entity.selfieAngle = pick(data.selfieAngles);
+                if (!entity.selfieLighting) entity.selfieLighting = pick(data.selfieLightings);
+                break;
+            case 'anime':
+                if (!entity.animeStudio) entity.animeStudio = pick(data.animeStudios);
+                if (!entity.animeEra) entity.animeEra = pick(data.animeEras);
+                break;
+            case 'portrait':
+                if (!entity.portraitLighting) entity.portraitLighting = pick(data.portraitLightings);
+                if (!entity.portraitBackdrop) entity.portraitBackdrop = pick(data.portraitBackdrops);
+                if (!entity.photographer) entity.photographer = pick(data.photographers);
+                break;
+            case 'comic':
+                if (!entity.comicPublisher) entity.comicPublisher = pick(data.comicPublishers);
+                if (!entity.comicEra) entity.comicEra = pick(data.comicEras);
+                if (!entity.comicColoring) entity.comicColoring = pick(data.comicColorings);
+                break;
+            case 'digitalArt':
+                if (!entity.digitalMedium) entity.digitalMedium = pick(data.digitalMediums);
+                if (!entity.digitalSoftware) entity.digitalSoftware = pick(data.digitalSoftwares);
+                if (!entity.digitalArtist) entity.digitalArtist = pick(data.digitalArtists);
+                break;
+            case 'fashion':
+                if (!entity.fashionMagazine) entity.fashionMagazine = pick(data.fashionMagazines);
+                if (!entity.fashionDecade) entity.fashionDecade = pick(data.fashionDecades);
+                if (!entity.photographer) entity.photographer = pick(data.photographers);
+                break;
+            case 'vintage':
+                if (!entity.vintageDecade) entity.vintageDecade = pick(data.vintageDecades);
+                if (!entity.vintageProcessing) entity.vintageProcessing = pick(data.vintageProcessings);
+                if (!entity.vintageCamera) entity.vintageCamera = pick(data.vintageCameras);
+                break;
+            case 'art':
+                if (!entity.artStyle) entity.artStyle = pick(data.artStyles);
+                break;
+        }
     }
 
     /**
@@ -463,8 +552,40 @@ class ImageGenerationManager {
         this.onGenerationStarted = null;
         this.onGenerationFailed = null;
         this.onQueueChanged = null;
+        this.onCaptureCreated = null;
     }
 }
+
+// Fallback values for null style-specific fields (subset of olio/sd/sdConfigData.json)
+ImageGenerationManager._SD_FALLBACKS = {
+    stillCameras: ["Leica M3", "Canon AE-1 SLR", "Hasselblad 500C", "Rolleiflex 2.8F", "Nikon F", "Pentax 67", "Mamiya RZ67", "Contax 645", "Polaroid SX-70", "Kodak Brownie box"],
+    films: ["Kodak Tri-X", "Kodak Ektachrome", "Kodak Kodachrome", "Fujifilm Velvia", "Kodak Portra 400", "Ilford HP5 Plus", "Kodak Ektar 100", "Polaroid Instant"],
+    lenses: ["50mm Summicron", "Carl Zeiss Planar 80mm f/2.8", "Nikkor 50mm f/1.4", "Canon FD 50mm f/1.8", "Large format"],
+    colorProcesses: ["Technicolor", "Kodachrome", "Kodacolor", "Fujicolor", "Zone System Black and White"],
+    photographers: ["Ansel Adams", "Annie Leibovitz", "Steve McCurry", "Henri Cartier-Bresson", "Richard Avedon", "Irving Penn", "David LaChapelle", "Helmut Newton", "Peter Lindbergh"],
+    movieCameras: ["ARRI ALEXA", "RED ONE", "Super Panavision 70", "Bolex H16", "Mitchell BNC camera"],
+    movieFilms: ["Super 8", "16 mm", "35 mm", "65 mm"],
+    directors: ["Stanley Kubrick", "Steven Spielberg", "Ridley Scott", "David Lynch", "Wes Anderson", "Christopher Nolan", "Akira Kurosawa"],
+    selfiePhones: ["iPhone 15 Pro", "Samsung Galaxy S24 Ultra", "Google Pixel 8 Pro", "iPhone 14", "Samsung Galaxy S23"],
+    selfieAngles: ["high angle", "low angle", "straight-on", "dutch angle", "mirror reflection", "arm's length"],
+    selfieLightings: ["golden hour", "ring light", "natural window light", "neon lights", "blue hour twilight", "studio softbox"],
+    animeStudios: ["Studio Ghibli", "Madhouse", "Ufotable", "Kyoto Animation", "MAPPA", "Trigger", "Wit Studio"],
+    animeEras: ["1990s golden age", "2010s modern", "1980s OVA era", "2020s hyperdetailed", "retro 80s cyberpunk"],
+    portraitLightings: ["Rembrandt lighting", "butterfly lighting", "split lighting", "rim lighting", "high key", "low key", "natural ambient"],
+    portraitBackdrops: ["seamless white", "dark charcoal muslin", "natural outdoor bokeh", "studio gradient", "textured brick wall"],
+    comicPublishers: ["Marvel Comics", "DC Comics", "Image Comics", "Dark Horse Comics", "2000 AD"],
+    comicEras: ["Golden Age 1930s-1940s", "Silver Age 1950s-1960s", "Modern Age late 1980s-1990s", "2010s indie renaissance"],
+    comicColorings: ["four-color process", "digital cel shading", "Ben-Day dots halftone", "fully painted oils", "ink wash grayscale"],
+    digitalMediums: ["concept art illustration", "3D render", "matte painting", "digital oil painting", "environment concept art"],
+    digitalSoftwares: ["Photoshop", "Blender 3D", "Unreal Engine 5", "Procreate", "Octane Render"],
+    digitalArtists: ["Greg Rutkowski", "Artgerm", "Craig Mullins", "Simon Stalenhag", "James Gurney", "Wlop"],
+    fashionMagazines: ["Vogue editorial", "Harper's Bazaar spread", "GQ editorial", "Vanity Fair portrait", "W Magazine avant-garde"],
+    fashionDecades: ["1950s New Look elegance", "1960s mod revolution", "1970s bohemian chic", "1980s power dressing", "2010s streetwear luxury"],
+    vintageDecades: ["1920s jazz age", "1940s wartime", "1950s Americana", "1960s counterculture", "1970s Polaroid era"],
+    vintageProcessings: ["daguerreotype", "cyanotype print", "Kodachrome slide", "sepia toned", "cross-processed E6", "expired film effect"],
+    vintageCameras: ["Kodak Brownie No. 2", "Polaroid Land Camera 95", "Holga 120", "Lomo LC-A", "Graflex Speed Graphic"],
+    artStyles: ["Impressionist painting with soft brush strokes and vibrant colors", "Surrealist artwork with dream-like elements", "Pop art piece with bold colors and iconic imagery", "Renaissance painting with classical composition", "Art Nouveau piece with flowing lines and floral motifs"]
+};
 
 // Export
 if (typeof module !== 'undefined' && module.exports) {

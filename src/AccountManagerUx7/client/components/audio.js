@@ -877,7 +877,7 @@
     function extractText(dataB64) {
         window.dbgBase64 = dataB64;
         let vprops = { "audio_sample": dataB64, "uid": page.uid() };
-        m.request({ method: 'POST', url: g_application_path + "/rest/voice/tts", withCredentials: true, body: vprops }).then((d) => {
+        m.request({ method: 'POST', url: g_application_path + "/rest/voice/stt", withCredentials: true, body: vprops }).then((d) => {
             console.log("Received", d);
         }).catch((x) => {
             page.toast("error", "Failed to extract text from audio - is the audio service running?");

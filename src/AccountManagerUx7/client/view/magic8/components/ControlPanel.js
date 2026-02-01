@@ -110,6 +110,7 @@ const ControlPanel = {
             onToggleAudio,
             onToggleFullscreen,
             onToggleMoodRing,
+            onToggleTestMode,
             onOpenConfig,
             onExit
         } = vnode.attrs;
@@ -117,6 +118,7 @@ const ControlPanel = {
         const isRecording = state?.isRecording || false;
         const isAudioEnabled = state?.audioEnabled || false;
         const isFullscreen = state?.isFullscreen || false;
+        const isTestMode = state?.testMode || false;
 
         return m('.control-panel', {
             class: `
@@ -245,6 +247,21 @@ const ControlPanel = {
                     m('span.hidden.sm:inline', state?.moodRingEnabled ? 'Mood On' : 'Mood Ring')
                 ]);
             })(),
+
+            // Test mode toggle button
+            m('button.control-btn', {
+                class: `
+                    flex items-center gap-2 px-4 py-2 rounded-full
+                    ${isTestMode ? 'bg-amber-600/80' : 'bg-gray-800/80'}
+                    hover:bg-gray-700 transition-colors
+                    text-white font-medium
+                `,
+                onclick: onToggleTestMode,
+                title: isTestMode ? 'Disable Test Mode' : 'Enable Test Mode'
+            }, [
+                m('span.material-symbols-outlined', 'bug_report'),
+                m('span.hidden.sm:inline', isTestMode ? 'Test On' : 'Test')
+            ]),
 
             // Config button
             m('button.control-btn', {

@@ -29,6 +29,7 @@
         "  voiceLine: \"short sentence to be spoken next via text-to-speech\"",
         "  suggestMood: { emotion: \"happy\"|\"sad\"|\"angry\"|\"fear\"|\"surprise\"|\"disgust\"|\"neutral\", gender: \"Man\"|\"Woman\", genderPct: 0-100 }",
         "  genderPct: 0=fully female, 100=fully male. Push gender energy — e.g. face says 95% male but session wants feminine energy, suggest genderPct:25. Drives a translucent color gradient bar.",
+        "  askUser: { question: \"your question to the user\" }  // Only when Interactive mode is on. Pauses the session tick to wait for user response via speech or text. Keep questions short and conversational. The response will appear as 'User Response' in the next state update.",
         "  progressPct: 0-100  // Your estimate of session progress toward the stated intent/goal",
         "  commentary: \"your reasoning (not displayed to user)\"",
         "",
@@ -51,6 +52,7 @@
         "- voiceLine is synthesized and injected as the next spoken line - keep it natural, 1-2 sentences",
         "- When 'Mood Ring: ACTIVE' appears in the state, ALWAYS include suggestMood in your response based on the biometric emotion, session intent, and elapsed time. The mood ring drives a visual color effect on the user's display.",
         "- Include a progressPct field (0-100) estimating how far the session has progressed toward the stated intent/goal",
+        "- When 'Interactive: ENABLED' appears in the state, you may use askUser to ask the user questions. Use sparingly — only when user input would meaningfully shape the session direction. Do not ask more than once every few ticks. Pair with a voiceLine to speak the question aloud.",
         "- Respond with ONLY the JSON object, no markdown fences, no explanation text"
     ],
     "imageTagsAppendix": [
