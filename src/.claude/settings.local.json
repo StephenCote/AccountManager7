@@ -11,7 +11,9 @@
       "Bash(dir:*)",
       "Bash(npm run build:*)",
       "Bash(ls:*)",
-      "WebFetch(domain:codepen.io)"
+      "WebFetch(domain:codepen.io)",
+      "Bash(powershell:*)",
+      "Bash(node -e:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

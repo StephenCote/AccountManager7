@@ -332,8 +332,7 @@
             try {
                 const resp = await m.request({
                     method: 'GET',
-                    url: SessionDirector.PROMPT_TEMPLATE_PATH,
-                    deserialize: JSON.parse
+                    url: SessionDirector.PROMPT_TEMPLATE_PATH
                 });
                 if (resp && Array.isArray(resp.lines)) {
                     SessionDirector._cachedTemplate = resp;
