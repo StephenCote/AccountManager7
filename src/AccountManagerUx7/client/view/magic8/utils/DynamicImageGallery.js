@@ -15,7 +15,11 @@ class DynamicImageGallery {
         this.generatedRatio = config.generatedRatio || 0.3; // 30% generated images
 
         this.intervalId = null;
+        this.timeoutId = null;
+        this._running = false;
         this.onImageChange = null;
+        this.gifDurationMultiplier = config.gifDurationMultiplier || 2;
+        this.generatedDurationMultiplier = config.generatedDurationMultiplier || 1.5;
 
         // Crossfade state
         this.currentImageUrl = null;
@@ -204,20 +208,56 @@ class DynamicImageGallery {
     }
 
     /**
-     * Start automatic image cycling
+     * Get display duration for an image based on its type
+     * @param {Object} image - Image object with type and name/url
+     * @returns {number} Duration in milliseconds
+     * @private
+     */
+    _getDurationForImage(image) {
+        if (!image) return this.cycleInterval;
+        const name = (image.name || image.url || '').toLowerCase();
+        if (name.endsWith('.gif')) {
+            return this.cycleInterval * this.gifDurationMultiplier;
+        }
+        if (image.type === 'generated') {
+            return this.cycleInterval * this.generatedDurationMultiplier;
+        }
+        return this.cycleInterval;
+    }
+
+    /**
+     * Start automatic image cycling with variable durations per image type
      */
     start() {
-        if (this.intervalId) return;
+        if (this._running) return;
+        this._running = true;
+        this._scheduleNext();
+    }
 
-        this.intervalId = setInterval(() => {
+    /**
+     * Schedule the next cycle based on current image's duration
+     * @private
+     */
+    _scheduleNext() {
+        if (this.timeoutId) return;
+        const current = this.getCurrent();
+        const duration = this._getDurationForImage(current);
+        this.timeoutId = setTimeout(() => {
+            this.timeoutId = null;
             this._cycle();
-        }, this.cycleInterval);
+        }, duration);
     }
 
     /**
      * Stop automatic image cycling
      */
     stop() {
+        this._running = false;
+        if (this.timeoutId) {
+            clearTimeout(this.timeoutId);
+            this.timeoutId = null;
+        }
+        // Legacy cleanup
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
@@ -238,10 +278,23 @@ class DynamicImageGallery {
             this.onImageChange(next, this.currentIndex, this.allImages.length);
         }
 
-        // Reset transition flag after crossfade duration
+        // Reset transition flag after crossfade duration, then schedule next
         setTimeout(() => {
             this.isTransitioning = false;
+            // Continue cycling if we haven't been stopped
+            if (!this.timeoutId && this._isRunning()) {
+                this._scheduleNext();
+            }
         }, this.crossfadeDuration);
+    }
+
+    /**
+     * Check if gallery cycling is active
+     * @returns {boolean}
+     * @private
+     */
+    _isRunning() {
+        return this._running === true;
     }
 
     /**
@@ -259,7 +312,7 @@ class DynamicImageGallery {
         }
 
         // Reset cycle timer so this image gets a full display period
-        const wasRunning = !!this.intervalId;
+        const wasRunning = this._running;
         if (wasRunning) {
             this.stop();
         }
@@ -306,7 +359,7 @@ class DynamicImageGallery {
      */
     setCycleInterval(interval) {
         this.cycleInterval = interval;
-        if (this.intervalId) {
+        if (this._running) {
             this.stop();
             this.start();
         }
@@ -322,7 +375,7 @@ class DynamicImageGallery {
             generatedCount: this.generatedImages.length,
             totalCount: this.allImages.length,
             currentIndex: this.currentIndex,
-            isRunning: !!this.intervalId
+            isRunning: this._running
         };
     }
 

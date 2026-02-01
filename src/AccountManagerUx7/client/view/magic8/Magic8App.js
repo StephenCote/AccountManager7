@@ -46,6 +46,10 @@
         _suggestedGender: null,
         moodRingEnabled: false,
         moodRingColor: null,
+        _genderMalePct: 50,  // 0=fully female, 100=fully male (drives gender bar gradient)
+
+        // Generated image emphasis animation
+        _imageAnimation: null, // { transform, transition } for current image
 
         // Debug console (test mode)
         debugMessages: [],
@@ -297,11 +301,27 @@
                 this.prevImage = this.currentImage;
                 this.currentImage = img;
                 this.imageOpacity = 0;
+
+                // Pick emphasis animation for generated images
+                if (img && img.type === 'generated') {
+                    const duration = this.imageGallery._getDurationForImage(img);
+                    this._imageAnimation = this._pickImageAnimation(duration);
+                } else {
+                    this._imageAnimation = null;
+                }
+
                 m.redraw();
 
-                // Fade in new image
+                // Fade in new image, then trigger animation start
                 requestAnimationFrame(() => {
                     this.imageOpacity = 1;
+                    if (this._imageAnimation) {
+                        // Start with 'from' transform, then after a frame switch to 'to'
+                        requestAnimationFrame(() => {
+                            this._imageAnimation._phase = 'to';
+                            m.redraw();
+                        });
+                    }
                     m.redraw();
                 });
             };
@@ -413,11 +433,12 @@
                 }
             }
 
-            // LLM-only voice mode: create empty manager when director + voice enabled
-            if (!this.voiceSequence && cfg.director?.enabled && cfg.voice?.enabled) {
+            // Create empty voice manager when voice is enabled but no source file
+            // (allows LLM to inject voice lines, or manual use without pre-loaded content)
+            if (!this.voiceSequence && cfg.voice?.enabled) {
                 this.voiceSequence = new Magic8.VoiceSequenceManager(this.audioEngine);
                 this.voiceSequence.loop = cfg.voice?.loop !== false;
-                console.log('Magic8App: Created empty voice manager for LLM-only mode');
+                console.log('Magic8App: Created empty voice manager (no source file)');
             }
 
             // Initialize recording
@@ -451,6 +472,7 @@
                         if (d.voiceLine) this._debugLog('Voice inject: "' + d.voiceLine + '"', 'voice');
                         if (d.opacity) this._debugLog('Opacity: ' + JSON.stringify(d.opacity), 'directive');
                         if (d.suggestMood) this._debugLog('Mood: ' + JSON.stringify(d.suggestMood), 'directive');
+                        if (d.progressPct != null) this._debugLog('Progress: ' + d.progressPct + '%', 'info');
                         if (d.commentary) this._debugLog('LLM: ' + d.commentary, 'info');
                     }
                 };
@@ -460,7 +482,9 @@
                         this._debugLog('Error: ' + (err.message || err), 'error');
                     }
                 };
-                await this.sessionDirector.initialize(cfg.director.command, cfg.director.intervalMs || 60000, cfg.name);
+                await this.sessionDirector.initialize(cfg.director.command, cfg.director.intervalMs || 60000, cfg.name, {
+                    imageTags: cfg.director.imageTags || ''
+                });
 
                 if (cfg.director.testMode) {
                     // Test mode: run multi-pass behavioral diagnostics
@@ -571,6 +595,12 @@
                     }
                 }
 
+                // Update gender percentage from face data (unless LLM has overridden)
+                if (data.gender_scores) {
+                    const malePct = data.gender_scores.Man || 0;
+                    this._genderMalePct = Math.round(malePct);
+                }
+
                 if (this.biometricThemer) {
                     this.biometricThemer.updateFromBiometrics(data);
                 }
@@ -604,6 +634,34 @@
                     );
                 }
             }, interval);
+        },
+
+        // Pick a random emphasis animation for generated images (Ken Burns-style)
+        _pickImageAnimation(durationMs) {
+            const dur = (durationMs || 5000) / 1000;
+            const animations = [
+                // Slow zoom in
+                { from: 'scale(1)', to: 'scale(1.15)' },
+                // Slow zoom out
+                { from: 'scale(1.15)', to: 'scale(1)' },
+                // Pan right + slight zoom
+                { from: 'scale(1.08) translateX(-3%)', to: 'scale(1.08) translateX(3%)' },
+                // Pan left + slight zoom
+                { from: 'scale(1.08) translateX(3%)', to: 'scale(1.08) translateX(-3%)' },
+                // Pan up + zoom
+                { from: 'scale(1.1) translateY(3%)', to: 'scale(1.1) translateY(-3%)' },
+                // Pan down + zoom
+                { from: 'scale(1.1) translateY(-3%)', to: 'scale(1.1) translateY(3%)' },
+                // Diagonal drift
+                { from: 'scale(1.1) translate(-2%, -2%)', to: 'scale(1.1) translate(2%, 2%)' },
+                // Reverse diagonal drift
+                { from: 'scale(1.1) translate(2%, -2%)', to: 'scale(1.1) translate(-2%, 2%)' }
+            ];
+            const pick = animations[Math.floor(Math.random() * animations.length)];
+            return {
+                from: { transform: pick.from, transition: 'none' },
+                to: { transform: pick.to, transition: 'transform ' + dur + 's ease-in-out' }
+            };
         },
 
         // Ambient opacity breathing
@@ -1118,7 +1176,7 @@
                 }
             }, [
                 // Background image container - ambient breathing controls overall opacity, director can dim
-                m('.magic8-bg-container.absolute.inset-0', {
+                m('.magic8-bg-container.absolute.inset-0.overflow-hidden', {
                     style: {
                         opacity: this.ambientOpacity * this._layerOpacity.images,
                         transition: `opacity ${this._breatheTransitionMs}ms ease-in-out`,
@@ -1132,15 +1190,25 @@
                             backgroundPosition: 'center'
                         }
                     }),
-                    this.currentImage && m('.magic8-bg-current.absolute.inset-0', {
-                        style: {
-                            backgroundImage: `url("${this.currentImage.url}")`,
-                            backgroundSize: 'cover',
-                            backgroundPosition: 'center',
-                            opacity: this.imageOpacity,
-                            transition: `opacity ${(this.sessionConfig?.images?.crossfadeDuration || 1000)}ms ease-in-out`
+                    this.currentImage && (() => {
+                        const anim = this._imageAnimation;
+                        const phase = anim ? (anim._phase === 'to' ? anim.to : anim.from) : null;
+                        const crossfade = (this.sessionConfig?.images?.crossfadeDuration || 1000);
+                        const transitions = ['opacity ' + crossfade + 'ms ease-in-out'];
+                        if (phase && phase.transition && phase.transition !== 'none') {
+                            transitions.push(phase.transition);
                         }
-                    })
+                        return m('.magic8-bg-current.absolute.inset-0', {
+                            style: {
+                                backgroundImage: `url("${this.currentImage.url}")`,
+                                backgroundSize: 'cover',
+                                backgroundPosition: 'center',
+                                opacity: this.imageOpacity,
+                                transform: phase ? phase.transform : '',
+                                transition: transitions.join(', ')
+                            }
+                        });
+                    })()
                 ]),
 
                 // Visual effects canvas layer (breathing opacity synced with background, director can dim)
@@ -1167,6 +1235,17 @@
                 // Dark overlay for text readability
                 m('.absolute.inset-0.z-10.bg-black', {
                     style: { opacity: 0.3 }
+                }),
+
+                // Gender confidence bar (only when mood ring is enabled)
+                this.moodRingEnabled && m('.absolute.inset-x-0.bottom-0.pointer-events-none', {
+                    style: {
+                        height: '33vh',
+                        opacity: 0.25,
+                        zIndex: 11,
+                        background: 'linear-gradient(to right, rgba(255,182,193,' + ((100 - this._genderMalePct) / 100) + '), rgba(135,206,235,' + (this._genderMalePct / 100) + '))',
+                        transition: 'background 2s ease-in-out'
+                    }
                 }),
 
                 // Animated floating text labels, styled by biometric theme (director can dim)
@@ -1401,6 +1480,87 @@
         },
 
         /**
+         * Find images by tags using intersection (AND logic)
+         * Pattern from dialog.js findImageForTags — no character scoping
+         * @param {Array<string>} tags - Tag names to intersect
+         * @returns {Promise<Object|null>} Random matching data.data object, or null
+         * @private
+         */
+        async _findImagesByTags(tags) {
+            if (!tags || !tags.length) return null;
+            try {
+                // Get tag objects for all requested tags
+                const tagObjects = [];
+                for (const tagName of tags) {
+                    const tag = await page.getTag(tagName.trim(), 'data.data');
+                    if (!tag) return null; // Tag doesn't exist — no match possible
+                    tagObjects.push(tag);
+                }
+
+                // Start with members of the first tag
+                const firstMembers = await am7client.members('data.tag', tagObjects[0].objectId, 'data.data', 0, 100);
+                if (!firstMembers || !firstMembers.length) return null;
+
+                let candidateIds = new Set(firstMembers.map(m => m.objectId));
+
+                // Intersect with each additional tag's members
+                for (let i = 1; i < tagObjects.length; i++) {
+                    const members = await am7client.members('data.tag', tagObjects[i].objectId, 'data.data', 0, 100);
+                    if (!members || !members.length) return null;
+                    const memberIds = new Set(members.map(m => m.objectId));
+                    for (const id of candidateIds) {
+                        if (!memberIds.has(id)) candidateIds.delete(id);
+                    }
+                    if (candidateIds.size === 0) return null;
+                }
+
+                // Random pick from candidates — use count=1, sort="random()"
+                const ids = Array.from(candidateIds);
+                const pickedId = ids[Math.floor(Math.random() * ids.length)];
+
+                const q = am7view.viewQuery(am7model.newInstance('data.data'));
+                q.field('objectId', pickedId);
+                const qr = await page.search(q);
+                return (qr && qr.results && qr.results.length) ? qr.results[0] : null;
+            } catch (err) {
+                console.warn('Magic8App: Tag search failed:', err);
+                return null;
+            }
+        },
+
+        /**
+         * Generate image from camera with temporary SD config overrides
+         * @param {Object} directive - Directive with generateImage fields
+         * @private
+         */
+        _generateImageFromCamera(directive) {
+            const sdKeys = ['description', 'style', 'imageAction', 'denoisingStrength', 'cfg'];
+            const origValues = {};
+
+            if (this.imageGenerator.sdConfig) {
+                for (const key of sdKeys) {
+                    origValues[key] = this.imageGenerator.sdConfig[key];
+                    if (directive.generateImage[key] != null) {
+                        this.imageGenerator.sdConfig[key] = directive.generateImage[key];
+                    }
+                }
+            }
+
+            this.imageGenerator.captureAndGenerate(
+                page.components.camera,
+                this.biometricData || null
+            ).then(() => {
+                if (this.imageGenerator.sdConfig) {
+                    for (const key of sdKeys) {
+                        if (origValues[key] !== undefined) {
+                            this.imageGenerator.sdConfig[key] = origValues[key];
+                        }
+                    }
+                }
+            });
+        },
+
+        /**
          * Apply a directive from the session director
          * @param {Object} directive - Parsed directive from LLM
          * @private
@@ -1408,6 +1568,19 @@
         _applyDirective(directive) {
             if (!directive) return;
             const cfg = this.sessionConfig;
+
+            // Director can enable audio if it was off
+            if (directive.audio && cfg?.audio && this.audioEngine && !this.audioEnabled) {
+                this.audioEnabled = true;
+                this.audioEngine.setVolume(1.0);
+                console.log('Magic8App: Director enabled audio');
+                m.redraw();
+            }
+
+            // Director can adjust volume
+            if (directive.audio?.volume != null && this.audioEngine) {
+                this.audioEngine.setVolume(Math.max(0, Math.min(1, directive.audio.volume)));
+            }
 
             // Apply audio changes (preset > band > raw Hz)
             if (directive.audio && cfg?.audio && this.audioEngine && this.audioEnabled) {
@@ -1519,34 +1692,39 @@
                 }
             }
 
-            // Apply image generation with temporary SD config overrides
+            // Apply image generation — tag search first, camera-based generation as fallback
             if (directive.generateImage && this.imageGenerator && page.components.camera) {
-                const sdKeys = ['description', 'style', 'imageAction', 'denoisingStrength', 'cfg'];
-                const origValues = {};
+                const tags = directive.generateImage.tags;
+                let tagImageHandled = false;
 
-                // Save originals and apply directive overrides
-                if (this.imageGenerator.sdConfig) {
-                    for (const key of sdKeys) {
-                        origValues[key] = this.imageGenerator.sdConfig[key];
-                        if (directive.generateImage[key] != null) {
-                            this.imageGenerator.sdConfig[key] = directive.generateImage[key];
+                // Try tag-based image search if tags provided
+                if (tags && tags.length > 0 && window.am7imageTokens) {
+                    this._findImagesByTags(tags).then(found => {
+                        if (found) {
+                            const url = window.am7imageTokens.thumbnailUrl
+                                ? window.am7imageTokens.thumbnailUrl(found, '512x512')
+                                : (g_application_path + '/media/Public/data.data' + encodeURI(found.groupPath || '') + '/' + encodeURIComponent(found.name));
+                            if (this.imageGallery) {
+                                this.imageGallery.showImmediate(url);
+                            }
+                            if (this.sessionConfig?.director?.testMode) {
+                                this._debugLog('Tag image found: ' + tags.join('+') + ' → ' + found.name, 'pass');
+                            }
+                        } else {
+                            // No tag match — fall back to camera generation
+                            if (this.sessionConfig?.director?.testMode) {
+                                this._debugLog('No tag match for ' + tags.join('+') + ', generating from camera', 'info');
+                            }
+                            this._generateImageFromCamera(directive);
                         }
-                    }
+                    });
+                    tagImageHandled = true;
                 }
 
-                this.imageGenerator.captureAndGenerate(
-                    page.components.camera,
-                    this.biometricData || null
-                ).then(() => {
-                    // Restore original SD config values after generation
-                    if (this.imageGenerator.sdConfig) {
-                        for (const key of sdKeys) {
-                            if (origValues[key] !== undefined) {
-                                this.imageGenerator.sdConfig[key] = origValues[key];
-                            }
-                        }
-                    }
-                });
+                // Direct camera-based generation (no tags)
+                if (!tagImageHandled) {
+                    this._generateImageFromCamera(directive);
+                }
             }
 
             // Apply voice line injection
@@ -1597,6 +1775,10 @@
                 }
                 if (directive.suggestMood.gender) {
                     this._suggestedGender = directive.suggestMood.gender;
+                }
+                // LLM gender push — override face data percentage
+                if (directive.suggestMood.genderPct != null) {
+                    this._genderMalePct = Math.max(0, Math.min(100, directive.suggestMood.genderPct));
                 }
                 // Update mood ring color when enabled
                 if (this.moodRingEnabled && this._suggestedEmotion) {

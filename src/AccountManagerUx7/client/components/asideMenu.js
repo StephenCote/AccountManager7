@@ -77,6 +77,7 @@
                 m("div", { class: "flyout-gutter" }, [
                     button("Dark Mode", "dark_mode", null, undefined, async function(){ let de = document.documentElement; let cls = de.className; if(cls != "dark") de.className = "dark"; else de.className = "light";}),
                     button("Breadcrumb Bar", "footprint", null, undefined, async function(){ page.components.breadCrumb.toggleBreadcrumb();}),
+                    button("Mood Ring", "mood", null, (page.components.moodRing && page.components.moodRing.enabled() ? "active" : ""), async function(){ if(page.components.moodRing) await page.components.moodRing.toggle(); m.redraw(); }, true),
                     button("Clear Cache", "cached", null, undefined, async function(){ await am7client.clearCache();}),
                     button("Cleanup", "cached", null, undefined, async function(){ await page.cleanup();})
                 ])

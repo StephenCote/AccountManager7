@@ -8,6 +8,9 @@
 (function() {
 
     class SessionDirector {
+        static PROMPT_TEMPLATE_PATH = 'view/magic8/media/prompts/magic8DirectorPrompt.json';
+        static _cachedTemplate = null;
+
         constructor() {
             // LLM infrastructure
             this.chatRequest = null;
@@ -44,11 +47,14 @@
          * @param {string} command - User's session intent/theme text
          * @param {number} [intervalMs=60000] - Polling interval in ms
          * @param {string} [sessionName] - Session name for unique conversation history
+         * @param {Object} [options] - Additional options
+         * @param {string} [options.imageTags] - Comma-separated tags available for image search
          */
-        async initialize(command, intervalMs, sessionName) {
+        async initialize(command, intervalMs, sessionName, options) {
             this.command = command || '';
             this.intervalMs = intervalMs || 60000;
             this.sessionName = sessionName || '';
+            this.imageTags = options?.imageTags || '';
 
             try {
                 this._setStatus('initializing');
@@ -73,7 +79,7 @@
                 }
 
                 // 4. Create or update prompt config with current command
-                const systemPrompt = this._buildSystemPrompt(command);
+                const systemPrompt = await this._buildSystemPrompt(command);
                 this.promptConfig = await this._ensurePromptConfig(chatDir, systemPrompt);
                 if (!this.promptConfig) {
                     throw new Error("Failed to create prompt config");
@@ -112,7 +118,9 @@
          * @private
          */
         async _ensurePromptConfig(chatDir, systemPrompt) {
-            const promptName = "Magic8 Director";
+            const promptName = this.sessionName
+                ? "Magic8 Director - " + this.sessionName
+                : "Magic8 Director";
             let q = am7view.viewQuery(am7model.newInstance("olio.llm.promptConfig"));
             q.field("groupId", chatDir.id);
             q.field("name", promptName);
@@ -314,13 +322,91 @@
         }
 
         /**
-         * Build the system prompt for the director LLM
-         * @param {string} command - User's session intent
-         * @returns {Array<string>} System prompt lines
+         * Load the prompt template JSON from the static file.
+         * Caches after first successful load.
+         * @returns {Promise<Object|null>} Template object or null
          * @private
          */
-        _buildSystemPrompt(command) {
-            return [
+        async _loadPromptTemplate() {
+            if (SessionDirector._cachedTemplate) return SessionDirector._cachedTemplate;
+            try {
+                const resp = await m.request({
+                    method: 'GET',
+                    url: SessionDirector.PROMPT_TEMPLATE_PATH,
+                    deserialize: JSON.parse
+                });
+                if (resp && Array.isArray(resp.lines)) {
+                    SessionDirector._cachedTemplate = resp;
+                    console.log('SessionDirector: Loaded prompt template v' + (resp.version || '?'));
+                    return resp;
+                }
+            } catch (err) {
+                console.warn('SessionDirector: Failed to load prompt template, using fallback:', err.message || err);
+            }
+            return null;
+        }
+
+        /**
+         * Replace ${token} placeholders in a string
+         * @param {string} str - String with ${token} placeholders
+         * @param {Object} tokens - Key-value map of token replacements
+         * @returns {string}
+         * @private
+         */
+        _resolveTokens(str, tokens) {
+            return str.replace(/\$\{(\w+)\}/g, (match, key) => {
+                return tokens.hasOwnProperty(key) ? tokens[key] : match;
+            });
+        }
+
+        /**
+         * Build the system prompt for the director LLM.
+         * Loads from external JSON template if available, falls back to hardcoded.
+         * @param {string} command - User's session intent
+         * @returns {Promise<Array<string>>} System prompt lines
+         * @private
+         */
+        async _buildSystemPrompt(command) {
+            const tokens = {
+                command: command || '',
+                imageTags: ''
+            };
+
+            // Resolve image tags for token replacement
+            if (this.imageTags) {
+                const tags = this.imageTags.split(',').map(t => t.trim()).filter(t => t);
+                if (tags.length > 0) {
+                    tokens.imageTags = tags.join(', ');
+                }
+            }
+
+            // Try loading from external template
+            const template = await this._loadPromptTemplate();
+            if (template) {
+                let lines = template.lines.map(line => this._resolveTokens(line, tokens));
+
+                // Append image tags section if tags are configured
+                if (tokens.imageTags && Array.isArray(template.imageTagsAppendix)) {
+                    const tagLines = template.imageTagsAppendix.map(line => this._resolveTokens(line, tokens));
+                    lines = lines.concat(tagLines);
+                }
+
+                return lines;
+            }
+
+            // Fallback: hardcoded prompt (in case template file is unavailable)
+            console.warn('SessionDirector: Using hardcoded prompt fallback');
+            return this._buildSystemPromptFallback(command);
+        }
+
+        /**
+         * Hardcoded fallback system prompt (used if template JSON is unavailable)
+         * @param {string} command
+         * @returns {Array<string>}
+         * @private
+         */
+        _buildSystemPromptFallback(command) {
+            const lines = [
                 "You are the Session Director for Magic8, an immersive audiovisual experience.",
                 "SESSION INTENT: " + command,
                 "You receive periodic state snapshots and must return a JSON object with directives to adjust the session.",
@@ -330,42 +416,32 @@
                 "  audio: { preset: \"goddessEnergy\"|\"heartOpening\"|\"loveFrequency\"|\"deepHealing\"|\"lettingGo\"|\"transformation\"|\"creativeFlow\"|\"thirdEye\"|\"crownConnection\"|\"regeneration\"|\"deepHypnosis\"|\"lucidDream\"",
                 "           OR band: \"delta\"|\"theta\"|\"alphaTheta\"|\"alpha\"|\"beta\"|\"gamma\" with optional troughBand, endBand, secondTransition, thirdTransition,",
                 "              baseFreq: carrier Hz (174|285|396|417|432|528|639|741|852|963),",
-                "           isochronicEnabled: true/false, isochronicBand: \"delta\"|\"theta\"|\"alphaTheta\"|\"alpha\"|\"beta\"|\"gamma\" }",
-                "  Isochronic tones pulse at the brainwave band rate to entrain focus. Use isochronicBand with a brainwave band name (e.g. \"theta\" for 5.5 Hz pulsing, \"alpha\" for 10 Hz). Combine with binaural presets for layered entrainment.",
-                "  Preset meanings: goddessEnergy=432Hz alpha→alphaTheta→theta (spiritual femininity, divine feminine), heartOpening=639Hz alpha→theta→alpha (connection, compassion),",
-                "    loveFrequency=528Hz (transformation, cellular healing), deepHealing=174Hz theta→delta→theta, lettingGo=396Hz (releasing guilt/fear),",
-                "    transformation=417Hz (breaking patterns), creativeFlow=741Hz (self-expression), thirdEye=852Hz (intuition),",
-                "    crownConnection=963Hz alpha→theta→gamma (divine consciousness), regeneration=285Hz (tissue repair), deepHypnosis=432Hz alpha→alphaTheta→delta, lucidDream=528Hz alpha→theta→delta",
-                "  Brainwave bands: delta=0.5-4Hz (deep sleep), theta=4-7.5Hz (meditation/hypnosis), alphaTheta=7-8Hz (hypnotic border), alpha=7.5-14Hz (relaxation), beta=14-40Hz (alertness), gamma=40+Hz (insight)",
-                "  Solfeggio carriers: 174Hz (security), 285Hz (healing), 396Hz (liberation), 417Hz (change), 432Hz (spiritual tuning), 528Hz (love), 639Hz (connection), 741Hz (expression), 852Hz (intuition), 963Hz (divine)",
+                "           isochronicEnabled: true/false, isochronicBand: \"delta\"|\"theta\"|\"alphaTheta\"|\"alpha\"|\"beta\"|\"gamma\",",
+                "           volume: 0.0-1.0 }",
                 "  visuals: { effect: \"particles\" or \"spiral\" or \"mandala\" or \"tunnel\" or \"hypnoDisc\", transitionDuration: 2000 }",
                 "  labels: { add: [\"1-3 word phrase\"], remove: [\"exact label text\"] }",
-                "  generateImage: { description: \"scene description\", style: \"art style keyword\", imageAction: \"what the subject is doing\", denoisingStrength: 0.3-0.9, cfg: 3-15 }",
+                "  generateImage: { description: \"scene description\", style: \"art style keyword\", imageAction: \"what the subject is doing\", denoisingStrength: 0.3-0.9, cfg: 3-15, tags: \"tag1+tag2+tag3\" }",
                 "  opacity: { labels: 0.15-1.0, images: 0.15-1.0, visualizer: 0.15-1.0, visuals: 0.15-1.0 }",
                 "  voiceLine: \"short sentence to be spoken next via text-to-speech\"",
-                "  suggestMood: { emotion: \"happy\"|\"sad\"|\"angry\"|\"fear\"|\"surprise\"|\"disgust\"|\"neutral\", gender: \"Man\"|\"Woman\" }",
+                "  suggestMood: { emotion: \"happy\"|\"sad\"|\"angry\"|\"fear\"|\"surprise\"|\"disgust\"|\"neutral\", gender: \"Man\"|\"Woman\", genderPct: 0-100 }",
+                "  progressPct: 0-100",
                 "  commentary: \"your reasoning (not displayed to user)\"",
                 "",
-                "Example response for a calm neutral state:",
-                "{\"audio\":{\"preset\":\"goddessEnergy\"},\"visuals\":{\"effect\":\"spiral\"},\"labels\":{\"add\":[\"soft calm\"]},\"commentary\":\"easing into relaxation with 432Hz divine feminine\"}",
-                "",
-                "Example response for a happy energetic state:",
-                "{\"audio\":{\"band\":\"alpha\",\"troughBand\":\"alphaTheta\",\"endBand\":\"alpha\",\"baseFreq\":528,\"isochronicEnabled\":true},\"visuals\":{\"effect\":\"particles\"},\"labels\":{\"add\":[\"radiant light\"]},\"commentary\":\"matching upbeat energy with love frequency\"}",
-                "",
                 "Guidelines:",
-                "- Prefer named presets for common therapeutic goals; use band/baseFreq for custom combinations",
                 "- Evolve gradually based on biometric emotion, elapsed time, and session intent",
-                "- When an 'Emotion Shift' is reported, adapt your directives to acknowledge the transition (e.g. sad→happy: brighten visuals, raise frequencies; happy→fear: add grounding labels, lower sweep)",
-                "- Labels must be 1-3 words only (e.g. \"deep calm\", \"warm glow\", \"breathe\"). Keep them poetic and aligned with session intent.",
-                "- Use theta/delta bands for deep relaxation, alpha for gentle awareness, beta/gamma for alertness",
-                "- For generateImage: adapt description/style/imageAction to the detected face emotion",
-                "- denoisingStrength controls transformation intensity (0.3=subtle, 0.7=dramatic, 0.9=extreme)",
-                "- cfg controls prompt adherence (low=creative/loose, high=strict/literal)",
-                "- opacity controls layer visibility (0.15=barely visible, 1.0=full) — changes transition gradually over ~20s",
-                "- voiceLine is synthesized and injected as the next spoken line - keep it natural, 1-2 sentences",
-                "- When 'Mood Ring: ACTIVE' appears in the state, ALWAYS include suggestMood in your response based on the biometric emotion, session intent, and elapsed time. The mood ring drives a visual color effect on the user's display.",
+                "- Labels must be 1-3 words only. Keep them poetic and aligned with session intent.",
                 "- Respond with ONLY the JSON object, no markdown fences, no explanation text"
             ];
+
+            if (this.imageTags) {
+                const tags = this.imageTags.split(',').map(t => t.trim()).filter(t => t);
+                if (tags.length > 0) {
+                    lines.push("");
+                    lines.push("Available image tags: " + tags.join(', '));
+                }
+            }
+
+            return lines;
         }
 
         /**
@@ -774,6 +850,7 @@
                     if (typeof directive.audio.isochronicBand === 'string' && validBands.includes(directive.audio.isochronicBand)) {
                         valid.audio.isochronicBand = directive.audio.isochronicBand;
                     }
+                    if (typeof directive.audio.volume === 'number') valid.audio.volume = directive.audio.volume;
                 }
 
                 if (directive.visuals && typeof directive.visuals === 'object') {
@@ -799,6 +876,12 @@
                     if (typeof directive.generateImage.imageAction === 'string') valid.generateImage.imageAction = directive.generateImage.imageAction;
                     if (typeof directive.generateImage.denoisingStrength === 'number') valid.generateImage.denoisingStrength = directive.generateImage.denoisingStrength;
                     if (typeof directive.generateImage.cfg === 'number') valid.generateImage.cfg = directive.generateImage.cfg;
+                    // Tags as "tag1+tag2" string or ["tag1","tag2"] array
+                    if (typeof directive.generateImage.tags === 'string') {
+                        valid.generateImage.tags = directive.generateImage.tags.split('+').map(t => t.trim()).filter(t => t);
+                    } else if (Array.isArray(directive.generateImage.tags)) {
+                        valid.generateImage.tags = directive.generateImage.tags.filter(t => typeof t === 'string');
+                    }
                     // Only keep if at least one field was set
                     if (Object.keys(valid.generateImage).length === 0) delete valid.generateImage;
                 }
@@ -821,6 +904,10 @@
                     valid.commentary = directive.commentary;
                 }
 
+                if (typeof directive.progressPct === 'number') {
+                    valid.progressPct = Math.max(0, Math.min(100, Math.round(directive.progressPct)));
+                }
+
                 // Validate suggestMood
                 if (directive.suggestMood && typeof directive.suggestMood === 'object') {
                     const validEmotions = ['neutral', 'happy', 'sad', 'angry', 'fear', 'surprise', 'disgust'];
@@ -831,6 +918,9 @@
                     }
                     if (typeof directive.suggestMood.gender === 'string' && validGenders.includes(directive.suggestMood.gender)) {
                         valid.suggestMood.gender = directive.suggestMood.gender;
+                    }
+                    if (typeof directive.suggestMood.genderPct === 'number') {
+                        valid.suggestMood.genderPct = Math.max(0, Math.min(100, Math.round(directive.suggestMood.genderPct)));
                     }
                     if (Object.keys(valid.suggestMood).length === 0) delete valid.suggestMood;
                 }
@@ -1028,7 +1118,7 @@
             // Test 4: Diagnostic prompt config (separate from live session)
             let promptConfig;
             try {
-                const systemPrompt = this._buildSystemPrompt(testCommand);
+                const systemPrompt = await this._buildSystemPrompt(testCommand);
                 promptConfig = await this._ensureDiagnosticPromptConfig(chatDir, systemPrompt);
                 if (promptConfig && promptConfig.objectId) {
                     log('Diagnostic prompt config', true,

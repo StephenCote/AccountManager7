@@ -198,7 +198,7 @@
                     m("div", { class: "flex-center2" }, [
                         m(page.components.games.component),
                         m(page.components.emoji.component),
-                        m(page.components.moodRing.component),
+                        (page.components.moodRing.enabled() ? m(page.components.moodRing.component) : ""),
                         m("div", { class: "context-menu-container" }, [
                             profileContextButton(),
                             m("div", { id: "profileContextMenu", class: "transition transition-0 context-menu-48" }, [

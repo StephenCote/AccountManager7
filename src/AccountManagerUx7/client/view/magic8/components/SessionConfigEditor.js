@@ -133,7 +133,8 @@ const SessionConfigEditor = {
                 enabled: false,
                 command: '',
                 intervalMs: 60000,
-                testMode: false
+                testMode: false,
+                imageTags: ''
             }
         };
     },
@@ -980,8 +981,8 @@ const SessionConfigEditor = {
                             'No groups selected - no background images will cycle'
                         ),
 
-                    // Cycle settings (shown when groups are selected)
-                    this.config.images.baseGroups.length > 0 && m('.space-y-4.mt-4', [
+                    // Cycle settings (always shown — images may come from generated or tag-based sources)
+                    m('.space-y-4.mt-4', [
                         m('.flex.items-center.gap-4', [
                             m('label.w-36', 'Cycle Interval'),
                             m('input.flex-1', {
@@ -1668,6 +1669,18 @@ const SessionConfigEditor = {
                                 value: this.config.director.intervalMs,
                                 oninput: (e) => this.config.director.intervalMs = parseInt(e.target.value)
                             })
+                        ]),
+
+                        // Image tags for director
+                        m('.config-field', [
+                            m('label.block.text-sm.font-medium.mb-1', 'Image Tags'),
+                            m('input.w-full.bg-gray-900.rounded.px-3.py-2.text-sm', {
+                                type: 'text',
+                                placeholder: 'landscape, ethereal, portrait (comma-separated)',
+                                value: this.config.director.imageTags || '',
+                                oninput: (e) => this.config.director.imageTags = e.target.value
+                            }),
+                            m('p.text-xs.text-gray-500.mt-1', 'Comma-separated tags the LLM can use to find existing tagged images. Leave empty to skip tag-based image search.')
                         ]),
 
                         // Test mode toggle

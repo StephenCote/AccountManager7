@@ -223,7 +223,7 @@ const HypnoCanvas = {
                 this._drawTunnel(ctx, w, h);
                 break;
             case 'hypnoDisc':
-                this._drawHypnoDisc(ctx, w, h);
+                // Rendered as DOM elements (nested divs with CSS animation), not on canvas
                 break;
         }
     },
@@ -425,53 +425,55 @@ const HypnoCanvas = {
     },
 
     /**
-     * Draw hypnotic disc spiral effect (concentric half-circles with alternating colors)
-     * Based on nested-circle CSS technique — alternating even/odd ring colors at varying
-     * radii create a moiré spiral illusion when rotated.
+     * Build the HypnoDisc DOM tree as nested Mithril vnodes.
+     * Each level gets its own CSS spin animation; nesting compounds the rotation,
+     * producing the moiré spiral illusion from the reference spiral.html/css.
+     * @param {boolean} active - Whether hypnoDisc is the current effect
+     * @returns {Object} Mithril vnode
      * @private
      */
-    _drawHypnoDisc(ctx, w, h) {
-        const cx = w / 2, cy = h / 2;
-        const maxR = Math.sqrt(w * w + h * h) / 2;
+    _renderHypnoDiscDOM(active) {
         const totalRings = 50;
-        // ~60s full rotation: frame * (2*PI / (60fps * 60s)) ≈ 0.00175
-        const rotation = this.frame * 0.00175;
         const { r, g, b } = this.accentColor;
 
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(rotation);
+        // Build from innermost (current=totalRings) to outermost (current=1)
+        let inner = m('div', { style: { minWidth: '7px', minHeight: '7px' } });
 
-        // Draw outermost to innermost (painter's algorithm)
-        for (let i = 1; i <= totalRings; i++) {
-            const rank = (totalRings + 1) - i;
-            const isEven = (rank % 2 === 0);
+        for (let current = totalRings; current >= 1; current--) {
+            const rank = (totalRings + 1) - current;
+            const isEven = rank % 2 === 0;
             const percentage = rank / totalRings;
             const invertPct = 1 - percentage;
             const opacity = Math.min(1, invertPct + 0.3);
-            const radius = (i / totalRings) * maxR;
-            const borderW = Math.max(1, 7 * percentage);
+            const borderW = Math.max(0.5, 7 * percentage);
 
-            // Top half — primary color for even rings, inverted for odd
-            ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI);
-            ctx.lineWidth = borderW;
-            ctx.strokeStyle = isEven
-                ? `rgba(${r}, ${g}, ${b}, ${opacity})`
-                : `rgba(${255 - r}, ${255 - g}, ${255 - b}, ${opacity * 0.7})`;
-            ctx.stroke();
+            const color = isEven
+                ? 'rgba(' + r + ',' + g + ',' + b + ',' + opacity + ')'
+                : 'rgba(' + (255 - r) + ',' + (255 - g) + ',' + (255 - b) + ',' + (opacity * 0.7) + ')';
 
-            // Bottom half — opposite coloring
-            ctx.beginPath();
-            ctx.arc(0, 0, radius, Math.PI, 2 * Math.PI);
-            ctx.lineWidth = borderW;
-            ctx.strokeStyle = isEven
-                ? `rgba(${255 - r}, ${255 - g}, ${255 - b}, ${opacity * 0.7})`
-                : `rgba(${r}, ${g}, ${b}, ${opacity})`;
-            ctx.stroke();
+            inner = m('div', {
+                style: {
+                    minWidth: '7px',
+                    minHeight: '7px',
+                    boxSizing: 'border-box',
+                    padding: '3.5px',
+                    borderRadius: '100%',
+                    borderTop: borderW + 'px solid ' + color,
+                    borderBottom: borderW + 'px solid ' + color,
+                    animation: 'spin 60s infinite linear'
+                }
+            }, inner);
         }
 
-        ctx.restore();
+        // Scale up so the disc fills ~90% of the viewport height
+        const scale = Math.max(1, Math.min(window.innerWidth, window.innerHeight) / 400);
+
+        return m('.absolute.inset-0.flex.items-center.justify-center.overflow-hidden', {
+            style: {
+                opacity: active ? 1 : 0,
+                transition: 'opacity 2s ease'
+            }
+        }, m('div', { style: { transform: 'scale(' + scale.toFixed(2) + ')' } }, inner));
     },
 
     /**
@@ -561,7 +563,8 @@ const HypnoCanvas = {
     },
 
     oncreate(vnode) {
-        this.setupCanvas(vnode.dom);
+        const canvas = vnode.dom.querySelector('canvas');
+        this.setupCanvas(canvas);
 
         if (vnode.attrs.theme) {
             this.updateTheme(vnode.attrs.theme);
@@ -587,13 +590,23 @@ const HypnoCanvas = {
 
     view(vnode) {
         const { theme, class: className } = vnode.attrs;
+        const showDisc = this.effectMode === 'hypnoDisc' || this.prevEffectMode === 'hypnoDisc';
+        const discActive = this.effectMode === 'hypnoDisc';
 
-        return m('canvas.hypno-canvas', {
-            class: className || 'absolute inset-0 z-5 pointer-events-none',
-            style: {
-                mixBlendMode: 'screen'
-            }
-        });
+        return m('.hypno-wrapper', {
+            class: className || 'absolute inset-0 pointer-events-none'
+        }, [
+            // Canvas for all non-hypnoDisc effects
+            m('canvas.hypno-canvas.absolute.inset-0', {
+                style: {
+                    mixBlendMode: 'screen',
+                    opacity: discActive ? 0 : 1,
+                    transition: 'opacity 2s ease'
+                }
+            }),
+            // HypnoDisc as nested CSS divs (compound rotation creates the spiral illusion)
+            showDisc ? this._renderHypnoDiscDOM(discActive) : null
+        ]);
     }
 };
 

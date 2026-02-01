@@ -20,6 +20,7 @@
         "/model",
         "/common",
         "/media",
+        "/media/prompts",
         "/dist",
         "/dist/tiles",
         "/node_modules/@fortawesome/fontawesome-free/webfonts",
