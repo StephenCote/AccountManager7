@@ -20,28 +20,48 @@
 
 AccountManager7 already contains the core systems needed for a turn-based RPG: a deep character model with D&D-style statistics, alignment, and personality; an MGRS-inspired spatial coordinate system with terrain generation; an inventory/crafting/equipment system; an interaction and combat framework; a time/event simulation engine (Overwatch); and a working game client (cardGame.js) with WebSocket streaming. This plan extends those systems into a fully realized turn-based RPG with tile-based visual navigation, party management, quest progression, and public asset integration.
 
-**What exists today (reuse):** ~85% of the backend model, service layer, and communication infrastructure — including needs-driven behavior, personality-based compatibility, social influence tracking, skill/combat resolution, and the tabletop-derived skill decay rules.
-**What needs to be built:** Visual tile renderer, intra-cell sub-grid system, persistent reputation calculator, skill leveling/decay implementation, tile art pipeline, and a dedicated RPG game client. Most "missing" systems are extensions of existing infrastructure rather than greenfield work.
+**Architecture Principle — REST-First:** The RPG client communicates with AM7 **exclusively through the REST API and WebSocket endpoints**. No direct model access, no embedded Java calls, no server-side rendering dependencies. Every game action — movement, combat, dialogue, inventory, party management — flows through the existing and extended `/rest/game/*` and `/rest/olio/*` endpoints. This strict API boundary means the client is a pure consumer of a well-defined service contract, making it trivial to swap, extend, or supplement with alternative frontends.
+
+**Architecture Principle — App-Ready:** The RPG client is built as an **installable cross-platform App** targeting desktop, tablet, and mobile from a single codebase. The web-based implementation (PWA) provides native-app-like experience — installable from the browser, full-screen capable, responsive across screen sizes, and touch-optimized. Because all game logic runs server-side behind the REST API, the client is a lightweight rendering and input layer with no platform-specific dependencies.
+
+**What exists today (reuse):** ~85% of the backend model, service layer, and communication infrastructure — including needs-driven behavior, personality-based compatibility, social influence tracking, skill/combat resolution, and the tabletop-derived skill decay rules. The REST API already exposes 25+ game endpoints covering movement, interaction, chat, situation reports, save/load, and asset serving.
+**What needs to be built:** Visual tile renderer, intra-cell sub-grid system, persistent reputation calculator, skill leveling/decay implementation, tile art pipeline, responsive/adaptive UI layout, PWA shell, and a dedicated RPG game client. Most "missing" systems are extensions of existing infrastructure rather than greenfield work. New backend features are exposed as REST endpoints first, then consumed by the client — never wired directly.
 
 ---
 
 ## Platform Recommendation
 
-**Recommendation: Web-based (browser)**
+**Recommendation: Progressive Web App (PWA) — App-ready for desktop, tablet, and mobile**
 
-The existing UX is a Mithril.js SPA with esbuild bundling, WebSocket real-time messaging, Canvas rendering (HypnoCanvas), and a REST client talking to the Java backend. A turn-based RPG with 2D pixel art on a grid is trivially within browser performance limits.
+The RPG client is built as a **Progressive Web App** — a single codebase that installs and runs as a native-feeling App on any platform. Users launch it from a URL during development, then install it to their home screen or desktop for a full-screen, app-like experience. The existing UX is a Mithril.js SPA with esbuild bundling, WebSocket real-time messaging, Canvas rendering, and a REST client talking to the Java backend — all of which carry forward unchanged.
 
-| Factor | Web (Browser) | Electron | Tauri |
-|--------|--------------|----------|-------|
-| Migration effort | None | High | High |
-| Distribution | URL | Installer | Installer |
-| Cross-platform | All (incl. mobile) | Desktop only | Desktop + mobile |
-| 2D RPG performance | Excellent | Excellent | Excellent |
-| Existing code reuse | 100% | ~95% | ~90% |
-| Offline play | Service worker | Native | Native |
-| Build complexity | Current (esbuild) | + Electron | + Rust toolchain |
+| Factor | PWA (Recommended) | Electron | Tauri | Native (iOS/Android) |
+|--------|-------------------|----------|-------|----------------------|
+| Migration effort | Low (add manifest + SW) | High | High | Very High |
+| Distribution | URL + install prompt | Installer | Installer | App Store |
+| Desktop support | Yes (installable) | Yes | Yes | No |
+| Tablet support | Yes (responsive) | No | Partial | Yes |
+| Mobile support | Yes (responsive + touch) | No | Yes | Yes |
+| 2D RPG performance | Excellent | Excellent | Excellent | Excellent |
+| Existing code reuse | 100% | ~95% | ~90% | ~30% |
+| Offline play | Service worker | Native | Native | Native |
+| Build complexity | Current (esbuild) | + Electron | + Rust toolchain | + Swift/Kotlin |
+| REST API boundary | Clean (same origin) | Clean (localhost) | Clean (localhost) | Clean (remote) |
 
-**Rationale:** Every alternative adds complexity, build overhead, and distribution burden while providing zero performance benefit for a 2D turn-based game. The heavy computation (world simulation, AI, combat resolution) already runs on the Java backend. If offline play is ever needed, a service worker can be added without leaving the browser.
+**Rationale:** The RPG client is a thin rendering and input layer — all game logic, world simulation, AI, and combat resolution run on the Java backend behind the REST API. This means the client has no platform-specific computational requirements. A PWA delivers:
+
+- **Desktop:** Installable via Chrome/Edge "Install App" prompt. Runs in its own window, no browser chrome. Indistinguishable from a native desktop app.
+- **Tablet:** Responsive layout adapts to landscape/portrait. Touch controls for movement and action selection. Add-to-home-screen for full-screen play.
+- **Mobile:** Same responsive layout with compact UI mode. Touch d-pad for navigation. VATS overlay sized for thumb reach. Installable from Safari/Chrome.
+
+Because the client communicates exclusively through REST + WebSocket, wrapping it in a native shell later (Capacitor, TWA, Electron) requires zero code changes — the PWA *is* the app, the shell is just a distribution mechanism. Build the PWA first; wrap it only if App Store distribution becomes a requirement.
+
+**PWA Requirements:**
+- `manifest.json` — app name, icons (192px, 512px), display: standalone, theme color, orientation: any
+- Service worker — cache static assets (tile atlases, spritesheets, audio), network-first for REST API calls
+- Responsive viewport meta tag — `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`
+- Touch event handling — tap, swipe, pinch-to-zoom on tile map
+- Orientation support — landscape preferred on mobile, both on tablet
 
 ---
 
@@ -789,40 +809,74 @@ World (olio.world)
 
 ## Technical Architecture
 
+### REST-First Architecture Principle
+
+The RPG client treats the AM7 backend as a **remote service accessed exclusively through its REST API and WebSocket endpoints**. This is a hard boundary, not a guideline:
+
+**Client ONLY uses:**
+- `REST /rest/game/*` — all game actions (move, interact, chat, save/load, situation, party, reputation, skills, cellGrid, needs)
+- `REST /rest/olio/*` — character generation, profiles, comparison, narration, image generation
+- `REST /rest/resource/*`, `/rest/list/*`, `/rest/path/*` — generic model CRUD when needed
+- `REST /media/*`, `/thumbnail/*` — asset and image serving
+- `WebSocket /wss` — real-time push events (VATS triggers, reputation updates, chat streaming, game state sync)
+
+**Client NEVER:**
+- Imports or references Java classes, model definitions, or backend utilities directly
+- Manipulates database records or AM7 object graph outside REST calls
+- Implements game logic that belongs on the server (combat resolution, reputation calculation, skill decay, needs evaluation)
+- Caches authoritative state — the server is the source of truth; the client renders and sends input
+
+**Why this matters:**
+1. **App-ready:** Any client that speaks REST + WebSocket can play the game — browser, PWA, native iOS/Android wrapper, desktop Electron shell, or a future Unity/Godot frontend. The API contract is the product.
+2. **Testable:** Backend endpoints are tested independently (Tier 3 tests). Client code is tested against mock REST responses. No integration coupling.
+3. **Deployable:** Client and server can be deployed, scaled, and updated independently. The client is a static asset bundle; the server is a Java WAR.
+4. **Secure:** PBAC authorization enforced at the REST layer. No client-side bypass possible.
+
 ### System Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     BROWSER (Client)                              │
+│              APP CLIENT (Desktop / Tablet / Mobile)                │
+│              PWA — installable, responsive, touch-ready           │
+│              Communicates ONLY via REST API + WebSocket            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  rpgGame.js (Main RPG Client)                                    │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────────┐ │
 │  │ TileRenderer  │ │ PartyPanel   │ │ CombatManager            │ │
-│  │ (Canvas 2D)   │ │              │ │ (turn queue, animations) │ │
+│  │ (Canvas 2D)   │ │              │ │ (VATS overlay, anims)    │ │
 │  ├──────────────┤ ├──────────────┤ ├──────────────────────────┤ │
-│  │ AssetLoader   │ │ QuestJournal │ │ DialogueUI               │ │
-│  │ (atlas mgr)   │ │              │ │ (trees + LLM chat)      │ │
+│  │ AssetLoader   │ │ NeedsJournal │ │ DialogueUI               │ │
+│  │ (atlas mgr)   │ │              │ │ (LLM chat streaming)    │ │
 │  ├──────────────┤ ├──────────────┤ ├──────────────────────────┤ │
 │  │ FogOfWar      │ │ Inventory    │ │ AudioManager             │ │
-│  │ (visibility)  │ │ (drag/drop)  │ │ (music + SFX)           │ │
+│  │ (visibility)  │ │ (touch drag) │ │ (music + SFX)           │ │
 │  └──────────────┘ └──────────────┘ └──────────────────────────┘ │
+│                                                                   │
+│  Responsive Layout Engine (desktop / tablet / mobile breakpoints)│
+│  Touch Input Manager (tap, swipe, d-pad, pinch-zoom)             │
+│  Service Worker (asset caching, offline fallback)                 │
 │                                                                   │
 │  Shared: am7client.js, pageClient.js, gameStream.js, modelDef.js│
 │                                                                   │
-│  ◀──── WebSocket ────▶          ◀──── REST/HTTP ────▶            │
-└─────────┬───────────────────────────────────┬───────────────────┘
-          │                                   │
-          │         ws://server/wss           │    /rest/*
-          │                                   │
-┌─────────┴───────────────────────────────────┴───────────────────┐
-│                     JAVA SERVER                                   │
+│  ═══════════════════ REST API BOUNDARY ══════════════════════    │
+│  ◀──── WebSocket /wss ────▶      ◀──── REST /rest/* ────▶       │
+└─────────┬───────────────────────────────────────────┬───────────┘
+          │  Push: VATS triggers,                     │
+          │  reputation updates,                      │  Request/Response:
+          │  chat streaming,                          │  all game actions,
+          │  state sync                               │  situation, party, etc.
+          │                                           │
+┌─────────┴───────────────────────────────────────────┴───────────┐
+│                     AM7 JAVA SERVER                               │
+│                     (All game logic lives here)                   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  GameService.java (extended)                                     │
+│  REST Endpoints (GameService.java — the client's sole interface)  │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │ Existing: move, interact, chat, situation, save/load      │   │
-│  │ New: party/*, quest/*, combat/turn, cellGrid/*            │   │
+│  │ Existing: move, moveTo, interact, resolve, chat, state    │   │
+│  │           situation, save, load, investigate, consume     │   │
+│  │ New: party/*, reputation/*, cellGrid/*, skills/*, needs/* │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                   │
 │  GameStreamHandler.java (extended)                               │
@@ -846,6 +900,7 @@ World (olio.world)
 │  │ (rep-gated)   │ │ (pause/resume)│ │ (objective tracking)   │ │
 │  └──────────────┘ └──────────────┘ └──────────────────────────┘ │
 │                                                                   │
+│  Auth: JWT (TokenFilter) + PBAC (AccessPoint) at REST boundary   │
 │  Data Layer: AccountManagerObjects7 (existing + new models)      │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘

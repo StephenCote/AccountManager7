@@ -13,7 +13,11 @@
       "Bash(ls:*)",
       "WebFetch(domain:codepen.io)",
       "Bash(powershell:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(python3:*)",
+      "Bash(py:*)",
+      "Bash(where:*)",
+      "Bash(python -c:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"
