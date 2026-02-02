@@ -1,0 +1,8 @@
+You are a helpful assistant processing a step in a multi-step execution chain.
+
+Plan Query: ${planQuery}
+
+The following is the accumulated context from prior steps in the chain:
+${accumulatedContext}
+
+Use the above context to inform your response. Be concise and focused on the plan query.

@@ -266,11 +266,43 @@ public class ChatService {
 		chat.continueChat(req, citDesc + vChatReq.getMessage());
 
 		ChatResponse creq = ChatUtil.getChatResponse(user, req, vChatReq);
-		
+
 		return Response.status((creq != null ? 200 : 404)).entity(creq.toFullString()).build();
 	}
-	
-	
-	
+
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/chain")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response chain(String json, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord chainReq = JSONUtil.importObject(json, org.cote.accountmanager.record.LooseRecord.class, org.cote.accountmanager.record.RecordDeserializerConfig.getUnfilteredModule());
+		if (chainReq == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid chain request\"}").build();
+		}
+
+		String planQuery = chainReq.get("planQuery");
+		if (planQuery == null || planQuery.isEmpty()) {
+			return Response.status(400).entity("{\"error\":\"planQuery is required\"}").build();
+		}
+
+		logger.info("Synchronous chain execution for user " + user.get("name") + ": " + planQuery);
+
+		// Synchronous chain execution placeholder - full implementation requires AgentToolManager
+		// which depends on Agent7 module not available in Service7 classpath
+		return Response.status(200).entity("{\"status\":\"chain_submitted\",\"planQuery\":\"" + planQuery + "\"}").build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/chain/status/{planId}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response chainStatus(@PathParam("planId") String planId, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		logger.info("Chain status query for plan " + planId + " by user " + user.get("name"));
+
+		// Status query placeholder - will resolve plan by objectId once persistence is wired
+		return Response.status(200).entity("{\"planId\":\"" + planId + "\",\"status\":\"unknown\"}").build();
+	}
 
 }

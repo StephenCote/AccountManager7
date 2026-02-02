@@ -218,6 +218,9 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 					else if("game".equals(smsg.get(FieldNames.FIELD_NAME))) {
 						handleGameRequest(session, user, msg);
 					}
+					else if("chain".equals(smsg.get(FieldNames.FIELD_NAME))) {
+						handleChainRequest(session, user, msg);
+					}
 					else {
 						logger.warn("Unknown message type: " + smsg.get(FieldNames.FIELD_NAME));
 					}
@@ -264,6 +267,38 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			return;
 		}
 		GameStreamHandler.handleRequest(session, user, gameReq);
+	}
+
+	private void handleChainRequest(Session session, BaseRecord user, SocketMessage msg) {
+		BaseRecord smsg = msg.getMessage();
+		if (smsg == null) {
+			logger.error("Chain request message is null");
+			return;
+		}
+		String chainReqStr = new String((byte[])smsg.get("data"));
+		BaseRecord chainReq = JSONUtil.importObject(chainReqStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		if (chainReq == null) {
+			logger.error("Chain request is null");
+			return;
+		}
+
+		String planQuery = chainReq.get("planQuery");
+
+		if (planQuery == null || planQuery.isEmpty()) {
+			logger.error("Chain request missing planQuery");
+			chirpUser(user, new String[] {"chainEvent", "chainError", "planQuery is required"});
+			return;
+		}
+
+		java.util.concurrent.CompletableFuture.runAsync(() -> {
+			try {
+				logger.info("Starting chain execution for user " + user.get(FieldNames.FIELD_URN) + ": " + planQuery);
+				chirpUser(user, new String[] {"chainEvent", "chainStart", planQuery});
+			} catch (Exception e) {
+				logger.error("Chain execution failed", e);
+				chirpUser(user, new String[] {"chainEvent", "chainError", e.getMessage()});
+			}
+		});
 	}
 
 	@OnClose

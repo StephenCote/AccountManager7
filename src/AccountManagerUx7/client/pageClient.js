@@ -442,6 +442,14 @@
                 }
                 page.audioStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2]);
             }
+            else if(c1 === "chainEvent"){
+                let eventType = msg.chirps[1];
+                let eventData = null;
+                try { eventData = JSON.parse(msg.chirps[2]); } catch(e) { eventData = msg.chirps[2]; }
+                if(page.chainStream){
+                    page.chainStream["on" + eventType](eventData);
+                }
+            }
             else if(c1.match(/^game\.action\./)){
                 // Game action messages (start, progress, complete, error, interrupt, cancel)
                 if(page.gameStream || window.gameStream){

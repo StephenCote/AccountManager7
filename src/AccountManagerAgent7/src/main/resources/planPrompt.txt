@@ -4,6 +4,12 @@ The following JSON schema describes tool.planStep tools available to you, includ
 ${toolDescriptions}
 The following describes the tool.planStep schema you must use to create plan steps:
 ${planStepSchema}
+Each plan step has a "stepType" field that determines its execution path. The default stepType is "TOOL" for backward compatibility. Available step types:
+- TOOL: Execute a Java tool method via reflection. Requires "toolName". This is the default if stepType is not specified.
+- LLM: Call an LLM with a prompt configuration. Requires "promptConfigName" (which prompt config to use) and optionally "chatConfigName".
+- RAG_QUERY: Perform a vector similarity search. Requires "ragQuery" (the search text) and optionally "ragLimit" (max results, default 10).
+- POLICY_GATE: Evaluate a policy that gates chain progression. Requires "policyName". If the policy denies, the chain halts.
+
 It is important to use the correct model schemas - ALWAYS lookup a desired schema definition before using it.
 Your response MUST BE VALID JSON!
 Ensure that all string values are enclosed in double quotes without additional escape characters or mismatched quotation types.

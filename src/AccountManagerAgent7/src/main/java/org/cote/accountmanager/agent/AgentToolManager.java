@@ -56,7 +56,8 @@ public class AgentToolManager {
 	private String defaultStepPromptName = "Tool Prompt";
 	private String defaultStepChatName = "Tool Chat";
 	private PlanExecutor planExec = null;
-	
+	private ChainExecutor chainExec = null;
+
 	private static Pattern toolDescsPat = Pattern.compile("\\$\\{toolDescriptions\\}");
 	private static Pattern planStepSchemaPat = Pattern.compile("\\$\\{planStepSchema\\}");
 	private static Pattern paramSchemaPat = Pattern.compile("\\$\\{parameterSchema\\}");
@@ -71,15 +72,24 @@ public class AgentToolManager {
 		this.toolUser = user;
 		this.chatConfig = chatConfig;
 		planExec = new PlanExecutor(this);
+		chainExec = new ChainExecutor(this, user);
 		discoverTools();
 	}
 
 	protected Object getToolInstance() {
 		return toolInstance;
 	}
-	
+
 	public PlanExecutor getPlanExecutor() {
 		return planExec;
+	}
+
+	public ChainExecutor getChainExecutor() {
+		return chainExec;
+	}
+
+	public BaseRecord getChatConfig() {
+		return chatConfig;
 	}
 	
 	protected Method getToolMethod(String toolName) {
@@ -167,6 +177,14 @@ public class AgentToolManager {
 
 	public BaseRecord createPlan(String query) {
 		return createPlan("Plan - " + UUID.randomUUID().toString(), defaultPlanPromptName, defaultPlanChatName, query);
+	}
+
+	public BaseRecord createChainPlan(String query) {
+		BaseRecord plan = createPlan(query);
+		if (plan != null) {
+			plan.setValue("chainMode", true);
+		}
+		return plan;
 	}
 	
 	public BaseRecord createPlan(String planName, String planPromptConfigName, String planChatName, String query) {
@@ -600,7 +618,7 @@ public class AgentToolManager {
 		return toolsArray.toString(2);
 	}
 
-	private BaseRecord getCreatePromptConfig(String name) {
+	protected BaseRecord getCreatePromptConfig(String name) {
 		BaseRecord opcfg = DocumentUtil.getRecord(toolUser, OlioModelNames.MODEL_PROMPT_CONFIG, name, "~/Chat");
 		if (opcfg != null) {
 			return opcfg;

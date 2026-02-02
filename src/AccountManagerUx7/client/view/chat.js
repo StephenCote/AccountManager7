@@ -308,6 +308,112 @@
       return cfg;
     }
 
+    function newChainStream() {
+      let cfg = {
+        steps: [],
+        currentStep: 0,
+        totalSteps: 0,
+        isRunning: false,
+
+        onchainStart: (data) => {
+          cfg.isRunning = true;
+          cfg.steps = [];
+          cfg.currentStep = 0;
+          m.redraw();
+        },
+        onstepStart: (data) => {
+          if (data) {
+            cfg.currentStep = data.stepNumber || 0;
+            cfg.totalSteps = data.totalSteps || 0;
+            cfg.steps.push({
+              step: data.stepNumber,
+              type: data.stepType || "TOOL",
+              status: "executing",
+              summary: data.stepSummary || "Executing..."
+            });
+          }
+          m.redraw();
+        },
+        onstepComplete: (data) => {
+          if (data && cfg.steps.length > 0) {
+            let last = cfg.steps[cfg.steps.length - 1];
+            last.status = "completed";
+            last.summary = data.stepSummary || "Completed";
+            cfg.totalSteps = data.totalSteps || cfg.totalSteps;
+          }
+          m.redraw();
+        },
+        onstepError: (data) => {
+          if (data && cfg.steps.length > 0) {
+            let last = cfg.steps[cfg.steps.length - 1];
+            last.status = "error";
+            last.summary = data.errorMessage || "Error";
+          }
+          m.redraw();
+        },
+        onchainComplete: (data) => {
+          cfg.isRunning = false;
+          if (data && data.stepSummary) {
+            if (!chatCfg.history) chatCfg.history = {};
+            if (!chatCfg.history.messages) chatCfg.history.messages = [];
+            chatCfg.history.messages.push({ role: "assistant", content: data.stepSummary });
+          }
+          page.chainStream = undefined;
+          m.redraw();
+        },
+        onstepsInserted: (data) => {
+          if (data) {
+            cfg.totalSteps = data.totalSteps || cfg.totalSteps;
+          }
+          m.redraw();
+        },
+        onchainMaxSteps: (data) => {
+          cfg.isRunning = false;
+          page.toast("warn", "Chain reached maximum step limit", 5000);
+          page.chainStream = undefined;
+          m.redraw();
+        },
+        onchainError: (data) => {
+          cfg.isRunning = false;
+          let msg = (typeof data === "string") ? data : (data?.errorMessage || "Chain error");
+          page.toast("error", "Chain error: " + msg, 5000);
+          page.chainStream = undefined;
+          m.redraw();
+        }
+      };
+      return cfg;
+    }
+
+    function getChainProgressView() {
+      if (!page.chainStream || !page.chainStream.isRunning) return null;
+      let cs = page.chainStream;
+      let statusIcons = { "completed": "\u2713", "error": "\u2717", "executing": "\u25CB" };
+      return m("div.chain-progress", [
+        m("div.chain-progress-bar", [
+          m("span", "Chain: Step " + cs.currentStep + " / " + cs.totalSteps),
+          cs.isRunning ? m("span.chain-spinner", " \u23F3") : null
+        ]),
+        m("div.chain-steps", cs.steps.map(s =>
+          m("div.chain-step." + s.status, [
+            m("span.chain-step-icon", statusIcons[s.status] || "?"),
+            m("span.chain-step-type", " [" + s.type + "] "),
+            m("span.chain-step-summary", s.summary)
+          ])
+        ))
+      ]);
+    }
+
+    function doChainSend() {
+      let msg = document.querySelector("[name='chatmessage']").value;
+      if (!msg || !msg.trim()) return;
+      pushHistory();
+      page.chainStream = newChainStream();
+      page.chainStream.isRunning = true;
+      let chainReq = { planQuery: msg };
+      page.wss.send("chain", JSON.stringify(chainReq), undefined);
+      m.redraw();
+    }
+
     function doStop() {
       if (!chatCfg.streaming) {
         return;
@@ -431,11 +537,11 @@
         ///
         chatCfg.peek = true;
         p = new Promise((res, rej) => {
-          m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/prompt/" + c1.name, withCredentials: true })
+          m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(c1.name), withCredentials: true })
             .then((c) => {
               chatCfg.prompt = c;
 
-              m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/chat/" + c2.name, withCredentials: true }).then((c3) => {
+              m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/chat/" + encodeURIComponent(c2.name), withCredentials: true }).then((c3) => {
                 chatCfg.chat = c3;
                 chatCfg.system = c3.systemCharacter;
                 chatCfg.user = c3.userCharacter;
@@ -447,11 +553,17 @@
                 }).catch((e) => {
                   console.warn("Error in chat history", e);
                   chatCfg.peek = false;
+                  rej(e);
                 });
               }).catch((e) => {
                   console.warn("Error in chat config", e);
                   chatCfg.peek = false;
-                });;
+                  rej(e);
+                });
+            }).catch((e) => {
+              console.warn("Error in prompt config", e);
+              chatCfg.peek = false;
+              rej(e);
             });
         });
       }

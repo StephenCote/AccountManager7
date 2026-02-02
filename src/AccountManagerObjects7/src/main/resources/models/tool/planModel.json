@@ -24,6 +24,33 @@
 			"default": false
 		},
 		{
+			"name": "maxSteps",
+			"type": "int",
+			"default": 20
+		},
+		{
+			"name": "totalExecutedSteps",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "chainContextJson",
+			"type": "string"
+		},
+		{
+			"name": "chainMode",
+			"type": "boolean",
+			"default": false
+		},
+		{
+			"name": "streamSessionId",
+			"type": "string"
+		},
+		{
+			"name": "mcpSessionId",
+			"type": "string"
+		},
+		{
 			"name": "steps",
 			"type": "list",
 			"baseType": "model",

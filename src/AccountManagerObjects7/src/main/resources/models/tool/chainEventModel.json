@@ -1,0 +1,57 @@
+{
+	"name": "tool.chainEvent",
+	"ioConstraints": ["unknown"],
+	"fields": [
+		{
+			"name": "eventType",
+			"type": "string"
+		},
+		{
+			"name": "planName",
+			"type": "string"
+		},
+		{
+			"name": "stepNumber",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "totalSteps",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "stepType",
+			"type": "string"
+		},
+		{
+			"name": "stepStatus",
+			"type": "string"
+		},
+		{
+			"name": "stepSummary",
+			"type": "string"
+		},
+		{
+			"name": "toolName",
+			"type": "string"
+		},
+		{
+			"name": "outputPreview",
+			"type": "string"
+		},
+		{
+			"name": "errorMessage",
+			"type": "string"
+		},
+		{
+			"name": "timestamp",
+			"type": "long",
+			"default": 0
+		},
+		{
+			"name": "mcpContextUri",
+			"type": "string"
+		}
+	]
+}

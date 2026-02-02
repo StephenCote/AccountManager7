@@ -14,13 +14,63 @@
 			"type": "int",
 			"default": 0
 		},
-
+		{
+			"name": "stepType",
+			"type": "enum",
+			"baseClass": "org.cote.accountmanager.schema.type.StepTypeEnumType",
+			"default": "TOOL"
+		},
+		{
+			"name": "stepStatus",
+			"type": "enum",
+			"baseClass": "org.cote.accountmanager.schema.type.StepStatusEnumType",
+			"default": "PENDING"
+		},
 		{
 			"name": "stepPromptConfigName",
 			"type": "string"
 		},
 		{
 			"name": "stepChatName",
+			"type": "string"
+		},
+		{
+			"name": "promptConfigName",
+			"type": "string"
+		},
+		{
+			"name": "chatConfigName",
+			"type": "string"
+		},
+		{
+			"name": "policyName",
+			"type": "string"
+		},
+		{
+			"name": "ragQuery",
+			"type": "string"
+		},
+		{
+			"name": "ragLimit",
+			"type": "int",
+			"default": 10
+		},
+		{
+			"name": "dynamic",
+			"type": "boolean",
+			"default": false
+		},
+		{
+			"name": "parentStep",
+			"type": "int",
+			"default": -1
+		},
+		{
+			"name": "summaryText",
+			"type": "string"
+		},
+		{
+			"name": "vectorReferenceUri",
 			"type": "string"
 		},
 		{
