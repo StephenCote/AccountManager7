@@ -201,7 +201,7 @@ public class ScimUserAdapter {
 		List<Map<String, Object>> groups = new ArrayList<>();
 		try {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_GROUP);
-			q.filterParticipant(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARTS, user, null);
+			q.filterParticipant(ModelNames.MODEL_GROUP, null, user, null);
 			q.planCommon(false);
 			QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, q);
 			if (qr != null && qr.getResults() != null) {
@@ -224,7 +224,7 @@ public class ScimUserAdapter {
 		List<Map<String, Object>> roles = new ArrayList<>();
 		try {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_ROLE);
-			q.filterParticipant(ModelNames.MODEL_ROLE, FieldNames.FIELD_PARTS, user, null);
+			q.filterParticipant(ModelNames.MODEL_ROLE, null, user, null);
 			q.planCommon(false);
 			QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, q);
 			if (qr != null && qr.getResults() != null) {
@@ -245,10 +245,14 @@ public class ScimUserAdapter {
 		Map<String, Object> meta = new LinkedHashMap<>();
 		meta.put("resourceType", resourceType);
 
-		Object created = record.get(FieldNames.FIELD_CREATED_DATE);
-		Object modified = record.get(FieldNames.FIELD_MODIFIED_DATE);
-		if (created != null) meta.put("created", created.toString());
-		if (modified != null) meta.put("lastModified", modified.toString());
+		if (record.hasField(FieldNames.FIELD_CREATED_DATE)) {
+			Object created = record.get(FieldNames.FIELD_CREATED_DATE);
+			if (created != null) meta.put("created", created.toString());
+		}
+		if (record.hasField(FieldNames.FIELD_MODIFIED_DATE)) {
+			Object modified = record.get(FieldNames.FIELD_MODIFIED_DATE);
+			if (modified != null) meta.put("lastModified", modified.toString());
+		}
 
 		String objectId = record.get(FieldNames.FIELD_OBJECT_ID);
 		String endpoint = "User".equals(resourceType) ? "/v2/Users/" : "/v2/Groups/";

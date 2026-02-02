@@ -3950,6 +3950,124 @@ src/test/resources/mcp/
 
 ---
 
+## Part 16: SCIM Overlap Analysis
+
+SCIM 2.0 (RFC 7643/7644) is already implemented in AM7 — `ScimUserAdapter`, `ScimGroupAdapter`, `ScimUserService`, and `ScimGroupService` are written and registered. Both SCIM and MCP sit on the same infrastructure stack. This section identifies where they intersect and where MCP should reuse SCIM work.
+
+### Shared Infrastructure (Already In Place)
+
+Both SCIM and MCP endpoints use the identical service stack:
+
+| Layer | Component | How SCIM Uses It | How MCP Would Use It |
+|-------|-----------|------------------|----------------------|
+| **AuthN** | `TokenFilter` (JWT bearer) | `/scim/*` URL pattern in web.xml | Needs `/mcp/*` added to same filter-mapping |
+| **AuthZ** | `AccessPoint` (PBAC) | All SCIM CRUD goes through `AccessPoint.find/create/update/delete` | All MCP tool calls and resource reads go through same `AccessPoint` |
+| **Org Scoping** | `AccessPoint.search()` auto-injects `organizationId` | SCIM queries scoped to service principal's org | MCP queries scoped identically — same behavior, same enforcement |
+| **User Context** | `ServiceUtil.getPrincipalUser(request)` | Every SCIM endpoint extracts context user | Every MCP endpoint would extract the same way |
+| **Service Registration** | `RestServiceConfig` auto-discovers `@Path` classes | `ScimUserService` auto-discovered in `org.cote.rest.services` | MCP services auto-discovered from same package |
+| **Generic CRUD** | `ModelService` | SCIM doesn't use it (has own endpoints) | MCP's `am7_create_object` tool would parallel it |
+| **web.xml** | Jersey servlet + token filter mapping | `/scim/*` mapped | Needs `/mcp/*` mapped |
+
+### Direct Functional Overlaps
+
+These MCP operations would duplicate what SCIM already does for identity resources:
+
+| MCP Tool / Resource | SCIM Equivalent | Overlap |
+|--------------------|--------------------|---------|
+| `am7_create_object` with `type=system.user` | `POST /scim/v2/Users` | Same user creation, same person record convention, same org scoping |
+| `am7_create_object` with `type=auth.group` | `POST /scim/v2/Groups` | Same group creation in same org |
+| `resources/read` for `am7://org/system.user/id` | `GET /scim/v2/Users/{id}` | Same record lookup by objectId |
+| `resources/read` for `am7://org/auth.group/id` | `GET /scim/v2/Groups/{id}` | Same record lookup |
+| `resources/list` for user/group types | `GET /scim/v2/Users?filter=...` | Same listing with query |
+| `am7_vector_search` against users/groups | SCIM filter parser | Different query syntax, same underlying `Query` system |
+
+### Where SCIM Adapters Should Be Reused
+
+The `ScimUserAdapter.toScim()` method already solves the mapping problem for identity resources:
+
+- `system.user` + `identity.person` → structured JSON with name, contacts, addresses, group membership, role membership, meta
+- Status mapping (`UserStatusEnumType` ↔ boolean active)
+- Person resolution via `PrincipalService.getPersonForUser()` convention (person name = user name, in `/Persons` group)
+- Contact/address sub-record mapping from `identity.contactInformation`
+
+MCP's `ResourceAdapter.toMcp()` would need to do the same work for user/group types. Rather than reimplementing:
+
+```java
+// ResourceAdapter.java — delegate to SCIM adapters for identity types
+public static McpResource toMcp(BaseRecord record, Am7Uri parsedUri) {
+    String schema = record.getSchema();
+
+    if (ModelNames.MODEL_USER.equals(schema)) {
+        // Reuse SCIM adapter for the structured field mapping
+        BaseRecord person = PrincipalService.getPersonForUser(contextUser, record);
+        Map<String, Object> scimData = ScimUserAdapter.toScim(record, person, baseUrl);
+        return McpResource.fromMap(parsedUri.toString(), record.get(FIELD_NAME),
+            "application/json", scimData);
+    }
+
+    if (ModelNames.MODEL_GROUP.equals(schema)) {
+        Map<String, Object> scimData = ScimGroupAdapter.toScim(record, contextUser, baseUrl);
+        return McpResource.fromMap(parsedUri.toString(), record.get(FIELD_NAME),
+            "application/json", scimData);
+    }
+
+    // Generic mapping for all other model types
+    return genericToMcp(record, parsedUri);
+}
+```
+
+### Organization-Scoped Identity: Same Rules Apply
+
+The key constraint documented in SCIM.md applies identically to MCP:
+
+> **Principal names are not globally unique.** Name uniqueness is scoped to an organization. The same `userName` (e.g., `"admin"`) can exist in multiple organizations simultaneously.
+
+For MCP this means:
+- `am7://default/system.user/...` must resolve by `objectId` (globally unique), never by `name`
+- MCP tool calls for user operations are implicitly scoped to the authenticated user's org
+- Cross-organization queries are not possible through MCP (enforced at `AccessPoint` layer, not API layer)
+- The `am7_chat` tool's `chatConfigUri`, `promptConfigUri`, and `dataReferences` are all org-scoped
+- Vector search results from `am7_vector_search` only return records visible to the calling user's org
+
+### Where They Don't Overlap
+
+| Concern | SCIM Only | MCP Only |
+|---------|-----------|----------|
+| **Scope** | Identity management (users, groups, roles) | All model types + vector/embedding + chat + prompts |
+| **Filter syntax** | RFC 7644 SCIM filter (`userName eq "j"`) | JSON tool arguments (`{"query": "...", "limit": 5}`) |
+| **Patch semantics** | RFC 7644 PatchOp (add/replace/remove with path expressions) | MCP tool calls (whole-object update) |
+| **Bulk operations** | SCIM `/Bulk` endpoint with bulkId cross-references | No MCP equivalent (individual tool calls) |
+| **Schema discovery** | SCIM `/Schemas` with attribute mutability/returned/uniqueness | MCP `tools/list` and `resources/templates/list` |
+| **Subscription** | Not in SCIM 2.0 core | MCP `resources/subscribe` via SSE |
+| **Vector/Embedding** | Not applicable | Core MCP capability |
+| **Chat/Sampling** | Not applicable | MCP `sampling/createMessage` |
+| **Prompts** | Not applicable | MCP `prompts/list` and `prompts/get` |
+
+### Recommendations
+
+1. **Reuse SCIM adapters** in MCP's `ResourceAdapter` for `system.user`, `auth.group`, `auth.role`, and `auth.permission` types. The field mapping, contact resolution, and membership queries are already solved.
+
+2. **Don't expose SCIM endpoints as MCP tools.** The protocols serve different purposes — SCIM is for identity provisioning systems (Okta, Azure AD, etc.), MCP is for AI assistants. An AI calling `am7_create_object` for a user is a different use case than an IdP syncing via SCIM. Keep the tool surface clean.
+
+3. **Share the filter infrastructure.** SCIM's `ScimFilterParser` translates filter expressions to AM7 `Query` objects. MCP's search tools also need to build `Query` objects from parameters. The underlying `QueryUtil.createQuery()` + `AccessPoint.find()` pattern is identical. If MCP ever needs a text-based filter syntax, the SCIM parser is a starting point.
+
+4. **web.xml changes are additive.** Add `/mcp/*` to the same `TokenFilter` and Jersey servlet mappings where `/scim/*` already exists. CORS is already `/*` so no change needed there.
+
+5. **Person resolution convention matters.** When MCP returns a user resource, it should include the same person data (name, contacts, addresses) that SCIM provides. This means calling `PrincipalService.getPersonForUser()` — the same convention both SCIM and the existing `PrincipalService` REST endpoint use.
+
+### Implementation Checklist Addition
+
+```markdown
+### Phase 2 (Resource Operations) — SCIM Integration
+- [ ] Import `ScimUserAdapter` and `ScimGroupAdapter` in `ResourceAdapter`
+- [ ] Delegate user/group MCP resource mapping to SCIM adapters
+- [ ] Ensure person resolution (`PrincipalService.getPersonForUser()`) is called for user resources
+- [ ] Verify org-scoping behavior matches SCIM (document in MCP test suite)
+- [ ] Add `/mcp/*` to TokenFilter and Jersey servlet mappings in web.xml
+```
+
+---
+
 ## Conclusion
 
 This MCP integration provides:
@@ -3960,5 +4078,6 @@ This MCP integration provides:
 4. **Extensibility** - New context types follow the same pattern
 5. **Backwards compatibility** - Legacy tokens can be upgraded transparently
 6. **Rich capabilities** - Full object model + vector search exposed via MCP
+7. **SCIM adapter reuse** - Identity resource mapping leverages existing SCIM work
 
-The combination of AM7's multi-dimensional object model, hybrid vector search, and existing REST infrastructure makes it uniquely suited as a comprehensive MCP server for AI assistants.
+The combination of AM7's multi-dimensional object model, hybrid vector search, existing REST infrastructure, and SCIM identity management makes it uniquely suited as a comprehensive MCP server for AI assistants.

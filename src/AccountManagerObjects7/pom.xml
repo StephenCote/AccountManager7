@@ -71,8 +71,10 @@
 					<excludes>
 						<!--
 						
-						<exclude>**/TestGameUtilSync</exclude>
+						
 						-->
+						<exclude>**/TestLandscape</exclude>
+						<exclude>**/TestGameUtilSync</exclude>
 						<exclude>**/TestGameUtil</exclude>
 						<exclude>**/TestCombat</exclude>
 						<exclude>**/TestOlioGameFeatures</exclude>

@@ -1690,17 +1690,38 @@ const SessionConfigEditor = {
                             })
                         ]),
 
-                        // Image tags for director
-                        m('.config-field', [
-                            m('label.block.text-sm.font-medium.mb-1', 'Image Tags'),
-                            m('input.w-full.bg-gray-900.rounded.px-3.py-2.text-sm', {
-                                type: 'text',
-                                placeholder: 'landscape, ethereal, portrait (comma-separated)',
-                                value: this.config.director.imageTags || '',
-                                oninput: (e) => this.config.director.imageTags = e.target.value
-                            }),
-                            m('p.text-xs.text-gray-500.mt-1', 'Comma-separated tags the LLM can use to find existing tagged images. Leave empty to skip tag-based image search.')
-                        ]),
+                        // Image tags for director (selectable pill buttons)
+                        (() => {
+                            const availableTags = (window.am7imageTokens && window.am7imageTokens.tags)
+                                ? window.am7imageTokens.tags
+                                : ['selfie', 'nude', 'intimate', 'sexy', 'private', 'casual', 'public', 'professional'];
+                            const currentTags = (this.config.director.imageTags || '')
+                                .split(',').map(t => t.trim()).filter(t => t);
+                            const toggleTag = (tag) => {
+                                const idx = currentTags.indexOf(tag);
+                                if (idx > -1) { currentTags.splice(idx, 1); }
+                                else { currentTags.push(tag); }
+                                this.config.director.imageTags = currentTags.join(',');
+                            };
+                            return m('.config-field', [
+                                m('label.block.text-sm.font-medium.mb-1', 'Image Tags'),
+                                m('.flex.flex-wrap.gap-2.py-2',
+                                    availableTags.map(tag => {
+                                        const isSelected = currentTags.indexOf(tag) > -1;
+                                        return m('button', {
+                                            class: 'px-3 py-1 rounded-full text-xs ' +
+                                                (isSelected
+                                                    ? 'bg-indigo-600 text-white'
+                                                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'),
+                                            onclick: () => toggleTag(tag)
+                                        }, tag);
+                                    })
+                                ),
+                                m('p.text-xs.text-gray-500.mt-1',
+                                    'Select tags the LLM can use to find existing tagged images.'
+                                )
+                            ]);
+                        })(),
 
                         // Interactive mode toggle
                         m('label.flex.items-center.gap-3.cursor-pointer', [

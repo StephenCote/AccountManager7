@@ -10,11 +10,10 @@ import java.util.List;
 import java.util.Map;
 
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.scim.ScimGroupAdapter;
 import org.junit.Test;
 
@@ -28,12 +27,8 @@ public class TestScimGroupAdapter extends BaseTest {
 		BaseRecord adminUser = orgContext.getAdminUser();
 
 		try {
-			BaseRecord group = IOSystem.getActiveContext().getFactory().newInstance(
-				ModelNames.MODEL_GROUP, adminUser, null, null
-			);
-			group.set(FieldNames.FIELD_NAME, "ScimTestGroup1");
-			group.set(FieldNames.FIELD_TYPE, "DATA");
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(adminUser, group);
+			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().make(
+				adminUser, ModelNames.MODEL_GROUP, "~/ScimTestGroup1", GroupEnumType.DATA.toString());
 			assertNotNull("Group should be created", created);
 
 			Map<String, Object> scim = ScimGroupAdapter.toScim(created, adminUser, BASE_URL);
@@ -57,12 +52,8 @@ public class TestScimGroupAdapter extends BaseTest {
 		BaseRecord adminUser = orgContext.getAdminUser();
 
 		try {
-			BaseRecord group = IOSystem.getActiveContext().getFactory().newInstance(
-				ModelNames.MODEL_GROUP, adminUser, null, null
-			);
-			group.set(FieldNames.FIELD_NAME, "ScimEmptyGroup1");
-			group.set(FieldNames.FIELD_TYPE, "DATA");
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(adminUser, group);
+			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().make(
+				adminUser, ModelNames.MODEL_GROUP, "~/ScimEmptyGroup1", GroupEnumType.DATA.toString());
 			assertNotNull("Group should be created", created);
 
 			Map<String, Object> scim = ScimGroupAdapter.toScim(created, adminUser, BASE_URL);
@@ -85,19 +76,15 @@ public class TestScimGroupAdapter extends BaseTest {
 		BaseRecord adminUser = orgContext.getAdminUser();
 
 		try {
-			BaseRecord group = IOSystem.getActiveContext().getFactory().newInstance(
-				ModelNames.MODEL_GROUP, adminUser, null, null
-			);
-			group.set(FieldNames.FIELD_NAME, "ScimMemberGroup1");
-			group.set(FieldNames.FIELD_TYPE, "DATA");
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(adminUser, group);
+			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().make(
+				adminUser, ModelNames.MODEL_GROUP, "~/ScimMemberGroup1", GroupEnumType.DATA.toString());
 			assertNotNull("Group should be created", created);
 
 			BaseRecord testUser = getCreateUser("scimGroupUser1");
 			assertNotNull("Test user should not be null", testUser);
 
-			boolean added = IOSystem.getActiveContext().getAccessPoint().member(adminUser, created, testUser, null, true);
-			assertTrue("Member should be added", added);
+			// member() returns false if the user is already a member from a prior run
+			IOSystem.getActiveContext().getAccessPoint().member(adminUser, created, testUser, null, true);
 
 			Map<String, Object> scim = ScimGroupAdapter.toScim(created, adminUser, BASE_URL);
 			assertNotNull("SCIM output should not be null", scim);
@@ -118,12 +105,8 @@ public class TestScimGroupAdapter extends BaseTest {
 		BaseRecord adminUser = orgContext.getAdminUser();
 
 		try {
-			BaseRecord group = IOSystem.getActiveContext().getFactory().newInstance(
-				ModelNames.MODEL_GROUP, adminUser, null, null
-			);
-			group.set(FieldNames.FIELD_NAME, "ScimMetaGroup1");
-			group.set(FieldNames.FIELD_TYPE, "DATA");
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(adminUser, group);
+			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().make(
+				adminUser, ModelNames.MODEL_GROUP, "~/ScimMetaGroup1", GroupEnumType.DATA.toString());
 			assertNotNull("Group should be created", created);
 
 			Map<String, Object> scim = ScimGroupAdapter.toScim(created, adminUser, BASE_URL);

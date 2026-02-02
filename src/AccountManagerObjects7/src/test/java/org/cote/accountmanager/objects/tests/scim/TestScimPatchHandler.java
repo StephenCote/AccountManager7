@@ -15,6 +15,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.UserStatusEnumType;
 import org.cote.accountmanager.scim.ScimPatchHandler;
 import org.junit.Test;
@@ -50,14 +51,19 @@ public class TestScimPatchHandler extends BaseTest {
 		assertNotNull("Test user should not be null", testUser);
 
 		try {
-			BaseRecord person = IOSystem.getActiveContext().getFactory().newInstance(
-				ModelNames.MODEL_PERSON, adminUser, null, null
-			);
-			person.set(FieldNames.FIELD_NAME, "Patch Person 2");
+			BaseRecord personsDir = IOSystem.getActiveContext().getPathUtil().findPath(
+				adminUser, ModelNames.MODEL_GROUP, "/Persons",
+				GroupEnumType.DATA.toString(), orgContext.getOrganizationId());
+
+			BaseRecord person = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(
+				adminUser, ModelNames.MODEL_PERSON,
+				personsDir.get(FieldNames.FIELD_OBJECT_ID),
+				(String) testUser.get(FieldNames.FIELD_NAME));
+			assertNotNull("Person should exist from getCreateUser", person);
+
 			person.set(FieldNames.FIELD_FIRST_NAME, "Original");
 			person.set(FieldNames.FIELD_LAST_NAME, "Name");
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(adminUser, person);
-			assertNotNull("Person should be created", created);
+			IOSystem.getActiveContext().getAccessPoint().update(adminUser, person);
 
 			List<Map<String, Object>> ops = new ArrayList<>();
 			Map<String, Object> op = new LinkedHashMap<>();
@@ -72,11 +78,11 @@ public class TestScimPatchHandler extends BaseTest {
 			op2.put("value", "NewLast");
 			ops.add(op2);
 
-			List<String> errors = ScimPatchHandler.applyPatch(testUser, created, ops);
+			List<String> errors = ScimPatchHandler.applyPatch(testUser, person, ops);
 			assertTrue("Should have no errors", errors.isEmpty());
 
-			assertEquals("First name should be updated", "NewFirst", created.get(FieldNames.FIELD_FIRST_NAME));
-			assertEquals("Last name should be updated", "NewLast", created.get(FieldNames.FIELD_LAST_NAME));
+			assertEquals("First name should be updated", "NewFirst", person.get(FieldNames.FIELD_FIRST_NAME));
+			assertEquals("Last name should be updated", "NewLast", person.get(FieldNames.FIELD_LAST_NAME));
 
 		} catch (Exception e) {
 			logger.error(e);
@@ -92,12 +98,15 @@ public class TestScimPatchHandler extends BaseTest {
 		assertNotNull("Test user should not be null", testUser);
 
 		try {
-			BaseRecord person = IOSystem.getActiveContext().getFactory().newInstance(
-				ModelNames.MODEL_PERSON, adminUser, null, null
-			);
-			person.set(FieldNames.FIELD_NAME, "Patch Person 3");
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(adminUser, person);
-			assertNotNull("Person should be created", created);
+			BaseRecord personsDir = IOSystem.getActiveContext().getPathUtil().findPath(
+				adminUser, ModelNames.MODEL_GROUP, "/Persons",
+				GroupEnumType.DATA.toString(), orgContext.getOrganizationId());
+
+			BaseRecord person = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(
+				adminUser, ModelNames.MODEL_PERSON,
+				personsDir.get(FieldNames.FIELD_OBJECT_ID),
+				(String) testUser.get(FieldNames.FIELD_NAME));
+			assertNotNull("Person should exist from getCreateUser", person);
 
 			List<Map<String, Object>> ops = new ArrayList<>();
 			Map<String, Object> op = new LinkedHashMap<>();
@@ -110,12 +119,12 @@ public class TestScimPatchHandler extends BaseTest {
 			op.put("value", nameValue);
 			ops.add(op);
 
-			List<String> errors = ScimPatchHandler.applyPatch(testUser, created, ops);
+			List<String> errors = ScimPatchHandler.applyPatch(testUser, person, ops);
 			assertTrue("Should have no errors", errors.isEmpty());
 
-			assertEquals("First name should be set", "First", created.get(FieldNames.FIELD_FIRST_NAME));
-			assertEquals("Middle name should be set", "Mid", created.get(FieldNames.FIELD_MIDDLE_NAME));
-			assertEquals("Last name should be set", "Last", created.get(FieldNames.FIELD_LAST_NAME));
+			assertEquals("First name should be set", "First", person.get(FieldNames.FIELD_FIRST_NAME));
+			assertEquals("Middle name should be set", "Mid", person.get(FieldNames.FIELD_MIDDLE_NAME));
+			assertEquals("Last name should be set", "Last", person.get(FieldNames.FIELD_LAST_NAME));
 
 		} catch (Exception e) {
 			logger.error(e);
@@ -204,13 +213,18 @@ public class TestScimPatchHandler extends BaseTest {
 		assertNotNull("Test user should not be null", testUser);
 
 		try {
-			BaseRecord person = IOSystem.getActiveContext().getFactory().newInstance(
-				ModelNames.MODEL_PERSON, adminUser, null, null
-			);
-			person.set(FieldNames.FIELD_NAME, "Patch Person 8");
+			BaseRecord personsDir = IOSystem.getActiveContext().getPathUtil().findPath(
+				adminUser, ModelNames.MODEL_GROUP, "/Persons",
+				GroupEnumType.DATA.toString(), orgContext.getOrganizationId());
+
+			BaseRecord person = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(
+				adminUser, ModelNames.MODEL_PERSON,
+				personsDir.get(FieldNames.FIELD_OBJECT_ID),
+				(String) testUser.get(FieldNames.FIELD_NAME));
+			assertNotNull("Person should exist from getCreateUser", person);
+
 			person.set(FieldNames.FIELD_MIDDLE_NAME, "MiddleToRemove");
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(adminUser, person);
-			assertNotNull("Person should be created", created);
+			IOSystem.getActiveContext().getAccessPoint().update(adminUser, person);
 
 			List<Map<String, Object>> ops = new ArrayList<>();
 			Map<String, Object> op = new LinkedHashMap<>();
@@ -218,7 +232,7 @@ public class TestScimPatchHandler extends BaseTest {
 			op.put("path", "name.middleName");
 			ops.add(op);
 
-			List<String> errors = ScimPatchHandler.applyPatch(testUser, created, ops);
+			List<String> errors = ScimPatchHandler.applyPatch(testUser, person, ops);
 			assertTrue("Should have no errors", errors.isEmpty());
 
 		} catch (Exception e) {

@@ -14,8 +14,10 @@ Magic8 is a full-screen immersive experience platform combining biometric-respon
 - **AI image generation** via Stable Diffusion img2img from camera captures
 - **Scripted text and voice sequences** loaded from server objects, with LLM-only mode
 - **Multi-effect visual canvas** - particles, spiral, mandala, tunnel, hypnoDisc with theme-responsive colors
+- **Interactive director mode** - LLM asks questions, user responds via text input; responses feed back to LLM on next tick
 - **Mood ring mode** - emotion-colored button in control bar with crossfade animation, LLM glow, and both emotion+gender emojis
 - **Test mode emojis** - large emoji display for detected/suggested emotion and gender
+- **Test mode diagnostics** - per-tick debug console with LLM raw output, parse results, interactive state tracking
 - **Composite video recording** with server-side storage
 - **Chat integration** - launchable from chat with context handoff
 
@@ -134,6 +136,8 @@ Layers are composited in DOM order (lowest z-index first):
 | 30 | Control panel | `ControlPanel` | Auto-hide after 5s. Includes mood ring toggle with crossfade emojis + mood-colored bg |
 | 40 | Debug console | Conditional | Only when `director.testMode` |
 | 45 | Mood emojis | `MoodEmojiDisplay` | Test mode only, crossfade on change |
+| 190 | Toast notifications | Floating cards | Top-right, auto-dismiss |
+| 200 | Interactive overlay | askUser text input | Shown when `_pendingQuestion` is set, bottom of screen |
 
 ### Director Opacity Control
 
@@ -210,7 +214,7 @@ LLM-powered session orchestration:
 
 1. **Initialization**: Finds `~/Chat` directory, loads "Open Chat" config template, creates chat request with session-specific name (`"Magic8 Director - {sessionName}"`).
 
-2. **System prompt**: Instructs the LLM to act as a session director, describing available controls (audio presets/bands, visuals, labels, images, opacity, suggestMood) with current session state.
+2. **System prompt**: Loaded from `media/prompts/magic8DirectorPrompt.json` template (fetched via HTTP, cached in static `_cachedTemplate`). Instructs the LLM to act as a session director, describing available controls (audio presets/bands, visuals, labels, images, opacity, voiceLine, suggestMood, askUser, progressPct) with examples for calm, energetic, and interactive states. Tokens `${command}` and `${imageTags}` are substituted at runtime.
 
 3. **Polling loop**: At configurable interval (default 60s), gathers session state (biometric data, emotion transitions, audio band label, labels, image gen stats, layer opacity) and sends to LLM.
 
@@ -230,14 +234,17 @@ LLM-powered session orchestration:
        baseFreq: 432,  // Solfeggio carrier
        // Legacy raw Hz (backwards compatible):
        sweepStart, sweepTrough, sweepEnd,
-       isochronicEnabled, isochronicRate, isochronicBand  // Band name resolves to mid Hz
+       isochronicEnabled, isochronicRate, isochronicBand,  // Band name resolves to mid Hz
+       volume: 0.0-1.0  // Master audio level; any audio directive auto-enables audio
      },
      visuals: { effect: "particles"|"spiral"|"mandala"|"tunnel"|"hypnoDisc", transitionDuration },
-     labels: { add: [...], remove: [...] },
-     generateImage: { description, style, imageAction, denoisingStrength, cfg },
-     opacity: { labels, images, visualizer, visuals },  // 0.15-1.0
+     labels: { add: ["1-3 word phrase"], remove: ["exact label text"] },
+     generateImage: { description, style, imageAction, denoisingStrength, cfg, tags: "tag1+tag2" },
+     opacity: { labels, images, visualizer, visuals },  // 0.15-1.0, transitions over ~20s
      voiceLine: "short sentence for TTS",
-     suggestMood: { emotion: "happy"|"sad"|..., gender: "Man"|"Woman" },
+     suggestMood: { emotion: "happy"|"sad"|..., gender: "Man"|"Woman", genderPct: 0-100 },
+     askUser: { question: "short question" },  // Interactive mode only; pauses director tick
+     progressPct: 0-100,  // Session progress estimate toward stated intent
      commentary: "reasoning (not displayed)"
    }
    ```
@@ -246,7 +253,26 @@ LLM-powered session orchestration:
 
 7. **Error resilience**: Consecutive LLM failures are counted; log output reduces after 3 failures (every 5th logged) to avoid console spam. The tick loop continues running through transient failures.
 
-8. **Diagnostics**: Multi-pass test mode sends 4 emotional states (neutral, happy+early, anxious+mid, calm+late) and validates LLM responses.
+8. **Interactive mode (askUser)**: When `director.interactive` is enabled, the LLM can include `askUser` directives to pose questions to the user. The session flow is:
+   1. LLM sends `{"askUser": {"question": "..."}, "voiceLine": "...", ...}`
+   2. `_applyDirective` stores the question, pauses the director tick cycle
+   3. Question is spoken aloud via voiceLine (LLM should include both)
+   4. A text input overlay renders at screen bottom (z-index 200) with a Send button
+   5. User types a response and submits (Enter key or Send button)
+   6. Response is captured, director resumes with an immediate tick
+   7. Next `_gatherDirectorState` includes `userResponse: "their answer"`
+   8. `_formatStateMessage` adds `User Response: "..."` line for the LLM to see and react to
+
+   **Escalating prompts**: A `_ticksSinceAskUser` counter tracks how many ticks pass without an askUser directive. The state message escalates:
+   - Ticks 0-1: `Interactive: ENABLED`
+   - Ticks 2-3: `Interactive: ENABLED — Include an askUser directive to check in with the user.`
+   - Ticks 4+: `Interactive: ENABLED — You MUST include askUser...` with inline JSON example
+
+   This progressive escalation is necessary to coax local LLMs into producing the directive.
+
+9. **Tick debug callback**: `onTickDebug` fires after each tick with `{tickNum, stateMessage, rawContent, directive}`. In test mode, Magic8App logs interactive state lines, raw LLM output (truncated), and parse results to the debug console.
+
+10. **Diagnostics**: Multi-pass test mode sends 5 emotional states (neutral, happy+early, anxious+mid, fear+grounding, interactive+response) and validates LLM responses. Coverage checks include labels, audio, visuals, and askUser directives.
 
 ### Label and Voice Interleaving
 
@@ -275,6 +301,7 @@ The mood ring toggle is integrated into the bottom control bar (not rendered as 
 - When disabled: standard gray control button appearance
 - Toggling mood ring sets `moodRingEnabled` in session state (reported to SessionDirector via state provider)
 - The SessionDirector uses the **full Magic8 prompt** (not a stripped-down mood ring prompt) and adds "Mood Ring: ACTIVE" to state messages when enabled, instructing the LLM to include `suggestMood` directives
+- `genderPct` (0-100) drives a translucent color gradient bar: 0 = fully female (pink), 100 = fully male (blue). LLM can push gender energy independently of detected gender.
 
 ### HypnoCanvas — HypnoDisc Effect
 
@@ -298,6 +325,10 @@ Manages SD img2img generation:
 - Generated images splice into `DynamicImageGallery` rotation
 
 **Inline SD config fields**: model, refinerModel, sampler, steps, cfgScale, clipSkip, width, height, prompt, negativePrompt, strength, seed, hiresFix, hiresSteps, hiresScale, style dropdown.
+
+**Image tags**: LLM can specify `tags: "tag1+tag2"` in `generateImage` directives. Tags use `+` for AND logic — `"landscape+ethereal"` finds images tagged with both. If no match, falls back to camera-based generation. Available tags are passed to the LLM via the `${imageTags}` token in the prompt template.
+
+**Style defaults (`_fillStyleDefaults`)**: When `randomImageConfig` omits style-specific fields, `_fillStyleDefaults` fills them with random values from `_SD_FALLBACKS` to prevent `(null)` in server-built prompts. Supports: photograph, movie, selfie, anime, portrait, comic, digitalArt, fashion, vintage, art styles. If a `refinerModel` is configured, `hires` mode is forced on.
 
 ### BiometricThemer (`state/BiometricThemer.js`)
 
@@ -444,7 +475,9 @@ Text-to-speech playback:
     enabled: false,
     command: "",                 // User's session intent/theme text
     intervalMs: 60000,
-    testMode: false
+    testMode: false,
+    imageTags: "",               // Comma-separated tags for generateImage tag search
+    interactive: false           // Enable askUser Q&A with the user
   }
 }
 ```
@@ -505,3 +538,25 @@ Magic8.launchWithConfig(sessionConfigId);  // Load saved config
 - **Sequential label injection** into text sequence rather than simultaneous overlay display
 - **Session replay**: Session names are stable (no timestamps), so generated images persist in `~/Magic8/Generated/{sessionName}` and appear on re-launch. Gallery loads both parent and session-specific subgroups.
 - **Audio mute safety**: Audio toggle stops all sources (binaural, isochronic, voice) AND zeros master gain for belt-and-suspenders muting
+- **AudioContext resume**: `_initSession` calls `ctx.resume()` after creating the AudioEngine, since the AudioContext may be created in a `setTimeout` (not a direct user gesture) and browsers will suspend it until resumed
+- **BiometricThemer redraw throttle**: `onThemeChange` callback throttles `m.redraw()` to once per 200ms via `setTimeout`, preventing the 60fps rAF animation loop from flooding mithril's vdom diffing (which caused DOMException Node.removeChild errors)
+- **Escalating LLM prompts**: Interactive mode uses tick-counter-based state messages that progressively demand the LLM include `askUser` directives — necessary for local models that ignore passive suggestions
+
+---
+
+## Known Issues
+
+### Recording — Session recording may fail silently
+Session recording (`SessionRecorder`) relies on `MediaRecorder` with codec auto-detection. Some browser/OS combinations fail to produce valid WebM output, particularly when the AudioContext is in a transitional state. Recording finalization (blob → base64 → server save) happens during `_handleExit`, so a recording failure may prevent clean exit. **Workaround**: Disable recording if experiencing exit issues.
+
+### Server-Side STT — Disabled (code preserved)
+The interactive mode originally included server-side speech-to-text via WebSocket streaming (`navigator.mediaDevices.getUserMedia` → `MediaRecorder` → `page.wss.send("audio", b64)` → `page.audioStream.onaudiosttupdate`). This is currently disabled due to a bug where the auto-submit timeout causes the view to revert to the config screen. The STT code is preserved in `_startUserInteraction` as a block comment for future re-enablement. Users interact via the text input overlay only.
+
+### AudioContext Suspension
+Browsers suspend `AudioContext` instances created outside of user gesture handlers. Magic8 creates its AudioEngine from `_initSession` (called via `setTimeout`, not a direct click). A `ctx.resume()` call is made at session start, but some browsers may still require a user interaction (e.g., clicking the audio toggle) to fully activate audio.
+
+### Local LLM Directive Compliance
+Local LLMs (20-30GB parameter models) often ignore passive directive suggestions in the system prompt. Features like `askUser`, `suggestMood`, and `generateImage` require strong directive cues — examples with exact JSON, MUST language, and escalating tick-based reminders in the state message. The prompt template and `_formatStateMessage` are tuned for this, but smaller models may still underperform.
+
+### Tailwind JIT Arbitrary Values
+The project uses Tailwind CSS classes but does not have full JIT mode configured. Arbitrary value syntax like `z-[200]` generates no CSS rule and elements render without the intended z-index. All critical z-index values use inline `style: {zIndex: N}` instead.

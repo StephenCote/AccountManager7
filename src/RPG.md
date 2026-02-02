@@ -8,9 +8,9 @@
 4. [Current Design Shortcomings](#current-design-shortcomings)
 5. [Intra-Cell Visual Grid System](#intra-cell-visual-grid-system)
 6. [Asset Library Strategy](#asset-library-strategy)
-7. [Game Design Document](#game-design-document)
-8. [Technical Architecture](#technical-architecture)
-9. [Implementation Phases](#implementation-phases)
+7. [Game Design Document](#game-design-document) (incl. Multiplayer Coordination)
+8. [Technical Architecture](#technical-architecture) (incl. WebSocket Event System)
+9. [Implementation Phases](#implementation-phases) (Phases 1–5 active, Phase 6 deferred)
 10. [Test Strategy](#test-strategy)
 11. [File Manifest](#file-manifest)
 
@@ -18,14 +18,18 @@
 
 ## Executive Summary
 
-AccountManager7 already contains the core systems needed for a turn-based RPG: a deep character model with D&D-style statistics, alignment, and personality; an MGRS-inspired spatial coordinate system with terrain generation; an inventory/crafting/equipment system; an interaction and combat framework; a time/event simulation engine (Overwatch); and a working game client (cardGame.js) with WebSocket streaming. This plan extends those systems into a fully realized turn-based RPG with tile-based visual navigation, party management, quest progression, and public asset integration.
+AccountManager7 already contains the core systems needed for a turn-based RPG: a deep character model with D&D-style statistics, alignment, and personality; an MGRS-inspired spatial coordinate system with terrain generation; an inventory/crafting/equipment system; an interaction and combat framework; a time/event simulation engine (Overwatch); and a working game client (cardGame.js) with WebSocket streaming. This plan extends those systems into a fully realized **multiplayer** turn-based RPG with tile-based visual navigation, party management, quest progression, and public asset integration.
 
 **Architecture Principle — REST-First:** The RPG client communicates with AM7 **exclusively through the REST API and WebSocket endpoints**. No direct model access, no embedded Java calls, no server-side rendering dependencies. Every game action — movement, combat, dialogue, inventory, party management — flows through the existing and extended `/rest/game/*` and `/rest/olio/*` endpoints. This strict API boundary means the client is a pure consumer of a well-defined service contract, making it trivial to swap, extend, or supplement with alternative frontends.
 
+**Architecture Principle — WebSocket-Driven State:** All intra-game status updates — player movement, combat resolution, reputation changes, NPC actions, threat detection, turn advancement, and multiplayer coordination — are **pushed to clients via WebSocket** in real-time. The existing `GameStreamHandler` already implements a session-subscription model where multiple clients subscribe to character updates and receive push events. REST is used for request/response actions (move, interact, save); WebSocket is used for all asynchronous state notifications. This dual-channel design means every connected client sees world changes as they happen, which is the foundation for multiplayer.
+
 **Architecture Principle — App-Ready:** The RPG client is built as an **installable cross-platform App** targeting desktop, tablet, and mobile from a single codebase. The web-based implementation (PWA) provides native-app-like experience — installable from the browser, full-screen capable, responsive across screen sizes, and touch-optimized. Because all game logic runs server-side behind the REST API, the client is a lightweight rendering and input layer with no platform-specific dependencies.
 
+**Architecture Principle — Multiplayer-Native:** The game is designed for multiplayer from the ground up, not bolted on after single-player. Multiple players share a realm, see each other's movements in real-time via WebSocket push, form cross-player parties, engage in PvP or cooperative combat, and trade. The Overwatch engine coordinates turn resolution across all players in a realm. Single-player is simply multiplayer with one participant — there is no separate single-player code path.
+
 **What exists today (reuse):** ~85% of the backend model, service layer, and communication infrastructure — including needs-driven behavior, personality-based compatibility, social influence tracking, skill/combat resolution, and the tabletop-derived skill decay rules. The REST API already exposes 25+ game endpoints covering movement, interaction, chat, situation reports, save/load, and asset serving.
-**What needs to be built:** Visual tile renderer, intra-cell sub-grid system, persistent reputation calculator, skill leveling/decay implementation, tile art pipeline, responsive/adaptive UI layout, PWA shell, and a dedicated RPG game client. Most "missing" systems are extensions of existing infrastructure rather than greenfield work. New backend features are exposed as REST endpoints first, then consumed by the client — never wired directly.
+**What needs to be built:** Visual tile renderer, intra-cell sub-grid system, persistent reputation calculator, skill leveling/decay implementation, tile art pipeline, responsive/adaptive UI layout, PWA shell, multiplayer session/turn coordination, and a dedicated RPG game client. Most "missing" systems are extensions of existing infrastructure rather than greenfield work. New backend features are exposed as REST endpoints first, then consumed by the client — never wired directly. The WebSocket push infrastructure (`GameStreamHandler`) already supports multi-session subscriptions; multiplayer extends this to player presence, cross-player events, and coordinated turn resolution.
 
 ---
 
@@ -349,9 +353,56 @@ The reputation score gates party recruitment (NPCs won't join hostile players), 
 
 **Solution:** Lightweight `rpgAudioManager.js` using Web Audio API, borrowing patterns from Magic8's `AudioEngine`. Terrain-keyed background music (forest → ambient, cave → tense, combat → battle track). SFX triggers on action resolution (attack hit/miss, item pickup, level up). Volume/mute toggle in game UI. Low implementation risk.
 
-### 11. Multiplayer Turn Coordination (Deferred)
+### 11. Multiplayer Session & Turn Coordination (Extension Needed)
 
-**Status:** Save for later. The WebSocket push infrastructure (Phase 1 complete via `GameStreamHandler`) provides the foundation. The Overwatch engine would need a player-notification gate in its processing loop to coordinate multiple players in the same realm. Not required for the initial RPG implementation.
+**What exists:**
+- `GameStreamHandler` — full WebSocket push infrastructure with session-subscription model. Multiple sessions can subscribe to the same character (`characterSubscriptions: charId → Set<Session>`). Push events broadcast to all subscribers.
+- 14+ push event types already implemented: `game.action.start/progress/complete/error`, `game.threat.detected/removed`, `game.npc.moved/action`, `game.interaction.start/phase/end`, `game.time.advanced`, `game.increment.end`, `game.event.occurred`, `game.state.changed`
+- `Overwatch` 7-stage processing loop handles all game simulation (proximity, interactions, actions, time)
+- JWT authentication identifies each connected user
+- `olio.realm` provides the shared geographic context (all players in a realm share the world)
+
+**What's missing:** Player session management (who is online in this realm), player-to-player visibility (seeing other players move on the tile map), coordinated turn resolution (Overwatch must wait for all active players at decision points), cross-player party formation, PvP interaction routing, and realm-scoped event broadcasting.
+
+**Solution — Realm Session Manager:**
+
+A `RealmSessionManager` tracks which players are currently active in each realm:
+- Player joins realm → `game.player.joined` pushed to all realm subscribers
+- Player moves → `game.player.moved` pushed to all nearby players (within visibility range)
+- Player disconnects/idles → `game.player.left` pushed to all realm subscribers
+- Session heartbeat (30s interval) detects stale connections
+
+**Solution — Coordinated Turn Resolution:**
+
+The Overwatch loop already processes actions sequentially. For multiplayer, extend this with a **player notification gate**:
+
+1. `Overwatch.processProximity()` detects a decision point (threat, NPC encounter, etc.)
+2. If multiple players are affected, server pushes `game.vats.pause` to ALL affected players
+3. Server enters **VATS collection window** — waits for action submissions from all affected players (with configurable timeout, default 60s)
+4. As each player submits their action, server pushes `game.vats.playerReady` to the others (showing who has committed)
+5. When all players have submitted (or timeout expires, defaulting idle players to "defend"), Overwatch resolves all actions in initiative order (`reaction` stat)
+6. Results pushed to all players via existing `game.action.complete` events
+7. Overwatch resumes real-time until the next decision point
+
+Players NOT involved in a decision point continue moving/exploring freely — only affected players pause. This avoids a global turn lock.
+
+**Solution — Player Visibility:**
+
+Players in the same realm see each other on the tile map. Visibility follows the same fog-of-war rules as NPCs:
+- Players within perception radius appear on each other's tile grids
+- `game.player.moved` events include position data (cell + sub-cell coordinates)
+- Player sprites rendered on the entity layer (same as NPCs, different color/indicator)
+- Player name labels shown on hover/tap
+
+**Solution — Cross-Player Interaction:**
+
+Players can interact with each other using the same `InteractionEnumType` system used for NPCs:
+- `COMBAT` → PvP, resolved through existing `InteractionAction` pipeline
+- `BEFRIEND` / `COOPERATE` → reputation-gated party formation across players
+- `COMMERCE` → direct player-to-player trading via shared store
+- `COMMUNICATE` → player-to-player chat (routed through WebSocket, not LLM)
+
+Cross-player interactions trigger the same VATS pause for both players — both must commit an action.
 
 ---
 
@@ -779,6 +830,82 @@ Skills are percentage-based proficiencies. Stats are 0-20 attributes. Both contr
 - Skill check: `roll under skill%` → determines hit/success for specific actions
 - Higher stats make skill *usage* more effective; higher skills make *specific actions* more reliable
 
+### Multiplayer Coordination
+
+Multiple players share a realm and interact in real-time. The server is authoritative — all game state, turn resolution, and visibility calculations happen server-side. Clients receive updates exclusively via WebSocket push events.
+
+#### Realm Sessions
+
+A realm session is the multiplayer container. When a player starts or joins a game, they enter a realm session:
+
+- **Create realm:** First player creates a realm → gets a realm session ID. Can share this ID with others.
+- **Join realm:** Other players join by realm session ID → their character is placed in the realm's starting area
+- **Leave realm:** Player disconnects or explicitly leaves → character persists in-world (can be set to "idle" or "sheltered")
+- **Reconnect:** Player reconnects → resumes control of their character in its current position
+
+**Realm Session State (`olio.realmSession`):**
+```
+olio.realmSession
+├── realm (olio.realm FK)
+├── activePlayers (list of system.user, participation: session.player)
+├── maxPlayers (int, default 6)
+├── status (RealmSessionStatusEnumType: LOBBY, ACTIVE, PAUSED)
+├── createdBy (system.user FK)
+├── turnMode (TurnModeEnumType: REAL_TIME, SIMULTANEOUS, SEQUENTIAL)
+└── vatsTimeout (int, seconds, default 60)
+```
+
+#### Turn Modes
+
+| Mode | Behavior | Best For |
+|------|----------|----------|
+| REAL_TIME | Overwatch runs continuously. VATS pauses only affected players. Others keep moving. | Exploration-heavy, casual co-op |
+| SIMULTANEOUS | At decision points, ALL players in range pause. All submit actions. All resolve at once (initiative order). | Tactical co-op, party combat |
+| SEQUENTIAL | At decision points, players take turns in initiative order (`reaction` stat). Other players see each action resolve before acting. | Strategic, turn-based purists |
+
+Default is REAL_TIME — matching the existing single-player VATS hybrid design. The realm creator sets the mode; it can be changed between encounters.
+
+#### Player Visibility & Interaction
+
+Players see each other on the tile map when within perception range (same rules as NPCs):
+
+- **Nearby players** (within perception radius): Full sprite + name label on tile grid
+- **Same cell, different sub-cell**: Visible on zoomed cell view
+- **Different cell**: Visible on area grid if within perception range
+- **Different feature/kident**: Not visible (too far)
+
+Player-to-player interaction uses the same `InteractionEnumType` system:
+
+| Interaction | Mechanic | VATS Behavior |
+|------------|----------|---------------|
+| COMMUNICATE | Direct player-to-player text chat (WebSocket, no LLM) | No VATS pause — real-time chat |
+| COOPERATE | Form cross-player party (reputation-gated, same as NPC) | No VATS pause |
+| COMMERCE | Trade items between player inventories | VATS pause for both — both must confirm |
+| COMBAT (PvP) | PvP combat through existing `InteractionAction` pipeline | VATS pause for both — action selection |
+| BEFRIEND | Increase cross-player reputation through positive interaction | No VATS pause |
+
+#### Cross-Player Party
+
+Players can form parties with each other (and with NPCs). The same reputation system applies:
+- Players start at NEUTRAL (+0) reputation with each other
+- Cooperative actions (fighting together, trading, chatting) increase reputation
+- PvP, theft, or betrayal decrease reputation
+- At +30 reputation, players can formally join each other's party
+- Mixed party: some members are players, some are NPC followers
+
+When a cross-player party enters combat, ALL player members get VATS pauses. Actions resolve in initiative order.
+
+#### PvP Rules
+
+PvP is opt-in at the realm session level:
+- **PvP disabled** (default): Players cannot initiate COMBAT interactions with each other. All other interactions work.
+- **PvP enabled**: Players can attack each other. Standard VATS mechanics apply — both players get action selection. Reputation consequences apply (attacking reduces reputation with the target and any witnesses).
+- **PvP dueling**: Players can challenge each other to a formal duel (no reputation penalty, no loot loss). Both must accept.
+
+#### Shared World Events
+
+Realm-wide events (weather, invasions, seasonal changes) affect all players simultaneously. The Overwatch engine processes these during `processEvents()` and pushes `game.realm.event` to all realm subscribers. Players in different parts of the realm may experience different local effects (a storm in the northern kident doesn't affect the southern village).
+
 ### World Design
 
 Leverage existing world generation:
@@ -906,6 +1033,191 @@ The RPG client treats the AM7 backend as a **remote service accessed exclusively
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Responsive & App-Ready Design
+
+The RPG client adapts to three form factors from a single codebase. All layouts use the same components and REST API calls — only sizing, positioning, and input handling change.
+
+#### Layout Breakpoints
+
+| Breakpoint | Target | Layout | Tile Size | UI Mode |
+|-----------|--------|--------|-----------|---------|
+| ≥ 1200px | Desktop | Three-panel (map + sidebar + bottom bar) | 48px or 64px | Full — all panels visible |
+| 768–1199px | Tablet | Two-panel (map + collapsible sidebar) | 32px or 48px | Compact — sidebar toggles, panels stack |
+| < 768px | Mobile | Single-panel (map fullscreen, overlays) | 32px | Minimal — slide-out panels, bottom nav |
+
+#### Input Modes
+
+| Platform | Movement | Action Selection | Menu/Inventory |
+|----------|----------|-----------------|----------------|
+| Desktop | WASD / arrow keys / click tile | Click action button / hotkeys | Click sidebar panels |
+| Tablet | Touch d-pad overlay / tap tile | Tap action button in VATS overlay | Tap sidebar toggle, swipe panels |
+| Mobile | Touch d-pad (thumb zone) / swipe | Tap action in fullscreen VATS overlay | Bottom nav tabs, slide-up sheets |
+
+**Touch d-pad:** Virtual directional pad rendered in the bottom-left corner on touch devices. 8-way input matching the existing compass system. Sized for thumb reach (~120px diameter on mobile, ~160px on tablet). Only visible on touch-capable devices (detected via `'ontouchstart' in window`).
+
+**Pinch-zoom on tile map:** Canvas supports pinch-to-zoom between 1x and 3x magnification on the tile grid. Zoom level adjusts which sub-cell tiles are visible (fewer tiles at higher zoom = more detail). Mouse wheel zoom on desktop.
+
+#### Responsive Component Patterns
+
+Each UI panel (character stats, inventory, needs journal, party, skills) follows the same responsive pattern:
+
+- **Desktop:** Rendered inline in the sidebar. Always visible. Full detail.
+- **Tablet:** Rendered in a collapsible sidebar. Tap to expand/collapse. Medium detail.
+- **Mobile:** Rendered as a slide-up bottom sheet or fullscreen overlay. Accessed via bottom navigation tab. Compact detail with expandable sections.
+
+The VATS overlay is fullscreen on all form factors — it is the primary decision point and demands full attention regardless of screen size.
+
+#### PWA Shell
+
+```
+manifest.json:
+  name: "AM7 RPG"
+  short_name: "AM7 RPG"
+  display: "standalone"
+  orientation: "any"
+  theme_color: "#1a1a2e"
+  background_color: "#0f0f23"
+  icons: [192x192, 512x512]
+  start_url: "/rpg"
+
+service-worker.js:
+  Cache strategy:
+    - Static assets (tile atlases, spritesheets, audio): Cache-first, long TTL
+    - REST API calls: Network-first, fallback to "server unavailable" UI
+    - Game state: Not cached (server is source of truth)
+  Install prompt: Triggered after first game session
+```
+
+#### CSS Architecture
+
+A single `rpgLayout.css` file using CSS Grid + CSS custom properties for responsive theming:
+
+```css
+.rpg-app {
+  --tile-size: 48px;          /* overridden per breakpoint */
+  --sidebar-width: 320px;     /* collapses on mobile */
+  --panel-padding: 12px;
+  display: grid;
+  grid-template: "map sidebar" 1fr / 1fr var(--sidebar-width);
+}
+@media (max-width: 1199px) { /* tablet */
+  .rpg-app { --tile-size: 32px; --sidebar-width: 280px; }
+}
+@media (max-width: 767px) {  /* mobile */
+  .rpg-app {
+    --tile-size: 32px;
+    grid-template: "map" 1fr / 1fr;  /* sidebar becomes overlay */
+  }
+}
+```
+
+### WebSocket Real-Time Event System
+
+All intra-game status updates flow through the WebSocket connection at `/wss`. The existing `GameStreamHandler` implements a session-subscription model; the RPG extends this with new event types for multiplayer, VATS, reputation, and skill progression. REST is for commands (player initiates an action); WebSocket is for notifications (server tells clients what happened).
+
+#### Existing Events (GameStreamHandler — already implemented)
+
+| Event | Direction | Trigger | Payload |
+|-------|-----------|---------|---------|
+| `game.action.start` | Server → Client | Action begins executing | `{actionType, charId}` |
+| `game.action.progress` | Server → Client | Action progress update | `{progress: 0-100, currentState}` |
+| `game.action.complete` | Server → Client | Action resolved | `{situation}` (full situation snapshot) |
+| `game.action.error` | Server → Client | Action failed | `{message}` |
+| `game.action.interrupt` | Server → Client | Action interrupted by threat/event | `{interruptData}` |
+| `game.threat.detected` | Server → Client | Hostile enters proximity | `{threatId, threatType, distance}` |
+| `game.threat.removed` | Server → Client | Threat no longer in proximity | `{threatId}` |
+| `game.threat.changed` | Server → Client | Threat state changed | `{threatId, newState}` |
+| `game.npc.moved` | Server → Client | NPC position changed | `{npcId, position}` |
+| `game.npc.action` | Server → Client | NPC performed action | `{npcId, actionType, outcome}` |
+| `game.npc.died` | Server → Client | NPC died | `{npcId}` |
+| `game.interaction.start` | Server → Client | Interaction initiated | `{interactionType, participants}` |
+| `game.interaction.phase` | Server → Client | Interaction phase change | `{phase, data}` |
+| `game.interaction.end` | Server → Client | Interaction resolved | `{outcome}` |
+| `game.time.advanced` | Server → Client | Game clock advanced | `{currentTime}` |
+| `game.increment.end` | Server → Client | Overwatch increment completed | `{summary}` |
+| `game.event.occurred` | Server → Client | World event triggered | `{eventType, data}` |
+| `game.state.changed` | Server → Client | Character state updated | `{stateData}` |
+| `game.situation.update` | Server → Client | Full situation refresh | `{situation}` |
+
+#### New Events — VATS & Combat (Phase 2)
+
+| Event | Direction | Trigger | Payload |
+|-------|-----------|---------|---------|
+| `game.vats.pause` | Server → Client | Decision point detected | `{threats[], npcs[], context, availableActions[]}` |
+| `game.vats.resume` | Server → Client | VATS resolved, world resumes | `{outcomes[]}` |
+| `game.vats.timeout` | Server → Client | Player did not act within timeout | `{defaultAction}` |
+
+#### New Events — Reputation (Phase 2)
+
+| Event | Direction | Trigger | Payload |
+|-------|-----------|---------|---------|
+| `game.reputation.changed` | Server → Client | Reputation score updated | `{actorId, targetId, oldScore, newScore, tier}` |
+| `game.reputation.tier.changed` | Server → Client | Reputation crossed tier boundary | `{actorId, targetId, oldTier, newTier}` |
+
+#### New Events — Party (Phase 3)
+
+| Event | Direction | Trigger | Payload |
+|-------|-----------|---------|---------|
+| `game.party.join.request` | Server → Client | NPC wants to join party | `{npcId, reputation, personality}` |
+| `game.party.member.joined` | Server → Client | Member added to party | `{memberId, partyId}` |
+| `game.party.member.left` | Server → Client | Member left/deserted | `{memberId, reason}` |
+| `game.party.member.betrayed` | Server → Client | Member betrayed party | `{memberId, action}` |
+
+#### New Events — Skills (Phase 4)
+
+| Event | Direction | Trigger | Payload |
+|-------|-----------|---------|---------|
+| `game.skill.gained` | Server → Client | Skill proficiency increased | `{skillName, oldProf, newProf}` |
+| `game.skill.decayed` | Server → Client | Skill proficiency decreased from disuse | `{skillName, oldProf, newProf}` |
+| `game.milestone.reached` | Server → Client | Milestone achieved, attribute points available | `{milestone, pointsGranted}` |
+
+#### New Events — Multiplayer (Phase 5)
+
+| Event | Direction | Trigger | Payload |
+|-------|-----------|---------|---------|
+| `game.player.joined` | Server → All in realm | Player enters realm | `{playerId, playerName, charId, position}` |
+| `game.player.left` | Server → All in realm | Player leaves/disconnects | `{playerId, reason}` |
+| `game.player.moved` | Server → Nearby players | Player position changed | `{playerId, charId, position, cellId}` |
+| `game.player.action` | Server → Nearby players | Player performed visible action | `{playerId, actionType, outcome}` |
+| `game.vats.playerReady` | Server → Affected players | A player committed their VATS action | `{playerId, actionCommitted: true}` |
+| `game.vats.allReady` | Server → Affected players | All players committed, resolving | `{playerActions[]}` |
+| `game.trade.request` | Server → Target player | Player initiated trade | `{fromPlayerId, offeredItems[]}` |
+| `game.trade.accepted` | Server → Both players | Trade completed | `{items exchanged}` |
+| `game.trade.rejected` | Server → Initiator | Trade declined | `{reason}` |
+| `game.pvp.challenge` | Server → Target player | PvP initiated | `{challengerId, context}` |
+| `game.realm.event` | Server → All in realm | Realm-wide event | `{eventType, affectedArea, data}` |
+
+#### Subscription Model
+
+The existing `GameStreamHandler` subscription model extends naturally for multiplayer:
+
+```
+Single-player (existing):
+  Client subscribes to charId → receives all events for that character
+
+Multiplayer (extended):
+  Client subscribes to charId → receives character-specific events (same as today)
+  Client subscribes to realmId → receives realm-wide events (player join/leave, world events)
+  Server auto-subscribes to nearby players → receives movement/action events for players in range
+  Nearby-player subscriptions update as the player moves (server manages automatically)
+```
+
+**Message Format (unchanged from existing):**
+```json
+// Client → Server (action request)
+{"actionId": "uuid", "actionType": "move", "params": {"charId": "...", "direction": "NORTH"}}
+
+// Client → Server (subscription)
+{"subscribe": true, "charId": "..."}
+{"subscribe": true, "realmId": "..."}
+
+// Server → Client (push event)
+["game.player.moved", "charId", "{\"playerId\":\"...\",\"position\":{...}}"]
+
+// Server → Client (action response)
+["game.action.complete", "actionId", "{\"situation\":{...}}"]
+```
+
 ### New Data Models
 
 ```
@@ -934,6 +1246,26 @@ olio.ability (extends olio.action)
 ├── prerequisiteSkillProficiency (double, 0-100)
 ├── effects (list of olio.actionResult templates)
 
+olio.realmSession (NEW — multiplayer session container)
+├── realm (olio.realm FK)
+├── activePlayers (list of system.user, participation: session.player)
+├── maxPlayers (int, default 6)
+├── status (RealmSessionStatusEnumType: LOBBY, ACTIVE, PAUSED)
+├── createdBy (system.user FK)
+├── turnMode (TurnModeEnumType: REAL_TIME, SIMULTANEOUS, SEQUENTIAL)
+├── vatsTimeout (int, seconds, default 60)
+├── pvpEnabled (boolean, default false)
+└── sessionCode (string, 6-char shareable join code)
+
+olio.playerPresence (NEW — tracks active player in a realm session)
+├── user (system.user FK)
+├── character (charPerson FK)
+├── realmSession (olio.realmSession FK)
+├── status (PlayerStatusEnumType: ACTIVE, IDLE, DISCONNECTED, SHELTERED)
+├── lastHeartbeat (zonetime)
+├── joinedAt (zonetime)
+└── position (geoLocation FK — cached for fast nearby-player queries)
+
 Extensions to existing models:
   data.trait (add fields):
   ├── proficiency (double, 0-100)  — current skill proficiency %
@@ -943,6 +1275,10 @@ Extensions to existing models:
   olio.state (add fields):
   ├── exploredCells (string)       — packed bitfield of explored cell IDs
   └── milestones (list of string)  — milestone keys for attribute point grants
+
+  olio.party (extend fields):
+  └── playerMembers (list of system.user, participation: party.player)
+      — supports mixed parties (players + NPCs)
 ```
 
 ### New Enums
@@ -951,6 +1287,9 @@ Extensions to existing models:
 FormationEnumType: LINE, WEDGE, CIRCLE, SCATTER, COLUMN
 TargetTypeEnumType: SELF, SINGLE_ALLY, SINGLE_ENEMY, ALL_ALLIES, ALL_ENEMIES, AREA, LINE
 ReputationTierEnumType: HOSTILE, GUARDED, NEUTRAL, FRIENDLY, ALLIED, DEVOTED
+RealmSessionStatusEnumType: LOBBY, ACTIVE, PAUSED
+TurnModeEnumType: REAL_TIME, SIMULTANEOUS, SEQUENTIAL
+PlayerStatusEnumType: ACTIVE, IDLE, DISCONNECTED, SHELTERED
 ```
 
 ### New REST Endpoints
@@ -978,69 +1317,108 @@ Skills:
 Needs Journal:
   GET  /rest/game/needs/{charId}        — Current needs assessment with narrative framing
   GET  /rest/game/needs/{charId}/objectives — Needs as trackable objectives with progress
+
+Multiplayer — Realm Sessions:
+  POST /rest/game/realm/create          — Create new realm session (returns sessionCode)
+  POST /rest/game/realm/join/{code}     — Join realm session by code
+  POST /rest/game/realm/leave           — Leave current realm session
+  GET  /rest/game/realm/{sessionId}     — Get realm session state (players, status, settings)
+  POST /rest/game/realm/settings        — Update realm settings (turn mode, pvp, timeout)
+  GET  /rest/game/realm/{sessionId}/players — List active players with positions
+
+Multiplayer — Player Interaction:
+  POST /rest/game/trade/offer           — Initiate trade with another player
+  POST /rest/game/trade/accept/{tradeId}— Accept pending trade
+  POST /rest/game/trade/reject/{tradeId}— Reject pending trade
+  POST /rest/game/pvp/challenge/{charId}— Challenge player to duel
+  POST /rest/game/pvp/accept/{challengeId} — Accept PvP challenge
+  POST /rest/game/pvp/decline/{challengeId}— Decline PvP challenge
+
+Multiplayer — WebSocket Subscriptions (via GameStreamHandler):
+  {"subscribe": true, "realmId": "..."}  — Subscribe to realm-wide events
+  {"unsubscribe": true, "realmId": "..."} — Unsubscribe from realm events
+  {"heartbeat": true}                     — Player presence heartbeat (30s interval)
 ```
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: Foundation — Tile Rendering & Sub-Grid
+### Phase 1: Foundation — Tile Rendering, Sub-Grid & App Shell
 
-**Goal:** Visual tile-based map with intra-cell sub-grid navigation.
+**Goal:** Visual tile-based map with intra-cell sub-grid navigation, responsive layout, and installable PWA shell. All client-server communication via REST API from day one.
 
 **Backend:**
 - Add `tileData` JSON field to `data.geoLocation` model (or dedicated sub-model)
 - Create `CellGridUtil.java` — sub-grid generation from terrain type + POI data
-- Add `/rest/game/cellGrid/*` endpoints to `GameService`
+- Add `/rest/game/cellGrid/*` endpoints to `GameService` — client fetches sub-grid data exclusively through these endpoints
 - Wire sub-grid generation into `prepareCells()` pipeline
 
-**Frontend:**
+**Frontend — App Shell & Responsive Layout:**
+- Create `rpgLayout.css` — CSS Grid responsive layout with desktop/tablet/mobile breakpoints
+- Create `manifest.json` — PWA manifest (name, icons, display: standalone, orientation: any)
+- Create `service-worker.js` — cache tile atlases and spritesheets; network-first for REST calls
+- Create `rpgInputManager.js` — unified input handling:
+  - Desktop: keyboard (WASD/arrows) + mouse click on tiles
+  - Tablet/Mobile: touch d-pad overlay + tap-to-move on tiles
+  - Pinch-to-zoom on tile canvas (1x–3x)
+  - Input mode auto-detected via `'ontouchstart' in window` + `matchMedia`
+- Add viewport meta tag (`width=device-width, initial-scale=1, viewport-fit=cover`)
+- Ensure all game state comes from REST calls (`/rest/game/situation`, `/rest/game/cellGrid`) — no hardcoded or computed game state on the client
+
+**Frontend — Tile Renderer:**
 - Create `rpgTileRenderer.js` — Canvas-based tile renderer
   - Load tile atlas (Ninja Adventure spritesheet)
   - Render 10x10 sub-grid with proper tile sprites
   - Support tile animations (water, fire)
   - Layer: ground → props → entities → fog
+  - Tile size adapts to breakpoint: 64px desktop, 48px tablet, 32px mobile
 - Create `rpgAssetLoader.js` — spritesheet/atlas management
   - Parse atlas JSON manifest
-  - Cache loaded atlases
+  - Cache loaded atlases (service worker pre-caches for offline resilience)
   - Provide `drawTile(ctx, tileKey, x, y, size)` API
 - Modify zoomed cell view rendering to use tile sprites instead of flat colors
-- Add passability check to movement (cannot move into impassable sub-cells)
+- Add passability check to movement (cannot move into impassable sub-cells) — passability data comes from REST `/rest/game/cellGrid` response, not computed client-side
 
 **Assets:**
 - Download Ninja Adventure asset pack
 - Extract terrain tilesets → build atlas PNG + JSON manifest
 - Map AM7 terrain enum values to tile keys
 - Create tile variation sets per terrain type (min 3 variants each)
+- Create PWA icons (192px, 512px) from game art
 
 **Tests:**
 - `TestCellGridUtil.java` — all 12 tests (Tier 1 + Tier 2): grid generation, terrain mapping, passability guarantees, path existence, coordinate mapping, edge cells, transition tiles, serialization round-trip, persistence, lazy generation
 - `rpgTileRenderer.test.js` — all 5 tests: coordinate conversion edge cases (0, 9, 50, 99), atlas key lookup, variation selection, layer ordering, viewport clipping
-- **Gate:** Phase 1 is not complete until all 17 tests pass
+- Manual verification: PWA installable on Chrome desktop, Safari iOS, Chrome Android; responsive layout correct at all three breakpoints; touch d-pad functional on tablet/mobile
+- **Gate:** Phase 1 is not complete until all 17 automated tests pass AND the app installs and renders correctly on desktop, tablet, and mobile
 
-**Deliverable:** Player can navigate a visually rich tile map with trees, rocks, water, and paths rendered at the sub-cell level.
+**Deliverable:** Player can install the RPG as an app on desktop, tablet, or mobile. Navigate a visually rich tile map with trees, rocks, water, and paths rendered at the sub-cell level. All game data fetched via REST API. Touch and keyboard input both functional.
 
 ### Phase 2: Reputation & VATS Combat
 
-**Goal:** Persistent reputation system and VATS-style action selection.
+**Goal:** Persistent reputation system and VATS-style action selection. All reputation data and VATS triggers flow through REST/WebSocket — no client-side game logic.
 
 **Backend:**
 - Create `ReputationUtil.java` — pair reputation calculation, persistence, tier evaluation
 - Add `olio.reputation` model + schema
 - Wire `InteractionUtil.calculateSocialInfluence()` output into reputation records after every interaction
 - Create `VATSUtil.java` — decision point detection, action option generation based on context
-- Extend `GameService` with reputation endpoints
-- Extend `GameStreamHandler` with VATS pause/resume push events
+- Extend `GameService` with reputation endpoints (`GET /rest/game/reputation/{charId}/{targetId}`, `GET /rest/game/reputation/{charId}/nearby`)
+- Extend `GameStreamHandler` with VATS pause/resume push events (client listens, never computes triggers)
 
 **Frontend:**
 - Create `rpgVATSOverlay.js` — action selection overlay on tile map
-  - Freeze time display on trigger
-  - Context-sensitive action list (combat/social/survival)
-  - Action preview (success probability from skill% + stat modifier)
-  - Submit action → stream resolution → show outcome → dismiss overlay
+  - Fullscreen on all form factors (desktop, tablet, mobile) — the decision moment demands full attention
+  - Freeze time display on WebSocket trigger from server
+  - Context-sensitive action list populated from REST response (combat/social/survival)
+  - Action preview (success probability returned by server, not computed client-side)
+  - Submit action via REST → stream resolution via WebSocket → show outcome → dismiss overlay
+  - Touch-friendly: action buttons sized for thumb tap on mobile (min 44px touch targets)
 - Create `rpgReputationPanel.js` — shows reputation with nearby NPCs
   - Reputation bars with tier labels (Hostile → Devoted)
   - Recent interaction history summary
+  - Responsive: inline sidebar on desktop, slide-up sheet on mobile
 - Add outcome animations using Ninja Adventure VFX sprites
 - Wire damage/outcome display into tile renderer
 
@@ -1056,25 +1434,27 @@ Needs Journal:
 
 ### Phase 3: Reputation-Gated Party & Needs Journal
 
-**Goal:** Party system gated by reputation + player-facing needs objectives.
+**Goal:** Party system gated by reputation + player-facing needs objectives. Party state and needs data served via REST endpoints.
 
 **Backend:**
 - Create `PartyUtil.java` — reputation-gated party formation, member loyalty check during Overwatch increments
 - Add `olio.party` model + schema
 - Extend `NeedsUtil` to generate player-facing objective descriptions
 - Create `NeedsJournalUtil.java` — needs-to-objective mapping with progress calculation
-- Add party and needs journal endpoints to `GameService`
-- Wire reputation check into Overwatch: members desert if reputation drops below threshold
+- Add party endpoints (`GET /rest/game/party`, `POST /rest/game/party/formation`, `POST /rest/game/party/dismiss`) and needs endpoints (`GET /rest/game/needs`, `GET /rest/game/needs/objectives`) to `GameService`
+- Wire reputation check into Overwatch: members desert if reputation drops below threshold; client notified via WebSocket push
 
 **Frontend:**
-- Create `rpgPartyPanel.js` — party management sidebar
-  - Member portraits with reputation bar overlay
-  - Formation editor (drag members to formation positions)
+- Create `rpgPartyPanel.js` — party management
+  - Member portraits with reputation bar overlay (data from `GET /rest/game/party`)
+  - Formation editor (drag on desktop, tap-to-assign on touch; sends `POST /rest/game/party/formation`)
   - Loyalty warnings when reputation is borderline
+  - Responsive: sidebar panel on desktop, bottom sheet on mobile
 - Create `rpgNeedsJournal.js` — needs-as-objectives display
   - Maslow hierarchy visualization (survive at bottom, thrive at top)
-  - Per-need progress bars (food inventory level, reputation scores, etc.)
+  - Per-need progress bars (data from `GET /rest/game/needs/objectives`)
   - LLM-generated narrative framing for each unmet need
+  - Responsive: scrollable sidebar on desktop, tabbed view on mobile
 - Reputation-based NPC indicators on tile map (color-coded by disposition tier)
 
 **Tests:**
@@ -1088,7 +1468,7 @@ Needs Journal:
 
 ### Phase 4: Skill Progression, Fog of War & Audio
 
-**Goal:** Skill leveling/decay, visibility system, and audio.
+**Goal:** Skill leveling/decay, visibility system, and audio. Skill and fog data served via REST; all game logic server-side.
 
 **Backend:**
 - Create `SkillProgressionUtil.java` — skill gain on use, decay on disuse per `olio.txt` rules
@@ -1097,24 +1477,30 @@ Needs Journal:
 - Wire decay evaluation into `Overwatch.syncClocks()`
 - Add fog of war tracking: `exploredCells` packed field on `olio.state`
 - Milestone-based attribute point grants (new region, new Maslow level, reputation threshold)
+- Add skill endpoints (`GET /rest/game/skills`, `POST /rest/game/allocatePoints`, `GET /rest/game/abilities`) to `GameService`
 - Extend save/load to include reputation, explored map, skill proficiencies
+- Fog of war visibility included in `/rest/game/situation` response — client renders what the server says is visible
 
 **Frontend:**
 - Create `rpgSkillPanel.js` — skill list with proficiency bars and decay indicators
   - Decay warning (amber) when skill is approaching decay threshold
   - Active decay (red) when skill has decayed since last use
   - Proficiency gain animation on successful skill use
+  - Data from `GET /rest/game/skills` — decay calculations run on server, not client
+  - Responsive: full list on desktop, collapsible categories on mobile
 - Create `rpgFogOfWar.js` — visibility overlay
   - Unexplored cells: opaque black
   - Previously explored but out of range: 50% darkened
   - Currently visible (perception radius): full brightness
+  - Visibility data comes from server situation response — client never computes perception radius
 - Create `rpgAudioManager.js` — background music + SFX
   - Terrain-keyed music (Ninja Adventure tracks)
-  - Combat music trigger on VATS activation
+  - Combat music trigger on VATS activation (WebSocket push event)
   - SFX on action resolution, item pickup, skill gain
-- Attribute allocation UI when milestone grants points
-- Character sheet with full stat + skill + reputation display
-- Mini-map overlay showing explored area
+  - Respects mobile audio policies (user gesture required to start AudioContext)
+- Attribute allocation UI when milestone grants points (`POST /rest/game/allocatePoints`)
+- Character sheet with full stat + skill + reputation display — all data from REST
+- Mini-map overlay showing explored area (from server-side `exploredCells`)
 
 **Tests:**
 - `TestSkillProgressionUtil.java` — all 17 tests (Tier 1 + Tier 2): gain on favorable/very-favorable/equilibrium, no gain on unfavorable, diminishing returns curve, cap at 95%, initial cap at 50%, Fae 4x cost, decay formula verification (70%→30d, 90%→10d, 95%→5d), floor at 60%, decay at 61%→60% then stop, decay accumulation over time, decay reset on use, intelligence gain rate modifier, decay during Overwatch syncClocks, skill gain after combat interaction, independent multi-skill decay
@@ -1123,22 +1509,122 @@ Needs Journal:
 - `rpgSkillPanel.test.js` — all 4 tests: proficiency bar width, decay warning threshold, active decay indicator, skill sort order
 - **Gate:** Phase 4 is not complete until all 29 tests pass
 
-**Cumulative:** All 110 tests across Phases 1-4 must pass for the RPG to be considered feature-complete.
+**Cumulative:** All 110 tests across Phases 1-4 must pass before starting Phase 5.
 
-**Deliverable:** Complete RPG experience with organic skill progression, atmospheric audio, and exploration reward through fog of war.
+**Deliverable:** Complete single-player RPG experience with organic skill progression, atmospheric audio, and exploration reward through fog of war. Fully functional as an installed App on desktop, tablet, and mobile. All game logic on the server, all data via REST. Foundation for multiplayer (REST API + WebSocket event system) already in place.
 
-### Phase 5 (Future): Multiplayer & Content
+### Phase 5: Multiplayer
 
-**Goal:** Cooperative multiplayer and expanded content. (Deferred)
+**Goal:** Multiple players share a realm, see each other in real-time, form cross-player parties, trade, and optionally PvP. All coordination via WebSocket push. Single-player remains fully functional (multiplayer with one participant).
 
-- Turn coordination for multiple players in same realm via WebSocket push
-- Shared party reputation (group reputation with NPCs)
-- PvP reputation and combat
+**Backend:**
+- Create `RealmSessionManager.java` — realm session lifecycle (create, join, leave, reconnect)
+  - Session code generation (6-char alphanumeric, unique)
+  - Player presence tracking with heartbeat (30s interval, 90s timeout → DISCONNECTED)
+  - Realm-scoped event broadcasting (push events to all players in a realm)
+- Create `RealmSessionUtil.java` — realm session CRUD, player count enforcement, status transitions
+- Add `olio.realmSession` + `olio.playerPresence` models + schema
+- Extend `GameStreamHandler`:
+  - Realm subscription (`subscribe`/`unsubscribe` for `realmId`)
+  - Heartbeat handling → update `lastHeartbeat` on `playerPresence`
+  - Player movement broadcasting: on character move, push `game.player.moved` to all realm subscribers within perception range
+  - Nearby-player subscription management: server auto-subscribes/unsubscribes as players move in and out of each other's perception radius
+- Extend `Overwatch` for coordinated turn resolution:
+  - When decision point affects multiple players, enter VATS collection window
+  - Track which players have submitted actions (per decision point)
+  - Timeout handling: default idle players to "defend" action
+  - Resolve all queued player actions in initiative order (`reaction` stat)
+  - Support three turn modes: REAL_TIME, SIMULTANEOUS, SEQUENTIAL
+- Add realm session REST endpoints: `POST /rest/game/realm/create`, `POST /rest/game/realm/join/{code}`, `POST /rest/game/realm/leave`, `GET /rest/game/realm/{sessionId}`, `POST /rest/game/realm/settings`, `GET /rest/game/realm/{sessionId}/players`
+- Add player interaction REST endpoints: `POST /rest/game/trade/offer`, `POST /rest/game/trade/accept|reject`, `POST /rest/game/pvp/challenge|accept|decline`
+- Wire cross-player reputation: player-to-player reputation uses the same `olio.reputation` model and `ReputationUtil` as NPC reputation. Cooperative actions increase rep, PvP/theft decreases it. Party join gated at +30 (same threshold as NPCs).
+
+**Frontend:**
+- Create `rpgMultiplayerLobby.js` — realm session UI
+  - Create realm: generates session code, displays for sharing
+  - Join realm: enter session code
+  - Lobby view: shows connected players, realm settings, "Start" button for creator
+  - Settings panel: turn mode selector, PvP toggle, VATS timeout slider
+  - Responsive: fullscreen overlay on all form factors
+- Create `rpgPlayerRenderer.js` — render other players on tile map
+  - Player sprites with name labels (different visual treatment from NPCs)
+  - Player status indicators (active, idle, disconnected)
+  - Proximity-based: only render players within perception range (data from server)
+- Create `rpgTradeUI.js` — player-to-player trade interface
+  - Split-screen inventory view (your items / their items)
+  - Drag-to-offer, confirm/cancel
+  - Both players must confirm (server enforces via VATS-like commit)
+  - Responsive: fullscreen overlay on mobile, panel on desktop
+- Create `rpgPlayerChat.js` — direct player-to-player text chat
+  - WebSocket-routed (not LLM) — low latency
+  - Chat overlay on tile map, expandable
+  - Player name + message display
+- Extend VATS overlay for multiplayer:
+  - Show other player action status ("Player 2 is choosing..." / "Player 2 ready")
+  - Initiative order display
+  - Timeout countdown
+- Extend `rpgReputationPanel.js` — add player-to-player reputation entries
+- Extend `rpgPartyPanel.js` — show player members alongside NPC members
+
+**Tests:**
+- `TestRealmSessionManager.java` — all 15 tests (Tier 2 + Tier 3):
+  - Session creation with unique code
+  - Player join by code (valid/invalid/full)
+  - Player leave and cleanup
+  - Reconnect with existing character
+  - Heartbeat updates lastHeartbeat
+  - Heartbeat timeout → DISCONNECTED status
+  - Max players enforcement
+  - Session status transitions (LOBBY → ACTIVE → PAUSED)
+  - Realm-scoped event broadcast reaches all players
+  - Player movement broadcast to nearby players only
+  - Perception-radius subscription management
+  - Cross-player reputation (create, update, query)
+  - Settings update (turn mode, PvP, timeout)
+  - Concurrent session access (thread safety)
+  - Session code uniqueness under parallel creation
+- `TestMultiplayerTurnCoordination.java` — all 10 tests (Tier 2):
+  - REAL_TIME mode: non-affected players continue during VATS
+  - SIMULTANEOUS mode: all nearby players pause at decision point
+  - SEQUENTIAL mode: players take turns in initiative order
+  - Timeout defaults idle player to "defend"
+  - All players submit → resolution in initiative order
+  - PvP challenge → both players get VATS pause
+  - Cross-player party combat: all party members get VATS
+  - Trade offer → accept flow via VATS-like commit
+  - Trade rejection flow
+  - Mixed PvP: PvP disabled blocks COMBAT interaction
+- `TestMultiplayerWebSocket.java` — all 8 tests (Tier 3):
+  - `game.player.joined` event reaches all realm subscribers
+  - `game.player.moved` event reaches only nearby players
+  - `game.player.left` event on disconnect
+  - `game.vats.playerReady` event during multiplayer VATS
+  - `game.trade.request/accepted/rejected` event flow
+  - Realm subscription/unsubscription
+  - Heartbeat over WebSocket
+  - Stale session cleanup on heartbeat timeout
+- `rpgMultiplayerLobby.test.js` — all 4 tests: session code display, player list rendering, settings controls, join/leave state transitions
+- **Gate:** Phase 5 is not complete until all 37 tests pass
+
+**Cumulative:** All 147 tests across Phases 1-5 must pass for the multiplayer RPG to be considered feature-complete.
+
+**Deliverable:** Multiple players can create or join a shared realm session, see each other move on the tile map in real-time, form cross-player parties, trade items, and engage in coordinated combat. All coordination via WebSocket push events. Single-player works unchanged.
+
+### Phase 6 (Future): Content Expansion & Native Wrappers
+
+**Goal:** Expanded content, advanced multiplayer features, and optional native app store distribution. (Deferred)
+
 - LLM-generated contextual objectives beyond basic needs
 - Dungeon instances (instanced sub-realms with unique POI configurations)
-- Trading system gated by mutual reputation
 - Reputation-based faction system (communities with collective disposition)
 - World events affecting reputation across regions
+- Shared party reputation (group reputation with NPCs across all party members)
+- Spectator mode (observe a realm without a character)
+- **Native app wrappers** (if App Store distribution needed):
+  - Android: Trusted Web Activity (TWA) wrapping the PWA — zero code changes
+  - iOS: Capacitor or WKWebView shell wrapping the PWA — zero code changes
+  - Desktop: Electron shell (if PWA install isn't sufficient) — zero code changes
+  - All wrappers consume the same REST API; the PWA *is* the app
 
 ---
 
@@ -1297,6 +1783,54 @@ The UX7 project currently has no JS test framework. Introduce **Vitest** (compat
 | `testUnauthorizedAccess` | 3 | Accessing another user's character data returns 403 |
 | `testInvalidCharId` | 3 | Non-existent charId returns 404 |
 
+#### TestRealmSessionManager.java (Phase 5)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testCreateSession` | 2 | Create realm session returns valid session with unique 6-char code |
+| `testJoinByCode` | 2 | Player joins session by valid code, appears in activePlayers |
+| `testJoinInvalidCode` | 2 | Invalid session code returns appropriate error |
+| `testJoinFullSession` | 2 | Joining at maxPlayers returns capacity error |
+| `testLeaveSession` | 2 | Player leave removes from activePlayers, pushes `game.player.left` |
+| `testReconnect` | 2 | Reconnecting player resumes existing character and position |
+| `testHeartbeatUpdate` | 2 | Heartbeat message updates `lastHeartbeat` timestamp on `playerPresence` |
+| `testHeartbeatTimeout` | 2 | No heartbeat for 90s → status transitions to DISCONNECTED |
+| `testMaxPlayersEnforcement` | 2 | Session rejects join when `activePlayers.size >= maxPlayers` |
+| `testStatusTransitions` | 2 | Session status follows LOBBY → ACTIVE → PAUSED lifecycle |
+| `testRealmScopedBroadcast` | 3 | Push event reaches all players in the realm, not players in other realms |
+| `testPlayerMovementBroadcast` | 3 | Player move pushes `game.player.moved` only to nearby players (perception range) |
+| `testPerceptionSubscriptionManagement` | 3 | Moving in/out of another player's range auto-subscribes/unsubscribes |
+| `testSettingsUpdate` | 2 | Realm creator can update turn mode, PvP, timeout |
+| `testSessionCodeUniqueness` | 2 | Parallel session creation produces unique codes |
+
+#### TestMultiplayerTurnCoordination.java (Phase 5)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testRealTimeMode` | 2 | Non-affected players continue moving during another player's VATS pause |
+| `testSimultaneousMode` | 2 | All nearby players pause at decision point, all must submit |
+| `testSequentialMode` | 2 | Players take turns in initiative order, each sees prior resolution |
+| `testVATSTimeout` | 2 | Idle player defaults to "defend" after timeout expires |
+| `testInitiativeOrderResolution` | 2 | Queued player actions resolve in `reaction` stat order |
+| `testPvPChallenge` | 2 | PvP challenge → both players get VATS pause |
+| `testCrossPlayerPartyCombat` | 2 | Party with multiple players → all get VATS in shared combat |
+| `testTradeOfferAccept` | 2 | Trade offer → accept → items exchanged, both inventories updated |
+| `testTradeOfferReject` | 2 | Trade offer → reject → no items exchanged, initiator notified |
+| `testPvPDisabledBlocksCombat` | 2 | PvP disabled realm rejects COMBAT interaction between players |
+
+#### TestMultiplayerWebSocket.java (Phase 5)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testPlayerJoinedEvent` | 3 | `game.player.joined` reaches all realm subscribers on player join |
+| `testPlayerMovedEvent` | 3 | `game.player.moved` reaches only nearby players within perception range |
+| `testPlayerLeftEvent` | 3 | `game.player.left` pushed on disconnect with reason |
+| `testVATSPlayerReadyEvent` | 3 | `game.vats.playerReady` pushed when player commits VATS action in multiplayer |
+| `testTradeEvents` | 3 | `game.trade.request/accepted/rejected` flow between two player sessions |
+| `testRealmSubscription` | 3 | Subscribe/unsubscribe to realmId controls realm event delivery |
+| `testHeartbeatOverWebSocket` | 3 | Heartbeat message processed and acknowledged |
+| `testStaleSessionCleanup` | 3 | Timed-out player presence cleaned up, `game.player.left` pushed |
+
 ### Frontend Test Classes (Vitest)
 
 #### rpgTileRenderer.test.js (Phase 1)
@@ -1336,6 +1870,15 @@ The UX7 project currently has no JS test framework. Introduce **Vitest** (compat
 | `gated level display` | Unmet lower level dims/locks upper levels |
 | `objective count per level` | Multiple unmet needs at same level all visible |
 
+#### rpgMultiplayerLobby.test.js (Phase 5)
+
+| Test | What It Validates |
+|------|-------------------|
+| `session code display` | Created session shows shareable code prominently |
+| `player list rendering` | Connected players listed with status indicators |
+| `settings controls` | Turn mode, PvP toggle, timeout slider render and update |
+| `join/leave state` | UI transitions correctly between lobby/active/disconnected states |
+
 ### Coverage Targets
 
 | Category | Target | Rationale |
@@ -1348,6 +1891,10 @@ The UX7 project currently has no JS test framework. Introduce **Vitest** (compat
 | Needs journal Maslow gating | 100% branch | Incorrect gating surfaces wrong objectives |
 | REST endpoints | All happy path + all error codes | Public API contract must be reliable |
 | Tile coordinate math (JS) | 100% branch | Off-by-one in coordinate conversion = visual bugs across entire map |
+| Realm session lifecycle | 100% branch | Session join/leave/reconnect must be bulletproof for multiplayer |
+| Turn coordination modes | 100% branch | Wrong mode behavior = broken multiplayer combat |
+| Player visibility broadcast | 90%+ line | Wrong broadcast scope leaks position data or misses nearby players |
+| WebSocket event delivery | 100% branch | Missed events = desynced clients; leaked events = information exposure |
 
 ### Test Execution
 
@@ -1356,10 +1903,10 @@ The UX7 project currently has no JS test framework. Introduce **Vitest** (compat
 mvn test -pl AccountManagerObjects7
 
 # Tier 2 — Integration (requires DB)
-mvn test -pl AccountManagerObjects7 -Dtest="TestReputationUtil,TestSkillProgressionUtil,TestCellGridUtil,TestPartyUtil,TestVATSUtil,TestNeedsJournalUtil,TestOverwatchRPGExtensions"
+mvn test -pl AccountManagerObjects7 -Dtest="TestReputationUtil,TestSkillProgressionUtil,TestCellGridUtil,TestPartyUtil,TestVATSUtil,TestNeedsJournalUtil,TestOverwatchRPGExtensions,TestRealmSessionManager,TestMultiplayerTurnCoordination"
 
 # Tier 3 — Service layer (requires H2)
-mvn test -pl AccountManagerService7 -Dtest="TestGameServiceRPGEndpoints"
+mvn test -pl AccountManagerService7 -Dtest="TestGameServiceRPGEndpoints,TestMultiplayerWebSocket"
 
 # Tier 4 — Frontend (requires Node.js)
 cd AccountManagerUx7 && npx vitest run
@@ -1376,6 +1923,7 @@ Each phase is **not complete** until all tests for that phase pass:
 - **Phase 2:** TestReputationUtil (all), TestVATSUtil (all), TestOverwatchRPGExtensions (VATS + reputation tests), TestGameServiceRPGEndpoints (reputation + cellGrid endpoints), rpgReputationPanel.test.js (all)
 - **Phase 3:** TestPartyUtil (all), TestNeedsJournalUtil (all), TestGameServiceRPGEndpoints (party + needs endpoints), rpgNeedsJournal.test.js (all)
 - **Phase 4:** TestSkillProgressionUtil (all), TestOverwatchRPGExtensions (skill decay tests), TestGameServiceRPGEndpoints (skills + abilities + allocatePoints endpoints), rpgSkillPanel.test.js (all)
+- **Phase 5:** TestRealmSessionManager (all), TestMultiplayerTurnCoordination (all), TestMultiplayerWebSocket (all), rpgMultiplayerLobby.test.js (all)
 
 ---
 
@@ -1398,6 +1946,12 @@ Each phase is **not complete** until all tests for that phase pass:
 | `src/main/java/org/cote/accountmanager/olio/schema/FormationEnumType.java` | Party formation enum |
 | `src/main/java/org/cote/accountmanager/olio/schema/ReputationTierEnumType.java` | Reputation tier enum |
 | `src/main/java/org/cote/accountmanager/olio/schema/TargetTypeEnumType.java` | Ability target enum |
+| `src/main/resources/models/olio/realmSessionModel.json` | Multiplayer realm session schema |
+| `src/main/resources/models/olio/playerPresenceModel.json` | Player presence tracking schema |
+| `src/main/java/org/cote/accountmanager/olio/RealmSessionUtil.java` | Realm session CRUD + player count + status |
+| `src/main/java/org/cote/accountmanager/olio/schema/RealmSessionStatusEnumType.java` | Session status enum |
+| `src/main/java/org/cote/accountmanager/olio/schema/TurnModeEnumType.java` | Turn coordination mode enum |
+| `src/main/java/org/cote/accountmanager/olio/schema/PlayerStatusEnumType.java` | Player presence status enum |
 
 **Backend Tests (AccountManagerObjects7):**
 | File | Purpose |
@@ -1409,33 +1963,51 @@ Each phase is **not complete** until all tests for that phase pass:
 | `src/test/java/org/cote/accountmanager/objects/tests/olio/TestVATSUtil.java` | Decision point detection, action options, skill gating (10 tests) |
 | `src/test/java/org/cote/accountmanager/objects/tests/olio/TestNeedsJournalUtil.java` | Needs-to-objective mapping, Maslow gating, progress (8 tests) |
 | `src/test/java/org/cote/accountmanager/objects/tests/olio/TestOverwatchRPGExtensions.java` | Skill decay in syncClocks, reputation triggers, VATS pause (5 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestRealmSessionManager.java` | Session lifecycle, join/leave, heartbeat, broadcast, code uniqueness (15 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestMultiplayerTurnCoordination.java` | Turn modes, VATS timeout, initiative order, PvP, trade flows (10 tests) |
 
 **Backend Tests (AccountManagerService7):**
 | File | Purpose |
 |------|---------|
 | `src/test/java/org/cote/accountmanager/objects/tests/TestGameServiceRPGEndpoints.java` | REST endpoint contracts for all new game endpoints (15 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/TestMultiplayerWebSocket.java` | WebSocket event delivery for multiplayer: join/move/leave, VATS, trade, realm sub (8 tests) |
 
 **Backend (AccountManagerService7):**
 | File | Purpose |
 |------|---------|
-| Extensions to `GameService.java` | New endpoints for reputation, party, cellGrid, skills, needs journal |
+| Extensions to `GameService.java` | New endpoints for reputation, party, cellGrid, skills, needs journal, realm sessions, trade, PvP |
+| `src/main/java/org/cote/sockets/RealmSessionManager.java` | Multiplayer session lifecycle, presence tracking, heartbeat, realm-scoped broadcast |
 
 **Frontend (AccountManagerUx7):**
 | File | Purpose |
 |------|---------|
-| `client/view/rpgGame.js` | Main RPG game view (extends cardGame patterns) |
-| `client/view/rpg/rpgTileRenderer.js` | Canvas tile rendering engine |
-| `client/view/rpg/rpgAssetLoader.js` | Spritesheet/atlas management |
-| `client/view/rpg/rpgVATSOverlay.js` | VATS-style action selection overlay |
-| `client/view/rpg/rpgReputationPanel.js` | NPC reputation display |
-| `client/view/rpg/rpgPartyPanel.js` | Reputation-gated party management |
-| `client/view/rpg/rpgNeedsJournal.js` | Needs-as-objectives display |
-| `client/view/rpg/rpgSkillPanel.js` | Skill proficiency + decay display |
-| `client/view/rpg/rpgAudioManager.js` | Music and sound effects |
-| `client/view/rpg/rpgFogOfWar.js` | Visibility overlay |
-| `client/view/rpg/rpgInventoryUI.js` | Enhanced inventory with equipment slots |
+| `client/view/rpgGame.js` | Main RPG game view (extends cardGame patterns, REST-only data access) |
+| `client/view/rpg/rpgTileRenderer.js` | Canvas tile rendering engine (adaptive tile size per breakpoint) |
+| `client/view/rpg/rpgAssetLoader.js` | Spritesheet/atlas management (service worker cached) |
+| `client/view/rpg/rpgInputManager.js` | Unified input — keyboard (desktop), touch d-pad + tap (tablet/mobile), pinch-zoom |
+| `client/view/rpg/rpgVATSOverlay.js` | VATS-style action selection overlay (fullscreen, touch-friendly) |
+| `client/view/rpg/rpgReputationPanel.js` | NPC reputation display (responsive: sidebar / bottom sheet) |
+| `client/view/rpg/rpgPartyPanel.js` | Reputation-gated party management (responsive: sidebar / bottom sheet) |
+| `client/view/rpg/rpgNeedsJournal.js` | Needs-as-objectives display (responsive: sidebar / tabbed mobile view) |
+| `client/view/rpg/rpgSkillPanel.js` | Skill proficiency + decay display (responsive) |
+| `client/view/rpg/rpgAudioManager.js` | Music and sound effects (respects mobile audio policies) |
+| `client/view/rpg/rpgFogOfWar.js` | Visibility overlay (server-driven visibility data) |
+| `client/view/rpg/rpgInventoryUI.js` | Enhanced inventory with equipment slots (touch drag on mobile) |
 | `client/view/rpg/rpgCharacterSheet.js` | Full character stats + skills + reputation display |
 | `client/view/rpg/rpgMiniMap.js` | Explored area mini-map |
+| `client/view/rpg/rpgMultiplayerLobby.js` | Realm session create/join/lobby UI (responsive) |
+| `client/view/rpg/rpgPlayerRenderer.js` | Render other players on tile map (sprites, labels, status) |
+| `client/view/rpg/rpgTradeUI.js` | Player-to-player trade interface (split inventory, confirm) |
+| `client/view/rpg/rpgPlayerChat.js` | Direct player-to-player text chat (WebSocket, not LLM) |
+
+**PWA & App Shell (AccountManagerUx7):**
+| File | Purpose |
+|------|---------|
+| `manifest.json` | PWA manifest — app name, icons, display: standalone, orientation: any, theme color |
+| `service-worker.js` | Asset caching (tile atlases, spritesheets, audio), network-first for REST API |
+| `client/view/rpg/rpgLayout.css` | Responsive CSS Grid layout with desktop/tablet/mobile breakpoints |
+| `assets/rpg/icons/icon-192.png` | PWA icon 192x192 |
+| `assets/rpg/icons/icon-512.png` | PWA icon 512x512 |
 
 **Frontend Tests (AccountManagerUx7):**
 | File | Purpose |
@@ -1444,6 +2016,7 @@ Each phase is **not complete** until all tests for that phase pass:
 | `client/view/rpg/__tests__/rpgReputationPanel.test.js` | Tier labels, color mapping, bar percentage (4 tests) |
 | `client/view/rpg/__tests__/rpgSkillPanel.test.js` | Proficiency bars, decay indicators, sort order (4 tests) |
 | `client/view/rpg/__tests__/rpgNeedsJournal.test.js` | Maslow ordering, progress bars, level gating (4 tests) |
+| `client/view/rpg/__tests__/rpgMultiplayerLobby.test.js` | Session code display, player list, settings, state transitions (4 tests) |
 | `vitest.config.js` | Vitest configuration for RPG module unit tests |
 
 **Assets:**
@@ -1466,15 +2039,17 @@ Each phase is **not complete** until all tests for that phase pass:
 | `AccountManagerObjects7` `data.traitModel.json` | Add `proficiency`, `lastUsed`, `usageCount` fields |
 | `AccountManagerObjects7` `olio.stateModel.json` | Add `exploredCells`, `milestones` fields |
 | `AccountManagerObjects7` `data.geoLocationModel.json` | Add `tileData` JSON field for sub-cell grid |
-| `AccountManagerObjects7` `Overwatch.java` | Wire skill decay into `syncClocks()`, VATS pause support |
+| `AccountManagerObjects7` `Overwatch.java` | Wire skill decay into `syncClocks()`, VATS pause support, multiplayer turn coordination (VATS collection window, initiative-order resolution) |
 | `AccountManagerObjects7` `InteractionAction.java` | Wire skill proficiency gain after action resolution |
 | `AccountManagerObjects7` `InteractionUtil.java` | Wire reputation persistence into `calculateSocialInfluence()` |
 | `AccountManagerObjects7` `GameUtil.java` | Party-aware movement, reputation-aware NPC behavior |
-| `AccountManagerService7` `GameService.java` | New endpoints (reputation, party, cellGrid, skills, needs) |
-| `AccountManagerService7` `GameStreamHandler.java` | VATS pause push events, reputation update events |
+| `AccountManagerService7` `GameService.java` | New endpoints (reputation, party, cellGrid, skills, needs, realm sessions, trade, PvP) |
+| `AccountManagerService7` `GameStreamHandler.java` | VATS pause push events, reputation update events, realm subscriptions, player presence broadcasting, heartbeat handling, multiplayer event routing |
 | `AccountManagerUx7` `applicationRouter.js` | Add `/rpg/:id` route |
-| `AccountManagerUx7` `modelDef.js` | Add new model schemas (party, reputation, ability) |
-| `AccountManagerUx7` `build.js` / esbuild config | Include new RPG modules and asset directories |
+| `AccountManagerUx7` `modelDef.js` | Add new model schemas (party, reputation, ability, realmSession, playerPresence) |
+| `AccountManagerUx7` `gameStream.js` | Add realm subscription, heartbeat, player event routing, trade/PvP message handling |
+| `AccountManagerUx7` `build.js` / esbuild config | Include new RPG modules, asset directories, and service worker |
+| `AccountManagerUx7` `index.html` (or entry point) | Add viewport meta tag, manifest link, service worker registration |
 
 ---
 

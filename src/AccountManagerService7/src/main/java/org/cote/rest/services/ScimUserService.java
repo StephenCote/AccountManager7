@@ -12,6 +12,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
@@ -19,6 +20,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.scim.ScimErrorHandler;
 import org.cote.accountmanager.scim.ScimFilterParser;
@@ -333,17 +335,31 @@ public class ScimUserService {
 			Map<String, Object> nameObj = (Map<String, Object>) scimUser.get("name");
 			if (nameObj == null) return null;
 
+			// Follow Factory convention: person name = user name, placed in /Persons group
+			OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(
+				contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
+			if (oc == null) {
+				logger.warn("Could not resolve organization context for person creation");
+				return null;
+			}
+			BaseRecord personsDir = IOSystem.getActiveContext().getPathUtil().findPath(
+				oc.getAdminUser(), ModelNames.MODEL_GROUP, "/Persons",
+				GroupEnumType.DATA.toString(), oc.getOrganizationId());
+			if (personsDir == null) {
+				logger.warn("Could not find /Persons group");
+				return null;
+			}
+
 			BaseRecord person = IOSystem.getActiveContext().getFactory().newInstance(
 				ModelNames.MODEL_PERSON, contextUser, null, null
 			);
 
+			// Person name matches user name (PrincipalService lookup convention)
+			person.set(FieldNames.FIELD_NAME, (String) createdUser.get(FieldNames.FIELD_NAME));
+			person.set(FieldNames.FIELD_GROUP_ID, personsDir.get(FieldNames.FIELD_ID));
+
 			String firstName = (String) nameObj.get("givenName");
 			String lastName = (String) nameObj.get("familyName");
-			String displayName = firstName != null ? firstName : "";
-			if (lastName != null) displayName += (displayName.isEmpty() ? "" : " ") + lastName;
-			if (displayName.isEmpty()) displayName = (String) createdUser.get(FieldNames.FIELD_NAME);
-
-			person.set(FieldNames.FIELD_NAME, displayName);
 			if (firstName != null) person.set(FieldNames.FIELD_FIRST_NAME, firstName);
 			if (nameObj.containsKey("middleName")) person.set(FieldNames.FIELD_MIDDLE_NAME, nameObj.get("middleName"));
 			if (lastName != null) person.set(FieldNames.FIELD_LAST_NAME, lastName);

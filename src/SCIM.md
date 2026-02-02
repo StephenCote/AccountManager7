@@ -89,6 +89,52 @@ private QueryResult search(BaseRecord contextUser, Query query) {
 
 ---
 
+## Organization Setup and SCIM Readiness
+
+### No Special Configuration Required
+
+SCIM endpoints operate over the standard AccountManager7 organization infrastructure. **Any organization created through the normal AM7 provisioning process is immediately SCIM-ready.** There is no per-organization SCIM configuration, feature toggle, or opt-in mechanism.
+
+### Standard Prerequisites
+
+The following are standard components of every AM7 organization — they are not SCIM-specific, but SCIM depends on them:
+
+1. **Organization with an `OrganizationContext`**: The organization must be provisioned through the standard AM7 setup process (`Factory.getCreateUser` / organization bootstrap), which creates the required directory structure, admin user, and default groups.
+
+2. **`/Persons` data group**: Standard organization provisioning creates a `/Persons` group under the root data group (`Factory.java` calls `makePath("/Persons", "DATA", organizationId)`). SCIM relies on this group for person resolution.
+
+3. **Service principal with a bearer token**: SCIM endpoints require authentication via bearer token (enforced by `TokenFilter` on `/scim/*`). The authenticated user's `organizationId` determines which organization all SCIM operations target. This is typically a dedicated service account with appropriate permissions for user and group management.
+
+### What Happens Automatically
+
+| Concern | Behavior |
+|---------|----------|
+| **Organization scoping** | All SCIM queries are automatically scoped to the authenticated user's organization via `AccessPoint`. No tenant identifier is needed in the URL or request body. |
+| **User creation** | `POST /scim/v2/Users` creates the user in the service principal's organization. If the SCIM request includes a `name` object, a corresponding person record is created in `/Persons` following the standard Factory convention. |
+| **Group creation** | `POST /scim/v2/Groups` creates the group in the service principal's organization. |
+| **Authorization** | All SCIM operations go through the standard `AccessPoint` PBAC layer. The service principal must have sufficient permissions to create, read, update, or delete the target resources. |
+
+### Person Resolution Convention
+
+SCIM User resources combine data from two AM7 models: `system.user` (account/auth identity) and `identity.person` (name, contacts, addresses). Person resolution follows the established `PrincipalService` convention:
+
+- Given a user record, the system finds the corresponding person by looking for a person **with the same `name` as the user** in the organization's `/Persons` group.
+- This is handled by `PrincipalService.getPersonForUser(contextUser, targetUser)`, which is shared between the existing principal REST endpoints and the SCIM service layer.
+- The standard `Factory.getCreateUser()` automatically creates a person record with `name = userName` in `/Persons`, so users created through AM7's normal provisioning are immediately visible to SCIM with full person data.
+- SCIM's `POST /Users` follows the same convention: the created person's `name` is set to the `userName`, and the person is placed in the `/Persons` group.
+- If no matching person record exists (e.g., a user was created without the standard factory flow), SCIM User responses will contain account fields (`id`, `userName`, `active`, etc.) but no name or contact details.
+
+### Multi-Organization Deployment
+
+In a multi-organization deployment, each organization is served by SCIM independently:
+
+- A service principal in Organization A can only manage users and groups in Organization A.
+- A **separate service principal and bearer token** is needed for each organization that will be managed via SCIM.
+- Cross-organization queries are not supported through SCIM (or through AM7 in general). This is enforced at the data layer, not the API layer.
+- The same `userName` may exist in multiple organizations — each organization's SCIM service sees only its own users.
+
+---
+
 ## Phase 1: Core SCIM Service Structure
 
 ### 1.1 Create ScimService.java

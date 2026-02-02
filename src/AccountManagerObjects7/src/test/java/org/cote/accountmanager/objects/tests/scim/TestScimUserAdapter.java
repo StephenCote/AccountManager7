@@ -14,9 +14,9 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.UserStatusEnumType;
 import org.cote.accountmanager.scim.ScimUserAdapter;
 import org.junit.Test;
@@ -59,24 +59,31 @@ public class TestScimUserAdapter extends BaseTest {
 	public void testToScimWithPerson() {
 		logger.info("Testing SCIM User Adapter - with person");
 		BaseRecord adminUser = orgContext.getAdminUser();
+		// getCreateUser already creates a matching person in /Persons via Factory convention
 		BaseRecord testUser = getCreateUser("scimTestUser3");
 		assertNotNull("Test user should not be null", testUser);
 
 		try {
-			BaseRecord person = IOSystem.getActiveContext().getFactory().newInstance(
-				ModelNames.MODEL_PERSON, adminUser, null, null
-			);
-			person.set(FieldNames.FIELD_NAME, "Test Person 3");
+			// Find the person already created by Factory.getCreateUser
+			BaseRecord personsDir = IOSystem.getActiveContext().getPathUtil().findPath(
+				adminUser, ModelNames.MODEL_GROUP, "/Persons",
+				GroupEnumType.DATA.toString(), orgContext.getOrganizationId());
+			assertNotNull("/Persons group should exist", personsDir);
+
+			BaseRecord person = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(
+				adminUser, ModelNames.MODEL_PERSON,
+				personsDir.get(FieldNames.FIELD_OBJECT_ID),
+				(String) testUser.get(FieldNames.FIELD_NAME));
+			assertNotNull("Person should exist from getCreateUser", person);
+
+			// Update the person with name fields for the test
 			person.set(FieldNames.FIELD_FIRST_NAME, "John");
 			person.set(FieldNames.FIELD_MIDDLE_NAME, "Q");
 			person.set(FieldNames.FIELD_LAST_NAME, "Smith");
+			IOSystem.getActiveContext().getAccessPoint().update(adminUser, person);
 
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(adminUser, person);
-			assertNotNull("Person should be created", created);
-
-			IOSystem.getActiveContext().getAccessPoint().member(adminUser, created, "users", testUser, null, true);
-
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_PERSON, FieldNames.FIELD_OBJECT_ID, (String) created.get(FieldNames.FIELD_OBJECT_ID));
+			// Re-read with full plan to get nested data
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_PERSON, FieldNames.FIELD_OBJECT_ID, (String) person.get(FieldNames.FIELD_OBJECT_ID));
 			q.planMost(true);
 			BaseRecord fullPerson = IOSystem.getActiveContext().getAccessPoint().find(adminUser, q);
 
