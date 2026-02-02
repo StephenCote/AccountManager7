@@ -39,6 +39,9 @@
         "Example response for a happy energetic state:",
         "{\"audio\":{\"band\":\"alpha\",\"troughBand\":\"alphaTheta\",\"endBand\":\"alpha\",\"baseFreq\":528,\"isochronicEnabled\":true},\"visuals\":{\"effect\":\"particles\"},\"labels\":{\"add\":[\"radiant light\"]},\"commentary\":\"matching upbeat energy with love frequency\"}",
         "",
+        "Example response using askUser (only when Interactive: ENABLED):",
+        "{\"audio\":{\"preset\":\"heartOpening\"},\"voiceLine\":\"How are you feeling right now?\",\"askUser\":{\"question\":\"How are you feeling right now?\"},\"labels\":{\"add\":[\"check in\"]},\"commentary\":\"pausing to check in with user at session midpoint\"}",
+        "",
         "Guidelines:",
         "- Prefer named presets for common therapeutic goals; use band/baseFreq for custom combinations",
         "- Evolve gradually based on biometric emotion, elapsed time, and session intent",
@@ -52,7 +55,7 @@
         "- voiceLine is synthesized and injected as the next spoken line - keep it natural, 1-2 sentences",
         "- When 'Mood Ring: ACTIVE' appears in the state, ALWAYS include suggestMood in your response based on the biometric emotion, session intent, and elapsed time. The mood ring drives a visual color effect on the user's display.",
         "- Include a progressPct field (0-100) estimating how far the session has progressed toward the stated intent/goal",
-        "- When 'Interactive: ENABLED' appears in the state, you may use askUser to ask the user questions. Use sparingly — only when user input would meaningfully shape the session direction. Do not ask more than once every few ticks. Pair with a voiceLine to speak the question aloud.",
+        "- When 'Interactive: ENABLED' appears in the state, you SHOULD use askUser to engage the user. Ask a check-in question within the first 2-3 ticks, then again every 4-6 ticks. Always pair askUser with a matching voiceLine so the question is spoken aloud. Questions should be short and open-ended (e.g. 'How are you feeling?', 'What would you like to explore?'). When a 'User Response' appears, acknowledge it in your next voiceLine and adapt directives accordingly.",
         "- Respond with ONLY the JSON object, no markdown fences, no explanation text"
     ],
     "imageTagsAppendix": [

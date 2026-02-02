@@ -63,6 +63,7 @@
         _sttMediaRecorder: null,    // MediaRecorder instance for server-side STT
         _responseTimeoutId: null,   // auto-submit timeout handle
         _voicePausedForInteraction: false, // voice sequence paused while waiting for user
+        _ticksSinceAskUser: 0,    // ticks since last askUser directive (for escalating prompts)
 
         // Debug console (test mode)
         debugMessages: [],
@@ -262,9 +263,17 @@
                     this.biometricThemer.setSmoothingFactor(cfg.biometrics.smoothingFactor);
                 }
 
+                this._themeRedrawTimer = null;
                 this.biometricThemer.onThemeChange = (theme) => {
                     this.currentTheme = theme;
-                    m.redraw();
+                    // Throttle m.redraw() — CSS custom properties update at 60fps via _applyTheme,
+                    // but mithril vdom diffing at 60fps causes Node.removeChild race conditions
+                    if (!this._themeRedrawTimer) {
+                        this._themeRedrawTimer = setTimeout(() => {
+                            this._themeRedrawTimer = null;
+                            m.redraw();
+                        }, 200);
+                    }
                 };
 
                 this._startBiometricCapture();
@@ -494,13 +503,44 @@
                         if (d.opacity) this._debugLog('Opacity: ' + JSON.stringify(d.opacity), 'directive');
                         if (d.suggestMood) this._debugLog('Mood: ' + JSON.stringify(d.suggestMood), 'directive');
                         if (d.progressPct != null) this._debugLog('Progress: ' + d.progressPct + '%', 'info');
+                        if (d.askUser) this._debugLog('askUser: "' + d.askUser.question + '"', 'pass');
                         if (d.commentary) this._debugLog('LLM: ' + d.commentary, 'info');
+                        // Interactive mode tracking
+                        if (this.sessionConfig?.director?.interactive) {
+                            this._debugLog('Interactive tick #' + this._ticksSinceAskUser + (d.askUser ? ' → askUser FIRED' : ' → no askUser'), d.askUser ? 'pass' : 'warn');
+                        }
                     }
                 };
                 this.sessionDirector.onError = (err) => {
                     console.warn('SessionDirector error:', err);
                     if (this.sessionConfig?.director?.testMode) {
                         this._debugLog('Error: ' + (err.message || err), 'error');
+                    }
+                };
+                // Tick debug: log state message and raw LLM response in test mode
+                this.sessionDirector.onTickDebug = (info) => {
+                    if (!this.sessionConfig?.director?.testMode) return;
+                    // Log the interactive-relevant lines from the state message
+                    const stateLines = info.stateMessage.split('\n');
+                    const interactiveLine = stateLines.find(l => l.startsWith('Interactive:'));
+                    const responseLine = stateLines.find(l => l.startsWith('User Response:'));
+                    if (interactiveLine) {
+                        this._debugLog('State → ' + interactiveLine, 'info');
+                    }
+                    if (responseLine) {
+                        this._debugLog('State → ' + responseLine, 'info');
+                    }
+                    // Log raw LLM output (truncated) so we can see what the LLM actually returned
+                    if (info.rawContent) {
+                        const raw = info.rawContent.length > 200 ? info.rawContent.substring(0, 200) + '...' : info.rawContent;
+                        this._debugLog('Raw LLM [#' + info.tickNum + ']: ' + raw, 'info');
+                    }
+                    // Log parse result
+                    if (!info.directive) {
+                        this._debugLog('Parse: FAILED (no valid directive)', 'fail');
+                    } else {
+                        const keys = Object.keys(info.directive).filter(k => k !== 'commentary');
+                        this._debugLog('Parse OK: {' + keys.join(', ') + '}', 'pass');
                     }
                 };
                 await this.sessionDirector.initialize(cfg.director.command, cfg.director.intervalMs || 60000, cfg.name, {
@@ -1171,6 +1211,10 @@
             this.sessionVoiceLines = [];
 
             // Stop biometric themer
+            if (this._themeRedrawTimer) {
+                clearTimeout(this._themeRedrawTimer);
+                this._themeRedrawTimer = null;
+            }
             this.biometricThemer?.dispose();
 
             // Exit fullscreen
@@ -1615,6 +1659,7 @@
                 moodRingEnabled: this.moodRingEnabled,
                 userResponse: this._userResponse || null,
                 interactiveEnabled: !!(this.sessionConfig?.director?.interactive),
+                ticksSinceAskUser: this._ticksSinceAskUser,
                 elapsedMinutes: this._sessionStartTime
                     ? (Date.now() - this._sessionStartTime) / 60000
                     : 0
@@ -1938,6 +1983,9 @@
             // Handle askUser directive (interactive mode)
             if (directive.askUser && this.sessionConfig?.director?.interactive) {
                 this._startUserInteraction(directive.askUser.question);
+                this._ticksSinceAskUser = 0;
+            } else if (this.sessionConfig?.director?.interactive) {
+                this._ticksSinceAskUser++;
             }
 
             if (directive.commentary) {

@@ -40,6 +40,7 @@
             this.onDirective = null;
             this.onError = null;
             this.onStatusChange = null;
+            this.onTickDebug = null; // (info) => {} — fired each tick with {tickNum, stateMessage, rawContent, directive}
         }
 
         /**
@@ -567,7 +568,8 @@
                 // Format the user message with state data
                 const userMessage = this._formatStateMessage(state);
 
-                console.log('SessionDirector: Tick #' + (this.callCount + 1) + ', sending state to LLM');
+                const tickNum = this.callCount + 1;
+                console.log('SessionDirector: Tick #' + tickNum + ', sending state to LLM');
 
                 // Call the LLM - m.request can reject with null/undefined on server errors
                 let response;
@@ -602,6 +604,16 @@
                     if (this.onDirective) {
                         this.onDirective(directive);
                     }
+                }
+
+                // Emit tick debug info
+                if (this.onTickDebug) {
+                    this.onTickDebug({
+                        tickNum: tickNum,
+                        stateMessage: userMessage,
+                        rawContent: content,
+                        directive: directive
+                    });
                 }
             } catch (err) {
                 this.consecutiveErrors++;
@@ -692,9 +704,16 @@
                 lines.push('User Response: "' + state.userResponse + '"');
             }
 
-            // Interactive mode indicator
+            // Interactive mode indicator with escalating prompts
             if (state.interactiveEnabled) {
-                lines.push('Interactive: ENABLED — you may use askUser to pose questions');
+                const ticks = state.ticksSinceAskUser || 0;
+                if (ticks >= 4) {
+                    lines.push('Interactive: ENABLED — You MUST include askUser in this response. Ask the user a short question about their experience. Example: {"askUser":{"question":"How are you feeling right now?"}}');
+                } else if (ticks >= 2) {
+                    lines.push('Interactive: ENABLED — Include an askUser directive to check in with the user. Pair it with a matching voiceLine.');
+                } else {
+                    lines.push('Interactive: ENABLED');
+                }
             }
 
             // Mood ring status
@@ -1255,6 +1274,7 @@
                         audio: { sweepStart: 8, sweepTrough: 4, sweepEnd: 8, isochronicEnabled: false },
                         visuals: { mode: 'single', effects: ['particles'] },
                         interactiveEnabled: true,
+                        ticksSinceAskUser: 5,
                         userResponse: 'I feel calm and centered',
                         elapsedMinutes: 8
                     }
@@ -1409,6 +1429,7 @@
             this.onDirective = null;
             this.onError = null;
             this.onStatusChange = null;
+            this.onTickDebug = null;
             this.lastDirective = null;
             this.lastError = null;
         }
