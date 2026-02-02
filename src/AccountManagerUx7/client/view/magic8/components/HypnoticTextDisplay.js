@@ -9,6 +9,23 @@ const HypnoticTextDisplay = {
         this.displayText = '';
         this.isTransitioning = false;
         this.transitionTimeout = null;
+        this._glowPhase = 0;
+        this._glowRafId = null;
+    },
+
+    oncreate(vnode) {
+        // Continuous subtle glow breathing on the center text (~10fps to stay light)
+        this._lastGlowRedraw = 0;
+        const animateGlow = () => {
+            this._glowPhase = (Date.now() % 6000) / 6000;
+            const now = Date.now();
+            if (now - this._lastGlowRedraw >= 100) {
+                this._lastGlowRedraw = now;
+                m.redraw();
+            }
+            this._glowRafId = requestAnimationFrame(animateGlow);
+        };
+        this._glowRafId = requestAnimationFrame(animateGlow);
     },
 
     onupdate(vnode) {
@@ -24,6 +41,10 @@ const HypnoticTextDisplay = {
     onremove(vnode) {
         if (this.transitionTimeout) {
             clearTimeout(this.transitionTimeout);
+        }
+        if (this._glowRafId) {
+            cancelAnimationFrame(this._glowRafId);
+            this._glowRafId = null;
         }
     },
 
@@ -70,6 +91,12 @@ const HypnoticTextDisplay = {
             ? `rgb(${theme.glow.join(',')})`
             : 'rgb(255, 255, 255)';
 
+        // Subtle breathing glow: oscillate text-shadow radii
+        const glowWave = 0.5 + 0.5 * Math.sin(this._glowPhase * Math.PI * 2);
+        const r1 = Math.round(20 + 20 * glowWave);
+        const r2 = Math.round(40 + 30 * glowWave);
+        const r3 = Math.round(60 + 40 * glowWave);
+
         return m('.hypnotic-text-container', {
             class: 'absolute inset-0 flex items-center justify-center pointer-events-none z-20'
         }, [
@@ -79,9 +106,9 @@ const HypnoticTextDisplay = {
                     opacity: this.opacity,
                     color: accentColor,
                     textShadow: `
-                        0 0 30px ${glowColor},
-                        0 0 60px ${glowColor},
-                        0 0 90px ${glowColor}
+                        0 0 ${r1}px ${glowColor},
+                        0 0 ${r2}px ${glowColor},
+                        0 0 ${r3}px ${glowColor}
                     `,
                     fontFamily: fontFamily,
                     letterSpacing: '0.05em',
@@ -105,6 +132,22 @@ function createHypnoticTextDisplay() {
             this.displayText = '';
             this.isTransitioning = false;
             this.transitionTimeout = null;
+            this._glowPhase = 0;
+            this._glowRafId = null;
+        },
+
+        oncreate(vnode) {
+            this._lastGlowRedraw = 0;
+            const animateGlow = () => {
+                this._glowPhase = (Date.now() % 6000) / 6000;
+                const now = Date.now();
+                if (now - this._lastGlowRedraw >= 100) {
+                    this._lastGlowRedraw = now;
+                    m.redraw();
+                }
+                this._glowRafId = requestAnimationFrame(animateGlow);
+            };
+            this._glowRafId = requestAnimationFrame(animateGlow);
         },
 
         onupdate(vnode) {
@@ -119,6 +162,10 @@ function createHypnoticTextDisplay() {
         onremove(vnode) {
             if (this.transitionTimeout) {
                 clearTimeout(this.transitionTimeout);
+            }
+            if (this._glowRafId) {
+                cancelAnimationFrame(this._glowRafId);
+                this._glowRafId = null;
             }
         },
 

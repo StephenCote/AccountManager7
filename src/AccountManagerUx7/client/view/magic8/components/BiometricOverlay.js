@@ -53,7 +53,7 @@ const BiometricOverlay = {
             this.lastText = text;
 
             const now = Date.now();
-            const animTypes = ['drift', 'pulse', 'scale', 'float'];
+            const animTypes = ['drift', 'pulse', 'scale', 'float', 'glow', 'breathe', 'swell'];
 
             this.labels.push({
                 id: this.nextId++,
@@ -137,6 +137,24 @@ const BiometricOverlay = {
                 const bobY = Math.sin(age * 0.6) * 12;
                 const bobX = Math.cos(age * 0.4) * 6;
                 style.transform = `translate(${bobX}px, ${bobY}px)`;
+            } else if (label.anim === 'glow') {
+                // Pulsing text-shadow intensity — glow swells and dims
+                const glowPulse = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(age * 1.2));
+                const r1 = Math.round(12 + 28 * glowPulse);
+                const r2 = Math.round(24 + 56 * glowPulse);
+                const r3 = Math.round(0 + 40 * glowPulse);
+                style.textShadow = `0 0 ${r1}px ${glowColor}, 0 0 ${r2}px ${glowColor}, 0 0 ${r3}px ${accentColor}`;
+            } else if (label.anim === 'breathe') {
+                // Slow inhale/exhale rhythm — opacity and slight vertical drift
+                const breath = 0.5 + 0.5 * Math.sin(age * 0.45);
+                style.opacity = opacity * (0.25 + breath * 0.75);
+                style.transform = `translateY(${breath * -6}px)`;
+            } else if (label.anim === 'swell') {
+                // Combined gentle scale swell with opacity wave
+                const wave = 0.5 + 0.5 * Math.sin(age * 0.7);
+                style.transform = `scale(${0.9 + 0.2 * wave})`;
+                style.opacity = opacity * (0.4 + wave * 0.6);
+                style.letterSpacing = (0.05 + 0.04 * wave) + 'em';
             }
 
             return m('.bio-label', { key: label.id, style: style }, label.text);

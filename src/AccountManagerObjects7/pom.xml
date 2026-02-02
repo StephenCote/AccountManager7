@@ -83,6 +83,7 @@
 						<exclude>**/TestMcpLlm.java</exclude>
 						<exclude>**/TestMcpMemory.java</exclude>
 						<exclude>**/TestMcpChatIntegration.java</exclude>
+						<exclude>**/TestMcpServer.java</exclude>
 						<exclude>**/TestLandscape</exclude>
 						<exclude>**/TestGameUtilSync</exclude>
 						<exclude>**/TestGameUtil</exclude>

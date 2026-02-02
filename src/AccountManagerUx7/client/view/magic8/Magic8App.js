@@ -62,6 +62,8 @@
         _sttMediaStream: null,      // getUserMedia stream for server-side STT
         _sttMediaRecorder: null,    // MediaRecorder instance for server-side STT
         _responseTimeoutId: null,   // auto-submit timeout handle
+        _interactionIdleTimer: null, // idle-check interval for text-only interaction
+        _lastTypingTime: 0,          // timestamp of last keystroke in interaction input
         _voicePausedForInteraction: false, // voice sequence paused while waiting for user
         _ticksSinceAskUser: 0,    // ticks since last askUser directive (for escalating prompts)
 
@@ -1208,6 +1210,10 @@
                 clearTimeout(this._responseTimeoutId);
                 this._responseTimeoutId = null;
             }
+            if (this._interactionIdleTimer) {
+                clearInterval(this._interactionIdleTimer);
+                this._interactionIdleTimer = null;
+            }
             this._pendingQuestion = null;
             this._voicePausedForInteraction = false;
 
@@ -1377,7 +1383,7 @@
                             m('input.flex-1.bg-gray-800.text-white.rounded-lg.px-4.py-3.border.border-gray-600.focus\\:border-cyan-400.outline-none', {
                                 placeholder: 'Type your response...',
                                 value: this._userInputText,
-                                oninput: (e) => { this._userInputText = e.target.value; },
+                                oninput: (e) => { this._userInputText = e.target.value; this._lastTypingTime = Date.now(); },
                                 onkeydown: (e) => { if (e.key === 'Enter') this._submitUserResponse(); }
                             }),
                             m('button.bg-cyan-600.hover\\:bg-cyan-500.text-white.px-5.py-3.rounded-lg.font-medium.transition-colors', {
@@ -2104,8 +2110,24 @@
             } else {
                 // Production mode: text input only (STT recording disabled for now)
                 // User types response and clicks Send or presses Enter.
-                // No auto-submit timeout — user controls when to respond.
+                // Idle timeout: after 30s of no typing, auto-submit "No response from user".
                 this._debugLog('Interactive: text input active (STT disabled)', 'info');
+
+                this._lastTypingTime = Date.now();
+                if (this._interactionIdleTimer) clearInterval(this._interactionIdleTimer);
+                this._interactionIdleTimer = setInterval(() => {
+                    if (!this._pendingQuestion) {
+                        clearInterval(this._interactionIdleTimer);
+                        this._interactionIdleTimer = null;
+                        return;
+                    }
+                    const idle = Date.now() - this._lastTypingTime;
+                    if (idle >= 30000) {
+                        this._debugLog('Interaction idle timeout (30s) — auto-submitting', 'info');
+                        this._userInputText = 'No response from user';
+                        this._submitUserResponse();
+                    }
+                }, 2000);
 
                 /* --- STT recording (disabled — re-enable when server-side STT bug is fixed) ---
                 // Use server-side STT via WebSocket streaming
@@ -2209,10 +2231,14 @@
             }
             page.audioStream = undefined;
 
-            // Clear timeout
+            // Clear timeouts
             if (this._responseTimeoutId) {
                 clearTimeout(this._responseTimeoutId);
                 this._responseTimeoutId = null;
+            }
+            if (this._interactionIdleTimer) {
+                clearInterval(this._interactionIdleTimer);
+                this._interactionIdleTimer = null;
             }
 
             // Resume voice sequence if we paused it
