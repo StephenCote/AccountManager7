@@ -11,7 +11,8 @@
 7. [Game Design Document](#game-design-document)
 8. [Technical Architecture](#technical-architecture)
 9. [Implementation Phases](#implementation-phases)
-10. [File Manifest](#file-manifest)
+10. [Test Strategy](#test-strategy)
+11. [File Manifest](#file-manifest)
 
 ---
 
@@ -181,7 +182,7 @@ The existing UX is a Mithril.js SPA with esbuild bundling, WebSocket real-time m
 
 ---
 
-## Current Design Shortcomings
+## Current Design Shortcomings & Gaps
 
 ### 1. Intra-Cell Visual Resolution (Critical)
 
@@ -191,85 +192,146 @@ The existing UX is a Mithril.js SPA with esbuild bundling, WebSocket real-time m
 
 **Solution:** See [Intra-Cell Visual Grid System](#intra-cell-visual-grid-system) section below.
 
-### 2. No Party/Group Management
+### 2. Persistent Char-to-Char Reputation Calculator (Extension Needed)
 
-**Problem:** The current game is strictly single-character. There is no concept of a player party, companion management, party formation, shared inventory, or group movement. The `community.group` model exists for population grouping but is not wired for tactical party mechanics.
+**What exists:**
+- `ProfileComparison` — dynamic compatibility assessment between any two characters using MBTI compatibility, racial/romantic compatibility, charisma/intelligence/strength/wisdom margins, dark triad diffs (Machiavellianism, psychopathy, narcissism), wealth gap, and leadership contest
+- `InteractionUtil.calculateSocialInfluence()` — updates `instinct.cooperate` and `instinct.resist` based on in-group/out-group interaction outcomes (+0.1 per favorable, -0.15 per conflict)
+- `InteractionUtil.guessReasonToInteract()` — reconstructs relationship disposition dynamically from personality profiles + alignment + context each time
+- `ProfileUtil.getProfile()` / `ProfileUtil.getGroupProfile()` — cached personality profiling with need analysis
+- Interaction outcome history stored on `olio.actionResult` and `olio.interaction` records
 
-**Impact:** Cannot implement party-based RPG gameplay (tank/healer/DPS roles, formation positioning, party inventory).
+**What's missing:** A unified **persistent reputation score** between specific character pairs. Today, relationships are reconstructed dynamically from personality and context — there is no cumulative reputation ledger that remembers "Character A helped Character B three times and betrayed them once." The cooperate/resist instincts capture group-level social influence but not pair-specific rapport.
 
-**Solution:** New `olio.party` model with member roster, formation, shared store, and turn ordering. Extend `GameService` with party endpoints.
+**Solution:** Create a `ReputationUtil` that computes a composite reputation score from:
+1. **Base compatibility** (from `ProfileComparison`): personality match, alignment margin, stat differentials, dark triad gaps
+2. **Interaction history** (from stored `olio.interaction` records between the pair): count and weight of outcomes by type (FAVORABLE combat together = high trust, UNFAVORABLE betrayal = low trust)
+3. **Instinct modifiers** (from `instinct.cooperate`/`instinct.resist`): current social disposition
+4. **Alignment drift**: accumulated alignment shifts from interactions
 
-### 3. No Quest/Objective System
+The reputation score gates party recruitment (NPCs won't join hostile players), NPC dialogue disposition (LLM system prompt includes reputation context), trade pricing, quest availability, and betrayal probability. Party management is entirely reputation-driven — no explicit "invite" mechanic, but rather a reputation threshold that, when crossed, makes an NPC willing to follow.
 
-**Problem:** No quest model, journal, objective tracking, quest givers, or reward system. The event system tracks world events but not player-directed objectives.
+### 3. Needs-Driven Objectives (Extend, Not Replace)
 
-**Impact:** No narrative progression structure. The game is open-ended sandbox without directed goals.
+**What exists:**
+- `NeedsUtil` implements Maslow's hierarchy: PHYSIOLOGICAL → SAFETY → LOVE → ESTEEM → SELF
+- `PhysiologicalNeedsEnumType`: AIR, WATER, FOOD, SHELTER, SLEEP, CLOTHING, REPRODUCTION
+- `SafetyNeedsEnumType`: SECURITY, EMPLOYMENT, RESOURCES, HEALTH, PROPERTY
+- `LoveNeedsEnumType`: FRIENDSHIP, INTIMACY, FAMILY, CONNECTION
+- `EsteemNeedsEnumType`: RESPECT, SELF_ESTEEM, STATUS, RECOGNITION, STRENGTH, FREEDOM
+- `NeedsUtil.recommend()` evaluates group needs and generates action recommendations
+- `ProfileUtil.analyzePhysiologicalNeeds()` checks inventory for food/water/clothing/shelter
+- `GroupDynamicUtil.delegateActions()` assigns needs-based actions to individuals
+- The survive/thrive distinction is implicit: lower-level needs (physiological, safety) = survive; higher-level needs (love, esteem, self) = thrive
 
-**Solution:** New `olio.quest` and `olio.questObjective` models. Quest types: fetch, kill, escort, explore, dialogue, craft. Integrate with event system for trigger conditions.
+**What's missing:** A player-facing objective tracker. The needs system drives NPC behavior but the player has no journal, progress indicators, or explicit goals. The needs themselves *are* the quest system — "find water," "build shelter," "earn respect" — but they need UI representation and milestone tracking.
 
-### 4. No Dialogue Tree System
+**Solution:** Expose the needs assessment as a player-visible **Needs Journal** rather than a traditional quest log. Each unmet need becomes a trackable objective with progress indicators. Higher-level needs (ESTEEM, SELF) unlock as lower needs are satisfied, creating natural progression. Supplement with LLM-generated contextual objectives: the LLM receives the current needs assessment and generates narrative framing ("The village elder won't speak with a stranger — earn the trust of the community first").
 
-**Problem:** NPC dialogue is handled through free-form LLM chat. While powerful for open conversation, there is no structured dialogue tree for quest-giving, branching choices with gameplay consequences, or scripted story beats.
+### 4. Reputation-Gated LLM Dialogue (Extend, Not Replace)
 
-**Impact:** Cannot create authored narrative content with meaningful player choices that affect game state. LLM responses are unpredictable for critical story moments.
+**What exists:**
+- Full LLM chat system with WebSocket streaming
+- Personality-aware NPC responses (personality/instinct/alignment data feeds into system prompt)
+- `concludeChat` evaluates interaction outcomes via LLM
+- NPC-initiated chat requests with polling
+- `ProfileComparison.compare()` generates detailed compatibility narrative
 
-**Solution:** Hybrid system — structured dialogue trees (JSON-defined) for quest/story moments with fallback to LLM chat for ambient NPC conversation. Dialogue nodes can trigger state changes, give items, start quests, or alter alignment.
+**What's missing:** Reputation context in the LLM prompt. Today, the LLM receives character personality data but not the cumulative relationship history between the player and this specific NPC.
 
-### 5. No Experience/Leveling System
+**Solution:** Feed the reputation score (from #2) and recent interaction summary into the LLM system prompt. High reputation → NPC is cooperative, offers help, shares secrets. Low reputation → NPC is guarded, charges more, may refuse to engage. Extremely low → NPC is hostile, may initiate combat. No scripted dialogue trees needed — the LLM handles branching naturally when given proper reputation context. The `concludeChat` evaluation feeds back into the reputation ledger, creating a closed loop.
 
-**Problem:** Statistics are fixed at generation time (0-20 scale). There is no XP accumulation, leveling, stat point allocation, or skill progression. The `potential` field on statistics exists but is unused.
+### 5. Skill Leveling & Decay (Implementation Needed — Design Exists)
 
-**Impact:** No character progression, which is fundamental to RPG design.
+**What exists (from `olio.txt` tabletop rules):**
+- Skills are percentage-based (0-100%)
+- Initial allocation cap: 50%
+- Fae/magic skills cost 4x normal points
+- **Decay formula:** `(100 - skill%) = days before 1% decay`
+  - A skill at 70% decays after 30 days of disuse (1% per 30 days)
+  - A skill at 90% decays after 10 days of disuse (1% per 10 days)
+  - Higher skills decay faster — use it or lose it
+- **Decay floor:** Skills do not decay below 60%
+- `data.trait` model with `TraitEnumType.SKILL` and `policy.score` inheritance provides the storage structure
+- `statistics.potential` (0-150) tracks unallocated attribute points
+- `CombatUtil` already defines base skill percentages: `DEFAULT_FIGHT_SKILL = 50`, `DEFAULT_WEAPON_SKILL = 40`
+- `CombatUtil.getFightSkill()`, `getDodgeSkill()`, `getParrySkill()` compute derived skill values from stats
+- Skills capped at 95% maximum effectiveness
 
-**Solution:** Use the existing `statistics.potential` field as unallocated stat points. Add XP tracking to `olio.state`. Define level thresholds and stat point grants per level. Wire XP rewards into interaction outcomes, quest completion, and exploration.
+**What's missing:** Runtime implementation of skill leveling through use and decay over time. The `data.trait` records exist but don't track `lastUsedDate` or `proficiencyScore` as persistent fields.
 
-### 6. No Skill/Ability System
+**Solution:**
+- Add `lastUsed` (zonetime) and `proficiency` (double, 0-100) fields to `data.trait` (or a `skill.score` extension)
+- On successful skill use during action resolution: increase proficiency by `(100 - proficiency) * 0.05` (diminishing returns)
+- During Overwatch time advancement: evaluate decay for all character skills based on the `(100 - skill%)` day formula
+- Wire into `InteractionAction.executeAction()` — after resolution, update proficiency on the skills used (stat names from the interaction's `positiveStatistics` + any weapon/ability skills)
+- Expose in UI: skill list with proficiency bars, decay warning indicators
 
-**Problem:** The `data.trait` model is used for character traits and item features, but there is no active ability system — no spells, special attacks, or activated skills with cooldowns, costs, or targeting.
+### 6. Active Ability System (Extension of Skill + Action)
 
-**Impact:** Combat is limited to basic interaction types. No tactical depth from ability selection.
+**What exists:**
+- `olio.action` model with difficulty (0-20), duration, positiveStatistics/negativeStatistics, counterActions, requiredSkills
+- `IAction` interface with full lifecycle: `beginAction → executeAction → concludeAction`
+- `InteractionAction` maps interaction types to component actions with stat overrides and personality/instinct modifiers
+- `CommonAction.applyActionEffects()` handles state/stat/instinct changes from outcomes
+- 2d20 resolution system with stat + personality + instinct modifiers
 
-**Solution:** New `olio.ability` model extending `olio.action` with resource costs (energy/mana), cooldown tracking, targeting rules, area-of-effect definitions, and prerequisite statistics.
+**What's missing:** Active abilities that a player can select during action evaluation — spells, special attacks, or skills with resource costs and targeting.
 
-### 7. Limited Turn Structure
+**Solution:** Extend `olio.action` with ability-specific fields (resourceCost, cooldown, targetType, range, areaSize). Abilities are unlocked by skill proficiency thresholds (e.g., "Fireball" requires magic skill ≥ 60%). During VATS-style action selection (see #7), the player picks from available abilities. Resource cost deducted from `state.energy`. Cooldown tracked per-ability on `olio.state.actions`.
 
-**Problem:** The `advance` endpoint progresses time by one increment (~1 hour), but there is no fine-grained turn system for tactical combat. Turns are coarse — the Overwatch engine processes all pending actions in bulk.
+### 7. Hybrid Real-Time / Turn-Based Combat (VATS-Style)
 
-**Impact:** Cannot implement round-by-round tactical combat where turn order, initiative, and action economy matter.
+**What exists:**
+- Overwatch processes actions through a 7-stage loop: `prune → processInteractions → processActions → processGroup → processProximity → processTimedSchedules → processEvents → syncClocks`
+- `Overwatch.processOne()` executes single actions: `executeAction → concludeAction → attach interactions → save`
+- Actions resolve through the `IAction` lifecycle with time costs calculated by `calculateCostMS()`
+- `InteractionAction.executeAction()` uses 2d20 rolls + stat/personality/instinct modifiers → OutcomeEnumType
+- Threat detection via `processProximity()` can trigger interrupts
+- `GameService.resolve()` already checks for threats before action execution
 
-**Solution:** Combat-mode turn manager that pauses Overwatch bulk processing and switches to initiative-ordered sequential turns. Derive initiative from `reaction` computed stat. Each turn allows one action + one movement.
+**Design clarification:** The system is **not** a traditional turn-based or real-time system — it's a **hybrid** like Fallout's VATS:
+- The world runs in **real-time** through Overwatch's processing loop
+- When the player encounters a decision point (threat detected, interaction initiated, proximity event), the game **pauses** for player input
+- The player selects an action (fight, talk, flee, use ability, consume item) — this is the VATS moment
+- The action is submitted to Overwatch, which resolves it through the normal `executeAction → concludeAction` pipeline
+- Resolution includes the 2d20 roll, stat modifiers, personality modifiers, instinct modifiers, and outcome application
+- After resolution, the world resumes real-time until the next decision point
 
-### 8. No Fog of War / Visibility System
+**What's missing:** Client-side "pause and choose" UX during action evaluation. The backend flow already supports this — `GameService.resolve()` checks for interrupts, and actions queue through Overwatch. The gap is purely in the client presenting the action selection as a deliberate moment.
+
+**Solution:** When a decision point occurs (threat detected, NPC proximity, etc.), the client enters a **VATS overlay** on the tile grid:
+- Time display freezes (cosmetic — the server doesn't advance until the player acts)
+- Available actions highlight based on context (combat actions if threat, social if NPC, survival if needs)
+- Player selects action → submitted via `gameStream.executeAction()` → resolved by Overwatch → outcome streamed back
+- Overlay dismisses, world resumes
+- No separate "combat mode" needed — the Overwatch loop IS the combat engine, the VATS overlay is just the player's window into it
+
+### 8. Fog of War / Visibility (Needs Solution)
 
 **Problem:** The `investigate` action reveals nearby entities based on perception, but there is no persistent fog of war. Previously explored areas are not tracked. The 10x10 area grid shows all terrain regardless of whether the player has visited those cells.
 
 **Impact:** No exploration reward. No hidden areas. No surprise encounters.
 
-**Solution:** Per-character visibility map stored as a bitfield on `olio.state`. Mark cells as explored when entered or observed. Unexplored cells render as black/fog. Perception stat determines observation radius.
+**Solution:** Per-character visibility map stored as a bitfield on `olio.state` (or a packed JSON field, similar to the intra-cell `tileData` approach). Mark cells as explored when entered or observed. Unexplored cells render as black/fog. Previously explored but out-of-range cells render darkened. Perception stat determines observation radius. The `investigate` action expands visibility range temporarily.
 
-### 9. No Map Tile Art Pipeline
+### 9. Map Tile Art Pipeline (Needs Solution)
 
 **Problem:** Terrain rendering uses basic PNG tiles served from `/rest/game/tile/{terrain}` with emoji fallback. There is no support for tile variations, animated tiles, transition tiles between terrain types, or layered rendering (ground + objects + entities).
 
 **Impact:** Maps look monotonous — every forest cell is the same forest tile. No visual variety or environmental storytelling.
 
-**Solution:** Multi-layer tile renderer with: (1) base terrain tiles with variations per terrain type, (2) transition/edge tiles for terrain boundaries, (3) object layer for props/decorations mapped to the intra-cell sub-grid, (4) entity layer for characters/NPCs/monsters.
+**Solution:** Multi-layer tile renderer with: (1) base terrain tiles with variations per terrain type (min 3 per terrain from asset pack), (2) transition/edge tiles for terrain boundaries using autotile rules, (3) object layer for props/decorations mapped to the intra-cell sub-grid, (4) entity layer for characters/NPCs/monsters with sprite animations. See [Asset Library Strategy](#asset-library-strategy) for specific asset mapping.
 
-### 10. No Audio / Music System for Game
+### 10. Audio / Music System (Straightforward Addition)
 
-**Problem:** The Magic8 application has a full audio engine (binaural beats, TTS), but the card game has no audio. No background music, no sound effects for combat, movement, or UI interactions.
+**What exists:** Magic8 has a full `AudioEngine` (binaural beats, isochronic tones), `VoiceSequenceManager` (TTS), and the backend `VoiceService` supports synthesis/transcription. The Ninja Adventure asset pack includes 37 music tracks and 100+ sound effects.
 
-**Impact:** Silent gameplay reduces immersion.
+**Solution:** Lightweight `rpgAudioManager.js` using Web Audio API, borrowing patterns from Magic8's `AudioEngine`. Terrain-keyed background music (forest → ambient, cave → tense, combat → battle track). SFX triggers on action resolution (attack hit/miss, item pickup, level up). Volume/mute toggle in game UI. Low implementation risk.
 
-**Solution:** Lightweight audio manager using Web Audio API. Context-aware music selection by terrain/situation. Sound effects for actions. Can reuse `AudioEngine` patterns from Magic8.
+### 11. Multiplayer Turn Coordination (Deferred)
 
-### 11. No Multiplayer Turn Coordination
-
-**Problem:** The WebSocket infrastructure supports push notifications and the game stream handler exists, but there is no turn coordination for multiple players in the same realm. The Overwatch engine processes all characters simultaneously.
-
-**Impact:** Cannot support cooperative or competitive multiplayer RPG sessions.
-
-**Solution:** Deferred to Phase 4. The WebSocket push infrastructure (Phase 1 complete) provides the foundation. Add turn queue manager and player notification system.
+**Status:** Save for later. The WebSocket push infrastructure (Phase 1 complete via `GameStreamHandler`) provides the foundation. The Overwatch engine would need a player-notification gate in its processing loop to coordinate multiple players in the same realm. Not required for the initial RPG implementation.
 
 ---
 
@@ -471,16 +533,18 @@ Client loads: atlas image + JSON manifest → Canvas drawImage() with source rec
 ### Core Loop
 
 ```
-Explore → Encounter → Act → Resolve → Progress → Explore
-   ↑                                        |
-   └────────────────────────────────────────┘
+Explore → Encounter → VATS Pause → Act → Resolve → Reputation/Skill Update → Explore
+   ↑          ↑                                              |
+   │    Overwatch pushes                                     │
+   │    proximity/threat                                     │
+   └─────────────────────────────────────────────────────────┘
 ```
 
-1. **Explore:** Navigate the tile map. Discover POIs, NPCs, resources. Fog of war reveals as you move.
-2. **Encounter:** Proximity triggers threats, NPC meetings, environmental events. Overwatch pushes alerts.
-3. **Act:** Choose action — fight, talk, trade, flee, investigate, consume, craft, rest.
-4. **Resolve:** Turn-based resolution. Combat uses initiative order. Dialogue uses LLM + structured trees. Outcomes modify state.
-5. **Progress:** Gain XP, complete quest objectives, acquire items, improve relationships. Level up at thresholds.
+1. **Explore:** Navigate the tile map in real-time (Overwatch runs). Discover POIs, NPCs, resources. Fog of war reveals as you move. Needs accumulate (hunger, thirst, fatigue).
+2. **Encounter:** Overwatch's `processProximity()` detects threats, NPC meetings, environmental events. Push notification pauses for player input.
+3. **VATS Pause:** Client enters action selection overlay. Available actions context-sensitive (combat if threat, social if NPC, survival if needs critical). World frozen until player commits.
+4. **Act + Resolve:** Player submits action → Overwatch `executeAction()` → 2d20 roll + stat/personality/instinct modifiers → `OutcomeEnumType` → `applyActionEffects()` → state/inventory/instinct changes.
+5. **Update:** Reputation ledger updated from interaction outcome. Skills used gain proficiency. Needs satisfied or worsened. Overwatch resumes.
 
 ### Character Creation
 
@@ -494,7 +558,9 @@ Leverage existing `GET /rest/olio/roll` with additions:
 6. **Generate portrait** — SD image generation (existing `/rest/olio/{type}/{id}/reimage`)
 7. **Name & background** — Free text + narrative generation (existing `/rest/olio/{type}/{id}/narrate`)
 
-### Party System
+### Party System (Reputation-Gated)
+
+Party formation is entirely driven by the reputation system — there is no explicit "invite to party" button. NPCs organically join or leave based on their cumulative relationship with the player.
 
 **Party Model (`olio.party`):**
 - Leader (charPerson FK)
@@ -503,142 +569,195 @@ Leverage existing `GET /rest/olio/roll` with additions:
 - Shared store (olio.store FK)
 - Active (boolean)
 
+**Reputation-Based Recruitment:**
+| Reputation Level | NPC Disposition | Party Behavior |
+|-----------------|-----------------|----------------|
+| < -50 | Hostile | Will attack on sight |
+| -50 to -10 | Guarded | Refuses interaction, charges premium |
+| -10 to +10 | Neutral | Standard interaction, no follow |
+| +10 to +30 | Friendly | Willing to trade favorably, share info |
+| +30 to +60 | Allied | Willing to follow as party member |
+| > +60 | Devoted | Loyal, will defend player, share secrets |
+
+**Reputation Calculation (per pair):**
+```
+reputation(A, B) =
+    baseCompatibility(ProfileComparison)        // -20 to +20
+  + interactionHistory(A, B)                     // weighted sum of past outcomes
+  + instinctModifier(A.cooperate - A.resist)     // -10 to +10
+  + alignmentAffinity(A.alignment, B.alignment)  // -8 to +8
+```
+
+Where `interactionHistory` sums: VERY_FAVORABLE = +5, FAVORABLE = +2, EQUILIBRIUM = 0, UNFAVORABLE = -3, VERY_UNFAVORABLE = -7 per interaction. Weighted by recency (recent interactions count more).
+
 **Mechanics:**
 - Party moves together (leader position, members follow in formation)
-- Combat: each member gets a turn per round, ordered by initiative (`reaction` stat)
-- Shared inventory with leader approval for withdrawals
-- Members can be dismissed or lost (death, desertion based on alignment/loyalty)
-- Recruit NPCs through dialogue (BEFRIEND → ALLY → invite to party)
+- Each member acts during VATS pauses, ordered by `reaction` stat
+- Shared inventory with leader control
+- Members desert if reputation drops below +10 (checked during Overwatch increment)
+- Members may betray if dark triad personality traits are high and reputation is borderline
+- NPC-initiated join: when reputation crosses +30, NPC may request to follow (via `game/chat/pending`)
 
-### Combat System
+### Combat System (VATS-Style Hybrid)
 
-Extends existing `InteractionEnumType.COMBAT` and `CombatUtil`:
+Combat is not a separate mode — it happens within the Overwatch real-time loop. When a threat enters proximity, the client presents a VATS-style pause for the player to select their action. Resolution uses the existing `InteractionAction` pipeline.
 
-**Turn Order:**
-1. Calculate initiative: `reaction` stat (AVG of agility, speed, wisdom, perception) + d20 roll
-2. Sort all combatants (party + enemies) by initiative, descending
-3. Each turn: one action + one movement (within sub-cell grid)
+**How it flows:**
+1. `Overwatch.processProximity()` detects threat → push event `game.threat.detected`
+2. Client enters VATS overlay: time display freezes, action options appear
+3. Player selects action (attack, defend, flee, talk, use item, cast ability)
+4. Action submitted → `Actions.beginAction()` → queued to Overwatch
+5. `Overwatch.processOne()` → `InteractionAction.executeAction()`:
+   - Get stat names for interaction type (e.g., COMBAT → fight/defend actions)
+   - Calculate modifiers: stat modifier `(avg_stat - 10.0)` + personality modifier + instinct modifier
+   - Roll 2d20: `actorScore = roll + statMod + personalityMod + instinctMod`
+   - Resolve outcome: `actorScore - interactorScore` → OutcomeEnumType
+     - ≥ 8.0 = VERY_FAVORABLE, ≥ 3.0 = FAVORABLE, ≥ -3.0 = EQUILIBRIUM, ≥ -8.0 = UNFAVORABLE, < -8.0 = VERY_UNFAVORABLE
+6. `CommonAction.applyActionEffects()` → health/energy/instinct changes
+7. Result streamed back → UI shows outcome → Overwatch resumes
 
-**Actions Available Per Turn:**
-| Action | Cost | Description |
-|--------|------|-------------|
-| Attack (melee) | 1 action | Physical attack, uses `physicalStrength` + weapon offensive |
-| Attack (ranged) | 1 action | Ranged attack, uses `manualDexterity` + weapon offensive |
-| Cast ability | 1 action | Use learned ability, costs energy/mana |
-| Defend | 1 action | +50% defensive until next turn |
-| Use item | 1 action | Consume potion, throw item, etc. |
-| Flee | 1 action + movement | Attempt escape, `speed` vs. enemy `speed` |
-| Talk | 1 action | Attempt to de-escalate (charisma check) |
-
-**Damage Calculation:**
+**Existing damage model (from `olio.txt` tabletop rules):**
 ```
-Base damage = attacker.physicalStrength + weapon.offensive * 20
-Defense = defender.physicalEndurance + armor.defensive * 20
-Roll = random(1, 20)
-Hit = (Roll + attacker.agility) > (10 + defender.agility)
-Damage = max(0, baseDamage - defense + roll)
-Health reduction = damage / maximumHealth (normalized to 0-1 scale)
-```
+Hit roll: fight/weapon skill % (e.g., 75%)
+Dodge: (agility + speed) / 2 * 5 = dodge skill %
+Parry: fight/weapon skill against equal or lesser weapon class
+  ParryModifier = skill% - attack%
+  Minimum parry = ParrySkill - PM
 
-**Outcome:**
-- Health reaches 0 → incapacitated (existing `state.incapacitated`)
-- All enemies incapacitated → VERY_FAVORABLE outcome
-- Party flees → UNFAVORABLE outcome
-- All party incapacitated → VERY_UNFAVORABLE (game over or rescue scenario)
+Armor Damaging System (ADS):
+  (a) Total armor hit points
+  (b) Armor stress point (pierce/break threshold)
+  (c) Armor absorption percentage
+  (d) Effective attack skill = fight/weapon skill - absorption
+  Below 5%: target AND armor damaged
+  5% to absorption%: armor only damaged
+  Above skill%: miss
 
-### Quest System
-
-**Quest Model (`olio.quest`):**
-- name, description
-- type (QuestTypeEnumType: FETCH, KILL, ESCORT, EXPLORE, DIALOGUE, CRAFT, DISCOVER)
-- giver (charPerson FK — the quest NPC)
-- state (QuestStateEnumType: AVAILABLE, ACTIVE, COMPLETED, FAILED, EXPIRED)
-- objectives (list of olio.questObjective)
-- rewards: XP (int), items (list of olio.item), alignment shift (int)
-- prerequisites: minimum level, required quests completed, minimum alignment
-- expiry (olio.event FK — optional time limit)
-- location (data.geoLocation FK — where to find the quest giver)
-
-**Quest Objective Model (`olio.questObjective`):**
-- description
-- type (ObjectiveTypeEnumType: COLLECT, DEFEAT, REACH_LOCATION, TALK_TO, CRAFT_ITEM, DISCOVER_POI)
-- target (flex model — item type, NPC, location, POI)
-- quantity (int — how many to collect/defeat)
-- progress (int — current count)
-- completed (boolean)
-- optional (boolean — for bonus objectives)
-
-**Quest Flow:**
-1. Player approaches NPC with available quest (indicated by icon in sub-cell grid)
-2. Structured dialogue tree presents quest details and accept/decline choice
-3. On accept: quest state → ACTIVE, objectives appear in journal
-4. Progress updates via Overwatch event hooks (kill enemy → check kill objectives, pick up item → check collect objectives)
-5. On all required objectives complete: return to giver for reward
-6. Reward: XP, items, alignment shift, potential follow-up quest unlock
-
-### Dialogue System
-
-**Hybrid approach:**
-
-1. **Structured Trees** for quest/story moments:
-```json
-{
-  "id": "blacksmith_quest_1",
-  "npc": "Blacksmith Varga",
-  "nodes": {
-    "start": {
-      "text": "My forge has gone cold. The iron shipment from the northern mines never arrived.",
-      "options": [
-        {"text": "I'll look into it.", "next": "accept", "action": "startQuest:iron_shipment"},
-        {"text": "What's in it for me?", "next": "negotiate"},
-        {"text": "Not my problem.", "next": "decline"}
-      ]
-    },
-    "negotiate": {
-      "text": "I can offer you a fine blade, forged by my own hand.",
-      "options": [
-        {"text": "Deal.", "next": "accept", "action": "startQuest:iron_shipment"},
-        {"text": "I need more than that.", "next": "haggle", "check": {"stat": "charisma", "min": 12}}
-      ]
-    }
-  }
-}
+Critical determination (additional roll):
+  0-50%: Regular outcome
+  51-85%: Double outcome
+  86-95%: Triple/messed-up outcome
+  96-00%: Deadly/total outcome
 ```
 
-2. **LLM Chat** for ambient conversation (existing system):
-   - Free-form dialogue with any NPC
-   - Personality-aware responses (existing personality/instinct/alignment data feeds into prompt)
-   - Interaction outcomes evaluated by LLM (existing `concludeChat`)
+**Saving throws:** `((physicalStrength + physicalEndurance + willpower) / 3) * 5 = save%`
 
-3. **Transition:** Structured tree can hand off to LLM chat and vice versa. A dialogue node can set `"action": "startLLMChat"` to switch to free-form.
+**After combat:** Skills used gain proficiency (fight skill, weapon skill, dodge). Reputation updated between combatants. Defeated enemies drop inventory items per their `olio.store`.
 
-### Progression System
+### Needs-Driven Objectives (Survive → Thrive)
 
-**Experience Points:**
-| Source | XP Reward |
-|--------|-----------|
-| Combat victory | 10-100 based on enemy difficulty |
-| Quest completion | 50-500 based on quest complexity |
-| Exploration (new cell discovered) | 5 per cell |
-| POI discovery | 20-50 based on POI type |
-| Successful social interaction | 5-25 based on outcome |
-| Crafting | 10-30 based on item complexity |
+The game does not use a traditional quest log with authored fetch/kill quests. Instead, objectives emerge organically from the Maslow-hierarchy needs system and reputation relationships.
 
-**Level Thresholds:**
-| Level | Total XP | Stat Points Gained |
-|-------|----------|--------------------|
-| 1 | 0 | — (starting) |
-| 2 | 100 | +2 |
-| 3 | 300 | +2 |
-| 4 | 600 | +2 |
-| 5 | 1000 | +3 |
-| 6 | 1500 | +3 |
-| 7 | 2100 | +3 |
-| 8 | 2800 | +4 |
-| 9 | 3600 | +4 |
-| 10 | 4500 | +5 |
+**Needs Hierarchy (existing `NeedsUtil` + `AssessmentEnumType`):**
 
-Stat points are allocated by the player into any base statistic (capped at 20). Computed stats recalculate automatically via `ComputeProvider`.
+| Level | Need Category | Examples | Player Experience |
+|-------|--------------|----------|-------------------|
+| 1 (Survive) | PHYSIOLOGICAL | FOOD, WATER, SHELTER, SLEEP, CLOTHING | "Find water before nightfall" |
+| 2 (Survive) | SAFETY | SECURITY, HEALTH, RESOURCES | "The wolves are circling — find a defensible position" |
+| 3 (Thrive) | LOVE | FRIENDSHIP, INTIMACY, FAMILY, CONNECTION | "Earn the villagers' trust" (reputation threshold) |
+| 4 (Thrive) | ESTEEM | RESPECT, STATUS, RECOGNITION, STRENGTH | "The elder will only speak to proven warriors" |
+| 5 (Thrive) | SELF | Morality, creativity, self-actualization | Open-ended goals, LLM-narrated |
+
+**How needs become objectives:**
+1. `ProfileUtil.analyzePhysiologicalNeeds()` checks inventory/state → identifies unmet needs
+2. `NeedsUtil.evaluateNeeds()` prioritizes across Maslow levels
+3. Client receives needs assessment as part of situation update
+4. **Needs Journal UI** displays unmet needs as trackable objectives with progress indicators:
+   - "Find food" → progress bar based on food items in store
+   - "Build shelter" → requires builder materials + skill check
+   - "Earn friendship" → reputation score with nearest NPC community
+5. Higher-level needs only surface when lower levels are satisfied (Maslow gate)
+6. LLM generates contextual narrative framing for each need based on location, nearby NPCs, and reputation state
+
+**LLM-Augmented Objective Generation:**
+The LLM receives the player's current needs assessment + location + nearby NPC profiles + reputation scores and generates narrative context:
+- Low food + forest terrain → "The berry bushes along the eastern ridge look promising, but something has been tracking you through the underbrush"
+- Low friendship + village proximity → "The blacksmith eyes you warily. Perhaps if you dealt with the wolves threatening the village outskirts..."
+
+This creates emergent quest-like experiences without authored content.
+
+### Dialogue System (Reputation + LLM)
+
+All dialogue is LLM-driven with reputation context — no scripted dialogue trees. The NPC's disposition, willingness to help, information shared, and trade terms are all functions of the reputation score.
+
+**LLM System Prompt Construction:**
+```
+You are {npc.narrative.fullName}, a {npc.narrative.physicalDescription}.
+Personality: {npc.narrative.mbtiDescription}, {npc.narrative.alignmentDescription}
+Dark traits: {npc.narrative.darkTetradDescription}
+
+Your relationship with {player.name}:
+- Reputation score: {reputation(npc, player)} ({reputationTier})
+- Recent interactions: {last 3 interaction summaries}
+- Alignment compatibility: {AlignmentEnumType.margin(npc, player)}
+- Personality compatibility: {MBTIUtil.getCompatibility(npc, player)}
+
+Your current needs: {npc needs assessment}
+Your current mood: {instinct-derived mood}
+
+Respond in character. Your willingness to help, share information, or
+trade favorably should reflect the reputation score:
+- Below -10: You are hostile or dismissive
+- -10 to +10: You are cautious and transactional
+- +10 to +30: You are friendly and helpful
+- Above +30: You are loyal and forthcoming with secrets
+```
+
+**Dialogue → Reputation Feedback Loop:**
+1. Player initiates chat (existing `/rest/game/chat`)
+2. LLM responds with reputation-appropriate disposition
+3. Player converses freely (WebSocket streaming)
+4. `concludeChat` evaluates interaction outcome via LLM → OutcomeEnumType
+5. Outcome feeds back into reputation ledger
+6. Next conversation reflects updated reputation
+
+**Key advantage over scripted trees:** Every NPC is unique based on their generated personality, alignment, instincts, and accumulated relationship history. The same "quest" (e.g., dealing with wolves) might be presented differently by every NPC depending on their personality and rapport with the player.
+
+### Progression System (Interaction-Driven Skill Leveling + Decay)
+
+Progression is not XP-based — it is **skill-based through use**. Characters improve at what they do and atrophy at what they neglect. This comes directly from the tabletop rules in `olio.txt`.
+
+**Skill Leveling (through use):**
+- Every action resolution identifies the skills involved (via `InteractionAction`'s stat override mapping + action's `positiveStatistics`)
+- On FAVORABLE or VERY_FAVORABLE outcome: skill proficiency increases by `(100 - currentProficiency) * gainRate`
+  - `gainRate` = 0.05 base, modified by intelligence (higher INT = faster learning)
+  - Diminishing returns: a 90% skill improves slower than a 30% skill
+- On EQUILIBRIUM: minor skill gain (half rate)
+- On UNFAVORABLE/VERY_UNFAVORABLE: no gain (you failed, you didn't learn)
+- Skills cannot exceed 95% (existing `CombatUtil` cap)
+- Initial allocation cap: 50% at character creation
+
+**Skill Decay (from disuse — `olio.txt` rules):**
+```
+Days before 1% decay = (100 - skill%)
+
+Examples:
+  Skill at 95%: decays 1% every 5 days of disuse
+  Skill at 80%: decays 1% every 20 days
+  Skill at 70%: decays 1% every 30 days
+  Skill at 65%: decays 1% every 35 days
+  Skill at 60%: STOPS DECAYING (floor)
+
+Fae/magic skills: cost 4x to learn, same decay rules
+```
+
+Decay is evaluated during Overwatch time advancement (`syncClocks`). Each skill's `lastUsed` timestamp is compared against game time. If elapsed days exceed `(100 - proficiency)`, the skill loses 1% and the timer resets.
+
+**Attribute Growth:**
+- `statistics.potential` (0-150) holds unallocated attribute points from character creation
+- Additional attribute points come from milestone achievements (not XP thresholds):
+  - First time reaching a new Maslow level (survive → thrive) = +2 attribute points
+  - First time entering a new region (kident) = +1 attribute point
+  - Reaching reputation +60 with any NPC = +1 attribute point
+  - Each combat survival against a superior opponent = +1 attribute point
+- Attribute points allocated by player into base statistics (capped at 20)
+- Computed stats (`willpower`, `reaction`, `magic`, etc.) recalculate automatically via `ComputeProvider`
+
+**Skill ↔ Stat Relationship:**
+Skills are percentage-based proficiencies. Stats are 0-20 attributes. Both contribute to action resolution:
+- Stat modifier: `(avg_relevant_stats - 10.0)` → contributes to the 2d20 roll
+- Skill check: `roll under skill%` → determines hit/success for specific actions
+- Higher stats make skill *usage* more effective; higher skills make *specific actions* more reliable
 
 ### World Design
 
@@ -709,22 +828,22 @@ World (olio.world)
 │  GameStreamHandler.java (extended)                               │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │ Existing: action streaming, push events                    │   │
-│  │ New: combat turn notifications, quest updates              │   │
+│  │ New: VATS pause notifications, reputation updates          │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                   │
 │  Overwatch.java (extended)                                       │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │ Existing: 7-stage processing loop                          │   │
-│  │ New: combat mode pause, quest trigger evaluation           │   │
+│  │ New: skill decay eval, reputation triggers, VATS pause     │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                   │
 │  New modules:                                                    │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────────┐ │
-│  │ CellGridUtil  │ │ QuestUtil    │ │ CombatTurnManager        │ │
-│  │ (sub-grid gen)│ │ (quest mgr)  │ │ (initiative, turns)     │ │
+│  │ CellGridUtil  │ │ ReputationUtil│ │ SkillProgressionUtil    │ │
+│  │ (sub-grid gen)│ │ (pair rep calc)│ │ (leveling + decay)    │ │
 │  ├──────────────┤ ├──────────────┤ ├──────────────────────────┤ │
-│  │ PartyUtil     │ │ DialogueUtil │ │ ProgressionUtil          │ │
-│  │ (party mgmt)  │ │ (tree eval)  │ │ (XP, leveling)         │ │
+│  │ PartyUtil     │ │ VATSUtil     │ │ NeedsJournalUtil        │ │
+│  │ (rep-gated)   │ │ (pause/resume)│ │ (objective tracking)   │ │
 │  └──────────────┘ └──────────────┘ └──────────────────────────┘ │
 │                                                                   │
 │  Data Layer: AccountManagerObjects7 (existing + new models)      │
@@ -742,80 +861,68 @@ olio.party
 ├── sharedStore (olio.store FK)
 └── active (boolean)
 
-olio.quest
-├── name, description
-├── type (QuestTypeEnumType)
-├── giver (charPerson FK)
-├── state (QuestStateEnumType)
-├── objectives (list of olio.questObjective)
-├── rewards: xp (int), items (list), alignmentShift (int)
-├── prerequisites: level (int), quests (list), alignment (int)
-├── expiry (olio.event FK)
-└── location (data.geoLocation FK)
+olio.reputation (NEW — persistent pair reputation)
+├── actor (charPerson FK)
+├── target (charPerson FK, flex model to support animals)
+├── score (double, -100 to +100)
+├── interactionCount (int)
+├── lastInteraction (zonetime)
+├── lastOutcome (OutcomeEnumType)
+└── history (list of olio.interaction, participation: reputation.interaction)
 
-olio.questObjective
-├── description
-├── type (ObjectiveTypeEnumType)
-├── target (flex model)
-├── quantity, progress (int)
-├── completed, optional (boolean)
-
-olio.ability
-├── inherits: olio.action
+olio.ability (extends olio.action)
 ├── resourceCost (double, 0-1 of energy)
 ├── cooldownTurns (int)
 ├── targetType (TargetTypeEnumType: SELF, SINGLE, AREA, LINE)
 ├── range (int, sub-cell units)
 ├── areaSize (int, sub-cell radius)
-├── prerequisiteStats (map of stat name → minimum value)
+├── prerequisiteSkillProficiency (double, 0-100)
 ├── effects (list of olio.actionResult templates)
-└── level (int, unlock level)
+
+Extensions to existing models:
+  data.trait (add fields):
+  ├── proficiency (double, 0-100)  — current skill proficiency %
+  ├── lastUsed (zonetime)          — for decay calculation
+  └── usageCount (int)             — total times used
+
+  olio.state (add fields):
+  ├── exploredCells (string)       — packed bitfield of explored cell IDs
+  └── milestones (list of string)  — milestone keys for attribute point grants
 ```
 
 ### New Enums
 
 ```
 FormationEnumType: LINE, WEDGE, CIRCLE, SCATTER, COLUMN
-QuestTypeEnumType: FETCH, KILL, ESCORT, EXPLORE, DIALOGUE, CRAFT, DISCOVER
-QuestStateEnumType: AVAILABLE, ACTIVE, COMPLETED, FAILED, EXPIRED
-ObjectiveTypeEnumType: COLLECT, DEFEAT, REACH_LOCATION, TALK_TO, CRAFT_ITEM, DISCOVER_POI
 TargetTypeEnumType: SELF, SINGLE_ALLY, SINGLE_ENEMY, ALL_ALLIES, ALL_ENEMIES, AREA, LINE
+ReputationTierEnumType: HOSTILE, GUARDED, NEUTRAL, FRIENDLY, ALLIED, DEVOTED
 ```
 
 ### New REST Endpoints
 
 ```
-Party:
-  POST /rest/game/party/create          — Create party with leader
-  POST /rest/game/party/invite/{charId} — Invite NPC to party
-  POST /rest/game/party/dismiss/{charId}— Remove member
-  GET  /rest/game/party/{partyId}       — Get party state
+Party (reputation-gated):
+  GET  /rest/game/party/{partyId}       — Get party state + member reputations
   POST /rest/game/party/formation       — Set formation
+  POST /rest/game/party/dismiss/{charId}— Dismiss member (reputation drops)
 
-Quest:
-  GET  /rest/game/quests/available      — List available quests near player
-  POST /rest/game/quest/accept/{questId}— Accept quest
-  GET  /rest/game/quest/journal         — Player's active/completed quests
-  POST /rest/game/quest/abandon/{questId}— Abandon quest
-
-Combat:
-  POST /rest/game/combat/start          — Enter combat mode
-  GET  /rest/game/combat/turnOrder      — Get initiative order
-  POST /rest/game/combat/action         — Submit turn action
-  POST /rest/game/combat/end            — Exit combat mode (flee/victory)
+Reputation:
+  GET  /rest/game/reputation/{charId}/{targetId} — Get pair reputation
+  GET  /rest/game/reputation/{charId}/nearby      — Reputations with all nearby NPCs
+  GET  /rest/game/reputation/{charId}/party        — Reputations with party members
 
 Cell Grid:
   GET  /rest/game/cellGrid/{cellId}     — Get sub-grid tile data
   POST /rest/game/cellGrid/generate/{cellId} — Generate sub-grid (lazy)
 
-Progression:
-  POST /rest/game/levelUp              — Allocate stat points on level up
-  GET  /rest/game/abilities/{charId}   — List available abilities
-  POST /rest/game/ability/learn/{abilityId} — Learn new ability
+Skills:
+  GET  /rest/game/skills/{charId}       — List all skills with proficiency + decay status
+  POST /rest/game/allocatePoints        — Allocate attribute points from potential
+  GET  /rest/game/abilities/{charId}    — List available abilities (gated by skill proficiency)
 
-Dialogue:
-  GET  /rest/game/dialogue/{npcId}     — Get dialogue tree for NPC
-  POST /rest/game/dialogue/choose      — Select dialogue option
+Needs Journal:
+  GET  /rest/game/needs/{charId}        — Current needs assessment with narrative framing
+  GET  /rest/game/needs/{charId}/objectives — Needs as trackable objectives with progress
 ```
 
 ---
@@ -851,99 +958,369 @@ Dialogue:
 - Map AM7 terrain enum values to tile keys
 - Create tile variation sets per terrain type (min 3 variants each)
 
+**Tests:**
+- `TestCellGridUtil.java` — all 12 tests (Tier 1 + Tier 2): grid generation, terrain mapping, passability guarantees, path existence, coordinate mapping, edge cells, transition tiles, serialization round-trip, persistence, lazy generation
+- `rpgTileRenderer.test.js` — all 5 tests: coordinate conversion edge cases (0, 9, 50, 99), atlas key lookup, variation selection, layer ordering, viewport clipping
+- **Gate:** Phase 1 is not complete until all 17 tests pass
+
 **Deliverable:** Player can navigate a visually rich tile map with trees, rocks, water, and paths rendered at the sub-cell level.
 
-### Phase 2: Combat & Party
+### Phase 2: Reputation & VATS Combat
 
-**Goal:** Turn-based tactical combat and party management.
+**Goal:** Persistent reputation system and VATS-style action selection.
 
 **Backend:**
-- Create `CombatTurnManager.java` — initiative calculation, turn queue, action validation
-- Create `PartyUtil.java` — party CRUD, formation positioning, shared inventory
+- Create `ReputationUtil.java` — pair reputation calculation, persistence, tier evaluation
+- Add `olio.reputation` model + schema
+- Wire `InteractionUtil.calculateSocialInfluence()` output into reputation records after every interaction
+- Create `VATSUtil.java` — decision point detection, action option generation based on context
+- Extend `GameService` with reputation endpoints
+- Extend `GameStreamHandler` with VATS pause/resume push events
+
+**Frontend:**
+- Create `rpgVATSOverlay.js` — action selection overlay on tile map
+  - Freeze time display on trigger
+  - Context-sensitive action list (combat/social/survival)
+  - Action preview (success probability from skill% + stat modifier)
+  - Submit action → stream resolution → show outcome → dismiss overlay
+- Create `rpgReputationPanel.js` — shows reputation with nearby NPCs
+  - Reputation bars with tier labels (Hostile → Devoted)
+  - Recent interaction history summary
+- Add outcome animations using Ninja Adventure VFX sprites
+- Wire damage/outcome display into tile renderer
+
+**Tests:**
+- `TestReputationUtil.java` — all 13 tests (Tier 1 + Tier 2): base compatibility scoring, interaction history weighting (VERY_FAVORABLE=+5 through VERY_UNFAVORABLE=-7), recency weighting, instinct modifiers, alignment affinity, composite clamping, tier evaluation, tier boundaries, persistence, update after interaction, no-history fallback, asymmetry validation, zero-division safety
+- `TestVATSUtil.java` — all 10 tests (Tier 1 + Tier 2): threat/NPC proximity triggers, context-sensitive action options (combat/social/survival), skill-gated abilities, success probability calculation, action submission pipeline, spurious pause prevention, multi-threat handling
+- `TestOverwatchRPGExtensions.java` — VATS + reputation tests (2 of 5): proximity push event, reputation trigger during processInteractions
+- `TestGameServiceRPGEndpoints.java` — reputation + cellGrid endpoints (5 of 15): GET reputation, GET reputation/nearby, GET cellGrid, POST cellGrid/generate, invalid charId 404
+- `rpgReputationPanel.test.js` — all 4 tests: tier label mapping, tier colors, bar percentage scaling, boundary display
+- **Gate:** Phase 2 is not complete until all 34 tests pass
+
+**Deliverable:** Player experiences VATS-style pauses at decision points. Reputation with NPCs tracked and visible. Actions resolve through existing Overwatch pipeline with visual feedback.
+
+### Phase 3: Reputation-Gated Party & Needs Journal
+
+**Goal:** Party system gated by reputation + player-facing needs objectives.
+
+**Backend:**
+- Create `PartyUtil.java` — reputation-gated party formation, member loyalty check during Overwatch increments
 - Add `olio.party` model + schema
-- Add `olio.ability` model + schema
-- Extend `GameService` with combat and party endpoints
-- Modify Overwatch to pause bulk processing during active combat
+- Extend `NeedsUtil` to generate player-facing objective descriptions
+- Create `NeedsJournalUtil.java` — needs-to-objective mapping with progress calculation
+- Add party and needs journal endpoints to `GameService`
+- Wire reputation check into Overwatch: members desert if reputation drops below threshold
 
 **Frontend:**
-- Create `rpgCombatUI.js` — combat overlay on tile map
-  - Turn order display
-  - Action selection panel (attack, defend, ability, item, flee)
-  - Movement range highlighting on sub-grid
-  - Attack range/area visualization
-  - Damage numbers and health bar animations
-  - Combat log panel
 - Create `rpgPartyPanel.js` — party management sidebar
-  - Member portraits and status
+  - Member portraits with reputation bar overlay
   - Formation editor (drag members to formation positions)
-  - Quick-swap active character
-- Add combat animations using Ninja Adventure VFX sprites
+  - Loyalty warnings when reputation is borderline
+- Create `rpgNeedsJournal.js` — needs-as-objectives display
+  - Maslow hierarchy visualization (survive at bottom, thrive at top)
+  - Per-need progress bars (food inventory level, reputation scores, etc.)
+  - LLM-generated narrative framing for each unmet need
+- Reputation-based NPC indicators on tile map (color-coded by disposition tier)
 
-**Deliverable:** Party-based tactical combat on the tile grid with initiative order, abilities, and visual feedback.
+**Tests:**
+- `TestPartyUtil.java` — all 13 tests (Tier 1 + Tier 2): reputation ≥+30 join gate, reputation <+30 refusal, desertion below +10, boundary value +10, max party size, formation assignment, leader movement, shared store access, dismiss reputation drop, dark triad betrayal trigger, high-reputation no-betrayal, party save/load persistence, NPC-initiated join request
+- `TestNeedsJournalUtil.java` — all 8 tests (Tier 2): physiological needs → objectives, Maslow level gating, progress calculation, reputation-based objectives, milestone tracking, needs reassessment on depletion, multiple simultaneous needs, narrative framing non-null
+- `TestGameServiceRPGEndpoints.java` — party + needs endpoints (5 of 15): GET party, POST formation, POST dismiss, GET needs, GET needs/objectives
+- `rpgNeedsJournal.test.js` — all 4 tests: Maslow ordering, progress bars, gated level display, objective counts
+- **Gate:** Phase 3 is not complete until all 30 tests pass
 
-### Phase 3: Quests & Dialogue
+**Deliverable:** NPCs organically join party when reputation is high enough. Player has visible needs-based objectives that drive exploration and interaction.
 
-**Goal:** Structured quest system with hybrid dialogue.
+### Phase 4: Skill Progression, Fog of War & Audio
 
-**Backend:**
-- Add `olio.quest` and `olio.questObjective` models + schemas
-- Create `QuestUtil.java` — quest lifecycle, objective tracking, reward distribution
-- Create `DialogueUtil.java` — dialogue tree evaluation, stat checks, action triggers
-- Extend Overwatch with quest trigger hooks (kill/collect/explore events check quest objectives)
-- Add quest endpoints to `GameService`
-- Create initial quest content (JSON dialogue trees + quest definitions)
-
-**Frontend:**
-- Create `rpgQuestJournal.js` — quest list, objective tracking, completion status
-- Create `rpgDialogueUI.js` — dialogue box with portrait, text, and choice buttons
-  - Structured tree mode (scripted)
-  - LLM chat mode (free-form, existing system)
-  - Seamless transition between modes
-- Add quest indicators to tile map (exclamation mark over quest givers, question mark for turn-in)
-- Add objective HUD (current quest objective displayed on screen)
-
-**Deliverable:** Players can accept quests from NPCs, track objectives, and experience branching dialogue with gameplay consequences.
-
-### Phase 4: Progression, Polish & Audio
-
-**Goal:** Character progression, fog of war, audio, and UX polish.
+**Goal:** Skill leveling/decay, visibility system, and audio.
 
 **Backend:**
-- Create `ProgressionUtil.java` — XP tracking, level calculation, stat point allocation
-- Add XP field to `olio.state`, level field derived from XP
-- Wire XP rewards into combat outcomes, quest completion, exploration
-- Add fog of war tracking (explored cells bitfield on state)
-- Extend save/load to include quest state, party, explored map
+- Create `SkillProgressionUtil.java` — skill gain on use, decay on disuse per `olio.txt` rules
+- Add `proficiency`, `lastUsed`, `usageCount` fields to `data.trait`
+- Wire skill updates into `InteractionAction.executeAction()` conclusion
+- Wire decay evaluation into `Overwatch.syncClocks()`
+- Add fog of war tracking: `exploredCells` packed field on `olio.state`
+- Milestone-based attribute point grants (new region, new Maslow level, reputation threshold)
+- Extend save/load to include reputation, explored map, skill proficiencies
 
 **Frontend:**
-- Create `rpgAudioManager.js` — background music + SFX
-  - Terrain-based music selection (forest → peaceful, cave → tense)
-  - Combat music trigger
-  - SFX for: footstep, attack, spell, item pickup, level up, quest complete
-  - Use Ninja Adventure sound/music assets
+- Create `rpgSkillPanel.js` — skill list with proficiency bars and decay indicators
+  - Decay warning (amber) when skill is approaching decay threshold
+  - Active decay (red) when skill has decayed since last use
+  - Proficiency gain animation on successful skill use
 - Create `rpgFogOfWar.js` — visibility overlay
   - Unexplored cells: opaque black
   - Previously explored but out of range: 50% darkened
   - Currently visible (perception radius): full brightness
-- Level-up UI (stat point allocation screen)
-- Inventory UI improvements (drag-and-drop, equipment slots, item tooltips)
-- Character sheet screen (full stat display with computed values)
+- Create `rpgAudioManager.js` — background music + SFX
+  - Terrain-keyed music (Ninja Adventure tracks)
+  - Combat music trigger on VATS activation
+  - SFX on action resolution, item pickup, skill gain
+- Attribute allocation UI when milestone grants points
+- Character sheet with full stat + skill + reputation display
 - Mini-map overlay showing explored area
 
-**Deliverable:** Complete RPG experience with progression, atmosphere, and polish.
+**Tests:**
+- `TestSkillProgressionUtil.java` — all 17 tests (Tier 1 + Tier 2): gain on favorable/very-favorable/equilibrium, no gain on unfavorable, diminishing returns curve, cap at 95%, initial cap at 50%, Fae 4x cost, decay formula verification (70%→30d, 90%→10d, 95%→5d), floor at 60%, decay at 61%→60% then stop, decay accumulation over time, decay reset on use, intelligence gain rate modifier, decay during Overwatch syncClocks, skill gain after combat interaction, independent multi-skill decay
+- `TestOverwatchRPGExtensions.java` — skill decay tests (3 of 5): skill decay during syncClocks, member desertion during processGroup, full cycle with gain-then-decay
+- `TestGameServiceRPGEndpoints.java` — remaining endpoints (5 of 15): GET skills, POST allocatePoints, allocatePoints exceeds potential 400, GET abilities, unauthorized access 403
+- `rpgSkillPanel.test.js` — all 4 tests: proficiency bar width, decay warning threshold, active decay indicator, skill sort order
+- **Gate:** Phase 4 is not complete until all 29 tests pass
+
+**Cumulative:** All 110 tests across Phases 1-4 must pass for the RPG to be considered feature-complete.
+
+**Deliverable:** Complete RPG experience with organic skill progression, atmospheric audio, and exploration reward through fog of war.
 
 ### Phase 5 (Future): Multiplayer & Content
 
-**Goal:** Cooperative multiplayer and expanded content.
+**Goal:** Cooperative multiplayer and expanded content. (Deferred)
 
-- Turn coordination for multiple players in same realm
-- Shared quest progress for party members
-- PvP arena system
-- Procedural quest generation using LLM
-- Dungeon instances (instanced sub-realms)
-- Trading system between players
-- Achievement/title system
-- World events (realm-wide, time-limited)
+- Turn coordination for multiple players in same realm via WebSocket push
+- Shared party reputation (group reputation with NPCs)
+- PvP reputation and combat
+- LLM-generated contextual objectives beyond basic needs
+- Dungeon instances (instanced sub-realms with unique POI configurations)
+- Trading system gated by mutual reputation
+- Reputation-based faction system (communities with collective disposition)
+- World events affecting reputation across regions
+
+---
+
+## Test Strategy
+
+### Principles
+
+Every new utility class gets a dedicated test class. Every modified existing class gets new test methods covering the modifications. Tests are written **before or alongside** implementation — not deferred. The existing project uses **JUnit 4 (4.13.2)** with **Maven Surefire** (`surefire-junit47`), the `BaseTest` parent class for DB lifecycle, and `OlioTestUtil` for character/context setup. All new tests follow these conventions.
+
+### Test Tiers
+
+**Tier 1 — Pure Logic (No DB, No External Services):**
+Unit tests for calculations, formulas, and enum logic. These run in the default Maven `test` phase with no exclusions. Fast, deterministic, no setup dependencies.
+
+**Tier 2 — Integration (DB Required, OlioContext):**
+Tests that create characters, run Overwatch cycles, and verify state persistence. Use `BaseTest` setup with H2 or PostgreSQL. May be excluded from CI default run but **must** pass before merge.
+
+**Tier 3 — Service Layer (REST Endpoint, WebSocket):**
+Tests for GameService endpoints using the Service7 `BaseTest` with H2. Verify request/response contracts, error handling, and authorization.
+
+**Tier 4 — Frontend (JS Unit Tests):**
+The UX7 project currently has no JS test framework. Introduce **Vitest** (compatible with the existing esbuild/Vite toolchain) for testing rpg module logic (tile coordinate math, reputation tier display, needs journal state). Canvas rendering and DOM are not unit-tested — those are validated manually or via integration playtesting.
+
+### Backend Test Classes
+
+#### TestReputationUtil.java (Phase 2)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testBaseCompatibilityScore` | 1 | `ProfileComparison` inputs produce correct base score range (-20 to +20) |
+| `testInteractionHistoryWeighting` | 1 | VERY_FAVORABLE = +5, FAVORABLE = +2, EQUILIBRIUM = 0, UNFAVORABLE = -3, VERY_UNFAVORABLE = -7 |
+| `testRecencyWeighting` | 1 | Recent interactions weighted more heavily than old ones |
+| `testInstinctModifierContribution` | 1 | cooperate/resist instinct maps to -10..+10 range |
+| `testAlignmentAffinityContribution` | 1 | Same alignment = +8, opposed = -8, partial match scales linearly |
+| `testCompositeScoreClamping` | 1 | Final score clamped to -100..+100 regardless of input extremes |
+| `testTierEvaluation` | 1 | Score → tier mapping: <-50 HOSTILE, -50..-10 GUARDED, -10..+10 NEUTRAL, +10..+30 FRIENDLY, +30..+60 ALLIED, >+60 DEVOTED |
+| `testTierBoundaryValues` | 1 | Exact boundary values (-50, -10, +10, +30, +60) map correctly |
+| `testReputationPersistence` | 2 | Create two characters, run interactions, verify reputation record persists across context reload |
+| `testReputationUpdateAfterInteraction` | 2 | Run `calculateSocialInfluence()`, verify reputation record updated |
+| `testReputationWithNoHistory` | 2 | New character pair returns base compatibility only |
+| `testSymmetry` | 1 | reputation(A,B) may differ from reputation(B,A) due to personality asymmetry — verify both are valid |
+| `testZeroDivision` | 1 | Characters with identical stats/personality produce valid (not NaN/Infinity) score |
+
+#### TestSkillProgressionUtil.java (Phase 4)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testSkillGainOnFavorable` | 1 | FAVORABLE outcome: proficiency increases by `(100 - current) * 0.05` |
+| `testSkillGainOnVeryFavorable` | 1 | VERY_FAVORABLE outcome: same gain formula applies |
+| `testSkillGainOnEquilibrium` | 1 | EQUILIBRIUM: half rate gain `(100 - current) * 0.025` |
+| `testNoGainOnUnfavorable` | 1 | UNFAVORABLE / VERY_UNFAVORABLE: proficiency unchanged |
+| `testDiminishingReturns` | 1 | Skill at 90% gains less per use than skill at 30% |
+| `testCapAt95` | 1 | Proficiency cannot exceed 95% regardless of gains |
+| `testInitialCapAt50` | 1 | New character skills cannot be allocated above 50% |
+| `testFaeCost4x` | 1 | Magic/Fae skills require 4x allocation cost |
+| `testDecayFormula` | 1 | `(100 - skill%) = days before 1% decay`. Verify: 70% → 30 days, 90% → 10 days, 95% → 5 days |
+| `testDecayFloorAt60` | 1 | Skill at 60% does not decay further regardless of time elapsed |
+| `testDecayAt61` | 1 | Skill at 61% decays to 60% after 39 days, then stops |
+| `testDecayAccumulation` | 1 | 100 days of disuse on 80% skill → 5 decay events (every 20 days) → 75% |
+| `testDecayResetOnUse` | 1 | Using a skill resets the `lastUsed` timestamp; no decay from prior disuse |
+| `testIntelligenceModifiesGainRate` | 1 | Higher intelligence → faster gain rate (modifier to base 0.05) |
+| `testSkillDecayInOverwatch` | 2 | Advance Overwatch clock by N days, verify skill proficiency decreases correctly |
+| `testSkillGainAfterCombat` | 2 | Run combat interaction, verify fight/weapon skills gain proficiency |
+| `testMultipleSkillsDecayIndependently` | 2 | Two skills with different lastUsed dates decay at different rates |
+
+#### TestCellGridUtil.java (Phase 1)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testGridGeneration` | 1 | 100m cell → 10x10 sub-grid with valid tile data for each position |
+| `testTerrainMapping` | 1 | Each `TerrainEnumType` maps to at least 1 valid tile key |
+| `testTerrainVariation` | 1 | Repeated generation for same terrain type produces variation (not all tiles identical) |
+| `testPOIPlacement` | 2 | POI at known meter position generates correct prop tile in corresponding sub-cell |
+| `testPassabilityGeneration` | 1 | Generated grid respects terrain passability percentages (e.g., FOREST 40-60% passable) |
+| `testPassabilityGuaranteesPath` | 1 | Generated grid always has at least one passable path across (no walled-off grids) |
+| `testMeterToSubCellMapping` | 1 | `floor(currentEast / 10)` and `floor(currentNorth / 10)` produce correct sub-cell indices for all 100 positions |
+| `testEdgeCells` | 1 | Sub-cells at (0,0), (0,9), (9,0), (9,9) generate valid tile data |
+| `testTransitionTiles` | 1 | Adjacent cells with different terrain types generate edge/transition tiles at boundaries |
+| `testTileDataSerialization` | 1 | `tileData` JSON field round-trips through serialization without data loss |
+| `testGridPersistence` | 2 | Generate grid, persist to `geoLocation.tileData`, reload, verify identical |
+| `testLazyGeneration` | 2 | Grid not generated until first request; subsequent requests return cached grid |
+
+#### TestPartyUtil.java (Phase 3)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testJoinRequiresReputation30` | 2 | NPC with reputation < +30 refuses to join party |
+| `testJoinSucceedsAtReputation30` | 2 | NPC with reputation ≥ +30 joins party |
+| `testDesertionBelowReputation10` | 2 | Member deserts during Overwatch increment when reputation drops below +10 |
+| `testDesertionBoundary` | 2 | Member at exactly +10 reputation does NOT desert |
+| `testMaxPartySize` | 2 | Cannot exceed max party members (4-6) |
+| `testFormationAssignment` | 1 | Each `FormationEnumType` value assigns valid positions |
+| `testLeaderMovement` | 2 | Party members follow leader position in formation |
+| `testSharedStoreAccess` | 2 | All party members can access shared `olio.store` |
+| `testDismissDropsReputation` | 2 | Dismissing a member reduces reputation with that NPC |
+| `testBetrayalOnHighDarkTriad` | 2 | Member with high Machiavellianism/psychopathy and borderline reputation may betray |
+| `testBetrayalNotGuaranteed` | 2 | High dark triad + high reputation does NOT trigger betrayal |
+| `testPartyPersistence` | 2 | Party survives save/load cycle with all members and formation intact |
+| `testNPCInitiatedJoin` | 2 | NPC crossing +30 reputation generates pending join request |
+
+#### TestVATSUtil.java (Phase 2)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testThreatTriggersPause` | 2 | Hostile entity entering proximity triggers VATS decision point |
+| `testNPCProximityTriggersPause` | 2 | Non-hostile NPC entering proximity triggers decision point |
+| `testActionOptionsForCombat` | 1 | Threat context generates combat actions (attack, defend, flee) |
+| `testActionOptionsForSocial` | 1 | NPC context generates social actions (talk, trade, recruit) |
+| `testActionOptionsForSurvival` | 1 | Critical needs context generates survival actions (eat, drink, rest) |
+| `testActionOptionsGatedBySkill` | 2 | Abilities only appear if character meets skill proficiency threshold |
+| `testSuccessProbabilityCalc` | 1 | Preview probability = `(skill% + statModifier) / 100` clamped to 5-95% |
+| `testActionSubmission` | 2 | Selected action queues to Overwatch and resolves through normal pipeline |
+| `testNoSpuriousPauses` | 2 | Neutral environment with no threats/NPCs does NOT trigger VATS |
+| `testMultipleThreats` | 2 | Multiple simultaneous threats generate single pause with all threats visible |
+
+#### TestNeedsJournalUtil.java (Phase 3)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testPhysiologicalNeedsMapping` | 2 | Unmet FOOD need → trackable "Find food" objective |
+| `testMaslowGating` | 2 | LOVE needs do not surface until PHYSIOLOGICAL and SAFETY are met |
+| `testProgressCalculation` | 2 | Food objective progress = foodItems.count / dailyRequirement |
+| `testReputationObjective` | 2 | LOVE.FRIENDSHIP need → "Earn trust" objective with reputation score as progress |
+| `testMilestoneTracking` | 2 | First time satisfying a new Maslow level → milestone recorded |
+| `testNeedsReassessment` | 2 | Dropping below a met need (e.g., food consumed) reactivates lower-level objectives |
+| `testMultipleUnmetNeeds` | 2 | Multiple unmet needs at same level all appear as objectives |
+| `testObjectiveNarrativeNotNull` | 2 | Every objective has non-null, non-empty narrative framing |
+
+#### TestOverwatchRPGExtensions.java (Phase 2 + 4)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testSkillDecayDuringSyncClocks` | 2 | Advancing clock triggers skill decay evaluation for all characters |
+| `testReputationTriggerDuringProcessInteractions` | 2 | Completed interaction updates reputation record |
+| `testVATSPauseOnProximityEvent` | 2 | `processProximity()` detecting threat generates push event |
+| `testMemberDesertionDuringProcessGroup` | 2 | Party member loyalty checked during group processing |
+| `testFullCycleWithSkillGainAndDecay` | 2 | Run N Overwatch increments: use skill, advance time, verify gain then decay |
+
+#### TestGameServiceRPGEndpoints.java (Phase 2 + 3 + 4)
+
+| Test Method | Tier | What It Validates |
+|------------|------|-------------------|
+| `testGetReputation` | 3 | `GET /rest/game/reputation/{charId}/{targetId}` returns valid reputation JSON |
+| `testGetReputationNearby` | 3 | `GET /rest/game/reputation/{charId}/nearby` returns list for all NPCs in range |
+| `testGetParty` | 3 | `GET /rest/game/party/{partyId}` returns party with members and reputations |
+| `testSetFormation` | 3 | `POST /rest/game/party/formation` updates formation and returns success |
+| `testDismissMember` | 3 | `POST /rest/game/party/dismiss/{charId}` removes member and reduces reputation |
+| `testGetCellGrid` | 3 | `GET /rest/game/cellGrid/{cellId}` returns 10x10 tile data |
+| `testGenerateCellGrid` | 3 | `POST /rest/game/cellGrid/generate/{cellId}` creates and persists grid |
+| `testGetSkills` | 3 | `GET /rest/game/skills/{charId}` returns skills with proficiency and decay status |
+| `testAllocatePoints` | 3 | `POST /rest/game/allocatePoints` deducts from potential and increases stat |
+| `testAllocatePointsExceedsPotential` | 3 | Allocating more points than available returns 400 error |
+| `testGetAbilities` | 3 | `GET /rest/game/abilities/{charId}` returns only abilities meeting skill threshold |
+| `testGetNeeds` | 3 | `GET /rest/game/needs/{charId}` returns needs assessment with narrative |
+| `testGetNeedsObjectives` | 3 | `GET /rest/game/needs/{charId}/objectives` returns trackable objectives with progress |
+| `testUnauthorizedAccess` | 3 | Accessing another user's character data returns 403 |
+| `testInvalidCharId` | 3 | Non-existent charId returns 404 |
+
+### Frontend Test Classes (Vitest)
+
+#### rpgTileRenderer.test.js (Phase 1)
+
+| Test | What It Validates |
+|------|-------------------|
+| `meterToSubCell conversion` | `floor(east/10)`, `floor(north/10)` for all edge cases (0, 9, 50, 99) |
+| `tile atlas key lookup` | Terrain enum string → correct atlas region coordinates |
+| `tile variation selection` | Same terrain + different seed → different variant (not always variant 0) |
+| `layer ordering` | Ground rendered before props, props before entities, entities before fog |
+| `viewport clipping` | Only visible sub-cells queried for tile data (not all 100) |
+
+#### rpgReputationPanel.test.js (Phase 2)
+
+| Test | What It Validates |
+|------|-------------------|
+| `tier label from score` | Score -60 → "Hostile", +15 → "Friendly", +45 → "Allied", etc. |
+| `tier color mapping` | Each tier maps to a distinct display color |
+| `reputation bar percentage` | Score -100..+100 maps to 0-100% bar width |
+| `boundary display` | Score exactly at tier boundary displays correct tier |
+
+#### rpgSkillPanel.test.js (Phase 4)
+
+| Test | What It Validates |
+|------|-------------------|
+| `proficiency bar width` | Proficiency 0-100 → proportional bar width |
+| `decay warning threshold` | Skill approaching decay shows amber indicator |
+| `active decay indicator` | Skill that has decayed since last use shows red indicator |
+| `skill sort order` | Skills sorted by proficiency descending |
+
+#### rpgNeedsJournal.test.js (Phase 3)
+
+| Test | What It Validates |
+|------|-------------------|
+| `maslow level ordering` | Physiological at bottom, Self at top |
+| `progress bar calculation` | Need progress 0-1 → proportional bar width |
+| `gated level display` | Unmet lower level dims/locks upper levels |
+| `objective count per level` | Multiple unmet needs at same level all visible |
+
+### Coverage Targets
+
+| Category | Target | Rationale |
+|----------|--------|-----------|
+| Reputation formula | 100% branch | Core mechanic — incorrect calculation breaks party, dialogue, and NPC behavior |
+| Skill decay formula | 100% branch | Tabletop-derived rules must match exactly; floor at 60%, Fae 4x, cap at 95% |
+| Cell grid generation | 90%+ line | Passability guarantees and terrain mapping are visual-correctness critical |
+| Party join/leave logic | 100% branch | Reputation gates are the party system — every threshold must be exact |
+| VATS trigger conditions | 100% branch | False positives (spurious pauses) or false negatives (missed threats) break gameplay |
+| Needs journal Maslow gating | 100% branch | Incorrect gating surfaces wrong objectives |
+| REST endpoints | All happy path + all error codes | Public API contract must be reliable |
+| Tile coordinate math (JS) | 100% branch | Off-by-one in coordinate conversion = visual bugs across entire map |
+
+### Test Execution
+
+```bash
+# Tier 1 — Pure logic (no external dependencies, runs in CI)
+mvn test -pl AccountManagerObjects7
+
+# Tier 2 — Integration (requires DB)
+mvn test -pl AccountManagerObjects7 -Dtest="TestReputationUtil,TestSkillProgressionUtil,TestCellGridUtil,TestPartyUtil,TestVATSUtil,TestNeedsJournalUtil,TestOverwatchRPGExtensions"
+
+# Tier 3 — Service layer (requires H2)
+mvn test -pl AccountManagerService7 -Dtest="TestGameServiceRPGEndpoints"
+
+# Tier 4 — Frontend (requires Node.js)
+cd AccountManagerUx7 && npx vitest run
+
+# All tiers
+mvn test && cd AccountManagerUx7 && npx vitest run
+```
+
+### Test-Per-Phase Checklist
+
+Each phase is **not complete** until all tests for that phase pass:
+
+- **Phase 1:** TestCellGridUtil (all), rpgTileRenderer.test.js (all)
+- **Phase 2:** TestReputationUtil (all), TestVATSUtil (all), TestOverwatchRPGExtensions (VATS + reputation tests), TestGameServiceRPGEndpoints (reputation + cellGrid endpoints), rpgReputationPanel.test.js (all)
+- **Phase 3:** TestPartyUtil (all), TestNeedsJournalUtil (all), TestGameServiceRPGEndpoints (party + needs endpoints), rpgNeedsJournal.test.js (all)
+- **Phase 4:** TestSkillProgressionUtil (all), TestOverwatchRPGExtensions (skill decay tests), TestGameServiceRPGEndpoints (skills + abilities + allocatePoints endpoints), rpgSkillPanel.test.js (all)
 
 ---
 
@@ -955,41 +1332,64 @@ Dialogue:
 | File | Purpose |
 |------|---------|
 | `src/main/resources/models/olio/partyModel.json` | Party schema |
-| `src/main/resources/models/olio/questModel.json` | Quest schema |
-| `src/main/resources/models/olio/questObjectiveModel.json` | Quest objective schema |
-| `src/main/resources/models/olio/abilityModel.json` | Ability schema |
-| `src/main/java/org/cote/accountmanager/olio/CellGridUtil.java` | Sub-grid generation |
-| `src/main/java/org/cote/accountmanager/olio/CombatTurnManager.java` | Turn-based combat |
-| `src/main/java/org/cote/accountmanager/olio/PartyUtil.java` | Party management |
-| `src/main/java/org/cote/accountmanager/olio/QuestUtil.java` | Quest lifecycle |
-| `src/main/java/org/cote/accountmanager/olio/DialogueUtil.java` | Dialogue tree evaluation |
-| `src/main/java/org/cote/accountmanager/olio/ProgressionUtil.java` | XP and leveling |
-| `src/main/java/org/cote/accountmanager/olio/schema/FormationEnumType.java` | Formation enum |
-| `src/main/java/org/cote/accountmanager/olio/schema/QuestTypeEnumType.java` | Quest type enum |
-| `src/main/java/org/cote/accountmanager/olio/schema/QuestStateEnumType.java` | Quest state enum |
-| `src/main/java/org/cote/accountmanager/olio/schema/ObjectiveTypeEnumType.java` | Objective type enum |
+| `src/main/resources/models/olio/reputationModel.json` | Persistent pair reputation schema |
+| `src/main/resources/models/olio/abilityModel.json` | Ability schema (extends action) |
+| `src/main/java/org/cote/accountmanager/olio/CellGridUtil.java` | Sub-grid generation from terrain + POIs |
+| `src/main/java/org/cote/accountmanager/olio/ReputationUtil.java` | Pair reputation calculation + persistence |
+| `src/main/java/org/cote/accountmanager/olio/SkillProgressionUtil.java` | Skill leveling through use + decay over time |
+| `src/main/java/org/cote/accountmanager/olio/PartyUtil.java` | Reputation-gated party management |
+| `src/main/java/org/cote/accountmanager/olio/VATSUtil.java` | Decision point detection + action options |
+| `src/main/java/org/cote/accountmanager/olio/NeedsJournalUtil.java` | Needs-to-objective mapping + progress |
+| `src/main/java/org/cote/accountmanager/olio/schema/FormationEnumType.java` | Party formation enum |
+| `src/main/java/org/cote/accountmanager/olio/schema/ReputationTierEnumType.java` | Reputation tier enum |
 | `src/main/java/org/cote/accountmanager/olio/schema/TargetTypeEnumType.java` | Ability target enum |
+
+**Backend Tests (AccountManagerObjects7):**
+| File | Purpose |
+|------|---------|
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestReputationUtil.java` | Reputation formula, tier evaluation, persistence, boundary values (13 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestSkillProgressionUtil.java` | Skill gain/decay formula, floor/cap, Fae 4x, Overwatch integration (17 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestCellGridUtil.java` | Sub-grid generation, terrain mapping, passability, serialization (12 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestPartyUtil.java` | Reputation-gated join/leave, desertion, betrayal, persistence (13 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestVATSUtil.java` | Decision point detection, action options, skill gating (10 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestNeedsJournalUtil.java` | Needs-to-objective mapping, Maslow gating, progress (8 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestOverwatchRPGExtensions.java` | Skill decay in syncClocks, reputation triggers, VATS pause (5 tests) |
+
+**Backend Tests (AccountManagerService7):**
+| File | Purpose |
+|------|---------|
+| `src/test/java/org/cote/accountmanager/objects/tests/TestGameServiceRPGEndpoints.java` | REST endpoint contracts for all new game endpoints (15 tests) |
 
 **Backend (AccountManagerService7):**
 | File | Purpose |
 |------|---------|
-| Extensions to `GameService.java` | New REST endpoints for party, quest, combat, cellGrid, progression |
+| Extensions to `GameService.java` | New endpoints for reputation, party, cellGrid, skills, needs journal |
 
 **Frontend (AccountManagerUx7):**
 | File | Purpose |
 |------|---------|
-| `client/view/rpgGame.js` | Main RPG game view (new, extends cardGame patterns) |
+| `client/view/rpgGame.js` | Main RPG game view (extends cardGame patterns) |
 | `client/view/rpg/rpgTileRenderer.js` | Canvas tile rendering engine |
 | `client/view/rpg/rpgAssetLoader.js` | Spritesheet/atlas management |
-| `client/view/rpg/rpgCombatUI.js` | Combat overlay and turn management |
-| `client/view/rpg/rpgPartyPanel.js` | Party management sidebar |
-| `client/view/rpg/rpgQuestJournal.js` | Quest tracking UI |
-| `client/view/rpg/rpgDialogueUI.js` | Dialogue box (tree + LLM hybrid) |
+| `client/view/rpg/rpgVATSOverlay.js` | VATS-style action selection overlay |
+| `client/view/rpg/rpgReputationPanel.js` | NPC reputation display |
+| `client/view/rpg/rpgPartyPanel.js` | Reputation-gated party management |
+| `client/view/rpg/rpgNeedsJournal.js` | Needs-as-objectives display |
+| `client/view/rpg/rpgSkillPanel.js` | Skill proficiency + decay display |
 | `client/view/rpg/rpgAudioManager.js` | Music and sound effects |
 | `client/view/rpg/rpgFogOfWar.js` | Visibility overlay |
 | `client/view/rpg/rpgInventoryUI.js` | Enhanced inventory with equipment slots |
-| `client/view/rpg/rpgCharacterSheet.js` | Full character stats display |
+| `client/view/rpg/rpgCharacterSheet.js` | Full character stats + skills + reputation display |
 | `client/view/rpg/rpgMiniMap.js` | Explored area mini-map |
+
+**Frontend Tests (AccountManagerUx7):**
+| File | Purpose |
+|------|---------|
+| `client/view/rpg/__tests__/rpgTileRenderer.test.js` | Coordinate conversion, atlas lookup, viewport clipping (5 tests) |
+| `client/view/rpg/__tests__/rpgReputationPanel.test.js` | Tier labels, color mapping, bar percentage (4 tests) |
+| `client/view/rpg/__tests__/rpgSkillPanel.test.js` | Proficiency bars, decay indicators, sort order (4 tests) |
+| `client/view/rpg/__tests__/rpgNeedsJournal.test.js` | Maslow ordering, progress bars, level gating (4 tests) |
+| `vitest.config.js` | Vitest configuration for RPG module unit tests |
 
 **Assets:**
 | Directory | Contents |
@@ -1004,25 +1404,22 @@ Dialogue:
 | `AccountManagerUx7/assets/rpg/audio/sfx/` | Sound effects |
 | `AccountManagerUx7/assets/rpg/atlases/` | Generated atlas JSON manifests |
 
-**Content:**
-| File | Purpose |
-|------|---------|
-| `AccountManagerUx7/content/quests/` | Quest definition JSON files |
-| `AccountManagerUx7/content/dialogues/` | Dialogue tree JSON files |
-| `AccountManagerUx7/content/abilities/` | Ability definition data |
-
 ### Existing Files to Modify
 
 | File | Changes |
 |------|---------|
-| `AccountManagerObjects7` model schemas | Add `tileData` field to geoLocation, XP/level to state |
-| `AccountManagerObjects7` Overwatch.java | Combat mode pause, quest trigger hooks |
-| `AccountManagerObjects7` GameUtil.java | Party-aware movement, combat turn support |
-| `AccountManagerService7` GameService.java | New endpoints (party, quest, combat, cellGrid, progression) |
-| `AccountManagerService7` GameStreamHandler.java | Combat turn push events, quest update events |
-| `AccountManagerUx7` applicationRouter.js | Add `/rpg/:id` route |
-| `AccountManagerUx7` modelDef.js | Add new model schemas (party, quest, ability) |
-| `AccountManagerUx7` build.js / esbuild config | Include new RPG modules and asset directories |
+| `AccountManagerObjects7` `data.traitModel.json` | Add `proficiency`, `lastUsed`, `usageCount` fields |
+| `AccountManagerObjects7` `olio.stateModel.json` | Add `exploredCells`, `milestones` fields |
+| `AccountManagerObjects7` `data.geoLocationModel.json` | Add `tileData` JSON field for sub-cell grid |
+| `AccountManagerObjects7` `Overwatch.java` | Wire skill decay into `syncClocks()`, VATS pause support |
+| `AccountManagerObjects7` `InteractionAction.java` | Wire skill proficiency gain after action resolution |
+| `AccountManagerObjects7` `InteractionUtil.java` | Wire reputation persistence into `calculateSocialInfluence()` |
+| `AccountManagerObjects7` `GameUtil.java` | Party-aware movement, reputation-aware NPC behavior |
+| `AccountManagerService7` `GameService.java` | New endpoints (reputation, party, cellGrid, skills, needs) |
+| `AccountManagerService7` `GameStreamHandler.java` | VATS pause push events, reputation update events |
+| `AccountManagerUx7` `applicationRouter.js` | Add `/rpg/:id` route |
+| `AccountManagerUx7` `modelDef.js` | Add new model schemas (party, reputation, ability) |
+| `AccountManagerUx7` `build.js` / esbuild config | Include new RPG modules and asset directories |
 
 ---
 

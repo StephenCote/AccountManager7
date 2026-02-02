@@ -36,6 +36,59 @@ SCIM Resource          AccountManager Models
 
 ---
 
+## Key Architectural Consideration: Organization-Scoped Identity
+
+### Principal Names Are Not Globally Unique
+
+A fundamental difference between SCIM's identity model and AccountManager7's model is that **a principal name (user/account name) alone is not sufficient to identify a user**. In AM7, all models inherit `system.organizationExt`, which provides a required `organizationId` field. Name uniqueness is always scoped to an organization:
+
+```
+system.user:       constraints: ["name, organizationId"]
+auth.group:        constraints: ["name, parentId, organizationId"]
+auth.role:         constraints: ["parentId, name, type, organizationId"]
+auth.permission:   constraints: ["parentId, name, type, organizationId"]
+```
+
+This means the same `userName` (e.g., `"admin"`) can exist in multiple organizations simultaneously. A SCIM `userName` value like `"jsmith"` is ambiguous without knowing which organization it belongs to.
+
+### How This Affects the SCIM Implementation
+
+All AM7 search and resolution methods require an organization reference:
+
+```java
+// ISearch interface — organizationId is always a required parameter
+BaseRecord[] findByName(String model, String name, long organizationId);
+BaseRecord[] findByNameInParent(String model, long parentId, String name, String type, long organizationId);
+BaseRecord[] findByNameInGroup(String model, long groupId, String name, long organizationId);
+```
+
+The `AccessPoint` layer enforces this automatically by injecting the authenticated user's `organizationId` into any query that does not already specify one:
+
+```java
+private QueryResult search(BaseRecord contextUser, Query query) {
+    query.setContextUser(contextUser);
+    if (!query.hasField(FieldNames.FIELD_ORGANIZATION_ID)) {
+        query.field(FieldNames.FIELD_ORGANIZATION_ID,
+                   contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+    }
+    return IOSystem.getActiveContext().getSearch().find(query);
+}
+```
+
+### Implications for SCIM Endpoints
+
+1. **Tenant scoping via authentication**: Every SCIM request is implicitly scoped to the authenticated user's (service principal's) organization. The `TokenFilter` resolves a bearer token to a `contextUser`, whose `organizationId` is automatically applied to all search queries. SCIM consumers do not need to specify an organization — it is derived from the service principal's org.
+
+2. **No cross-organization queries**: A SCIM `filter` like `userName eq "jsmith"` will only match users within the service principal's organization — never across organizations. This is enforced at the data layer, not just the API layer. Cross-organization authorization is currently not supported, so all SCIM operations are strictly bounded to a single organization context.
+
+3. **User creation requires organization context**: When creating a user via `POST /scim/v2/Users`, the new user's `organizationId` must be set from the authenticated context. The SCIM request body does not carry this information.
+
+4. **SCIM `id` uses `objectId`**: Because names are not globally unique, all SCIM resource `id` values must map to AM7's `objectId` (which is globally unique), not the `name` field.
+
+5. **`externalId` mapping**: SCIM's `externalId` can map to AM7's `urn` field, which provides an external reference that is also organization-scoped.
+
+---
+
 ## Phase 1: Core SCIM Service Structure
 
 ### 1.1 Create ScimService.java
@@ -478,12 +531,159 @@ public class ScimSchemaGenerator {
 - [ ] Transform model schemas to SCIM format
 - [ ] Support schema extensions
 
-### Testing
-- [ ] Create SCIM conformance tests
-- [ ] Test filter expressions
-- [ ] Test patch operations
-- [ ] Test bulk operations
-- [ ] Integration tests with common SCIM clients
+### Phase 7: Testing (per-phase, not deferred)
+- [ ] **Adapter tests** — every phase must have passing tests before the next phase begins
+- [ ] `TestScimUserAdapter` — round-trip mapping, null/missing field handling, edge cases
+- [ ] `TestScimGroupAdapter` — membership mapping, nested groups, empty groups
+- [ ] `TestScimFilterParser` — every operator, compound expressions, malformed input
+- [ ] `TestScimPatchHandler` — add/replace/remove, path expressions, invalid operations
+- [ ] `TestScimBulkOperations` — mixed operations, bulkId resolution, failOnErrors
+- [ ] `TestScimSchemaDiscovery` — ServiceProviderConfig, ResourceTypes, schema generation
+- [ ] `TestScimOrganizationScoping` — org boundary enforcement, cross-org rejection
+- [ ] `TestScimErrorResponses` — 400/404/409/413/500 response format compliance
+- [ ] SCIM conformance validation against RFC 7643/7644
+
+---
+
+## Phase 7: Unit and Integration Testing
+
+Testing is not a final phase — each implementation phase must include corresponding tests before moving on. The project uses **JUnit 4** with a `BaseTest` pattern that provides `IOContext` and `OrganizationContext` against a real database (H2 or PostgreSQL).
+
+**Location**: `AccountManagerService7/src/test/java/org/cote/accountmanager/objects/tests/`
+
+### 7.1 Adapter Tests
+
+**`TestScimUserAdapter.java`** — Validates the mapping layer between SCIM JSON and AM7 BaseRecord models.
+
+| Test | What It Validates |
+|------|-------------------|
+| `testToScimBasicFields` | `objectId` → `id`, `name` → `userName`, `status` → `active` |
+| `testToScimWithPerson` | `firstName`/`lastName` → `name.givenName`/`name.familyName`, `displayName` |
+| `testToScimNullPerson` | User without an associated person record produces valid SCIM JSON (no NPE) |
+| `testToScimContacts` | `identity.contact` records map to `emails[]` and `phoneNumbers[]` by type |
+| `testToScimAddresses` | `identity.address` records map to `addresses[]` with all subfields |
+| `testToScimGroupMembership` | Group participations appear in `groups[]` with `value`, `display`, `$ref` |
+| `testToScimRoles` | Role participations appear in `roles[]` |
+| `testToScimMeta` | `createdDate` → `meta.created`, `modifiedDate` → `meta.lastModified`, correct `meta.location` |
+| `testFromScimCreateUser` | Valid SCIM JSON → BaseRecord with correct `name`, `status`, `organizationId` |
+| `testFromScimWithNameObject` | `name.givenName`/`name.familyName` → person `firstName`/`lastName` |
+| `testFromScimMissingRequiredFields` | Missing `userName` results in error, not silent null |
+| `testRoundTripFidelity` | `toScim(fromScim(json))` preserves all mapped fields |
+
+**`TestScimGroupAdapter.java`**
+
+| Test | What It Validates |
+|------|-------------------|
+| `testToScimBasicGroup` | `objectId` → `id`, `name` → `displayName` |
+| `testToScimMembers` | Member list includes `value`, `display`, `$ref`, correct `type` (User vs Group) |
+| `testToScimEmptyGroup` | Group with no members produces `members: []`, not null/absent |
+| `testToScimNestedGroups` | Group members that are groups have `type: "Group"` and correct `$ref` |
+| `testFromScimCreateGroup` | Valid SCIM JSON → BaseRecord with correct `name`, `organizationId` |
+| `testRoundTripFidelity` | `toScim(fromScim(json))` preserves all mapped fields |
+
+### 7.2 Filter Parser Tests
+
+**`TestScimFilterParser.java`** — Every SCIM operator and expression form must be tested.
+
+| Test | Filter Expression | Expected Behavior |
+|------|-------------------|-------------------|
+| `testEq` | `userName eq "jsmith"` | Query with `FIELD_NAME = "jsmith"` |
+| `testNe` | `userName ne "jsmith"` | Query with `FIELD_NAME != "jsmith"` |
+| `testCo` | `userName co "smith"` | Query with `FIELD_NAME LIKE "%smith%"` |
+| `testSw` | `userName sw "j"` | Query with `FIELD_NAME LIKE "j%"` |
+| `testEw` | `userName ew "ith"` | Query with `FIELD_NAME LIKE "%ith"` |
+| `testPr` | `name.givenName pr` | Query with `firstName IS NOT NULL` |
+| `testGt` | `meta.lastModified gt "2024-01-01T00:00:00Z"` | Date comparison query |
+| `testGe` | `meta.lastModified ge "2024-01-01T00:00:00Z"` | Inclusive date comparison |
+| `testLt` / `testLe` | Analogous to gt/ge | Less-than comparisons |
+| `testAndOperator` | `userName eq "j" and active eq true` | Compound query with AND |
+| `testOrOperator` | `userName eq "j" or userName eq "k"` | Compound query with OR |
+| `testNotOperator` | `not (userName eq "j")` | Negated query |
+| `testNestedParens` | `(a eq "1" or b eq "2") and c eq "3"` | Correct precedence |
+| `testDottedPath` | `name.givenName eq "John"` | Maps to `firstName` field |
+| `testAttributeMappingUnknown` | `bogusField eq "x"` | Graceful error or pass-through |
+| `testEmptyFilter` | `""` | Returns unfiltered query (no crash) |
+| `testMalformedFilter` | `userName eq` | Returns SCIM 400 error, not exception |
+| `testSqlInjectionAttempt` | `userName eq "x'; DROP TABLE--"` | No injection; treated as literal string |
+
+### 7.3 Patch Handler Tests
+
+**`TestScimPatchHandler.java`**
+
+| Test | What It Validates |
+|------|-------------------|
+| `testAddSingleValue` | `op: "add", path: "nickName", value: "Jim"` sets field |
+| `testAddMultiValue` | `op: "add", path: "emails"` appends to list |
+| `testReplaceSingleValue` | `op: "replace", path: "name.givenName"` updates existing value |
+| `testReplaceNoPath` | `op: "replace", value: {userName: "new"}` replaces top-level attributes |
+| `testRemoveSingleValue` | `op: "remove", path: "nickName"` clears field |
+| `testRemoveMultiValueFilter` | `op: "remove", path: "emails[type eq \"fax\"]"` removes matching entry |
+| `testAddToNonExistentPath` | Adding to a path that doesn't exist creates it |
+| `testRemoveRequiredField` | Removing `userName` returns 400 error |
+| `testInvalidOp` | `op: "move"` returns 400 (not a SCIM operation) |
+| `testEmptyOperations` | Empty `Operations` array returns success (no-op) |
+| `testMultipleOperations` | Multiple ops applied in order within a single request |
+| `testPatchIdempotency` | Applying the same replace twice yields the same result |
+
+### 7.4 Bulk Operations Tests
+
+**`TestScimBulkOperations.java`**
+
+| Test | What It Validates |
+|------|-------------------|
+| `testBulkCreateUsers` | Multiple POST operations create multiple users |
+| `testBulkMixedOperations` | POST, PUT, PATCH, DELETE in a single request |
+| `testBulkIdReference` | `bulkId:abc123` in a later operation resolves to the created resource's `id` |
+| `testBulkFailOnErrorsZero` | `failOnErrors: 0` processes all operations even after failures |
+| `testBulkFailOnErrorsOne` | `failOnErrors: 1` stops after first failure |
+| `testBulkMaxOperations` | Exceeding `maxOperations` returns 413 |
+| `testBulkMaxPayloadSize` | Exceeding `maxPayloadSize` returns 413 |
+| `testBulkEmptyOperations` | Empty operations array returns success |
+| `testBulkResponseFormat` | Each result includes `method`, `status`, `location`, and optional `response` |
+
+### 7.5 Organization Scoping Tests
+
+**`TestScimOrganizationScoping.java`** — Validates that organization boundaries are enforced through the SCIM layer.
+
+| Test | What It Validates |
+|------|-------------------|
+| `testUserCreatedInServicePrincipalOrg` | `POST /Users` sets `organizationId` from authenticated context |
+| `testSearchScopedToOrg` | User in org A is not visible to service principal in org B |
+| `testSameUserNameDifferentOrgs` | `"jsmith"` in org A and org B are distinct; each org only sees its own |
+| `testGetByIdCrossOrgReturns404` | `GET /Users/{id}` where id belongs to another org returns 404, not 403 |
+| `testPatchCrossOrgReturns404` | `PATCH /Users/{id}` for a user in another org returns 404 |
+| `testDeleteCrossOrgReturns404` | `DELETE /Users/{id}` for a user in another org returns 404 |
+| `testGroupMembershipScopedToOrg` | Group members only include users from the same organization |
+| `testFilterDoesNotLeakCrossOrg` | `filter=userName eq "admin"` only returns the org's admin, not other orgs' |
+
+### 7.6 Error Response Tests
+
+**`TestScimErrorResponses.java`** — SCIM requires specific error response format (RFC 7644 Section 3.12).
+
+| Test | What It Validates |
+|------|-------------------|
+| `testErrorResponseFormat` | All errors return `{"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"], "status":"...", "detail":"..."}` |
+| `testNotFound404` | `GET /Users/{nonexistent}` returns 404 with SCIM error body |
+| `testConflict409` | `POST /Users` with duplicate `userName` returns 409 |
+| `testBadRequest400` | Malformed JSON body returns 400 |
+| `testPayloadTooLarge413` | Bulk request exceeding limits returns 413 |
+| `testMethodNotAllowed405` | Unsupported HTTP method returns 405 |
+| `testUnauthorized401` | Missing or invalid bearer token returns 401 |
+| `testContentTypeJson` | All error responses have `Content-Type: application/scim+json` |
+
+### 7.7 Schema Discovery Tests
+
+**`TestScimSchemaDiscovery.java`**
+
+| Test | What It Validates |
+|------|-------------------|
+| `testServiceProviderConfig` | Returns valid config with correct `patch`, `bulk`, `filter`, `sort` support flags |
+| `testResourceTypesUser` | `/ResourceTypes` includes User with correct schema URN and endpoint |
+| `testResourceTypesGroup` | `/ResourceTypes` includes Group with correct schema URN and endpoint |
+| `testUserSchema` | `/Schemas/urn:ietf:params:scim:schemas:core:2.0:User` returns valid attribute list |
+| `testGroupSchema` | `/Schemas/urn:ietf:params:scim:schemas:core:2.0:Group` returns valid attribute list |
+| `testSchemaAttributeTypes` | Each attribute has correct `type`, `mutability`, `returned`, `uniqueness` metadata |
+| `testSchemasListEndpoint` | `/Schemas` returns all schemas in `Resources` array |
 
 ---
 
@@ -507,6 +707,17 @@ AccountManagerService7/src/main/java/org/cote/rest/
         │   └── ScimPatchHandler.java  # Patch operations
         └── schema/
             └── ScimSchemaGenerator.java # Schema discovery
+
+AccountManagerService7/src/test/java/org/cote/accountmanager/objects/tests/
+└── scim/
+    ├── TestScimUserAdapter.java        # User mapping round-trip
+    ├── TestScimGroupAdapter.java       # Group mapping round-trip
+    ├── TestScimFilterParser.java       # Filter parsing and operator coverage
+    ├── TestScimPatchHandler.java       # Patch operation handling
+    ├── TestScimBulkOperations.java     # Bulk endpoint behavior
+    ├── TestScimOrganizationScoping.java # Org boundary enforcement
+    ├── TestScimErrorResponses.java     # SCIM error format compliance
+    └── TestScimSchemaDiscovery.java    # Schema/config endpoint validation
 ```
 
 ---
