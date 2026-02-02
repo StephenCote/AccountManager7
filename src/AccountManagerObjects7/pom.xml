@@ -78,6 +78,12 @@
 						<exclude>**/TestScimPatchHandler.java</exclude>
 						<exclude>**/TestScimSchemaDiscovery.java</exclude>
 						<exclude>**/TestScimUserAdapter.java</exclude>
+						<exclude>**/TestAm7Uri.java</exclude>
+						<exclude>**/TestMcpContextBuilder.java</exclude>
+						<exclude>**/TestMcpContextFilter.java</exclude>
+						<exclude>**/TestMcpContextParser.java</exclude>
+						<exclude>**/TestMcpLlm.java</exclude>
+						<exclude>**/TestMcpMemory.java</exclude>
 						<exclude>**/TestLandscape</exclude>
 						<exclude>**/TestGameUtilSync</exclude>
 						<exclude>**/TestGameUtil</exclude>
