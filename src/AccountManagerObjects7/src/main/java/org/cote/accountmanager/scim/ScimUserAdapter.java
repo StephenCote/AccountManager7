@@ -72,18 +72,6 @@ public class ScimUserAdapter {
 		return scim;
 	}
 
-	public static BaseRecord findPersonForUser(BaseRecord contextUser, BaseRecord user) {
-		try {
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_PERSON);
-			q.filterParticipant(ModelNames.MODEL_PERSON, "users", user, null);
-			q.planMost(true);
-			return IOSystem.getActiveContext().getAccessPoint().find(contextUser, q);
-		} catch (Exception e) {
-			logger.error("Error finding person for user: " + e.getMessage());
-		}
-		return null;
-	}
-
 	public static boolean mapStatusToActive(String status) {
 		if (status == null) return true;
 		try {

@@ -70,7 +70,7 @@ public class ScimUserService {
 			return ScimService.scimError(404, "User not found: " + id);
 		}
 
-		BaseRecord person = ScimUserAdapter.findPersonForUser(user, rec);
+		BaseRecord person = PrincipalService.getPersonForUser(user, rec);
 		String baseUrl = ScimService.getBaseUrl(request);
 		Map<String, Object> scimUser = ScimUserAdapter.toScim(rec, person, baseUrl);
 
@@ -130,7 +130,7 @@ public class ScimUserService {
 			if (qr != null) {
 				totalResults = (int) qr.get(FieldNames.FIELD_TOTAL_COUNT);
 				for (BaseRecord rec : qr.getResults()) {
-					BaseRecord person = ScimUserAdapter.findPersonForUser(user, rec);
+					BaseRecord person = PrincipalService.getPersonForUser(user, rec);
 					resources.add(ScimUserAdapter.toScim(rec, person, baseUrl));
 				}
 			}
@@ -233,7 +233,7 @@ public class ScimUserService {
 
 			IOSystem.getActiveContext().getAccessPoint().update(contextUser, existing);
 
-			BaseRecord person = ScimUserAdapter.findPersonForUser(contextUser, existing);
+			BaseRecord person = PrincipalService.getPersonForUser(contextUser, existing);
 			@SuppressWarnings("unchecked")
 			Map<String, Object> nameObj = (Map<String, Object>) scimUser.get("name");
 			if (nameObj != null && person != null) {
@@ -278,7 +278,7 @@ public class ScimUserService {
 				return ScimService.scimError(400, "Missing Operations array");
 			}
 
-			BaseRecord person = ScimUserAdapter.findPersonForUser(contextUser, existing);
+			BaseRecord person = PrincipalService.getPersonForUser(contextUser, existing);
 
 			List<String> errors = ScimPatchHandler.applyPatch(existing, person, operations);
 			if (!errors.isEmpty()) {
@@ -294,7 +294,7 @@ public class ScimUserService {
 			Query fullQ = QueryUtil.createQuery(ModelNames.MODEL_USER, FieldNames.FIELD_OBJECT_ID, id);
 			fullQ.planMost(true);
 			BaseRecord fullUser = IOSystem.getActiveContext().getAccessPoint().find(contextUser, fullQ);
-			person = ScimUserAdapter.findPersonForUser(contextUser, fullUser != null ? fullUser : existing);
+			person = PrincipalService.getPersonForUser(contextUser, fullUser != null ? fullUser : existing);
 
 			return ScimService.scimOk(ScimUserAdapter.toScim(fullUser != null ? fullUser : existing, person, baseUrl));
 

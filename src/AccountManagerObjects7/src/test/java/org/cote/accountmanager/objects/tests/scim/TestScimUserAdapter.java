@@ -129,35 +129,6 @@ public class TestScimUserAdapter extends BaseTest {
 	}
 
 	@Test
-	public void testFindPersonForUser() {
-		logger.info("Testing SCIM User Adapter - find person for user");
-		BaseRecord adminUser = orgContext.getAdminUser();
-		BaseRecord testUser = getCreateUser("scimTestUser5");
-		assertNotNull("Test user should not be null", testUser);
-
-		try {
-			BaseRecord person = IOSystem.getActiveContext().getFactory().newInstance(
-				ModelNames.MODEL_PERSON, adminUser, null, null
-			);
-			person.set(FieldNames.FIELD_NAME, "Test Person 5");
-			person.set(FieldNames.FIELD_FIRST_NAME, "Jane");
-			person.set(FieldNames.FIELD_LAST_NAME, "Doe");
-
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(adminUser, person);
-			assertNotNull("Person should be created", created);
-
-			IOSystem.getActiveContext().getAccessPoint().member(adminUser, created, "users", testUser, null, true);
-
-			BaseRecord found = ScimUserAdapter.findPersonForUser(adminUser, testUser);
-			assertNotNull("Should find person for user", found);
-
-		} catch (Exception e) {
-			logger.error(e);
-			assertTrue("Should not throw exception: " + e.getMessage(), false);
-		}
-	}
-
-	@Test
 	public void testRoundTripFidelity() {
 		logger.info("Testing SCIM User Adapter - round trip");
 		BaseRecord testUser = getCreateUser("scimTestUser6");

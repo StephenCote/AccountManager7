@@ -88,19 +88,22 @@ public class PrincipalService {
 		return Response.status(200).entity((person == null ? null : person.toFilteredString())).build();
 	}
 	
+	public static BaseRecord getPersonForUser(BaseRecord contextUser, BaseRecord targetUser) {
+		if (contextUser == null || targetUser == null) {
+			logger.error("Context user or target user were null");
+			return null;
+		}
+		OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
+		if (oc == null) return null;
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(oc.getAdminUser(), ModelNames.MODEL_GROUP, "/Persons", GroupEnumType.DATA.toString(), oc.getOrganizationId());
+		if (dir == null) return null;
+		return IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(contextUser, ModelNames.MODEL_PERSON, dir.get(FieldNames.FIELD_OBJECT_ID), targetUser.get(FieldNames.FIELD_NAME));
+	}
+
 	public BaseRecord getPerson(String objectId, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord contUser = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, ModelNames.MODEL_USER, objectId);
-		OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(user.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
-		BaseRecord person = null;
-		if(contUser != null && user != null){
-			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(oc.getAdminUser(), ModelNames.MODEL_GROUP, "/Persons", GroupEnumType.DATA.toString(), oc.getOrganizationId());
-			person = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_PERSON, dir.get(FieldNames.FIELD_OBJECT_ID), contUser.get(FieldNames.FIELD_NAME));
-		}
-		else {
-			logger.error("Context user or user were null");
-		}
-		return person;
+		return getPersonForUser(user, contUser);
 	}
 	
 	
