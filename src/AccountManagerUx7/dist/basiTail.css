@@ -7892,10 +7892,6 @@ button.button-tab-active:hover:is(.dark *) {
   z-index: 50;
 }
 
-.z-\[200\] {
-  z-index: 200;
-}
-
 .row-span-1 {
   grid-row: span 1 / span 1;
 }

@@ -232,6 +232,12 @@
 
             // Initialize audio engine
             this.audioEngine = new Magic8.AudioEngine();
+            // Ensure AudioContext is resumed (browsers suspend until user gesture;
+            // _initSession runs from setTimeout, not a direct click handler)
+            try {
+                const ctx = this.audioEngine.getContext();
+                if (ctx.state === 'suspended') ctx.resume();
+            } catch (e) { /* context resume is best-effort */ }
 
             if (cfg.audio?.binauralEnabled) {
                 if (cfg.audio.preset && Magic8.AudioEngine.FREQUENCY_PRESETS[cfg.audio.preset]) {
@@ -1355,7 +1361,9 @@
                 }),
 
                 // Interactive director overlay (askUser)
-                this._pendingQuestion && m('.fixed.inset-x-0.bottom-20.z-[200].flex.justify-center.px-4', [
+                this._pendingQuestion && m('.fixed.inset-x-0.bottom-20.flex.justify-center.px-4', {
+                    style: { zIndex: 200 }
+                }, [
                     m('.bg-gray-900/95.backdrop-blur.rounded-2xl.p-5.max-w-lg.w-full.shadow-2xl.border.border-cyan-500/30', [
                         // Question text
                         m('.text-cyan-300.text-lg.font-medium.mb-4.text-center', this._pendingQuestion.question),
