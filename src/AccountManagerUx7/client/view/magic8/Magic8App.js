@@ -1367,10 +1367,10 @@
                     m('.bg-gray-900/95.backdrop-blur.rounded-2xl.p-5.max-w-lg.w-full.shadow-2xl.border.border-cyan-500/30', [
                         // Question text
                         m('.text-cyan-300.text-lg.font-medium.mb-4.text-center', this._pendingQuestion.question),
-                        // Mic indicator
+                        // Input hint
                         m('.flex.items-center.justify-center.gap-2.mb-3.text-sm.text-gray-400', [
-                            m('span.material-symbols-outlined.text-red-400.animate-pulse', 'mic'),
-                            'Listening... speak or type below'
+                            m('span.material-symbols-outlined.text-cyan-400', 'chat'),
+                            'Type your response below'
                         ]),
                         // Text input + submit
                         m('.flex.gap-2', [
@@ -2102,13 +2102,18 @@
                     this._submitUserResponse();
                 }, 5000);
             } else {
-                // Production mode: Use server-side STT via WebSocket streaming
+                // Production mode: text input only (STT recording disabled for now)
+                // User types response and clicks Send or presses Enter.
+                // No auto-submit timeout — user controls when to respond.
+                this._debugLog('Interactive: text input active (STT disabled)', 'info');
+
+                /* --- STT recording (disabled — re-enable when server-side STT bug is fixed) ---
+                // Use server-side STT via WebSocket streaming
                 // Capture microphone, stream audio chunks to server, receive transcription
                 navigator.mediaDevices.getUserMedia({
                     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
                 }).then(mediaStream => {
                     if (!this._pendingQuestion) {
-                        // Interaction was cancelled before mic was ready
                         mediaStream.getTracks().forEach(t => t.stop());
                         return;
                     }
@@ -2129,7 +2134,6 @@
                     this._sttMediaStream = mediaStream;
                     this._sttMediaRecorder = mediaRecorder;
 
-                    // Set up audio stream handler for receiving STT results from server
                     page.audioStream = {
                         onaudioupdate: () => {},
                         onaudiosttupdate: (text) => {
@@ -2141,7 +2145,6 @@
                         onaudiouerror: () => {}
                     };
 
-                    // Convert blob to base64 for WebSocket transmission
                     const blobToBase64 = async (blob) => {
                         try {
                             const buff = await blob.arrayBuffer();
@@ -2152,7 +2155,6 @@
                         }
                     };
 
-                    // Stream audio chunks to server via WebSocket for real-time STT
                     mediaRecorder.ondataavailable = async (event) => {
                         if (event.data && event.data.size > 0 && page.wss) {
                             const b64 = await blobToBase64(event.data);
@@ -2162,7 +2164,6 @@
                         }
                     };
 
-                    // Start recording in 2-second chunks
                     try {
                         mediaRecorder.start(2000);
                         this._debugLog('STT: microphone recording started (server-side)', 'info');
@@ -2173,12 +2174,13 @@
                     console.warn('Magic8: Microphone access error:', err.message);
                 });
 
-                // Set auto-submit timeout: max(director interval, 30s)
+                // Auto-submit timeout: max(director interval, 30s)
                 const directorInterval = this.sessionDirector?.intervalMs || 60000;
                 const timeout = Math.max(directorInterval, 30000);
                 this._responseTimeoutId = setTimeout(() => {
                     this._submitUserResponse();
                 }, timeout);
+                --- end disabled STT --- */
             }
 
             m.redraw();
