@@ -3,6 +3,7 @@ package org.cote.accountmanager.olio.llm;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -17,6 +18,7 @@ import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
+import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
@@ -335,7 +337,9 @@ public class PromptUtil {
 			}
 			elBuff.append(epBuff.toString());
 			episodeText = elBuff.toString();
-			episodeReminderText = "(Reminder: Follow Episode Stages: " + System.lineSeparator() + epBuff.toString() + ")";
+			McpContextBuilder epRemBuilder = new McpContextBuilder();
+			epRemBuilder.addReminder("am7://reminder/episode", List.of(Map.of("key", "episode-stages", "value", "Follow Episode Stages: " + System.lineSeparator() + epBuff.toString())));
+			episodeReminderText = epRemBuilder.build();
 		}
 		
 		
@@ -397,7 +401,13 @@ public class PromptUtil {
 			if(ucons.length() > 0) ucons += " and ";
 			ucons += composeTemplate(ctx.promptConfig.get("userConsentNlp"));
 		}
-		ctx.replace(TemplatePatternEnumType.NLP_REMINDER, useNLP ? "(Reminder: \"${nlp.command}\")" : "");
+		String nlpReminderBlock = "";
+		if(useNLP) {
+			McpContextBuilder nlpRemBuilder = new McpContextBuilder();
+			nlpRemBuilder.addReminder("am7://reminder/nlp", List.of(Map.of("key", "nlp-command", "value", "${nlp.command}")));
+			nlpReminderBlock = nlpRemBuilder.build();
+		}
+		ctx.replace(TemplatePatternEnumType.NLP_REMINDER, nlpReminderBlock);
 		ctx.replace(TemplatePatternEnumType.USER_CONSENT, ucons.length() > 0 ? uconpref + ucons + ".": "");
 		ctx.replace(TemplatePatternEnumType.NLP_COMMAND, nlpCommand);
 		ctx.replace(TemplatePatternEnumType.CENSOR_WARN, sysCens);

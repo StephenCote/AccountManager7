@@ -248,12 +248,8 @@ public class ChatService {
 		if(citRef.length() > 0) {
 			citDesc = PromptUtil.getUserCitationTemplate(chat.getPromptConfig(), chat.getChatConfig());
 			if(citDesc == null || citDesc.length() == 0) {
-				citDesc = 
-					"--- CITATION INSTRUCTIONS ---" + System.lineSeparator()
-					+ "Use any previous and the following citations to generate a response to the user request: \"" +  vChatReq.getMessage() + "\"" + System.lineSeparator()
-					+ "--- BEGIN CITATIONS ---" + System.lineSeparator() + citRef + System.lineSeparator() + "--- END CITATIONS ---"
-					+ System.lineSeparator() + System.lineSeparator()
-				;
+				/// MCP blocks are self-describing; no wrapper needed
+				citDesc = citRef + System.lineSeparator();
 			}
 			else {
 			    PromptBuilderContext ctx = new PromptBuilderContext(chat.getPromptConfig(), chat.getChatConfig(), citDesc, true);

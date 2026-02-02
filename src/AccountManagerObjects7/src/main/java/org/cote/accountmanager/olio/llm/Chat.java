@@ -7,6 +7,7 @@ import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -34,6 +35,7 @@ import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 
@@ -960,12 +962,31 @@ public class Chat {
 		BaseRecord userChar = chatConfig.get("userCharacter");
 
 		String lab = systemChar.get("firstName") + " and " + userChar.get("firstName");
+		String analysisText = analyze(req, null, false, false, false);
 
-		msg.setContent(
-				"(KeyFrame: (Summary of " + lab + " with " + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating)
-						+ "-rated content) " + analyze(req, null, false, false, false) + ")");
+		String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+		McpContextBuilder builder = new McpContextBuilder();
+		builder.addKeyframe(
+			"am7://keyframe/" + (cfgObjId != null ? cfgObjId : "default"),
+			Map.of(
+				"summary", "Summary of " + lab + " with " + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating) + "-rated content",
+				"analysis", analysisText != null ? analysisText : "",
+				"rating", rating.toString(),
+				"ratingMpa", ESRBEnumType.getESRBMPA(rating),
+				"characters", lab
+			)
+		);
+		msg.setContent(builder.build());
+
+		/// Filter out previous keyframes (both old and MCP format)
 		List<OpenAIMessage> msgs = req.getMessages().stream()
-				.filter(m -> m.getContent() != null && !m.getContent().startsWith("(KeyFrame"))
+				.filter(m -> {
+					String c = m.getContent();
+					if(c == null) return true;
+					if(c.startsWith("(KeyFrame")) return false;
+					if(c.contains("<mcp:context") && c.contains("/keyframe/")) return false;
+					return true;
+				})
 				.collect(Collectors.toList());
 		msgs.add(msg);
 		req.setMessages(msgs);
@@ -1033,7 +1054,7 @@ public class Chat {
 		for (int i = idx; i < len; i++) {
 			OpenAIMessage msg = req.getMessages().get(i);
 			msg.setPruned(true);
-			if (msg.getContent() != null && msg.getContent().startsWith("(KeyFrame:")) {
+			if (msg.getContent() != null && (msg.getContent().startsWith("(KeyFrame:") || (msg.getContent().contains("<mcp:context") && msg.getContent().contains("/keyframe/")))) {
 				kfs.add(msg);
 			}
 		}
@@ -1060,16 +1081,29 @@ public class Chat {
 			if(systemRole.equals(imsg.getRole())) {
 				continue;
 			}
-			/// imsg.isPruned() || 
+			if(imsg.getContent() == null) continue;
+			/// Check old format
 			if(imsg.getContent().contains(pattern)) {
 				break;
 			}
-			//  || imsg.getContent().startsWith("(KeyFrame:")
-			if(imsg.getContent() == null) continue;
+			/// Check MCP format
+			if(isMcpEquivalent(imsg.getContent(), pattern)) {
+				break;
+			}
 			qual++;
 		}
 		return qual;
-		
+	}
+
+	private boolean isMcpEquivalent(String content, String pattern) {
+		if(!content.contains("<mcp:context")) return false;
+		if("(Reminder:".equals(pattern)) {
+			return content.contains("/reminder/");
+		}
+		if("(KeyFrame:".equals(pattern)) {
+			return content.contains("/keyframe/");
+		}
+		return false;
 	}
 	
 	public OpenAIMessage newMessage(OpenAIRequest req, String message) {
@@ -1104,18 +1138,21 @@ public class Chat {
 					}
 				}
 				
-				/// Inject the user reminder
+				/// Inject the user reminder as MCP block
 				List<String> urem = promptConfig.get("userReminder");
 				String rem = urem.stream().collect(Collectors.joining(System.lineSeparator()));
 				if (chatConfig != null) {
 					rem = PromptUtil.getChatPromptTemplate(promptConfig, chatConfig, rem, false);
 				}
 
-				// logger.info("reminding ...");
 				if (rem.length() > 0) {
-					msgBuff.append(System.lineSeparator() + rem);
-				} else {
-					// logger.warn("Reminder template is empty.");
+					String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+					McpContextBuilder remBuilder = new McpContextBuilder();
+					remBuilder.addReminder(
+						"am7://reminder/" + (cfgObjId != null ? cfgObjId : "default"),
+						List.of(Map.of("key", "user-reminder", "value", rem))
+					);
+					msgBuff.append(System.lineSeparator() + remBuilder.build());
 				}
 			}
 		}

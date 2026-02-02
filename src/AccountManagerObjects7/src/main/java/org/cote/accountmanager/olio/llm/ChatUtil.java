@@ -3,8 +3,10 @@ package org.cote.accountmanager.olio.llm;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -48,6 +50,12 @@ import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
+import org.cote.accountmanager.mcp.Am7Uri;
+import org.cote.accountmanager.mcp.McpContext;
+import org.cote.accountmanager.mcp.McpContextBuilder;
+import org.cote.accountmanager.mcp.McpContextFilter;
+import org.cote.accountmanager.mcp.McpContextParser;
+import org.cote.accountmanager.mcp.McpFilterResult;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 
@@ -563,15 +571,19 @@ public class ChatUtil {
 			logger.warn("Citation is null");
 			return null;
 		}
-		List<OpenAIMessage> msgs = req.getMessages().stream().filter(m -> {
-			return m.getContent() != null && m.getContent().contains(cit);
-		}).collect(Collectors.toList());
-		
-		String citation = null;
-		if(msgs.size() == 0) {
-			citation = cit;
+		/// Deduplicate by checking if the raw content already appears in any existing message
+		String rawContent = getCitationText(storeChunk, type, false);
+		if(rawContent != null) {
+			rawContent = rawContent.trim();
+			final String checkContent = rawContent;
+			List<OpenAIMessage> msgs = req.getMessages().stream().filter(m -> {
+				return m.getContent() != null && m.getContent().contains(checkContent);
+			}).collect(Collectors.toList());
+			if(msgs.size() > 0) {
+				return null;
+			}
 		}
-		return citation;
+		return cit;
 	}
 	public static String getCitationText(BaseRecord storeChunk, String type, boolean includeMeta) {
 		BaseRecord chunk = storeChunk;
@@ -594,9 +606,31 @@ public class ChatUtil {
 		if(storeChunk.hasField(FieldNames.FIELD_NAME)) {
 			name = chunk.get(FieldNames.FIELD_NAME);
 		}
-		String citationKey = "<citation schema=\"" + storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE_TYPE) + "\" chapter = \"" + chapter + "\" chapterTitle = \"" + chapterTitle + "\" name = \"" + name + "\" type = \"" + type + "\" chunk = \"" + chunk.get("chunk") + "\" id = \"" + storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE + "." + FieldNames.FIELD_ID) + "\">";
-		String citationSuff = "</citation>";
-		return (includeMeta ? citationKey + System.lineSeparator() : "") + cnt + System.lineSeparator() + (includeMeta ? citationSuff : "");
+		if(!includeMeta) {
+			return cnt + System.lineSeparator();
+		}
+		String uri = Am7Uri.toUri(storeChunk);
+		if(uri == null) {
+			uri = "am7://default/vector/citations/chunk/" + storeChunk.get(FieldNames.FIELD_ID);
+		}
+		else {
+			uri = uri + "/citations/chunk/" + chunk.get("chunk");
+		}
+		String refType = storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE_TYPE);
+		Long refIdObj = storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE + "." + FieldNames.FIELD_ID);
+		long refId = refIdObj != null ? refIdObj : 0L;
+		Map<String, Object> data = new HashMap<>();
+		data.put("content", cnt);
+		data.put("chunk", chunk.get("chunk"));
+		data.put("type", type);
+		data.put("chapter", chapter);
+		data.put("chapterTitle", chapterTitle);
+		data.put("name", name);
+		data.put("referenceType", refType != null ? refType : "");
+		data.put("referenceId", refId);
+		McpContextBuilder builder = new McpContextBuilder();
+		builder.addResource(uri, "urn:am7:vector:search-result", data, true);
+		return builder.build();
 	}
 	
 	private static String notePath = "~/Notes/Summaries";
@@ -894,16 +928,20 @@ public class ChatUtil {
 		else {
 			for(BaseRecord frec : frecs) {
 				if(frec.getSchema().equals(OlioModelNames.MODEL_CHAT_REQUEST)) {
-					//logger.info(frec.toFullString());
 					ChatRequest rcreq = new ChatRequest(frec);
 					OpenAIRequest  oreq = getOpenAIRequest(user, rcreq);
 					BaseRecord ccfg = OlioUtil.getFullRecord(rcreq.getChatConfig());
 					String hist = getFormattedChatHistory(oreq, ccfg, -1, false).stream().collect(Collectors.joining(System.lineSeparator() + System.lineSeparator()));
-					
-					String citationKey = "<citation schema=\"" + OlioModelNames.MODEL_CHAT_REQUEST + "\" id = \"" + ccfg.get(FieldNames.FIELD_ID) + "\">";
-					String citationSuff = "</citation>";
-					
-					dataCit.add(citationKey + System.lineSeparator()  + "--- CHAT HISTORY ---" + System.lineSeparator() + hist + System.lineSeparator() + "--- END CHAT HISTORY ---" + System.lineSeparator() + citationSuff);
+
+					String uri = Am7Uri.toUri(ccfg);
+					if(uri == null) {
+						uri = "am7://default/" + OlioModelNames.MODEL_CHAT_REQUEST + "/citations/" + ccfg.get(FieldNames.FIELD_ID);
+					}
+					McpContextBuilder builder = new McpContextBuilder();
+					Map<String, Object> histData = new HashMap<>();
+					histData.put("history", hist);
+					builder.addResource(uri, "urn:am7:narrative:chat-history", histData, true);
+					dataCit.add(builder.build());
 				}
 				
 				else if(msg != null && msg.length() > 0) {
@@ -978,10 +1016,57 @@ public class ChatUtil {
 		if((boolean)chatConfig.get("assist")) {
 			startIndex = 3;
 		}
+
+		/// Extract MCP citations from user messages and attach to the following assistant response
+		McpContextFilter mcpFilter = new McpContextFilter();
+		List<McpContext> pendingCitations = new ArrayList<>();
 		for(int i = startIndex; i < req.getMessages().size(); i++) {
-			rep.getMessages().add(req.getMessages().get(i));
+			OpenAIMessage msg = req.getMessages().get(i);
+			String content = msg.getContent();
+			if(content != null && Chat.userRole.equals(msg.getRole()) && content.contains("<mcp:context")) {
+				McpFilterResult filterResult = mcpFilter.filter(content);
+				pendingCitations.addAll(filterResult.getCitations());
+				/// Strip ephemeral MCP blocks from user message content for display
+				msg = new OpenAIMessage(msg);
+				msg.setContent(filterResult.getContent());
+			}
+			rep.getMessages().add(msg);
+			/// Attach pending citations to assistant response messages
+			if(Chat.assistantRole.equals(msg.getRole()) && !pendingCitations.isEmpty()) {
+				attachCitations(msg, pendingCitations);
+				pendingCitations.clear();
+			}
 		}
 		return rep;
+	}
+
+	private static void attachCitations(OpenAIMessage msg, List<McpContext> mcpCitations) {
+		List<BaseRecord> citations = msg.get("context");
+		for(McpContext ctx : mcpCitations) {
+			try {
+				BaseRecord cit = RecordFactory.newInstance("olio.llm.openai.openaiCitation");
+				String body = ctx.getBody();
+				Map<String, Object> data = null;
+				if(body != null && body.trim().startsWith("{")) {
+					data = JSONUtil.getMap(body, String.class, Object.class);
+				}
+				cit.set("url", ctx.getUri());
+				if(data != null) {
+					Object contentVal = data.get("content");
+					if(contentVal != null) cit.set("content", contentVal.toString());
+					Object nameVal = data.get("name");
+					if(nameVal != null) cit.set("title", nameVal.toString());
+					Object sourceVal = data.get("source");
+					if(sourceVal != null && nameVal == null) cit.set("title", sourceVal.toString());
+					Object chunkVal = data.get("chunk");
+					if(chunkVal instanceof Number) cit.set("chunk_id", ((Number)chunkVal).intValue());
+				}
+				citations.add(cit);
+			}
+			catch(Exception e) {
+				logger.warn("Error attaching citation: " + e.getMessage());
+			}
+		}
 	}
 	
 	public static OpenAIRequest getOpenAIRequest(BaseRecord user, ChatRequest creq) {
@@ -1158,11 +1243,21 @@ public class ChatUtil {
 		for (int i = (full ? 0 : (pruneSkip + 2)); i < req.getMessages().size(); i++) {
 			OpenAIMessage msg = req.getMessages().get(i);
 			String cont = msg.getContent();
+			/// Skip MCP keyframe messages
+			if (cont != null && cont.contains("<mcp:context") && cont.contains("/keyframe/")) {
+				continue;
+			}
+			/// Skip old-format keyframe messages (backward compat)
 			if (cont != null && cont.startsWith("(KeyFrame")) {
 				continue;
 			}
-			if(cont != null && cont.indexOf("(Reminder") > -1) {
-				cont = cont.substring(0, cont.indexOf("(Reminder")).trim();
+			if(cont != null) {
+				/// Strip MCP blocks
+				cont = McpContextParser.stripAll(cont);
+				/// Strip old-format reminder text (backward compat)
+				if(cont.indexOf("(Reminder") > -1) {
+					cont = cont.substring(0, cont.indexOf("(Reminder")).trim();
+				}
 			}
 			String name = null;
 			boolean isUser = msg.getRole().equals(Chat.userRole);
