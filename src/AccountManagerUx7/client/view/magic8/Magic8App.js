@@ -1981,10 +1981,23 @@
             }
 
             // Handle askUser directive (interactive mode)
-            if (directive.askUser && this.sessionConfig?.director?.interactive) {
+            const hasAskUser = !!(directive.askUser);
+            const interactiveCfg = !!(this.sessionConfig?.director?.interactive);
+            if (hasAskUser || interactiveCfg) {
+                console.log('Magic8: askUser check — directive.askUser:', hasAskUser,
+                    ', interactive config:', interactiveCfg,
+                    ', pendingQuestion:', !!(this._pendingQuestion));
+                if (hasAskUser && !interactiveCfg) {
+                    this._debugLog('askUser BLOCKED: interactive mode is OFF in config', 'warn');
+                }
+                if (hasAskUser && interactiveCfg && this._pendingQuestion) {
+                    this._debugLog('askUser BLOCKED: already waiting for response', 'warn');
+                }
+            }
+            if (hasAskUser && interactiveCfg) {
                 this._startUserInteraction(directive.askUser.question);
                 this._ticksSinceAskUser = 0;
-            } else if (this.sessionConfig?.director?.interactive) {
+            } else if (interactiveCfg) {
                 this._ticksSinceAskUser++;
             }
 
@@ -2003,11 +2016,15 @@
          * @private
          */
         _startUserInteraction(question) {
-            if (this._pendingQuestion) return; // already waiting
+            if (this._pendingQuestion) {
+                console.log('Magic8: _startUserInteraction SKIPPED — already pending:', this._pendingQuestion.question);
+                return;
+            }
 
             this._pendingQuestion = { question };
             this._userInputText = '';
             this._voicePausedForInteraction = false;
+            console.log('Magic8: _startUserInteraction SET _pendingQuestion:', question);
 
             // Pause director tick cycle while waiting
             this.sessionDirector?.pause();
