@@ -17,7 +17,8 @@
       "Bash(python3:*)",
       "Bash(py:*)",
       "Bash(where:*)",
-      "Bash(python -c:*)"
+      "Bash(python -c:*)",
+      "Bash(findstr:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

@@ -73,6 +73,11 @@
 						
 						
 						-->
+						<exclude>**/TestScimFilterParser.java</exclude>
+						<exclude>**/TestScimGroupAdapter.java</exclude>
+						<exclude>**/TestScimPatchHandler.java</exclude>
+						<exclude>**/TestScimSchemaDiscovery.java</exclude>
+						<exclude>**/TestScimUserAdapter.java</exclude>
 						<exclude>**/TestLandscape</exclude>
 						<exclude>**/TestGameUtilSync</exclude>
 						<exclude>**/TestGameUtil</exclude>

@@ -671,7 +671,7 @@ $$;""";
 				break;
 			case MODEL:
 				if(!schema.isForeign()) {
-					logger.info("Linked model " + schema.getName() + " will be persisted as a JSON string");
+					// logger.info("Linked model " + schema.getName() + " will be persisted as a JSON string");
 					// logger.info(JSONUtil.exportObject(schema));
 					outType = "text";
 				}
