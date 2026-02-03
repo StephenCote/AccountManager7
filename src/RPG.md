@@ -7,8 +7,8 @@
 3. [Existing AM7 Capabilities Inventory](#existing-am7-capabilities-inventory)
 4. [Current Design Shortcomings](#current-design-shortcomings)
 5. [Intra-Cell Visual Grid System](#intra-cell-visual-grid-system)
-6. [Asset Library Strategy](#asset-library-strategy)
-7. [Game Design Document](#game-design-document) (incl. Multiplayer Coordination)
+6. [Asset Library Strategy](#asset-library-strategy) (incl. Theme Swappability, Dynamic Generation)
+7. [Game Design Document](#game-design-document) (incl. Multiplayer, Death, Economy, Creatures, Skill Universe, Magic)
 8. [Technical Architecture](#technical-architecture) (incl. WebSocket Event System)
 9. [Implementation Phases](#implementation-phases) (Phases 1–5 active, Phase 6 deferred)
 10. [Test Strategy](#test-strategy)
@@ -290,6 +290,7 @@ The reputation score gates party recruitment (NPCs won't join hostile players), 
 - During Overwatch time advancement: evaluate decay for all character skills based on the `(100 - skill%)` day formula
 - Wire into `InteractionAction.executeAction()` — after resolution, update proficiency on the skills used (stat names from the interaction's `positiveStatistics` + any weapon/ability skills)
 - Expose in UI: skill list with proficiency bars, decay warning indicators
+- See [Skill Universe Template](#skill-universe-template) for the full catalog of learnable skills organized by category and world maturity tier
 
 ### 6. Active Ability System (Extension of Skill + Action)
 
@@ -302,7 +303,9 @@ The reputation score gates party recruitment (NPCs won't join hostile players), 
 
 **What's missing:** Active abilities that a player can select during action evaluation — spells, special attacks, or skills with resource costs and targeting.
 
-**Solution:** Extend `olio.action` with ability-specific fields (resourceCost, cooldown, targetType, range, areaSize). Abilities are unlocked by skill proficiency thresholds (e.g., "Fireball" requires magic skill ≥ 60%). During VATS-style action selection (see #7), the player picks from available abilities. Resource cost deducted from `state.energy`. Cooldown tracked per-ability on `olio.state.actions`.
+**Solution:** Extend `olio.action` with ability-specific fields (resourceCost, cooldown, targetType, range, areaSize). Abilities are unlocked by skill proficiency thresholds (e.g., "Fireball" requires magic skill >= 60%). During VATS-style action selection (see #7), the player picks from available abilities. Resource cost deducted from `state.energy`. Cooldown tracked per-ability on `olio.state.actions`.
+
+**Note:** Magic and Fae abilities use the [Seal-based magic system](#magic-system-seal-based) — spells are powered by physical Seal artifacts and cast via Sorcerer (reagent) or Channeler (direct) paths. Non-magical abilities (special attacks, defensive stances, crafting techniques) derive from the [Skill Universe](#skill-universe-template) categories (COMBAT, DEFENSE, SURVIVAL, etc.).
 
 ### 7. Hybrid Real-Time / Turn-Based Combat (VATS-Style)
 
@@ -339,13 +342,13 @@ The reputation score gates party recruitment (NPCs won't join hostile players), 
 
 **Solution:** Per-character visibility map stored as a bitfield on `olio.state` (or a packed JSON field, similar to the intra-cell `tileData` approach). Mark cells as explored when entered or observed. Unexplored cells render as black/fog. Previously explored but out-of-range cells render darkened. Perception stat determines observation radius. The `investigate` action expands visibility range temporarily.
 
-### 9. Map Tile Art Pipeline (Needs Solution)
+### 9. Map Tile Art Pipeline (Solved -- Theme System)
 
 **Problem:** Terrain rendering uses basic PNG tiles served from `/rest/game/tile/{terrain}` with emoji fallback. There is no support for tile variations, animated tiles, transition tiles between terrain types, or layered rendering (ground + objects + entities).
 
 **Impact:** Maps look monotonous — every forest cell is the same forest tile. No visual variety or environmental storytelling.
 
-**Solution:** Multi-layer tile renderer with: (1) base terrain tiles with variations per terrain type (min 3 per terrain from asset pack), (2) transition/edge tiles for terrain boundaries using autotile rules, (3) object layer for props/decorations mapped to the intra-cell sub-grid, (4) entity layer for characters/NPCs/monsters with sprite animations. See [Asset Library Strategy](#asset-library-strategy) for specific asset mapping.
+**Solution:** Solved by the [Theme-Swappable Asset System](#architecture-principle--theme-swappable-assets). All tile rendering uses **concept keys** resolved through the active theme manifest. The theme system provides: (1) base terrain tiles with variations per terrain type mapped to concept keys (e.g., `terrain.FOREST.base.0`, `terrain.FOREST.base.1`), (2) transition/edge tiles for terrain boundaries using autotile rules and concept keys (e.g., `terrain.FOREST.transition.LAKE`), (3) object/structure layer for props and player-built structures mapped to the intra-cell sub-grid, (4) entity layer for characters/NPCs/monsters with sprite animations. The SD pipeline generates missing assets on demand via `POST /rest/game/asset/generate`. See [Asset Library Strategy](#asset-library-strategy) for the full theme architecture, manifest format, and resolution chain.
 
 ### 10. Audio / Music System (Straightforward Addition)
 
@@ -419,47 +422,40 @@ GZD (30K) → Kident (100km²) → Feature/Cell (1km², type="feature")
 
 The `prepareCells(feature)` method creates 10x10 interior cells (100m x 100m each) within a feature. Character position is tracked at 1m resolution via `state.currentEast`/`state.currentNorth`. The zoomed view in `cardGame.js` divides the current 100m cell into a 10x10 visual grid (each block = 10m), but these blocks have no backing data.
 
-### Proposed Extension: Sub-Cell Tile Grid
+### Proposed Extension: Sub-Cell Tile Grid (type: `subCell`)
 
-Add a 10x10 sub-cell grid to each `data.geoLocation` record of type `cell`. Each sub-cell tile represents a 10m x 10m area and can hold:
+Add a 10x10 sub-cell grid to each `data.geoLocation` record of type `cell`. Each sub-cell tile represents a 10m x 10m area and can hold terrain, props, and structures.
 
-- A tile type/variant for visual rendering
-- An occupancy flag (passable/impassable)
-- An optional reference to a decoration or prop
-- An optional reference to a point of interest
+**Design Principle:** The world starts wild. Terrain is procedurally generated from noise functions seeded by cell coordinates. Structures (campfires, walls, workbenches, storage) are **player-built** — they do not exist until someone constructs them. The only pre-placed objects are terrain features (trees, rocks, water) and POIs from `olio.pointOfInterest`.
 
 #### Data Model Extension
 
-**Option A — Packed field on geoLocation (Recommended)**
+**Packed JSON field on geoLocation:**
 
-Add a `tileData` field to `data.geoLocation` containing a JSON-encoded 10x10 grid:
+Add a `tileData` field to `data.geoLocation` containing a JSON-encoded 10x10 grid. All tile keys are **concept keys** resolved through the active theme manifest:
 
 ```json
 {
   "tiles": [
-    [{"t": "grass_1", "p": true}, {"t": "grass_2", "p": true}, ...],
-    [{"t": "tree_oak", "p": false}, {"t": "grass_1", "p": true}, ...],
+    [{"t": "terrain.FOREST.base", "p": true}, {"t": "terrain.FOREST.base", "p": true}, ...],
+    [{"t": "terrain.FOREST.tree", "p": false}, {"t": "terrain.FOREST.base", "p": true}, ...],
     ...
   ],
-  "props": [
-    {"x": 3, "y": 7, "type": "campfire", "id": "poi-123"},
-    {"x": 5, "y": 2, "type": "chest", "id": "store-456"}
+  "structures": [],
+  "pois": [
+    {"x": 3, "y": 7, "type": "COMMERCIAL", "id": "poi-123", "name": "Blacksmith"},
+    {"x": 5, "y": 2, "type": "RUIN", "id": "poi-456", "name": "Old Well"}
   ]
 }
 ```
 
 Where:
-- `t` = tile asset key (maps to sprite in asset atlas)
+- `t` = concept key (resolved via theme manifest at render time)
 - `p` = passable (boolean)
-- `props` = positioned objects at specific sub-cell coordinates
+- `structures` = player-built objects (starts empty, populated by construction actions)
+- `pois` = pre-existing points of interest from `olio.pointOfInterest`
 
-**Rationale:** Avoids creating 100 new database records per cell. The 10x10 grid is a rendering concern — it needs fast bulk reads, not individual CRUD. A single JSON field on the existing cell record is efficient.
-
-**Option B — New model type (Higher fidelity, higher cost)**
-
-New `olio.subCell` model with eastings (0-9), northings (0-9), parent cell FK, tile type, passability, and optional POI reference. This creates 100 records per cell (10,000 per feature). Only viable if sub-cells need independent access control or complex relationships.
-
-**Recommendation:** Option A. The sub-cell grid is a visual/navigation concern, not an authorization boundary. Packed JSON keeps the record count manageable and allows the entire grid to be loaded in a single fetch.
+**Rationale:** Avoids creating 100 new database records per cell. The 10x10 grid is a rendering concern — it needs fast bulk reads, not individual CRUD. A single JSON field on the existing cell record is efficient. Concept keys decouple tile data from any specific art pack.
 
 #### Position Mapping
 
@@ -475,20 +471,28 @@ Movement from (49,23) to (50,23):
   Sub-cell changes from (4,2) to (5,2) → visual tile transition
 ```
 
-#### Generation Pipeline
+#### Procedural Terrain Generation
 
-When `prepareCells(feature)` creates a cell, also generate its `tileData`:
+When `prepareCells(feature)` creates a cell, generate its `tileData` using noise-based terrain:
 
-1. **Base fill:** Set all 100 tiles to the cell's terrain type with random variation (e.g., `grass_1`, `grass_2`, `grass_3`)
-2. **Edge blending:** For cells on terrain boundaries, blend adjacent terrain types along edges
-3. **Feature placement:** Place terrain-appropriate features (trees in forest, rocks in mountain, cacti in desert)
-4. **Path carving:** If the cell is on a route between POIs, carve a path through the sub-grid
-5. **POI integration:** Map existing `olio.pointOfInterest` entries (which already have `east`/`north` meter positions) to sub-cell coordinates by dividing by 10
-6. **Passability:** Mark tiles with obstacles as impassable. Pathfinding in the zoomed view respects passability.
+1. **Noise-based base fill:** Use Perlin/simplex noise seeded by `(cellEast, cellNorth, worldSeed)` to generate terrain variation. The cell's `TerrainEnumType` sets the palette; noise selects among base variants (e.g., `terrain.FOREST.base` variants).
+2. **Feature placement:** Noise threshold determines feature density (trees in forest, rocks in mountain, cacti in desert). Higher noise values = denser features. Features use concept keys (`terrain.FOREST.tree`, `terrain.MOUNTAIN.boulder`).
+3. **Edge blending:** For cells on terrain boundaries, blend adjacent terrain types along edges using transition concept keys (`terrain.FOREST.transition.LAKE`).
+4. **Path carving:** If the cell is on a route between POIs, carve a passable path through the sub-grid.
+5. **POI integration:** Map existing `olio.pointOfInterest` entries (which already have `east`/`north` meter positions) to sub-cell coordinates by dividing by 10.
+6. **Passability:** Mark tiles with obstacles as impassable. Pathfinding in the zoomed view respects passability. Guarantee at least one passable path across the grid.
+7. **No structures:** `structures` array starts empty. All structures are player-built.
+
+#### Player Construction
+
+Players can build structures at their current sub-cell position using materials from inventory. Construction uses the existing `olio.builder` system:
+
+- **Requirements:** Appropriate materials in inventory + sufficient crafting skill + valid location (not water, not occupied)
+- **Process:** `POST /rest/game/build` → server validates requirements → adds structure to `tileData.structures` → updates passability → pushes `game.state.changed`
+- **Structure types:** `StructureTypeEnumType`: CAMPFIRE, STORAGE_CHEST, WALL, WORKBENCH, FORGE, SHELTER, BRIDGE, DOOR, FENCE
+- **Demolition:** `POST /rest/game/demolish` → removes structure, returns partial materials
 
 #### API Extension
-
-New endpoint or extension to existing:
 
 ```
 GET /rest/game/cellGrid/{cellObjectId}
@@ -496,29 +500,118 @@ GET /rest/game/cellGrid/{cellObjectId}
 
 POST /rest/game/cellGrid/generate/{cellObjectId}
 → Generates tileData for a cell (lazy generation on first visit)
+
+POST /rest/game/build
+→ Build structure at player's current sub-cell position
+  Body: { "charId": "...", "structureType": "CAMPFIRE", "materials": [...] }
+
+POST /rest/game/demolish
+→ Demolish structure at player's current sub-cell position
+  Body: { "charId": "...", "subCellX": 4, "subCellY": 2 }
 ```
 
 Or, include `tileData` in the existing `/rest/game/situation/{charId}` response for the current cell (and optionally adjacent cells for smooth scrolling).
 
 #### Client Rendering
 
-Replace the flat-color 10x10 blocks in `cardGame.js` zoomed view with sprite-based rendering:
+Replace the flat-color 10x10 blocks in `cardGame.js` zoomed view with theme-aware sprite rendering:
 
 ```javascript
 // For each sub-cell tile:
-// 1. Draw base terrain sprite from atlas
-// 2. Draw prop/decoration sprite if present
-// 3. Draw entity sprite if character/NPC/animal is in this sub-cell
-// 4. Draw fog overlay if sub-cell is unexplored
+// 1. Resolve concept key (e.g., "terrain.FOREST.base") via rpgAssetLoader
+// 2. Draw base terrain sprite from theme atlas
+// 3. Draw structure sprite if present (player-built)
+// 4. Draw prop/POI sprite if present
+// 5. Draw entity sprite if character/NPC/animal is in this sub-cell
+// 6. Draw fog overlay if sub-cell is unexplored
 ```
 
-Use HTML5 Canvas for sprite rendering (already proven with HypnoCanvas). Tile atlas loaded as a single spritesheet image; individual tiles drawn via `drawImage()` with source rectangle.
+Use HTML5 Canvas for sprite rendering (already proven with HypnoCanvas). Theme atlas loaded via `rpgAssetLoader.js`; individual tiles drawn via `drawImage()` with source rectangle. Concept keys ensure the renderer is theme-agnostic.
 
 ---
 
 ## Asset Library Strategy
 
-### Primary Asset Pack: Ninja Adventure (CC0)
+### Architecture Principle — Theme-Swappable Assets
+
+All game code references **concept keys** (e.g., `terrain.FOREST.base`, `character.HUMAN.walkN`, `sfx.attack_hit`), never file paths or pack-specific asset names. A **theme manifest** (`theme.json`) maps concept keys to actual asset files. Switching the entire visual/audio identity of the game means changing one config value and providing a new theme directory. AI-generated assets (via the existing SD pipeline) can serve as a complete alternative theme or fill gaps in an incomplete pack.
+
+**Theme Directory Structure:**
+
+```
+assets/rpg/themes/
+├── ninja-adventure/          ← default theme (CC0 pack)
+│   ├── theme.json            ← manifest mapping concept keys → files
+│   ├── terrain/
+│   ├── characters/
+│   ├── monsters/
+│   ├── items/
+│   ├── ui/
+│   └── audio/
+├── generated/                ← AI-generated theme (SD pipeline)
+│   ├── theme.json
+│   └── ...                   ← same structure, generated assets
+└── fallback/                 ← minimal placeholder assets
+    ├── theme.json
+    └── ...                   ← colored rectangles, beep SFX
+```
+
+**Theme Manifest Format (`theme.json`):**
+
+```json
+{
+  "name": "Ninja Adventure",
+  "version": "1.0",
+  "tileSize": 32,
+  "terrain": {
+    "FOREST": {
+      "base": ["forest_grass_1.png", "forest_grass_2.png"],
+      "tree": ["tree_oak.png", "tree_pine.png", "tree_birch.png"],
+      "transition": { "LAKE": "forest_shore.png", "MOUNTAIN": "forest_rock_edge.png" }
+    },
+    "LAKE": {
+      "base": ["water_1.png", "water_2.png"],
+      "shore": ["shore_n.png", "shore_s.png", "shore_e.png", "shore_w.png"],
+      "animated": { "water_1": { "frames": 4, "speed": 500 } }
+    }
+  },
+  "characters": {
+    "HUMAN": { "walkN": "human_walk_n.png", "walkS": "human_walk_s.png", "idle": "human_idle.png" },
+    "ELF": { "walkN": "elf_walk_n.png", "walkS": "elf_walk_s.png", "idle": "elf_idle.png" }
+  },
+  "monsters": {
+    "WOLF": { "idle": "wolf_idle.png", "attack": "wolf_attack.png" },
+    "SKELETON": { "idle": "skeleton_idle.png", "attack": "skeleton_attack.png" }
+  },
+  "items": {
+    "SWORD": "sword_iron.png",
+    "POTION_HEALTH": "potion_red.png"
+  },
+  "ui": {
+    "panel": "ui_panel.png",
+    "button": "ui_button.png",
+    "healthBar": "ui_health_bar.png"
+  },
+  "audio": {
+    "music": { "FOREST": "forest_ambient.ogg", "COMBAT": "battle_theme.ogg" },
+    "sfx": { "attack_hit": "hit.ogg", "attack_miss": "miss.ogg", "item_pickup": "pickup.ogg" }
+  }
+}
+```
+
+**Asset Resolution Chain (`rpgAssetLoader.js`):**
+
+1. Look up concept key in **active theme** manifest. If asset file exists, use it.
+2. If missing, look up concept key in **generated** theme. If asset file exists, use it. If not, trigger SD generation request (`POST /rest/game/asset/generate`) and cache result.
+3. If both miss, fall back to **fallback** theme (guaranteed complete — uses colored rectangles and placeholder audio).
+
+**Dynamic Asset Generation:** When a concept key has no static asset in the active or generated theme, the SD pipeline generates one on demand via `POST /rest/game/asset/generate` and caches the result in the `generated/` theme directory. A style prompt template per theme controls the visual identity (e.g., "16-bit pixel art, top-down RPG style" for the default theme).
+
+**Theme Completeness Validator:** A build-step script (`validateTheme.js`) checks a theme manifest against the required concept key list. Reports missing keys, allowing theme authors to see gaps before deployment. Missing keys are not fatal — the resolution chain handles them at runtime.
+
+**Runtime Theme Switching:** The active theme is a client-side config value (`rpgConfig.activeTheme`). Changing it reloads manifests, re-requests tiles from the server, and invalidates the service worker cache for the old theme. Players can switch themes at any time from the settings menu without restarting.
+
+### Default Theme: Ninja Adventure (CC0)
 
 **Source:** https://pixel-boy.itch.io/ninja-adventure-asset-pack
 **License:** CC0 (Public Domain — no attribution required)
@@ -563,39 +656,50 @@ Use HTML5 Canvas for sprite rendering (already proven with HypnoCanvas). Tile at
 | **Shikashi's Fantasy Icons** | Free (attribution) | 284+ item/spell icons at 32x32 | https://shikashipx.itch.io/shikashis-fantasy-icons-pack |
 | **DCSS Tiles** | CC0 | 3,000+ supplemental dungeon tiles and monsters | https://opengameart.org/content/dungeon-crawl-32x32-tiles |
 
-### Asset Pipeline
+### Asset Pipeline (Theme-Aware)
 
 ```
-Asset Source (PNG spritesheets)
+Theme Directory (chosen by rpgConfig.activeTheme)
     ↓
-Build step: spritesheet → individual tile extraction + atlas JSON manifest
+theme.json manifest maps concept keys → asset files
     ↓
-Served via: /media/ endpoint (static files) or bundled with esbuild
+Build step: spritesheet → individual tile extraction + atlas per theme
     ↓
-Client loads: atlas image + JSON manifest → Canvas drawImage() with source rects
+Served via: /media/ endpoint (static) or /rest/game/asset/generate (SD pipeline)
+    ↓
+Client loads: rpgAssetLoader resolves concept keys → theme atlas → Canvas drawImage()
+    ↓
+Service worker caches per theme (invalidated on theme switch)
 ```
 
-**Tile Atlas Format:**
+**Tile Atlas Format (per theme):**
 ```json
 {
   "tileSize": 32,
-  "atlas": "terrain-atlas.png",
+  "atlas": "ninja-adventure-terrain.png",
   "tiles": {
-    "grass_1": {"x": 0, "y": 0},
-    "grass_2": {"x": 32, "y": 0},
-    "grass_3": {"x": 64, "y": 0},
-    "tree_oak": {"x": 0, "y": 32},
-    "tree_pine": {"x": 32, "y": 32},
-    "rock_1": {"x": 64, "y": 32},
-    "water_1": {"x": 0, "y": 64},
-    "path_h": {"x": 32, "y": 64},
-    "path_v": {"x": 64, "y": 64}
+    "terrain.CLEAR.base.0": {"x": 0, "y": 0},
+    "terrain.CLEAR.base.1": {"x": 32, "y": 0},
+    "terrain.CLEAR.base.2": {"x": 64, "y": 0},
+    "terrain.FOREST.tree.oak": {"x": 0, "y": 32},
+    "terrain.FOREST.tree.pine": {"x": 32, "y": 32},
+    "terrain.MOUNTAIN.boulder": {"x": 64, "y": 32},
+    "terrain.LAKE.base.0": {"x": 0, "y": 64},
+    "structure.CAMPFIRE": {"x": 32, "y": 64},
+    "structure.WALL": {"x": 64, "y": 64}
   },
   "animations": {
-    "water_1": {"frames": [{"x": 0, "y": 64}, {"x": 96, "y": 64}], "speed": 500}
+    "terrain.LAKE.base.0": {"frames": [{"x": 0, "y": 64}, {"x": 96, "y": 64}], "speed": 500}
   }
 }
 ```
+
+**Adding a New Theme:**
+1. Create a new directory under `assets/rpg/themes/{themeName}/`
+2. Create `theme.json` mapping all concept keys to asset files
+3. Run `validateTheme.js {themeName}` — reports missing concept keys
+4. Fill gaps with SD-generated assets (`POST /rest/game/asset/generate`) or let the resolution chain handle them at runtime
+5. Set `rpgConfig.activeTheme = "{themeName}"` to activate
 
 ---
 
@@ -830,6 +934,223 @@ Skills are percentage-based proficiencies. Stats are 0-20 attributes. Both contr
 - Skill check: `roll under skill%` → determines hit/success for specific actions
 - Higher stats make skill *usage* more effective; higher skills make *specific actions* more reliable
 
+### Skill Universe Template
+
+The full set of learnable skills, organized by category and gated by world maturity tier. Skills are stored as `data.trait` records with `TraitEnumType.SKILL`. Each skill belongs to a category and has a minimum world maturity tier required to exist.
+
+#### Skill Categories (`SkillCategoryEnumType`)
+
+| Category | Description | Primary Stats |
+|----------|-------------|---------------|
+| COMBAT | Melee fighting techniques | physicalStrength, physicalEndurance |
+| RANGED | Projectile and thrown weapons | agility, perception |
+| DEFENSE | Blocking, dodging, armor use | physicalEndurance, agility |
+| SURVIVAL | Wilderness skills, foraging, tracking | perception, wisdom |
+| CRAFTING | Building, smithing, alchemy | intelligence, wisdom |
+| SOCIAL | Persuasion, intimidation, deception | charisma, intelligence |
+| STEALTH | Sneaking, lockpicking, pickpocketing | agility, perception |
+| KNOWLEDGE | Lore, medicine, languages | intelligence, wisdom |
+| MOVEMENT | Climbing, swimming, riding | agility, physicalStrength |
+| MAGIC | Sorcery and channeling (4x learning cost) | magic, wisdom |
+
+#### Skills by World Maturity Tier
+
+| Maturity Tier | Available Skill Examples |
+|---------------|------------------------|
+| PRIMITIVE | Brawling, Thrown Weapons, Dodge, Foraging, Tracking, Fire-making, Tanning, Intimidation, Sneaking, Herbalism, Climbing, Swimming |
+| ANCIENT | Sword, Spear, Shield Use, Bow, Hunting, Pottery, Weaving, Persuasion, Lockpicking, History, Animal Handling, Basic Sorcery |
+| MEDIEVAL | Longsword, Crossbow, Heavy Armor, Parry, Farming, Blacksmithing, Alchemy, Diplomacy, Disguise, Medicine, Riding, Channeling |
+| RENAISSANCE | Rapier, Musket, Fencing, Navigation, Gunsmithing, Engineering, Rhetoric, Espionage, Surgery, Cartography, Sail |
+| MODERN | Firearms, Martial Arts, Tactical Armor, First Aid, Mechanics, Electronics, Negotiation, Hacking, Forensics, Driving, Piloting |
+
+#### Learning Methods (`LearnMethodEnumType`)
+
+| Method | Proficiency Gain Rate | Requirements |
+|--------|----------------------|--------------|
+| TEACHER | 15-25% of `(100 - current)` per session | NPC with skill proficiency > yours + FRIENDLY reputation |
+| TEXT | 10-15% of `(100 - current)` per study session | Skill book/scroll item in inventory |
+| EXPERIMENTATION | 5-10% of `(100 - current)` per attempt | Relevant materials + location (e.g., forge for smithing) |
+| OBSERVATION | 5% of `(100 - current)` per observation | Witness NPC or player using the skill successfully |
+
+Magic skills (MAGIC category) use the same methods but at **4x cost** per the `olio.txt` tabletop rules — gain rates are quartered.
+
+#### Skill Data Model (on `data.trait`)
+
+Each learned skill is a `data.trait` record with these fields:
+- `name` — skill name (e.g., "Sword", "Blacksmithing", "Basic Sorcery")
+- `traitType` = `SKILL`
+- `proficiency` — current skill percentage (0-100, capped at 95)
+- `lastUsed` — timestamp for decay calculation
+- `usageCount` — total times used
+- `learnedVia` — `LearnMethodEnumType` indicating how the skill was first acquired
+- `learnedFrom` — reference to the teacher NPC, book item, or null
+- `maturityTier` — minimum `TechnicalMaturityEnumType` required
+
+#### NPC Skill Distribution
+
+NPCs are generated with skills appropriate to their profession, terrain, and world maturity:
+- A blacksmith NPC in a MEDIEVAL village has Blacksmithing 70-85%, Sword 40-50%, Commerce 60-70%
+- A forest bandit has Sword 50-60%, Stealth 60-70%, Tracking 40-50%
+- A village healer has Herbalism 70-80%, Medicine 60-70%, Persuasion 40-50%
+- Skill distribution drives NPC shop inventory, teachable skills, and combat behavior
+
+### Magic System (Seal-Based)
+
+All magic in the game derives from ancient machine-like artifacts called **Seals**. Seals are physical objects located at specific positions in the world. They radiate magical energy within a radius. If a Seal is damaged or goes offline, all magic of that type fails within its radius. Magic is not innate — it is a technology powered by external infrastructure.
+
+#### Seal Types (Schools of Magic)
+
+| Seal Type | Element | Opposition Pair | Notes |
+|-----------|---------|-----------------|-------|
+| FIRE | Fire, heat, combustion | WATER | Classic elemental opposition |
+| WATER | Water, ice, flow | FIRE | Classic elemental opposition |
+| EARTH | Stone, metal, gravity | — | Partially balances VOID |
+| LIFE | Healing, growth, vitality | DEATH | Biological opposition |
+| DEATH | Decay, undeath, entropy | LIFE | Biological opposition |
+| POLAR | Magnetism, lightning, force | SOLAR | Energy opposition |
+| SOLAR | Light, radiance, truth | POLAR | Energy opposition |
+| LUNAR | Illusion, shadow, dreams | — | Neutral/self-balancing |
+| VOID | Annihilation, teleportation, chaos | — | Inherently unstable; EARTH provides partial balance |
+
+#### Seal Placement in the World
+
+Seals are `olio.seal` model records placed at specific world locations:
+
+```
+olio.seal
+├── sealType (SealTypeEnumType: FIRE, WATER, EARTH, LIFE, DEATH, POLAR, LUNAR, SOLAR, VOID)
+├── location (geoLocation FK — specific cell position)
+├── alignment (double, 0-1 — health/stability of the Seal)
+├── radiusKm (int — effective range in kilometers)
+├── discoveredBy (list of charPerson — who has found this Seal)
+├── guardians (list of olio.animal / charPerson — creatures protecting the Seal)
+└── narrative (olio.narrative — lore, description, visual appearance)
+```
+
+Seals are rare — perhaps 1-3 per kident. Their locations are not marked on the map. Players discover them through exploration, NPC hints (reputation-gated information), or knowledge skills. A discovered Seal's location is added to the player's known Seal list.
+
+#### Two Casting Paths
+
+There are two fundamentally different ways to use Seal energy. Every magic user chooses (or learns) one or both paths.
+
+##### Path 1: Sorcerer (Reagent Casting)
+
+Sorcerers use **physical reagents** combined with **incantations** to channel Seal energy safely. The reagents act as a buffer — they absorb the energy, transform it, and release the spell effect. The caster never directly contacts the Seal's energy.
+
+- **Reagents consumed on cast** — each spell has a specific reagent recipe
+- **Supply chain dependent** — need access to reagent materials (commerce, crafting, foraging)
+- **Safe but rigid** — cannot modify spells beyond what the recipe allows
+- **No orientation required** — reagents handle the Seal connection
+- **Learning:** Sorcery skills in MAGIC category, learned from teachers or spell books
+
+**Reagent Mapping by Seal Type:**
+
+| Seal Type | Primary Reagent | Secondary Reagent | Catalyst |
+|-----------|----------------|-------------------|----------|
+| FIRE | Magnesium | Sulfur | Hemp |
+| WATER | Salt crystal | Mercury | Distilled moss |
+| EARTH | Iron filings |ite clay | Root paste |
+| LIFE | Fresh herbs | Spring water | Honey |
+| DEATH | Bone meal | Grave soil | Ash |
+| POLAR | Lodestone dust | Zinc filings | Silver wire |
+| LUNAR | Moonstone dust | Selenite crystal | Nightshade oil |
+| SOLAR | Gold leaf | Quartz crystal | Amber resin |
+| VOID | ??? | ??? | ??? |
+
+Void reagents are unknown — no reliable sorcery recipe for Void magic exists. This is intentional: Void magic can only be accessed through Channeling.
+
+##### Path 2: Channeler (Direct Channeling)
+
+Channelers approach magic as a **science**. They measure Seal energy in amperes and coulombs, calculate vectors to Seal locations, and directly channel raw energy through their body. This is powerful but dangerous.
+
+- **Must orient to Seal** — either be in proximity or calculate the correct directional vector (using compass + almanac or a Statlass instrument)
+- **Must balance opposing channels simultaneously** — casting a FIRE spell requires holding a WATER counter-channel to prevent energy overflow
+- **Failure = The Burn** — if balance fails, the caster takes direct physical damage matching the element (fire burns, ice frostbite, death necrosis, void... disintegration)
+- **No reagent cost** — can cast indefinitely if skilled enough
+- **Highly modifiable** — can adjust spell intensity, area, duration on the fly
+- **Learning:** Channeling skills in MAGIC category, 4x learning cost
+
+**Channeling Tools:**
+
+| Tool | Effect | Acquisition |
+|------|--------|-------------|
+| Statlass | +15% balance accuracy | Crafted (requires high crafting + knowledge skill) |
+| Compass + Almanac | +10% orientation accuracy | Purchased or found |
+| Channeling Gloves | -50% Burn damage on failure | Crafted (rare materials) |
+| Dragon Balm | -25% Burn damage, consumable | Crafted (alchemy) or purchased |
+
+**Void Channeling:** VOID has no true opposition pair. Channelers attempting Void magic must use EARTH as a partial balance (50% effectiveness), making Void spells inherently dangerous. Even master Channelers risk catastrophic Burn when working with Void energy.
+
+#### Spell Mechanics
+
+Spells are `olio.spell` model records defining what each spell does and how to cast it:
+
+```
+olio.spell
+├── name (string — e.g., "Fireball", "Heal", "Stone Wall")
+├── sealTypes (list of SealTypeEnumType — which Seals power this spell)
+├── difficulty (int, 1-20 — base difficulty for casting)
+├── effect (olio.actionResult template — what the spell does)
+├── sorcererReagents (list of {itemType, quantity} — recipe for Sorcerer path)
+├── channelerBalancePairs (list of {primary, opposition} — balance requirements for Channeler path)
+├── weaveTier (int, 0-5 — complexity tier)
+├── modifiable (boolean — can Channelers modify this spell's parameters?)
+├── prerequisiteSkills (map of skillName -> minProficiency)
+└── description (string — narrative description)
+```
+
+##### Single-Channel Spells (Tier 0-1)
+
+Simple spells drawing from one Seal type. Sorcerers use one reagent set; Channelers balance against the opposition element.
+- **Tier 0:** Cantrips — minimal effect, low difficulty, good for practice (e.g., spark, chill touch, minor light)
+- **Tier 1:** Standard spells — single target, moderate effect (e.g., fireball, heal wound, stone shield)
+
+##### Weave Spells (Tier 2-5)
+
+Complex spells drawing from **multiple Seal types simultaneously**. Require weaving multiple energy channels. Difficulty scales with tier:
+
+| Weave Tier | Seal Types Required | Difficulty Multiplier | Example |
+|------------|--------------------|-----------------------|---------|
+| 2 | 2 Seal types | 1x base difficulty | Fire + Earth = Lava Wall |
+| 3 | 3 Seal types | 3x base difficulty | Fire + Life + Solar = Phoenix Resurrection |
+| 4 | 4 Seal types | 6x base difficulty | Water + Death + Lunar + Polar = Spectral Storm |
+| 5 | 5+ Seal types | 12x base difficulty | Requires mastery of multiple schools; legendary spells |
+
+Sorcerers at Tier 2+ need all reagent sets simultaneously. Channelers at Tier 2+ must balance multiple opposition pairs at once — exponentially harder.
+
+##### Spell Modification (Channeler Only)
+
+Channelers with `modifiable: true` spells can adjust parameters at cast time:
+- **Intensity:** More power = higher difficulty, more Burn risk on failure
+- **Target:** Redirect from single to area, or increase range
+- **Duration:** Extend effect duration at higher energy cost
+- **Area:** Expand area of effect (each doubling = +2 difficulty)
+
+Sorcerers cannot modify spells — the reagent recipe produces a fixed effect.
+
+#### Seal Disruption (World-Level Event)
+
+Seals can be damaged by combat, natural disasters, or deliberate sabotage. When a Seal's alignment drops, magic dependent on that Seal degrades:
+
+| Alignment Range | Status | Effect |
+|----------------|--------|--------|
+| 1.0 - 0.7 | Full | All spells function normally |
+| 0.7 - 0.4 | Degraded | Spell difficulty +5, Burn damage doubled |
+| 0.4 - 0.1 | Unstable | Spell difficulty +10, random misfires, Burn damage tripled |
+| < 0.1 | Offline | All spells of this Seal type fail completely |
+
+Seal disruption is a **world-level event** — it affects every magic user in the Seal's radius. Repairing a Seal requires rare materials, high magic skill, and physical access to the Seal location (which may be guarded by hostile creatures).
+
+Seal disruption pushes `game.realm.event` with type `seal.disrupted` to all players in the affected area.
+
+#### Integration with Existing Systems
+
+- **Action resolution:** Spell casting routes through the `InteractionAction` pipeline. The 2d20 roll uses magic stat + spell difficulty + balance modifiers. Outcome determines spell success and Burn severity on failure.
+- **Skill system:** Magic skills follow the same proficiency/decay model as all other skills, but at **4x learning cost** per the `olio.txt` tabletop rules. A character must invest heavily to become a competent magic user.
+- **Economy:** Reagents are a major economic driver. Rare reagents (Moonstone dust, Gold leaf, Dragon Balm ingredients) create trade demand. Sorcerers need a reliable supply chain; Channelers need expensive tools.
+- **Creature encounters:** Seal guardians appear in encounter tables for cells near Seals. These are typically BOSS-behavior creatures of the matching element.
+- **Social perception:** Sorcery is generally legal and accepted — it is regulated, predictable, and safe. Channeling is controversial — it is powerful but dangerous, and communities may distrust Channelers. Void magic of any kind is universally feared and may provoke hostile reactions from NPCs regardless of reputation.
+
 ### Multiplayer Coordination
 
 Multiple players share a realm and interact in real-time. The server is authoritative — all game state, turn resolution, and visibility calculations happen server-side. Clients receive updates exclusively via WebSocket push events.
@@ -931,6 +1252,103 @@ World (olio.world)
     └── Region: Sunken Ruins Kident
         └── End-game content
 ```
+
+### Death and Permadeath
+
+Death is permanent. When a character dies (health reaches zero from any cause — combat, starvation, environmental damage, magic), the `charPerson` record is marked dead and excluded from all group dynamics, party membership, and realm participation.
+
+**Cascade Effects:**
+- NPC relationships shift: allies mourn, enemies celebrate, neutral NPCs reassess the power balance
+- Party members react based on personality: loyal members may seek vengeance, pragmatic members redistribute gear, cowardly members flee
+- Social hierarchies in the area collapse and reform — the dead character's reputation with every NPC becomes frozen history
+- Inventory drops at the death location as a lootable container (`olio.store`), accessible by anyone who visits the sub-cell
+
+**Single Player:**
+- Save game works normally — the player can reload a save from before death
+- Death is a meaningful consequence but not permanently punishing in single-player
+
+**Multiplayer:**
+- Only the latest auto-save is available (auto-saved at each Overwatch increment)
+- The player **cannot undo death** by reloading — the auto-save reflects the dead state
+- The player must create a new character and enter the realm fresh
+- The new character enters a world shaped by the previous character's impact: reputation with NPCs resets, but the world state (built structures, NPC dispositions toward other players, quest progress) persists
+- Other players see `game.npc.died` event for the dead character
+
+### Economy and Commerce
+
+**Currency:** At `PRIMITIVE` world maturity, all trade is barter — items exchanged directly based on perceived value. At `MEDIEVAL` and above, coinage exists as `olio.item` records with `itemType: CURRENCY` and denomination values. Currency items are standard inventory entries managed through `olio.store`.
+
+**NPC Pricing:**
+```
+finalPrice = baseValue * supplyModifier * reputationModifier * needModifier
+
+supplyModifier:   0.5 (oversupply) to 2.0 (scarcity) based on NPC shop inventory
+needModifier:     0.8 (NPC doesn't want it) to 1.5 (NPC desperately needs it)
+reputationModifier per tier:
+  HOSTILE:    2.0x  (double price / half sell value)
+  GUARDED:    1.5x
+  NEUTRAL:    1.0x
+  FRIENDLY:   0.85x
+  ALLIED:     0.7x
+  DEVOTED:    0.5x  (half price / full sell value)
+```
+
+**NPC Shop Inventory:**
+Generated from NPC profession, local terrain, world maturity tier, and NPC crafting skill:
+- Blacksmith in FOREST village: iron tools, basic weapons, nails
+- Herbalist in MARSH: potions, poultices, medicinal herbs
+- Trader in DESERT oasis: water skins, dried food, maps, rare imports
+- Inventory refreshes periodically during Overwatch increments based on NPC production and trade routes
+
+**Crafting Integration:**
+Uses the existing `olio.builder` system. Crafting requires:
+- Materials (specific `olio.item` entries consumed from inventory)
+- Skill (minimum crafting proficiency for the recipe)
+- Location (some recipes require a forge, workbench, or other structure — ties into player construction)
+- Time (crafting actions have duration, processed through Overwatch)
+
+**Player-to-Player Trade:**
+Direct barter between players. Both players see the offered items, both must confirm. Reputation between the trading players adjusts positively on successful trades. No currency required — items are exchanged directly from `olio.store` to `olio.store`.
+
+### Creature Encounters and Behavior
+
+**Encounter Tables (per terrain):**
+
+Each `TerrainEnumType` has an encounter table with weighted creature entries:
+
+| Rarity | Weight | Typical Encounter |
+|--------|--------|-------------------|
+| COMMON | 60% | Wolves, rats, snakes, bandits |
+| UNCOMMON | 25% | Bears, giant spiders, orc scouts |
+| RARE | 12% | Trolls, wyverns, necromancers |
+| LEGENDARY | 3% | Dragons, liches, ancient golems |
+
+**Example Encounter Tables:**
+
+| Terrain | Common | Uncommon | Rare | Legendary |
+|---------|--------|----------|------|-----------|
+| FOREST | Wolf, Boar, Bandit | Bear, Giant Spider, Dryad | Troll, Werewolf | Ancient Treant |
+| MOUNTAIN | Mountain Goat, Eagle, Orc | Yeti, Stone Golem, Wyvern | Rock Dragon, Giant | Mountain Titan |
+| DESERT | Scorpion, Sand Viper, Jackal | Dust Devil, Mummy, Sandworm | Sphinx, Djinn | Desert Wyrm |
+| LAKE | Fish, Frog, Water Snake | Nixie, Crocodile, Siren | Sea Serpent, Water Elemental | Kraken |
+| CAVE | Bat, Rat, Goblin | Cave Troll, Basilisk, Myconid | Umber Hulk, Beholder | Ancient Dragon |
+| MARSH | Leech, Bog Rat, Will-o-Wisp | Hydra, Swamp Hag, Lizardfolk | Black Dragon, Lich | Swamp Colossus |
+
+**Difficulty Scaling:**
+Difficulty is **geographic, not level-based**. The starting kident contains only COMMON encounters. Adjacent kidents introduce UNCOMMON. Distant kidents have the full table including RARE and LEGENDARY. This creates natural difficulty zones without artificial level scaling.
+
+**Creature Behavior Patterns (`BehaviorPatternEnumType`):**
+
+| Pattern | Behavior | Example |
+|---------|----------|---------|
+| TERRITORIAL | Attacks if player enters their sub-cell range, does not pursue far | Bears, Trolls |
+| PREDATORY | Actively hunts player, pursues across cells | Wolves, Wyverns |
+| PACK | Calls nearby allies when engaged, coordinates attacks | Wolves, Orcs, Goblins |
+| DEFENSIVE | Only attacks if attacked first or cornered | Deer, Treants, Golems |
+| FLEE | Runs from player if player's stats exceed a threshold | Rats, Rabbits, low-HP creatures |
+| BOSS | Does not flee, has special attack patterns, guards a location | Dragons, Titans, Liches |
+
+**Integration:** Creature behavior is driven by the existing `olio.instinct` system. A wolf with high `instinct.hunt` and `instinct.pack` exhibits PREDATORY + PACK behavior. Behavior patterns are the default; instinct values modify the specifics. Monster stats use the same `olio.statistics` model as characters — there is no separate monster stat system.
 
 ---
 
@@ -1266,15 +1684,57 @@ olio.playerPresence (NEW — tracks active player in a realm session)
 ├── joinedAt (zonetime)
 └── position (geoLocation FK — cached for fast nearby-player queries)
 
+olio.seal (NEW — physical magic source in the world)
+├── sealType (SealTypeEnumType)
+├── location (geoLocation FK)
+├── alignment (double, 0-1)
+├── radiusKm (int)
+├── discoveredBy (list of charPerson)
+├── guardians (list of olio.animal / charPerson)
+└── narrative (olio.narrative)
+
+olio.spell (NEW — spell definition)
+├── name (string)
+├── sealTypes (list of SealTypeEnumType)
+├── difficulty (int, 1-20)
+├── effect (olio.actionResult template)
+├── sorcererReagents (list of {itemType, quantity})
+├── channelerBalancePairs (list of {primary, opposition})
+├── weaveTier (int, 0-5)
+├── modifiable (boolean)
+├── prerequisiteSkills (map of skillName -> minProficiency)
+└── description (string)
+
+olio.skillUniverse (NEW — skill catalog per world maturity)
+├── name (string)
+├── category (SkillCategoryEnumType)
+├── maturityFloor (TechnicalMaturityEnumType)
+├── primaryStats (list of string)
+├── prerequisites (list of string)
+├── learnableMethods (list of LearnMethodEnumType)
+├── baseDifficulty (int, 1-20)
+└── description (string)
+
+olio.encounterTable (NEW — per-terrain creature spawning)
+├── terrain (TerrainEnumType)
+├── entries (list with creature, rarity, weight, groupSize, behaviorPattern)
+└── baseEncounterRate (double)
+
 Extensions to existing models:
   data.trait (add fields):
   ├── proficiency (double, 0-100)  — current skill proficiency %
   ├── lastUsed (zonetime)          — for decay calculation
-  └── usageCount (int)             — total times used
+  ├── usageCount (int)             — total times used
+  ├── learnedVia (LearnMethodEnumType) — how the skill was acquired
+  ├── learnedFrom (charPerson FK or item FK) — teacher or book reference
+  └── maturityTier (TechnicalMaturityEnumType) — minimum world maturity
 
   olio.state (add fields):
   ├── exploredCells (string)       — packed bitfield of explored cell IDs
   └── milestones (list of string)  — milestone keys for attribute point grants
+
+  data.geoLocation (add field):
+  └── tileData (string, JSON)      — packed 10x10 sub-cell grid with concept keys
 
   olio.party (extend fields):
   └── playerMembers (list of system.user, participation: party.player)
@@ -1290,6 +1750,13 @@ ReputationTierEnumType: HOSTILE, GUARDED, NEUTRAL, FRIENDLY, ALLIED, DEVOTED
 RealmSessionStatusEnumType: LOBBY, ACTIVE, PAUSED
 TurnModeEnumType: REAL_TIME, SIMULTANEOUS, SEQUENTIAL
 PlayerStatusEnumType: ACTIVE, IDLE, DISCONNECTED, SHELTERED
+SkillCategoryEnumType: COMBAT, RANGED, DEFENSE, SURVIVAL, CRAFTING, SOCIAL, STEALTH, KNOWLEDGE, MOVEMENT, MAGIC
+LearnMethodEnumType: TEACHER, TEXT, EXPERIMENTATION, OBSERVATION
+RarityEnumType: COMMON, UNCOMMON, RARE, LEGENDARY
+BehaviorPatternEnumType: TERRITORIAL, PREDATORY, PACK, DEFENSIVE, FLEE, BOSS
+StructureTypeEnumType: CAMPFIRE, STORAGE_CHEST, WALL, WORKBENCH, FORGE, SHELTER, BRIDGE, DOOR, FENCE
+SealTypeEnumType: FIRE, WATER, EARTH, LIFE, DEATH, POLAR, LUNAR, SOLAR, VOID
+CastingPathEnumType: SORCERER, CHANNELER
 ```
 
 ### New REST Endpoints
@@ -1333,6 +1800,29 @@ Multiplayer — Player Interaction:
   POST /rest/game/pvp/challenge/{charId}— Challenge player to duel
   POST /rest/game/pvp/accept/{challengeId} — Accept PvP challenge
   POST /rest/game/pvp/decline/{challengeId}— Decline PvP challenge
+
+Construction:
+  POST /rest/game/build                   — Build structure at player's current sub-cell
+  POST /rest/game/demolish                — Demolish structure
+
+Commerce:
+  GET  /rest/game/commerce/{npcId}        — NPC shop inventory with prices
+  POST /rest/game/commerce/buy            — Buy from NPC
+  POST /rest/game/commerce/sell           — Sell to NPC
+  POST /rest/game/craft                   — Initiate crafting action
+  GET  /rest/game/recipes/{charId}        — Known recipes
+
+Skill Learning:
+  POST /rest/game/skills/learn            — Learn skill from teacher/text/experimentation
+  GET  /rest/game/skills/available/{charId} — Learnable skills nearby
+
+Magic:
+  GET  /rest/game/seals/known/{charId}    — Known Seal locations and alignments
+  POST /rest/game/cast                    — Cast a spell (route through Sorcerer or Channeler path)
+  GET  /rest/game/spells/{charId}         — Known spells with castability status
+
+Asset Generation:
+  POST /rest/game/asset/generate          — Generate game asset via SD for concept key
 
 Multiplayer — WebSocket Subscriptions (via GameStreamHandler):
   {"subscribe": true, "realmId": "..."}  — Subscribe to realm-wide events
@@ -1952,6 +2442,24 @@ Each phase is **not complete** until all tests for that phase pass:
 | `src/main/java/org/cote/accountmanager/olio/schema/RealmSessionStatusEnumType.java` | Session status enum |
 | `src/main/java/org/cote/accountmanager/olio/schema/TurnModeEnumType.java` | Turn coordination mode enum |
 | `src/main/java/org/cote/accountmanager/olio/schema/PlayerStatusEnumType.java` | Player presence status enum |
+| `src/main/resources/models/olio/sealModel.json` | Seal (magic source) schema |
+| `src/main/resources/models/olio/spellModel.json` | Spell definition schema |
+| `src/main/resources/models/olio/skillUniverseModel.json` | Skill catalog per world maturity schema |
+| `src/main/resources/models/olio/encounterTableModel.json` | Per-terrain creature encounter table schema |
+| `src/main/java/org/cote/accountmanager/olio/CommerceUtil.java` | NPC pricing, shop inventory, buy/sell logic |
+| `src/main/java/org/cote/accountmanager/olio/EncounterUtil.java` | Encounter table lookup, difficulty scaling, creature behavior |
+| `src/main/java/org/cote/accountmanager/olio/SkillUniverseUtil.java` | Skill catalog management, learning methods, NPC skill distribution |
+| `src/main/java/org/cote/accountmanager/olio/ConstructionUtil.java` | Player structure building/demolition in sub-cell grid |
+| `src/main/java/org/cote/accountmanager/olio/MagicUtil.java` | Seal-based magic system — casting, balance, burn, seal health |
+| `src/main/java/org/cote/accountmanager/olio/schema/SkillCategoryEnumType.java` | Skill category enum |
+| `src/main/java/org/cote/accountmanager/olio/schema/LearnMethodEnumType.java` | Skill learning method enum |
+| `src/main/java/org/cote/accountmanager/olio/schema/RarityEnumType.java` | Creature encounter rarity enum |
+| `src/main/java/org/cote/accountmanager/olio/schema/BehaviorPatternEnumType.java` | Creature behavior pattern enum |
+| `src/main/java/org/cote/accountmanager/olio/schema/StructureTypeEnumType.java` | Player-buildable structure types |
+| `src/main/java/org/cote/accountmanager/olio/schema/SealTypeEnumType.java` | Magic seal type (school) enum |
+| `src/main/java/org/cote/accountmanager/olio/schema/CastingPathEnumType.java` | Magic casting path enum (Sorcerer/Channeler) |
+| `src/main/resources/data/skillUniverse.json` | Skill catalog data — all skills by category and maturity tier |
+| `src/main/resources/data/encounterTables.json` | Encounter table data — creatures by terrain and rarity |
 
 **Backend Tests (AccountManagerObjects7):**
 | File | Purpose |
@@ -1965,6 +2473,11 @@ Each phase is **not complete** until all tests for that phase pass:
 | `src/test/java/org/cote/accountmanager/objects/tests/olio/TestOverwatchRPGExtensions.java` | Skill decay in syncClocks, reputation triggers, VATS pause (5 tests) |
 | `src/test/java/org/cote/accountmanager/objects/tests/olio/TestRealmSessionManager.java` | Session lifecycle, join/leave, heartbeat, broadcast, code uniqueness (15 tests) |
 | `src/test/java/org/cote/accountmanager/objects/tests/olio/TestMultiplayerTurnCoordination.java` | Turn modes, VATS timeout, initiative order, PvP, trade flows (10 tests) |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestCommerceUtil.java` | NPC pricing, reputation modifiers, shop inventory generation, buy/sell |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestEncounterUtil.java` | Encounter table lookup, difficulty scaling, behavior patterns, geographic gating |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestSkillUniverseUtil.java` | Skill catalog, maturity gating, learning methods, NPC skill distribution |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestConstructionUtil.java` | Structure building/demolition, material validation, passability updates |
+| `src/test/java/org/cote/accountmanager/objects/tests/olio/TestMagicUtil.java` | Seal casting, balance check, burn damage, seal disruption, weave spells |
 
 **Backend Tests (AccountManagerService7):**
 | File | Purpose |
@@ -1999,6 +2512,11 @@ Each phase is **not complete** until all tests for that phase pass:
 | `client/view/rpg/rpgPlayerRenderer.js` | Render other players on tile map (sprites, labels, status) |
 | `client/view/rpg/rpgTradeUI.js` | Player-to-player trade interface (split inventory, confirm) |
 | `client/view/rpg/rpgPlayerChat.js` | Direct player-to-player text chat (WebSocket, not LLM) |
+| `client/view/rpg/rpgConstructionUI.js` | Structure building interface — material selection, placement preview |
+| `client/view/rpg/rpgCommerceUI.js` | NPC shop interface — buy/sell with reputation-adjusted prices |
+| `client/view/rpg/rpgCraftingUI.js` | Crafting interface — recipe selection, material check, progress |
+| `client/view/rpg/rpgDeathScreen.js` | Death screen — permadeath notification, world impact summary, new character option |
+| `client/view/rpg/rpgMagicUI.js` | Magic casting interface — Seal orientation, reagent selection, balance display |
 
 **PWA & App Shell (AccountManagerUx7):**
 | File | Purpose |
@@ -2019,34 +2537,40 @@ Each phase is **not complete** until all tests for that phase pass:
 | `client/view/rpg/__tests__/rpgMultiplayerLobby.test.js` | Session code display, player list, settings, state transitions (4 tests) |
 | `vitest.config.js` | Vitest configuration for RPG module unit tests |
 
-**Assets:**
+**Assets (Theme Directory Structure):**
 | Directory | Contents |
 |-----------|----------|
-| `AccountManagerUx7/assets/rpg/terrain/` | Terrain tile atlases |
-| `AccountManagerUx7/assets/rpg/characters/` | Character spritesheets |
-| `AccountManagerUx7/assets/rpg/monsters/` | Monster spritesheets |
-| `AccountManagerUx7/assets/rpg/items/` | Item/equipment icons |
-| `AccountManagerUx7/assets/rpg/ui/` | UI elements (panels, buttons, bars) |
-| `AccountManagerUx7/assets/rpg/effects/` | Combat/spell VFX |
-| `AccountManagerUx7/assets/rpg/audio/music/` | Background music tracks |
-| `AccountManagerUx7/assets/rpg/audio/sfx/` | Sound effects |
-| `AccountManagerUx7/assets/rpg/atlases/` | Generated atlas JSON manifests |
+| `AccountManagerUx7/assets/rpg/themes/ninja-adventure/` | Default theme (CC0) — complete asset pack |
+| `AccountManagerUx7/assets/rpg/themes/ninja-adventure/theme.json` | Theme manifest mapping concept keys to asset files |
+| `AccountManagerUx7/assets/rpg/themes/ninja-adventure/terrain/` | Terrain tile atlases |
+| `AccountManagerUx7/assets/rpg/themes/ninja-adventure/characters/` | Character spritesheets |
+| `AccountManagerUx7/assets/rpg/themes/ninja-adventure/monsters/` | Monster spritesheets |
+| `AccountManagerUx7/assets/rpg/themes/ninja-adventure/items/` | Item/equipment icons |
+| `AccountManagerUx7/assets/rpg/themes/ninja-adventure/ui/` | UI elements (panels, buttons, bars) |
+| `AccountManagerUx7/assets/rpg/themes/ninja-adventure/audio/` | Music tracks + sound effects |
+| `AccountManagerUx7/assets/rpg/themes/generated/` | AI-generated theme (SD pipeline output) |
+| `AccountManagerUx7/assets/rpg/themes/generated/theme.json` | Generated theme manifest |
+| `AccountManagerUx7/assets/rpg/themes/fallback/` | Minimal placeholder assets (colored rectangles, beep SFX) |
+| `AccountManagerUx7/assets/rpg/themes/fallback/theme.json` | Fallback theme manifest |
+| `AccountManagerUx7/assets/rpg/icons/` | PWA icons (192px, 512px) |
+| `AccountManagerUx7/validateTheme.js` | Build-step script to check theme completeness against required concept keys |
 
 ### Existing Files to Modify
 
 | File | Changes |
 |------|---------|
-| `AccountManagerObjects7` `data.traitModel.json` | Add `proficiency`, `lastUsed`, `usageCount` fields |
+| `AccountManagerObjects7` `data.traitModel.json` | Add `proficiency`, `lastUsed`, `usageCount`, `learnedVia`, `learnedFrom`, `maturityTier` fields |
 | `AccountManagerObjects7` `olio.stateModel.json` | Add `exploredCells`, `milestones` fields |
-| `AccountManagerObjects7` `data.geoLocationModel.json` | Add `tileData` JSON field for sub-cell grid |
+| `AccountManagerObjects7` `data.geoLocationModel.json` | Add `tileData` JSON field for sub-cell grid (concept keys, structures, POIs) |
 | `AccountManagerObjects7` `Overwatch.java` | Wire skill decay into `syncClocks()`, VATS pause support, multiplayer turn coordination (VATS collection window, initiative-order resolution) |
+| `AccountManagerObjects7` `Overwatch.java` `processProximity()` | Wire encounter table lookup for creature spawning based on terrain and geographic difficulty |
 | `AccountManagerObjects7` `InteractionAction.java` | Wire skill proficiency gain after action resolution |
 | `AccountManagerObjects7` `InteractionUtil.java` | Wire reputation persistence into `calculateSocialInfluence()` |
 | `AccountManagerObjects7` `GameUtil.java` | Party-aware movement, reputation-aware NPC behavior |
-| `AccountManagerService7` `GameService.java` | New endpoints (reputation, party, cellGrid, skills, needs, realm sessions, trade, PvP) |
+| `AccountManagerService7` `GameService.java` | New endpoints: reputation, party, cellGrid, skills, needs, realm sessions, trade, PvP, construction, commerce, skill learning, magic, asset generation |
 | `AccountManagerService7` `GameStreamHandler.java` | VATS pause push events, reputation update events, realm subscriptions, player presence broadcasting, heartbeat handling, multiplayer event routing |
 | `AccountManagerUx7` `applicationRouter.js` | Add `/rpg/:id` route |
-| `AccountManagerUx7` `modelDef.js` | Add new model schemas (party, reputation, ability, realmSession, playerPresence) |
+| `AccountManagerUx7` `modelDef.js` | Add new model schemas (party, reputation, ability, realmSession, playerPresence, seal, spell, skillUniverse, encounterTable) |
 | `AccountManagerUx7` `gameStream.js` | Add realm subscription, heartbeat, player event routing, trade/PvP message handling |
 | `AccountManagerUx7` `build.js` / esbuild config | Include new RPG modules, asset directories, and service worker |
 | `AccountManagerUx7` `index.html` (or entry point) | Add viewport meta tag, manifest link, service worker registration |

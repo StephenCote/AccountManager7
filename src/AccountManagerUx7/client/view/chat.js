@@ -119,9 +119,13 @@
             let qr = await page.search(q);
             if (qr && qr.results && qr.results.length > 0) {
                 let req = qr.results[0];
-                if (req.messages && req.messages[msgIndex]) {
-                    req.messages[msgIndex].content = newContent;
-                    await page.patchObject(req);
+                if (req.messages) {
+                    let localCount = chatCfg.history?.messages?.length || 0;
+                    let serverIndex = msgIndex + (req.messages.length - localCount);
+                    if (serverIndex >= 0 && serverIndex < req.messages.length) {
+                        req.messages[serverIndex].content = newContent;
+                        await page.patchObject(req);
+                    }
                 }
             }
         } catch (e) {
