@@ -295,5 +295,10 @@ public class Actions {
 		return beginAction(ctx, evt, params, per1, null);
 	}
 
+	public static BaseRecord beginBuild(OlioContext ctx, BaseRecord evt, BaseRecord per1, String builderName) throws OlioException {
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.PHYSIOLOGICAL, null, "build", true);
+		params.setValue("itemName", builderName);
+		return beginAction(ctx, evt, params, per1, null);
+	}
 
 }

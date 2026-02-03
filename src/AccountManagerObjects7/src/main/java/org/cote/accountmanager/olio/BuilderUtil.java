@@ -30,6 +30,19 @@ public class BuilderUtil {
 	private static BaseRecord[] builders = new BaseRecord[0];
 	private static String RAW_MATERIAL_CATEGORY = "raw material";
 	
+	public static BaseRecord getBuilderByName(OlioContext ctx, String name) {
+		if(name == null || name.length() == 0) {
+			return null;
+		}
+		for(BaseRecord b : getBuilders(ctx)) {
+			String bname = b.get(FieldNames.FIELD_NAME);
+			if(name.equalsIgnoreCase(bname)) {
+				return b;
+			}
+		}
+		return null;
+	}
+
 	public static List<BaseRecord> listBuildersCommonToTerrain(OlioContext ctx, TerrainEnumType tet){
 		List<BaseRecord> builders = Arrays.asList(getBuilders(ctx));
 		String stet = tet.toString().toLowerCase();

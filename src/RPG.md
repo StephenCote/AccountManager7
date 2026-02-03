@@ -1307,6 +1307,44 @@ Uses the existing `olio.builder` system. Crafting requires:
 - Location (some recipes require a forge, workbench, or other structure — ties into player construction)
 - Time (crafting actions have duration, processed through Overwatch)
 
+**Build/Craft Action (`Build.java`):**
+The `build` action provider implements the full crafting lifecycle as a 3-phase action (begin → execute → conclude):
+1. **beginAction** — Resolves the builder (by name via `itemName` param, or pre-set by NeedsUtil for AI-driven needs). Validates terrain compatibility (`builder.terrain[]` vs actor's current cell), required skills (`builder.skills[]` vs actor's `trades`), and material availability. Calculates build time adjusted by actor's skill level.
+2. **executeAction** — Waits for dependent actions (e.g., movement). Consumes materials from actor inventory via `ItemUtil.withdrawItemFromInventory()`. Produces output based on builder type (ITEM/APPAREL/WEARABLE/LOCATION/FIXTURE/BUILDER) and deposits into actor's store. Sets `retailValue` on produced items via the pricing formula.
+3. **concludeAction** — Applies action effects (energy, fatigue).
+
+Builder types and their outputs:
+| Type | Output | Destination |
+|------|--------|-------------|
+| ITEM | Clone from `builder.item` template | Actor's `store.inventory` |
+| APPAREL | Clone from `builder.apparel` template | Actor's `store.apparel` |
+| WEARABLE | Single wearable item | Actor's `store.items` |
+| LOCATION | Structure (shelter, cistern) | Actor's cell / `store.locations` |
+| FIXTURE | Interactive cell object (well, road) | Current cell as POI with attached store |
+| BUILDER | Meta-craft (tools, skills) | New builder/skill capability |
+
+Quality scaling: The builder's `qualities[0].skill` (0.0–1.0) determines how much crafter skill affects output quality. Low-skill items (rudimentary shelter, skill=0.1) barely vary; high-skill items (atlatl, skill=0.3) reward better crafters with better stats.
+
+**Formulaic Pricing System (`PriceUtil.java`):**
+A baseline transactional pricing model designed to be eventually replaced by organically evolved commerce from simulation. All prices derive from a minimum wage constant, modified by skill, materials, artistry, and rarity:
+
+```
+retailValue = (laborCost + materialCost) * qualityModifier * artistryModifier * rarityModifier
+```
+
+| Component | Formula | Description |
+|-----------|---------|-------------|
+| laborCost | `MINIMUM_WAGE_PER_MINUTE × builder.time` | Base cost of labor |
+| materialCost | `Σ(material.retailValue)` | Sum of material values (raw materials use `RAW_MATERIAL_BASE_VALUE`) |
+| qualityModifier | `QUALITY_FLOOR + (1 - QUALITY_FLOOR) × skillMatch` | Actor's avg build stats / max stat. Floor=0.3 prevents zero-value items |
+| artistryModifier | `1.0 + (favorableRatio - 0.5) × ARTISTRY_WEIGHT` | Ratio of favorable interaction outcomes. Clamped [0.5, 2.0] |
+| rarityModifier | `1.0 + (1.0 - skillPrevalence) × RARITY_WEIGHT` | Inverse of how many characters have required skills. Clamped [1.0, 3.0] |
+
+Constants (in `Rules.java`): `MINIMUM_WAGE_PER_MINUTE=0.25`, `RAW_MATERIAL_BASE_VALUE=1.0`, `QUALITY_FLOOR=0.3`, `ARTISTRY_WEIGHT=1.0`, `RARITY_WEIGHT=1.0`, `RESALE_DEFAULT=0.5`.
+
+**Design Note — Evolved Commerce:**
+The formulaic pricing above is a placeholder. The long-term vision is that commerce emerges organically from simulated evolution: take 1–3 locations with small populations (50–100), run them through the Olio Evolve system over simulated centuries, and let trade systems develop from needs-driven interactions, resource scarcity, skill specialization, and social dynamics. The current system provides a working transactional baseline while the evolution simulation matures.
+
 **Player-to-Player Trade:**
 Direct barter between players. Both players see the offered items, both must confirm. Reputation between the trading players adjusts positively on successful trades. No currency required — items are exchanged directly from `olio.store` to `olio.store`.
 

@@ -244,6 +244,7 @@
 	},
 	{
 		"name": "build",
+		"provider": "org.cote.accountmanager.olio.actions.Build",
 		"minimumEnergyCost": 0.3,
 		"minimumTime": 3600,
 		"counterActions": [

@@ -111,7 +111,21 @@ public class Rules {
 
 	/// Odds there is at least one point of interest in a 100 square meter cell
 	public static double POINT_OF_INTEREST_ODDS = 0.25;
-	
+
+	/// Commerce / Pricing constants
+	/// Base value unit per minute of labor
+	public static final double MINIMUM_WAGE_PER_MINUTE = 0.25;
+	/// Default value for raw/gathered materials
+	public static final double RAW_MATERIAL_BASE_VALUE = 1.0;
+	/// Minimum quality multiplier (worst crafter still produces 30% value)
+	public static final double QUALITY_FLOOR = 0.3;
+	/// How much artistry (interaction reputation) affects price
+	public static final double ARTISTRY_WEIGHT = 1.0;
+	/// How much rarity (skill scarcity) affects price
+	public static final double RARITY_WEIGHT = 1.0;
+	/// Default resale adjustment multiplier
+	public static final double RESALE_DEFAULT = 0.5;
+
 	public static double getAnimalOdds(TerrainEnumType type) {
 		double typeOdds = ODDS_ANIMAL_GROUP;
 		switch(type) {
