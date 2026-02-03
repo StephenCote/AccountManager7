@@ -1,6 +1,6 @@
 # Card Game v2 — Card-Based RPG
 
-A web-based card RPG playable online (1v1 vs AI, expandable to free-for-all multiplayer) and printable for real-life tabletop play. Built on the AM7 backend with LLM-driven outcomes online and dice + card modifiers for RL.
+A web-based card RPG playable online (1v1 vs AI) and printable for real-life tabletop play (multiplayer IRL only). Built on the AM7 backend with LLM-driven outcomes online; IRL play is fully standalone — just printed cards, dice, and players, no online services or data required.
 
 ---
 
@@ -28,8 +28,9 @@ A web-based card RPG playable online (1v1 vs AI, expandable to free-for-all mult
 20. [Online Implementation](#online-implementation)
 21. [Rules Quick Reference](#rules-quick-reference)
 22. [Rules Documentation](#rules-documentation-help-content) — markdown help content for online and IRL play
-23. [v1 Migration](#v1-migration) — archive cardGame.js v1, rename v2 to "Card Game"
-24. [Open Design Questions](#open-design-questions)
+23. [Phased Implementation Plan](#phased-implementation-plan) — build-test-build incremental delivery
+24. [v1 Migration](#v1-migration) — archive cardGame.js v1, rename v2 to "Card Game"
+25. [Open Design Questions](#open-design-questions)
 
 **Companion files:**
 - [cardGame-v2-themes.md](cardGame-v2-themes.md) — Complete card pool definitions for High Fantasy, Sci-Fi, and Post Apocalyptic themes
@@ -43,8 +44,8 @@ A web-based card RPG playable online (1v1 vs AI, expandable to free-for-all mult
 1. **Cards are the interface.** Every game element — characters, items, actions, encounters — is a card. No map, no board. The world comes to you through drawn cards.
 2. **Stacks are sentences.** A single card is a noun. A stack is a verb phrase: "Character + Weapon + Action = I attack." Stacking is the primary mechanic.
 3. **Use it or lose it.** Consumable cards played in a round are spent whether their effect triggered or not. This forces commitment and risk assessment every round.
-4. **Do it or don't.** Each round, you build stacks and commit them. No take-backs. Simultaneous reveal prevents reactive play.
-5. **Same rules, two surfaces.** Online and RL play follow identical rules. Online uses LLM for outcome narration and AI opponent behavior; RL uses dice + card modifiers. The math is the same.
+4. **Do it or don't.** Each round, you build stacks and commit them. No take-backs. Open placement prevents hidden play, but initiative determines position advantage.
+5. **Same rules, two surfaces.** Online and IRL play follow identical rules. Online uses LLM for outcome narration and AI opponent behavior; IRL uses dice + printed card modifiers only — no network, no server, no LLM. IRL play is fully self-contained with printed cards and players.
 6. **Print-first card design.** Cards are designed to be physically printed and playable. Online rendering mirrors the physical layout exactly.
 
 ### Simplifications from RPG.md
@@ -54,10 +55,10 @@ A web-based card RPG playable online (1v1 vs AI, expandable to free-for-all mult
 | MGRS spatial grid, cell navigation | Eliminated — no map, encounters drawn from deck |
 | 16 base statistics | Reduced to 6 core stats on the character card |
 | 2d20 resolution with personality/instinct modifiers | Simplified to 1d20 + stack modifier vs target number or opposed roll (d20 maps directly to 1-20 stat range) |
-| Maslow hierarchy (5 levels, 30+ individual needs) | 4 need tracks on the character card (Health, Energy, Hunger, Morale) |
+| Maslow hierarchy (5 levels, 30+ individual needs) | 3 need tracks on the character card (Health, Energy, Morale) |
 | Skill proficiency 0-100% with decay formula | Skill cards with flat modifier values; decay = discard oldest skill card between sessions |
 | Seal-based magic with reagents and channeling | Three skill types (Imperial, Undead, Psionic) + Magic Effect cards |
-| Real-time Overwatch simulation | Turn-based rounds with simultaneous stack commitment |
+| Real-time Overwatch simulation | Turn-based rounds with initiative-ordered placement on shared action bar |
 | Fog of war, intra-cell sub-grid | Encounter deck replaces exploration |
 | Party formation, reputation ledger | Alliance cards, reputation tracked as card count |
 
@@ -72,7 +73,7 @@ There are 8 card types, each with a distinct card back color/design.
 | **Character** | Gold | Your persona — stats, portrait, needs | Persistent (never discarded) |
 | **Apparel** | Silver | Armor, clothing — defensive modifiers | Equipped until destroyed or replaced |
 | **Item** | Green | Weapons, tools, consumables | Weapons persist; consumables are use-or-lose |
-| **Action** | Red | What you do this round (Attack, Defend, Flee, etc.) | Played and returned to hand after round |
+| **Action** | Red | What you do this round (Attack, Flee, Rest, etc.) | Played and returned to hand after round |
 | **Talk** | Blue | Initiate conversation / negotiate | Played and returned after round |
 | **Encounter** | Purple | Threats, events, discoveries — drawn from shared deck | Resolved and discarded |
 | **Skill** | Orange | Learned abilities that modify actions | Persist until decay (campaign mode) |
@@ -131,10 +132,9 @@ Corner icons are rendered at **24×24px** on screen (scaled for print). They use
 | STR [##] | AGI [##] | END [##]       |
 | INT [##] | MAG [##] | CHA [##]       |
 |---------------------------------------|
-| HP  [████████░░] 80/100              |
-| NRG [██████░░░░] 60/100              |
-| HNG [████░░░░░░] 40/100              |
-| MRL [██████████] 100/100             |
+| HP  [████████░░] 16/20               |
+| NRG [██████░░░░] 10/14  (=MAG)       |
+| MRL [██████████] 20/20               |
 |---------------------------------------|
 | Skill Slots: [_] [_] [_] [_]         |
 | Equip Slots: [Head] [Body] [Hand×2]  |
@@ -156,16 +156,73 @@ Corner icons are rendered at **24×24px** on screen (scaled for print). They use
 
 Each stat is 1-20. The stat value **is** the modifier added to d20 rolls — a direct comparison against the 20-based scale. Roll 1d20 + stat modifier + card bonuses vs opposing roll. This keeps math simple: your stat value is exactly how much you add.
 
-**Need Tracks (4):**
+**Need Tracks (3):**
 
-| Track | Depleted By | Restored By |
-|-------|------------|-------------|
-| Health (HP) | Combat damage, hazards | Healing items, rest, Life magic |
-| Energy (NRG) | Actions, magic casting, movement | Rest, food, stimulants |
-| Hunger (HNG) | Every 3 rounds automatically | Food item cards |
-| Morale (MRL) | Failed actions, ally defeat, isolation | Successful Talk, ally victory, rest |
+| Track | Max Value | Depleted By | Restored By |
+|-------|-----------|------------|-------------|
+| Health (HP) | **20** (flat, all characters) | Combat damage, hazards | Healing items, rest, Life magic, round recovery |
+| Energy (NRG) | **MAG stat** (or INT for Undead magic, or equivalent per theme) | Magic casting, spell use | Rest, stimulants |
+| Morale (MRL) | **20** (flat) | Failed actions, ally defeat, isolation | Successful Talk, ally victory, rest |
 
-All tracks are 0-100. At 0 HP = defeated. At 0 Energy = can only play Defend or Talk. At 0 Hunger = lose 10 HP per round. At 0 Morale = cannot play Talk or cooperative actions.
+At 0 HP = defeated. At 0 Energy = cannot cast spells (can still attack, talk, etc.). At 0 Morale = cannot play Talk or cooperative actions.
+
+**Hunger is shelved** — removed from card game mechanics for simplicity. May be revisited in future iterations.
+
+### Health & Energy Cards (Damage/Magic Tracking)
+
+Health and Energy are tracked visibly using **denomination cards**. This makes damage and spellcasting tangible — you throw away health cards when hit, spend energy cards when casting, and draw them back when recovering.
+
+#### Health Cards (HP Tracking)
+
+**Setup:** Each character starts with health cards totaling **20 HP** (max HP is always 20). Suggested mix: 1× +10, 1× +5, 3× +2, 1× +1 = 20 HP. Adjust denominations as needed.
+
+**Denomination cards:**
+```
+┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐
+│ +1  │  │ +2  │  │ +5  │  │ +10 │
+│  ♥  │  │ ♥♥  │  │♥♥♥♥♥│  │ ♥×10│
+│  HP │  │  HP │  │  HP │  │  HP │
+└─────┘  └─────┘  └─────┘  └─────┘
+```
+
+**Taking damage:** Discard health cards equal to the damage dealt. Make change from higher denominations as needed (e.g., 3 damage with only a +5 = discard +5, take +2 back from bank).
+
+**Healing:** Draw health cards from the health bank equal to the amount restored (potions, rest, magic). **Cannot exceed max 20 HP** — if healing would overflow, just take cards up to 20. Use-it-or-lose-it.
+
+**End-of-round recovery:**
+- **Round loser:** +2 HP recovery (draw +2 health card)
+- **Round winner:** +5 HP recovery (draw +5 health card)
+- Recovery cannot exceed max HP. If already at max, skip.
+
+#### Energy Cards (Magic/Spell Tracking)
+
+**Setup:** Each character starts with energy cards totaling their **magic stat** value (MAG for Imperial magic, INT for Undead magic, theme-equivalent for other magic systems). A character with MAG 13 starts with 13 energy worth of cards.
+
+```
+┌─────┐  ┌─────┐  ┌─────┐
+│ +1  │  │ +2  │  │ +5  │
+│  ⚡ │  │ ⚡⚡│  │⚡×5 │
+│ NRG │  │ NRG │  │ NRG │
+└─────┘  └─────┘  └─────┘
+```
+
+**Casting a spell:** Discard energy cards equal to the spell's energy cost. Energy is spent **when the spell is played** (committed at placement), regardless of whether the spell succeeds or fails.
+
+**Recovery:** Rest action restores energy. Some consumables restore energy. Cannot exceed max energy (= magic stat).
+
+**Non-magic characters:** Characters with no magic stat (MAG < threshold for their theme) have **0 energy cards** and cannot cast spells. They still participate normally with physical attacks, items, and non-magic actions.
+
+#### Card Bank (Shared)
+
+**RL play:** Health and energy cards sit in piles next to the character stack. Discarded cards go to a shared **card bank** in the center of the table. When healing/recovering, draw from the bank. The pile sizes are your HP and Energy — instantly visible to both players.
+
+**Online play:** The card piles are visualized as stacks next to the character portrait, with numeric totals displayed. Taking damage shows cards flipping off the stack (animated). Healing shows cards returning. The numeric bars still show exact values — the denomination cards are a visual layer on top.
+
+**Print:** The deck includes a sheet of perforated health/energy cards per player:
+- Health: 2× +10, 2× +5, 4× +2, 4× +1 = 42 HP worth (plenty of change-making room for 20 HP max)
+- Energy: 2× +5, 4× +2, 4× +1 = 22 NRG worth (covers up to MAG 20)
+
+**Overheal/overcharge:** If healing or energy recovery would exceed the max, the player simply stops at max. No extra cards drawn — the cup doesn't overflow.
 
 **Equip Slots:**
 
@@ -173,10 +230,19 @@ All tracks are 0-100. At 0 HP = defeated. At 0 Energy = can only play Defend or 
 |------|---------|
 | Head | Helmet, hat, circlet |
 | Body | Armor, robe, vest |
-| Hand (×2) | Weapon, shield, tool, staff (two-handed items take both) |
+| Hand L | Weapon, shield, tool, off-hand item |
+| Hand R | Weapon, tool, primary-hand item |
 | Feet | Boots, sandals |
 | Ring | Ring items (stat bonuses) |
 | Back | Cloak, pack, wings |
+
+**Hand slot rules:** A character has exactly 2 hand slots (L and R). These are the **only slots that hold items** actively used in combat (weapons, shields, tools, foci). All other slots hold passive equipment (apparel).
+
+- **One-handed weapon:** Occupies 1 hand slot. The other hand can hold a shield, a second one-handed weapon (dual wield), or nothing.
+- **Two-handed weapon:** Occupies BOTH hand slots (handL + handR). No shield or off-hand item while using a two-handed weapon.
+- **Dual wield:** Two one-handed weapons, one per hand. Playing **1 Attack action card** with two weapons equipped yields **2 separate attack rolls** — one per weapon, each at full ATK. This means dual wielding effectively doubles your attacks per action stack, but you lose the shield's parry bonus on defense.
+- **Weapon + Shield:** One-handed weapon in one hand, shield in the other. Shield adds its DEF bonus to passive armor defense AND to parry rolls.
+- **Max 2 items in hands** — you cannot equip more than 2 hand items. Equipping a two-handed weapon auto-unequips whatever was in both hands.
 
 ### Apparel Card
 
@@ -212,7 +278,7 @@ All tracks are 0-100. At 0 HP = defeated. At 0 Energy = can only play Defend or 
 | [⚔]                    [⚔] |
 | [Weapon Image]                |
 | WEAPON NAME                   |
-| Slot: Hand    Rarity: ★★    |
+| Slot: Hand (1H) Rarity: ★★  |
 |-------------------------------|
 | ATK +4  | Range: Melee       |
 | Type: Slashing                |
@@ -228,6 +294,7 @@ All tracks are 0-100. At 0 HP = defeated. At 0 Energy = can only play Defend or 
 
 **Fields:**
 - **ATK**: Attack modifier added to attack action rolls
+- **Slot**: `Hand (1H)` for one-handed, `Hand (2H)` for two-handed. Two-handed weapons occupy both hand slots.
 - **Range**: Melee or Ranged (Ranged weapons can attack without being in the same encounter)
 - **Type**: Slashing, Piercing, Blunt, Ranged (matters for armor interactions)
 - **Requires**: Minimum stat to equip
@@ -284,14 +351,13 @@ All tracks are 0-100. At 0 HP = defeated. At 0 Energy = can only play Defend or 
 
 | Action | Type | Stack Requirements | Roll Formula | Energy Cost |
 |--------|------|--------------------|-------------|-------------|
-| **Attack** | Offensive | Character + Weapon (req) + Skill (opt) | 1d20 + STR + ATK bonus vs target DEF roll | 10 |
-| **Defend** | Defensive | Character + Apparel (opt) + Skill (opt) | 1d20 + END + DEF bonus (sets defense for round) | 5 |
-| **Flee** | Movement | Character only | 1d20 + AGI vs encounter difficulty | 5 |
-| **Investigate** | Discovery | Character + Skill (opt) | 1d20 + INT vs encounter hidden threshold | 5 |
+| **Attack** | Offensive | Character + Weapon (req) + Skill (opt) | 1d20 + STR + ATK bonus vs target passive DEF (+ weapon parry if weapon has parry property) | 0 |
+| **Flee** | Movement | Character only | 1d20 + AGI vs encounter difficulty | 0 |
+| **Investigate** | Discovery | Character + Skill (opt) | 1d20 + INT vs encounter hidden threshold | 0 |
 | **Trade** | Social | Character + Item(s) to offer | CHA determines price modifier | 0 |
-| **Rest** | Recovery | Character only (no other actions) | Auto-success: restore 20 NRG, 10 HP | 0 |
+| **Rest** | Recovery | Character only (no other actions) | Auto-success: restore +2 HP, +3 Energy | 0 |
 | **Use Item** | Utility | Character + Consumable item | Auto-success: apply item effect | 0 |
-| **Craft** | Creation | Character + Material items + Skill | 1d20 + INT vs recipe difficulty | 15 |
+| **Craft** | Creation | Character + Material items + Skill | 1d20 + INT vs recipe difficulty | 2 |
 
 ### Talk Card
 
@@ -353,7 +419,7 @@ All tracks are 0-100. At 0 HP = defeated. At 0 Energy = can only play Defend or 
 | **Threat** | Must fight, flee, or talk. Has ATK/DEF/HP stats. |
 | **Event** | Environmental effect: storm (-5 to all rolls this round), found campsite (free Rest), etc. |
 | **Discovery** | Loot/resource find. Investigate action may reveal bonus items. |
-| **NPC** | Non-hostile character. Can Talk, Trade, or ignore. May offer quests (scenario mode). |
+| **NPC** | Non-hostile character drawn from the Olio population. Can Talk, Trade, or ignore. May offer quests (scenario mode). Has real `olio.charPerson` stats, portrait, personality, and interaction history. |
 
 ### Skill Card
 
@@ -382,7 +448,7 @@ All tracks are 0-100. At 0 HP = defeated. At 0 Energy = can only play Defend or 
 |----------|----------|
 | COMBAT | Attack rolls with melee weapons |
 | RANGED | Attack rolls with ranged weapons |
-| DEFENSE | Defend rolls |
+| DEFENSE | Parry bonus, armor effectiveness |
 | SURVIVAL | Investigate rolls, need management |
 | CRAFTING | Craft action success |
 | SOCIAL | Talk rolls, Trade prices |
@@ -433,7 +499,7 @@ Generated from the player's AM7 character data. Each player begins with:
 | Starting Apparel | 2-3 | From character's `olio.apparel` / `olio.wearable` equipment |
 | Starting Weapons | 1-2 | From character's `olio.store` inventory |
 | Starting Consumables | 3-5 | Basic supplies: 2 rations, 1 health potion, 1 bandage, 1 torch |
-| Action Cards | 1 of each type | Full set: Attack, Defend, Flee, Investigate, Trade, Rest, Use Item, Craft |
+| Action Cards | 1 of each type | Full set: Attack, Flee, Investigate, Trade, Rest, Use Item, Craft, Watch |
 | Talk Card | 1 | Always included |
 | Starting Skills | 1-2 | Derived from character's highest proficiency `data.trait` records |
 | Magic Effects | 0-1 | Only if character has MAG ≥ 10 or INT ≥ 12 or relevant skill type |
@@ -442,27 +508,213 @@ Generated from the player's AM7 character data. Each player begins with:
 
 ### Shared Encounter Deck
 
-A communal deck drawn from during play:
+A communal deck drawn from **randomly** during the Draw Phase. Contains common-to-rare content — the everyday encounters, supplies, and dangers of the world. All draws are random (shuffled deck, top card).
 
-| Subtype | Count (2-player) | Notes |
-|---------|-----------------|-------|
-| Threat encounters | 15 | Scaled to character levels |
-| Event encounters | 10 | Weather, terrain effects, time-of-day |
-| Discovery encounters | 10 | Loot finds, resource caches |
-| NPC encounters | 8 | Traders, travelers, quest-givers |
-| Item cards (loot) | 12 | Weapons, apparel, consumables mixed in |
-| Skill cards (learnable) | 6 | Found or earned through encounters |
-| Magic Effect cards | 4 | Rare, found through Discovery or NPC |
+| Subtype | Count (2-player) | Rarity Range | Notes |
+|---------|-----------------|-------------|-------|
+| Threat encounters (animals/creatures) | 8 | ★–★★★ | Regular threats only (difficulty 4–10). Bosses are in the Vault. |
+| Hostile NPC encounters | 4 | ★–★★★ | Real Olio population characters drawn as hostile. Can be fought OR subdued via Talk. |
+| Event encounters | 10 | ★–★★ | Weather, terrain effects, time-of-day |
+| Discovery encounters | 10 | ★–★★ | Loot finds, resource caches |
+| Friendly NPC encounters | 8 | ★–★★★ | Real Olio population characters — trader, ally, quest-giver, etc. |
+| Item cards (loot) | 10 | ★–★★★ | Weapons, apparel, consumables — Common to Rare only |
+| Skill cards (learnable) | 5 | ★★–★★★ | Found through encounters |
+| Magic Effect cards | 2 | ★★★ | Rare, found through Discovery or NPC |
 
-**Total shared deck**: ~65 cards for 2 players. Add ~20 per additional player.
+**Total encounter deck**: ~57 cards for 2 players. Add ~15 per additional player.
+
+**Hostile NPC encounters:** Some NPCs are dealt into the threat portion of the encounter deck as hostile characters. When drawn, they behave like threats — they get AP, fill action bar positions, and attack. However, unlike animal threats, hostile NPCs can be **subdued through non-violence** using the Talk card:
+
+- **Fight:** Treat as a normal threat. Defeat them through combat. They have `olio.charPerson` stats and equipment.
+- **Talk to subdue:** Play a Talk card targeting the hostile NPC. Opens a chat/negotiation. Success (opposed CHA roll, or LLM-evaluated conversation online) de-escalates the NPC from hostile to neutral. The NPC is removed from the threat bar and added to the player's hand as a friendly NPC card (can be traded with, asked for quests, etc.).
+- **Failed Talk:** The hostile NPC becomes more aggressive (+2 ATK for the rest of the encounter). The Talk card is consumed but the NPC remains hostile.
+- **Hostile NPC loot:** If defeated in combat, hostile NPCs drop equipment from their `olio.charPerson` inventory (weapon, apparel). If subdued via Talk, they offer a trade or quest reward instead.
+
+**Draw is random** — the deck is shuffled at game start. Each Draw Phase, the active player draws the top card. No selection, no peeking. The desperation draw rule (draw 2 if Energy < 30) also draws randomly from the top.
+
+### Treasure Vault (Unique Deck)
+
+A separate deck containing **unique/hard encounters AND high-rarity items** shuffled together. Boss creatures, legendary weapons, epic armor, and rare magic all share the same vault. When you earn a vault draw, you might pull a legendary sword — or you might unleash a dragon. Risk and reward in the same deck.
+
+The vault contains two categories of cards, shuffled together:
+
+**Boss Encounters (unique/hard animals & creatures):**
+
+| Subtype | Count (2-player) | Rarity | Notes |
+|---------|-----------------|--------|-------|
+| Boss threats | 3–4 | ★★★★–★★★★★ | Difficulty 12+, unique abilities, multi-round mechanics |
+
+These are the hardest creatures in the theme — dragons, liches, behemoths, AI core defenders. They have higher stats, unique behaviors (phasing, regeneration, multi-attack), and better loot attached. When drawn from the vault, they become **immediate encounter threats** — placed at the end of the current round's action bar just like a scenario-triggered threat. You opened the vault and something came out.
+
+**High-Rarity Items & Skills:**
+
+| Subtype | Count (2-player) | Rarity | Notes |
+|---------|-----------------|--------|-------|
+| Legendary weapons | 2 | ★★★★★ | Named artifacts with unique abilities |
+| Epic weapons | 3 | ★★★★ | Superior versions of common weapon types |
+| Epic apparel | 3 | ★★★★ | Set pieces, enchanted armor |
+| Epic consumables | 2 | ★★★★ | Elixirs, powerful one-use items |
+| Rare/Epic skills | 3 | ★★★–★★★★ | Advanced combat/magic techniques |
+| Legendary magic effects | 2 | ★★★★★ | Game-changing spells |
+
+**Total treasure vault**: ~18–19 cards for 2 players. Add ~5 per additional player.
+
+#### How to Draw from the Treasure Vault
+
+The vault is sealed — you need a **key action** to draw from it:
+
+| Trigger | Draw Count | Condition |
+|---------|-----------|-----------|
+| **Discovery encounter (★★★)** | Draw 1 | Only Rare discoveries unlock the vault — "You find a hidden chamber..." |
+| **Investigate action (critical success)** | Draw 1 | Natural 20 on Investigate roll opens the vault |
+| **NPC quest reward** | Draw 1 | Completing an NPC encounter's quest objective grants a vault draw |
+| **Round Pot jackpot** | Draw 1 | If the pot contains 5+ cards when claimed, winner also draws from vault |
+
+**Vault draw is random** — the vault deck is shuffled, and you draw from the top. You cannot browse or choose. The excitement is in *earning the right to draw*, not in selecting what you get — and the tension is in not knowing whether you'll get a treasure or a boss fight.
+
+**Drawing a boss from the vault:**
+- The boss encounter is placed at the **end of the current action bar** as an immediate threat (same rules as end threats — see [Per-Round Threats](#per-round-threats))
+- The boss comes with attached loot cards (drawn from the vault alongside it, not from the encounter deck)
+- Defeating a vault boss grants **1 additional vault draw** as a reward — creating a chain where beating a boss might yield another boss or a legendary item
+- If no one defeats the vault boss this round, it **persists** into the next round (stays on the bar) with full remaining HP
+
+**Vault exhaustion:** Once all vault cards are drawn, the vault is empty for the rest of the session. In campaign mode, the vault refills between sessions with new high-rarity cards and boss encounters scaled to player level.
+
+**RL equivalent:** The vault is a separate, physically smaller deck placed to the side of the main encounter deck. It should have a distinct card back (gold/foil pattern) or be placed in a container (box lid, cloth pouch) to signal its special status. Players draw face-down. If you flip a boss, it goes on the bar immediately.
+
+### Character Population Sourcing
+
+**All characters in the game — player, opponent, and NPCs — are real `olio.charPerson` records** drawn from the Olio Universe/World population. No characters are invented or templated at card-generation time. This means every NPC you encounter has a portrait, stats, personality traits, alignment, and narrative backstory from the AM7 data model.
+
+**How characters are selected during deck build:**
+
+| Role | Selection Method | Source |
+|------|-----------------|--------|
+| **Player character** | Picked by the player in the Character Picker (Step 2), or randomly generated | Olio population or `CharacterUtil.randomPerson()` |
+| **AI opponent** (Mode 1) | Picked by the player in deck builder, or randomly drawn from population | Olio population (excludes player character) |
+| **Friendly NPC encounters** (8 per deck) | Randomly drawn from population during deck build | Olio population (excludes player + opponent) |
+| **Hostile NPC encounters** (4 per deck) | Randomly drawn from population, dealt into threat portion | Olio population (excludes player + opponent + friendly NPCs) |
+
+**NPC role assignment:**
+
+The theme defines NPC **roles** (trader, ally, crafter, quest-giver, social, rescue, magic) for friendly NPCs and hostile dispositions for hostile NPCs, but not the specific characters. During deck build, the system:
+
+1. Queries the Olio population for available `charPerson` records (excluding player and opponent)
+2. Randomly selects 8 characters for friendly NPC slots + 4 characters for hostile NPC slots (12 total)
+3. Assigns each friendly character a role from the theme's NPC role list (N1–N8)
+4. The NPC's actual stats, portrait, and personality are used — the role just defines the encounter mechanics (what they sell, what quest they offer, difficulty check, etc.)
+5. The NPC encounter card shows the real character portrait and name, overlaid with the role label
+
+This means the same "Wandering Merchant" role might be filled by an elf, an orc, or a human depending on who gets drawn from the population. The theme's art prompt for the NPC card is adapted to include the character's actual appearance traits alongside the role description.
+
+**Population requirements:**
+
+The Olio world must have **at least 14 characters** in its population (1 player + 1 opponent + 8 friendly NPCs + 4 hostile NPCs). If the population is smaller, the deck builder shows a warning and offers to auto-generate random characters to fill the gap via `CharacterUtil.randomPerson()`.
+
+**Endpoint:**
+```
+GET /rest/olio/charPerson/list?worldPath={worldPath}&limit=50
+→ Returns: population list (id, name, gender, race, age, stats summary, portrait)
+→ Deck builder draws from this pool
+```
+
+**Interaction history carries over:** Because NPCs are real Olio characters, any `olio.interaction` records between the player and an NPC persist across game sessions. If you chatted with a merchant last session and built rapport, the LLM receives that interaction history when you encounter them again. This creates emergent NPC relationships driven by the existing AM7 interaction system.
 
 ### Deck Building (Between Sessions / Campaign Mode)
 
 Between game sessions in campaign play:
-- Keep all persistent cards (Character, equipped Apparel/Weapons, Skills, reusable Magic Effects)
-- Discard all consumables (they don't keep between sessions)
-- May swap up to 3 cards from a "collection" (cards earned in previous sessions but not in current deck)
+- **Only the Character card persists** — the character's stats, level gains, and identity carry forward
+- All items, apparel, weapons, skills, and consumables are **NOT carried between games** — they can be lost, damaged, dropped, or stolen during play, so the deck rebuilds fresh each session
 - Character stat changes from leveling persist on the character card
+- NPC encounters are re-drawn from the population (you may encounter different characters each session, but interaction history with previously met NPCs persists)
+- Each new session draws a fresh starter hand and encounter/vault decks from the theme's card pool
+
+### Card Pool Shortage Fallback
+
+If a theme pool doesn't have enough cards to fill a required category, the deck builder applies these fallback rules in order:
+
+| Shortage | Fallback |
+|----------|----------|
+| **Encounter deck short on threats** | Generate random threats by combining a random Olio `animal` with scaled stats (ATK/DEF/HP derived from difficulty target). Art prompt auto-composed from the animal's description + theme art style. |
+| **Not enough items/weapons/apparel** | Use the theme's base item templates with randomized stats within the rarity range. Named generically: "Common Sword," "Sturdy Boots," etc. Flagged as auto-generated in the snapshot for later replacement. |
+| **Skill or Magic Effect cards short** | Reduce count to available pool size. Minimum 1 skill card (always: the character's highest proficiency trait). Magic Effects can be 0 if no theme magic cards exist. |
+| **NPC encounter slots unfilled** (population too small) | Auto-generate random `charPerson` records via `CharacterUtil.randomPerson()` to fill remaining NPC slots. Each gets a portrait generated from `sdConfig.charPerson`. |
+| **Treasure Vault too small** | Vault can be as small as 5 cards. Below that, the deck builder warns "Vault is thin — consider adding items via Add Item (Step 4)." Game still plays, vault just empties faster. |
+| **Encounter deck exhausted mid-game** | Reshuffle the discard pile into a new encounter deck. Vault is NOT reshuffled — once empty, it stays empty until campaign session refill. |
+
+The deck builder shows a **pool health indicator** during Step 6 (Review & Build): a per-category bar showing filled/required counts with yellow (near-shortage) and red (using fallback) warnings. This lets the player add custom cards via Step 4 before building.
+
+### Card Hoarding Prevention (Lethargy & Exhausted)
+
+Two rules prevent players from hoarding duplicate action cards and force active, decisive play:
+
+#### Lethargy
+
+**Trigger:** At the **end of a round** (Cleanup Phase), if you hold **more than 1 copy** of the same action type and you **did not play any of that type** this round.
+
+**Effect:** You keep 1 copy. All extras of that action type are returned to the encounter deck draw pile (shuffled back in).
+
+**Reasoning:** If you're sitting on 3 Attack cards and not using them, you're hoarding. The world doesn't wait — unused tools drift away. You must use it or lose the extras.
+
+**Example:**
+```
+Start of round: Hand contains Attack ×3, Flee ×1, Investigate ×1
+Player places: Investigate (position 1), Flee (position 3)
+                ↑ no Attack played this round
+
+Cleanup — Lethargy check:
+  Attack: 3 copies, 0 played → LETHARGY. Keep 1 Attack, return 2 to encounter deck.
+  Flee: 1 copy → no duplicate, skip.
+  Investigate: 1 copy → no duplicate, skip.
+
+Hand after cleanup: Attack ×1, Flee ×1, Investigate ×1
+```
+
+#### Exhausted
+
+**Trigger:** During **resolution**, if you play the **same action type more than once** in the same round, hold **2 or more** of that type in hand, and the **last played action of that type fails**.
+
+**Effect:** All extra copies of that action type (beyond 1) are returned from your hand to the encounter deck draw pile.
+
+**Reasoning:** Overcommitting to one strategy and failing at it means you've exhausted that approach. Your spare copies slip away — the enemy adapts, your weapons dull, your tricks stop working.
+
+**Example:**
+```
+Hand contains: Attack ×3, Rest ×1, Investigate ×1
+Player places: Attack (pos 1), Attack (pos 3), Rest (pos 5)
+
+Resolution:
+  Position 1: Attack → Success (roll 14, opponent roll 8) ✓
+  Position 3: Attack → Fail (roll 5, opponent roll 17) ✗
+              ↑ This is the LAST Attack played this round, and it FAILED
+              ↑ Player still has 1 Attack in hand (3 total - 2 played = 1)
+
+Exhausted check (during resolution, immediately):
+  Attack: played 2 this round, last one failed, 1 remaining in hand
+  But 1 remaining = no extras beyond 1 → Exhausted does NOT trigger.
+
+DIFFERENT SCENARIO — 4 Attack cards:
+  Hand: Attack ×4. Places Attack (pos 1), Attack (pos 3). Holds Attack ×2 in hand.
+  Position 3 Attack fails → Exhausted triggers.
+  Keep 1 Attack in hand, return 1 extra to encounter deck.
+  Hand after: Attack ×1.
+```
+
+**Key distinctions:**
+
+| | Lethargy | Exhausted |
+|---|---------|-----------|
+| **When** | Cleanup Phase (end of round) | During Resolution (mid-round, immediate) |
+| **Trigger** | Have 2+ of a type, played 0 of that type | Played 2+ of a type, last one failed, hold 2+ extras |
+| **Cards affected** | Unplayed duplicates in hand | Unplayed duplicates in hand |
+| **Where cards go** | Back to encounter deck (shuffled in) | Back to encounter deck (shuffled in) |
+| **Net result** | Always end with exactly 1 of that type | Always end with exactly 1 of that type |
+
+**Both rules apply only to Action-type cards** (Attack, Flee, Rest, Use Item, Investigate, Craft, Watch) and Talk cards. They do NOT apply to equipment, consumables, skills, or magic effects — you can stockpile potions and gear freely.
+
+**Cards returned to the encounter deck** are shuffled back into the draw pile, meaning they can be drawn again by anyone. This keeps the card economy flowing instead of letting duplicates pile up in one player's hand.
+
+**RL enforcement:** In tabletop play, both players are responsible for policing hoarding. At cleanup, declare your hand's action card counts openly. If disputed, count and return per the rules. For Exhausted, the trigger is immediate on the failed roll — return extras before the next position resolves.
 
 ---
 
@@ -473,48 +725,69 @@ Between game sessions in campaign play:
 Each game round follows this sequence:
 
 ```
-1. DRAW PHASE
-   └─ Active player draws 1 card from encounter deck
-      (or 2 if Energy < 30 — desperation draw)
-   └─ Reveal drawn encounter card
-   └─ If Threat: must be addressed this round (fight, flee, or talk)
-   └─ If Event: effect applies immediately
-   └─ If Discovery/NPC: optional interaction
-
-2. INITIATIVE PHASE
+1. INITIATIVE PHASE
    └─ All players roll 1d20 + AGI
-   └─ Highest total wins initiative (ties: re-roll, or highest raw AGI wins)
+   └─ Highest total wins initiative (ties: re-roll until broken)
    └─ Initiative winner fills ODD action bar positions (1, 3, 5, 7...)
    └─ Other player(s) fill EVEN positions (2, 4, 6...)
    └─ Encounter threats (if any) also receive AP and fill positions
    └─ CRITICAL INITIATIVE: Nat 1 on initiative roll triggers a Per-Round Threat
       at the BEGINNING of the action bar (see Per-Round Threats)
 
-3. PLACEMENT PHASE (simultaneous, open)
-   └─ All players simultaneously build and place action stacks
-      onto the shared Action Bar — stacks are OPEN (face-up)
-   └─ Number of stacks limited by Action Points (AP = floor(END / 5) + 1)
-   └─ Each stack also costs Energy per its action type — AP and Energy are separate limits
-   └─ Consumables committed here are LOCKED IN (use-or-lose)
-   └─ Players can rearrange their stacks until all players confirm "Ready"
-   └─ Character Stack (charPerson + equipped gear) is always active on the sidebar —
-      its modifiers apply to every action stack automatically
+2. EQUIP PHASE (between rounds only)
+   └─ Before drawing, players may equip/unequip apparel, weapons, or skills
+   └─ Equipping is FREE (no AP or Energy cost) — it happens BETWEEN rounds
+   └─ If a player loses a weapon during resolution, they cannot re-equip mid-round
+      — they must defend the remaining positions and hope to draw/equip next round
+   └─ Character Stack (charPerson + equipped gear) is always active on the sidebar
+
+3. DRAW & PLACEMENT PHASE (turn-based, in initiative order)
+   └─ Players take turns in initiative order (winner goes first)
+   └─ On each turn, the active player:
+      a. DRAWS 1 card from the encounter deck (mandatory, free)
+      b. Then CHOOSES ONE:
+         • PLACE an action stack (costs 1 AP): lay down action card + adjacent
+           skill modifier cards onto the Action Bar. Stacks are OPEN (face-up).
+           Consumables committed here are LOCKED IN (use-or-lose).
+         • DRAW AGAIN: draw 1 additional card from the encounter deck (no AP cost)
+           — a second draw instead of placing
+         • SKIP: pass this turn without placing or drawing extra
+   └─ Continue rotating turns until all players have either:
+      - Used all their AP, or
+      - Skipped consecutively (both skip = phase ends)
+   └─ Must place at least 1 action stack total before the phase ends
+   └─ If Threat drawn: must be addressed this round (fight, flee, or talk)
+   └─ If Event drawn: effect applies immediately
+   └─ If Discovery (★★★): optional interaction + grants 1 TREASURE VAULT draw
+   └─ If NPC drawn: optional interaction (quest reward may grant vault draw)
+   └─ [Pause] button pauses the round timer (both players must agree in multiplayer;
+      vs AI: immediate pause). Paused state persists until [Resume] is clicked.
+   └─ NOTE: Epic/Legendary items are in the Treasure Vault, not the encounter deck.
+      See Treasure Vault for how to earn vault draws.
 
 4. RESOLUTION PHASE (left to right, interleaved)
    └─ Resolve action bar position by position: 1, 2, 3, 4...
    └─ Each position resolves fully before the next begins
-   └─ Players alternate — position 1 (initiative winner), position 2 (other), etc.
+   └─ Players alternate — initiative winner's positions first, then other's
+   └─ DAMAGE IS REAL-TIME: HP changes apply immediately per position.
+      If a player's HP hits 0 mid-round, the game ends IMMEDIATELY.
+      No waiting for cleanup — the surviving player wins on the spot.
+      Remaining unresolved positions on the action bar are skipped.
    └─ Mid-round disruptions may INSERT new stacks or REMOVE upcoming stacks
+   └─ EXHAUSTED CHECK (immediate, per position): If this is the last played
+      action of a type this round AND it failed, AND you hold 2+ extras of
+      that type → keep 1, return extras to encounter deck before next position
    └─ Online: each position narrated by LLM, dice rolled server-side
    └─ RL: dice rolls + card modifier math per position
 
-5. CLEANUP PHASE
+5. CLEANUP PHASE (only reached if all players survive the round)
    └─ Discard consumed items (core cards of action stacks that were consumable)
    └─ Return non-consumed Action cards and modifier cards to hand
    └─ Reduce durability on used equipment
-   └─ Hunger tick: -10 Hunger every 3rd round
-   └─ Check defeat conditions (0 HP = eliminated)
-   └─ Unresolved threats carry to next round (escalate: +2 ATK)
+   └─ LETHARGY CHECK: For each action type where you hold 2+ copies
+      but played 0 this round → keep 1, return extras to encounter deck
+   └─ Round recovery: LOSER gets +2 HP, WINNER gets +5 HP (cannot exceed max)
+   └─ Unresolved threats carry to next round (no escalation — same stats)
 ```
 
 ### Action Points (AP)
@@ -531,7 +804,12 @@ AP determines how many action stacks a player can place on the Action Bar per ro
 | 15–19     | 4   | 4 action stacks per round |
 | 20        | 5   | 5 action stacks per round |
 
-**AP vs Energy:** AP is the hard cap on stack count. Energy is the resource cost per action. A player with 4 AP but only 15 Energy remaining may only be able to afford 2 actions (if each costs 10 Energy). Unused AP is not banked — use it or lose it each round.
+**AP vs Energy:** AP is the hard cap on stack count. Energy is the resource cost per action. A player with 4 AP but only 15 Energy remaining may only be able to afford 2 actions (if each costs 10 Energy).
+
+**AP usage rules:**
+- **Must use at least 1 AP per round** — a player cannot voluntarily pass an entire round without acting (that triggers the Lazy Bones default, see Round Timing)
+- **Don't have to use all AP** — a player with 4 AP can choose to place only 2 action stacks if they want to conserve Energy or have limited cards
+- **Use it or lose it** — unused AP does NOT carry to the next round. Each round starts fresh with max AP from the current END stat
 
 **Encounter AP:** Encounter threats also get AP based on their difficulty tier:
 
@@ -542,7 +820,7 @@ AP determines how many action stacks a player can place on the Action Bar per ro
 | 9–12 (Hard) | 3 |
 | 13+ (Boss) | 4 |
 
-Encounter stacks are placed by the system (online: server/AI decides; RL: draw from a behavior card or follow the encounter card's behavior text).
+Encounter stacks are placed by the system (online: server/AI decides; IRL: follow the encounter card's printed behavior text, or the human GM decides).
 
 ### Initiative & Position Interleaving
 
@@ -581,12 +859,49 @@ Action Bar (5 total positions):
 └─────┴─────┴─────┴─────┴─────┘
 ```
 
-**Multiplayer (3+ players):** Initiative order determines round-robin fill. 1st place fills positions 1, 4, 7...; 2nd fills 2, 5, 8...; 3rd fills 3, 6, 9... and so on.
+**Multiplayer (IRL only):**
 
-### Round Timing
+Online play is always **player vs system** (AI opponent or GM). Multiplayer is IRL tabletop only — additional human players join the initiative roll and take turns on the shared action bar.
 
-- Online: Placement phase has a configurable timer (default 60 seconds). Auto-defend if timer expires.
-- RL: No timer enforced, but a 2-minute sand timer is recommended for the placement phase.
+- **Initiative:** All players roll 1d20 + AGI. Turn order = highest to lowest.
+- **Position fill:** Round-robin by initiative rank. 1st fills positions 1, 4, 7...; 2nd fills 2, 5, 8...; 3rd fills 3, 6, 9... and so on.
+- **Directional combat:** Attacks target the **next player** in initiative order (look ahead on the bar). Defense applies against the **previous player** (look behind on the bar). The last player in initiative order attacks the first (wrap-around).
+  - Example: Initiative order is Player A, Player B, Player C.
+    - Player A attacks → targets Player B
+    - Player B attacks → targets Player C
+    - Player C attacks → targets Player A (wrap-around)
+    - Player A defends against → Player C's attacks
+    - Player B defends against → Player A's attacks
+    - Player C defends against → Player B's attacks
+  - A player can choose to play only an Attack action and rely on passive defense (armor + weapon parry), or add a shield/defensive item to bolster their defense against the player behind them.
+- **Encounter threats:** In GM mode with multiplayer, encounter threats target the player with the lowest HP (or random if tied).
+
+### Round Timing & Lazy Bones (Sloth Penalty)
+
+Each phase has a configurable timer. When the timer expires without the player acting, the **Lazy Bones** penalty applies:
+
+**Timer defaults:**
+- **Placement phase:** 60 seconds (online), 2-minute sand timer recommended (RL)
+- **Resolution phase (per position):** 15 seconds to confirm/respond
+
+**Lazy Bones penalty (timer expiry):**
+1. **First expiry** — Player loses initiative advantage (forced to even positions for the rest of the round, regardless of initiative roll) AND loses 1 AP for this round (one fewer action stack allowed). Timer restarts.
+2. **Second expiry** — Player loses an additional AP. Timer restarts again. If AP reaches 0, the player has no actions this round.
+3. **Never acts (timer expires with AP remaining and the player can act)** — Player **defaults the round**. All their action bar positions are emptied. They are treated as having taken no actions. The opponent resolves their stacks unopposed. The defaulting player still takes passive damage from any threats. The round continues to cleanup.
+
+**Lazy Bones state:**
+```javascript
+lazyBones: {
+    expiries: 0,              // Number of timer expiries this round
+    apPenalty: 0,             // AP lost to Lazy Bones this round
+    initiativeLost: false,    // Whether initiative was forfeit
+    defaulted: false          // Whether player defaulted the round entirely
+}
+```
+
+**Pause button:** The [Pause] button in the header stops the round timer. Against AI, pause is immediate. In multiplayer, both players must agree (one player requests, the other confirms). While paused, no timer penalties accumulate. The game shows a "PAUSED" overlay. [Resume] restarts the timer from where it stopped.
+
+**RL enforcement:** In tabletop play, Lazy Bones is optional. The group can agree to use a sand timer with the same escalating penalties, or play untimed.
 
 ### Round Pot
 
@@ -609,10 +924,11 @@ During the Resolution Phase, the pot grows from game effects:
 - **Consumed items:** Consumable cards that are used/spent during the round go into the pot (they're gone from both players' hands, but the winner may recover them)
 - **Encounter loot:** When an encounter threat is defeated, its loot cards go into the pot (not directly to the player who dealt the killing blow)
 
-**Round winner determination:**
-The "round winner" is determined by **net advantage** during the round:
-- If a player reduces the opponent's HP more than they lost → that player wins the round
-- If equal HP change → the player who completed more successful actions wins
+**Round winner determination (point system):**
+The "round winner" is determined by **round points** accumulated during resolution:
+- **Landed hits** — each point of HP damage dealt to the opponent counts as 1 round point
+- **Successful non-combat actions** — each successful action that isn't a direct attack (Talk, Investigate, Trade, Craft, etc.) earns **5 round points**
+- Higher total wins the round
 - If still tied → the initiative winner claims the pot
 - In GM mode (no opponent): the player always claims the pot if they survive the round
 
@@ -661,10 +977,14 @@ A **third play dimension** beyond the two players: independent threats that appe
 **Maximum threat positions per round:** 3 (hard cap). This means the action bar's total length is: `Player A AP + Player B AP + threat count (0–3)`.
 
 **Threat composition:**
-Each threat is drawn from the encounter deck (or a dedicated threat sub-deck for scenario mode). A threat comes with:
+
+Regular threats (difficulty 4–10) are drawn from the **encounter deck**. Boss threats (difficulty 12+, unique creatures) are in the **Treasure Vault** and only appear when someone earns a vault draw and pulls one.
+
+A threat comes with:
 - A threat card (creature/hazard with ATK, DEF, HP, difficulty)
-- 1–2 random loot cards attached (drawn from encounter deck alongside the threat)
+- 1–2 random loot cards attached (regular threats: loot from encounter deck, ★–★★★; vault bosses: loot from vault, ★★★★–★★★★★)
 - The threat card shows its loot face-up, so players can see what's at stake
+- Defeating a vault boss grants **1 additional vault draw** (risk → reward chain)
 
 #### Beginning Threats (Critical Initiative Failure)
 
@@ -682,13 +1002,14 @@ Action Bar:
 ```
 
 **Beginning threat rules:**
-- The threat **attacks the initiative winner** (the player acting first) regardless of who caused the critical initiative failure
-- The initiative winner has no warning and no choice — the threat acts against them with its own attack stack
-- The initiative winner's Character Stack passively defends (same as normal passive defense: `1d20 + END + DEF`)
-- **If the initiative winner beats the threat:** They keep the threat's loot cards immediately (added to hand, not pot). This rewards surviving the ambush.
-- **If the initiative winner loses to the threat:** They take damage, and the threat's loot goes into the pot
+- The threat occupies position 1 (or positions 1 and 2 if two threats). All player action stacks shift right accordingly.
+- The threat **attacks the player who rolled Nat 1** — your fumble brought this upon yourself. The other player watches.
+- The fumbling player has no warning and no choice — the threat acts against them before any player actions resolve.
+- The fumbling player's Character Stack passively defends (`1d20 + END + Apparel DEF`, plus parry if applicable at position 2).
+- **If the fumbling player beats the threat:** They keep the threat's loot cards immediately (added to hand, not pot). Surviving your own mistake is rewarded.
+- **If the fumbling player loses to the threat:** They take damage. If this drops them to 0 HP, **they lose the game immediately** — killed by their own initiative fumble before the round even begins. The threat's loot goes into the pot (or is discarded if the game ends).
 
-If BOTH players roll Nat 1: two threats at the beginning, resolved in sequence (T1, T2, then player positions). T1 attacks initiative winner, T2 attacks initiative loser.
+If BOTH players roll Nat 1: two threats at the beginning (positions 1 and 2), resolved in sequence. T1 attacks the player who rolled lower (worst fumble goes first). T2 attacks the other fumbler. Player action stacks start at position 3.
 
 #### End Threats (Scenario/Card Triggered)
 
@@ -706,18 +1027,21 @@ Action Bar:
 ```
 
 **End threat rules:**
-- The end threat **only applies to the round winner** (the player winning the round based on net HP advantage). This is a "final boss" surprise — you won the round, but can you survive one more fight?
-- The round winner is **out of Action Points** at this point — they've already used all their stacks
-- The round winner gets a **choice:**
-  1. **Play 1 bonus stack** — they may build ONE action stack from cards in their hand (at no AP cost — it's a desperate last stand). This is their only chance to fight the threat.
-  2. **Roll to flee** — roll `1d20 + AGI` vs the threat's difficulty. Success = escape, no damage, but the loot goes to the pot.
-- **If the round winner beats the end threat:** They keep the threat's loot AND still claim the pot normally
-- **If the round winner loses OR flees:** They **lose the entire pot** — all pot cards are discarded (or go to the opponent in PvP). The threat's loot is also discarded.
-- **If the round winner doesn't know** about the end threat in advance (e.g., trap card triggered mid-resolution), this creates a surprise twist at the end of the round. Online: the narrator reveals the threat dramatically. RL: the GM or the threat card is flipped at the end.
+- The end threat **applies to the round winner** (the player winning the round based on net HP advantage). This is a "final boss" surprise — you won the round, but can you survive one more fight?
+- The round winner is **out of Action Points** at this point — they've already used all their stacks.
+- The round winner gets **1 bonus stack** to fight the threat — a single action stack of **any type** (attack, defense, spell, item, talk), built from cards currently in hand, at **no AP cost**. The stack can include any number of modifier/skill cards adjacent to the core action card. This is their only shot — one stack, any composition, last chance.
+- **Repel = at least 1 successful attack** against the threat. Success is determined by the normal opposed roll — the bonus stack must deal damage (any non-negative outcome: Glancing Blow or better). If the bonus stack is a Talk action (subduing a hostile NPC), a successful Talk roll also counts as repelling.
+  - **If repelled AND threat killed (HP → 0):** Round winner keeps the threat's loot AND claims the pot. Clean victory.
+  - **If repelled but threat survives (HP > 0):** Round winner still claims the pot, but the **threat carries to the beginning of the next round** — it becomes a beginning threat at position 1 next round with its remaining HP. The threat escalates (+2 ATK, same as unresolved threats). The round winner still gets the pot this round.
+- **If NOT repelled (bonus stack fails — Stalemate or worse):** The ending player **loses the round**. They forfeit the entire pot to the opponent. The threat's loot is discarded. The threat still carries to next round as a beginning threat.
+- **Flee option:** Instead of fighting, the round winner can **roll to flee** (`1d20 + AGI` vs threat difficulty). Success = escape, no damage, but the pot goes to the opponent and the threat carries to next round. Failure = take damage AND lose pot.
+- **If the round winner doesn't know** about the end threat in advance (e.g., trap card triggered mid-resolution), this creates a surprise twist. Online: the narrator reveals the threat dramatically. RL: the threat card is flipped at the end.
 
-**Hidden vs visible end threats:**
-- Scenario-triggered threats are **visible** during placement (players see the threat card at the end of the bar and can plan for it)
-- Action card / trap-triggered threats are **hidden** until their trigger condition is met during resolution. They appear on the bar only when triggered.
+**Hidden end threat reveal timing:**
+End threats come from **scenario card draws** in the encounter deck. The drawn scenario card determines whether the threat is hidden or visible:
+- **Visible threats:** The scenario card's threat is revealed immediately during the draw phase. Players see the threat card at the end of the bar during placement and can plan around it.
+- **Hidden threats:** The scenario card has a hidden threat flag — the card itself is drawn and placed face-down at the end of the bar. Players know *something* is there but not what. The threat is revealed only when resolution reaches that position. Online: the narrator builds suspense ("something stirs in the shadows...") then reveals it dramatically. RL: the threat card is flipped face-up at resolve time.
+- Which type (hidden vs visible) is a property of the scenario card itself, set during deck/encounter composition.
 
 #### Combined Example
 
@@ -734,10 +1058,14 @@ Action Bar (9 positions: 1 beginning + 3 + 3 + 1 end + 1 end scenario):
 └──────┴─────┴─────┴─────┴─────┴─────┴─────┴──────┘
 
 Resolution order:
-T1 (wolf) attacks B (initiative winner) → B passively defends
+T1 (wolf) attacks A (the fumbler who rolled Nat 1) → A passively defends
+  → If A is killed, game over. If A survives, continue:
 1: B's action → 2: A's action → 3: B's action → 4: A's action
 5: B's action → 6: A's action
-T2 (bandit) → round winner faces bandit: 1 bonus stack or flee
+T2 (bandit) → round winner gets 1 bonus stack to repel
+  → If repelled + killed: winner keeps loot + pot
+  → If repelled + bandit survives: winner keeps pot, bandit → beginning next round
+  → If failed: winner loses pot to opponent, bandit → beginning next round
 ```
 
 #### Threat AP and Scaling
@@ -771,11 +1099,12 @@ The v2 system separates cards into two distinct stack categories:
 
 **Character Stack** — your persistent "base state," always visible on the sidebar:
 ```
-CHARACTER STACK = CharPerson + [Apparel (head, body, feet, back, ring)] + [Weapon(s) (handL, handR)] + [Magic Focus]
+CHARACTER STACK = CharPerson + [Apparel (head, body, feet, back, ring)] + [Hand items (handL, handR — max 2)] + [Magic Focus]
+  Hand items: 1-handed weapon ×2 (dual wield), OR 2-handed weapon (fills both), OR weapon + shield
 ```
 - Always in play — never placed on the action bar
 - Its modifiers (DEF from armor, ATK from weapon, stat bonuses from gear) apply to ALL action stacks automatically
-- Changing equipment (equip/unequip) requires spending 1 AP on an **Equip action stack** on the bar
+- Equipment changes happen **between rounds only** during the Equip Phase (free, no AP or Energy cost). You cannot change equipment mid-round
 - Visual: a vertical card stack on the left (your character) or right (opponent) sidebar
 
 **Action Stack** — placed on the Action Bar, one per AP spent:
@@ -784,7 +1113,7 @@ ACTION STACK = CoreCard(s) + [ModifierCards...]
 ```
 - **Core cards:** The action itself, potentially consumable. Examples:
   - Attack card (returned to hand after round)
-  - Spell card + Reagent (reagent consumed, spell card returned)
+  - Spell card (reusable, always returned) + Reagent (consumed)
   - Gun card (from hand) + Ammo card (consumed)
   - Health Potion (consumed whether effect needed or not)
   - Investigate card (returned to hand)
@@ -838,17 +1167,17 @@ Roll = 1d20 + STR(14) + 4(sword) + 2(skill) + 1(bonus) = 1d20 + 21
 **Magic Blast (Position 3):**
 ```
 Character Stack (sidebar): Mage + Silk Robes (DEF +2, MAG DEF +4) + Crystal Staff (MAG +3)
-Action Stack on bar: [Fireball spell (consumed)] + [Fire Crystal reagent (consumed)] + [Imperial Mastery skill +2]
+Action Stack on bar: [Fireball spell (reusable)] + [Fire Crystal reagent (consumed)] + [Imperial Mastery skill +2]
 Roll = 1d20 + MAG(16) + 3(staff) + 2(skill) = 1d20 + 21
-Energy cost: 20 (Fireball) — on hit: 15 fire damage, ignores 2 DEF
+Energy cost: 4 (Fireball) — on hit: 3 fire damage, ignores 2 DEF
 ```
 
-**Defensive Heal (Position 2):**
+**Use Item — Heal (Position 2):**
 ```
-Character Stack (sidebar): Cleric + Chainmail (DEF +3) + Mace (ATK +2)
-Action Stack on bar: [Defend card] + [Health Potion (consumed, +30 HP)]
-Defense this position = 1d20 + END(12) + 3(armor) = 1d20 + 15
-Also restore 30 HP (potion consumed whether damaged or not)
+Character Stack (sidebar): Cleric + Chainmail (DEF +3) + Mace (ATK +2, parry +1)
+Action Stack on bar: [Use Item card] + [Health Potion (consumed, +5 HP)]
+Passive defense still active: 1d20 + END(12) + 3(armor) + 1(parry) = 1d20 + 16
+Also restore 5 HP (potion consumed whether needed or not). Overheal caps at 20.
 ```
 
 **Talk (Position 4):**
@@ -864,6 +1193,7 @@ RL: Player may speak to target. Roll 1d20 + CHA + 3 vs opposed
 Action Stack on bar: [Investigate card] + [Survival skill +2]
 Roll = 1d20 + INT(13) + 2(skill) = 1d20 + 15 vs Discovery DC
 On success: draw 1 card from encounter deck (may find items, NPCs, etc.)
+On critical success (Nat 20): also draw 1 card from the Treasure Vault
 ```
 
 **Flee (Position 6):**
@@ -913,7 +1243,7 @@ Position 6.5 resolves next (before position 7)
 - Level 2: insert up to 2 stacks
 - Level 3+: insert up to 3 stacks (rare, powerful cards)
 
-Inserted stacks are built from cards in hand and placed immediately (no planning time in RL; online: quick-place UI with 10-second timer).
+Inserted stacks are built from cards in hand and placed immediately (IRL: no planning time, just play the cards; online: quick-place UI with 10-second timer).
 
 ### REMOVE — Strip Upcoming Stacks
 
@@ -1021,7 +1351,7 @@ Marker sequence: T1 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → [End threats i
 Resolution walkthrough (7-position bar):
 
 Position 1 (Player A): Attack action → roll vs target → apply damage → check disruptions
-Position 2 (Player B): Defend action → set defense → apply heal if consumable used
+Position 2 (Player B): Use Item action → apply consumable effect (heal, buff, etc.)
 Position 3 (Player A): Investigate → roll vs DC → find item or fail
 Position 4 (Player B): Attack action → roll vs A's defense → apply damage
 Position 5 (Player A): Spell (Freeze Time) → roll → SUCCESS → INSERT 1 stack at 5.5
@@ -1036,13 +1366,32 @@ When an action stack targets an opponent (attack, talk, disarm, etc.), both side
 
 ```
 Active player:  1d20 + Character Stack base + Action Stack modifiers
-Target:         1d20 + Character Stack base + relevant defense modifiers
-                (or passive defense if target has no Defend stack at this position)
+Target:         1d20 + Passive Armor DEF + Parry bonus (if applicable)
 
 Difference = Active player total - Target total
 ```
 
-**Passive defense:** If the target has no Defend action stack at the current position, they still get a passive defense roll: `1d20 + END + equipped Apparel DEF`. Active Defend stacks add their modifier cards on top of this.
+**Defense model — passive armor + weapon parry:**
+
+Defense is always **passive** through equipped armor and weapon. There is no "Defend action stack" that takes up a bar position. Defense is calculated automatically whenever a player is targeted by an attack:
+
+1. **Passive armor defense (always active):** `1d20 + END + equipped Apparel DEF`. This applies automatically whenever a player is targeted. No action required — it comes from the Character Stack.
+
+2. **Weapon parry bonus (if weapon has parry property):** Some weapons have a **parry** property (swords, shields, staffs, etc.). If the defender has a parry-capable weapon equipped, its parry bonus is added to the defense roll automatically. This is a weapon stat, not a separate card or action.
+   - Example: Short Sword has `parry: +2`. When the wielder is attacked, their defense roll includes the +2 parry bonus.
+   - Shields have high parry values (Shield: `parry: +4`). This is their primary function — they boost passive defense.
+   - A skill modifier card with a combat skill that includes a parry bonus can be placed adjacent to the weapon in the Character Stack to further increase the parry value.
+   - Weapons without a parry property (bows, wands, two-handed hammers) provide no parry bonus.
+
+3. **Dual wield parry:** If dual wielding, only the off-hand weapon's parry value applies (you can't parry with the weapon you're attacking with). A common loadout: sword (ATK) in primary hand + shield (parry) in off-hand.
+
+**Defense roll summary:**
+| Scenario | Defense Roll |
+|----------|-------------|
+| No weapon or weapon has no parry | `1d20 + END + Apparel DEF` (passive only) |
+| Weapon with parry equipped | `1d20 + END + Apparel DEF + Weapon parry bonus` |
+| Weapon + combat skill modifier | `1d20 + END + Apparel DEF + Weapon parry + Skill bonus` |
+| Shield in off-hand | `1d20 + END + Apparel DEF + Shield parry` |
 
 ### Outcome Table
 
@@ -1053,12 +1402,12 @@ Difference = Active player total - Target total
 | +1 to +4 | Glancing Blow | Half damage (round down). No durability loss. |
 | 0 | Stalemate | No damage to either side. |
 | -1 to -4 | Deflected | No damage. Attacker's weapon loses 1 durability. |
-| -5 to -9 | Countered | Defender deals half their weapon damage to attacker. |
-| -10 or less | **Critical Counter** | Defender deals full weapon damage to attacker. **Attacker drops 1 item** (not apparel) → goes to pot. **Attacker loses next action** — their next unresolved action stack on the bar is disabled (removed, cards return to hand). |
+| -5 to -9 | Countered | Defender deals half their weapon damage to attacker. Attacker's armor applies normally (can reduce to 0). |
+| -10 or less | **Critical Counter** | Defender deals full weapon damage to attacker. Attacker's armor applies normally. **Attacker drops 1 item** (not apparel) → goes to pot. **Attacker loses next action** — their next unresolved action stack on the bar is disabled (removed, cards return to hand). |
 
-**Natural 20 rule:** If the raw d20 roll (before modifiers) is a 20, the outcome is automatically upgraded by one tier (e.g., Solid Hit becomes Critical Hit). Applies to both sides.
+**Natural 20 rule (auto-success):** A raw d20 roll of 20 **always succeeds**, regardless of modifiers. The action achieves at least a Solid Hit (or the equivalent success tier for non-combat actions). Additionally, the outcome is upgraded by one tier (e.g., Solid Hit becomes Critical Hit). Applies to both attacker and defender. A Natural 20 cannot be negated by any modifier math.
 
-**Natural 1 rule:** If the raw d20 roll is a 1, the outcome is automatically downgraded by one tier (e.g., Glancing Blow becomes Stalemate). **Additionally**, a Natural 1 by the attacker causes them to drop 1 item (not apparel) into the pot. Fumbles hurt.
+**Natural 1 rule (auto-fail):** A raw d20 roll of 1 **always fails**, regardless of modifiers. The action achieves at worst a Deflected result (or the equivalent failure tier for non-combat actions). Additionally, the outcome is downgraded by one tier (e.g., Deflected becomes Countered). A Natural 1 by the attacker also causes them to drop 1 item (not apparel) into the pot. Fumbles hurt. A Natural 1 cannot be rescued by any modifier math. **Critical fail armor bypass:** When counter damage is triggered by a Natural 1, the attacker's armor does NOT reduce the incoming counter damage — the hit goes straight through.
 
 ### Critical Effects — Drop & Disable
 
@@ -1080,14 +1429,23 @@ Difference = Active player total - Target total
 ```
 Base damage = Weapon ATK (from Character Stack) + governing stat (STR melee / AGI ranged)
               + Action Stack core card bonus (if any)
-Armor reduction = Defender's total DEF (from Character Stack Apparel)
-Net damage = max(1, base damage - armor reduction)   // minimum 1 on a hit
+Armor reduction = Defender's total DEF (from Character Stack Apparel + parry bonus if applicable)
+
+For NON-CRITICAL outcomes:
+  Net damage = max(0, base damage - armor reduction)
+  → Armor CAN fully absorb damage (reduce to 0). High DEF exceeding damage = no damage taken.
+
+For CRITICAL outcomes (Critical Hit):
+  Net damage = max(1, base damage - armor reduction) × 2
+  → Criticals always deal at least 1 damage, doubled. Armor cannot fully block a critical.
 
 Apply outcome multiplier:
-  Critical Hit: net damage × 2
-  Solid Hit: net damage × 1
-  Glancing Blow: net damage × 0.5 (round down, minimum 1)
+  Critical Hit: net damage × 2 (min 2 damage — criticals always hurt)
+  Solid Hit: net damage × 1 (can be 0 if armor absorbs all)
+  Glancing Blow: floor(net damage × 0.5) (can be 0)
 ```
+
+**Armor reduction cap:** Defense can exceed incoming damage on non-critical hits — the attack is simply absorbed by armor. This makes heavy armor builds viable as damage sponges. However, **critical hits always penetrate** — at least 1 base damage gets through before the ×2 multiplier, ensuring even the tankiest character takes a minimum of 2 damage from a critical.
 
 ### Unarmed Attack
 
@@ -1102,8 +1460,9 @@ Encounter threats are participants in the action bar, not passive targets:
 - The encounter has its own AP (based on difficulty tier) and fills action bar positions
 - At each of the encounter's positions, it performs its behavior action (attack, defend, special)
 - The encounter rolls: 1d20 + encounter ATK/DEF mod
-- Players defend with passive defense or active Defend stacks
-- Reduce encounter HP by damage dealt. At 0 HP, encounter is defeated → collect loot.
+- Players defend with passive armor DEF (+ parry look-ahead if applicable)
+- Reduce encounter HP by damage dealt. At 0 HP, encounter is defeated → collect loot
+- All damage is applied **immediately** — if a player reaches 0 HP during any position's resolution, the game ends right there (mid-round defeat)
 - Undefeated encounters carry forward to the next round with **+2 ATK** (they escalate)
 
 ### Per-Step Roll & Stat Infographic
@@ -1258,9 +1617,10 @@ When a Talk card is played targeting another character (NPC or player-controlled
 1. Chat interface opens (WebSocket streaming via existing `cardGame.js` chat system)
 2. Player types messages to the target
 3. **NPC targets**: LLM responds in character, using:
-   - NPC personality from `olio.charPerson` narrative data
-   - Reputation score between player and NPC (from interaction history)
+   - NPC personality, alignment, and backstory from the real `olio.charPerson` record (drawn from population)
+   - Reputation score between player and NPC (from `olio.interaction` history — persists across sessions)
    - Current game context (encounter state, needs, nearby threats)
+   - The NPC's actual stats influence dialogue (high-CHA NPCs are more eloquent; low-INT NPCs speak simply)
 4. **Player targets**: Direct player-to-player chat channel opens (no LLM intermediary)
 5. Chat concludes when either party ends it or round timer expires
 6. `POST /rest/game/concludeChat` evaluates the conversation:
@@ -1310,7 +1670,7 @@ Magic Effect cards are spell-like abilities that can be stacked with an Action c
 2. **Minimum Stat**: The stat threshold to cast (e.g., "MAG 12" or "INT 14")
 3. **Energy Cost**: Deducted from the caster's Energy track
 4. **Effect**: What the spell does mechanically
-5. **Reusable**: Whether the card returns to hand (powerful spells) or is consumed (scroll-type)
+5. **Reusable**: All spell cards are reusable — they return to hand after resolution. Energy is spent at placement regardless of success or failure (use-it-or-lose-it for Energy, not for the card itself)
 
 ### Casting Requirements
 
@@ -1325,7 +1685,7 @@ To play a Magic Effect card, your stack must contain:
 2. The Character's relevant stat meets or exceeds the Magic Effect's minimum
 3. The Character has enough Energy to pay the cost
 
-If any requirement is not met, the Magic Effect card fizzles — it's still consumed if consumable, and Energy is still spent. This is part of the use-it-or-lose-it design.
+If any requirement is not met, the Magic Effect card fizzles — Energy is still spent, but the spell card returns to hand (all spells are reusable). This is use-it-or-lose-it for Energy, not for the card.
 
 ### Multi-Type Magic Effects
 
@@ -1338,14 +1698,14 @@ Some powerful Magic Effect cards require **two** skill types (e.g., "Imperial + 
 
 | Name | Skill Type | Min Stat | Energy | Effect | Reusable |
 |------|-----------|----------|--------|--------|----------|
-| Fireball | Imperial | MAG 12 | 20 | 15 fire dmg, ignores 2 DEF | Yes |
-| Ice Wall | Imperial | MAG 10 | 15 | +5 DEF this round, negates Flee attempts against you | Yes |
-| Raise Thrall | Undead | INT 14 | 25 | Defeated encounter becomes your ally for 3 rounds (fights with its original stats) | No (consumed) |
-| Entropy Touch | Undead | INT 12 | 15 | Target's equipped weapon loses 3 durability | Yes |
-| Mind Read | Psionic | INT 12 | 10 | See one target player's hand (or reveal encounter's loot before fighting) | Yes |
-| Telekinetic Slam | Psionic | INT 14 | 20 | 12 force dmg + push target (they cannot attack you next round) | Yes |
-| Soul Drain | Undead + Psionic | INT 16 | 30 | Deal 10 dmg and restore 10 HP to self | No (consumed) |
-| Arcane Storm | Imperial + Psionic | MAG 14, INT 14 | 35 | 20 dmg to ALL enemies in current encounter | No (consumed) |
+| Fireball | Imperial | MAG 12 | 4 | 3 fire dmg, ignores 2 DEF | Yes |
+| Ice Wall | Imperial | MAG 10 | 3 | +5 DEF this round, negates Flee attempts against you | Yes |
+| Raise Thrall | Undead | INT 14 | 5 | Defeated encounter becomes your ally for 3 rounds (fights with its original stats) | Yes |
+| Entropy Touch | Undead | INT 12 | 3 | Target's equipped weapon loses 3 durability | Yes |
+| Mind Read | Psionic | INT 12 | 2 | See one target player's hand (or reveal encounter's loot before fighting) | Yes |
+| Telekinetic Slam | Psionic | INT 14 | 4 | 3 force dmg + push target (they cannot attack you next round) | Yes |
+| Soul Drain | Undead + Psionic | INT 16 | 6 | Deal 3 dmg and restore 3 HP to self | Yes |
+| Arcane Storm | Imperial + Psionic | MAG 14, INT 14 | 7 | 5 dmg to ALL enemies in current encounter | Yes |
 
 ### Magic in RL Play
 
@@ -1356,7 +1716,7 @@ Magic attack: 1d20 + MAG mod (Imperial) or INT mod (Undead/Psionic) + Skill mod
 vs target: 1d20 + END mod (resist physical magic) or INT mod (resist mental magic)
 ```
 
-On hit: apply the Magic Effect's stated damage/effect. On miss: effect fizzles but Energy is still spent and consumable cards are still consumed.
+On hit: apply the Magic Effect's stated damage/effect. On miss: effect fizzles but Energy is still spent. The spell card returns to hand regardless of outcome (all spells are reusable).
 
 ---
 
@@ -1364,27 +1724,21 @@ On hit: apply the Magic Effect's stated damage/effect. On miss: effect fizzles b
 
 ### Need Track Mechanics
 
-The four need tracks create ongoing pressure independent of encounters:
+The three need tracks create ongoing pressure independent of encounters:
 
-| Track | Starts At | Drain | At Zero |
+| Track | Max Value | Drain | At Zero |
 |-------|----------|-------|---------|
-| HP | 50 + (END × 5) | Combat damage, hazards, hunger drain | **Defeated.** Character is out. |
-| Energy | 50 + (END × 3) | Action costs (5-35 per action) | Can only Defend or Talk. No attacks, magic, crafting, or fleeing. |
-| Hunger | 100 | -10 every 3 rounds automatically | Lose 10 HP per round (starvation damage). |
-| Morale | 50 + (CHA × 3) | -10 on failed actions, -15 on ally defeat | Cannot Talk or cooperate. -2 to all rolls (despair). |
+| HP | **20** (flat, all characters) | Combat damage, hazards | **Defeated immediately.** Game ends mid-round if this happens during resolution. No waiting for cleanup. |
+| Energy | **MAG stat** (Imperial) or **INT** (Undead/Psionic) | Spell costs, special action costs | Cannot cast spells or use Energy-costing actions. Can still Attack (weapon), Talk, Flee, Investigate, Rest. |
+| Morale | **20** (flat, all characters) | -2 on failed actions, -3 on ally defeat | Cannot Talk or cooperate. -2 to all rolls (despair). |
 
 ### Restoring Needs
 
 | Track | Restoration Methods |
 |-------|-------------------|
-| HP | Health Potion (+30), Bandage (+10), Rest action (+10), Life magic (varies) |
-| Energy | Rest action (+20), Ration (+10), Stimulant Potion (+25), sleep event (+full) |
-| Hunger | Ration (+30), Cooked Meal (+50), Raw Meat (+15, risk: lose 10 HP from illness), Foraged Berries (+10) |
-| Morale | Successful Talk (+15), Ally victory in combat (+10), Rest action (+5), finding loot (+5) |
-
-### Hunger Timer
-
-Every 3 rounds, all players lose 10 Hunger. This creates a clock — you have roughly 30 rounds before starvation without food. Food items become strategically valuable.
+| HP | Health Potion (+5), Bandage (+2), Rest action (+2), Life magic (varies), round recovery (winner +5, loser +2). **Overheal caps at 20** — use-it-or-lose-it. |
+| Energy | Rest action (+3), Mana Potion (+5), sleep event (+full). **Overheal caps at max (MAG or INT stat).** |
+| Morale | Successful Talk (+3), Ally victory in combat (+2), Rest action (+1), finding loot (+1) |
 
 ---
 
@@ -1392,11 +1746,12 @@ Every 3 rounds, all players lose 10 Hunger. This creates a clock — you have ro
 
 ### Mode 1: AI as Character Opponent
 
-The AI controls a full NPC character with its own deck, following the same rules as the player — including initiative, AP, and action bar placement.
+The AI controls a full character with its own deck, following the same rules as the player — including initiative, AP, and action bar placement.
 
 **Online implementation:**
-- Server generates an NPC character via `GET /rest/olio/roll` with stats, inventory, skills
-- NPC deck built from the same starter deck rules
+- AI opponent is picked or randomly drawn from the Olio character population (same pool as the player character — real `olio.charPerson` records with stats, portraits, personality, and narrative data)
+- If a specific opponent hasn't been chosen in the deck builder, one is randomly selected from the population, excluding the player's character
+- Opponent deck built from the same starter deck rules, using the opponent's actual stats and equipment
 - Each round, the AI:
   1. Rolls initiative (server-side 1d20 + AGI)
   2. Receives a condensed game state and its available cards
@@ -1405,16 +1760,16 @@ The AI controls a full NPC character with its own deck, following the same rules
   5. During resolution, the AI responds to mid-round disruptions (see AI Mid-Turn Response below)
 - AI personality profile influences strategy (aggressive AI front-loads attacks; cautious AI reserves defense stacks for later positions)
 
-**RL equivalent:** In tabletop play without AI, another player controls the opponent. For solo RL play, a simple decision table is printed on a reference card:
+**IRL equivalent:** In tabletop play, another player controls the opponent. For solo IRL play, a **printed decision table** on a reference card determines the opponent's behavior — no online service or LLM involved:
 
 ```
-AI Priority (check in order):
-1. HP < 20%  → Flee or Defend + Heal
-2. Enemy HP < 30% → Attack (best weapon)
-3. Has magic + Energy > 30 → Magic Attack
-4. Hunger < 30 → Use food item
-5. Default → Attack with best available weapon
+Solo Opponent Priority (printed reference card, check in order):
+1. HP ≤ 4 (20%)  → Flee + Use heal item if available
+2. Enemy HP ≤ 6 (30%) → Attack (best weapon)
+3. Has magic + Energy ≥ spell cost → Magic Attack
+4. Default → Attack with best available weapon
 Assign stacks to positions in priority order.
+Roll dice for the opponent's actions using the same rules.
 ```
 
 ### Mode 2: AI as Game Master
@@ -1449,14 +1804,19 @@ Player performance: {win/loss ratio}
 Output: { encounter, stacks: [...], narration: "..." }
 ```
 
-**RL equivalent:** In tabletop play, one player acts as GM. They draw encounter cards, place encounter stacks on the bar, and roleplay NPCs. The GM does not have their own character or deck.
+**IRL equivalent:** In tabletop play, one player acts as GM. They draw encounter cards, place encounter stacks on the bar, and roleplay NPCs. The GM does not have their own character or deck. No online services are needed — the human GM makes all decisions that the LLM handles online.
 
 ### Mode Switching
 
-Online, the player selects mode at game start:
+**Online**, the player selects mode at game start:
 - **"Play vs AI"** → Mode 1 (AI as opponent)
 - **"Story Mode"** → Mode 2 (AI as GM)
 - Can switch between modes between sessions (campaign mode) but not mid-session
+
+**IRL**: Mode is determined by how many players are at the table:
+- **2 players, no GM** → Mode 1 equivalent (player vs player, using printed opponent decision table for encounter behavior)
+- **2+ players + 1 GM** → Mode 2 equivalent (GM controls encounters and narrates)
+- No AI, LLM, or online services involved — all decisions are made by human players
 
 ### AI Stack Selection — Condensed LLM Protocol
 
@@ -1470,19 +1830,19 @@ The AI opponent (Mode 1) and encounter behavior (Mode 2) both use a compact, str
   "round": 7,
   "initiative": { "winner": "ai", "aiRoll": 18, "playerRoll": 12 },
   "ai": {
-    "ap": 4, "energy": 55, "hp": 70, "hunger": 60, "morale": 80,
+    "ap": 4, "energy": 10, "hp": 16, "morale": 18,
     "charStack": "Goblin Warlord | Spiked Plate (DEF+5) | War Axe (ATK+6) | Battle Rage skill",
     "hand": [
       { "id": "a1", "type": "action", "name": "Attack", "energyCost": 10 },
-      { "id": "a2", "type": "action", "name": "Defend", "energyCost": 5 },
+      { "id": "a2", "type": "action", "name": "Flee", "energyCost": 5 },
       { "id": "s1", "type": "skill", "name": "Intimidate", "mod": "+3 CHA" },
-      { "id": "c1", "type": "consumable", "name": "Rage Potion", "effect": "+5 ATK 1 round" },
+      { "id": "c1", "type": "consumable", "name": "Rage Potion", "effect": "+3 ATK 1 round" },
       { "id": "m1", "type": "magic", "name": "Fear Aura", "cost": 15, "insert": 1 }
     ]
   },
   "player": {
     "charStack": "Elf Ranger | Leather Armor (DEF+2) | Longbow (ATK+5, ranged)",
-    "needs": { "hp": 45, "energy": 30, "hunger": 40, "morale": 55 }
+    "needs": { "hp": 14, "energy": 12, "morale": 16 }
   },
   "encounter": null,
   "pokerFace": { "emotion": "worried", "confidence": 0.78 }
@@ -1531,9 +1891,9 @@ OUTPUT FORMAT (JSON only, no explanation):
     { "pos": 8, "owner": "ai", "resolved": false }
   ],
   "aiHand": [
-    { "id": "a2", "type": "action", "name": "Defend", "energyCost": 5 }
+    { "id": "a2", "type": "action", "name": "Flee", "energyCost": 5 }
   ],
-  "aiEnergy": 25
+  "aiEnergy": 10
 }
 → AI responds with updated stacks for its remaining unresolved positions.
 → May swap, replace, or keep current stacks. JSON only.
@@ -1557,7 +1917,7 @@ Cards in hand are displayed in a scrollable tray at the bottom of the screen, or
 ┌──────────────────────────────────────────────────────────────────┐
 │  [Actions ▼]  [Consumables ▼]  [Skills ▼]  [Modifiers ▼]  [Equip ▼]  │
 │  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐       │
-│  │Atk  │ │Def  │ │Flee │ │Heal │ │Sword│ │+1ATK│ │+2Par│       │
+│  │Atk  │ │Flee │ │Rest │ │Heal │ │Sword│ │+1ATK│ │+2Par│       │
 │  │     │ │     │ │     │ │Pot. │ │skill│ │     │ │    │       │
 │  └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘       │
 └──────────────────────────────────────────────────────────────────┘
@@ -1580,7 +1940,7 @@ Cards in hand are displayed in a scrollable tray at the bottom of the screen, or
 
 - **Compatibility highlighting:** When dragging a card, valid drop targets glow green. Invalid targets (wrong type, insufficient energy, duplicate skill) show red with a tooltip.
 - **Auto-build:** Right-click an action card on the bar → "Suggest Modifiers" — system scans hand for compatible modifiers and auto-attaches the best ones. Uses a simple heuristic: match action type to skill category, pick highest bonus modifiers first.
-- **Auto-arrange:** Button in the header — calls the AI (online) or applies a heuristic (RL) to suggest optimal stack placement for all AP. Player can accept, modify, or dismiss.
+- **Auto-arrange:** Button in the header (online only) — calls the AI to suggest optimal stack placement for all AP. Player can accept, modify, or dismiss. IRL: players arrange cards themselves.
 - **Quick-add:** Double-click a modifier card in hand → auto-attaches to the first compatible action stack on the bar. If no compatible stack exists, card bounces back.
 - **Shake reject:** Dropping a card on an invalid target triggers a shake animation + "Cannot add: {reason}" tooltip (e.g., "Cannot add: action stack already has a skill card").
 
@@ -1618,21 +1978,119 @@ Each action bar position shows its stack as a compact card cluster:
 | `Enter` | Confirm placement ("Ready") |
 | `Ctrl+Z` | Undo last placement action |
 
-### RL Physical Arrangement
+### IRL Physical Layout — Character Wheel + Action Bar
 
-In tabletop play, the action bar is represented by a **play mat** or simply the table space in front of the player:
+The tabletop layout is a **circle + rectangle**: a rotating **Character Wheel** on the left, a horizontal **Action Bar** extending from it to the right, with resource piles, hand areas, and a discard pit around the edges.
 
 ```
-Character Stack          Action Bar (left to right)
-┌────────┐      ┌────────┐  ┌────────┐  ┌────────┐
-│ Person │      │ Pos 1  │  │ Pos 3  │  │ Pos 5  │
-│ Armor  │      │ Attack │  │ Defend │  │ Flee   │
-│ Weapon │      │ +Skill │  │ +Potion│  │        │
-└────────┘      └────────┘  └────────┘  └────────┘
-(to the side)   (core on top, modifiers tucked underneath)
+            ACTIONS (hand)             SCENARIOS              PIT / DEBRIS FIELD
+            ┌─────┐ ┌─────┐           ┌───────┐             ┌─────┐ ┌─────┐
+            │ Atk │ │Skill│           │Encntr │             │ Pot │ │Disc.│
+            │     │ │     │           │ Deck  │             │cards│ │pile │
+            └─────┘ └─────┘           └───────┘             └─────┘ └─────┘
+                                                              ITEMS (hand)
+       ╭──────────────╮                                      ┌─────┐ ┌─────┐
+      ╱    CHARACTER    ╲    ACTION BAR (radiating stepped)   │Sword│ │Potn │
+     │      WHEEL        │   ┌───────┬───────┬───────┬─────┐ │     │ │     │
+     │  ┌────┐  ┌────┐   │   │ Pos 1 │ Pos 2 │ Pos 3 │ ... │ └─────┘ └─────┘
+     │  │ P1 │  │ P2 │   │──▸│Attack │ Magic │ Skill │     │
+     │  │Armr│  │Armr│   │   │  +3   │       │  +1   │     │
+     │  │Weap│  │Weap│   │   └───────┴───────┴───────┴─────┘
+     │  └────┘  └────┘   │       ▲ resolution marker
+      ╲   ◎ (pivot)     ╱
+       ╰──────────────╯         THREATS
+                                ┌─────┐ ┌─────┐ ┌─────┐
+       RESOURCES                │Threat│ │Threat│ │Threat│
+       ● ● ● ● (HP coins)      └─────┘ └─────┘ └─────┘
+       ◆ ◆ ◆ (Energy coins)
 ```
 
-Players place cards physically. Core cards face-up on top, modifier cards partially visible underneath. A position marker (token/coin) tracks the current resolution position.
+**Character Wheel:**
+- A circular cardboard wheel (printed as part of the deck) or any lazy-susan-style rotating surface
+- Each player's character stack is arranged radially — charPerson card on top, apparel and weapon cards fanned around it
+- The wheel **rotates to mark the active player** during initiative order. Whoever is at the "12 o'clock" position (or aligned with the action bar) is the active player
+- In multiplayer (3+ players), all character stacks sit on the wheel. Rotate after each turn in the Draw & Placement Phase
+- The wheel's center pivot can hold a round counter token
+
+**Action Bar:**
+- Extends horizontally from the wheel to the right
+- Stepped slots (marked on a play mat, or just table space) for each action bar position
+- Core card face-up on top of each slot, modifier cards tucked partially underneath
+- A physical resolution marker (token/coin/d20 on side) advances left to right during resolution
+- Beginning threats placed to the left of position 1; end threats placed to the right of the last position
+
+**Resource Area (below wheel):**
+- Health denomination cards (+1, +2, +5) in a pile — pile size = current HP
+- Energy denomination cards (+1, +2, +5) in a separate pile — pile size = current Energy
+- Morale tracked via a separate small pile or a dial/counter
+
+**Pit / Debris Field (right side):**
+- The pot: cards anted or dropped during the round collect here
+- Discard pile: consumed items, resolved encounters
+- Does not need to be a specific shape — any designated table area works
+
+**Hand Areas (top left / top right):**
+- Action and skill cards fanned in one area (top left, near the wheel)
+- Item, equipment, and consumable cards spread in another area (top right, near the pit)
+- Players organize their hand however they prefer — no enforced layout
+
+**Scenario / Encounter Deck (top center):**
+- Shared encounter deck face-down
+- Scenario cards (if GM mode) placed face-up nearby
+- Drawn cards go onto the action bar or into the threat row
+
+**Threat Row (below action bar):**
+- Active threat cards laid out in a row below the bar
+- Visible to all players — threat source, difficulty, and behavior text readable
+
+### Touch Screen & Mobile UX
+
+All gameplay mechanics must work on touch screens (tablets and phones) with finger-sized tap targets and touch-native drag. No interaction should require hover, right-click, or keyboard shortcuts to be functional.
+
+**Touch target sizing:**
+
+| Element | Minimum Size | Notes |
+|---------|-------------|-------|
+| Card in hand tray | 64×96px (min), 80×120px recommended | Finger-selectable, scrollable tray |
+| Action bar position | 80×120px (min) | Drop target for drag |
+| Buttons (Ready, Reimage, Open in AM7) | 44×44px (min tap area) | Per Apple/Google HIG |
+| Needs bars, AP counter | 44px height (min) | Tappable to expand detail |
+| D-pad / movement controls | 56×56px per direction button | Prominent, easily tappable |
+| Card type filter tabs | 44px height, full-width | Large touch targets in hand tray |
+
+**Touch drag-and-drop:**
+- **Long-press (150ms) to pick up** a card — short tap selects/previews, long-press initiates drag
+- **Drag ghost:** Semi-transparent card image follows finger, with a subtle shadow beneath
+- **Drop zones glow** when a dragged card enters them (same green/red highlighting as mouse)
+- **Snap-to-target:** Releasing within 20px of a valid drop zone snaps the card into place
+- **Cancel drag:** Drag off-screen or back to original position to cancel
+- **Scroll vs drag conflict:** Hand tray scrolls on horizontal swipe. Long-press on a card suppresses scroll and initiates drag. Visual feedback (card lifts/scales up slightly) confirms drag mode.
+
+**Touch alternatives for hover/right-click actions:**
+
+| Desktop Action | Touch Equivalent |
+|---------------|-----------------|
+| Hover to see card detail | Tap to select, detail shown in side panel or modal |
+| Right-click "Suggest Modifiers" | Long-press on action bar slot → context menu |
+| Keyboard shortcuts (1-9, A, M) | Visible on-screen buttons during placement phase |
+| Mouse drag card between stacks | Same: long-press + drag |
+| Hover ↻ reimage icon on card | Tap card → detail view shows [↻ Reimage] button |
+| Scroll hand tray with mousewheel | Horizontal swipe gesture |
+
+**Responsive layout adjustments:**
+
+| Screen Width | Layout Change |
+|-------------|--------------|
+| ≥1200px (desktop) | Full three-column layout as documented |
+| 768–1199px (tablet landscape) | Character stack and opponent stack collapse to narrow sidebars. Action bar and hand tray take full width. |
+| <768px (phone/tablet portrait) | Single-column stack layout: Header → Character/Opponent toggle → Action Bar (horizontally scrollable) → Hand Tray. Character stack accessible via slide-out drawer. |
+
+**Specific touch-friendly patterns:**
+- **Placement phase:** Hand tray cards are large enough to drag. Action bar slots show "+" drop zones when empty. Pre-built "Quick Arrange" button auto-places cards with one tap.
+- **Resolution phase:** "Next" button advances to next position (no auto-advance that could be missed on small screens). Each position's outcome panel has large Dismiss button.
+- **Chat/Talk:** Standard mobile chat UI — full-screen modal with bottom input bar, send button ≥44px.
+- **Initiative roll:** Tap-to-roll with large dice animation (swipe/shake to roll as optional flair).
+- **Deck browser / image review:** Grid of cards, scrollable. Tap to select, action bar at bottom with [↻ Reimage] [Open in AM7] buttons at full-width 44px height.
 
 ---
 
@@ -1732,7 +2190,7 @@ The Poker Face widget appears on the player's sidebar (and optionally the oppone
 
 Each round of online play is **narrated by an LLM** and **spoken aloud via voice synthesis**. The narrator acts as a sports commentator, dungeon master, or dramatic storyteller — describing the action as it unfolds, reacting to outcomes, building tension, and creating an immersive audio-visual experience. After each round's resolution, an **after-action image** is generated to depict the key moment of the round.
 
-This system is online-only — RL play relies on the players themselves for narration.
+This system is online-only — IRL tabletop play has no narration system. Players narrate their own actions, describe outcomes, and roleplay encounters themselves.
 
 ### Narrator Personality Profiles
 
@@ -1829,6 +2287,11 @@ Also output a one-line scene description for image generation (prefix with "IMAG
 ### Voice Synthesis Pipeline
 
 Voice narration uses the existing AM7 voice synthesis infrastructure — the same `AudioEngine` and `VoiceService` used by Magic8.
+
+**Voice config fallback:**
+- If no voice profile is configured for the narrator → show a one-time warning: "Voice narration not configured. Configure a voice profile in deck settings to enable spoken narration."
+- If the user never specifies a voice profile (i.e., no voice config exists at all) → **skip voice synthesis entirely**. The narration system still generates text via LLM and displays subtitles, but no audio is produced and no voice endpoints are called. This is the default for new decks — voice is opt-in.
+- If a voice profile IS configured but the synthesis call fails → show error inline ("Voice synthesis failed"), fall back to text-only subtitles for that narration point, continue gameplay without blocking.
 
 **Flow:**
 ```
@@ -1954,7 +2417,7 @@ The event log panel becomes a visual narrative timeline:
 |  Aelindra cleaves through the   |
 |  wolf alpha. The pack scatters   |
 |  into the darkness."             |
-| ✅ Critical Hit — 24 damage     |
+| ✅ Critical Hit — 5 damage      |
 | 🐺 Wolf Pack defeated           |
 | 🎒 Loot: Wolf Pelt, Raw Meat   |
 +-----------------------------------+
@@ -2019,12 +2482,36 @@ Card images are generated via the existing AM7 SD (Stable Diffusion) image pipel
 
 **Every card face must have a representative image.** The image conveys what the card *is* at a glance — a portrait for characters, a mannequin display for apparel, a detailed rendering of weapons and items, etc.
 
+### Theme-Mandatory Regeneration
+
+**All entity images are regenerated fresh for every deck build.** Characters, apparel, items, animals, and wearables all receive new images regardless of whether they had images before. This is required because:
+
+1. **Theme consistency** — a character portrait generated in the Olio world editor uses generic prompts. The card game needs the portrait rendered in the theme's art style (`{theme.artStyle.promptSuffix}`).
+2. **Visual anchor reference** — the `gameBackground` establishes the color palette and atmosphere. Entity images generated with the background as an img2img reference at low weight (0.1–0.15) inherit the theme's hue and mood.
+3. **Prompt enrichment** — card game prompts are richer than Olio defaults (they include equipped gear, theme setting context, card composition cues like "RPG card art, centered, no text").
+
+| Entity Type | Always Regenerated Per Deck? | Why |
+|-------------|---------------------------|-----|
+| `charPerson` (player, opponent, NPCs) | Yes | Theme art style + equipped theme apparel + background reference |
+| `apparel` (mannequin images) | Yes | Theme-specific clothing must match art style |
+| `wearable` (individual icons) | Yes | Must match theme palette; flat-lay style varies by theme |
+| `item` (weapons, consumables) | Yes | Items may be shared across themes but need style-specific rendering |
+| `animal` (creatures, threats) | Yes | Creature art must match theme atmosphere (fantasy vs sci-fi vs post-apoc) |
+| `deckAssets` (backgrounds, icons) | Yes | Theme-defining assets, always regenerated |
+| `cardBack`, `cardStyle` | Yes | Per-theme by definition |
+| `afterAction` scenes | No — generated on demand during gameplay | Each is unique to the situation |
+
+**Existing Olio images are NOT reused.** Even if a character already has a portrait in the Olio world, the deck build generates a new one in the theme's style. The Olio-world image is preserved on the original object — the card game image goes to `~/CardGame/{deckName}/images/{type}/{name}/`.
+
+**This means a full deck build queues 60–90+ images.** The queue is designed for this volume — see [Image Generation Queue Manager](#image-generation-queue-manager) for the review workflow that lets players spot-check results and re-queue any they don't like.
+
 #### Card Image Source Map
 
 | Card Type | Image Content | Generation Source | Endpoint |
 |-----------|--------------|-------------------|----------|
 | **Character** | Portrait of the character wearing their equipped gear | `sdConfig.charPerson` (Config 3) | `POST /rest/olio/charPerson/{id}/reimage` |
 | **Apparel** | Clothing/armor displayed on a mannequin form | **Existing mannequin pipeline** — `NarrativeUtil.getMannequinPrompt()` → `SDUtil.generateMannequinImages()` | `POST /rest/olio/apparel/{id}/reimage` |
+| **Wearable (icon)** | Single garment/piece isolated on flat background | **New wearable icon pipeline** — `NarrativeUtil.getWearableIconPrompt()` → `SDUtil.generateWearableIcon()` | `POST /rest/olio/wearable/{id}/reimage` |
 | **Item (Weapon)** | Isolated weapon on dark background | `sdConfig.item` subtype `weapon` (Config 5) | `POST /rest/game/asset/generate` |
 | **Item (Consumable)** | Potion, food, material on dark background | `sdConfig.item` subtype `consumable` (Config 5) | `POST /rest/game/asset/generate` |
 | **Action** | Themed action-type illustration (attack = clashing swords, defend = raised shield, etc.) | `sdConfig.item` subtype `action` (Config 5) | `POST /rest/game/asset/generate` |
@@ -2034,7 +2521,9 @@ Card images are generated via the existing AM7 SD (Stable Diffusion) image pipel
 | **Skill** | Symbolic emblem or rune representing the skill | `sdConfig.item` subtype `skill` (Config 5) | `POST /rest/game/asset/generate` |
 | **Magic Effect** | Spell energy, particle effect, ethereal visual | `sdConfig.item` subtype `magicEffect` (Config 5) | `POST /rest/game/asset/generate` |
 
-**Apparel uses the mannequin pipeline** — not the generic item config. The existing `NarrativeUtil.getMannequinPrompt()` generates prompts showing clothing on a "full body retail mannequin" at cumulative wear levels (base layer → under → suit → outer). This produces clothing images that clearly show the garment's shape, material, and coverage without human features. The mannequin negative prompt excludes "human face, realistic skin, hair, eyes, hands" to keep focus on the apparel itself. Generated images are stored in `~/Gallery/Apparel/{apparelName}/` with wear level metadata.
+**Apparel uses the mannequin pipeline** — not the generic item config. The existing `NarrativeUtil.getMannequinPrompt()` generates prompts showing clothing on a "full body retail mannequin" at cumulative wear levels (base layer → under → suit → outer). This produces clothing images that clearly show the garment's shape, material, and coverage without human features. The mannequin negative prompt excludes "human face, realistic skin, hair, eyes, hands" to keep focus on the apparel itself. Generated images are stored in `~/CardGame/{deckName}/images/apparel/{apparelName}/` with wear level metadata.
+
+**Wearable icons** use a new single-item pipeline modeled on the mannequin approach — see [Wearable Icon Generation](#wearable-icon-generation) below. Each individual `olio.wearable` (a single boot, a helmet, a glove) gets its own icon image for use as equipment slot icons, character stack detail, and card modifier overlays.
 
 **Action and Talk cards** get unique themed illustrations (not just icons). During deck build, each action type generates a card-face image showing the action in the theme's art style — e.g., High Fantasy "Attack" shows a dramatic sword clash, Sci-Fi "Attack" shows a laser firefight. These are generated once per theme and reused across games.
 
@@ -2064,7 +2553,7 @@ Generates the type-specific card back designs. These are generated **once per th
 **Generation triggers:**
 - New theme selected → generate all 8 type backs
 - Never regenerated during gameplay (stable reference images)
-- Stored at `~/Gallery/CardGame/cardBack/{themeId}/{cardType}.png`
+- Stored at `~/CardGame/{deckName}/images/cardBacks/{cardType}.png`
 
 **Per-type prompts:**
 | Type | Prompt Fragment |
@@ -2149,7 +2638,7 @@ Rather than generating a static image, this config produces a **card style defin
    └─ Divider image generated from dividers.sdPrompt
    └─ Stat icons generated from statIcons.sdPrompt (one per stat)
    └─ Corner flourishes (if specified) generated
-   └─ All stored under ~/Gallery/CardGame/cardStyle/{themeId}/
+   └─ All stored under ~/CardGame/{deckName}/images/cardStyle/
 
 3. CLIENT CARD RENDERER
    └─ Loads cardStyleDef JSON
@@ -2261,7 +2750,7 @@ Generates images for Item cards (weapons, consumables), Action cards, Encounter 
       "promptTemplate": "{actionName}, dramatic {actionDescription}, {theme.artStyle.promptSuffix}, card illustration, dynamic composition",
       "negativePrompt": "text, UI, icon, simple, flat, watermark",
       "perAction": true,
-      "note": "Generated once per theme per action type (8 action + 1 talk = 9 images)"
+      "note": "Generated once per theme per action type (7 action + 1 talk = 8 images)"
     },
     "encounter": {
       "promptTemplate": "{encounterName}, {encounterDescription}, environment scene, {terrainContext}, {theme.artStyle.promptSuffix}, dramatic lighting",
@@ -2288,7 +2777,7 @@ Generates images for Item cards (weapons, consumables), Action cards, Encounter 
 | Iron Sword | weapon | "Iron Sword, longsword, forged iron with leather grip, item icon, isolated on dark background, weapon, sharp detail, metallic sheen, dark fantasy, oil painting style" |
 | Health Potion | consumable | "Health Potion, red glowing liquid in glass flask, item icon, isolated on dark background, potion bottle, glowing, dark fantasy, oil painting style" |
 | Attack | action | "Attack, dramatic sword clash between two warriors, sparks flying, dark fantasy, oil painting style, card illustration, dynamic composition" |
-| Defend | action | "Defend, warrior bracing behind raised shield, incoming blow deflected, dark fantasy, oil painting style, card illustration, dynamic composition" |
+| Watch | action | "Watch, vigilant sentinel scanning the horizon, keen eyes, watchtower silhouette, dark fantasy, oil painting style, card illustration, atmospheric composition" |
 | Talk | action | "Talk, diplomatic meeting between two figures, candlelit table, scrolls and seals, dark fantasy, oil painting style, card illustration, dynamic composition" |
 | Sandstorm | encounter | "Sandstorm, swirling desert storm engulfing ruins, environment scene, arid wasteland, dark fantasy, oil painting style, dramatic lighting" |
 | Swordsmanship | skill | "Swordsmanship, crossed swords emblem, combat mastery, item icon, isolated on dark background, skill emblem, glowing rune, dark fantasy, oil painting style" |
@@ -2299,12 +2788,82 @@ Generates images for Item cards (weapons, consumables), Action cards, Encounter 
 POST /rest/olio/apparel/{objectId}/reimage
   └─ NarrativeUtil.getMannequinPrompt(apparel, wearLevel)
      → "8k highly detailed ((professional fashion photography)) of a ((full body retail mannequin)) displaying: {cumulative clothing description}"
-  └─ SDUtil.generateMannequinImages(user, galleryPath, apparel, ...)
-     → Generates at 512×768, stores in ~/Gallery/CardGame/apparel/{name}/
+  └─ SDUtil.generateMannequinImages(user, imagePath, apparel, ...)
+     → Generates at 1024×1024 + hires, stores in ~/CardGame/{deckName}/images/apparel/{name}/
   └─ Negative prompt: "human face, realistic skin, hair, eyes, hands, fingers, feet, toes, skin texture"
 ```
 
 Uses `POST /rest/game/asset/generate` for non-apparel items.
+
+#### Wearable Icon Generation
+
+Individual `olio.wearable` items need their own icon images for use in the character stack equipment slots, card modifier overlays, and the equip/unequip UI. The apparel mannequin pipeline shows the **whole outfit** — the wearable icon pipeline shows a **single garment piece** in isolation.
+
+**Pattern:** Follows the same architecture as the mannequin pipeline — a `NarrativeUtil` method builds the prompt from the wearable record's name, fabric, color, and location fields, and `SDUtil` generates and stores the image.
+
+```
+POST /rest/olio/wearable/{objectId}/reimage
+  └─ NarrativeUtil.getWearableIconPrompt(wearable, sdConfig)
+     → "8k highly detailed ((product photography)) of a single ((isolated {wearableName})),
+         {color} {fabric}, {theme.artStyle.promptSuffix}, flat lay on dark background,
+         centered, clean edges, no model, no mannequin, single item only"
+  └─ SDUtil.generateWearableIcon(user, imagePath, wearable, ...)
+     → Generates at 512×512, stores in ~/CardGame/{deckName}/images/wearables/{name}/
+  └─ Negative prompt: "human, person, mannequin, model, multiple items,
+     text, watermark, blurry, low quality, body parts"
+```
+
+**Key differences from the mannequin pipeline:**
+
+| | Mannequin (Apparel) | Wearable Icon |
+|---|-------------------|---------------|
+| **Shows** | Full outfit (cumulative wearables at/below a wear level) on a mannequin form | Single garment piece, isolated, no mannequin |
+| **Dimensions** | 1024×1024 + hires (CSS crops to card aspect, shows full body mannequin) | 512×512 (square — icon format for slots and overlays) |
+| **Prompt style** | "professional fashion photography of a full body retail mannequin displaying..." | "product photography of a single isolated {item}, flat lay on dark background..." |
+| **Source method** | `NarrativeUtil.getMannequinPrompt(apparel, wearLevel, sdConfig)` | `NarrativeUtil.getWearableIconPrompt(wearable, sdConfig)` |
+| **SD method** | `SDUtil.generateMannequinImages()` | `SDUtil.generateWearableIcon()` |
+| **Storage** | `~/CardGame/{deckName}/images/apparel/{apparelName}/` | `~/CardGame/{deckName}/images/wearables/{wearableName}/` |
+
+**Prompt construction** (mirrors the mannequin `describeOutfitForMannequin` pattern but for a single item):
+
+```java
+// NarrativeUtil.getWearableIconPrompt(wearable, sdConfig)
+//
+// Reads from the wearable record:
+//   - name:     "leather boots"
+//   - fabric:   "leather"
+//   - color:    { name: "brown" }
+//   - location: ["foot", "ankle"]
+//
+// Builds prompt:
+//   "8k highly detailed ((product photography)) of a single
+//    ((isolated brown leather boots)), foot and ankle wear,
+//    {theme.artStyle.promptSuffix}, flat lay on dark background,
+//    centered, clean edges, no model, no mannequin, single item only"
+```
+
+**When wearable icons are generated:**
+
+| Trigger | Notes |
+|---------|-------|
+| Theme apparel swap (Step 3b) | Each new wearable created during apparel swap gets an icon queued |
+| Custom item creation (Step 4b) | New wearable items get icons alongside their mannequin/apparel images |
+| Equip/unequip during game | If a wearable has no icon yet, generate on equip |
+| Manual reimage | Player clicks reimage on the equipment slot |
+
+**Generation priority:** Wearable icons are queued at the same priority as apparel (after card backs and deck assets). They are 512×512 icons and fast to generate. For a typical starter outfit of 6–8 wearable pieces, the full set generates quickly.
+
+**Fallback:** Before wearable icons generate, equipment slots display a **generic silhouette icon** for the wearable's location (head → helmet outline, foot → boot outline, torso → shirt outline, etc.). These SVG silhouettes are built into the client and tinted per card type color. Once the wearable icon generates, it replaces the silhouette with a smooth crossfade.
+
+**Usage in the card game UI:**
+
+| Context | How the wearable icon appears |
+|---------|------------------------------|
+| **Character Stack sidebar** | Equipment slots show wearable icons in a paper-doll layout (head, body, hands, feet, ring, back) |
+| **Equip/unequip dialog** | Grid of owned wearables with icons, drag to equip slots |
+| **Card modifier overlay** | When a wearable provides stat bonuses (e.g., +2 DEF from boots), the icon appears as a small badge on the action stack |
+| **Loot display** | When a wearable drops as loot (from threat defeat or discovery), the icon appears in the loot preview |
+| **Print** | Wearable icons printed at 32×32 in equipment slot diagrams on the character reference card |
 
 #### Config 6: Deck Visual Assets (`sdConfig.deckAssets`)
 
@@ -2360,7 +2919,7 @@ Generates **thematic UI and gameplay assets** — backgrounds, icons, titles, an
       "promptTemplate": "{needName} icon, {theme.artStyle.promptSuffix}, small emblem, iconic, 48px",
       "negativePrompt": "text, person, realistic",
       "perNeed": true,
-      "needs": ["HP", "Energy", "Hunger", "Morale", "AP"],
+      "needs": ["HP", "Energy", "Morale", "AP"],
       "usage": "Need bar icons on sidebar panels"
     },
     "actionTypeIcons": {
@@ -2368,7 +2927,7 @@ Generates **thematic UI and gameplay assets** — backgrounds, icons, titles, an
       "promptTemplate": "{actionName} action icon, {theme.artStyle.promptSuffix}, symbolic emblem, bold, 64px",
       "negativePrompt": "text, person, realistic",
       "perAction": true,
-      "actions": ["Attack", "Defend", "Flee", "Rest", "Use Item", "Investigate", "Craft", "Watch", "Talk"],
+      "actions": ["Attack", "Flee", "Rest", "Use Item", "Investigate", "Craft", "Watch", "Talk"],
       "usage": "Action card icons, action bar position headers"
     },
     "outcomeIcons": {
@@ -2407,14 +2966,14 @@ Generates **thematic UI and gameplay assets** — backgrounds, icons, titles, an
       "usage": "Card face corner suit icons (top-left, top-right, bottom-right) for quick type identification when fanned/stacked"
     }
   },
-  "generationOrder": "gameBackground FIRST, then all other assets use gameBackground as img2img reference",
+  "generationOrder": "gameBackground FIRST → cardBack SECOND → all other assets",
   "referenceStrategy": {
     "anchor": "gameBackground",
-    "referenceWeight": 0.25,
-    "note": "Background generates first. Card backs, covers, banners, and pot/bar backgrounds use the gameBackground as an img2img reference at low weight to maintain visual palette and texture consistency across all theme assets."
+    "defaultReferenceWeight": 0.25,
+    "note": "The gameBackground is the single visual origin for the entire theme. It generates first and establishes palette, texture, and atmosphere. Every surface-level asset (card backs, help cover, pot, action bar, banners) uses it as an img2img reference at low weight (0.2–0.3). This ensures the game table, card backs, help booklet cover, and all decorative panels feel like a unified visual family without being copies of each other."
   },
   "regenerateOn": "theme-change",
-  "storage": "~/Gallery/CardGame/deckAssets/{themeId}/"
+  "storage": "~/CardGame/{deckName}/images/deckAssets/"
 }
 ```
 
@@ -2425,20 +2984,30 @@ Generates **thematic UI and gameplay assets** — backgrounds, icons, titles, an
 
 **Generation order (reference chain):**
 
-The `gameBackground` generates **first** and becomes the visual anchor for the entire theme. All subsequent assets use it as an `img2img` reference at low weight (0.2–0.3) to maintain palette, texture, and atmospheric consistency:
+The `gameBackground` is the **single visual origin** for every theme. It generates first and sets the palette, texture, and atmosphere. Every large surface asset then references it via img2img, creating a coherent visual family:
 
 ```
-gameBackground (generates first, 3 variants)
-    ├── potBackground       (ref weight 0.25)
-    ├── actionBarBackground (ref weight 0.25)
-    ├── titleBanner         (ref weight 0.2)
-    ├── phaseHeaders ×5     (ref weight 0.2)
-    └── rulesCover          (ref weight 0.3)
+gameBackground (generates first, 3 variants — the visual anchor)
+    │
+    ├─── cardBack ×8 types  (Config 1, ref weight 0.25)
+    │       Card backs are the most-seen surface after the board.
+    │       Generating them second ensures they harmonize with the
+    │       background while still having their own distinct design.
+    │
+    ├─── potBackground       (ref weight 0.25)
+    ├─── actionBarBackground (ref weight 0.25)
+    ├─── titleBanner         (ref weight 0.2)
+    ├─── phaseHeaders ×5     (ref weight 0.2)
+    └─── rulesCover          (ref weight 0.3)
+            Help content cover page — highest reference weight
+            because the cover should feel closest to the game
+            board aesthetic (same dimensions as a card back,
+            used as the help panel header and print booklet cover).
 ```
 
-The `cardBack` images (Config 1) also use the `gameBackground` as a reference — see [Card Backs](#config-1-card-backs-sdconfigcardback). This ensures the card backs, board background, pot, action bar, and help cover all feel like they belong to the same visual family without being identical.
+**Why background first?** Generating background → card backs → covers in that order means each downstream asset inherits the same color palette and texture vocabulary. Without a shared visual anchor, independently generated assets often drift into incompatible palettes — a warm parchment background paired with a cold steel card back looks disjointed. The low reference weight (0.2–0.3) is enough to align hue/saturation without making every asset look like a filtered copy of the background.
 
-Small icons (d20, stat, need, action, outcome) do **not** use the background reference — they are too small for img2img to help and need crisp isolated shapes instead.
+Small icons (d20, stat, need, action, outcome, card type corners) do **not** use the background reference — they are too small for img2img to help and need crisp isolated shapes instead.
 
 **Asset count per theme:**
 | Asset Category | Count | Total Images |
@@ -2447,8 +3016,8 @@ Small icons (d20, stat, need, action, outcome) do **not** use the background ref
 | Title banner | 1 | 1 |
 | d20 icon | 1 | 1 |
 | Stat icons | 6 (STR, AGI, END, INT, MAG, CHA) | 6 |
-| Need icons | 5 (HP, Energy, Hunger, Morale, AP) | 5 |
-| Action type icons | 9 | 9 |
+| Need icons | 4 (HP, Energy, Morale, AP) | 4 |
+| Action type icons | 8 | 8 |
 | Outcome icons | 7 | 7 |
 | Phase headers | 5 | 5 |
 | Rules cover | 1 | 1 |
@@ -2618,55 +3187,98 @@ Here `bright-medieval` only ships one custom SD config (for brighter character p
 
 #### Config Customization (Deck Builder Step)
 
-During deck building (between Steps 1 and 6), the player can optionally open a **Config Editor** to view and customize any AI config for the selected theme. Changes are saved as user-specific copies, leaving the default templates untouched.
+During deck building (between Steps 1 and 6), the player can optionally customize any AI config for the selected theme. Each config type has a different editing approach based on whether AM7 has a native editor for it:
+
+**Prompt Configs (`olio.llm.promptConfig`)** — opened via **object link**. The prompt config has a native AM7 form (`formDef.js`), so clicking the config name opens it in the AM7 object editor (same as the [Open in AM7] links on card types). The player edits the prompt template, system instructions, and evaluation criteria directly.
+
+**Chat Configs (`olio.llm.chatConfig`)** — also opened via **object link**. Native AM7 form for model selection, temperature, token limits, etc. New chat configs are created using the **"Open Chat" chatConfig as a connection settings template** — the same pattern used by `cardGame.js` v1. The "Open Chat" template provides base connection fields (serverUrl, model, serviceType, apiKey, chatOptions values). The deck builder copies only value fields from this template (avoiding stale identity/organization refs from nested objects), then assigns deck-specific character references and purpose-specific settings (temperature, maxTokens, system prompt refs).
+
+**SD Configs (`olio.sd.config`)** — opened in a **modal dialog** within the deck builder. SD configs have no direct AM7 editor form, so the deck builder provides a purpose-built modal:
 
 ```
 ┌────────────────────────────────────────────────────┐
-│  CONFIG EDITOR (accessible from deck builder)       │
+│  SD CONFIG: high-fantasy.charPerson      [✕ Close] │
 ├────────────────────────────────────────────────────┤
 │                                                     │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐  │
-│  │ SD Configs  │ │ Prompts     │ │ Chat/Model  │  │
-│  │ (6)         │ │ (6)         │ │ (3)         │  │
-│  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘  │
-│         │               │               │          │
-│  ┌──────▼──────────────────────────────────────┐   │
-│  │ Selected: high-fantasy.charPerson (sdConfig)│   │
-│  ├─────────────────────────────────────────────┤   │
-│  │ Prompt Template:                             │   │
-│  │ ┌─────────────────────────────────────────┐ │   │
-│  │ │ {race} {gender}, {physicalDescription}, │ │   │
-│  │ │ {apparelDescription}, portrait,         │ │   │
-│  │ │ {theme.artStyle.promptSuffix}, card art │ │   │
-│  │ └─────────────────────────────────────────┘ │   │
-│  │ Negative Prompt:                             │   │
-│  │ ┌─────────────────────────────────────────┐ │   │
-│  │ │ deformed, blurry, text, watermark ...   │ │   │
-│  │ └─────────────────────────────────────────┘ │   │
-│  │ Dimensions: [512] × [768]                   │   │
-│  │ CFG Scale: [7.5]  Steps: [30]               │   │
-│  │ Denoising: [0.75]  Seed: [_____]           │   │
-│  │                                              │   │
-│  │ [Preview] [Reset to Default] [Save Copy]    │   │
-│  └──────────────────────────────────────────────┘   │
+│  Prompt Template:                                   │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ {race} {gender}, {physicalDescription},     │   │
+│  │ {apparelDescription}, portrait,             │   │
+│  │ {theme.artStyle.promptSuffix}, card art     │   │
+│  └─────────────────────────────────────────────┘   │
+│  Negative Prompt:                                   │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ deformed, blurry, text, watermark ...       │   │
+│  └─────────────────────────────────────────────┘   │
+│  Dimensions: [512] × [768]                         │
+│  CFG Scale: [7.5]  Steps: [30]                     │
+│  Denoising: [0.75]  Seed: [_____]                  │
+│  Sampler: [Euler a ▼]  Model: [sdXL_v10 ▼]        │
+│  img2img Reference: [✓ Use gameBackground]         │
+│  Reference Weight: [0.25]                           │
 │                                                     │
+│  [Preview] [Reset to Default] [Save]               │
+└────────────────────────────────────────────────────┘
+```
+
+**SD Config storage options:** Since sdConfig is passed directly to the server and is stateless (no session context), it can be stored in two ways:
+1. **As an AM7 object** (`olio.sd.config`) — standard storage, loaded by name each session. Shared across games using the same theme.
+2. **Embedded in the deck snapshot** — the full sdConfig JSON is serialized into the deck's `data.data` object alongside card snapshots. This freezes the exact generation parameters with the deck, so replaying a saved game reproduces the same image style even if the global config has since changed.
+
+The deck builder defaults to option 1 (reference by name). If the player enables "Lock configs to deck" in settings, all SD configs are embedded in the snapshot (option 2).
+
+**Config Editor UI:**
+
+```
+┌────────────────────────────────────────────────────┐
+│  AI CONFIGS for "High Fantasy"                      │
+├────────────────────────────────────────────────────┤
+│                                                     │
+│  SD Configs (7):                                    │
+│  ┌──────────────────────────────────────────────┐  │
+│  │ charPerson     [Edit Modal] [Preview]        │  │
+│  │ animal         [Edit Modal] [Preview]        │  │
+│  │ item           [Edit Modal] [Preview]        │  │
+│  │ cardBack       [Edit Modal] [Preview]        │  │
+│  │ cardStyle      [Edit Modal] [Preview]        │  │
+│  │ deckAssets     [Edit Modal] [Preview]        │  │
+│  │ afterAction    [Edit Modal] [Preview]        │  │
+│  └──────────────────────────────────────────────┘  │
+│                                                     │
+│  Prompt Configs (6):                                │
+│  ┌──────────────────────────────────────────────┐  │
+│  │ narrator          [Open in AM7] [Preview]    │  │
+│  │ cardStyleComposer [Open in AM7] [Preview]    │  │
+│  │ combatEval        [Open in AM7] [Preview]    │  │
+│  │ interactionEval   [Open in AM7] [Preview]    │  │
+│  │ aiOpponent        [Open in AM7] [Preview]    │  │
+│  │ gmEncounter       [Open in AM7] [Preview]    │  │
+│  └──────────────────────────────────────────────┘  │
+│                                                     │
+│  Chat / Model Configs (3):                          │
+│  ┌──────────────────────────────────────────────┐  │
+│  │ narrator           [Open in AM7]             │  │
+│  │ playerChat         [Open in AM7]             │  │
+│  │ cardStyleComposer  [Open in AM7]             │  │
+│  └──────────────────────────────────────────────┘  │
+│                                                     │
+│  [✓ Lock configs to deck] (embed in snapshot)      │
 │  [Use Defaults]              [Save All & Continue]  │
 └────────────────────────────────────────────────────┘
 ```
 
 **Customization flow:**
 1. Player clicks "Customize AI Configs" in the deck builder
-2. Three tabs: SD Configs, Prompts, Chat/Model — each lists configs for the current theme
-3. Selecting a config loads the full AM7 object into an editable form (uses existing `formDef.js` definitions for `olio.sd.config`, `olio.llm.promptConfig`, `olio.llm.chatConfig`)
-4. **Preview** button generates a sample output (SD: generates a test image; Prompt: shows rendered prompt with sample data; Chat: shows model/settings summary)
-5. **Save Copy** creates a user-owned copy: `{deckName}.{purpose}.custom` stored under the user's config directory. The theme's `aiConfigs` reference is updated to point to the custom copy.
-6. **Reset to Default** reverts to the shipped template
-7. **Save All & Continue** returns to the deck builder with all config choices locked in
+2. Three groups listed: SD Configs, Prompt Configs, Chat/Model Configs
+3. **SD Configs** → click "Edit Modal" → opens modal dialog with all SD parameters. Edits are saved as a user-owned copy (`{deckName}.{purpose}.custom`) or embedded in the deck snapshot.
+4. **Prompt / Chat Configs** → click "Open in AM7" → opens the AM7 object editor in a new tab/panel. Player edits using the native AM7 form. On return, the deck builder detects if the object was modified.
+5. **Preview** button generates a sample output (SD: generates a test image; Prompt: shows rendered prompt with sample data)
+6. **Save All & Continue** returns to the deck builder with all config choices locked in
 
-**Custom config naming:** User copies append `.custom` or a user-chosen suffix:
+**Custom config naming:** User copies use `{deckName}.{purpose}.custom`:
 ```
-high-fantasy.charPerson.custom.sdConfig.json
-high-fantasy.narrator.v2.promptConfig.json
+high-fantasy.charPerson.custom   → user's customized SD config for character portraits
+high-fantasy.narrator.custom     → user's customized narrator prompt
 ```
 
 #### Config Loading at Runtime
@@ -2705,27 +3317,28 @@ async function loadThemeAiConfigs(themeConfig) {
 }
 ```
 
-Since configs are loaded fresh (not snapshotted), prompt tuning, model upgrades, or SD parameter changes take effect on the next game session without any re-snapshot.
+When "Lock configs to deck" is **off** (default), configs are loaded fresh by name — prompt tuning, model upgrades, or SD parameter changes take effect on the next game session without any re-snapshot. When "Lock configs to deck" is **on**, SD configs are read from the embedded snapshot copy, ignoring any global changes.
 
 ### Generation Priority Queue
 
 When multiple images need generation, the queue is ordered by config priority:
 
 ```
-Priority 1a: deckAssets.gameBackground — generates FIRST, visual anchor for the theme
-Priority 1b: deckAssets (remaining) — covers, icons, titles, banners (ref gameBackground)
+Priority 1a: deckAssets.gameBackground — generates FIRST, visual anchor for all theme art
+Priority 1b: cardBack ×8 types — generates SECOND (ref gameBackground, weight 0.25)
+Priority 1c: deckAssets (remaining) — rulesCover, pot, action bar, banners, icons (ref gameBackground)
 Priority 2:  cardStyle frame elements (needed before any card can render properly)
-Priority 3:  cardBack images (ref gameBackground for palette consistency)
-Priority 4:  charPerson — player character portrait (most visible card)
-Priority 5:  charPerson — opponent/NPC portraits
-Priority 6:  item — equipped weapons/apparel
-Priority 7:  encounter — as drawn from deck
-Priority 8:  item — consumables, skills, magic effects in hand
-Priority 9:  animal — creature encounter images
-Priority 10: afterAction — generated on demand after resolution
+Priority 3:  charPerson — player character portrait (most visible card)
+Priority 4:  charPerson — opponent/NPC portraits
+Priority 5:  item — equipped weapons, apparel (mannequin)
+Priority 5b: wearable — individual wearable icons (512×512, same priority as apparel)
+Priority 6:  encounter — as drawn from deck
+Priority 7:  item — consumables, skills, magic effects in hand
+Priority 8:  animal — creature encounter images
+Priority 9:  afterAction — generated on demand after resolution
 ```
 
-The `gameBackground` at Priority 1a is the **visual anchor** — it establishes palette and texture for the theme. Priorities 1b and 3 use it as an img2img reference to maintain visual consistency across all board surfaces and card backs.
+**Background → Card Backs → Covers:** The `gameBackground` at Priority 1a establishes palette and texture. Card backs (1b) generate next because they are the most-seen surface after the board itself — players see card backs constantly during draws, opponents' hands, and deck piles. The rules/help cover and other deck assets (1c) follow, all referencing the same background anchor. This three-stage cascade ensures every large surface in the game shares a unified visual identity.
 
 Max concurrent SD generations: **2** (configurable per server capacity). Queue is FIFO within each priority level.
 
@@ -2744,23 +3357,25 @@ Max concurrent SD generations: **2** (configurable per server capacity). Queue i
 3. GENERATION REQUEST (routed by card type)
    └─ Character:  POST /rest/olio/charPerson/{id}/reimage
    └─ Apparel:    POST /rest/olio/apparel/{id}/reimage (mannequin pipeline)
+   └─ Wearable:   POST /rest/olio/wearable/{id}/reimage (single-item icon, 512×512)
    └─ Animal:     POST /rest/olio/animal/{id}/reimage
    └─ All others: POST /rest/game/asset/generate (weapons, consumables, actions, skills, magic, encounters)
 
 4. IMAGE STORAGE
-   └─ All card game images stored under ~/Gallery/CardGame/{configName}/
-       Characters:   ~/Gallery/CardGame/charPerson/{characterName}/
-       Apparel:      ~/Gallery/CardGame/apparel/{apparelName}/
-       Animals:      ~/Gallery/CardGame/animal/{creatureName}/
-       Weapons:      ~/Gallery/CardGame/item/{itemName}/
-       Consumables:  ~/Gallery/CardGame/item/{itemName}/
-       Actions:      ~/Gallery/CardGame/action/{themeId}/{actionType}.png
-       Encounters:   ~/Gallery/CardGame/encounter/{encounterName}/
-       Skills:       ~/Gallery/CardGame/skill/{skillName}/
-       Magic:        ~/Gallery/CardGame/magicEffect/{spellName}/
-       Card Backs:   ~/Gallery/CardGame/cardBack/{themeId}/
-       Card Style:   ~/Gallery/CardGame/cardStyle/{themeId}/
-       Deck Assets:  ~/Gallery/CardGame/deckAssets/{themeId}/
+   └─ All card game images stored under ~/CardGame/{deckName}/images/
+       Characters:   ~/CardGame/{deckName}/images/characters/{characterName}/
+       Apparel:      ~/CardGame/{deckName}/images/apparel/{apparelName}/
+       Wearables:    ~/CardGame/{deckName}/images/wearables/{wearableName}/
+       Animals:      ~/CardGame/{deckName}/images/animals/{creatureName}/
+       Weapons:      ~/CardGame/{deckName}/images/items/{itemName}/
+       Consumables:  ~/CardGame/{deckName}/images/items/{itemName}/
+       Actions:      ~/CardGame/{deckName}/images/actions/{actionType}.png
+       Encounters:   ~/CardGame/{deckName}/images/encounters/{encounterName}/
+       Skills:       ~/CardGame/{deckName}/images/skills/{skillName}/
+       Magic:        ~/CardGame/{deckName}/images/magicEffects/{spellName}/
+       Card Backs:   ~/CardGame/{deckName}/images/cardBacks/
+       Card Style:   ~/CardGame/{deckName}/images/cardStyle/
+       Deck Assets:  ~/CardGame/{deckName}/images/deckAssets/
 
 5. IMAGE READY
    └─ Server pushes notification via WebSocket (game.asset.ready)
@@ -2776,27 +3391,53 @@ Max concurrent SD generations: **2** (configurable per server capacity). Queue i
 
 ### Placeholder Design (Per Card Type)
 
-| Card Type | Placeholder Background | Placeholder Icon | Border Style |
-|-----------|----------------------|-----------------|-------------|
-| Character | Gold gradient | Silhouette figure | Gold, pulsing |
-| Apparel | Silver gradient | Shield outline | Silver, pulsing |
-| Item | Green gradient | Crossed swords outline | Green, pulsing |
-| Action | Red gradient | Lightning bolt outline | Red, pulsing |
-| Talk | Blue gradient | Speech bubble outline | Blue, pulsing |
-| Encounter | Purple gradient | Question mark | Purple, pulsing |
-| Skill | Orange gradient | Star outline | Orange, pulsing |
-| Magic Effect | Teal gradient | Spiral outline | Teal, pulsing |
+Cards without generated images use **Material Icons** (Google Material Symbols) or **emoji fallbacks** as placeholders. No custom gradient backgrounds — just the icon/emoji centered on the card's type-colored background with a subtle pulsing border to indicate pending generation.
+
+| Card Type | Material Icon | Emoji Fallback | Background Color |
+|-----------|--------------|----------------|-----------------|
+| Character | `person` | 🧑 | Gold |
+| Apparel | `checkroom` | 🛡️ | Silver |
+| Item (Weapon) | `swords` | ⚔️ | Green |
+| Item (Consumable) | `local_pharmacy` | 🧪 | Green |
+| Action (Attack) | `flash_on` | ⚡ | Red |
+| Action (Parry) | `shield` | 🛡️ | Red |
+| Action (Flee) | `directions_run` | 🏃 | Red |
+| Action (Other) | `play_arrow` | ▶️ | Red |
+| Talk | `chat` | 💬 | Blue |
+| Encounter (Creature) | `pest_control` | 🐺 | Purple |
+| Encounter (NPC) | `person_alert` | ⚠️ | Purple |
+| Encounter (Event) | `explore` | 🔍 | Purple |
+| Skill | `stars` | ⭐ | Orange |
+| Magic Effect | `auto_fix_high` | ✨ | Teal |
+| Card Back | `style` | 🃏 | Theme color |
+| Deck Asset | `image` | 🖼️ | Theme color |
+
+**Icon sizing:** 48px (hand view), 96px (detail view), 24px (thumbnail/stack). Material Icon font loaded via `<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">`. Emoji fallback used if Material Symbols fails to load.
+
+**During generation:** The pulsing border remains. The icon/emoji is replaced by a small spinner overlay. Once the image arrives, it fades in over the placeholder.
 
 All card types use pulsing borders during generation. Action and Talk cards generate themed illustrations during deck build (see Config 5 `action` subtype), so they also start as placeholders before their images are ready.
 
 ### Image Sizing
 
-| Context | Image Size | Aspect Ratio |
-|---------|-----------|-------------|
-| Card face (in-hand view) | 256×384 | 2:3 (standard card ratio) |
-| Card face (zoomed/detail) | 512×768 | 2:3 |
-| Card thumbnail (stack view) | 64×96 | 2:3 |
-| Print resolution | 744×1039 | 2:3 (at 300 DPI for 2.5"×3.5") |
+**Generation sizes** — all images are generated at one of two fixed sizes. CSS handles all display sizing via `object-fit: cover` and `object-position: center` to fit card dimensions/locations:
+
+| Image Type | Generation Size | Notes |
+|------------|----------------|-------|
+| Card images (characters, apparel, animals, encounters, actions, skills, magic, card backs, card style, backgrounds, after-action, deck assets) | **1024×1024 + hires fix** | All card art and scene images generated at 1024×1024 with hires upscale. CSS crops/centers to card aspect ratio. |
+| Icons (wearable icons, equipment slot icons) | **512×512** | Square icons for equipment slots, modifier overlays, etc. |
+
+**Display sizes** — CSS scales the generated image to fit:
+
+| Context | Display Size | CSS Fit |
+|---------|-------------|---------|
+| Card face (in-hand view) | 256×384 CSS | `object-fit: cover; object-position: center;` on 1024×1024 source |
+| Card face (zoomed/detail) | 512×768 CSS | Same fit, larger display |
+| Card thumbnail (stack view) | 64×96 CSS | Same fit, thumbnail scale |
+| Equipment slot icon | 48×48 CSS | `object-fit: contain;` on 512×512 source |
+| Print resolution | 744×1039 CSS | 2:3 at 300 DPI for 2.5"×3.5" — uses full 1024×1024 source for print quality |
+
+**No pre-resizing** — the server generates at 1024×1024 (or 512×512 for icons) and the client handles all display scaling via CSS. This means one source image works for hand view, detail view, print, and any future layout changes.
 
 ### Character Reimage on Equip
 
@@ -2838,97 +3479,229 @@ Players can also manually request re-generation of any card's image:
 
 ### Batch Reimage
 
-Players can regenerate images for multiple cards at once — either the entire deck or filtered by card type.
+Players can regenerate images for multiple cards at once — either the entire deck or filtered by card type. Batch reimage uses the same client-side queue as initial generation (see Image Generation Queue below).
 
 **UI options:**
-- **Reimage All** — Regenerate every card in the current deck. Queues all cards through the priority system.
-- **Reimage by Type** — Select one or more card types (Character, Apparel, Item, Encounter, Skill, Magic Effect) and regenerate only those. Useful after a theme or art style change.
-- **Reimage Card Backs** — Regenerate all 8 type-specific card back images. Triggered automatically on theme change, but can also be done manually.
+- **Reimage All** — Queues every card in the current deck for regeneration. Existing images stay visible until replaced.
+- **Reimage by Type** — Select one or more card types and regenerate only those.
+- **Reimage Card Backs** — Regenerate all 8 type-specific card back images.
 
-**Batch flow:**
+All batch reimage items are added to the generation queue as `regen: true` entries, bypassing the image skip-check.
+
+### Image Generation Queue
+
+The image generation queue is a **simple client-side array** processed one item at a time. No server-side batch tracking — the client drives everything by calling individual reimage endpoints sequentially.
+
+**Image storage:** All generated images are stored under the deck's group — no gallery involvement:
 ```
-1. Player selects scope (all, by type, or card backs)
-2. Client builds queue of card IDs to regenerate
-3. Cards queued in priority order (same as generation priority queue)
-4. Progress bar shows: "Regenerating 12/47 cards..."
-5. Each card updates in-place as its image arrives (fade transition)
-6. Cards not yet regenerated continue showing their current image (not placeholder)
-7. Cancel button available — stops queue, keeps whatever has been generated
+~/CardGame/{deckName}/images/
+  ├── deckAssets/
+  ├── cardBacks/
+  ├── cardStyle/
+  ├── characters/
+  ├── apparel/
+  ├── wearables/
+  ├── items/
+  ├── animals/
+  ├── encounters/
+  ├── actions/
+  ├── skills/
+  └── magicEffects/
 ```
 
-**Endpoint:**
-```
-POST /rest/game/v2/reimage/batch
-Body: {
-  "scope": "all" | "type" | "backs",
-  "cardTypes": ["character", "apparel"],  // only if scope=type
-  "themeId": "dark-medieval"
+**Skip-check on queue:** Before generating each image, the queue checks the deck image path for an existing image for that entity. If the image exists and the queue entry is NOT a regen request, the item is **skipped** — no generation call made. This is the key mechanism for:
+- **Crash / refresh resilience** — if the browser closes mid-queue, restarting the queue just re-checks the image path, skips everything already generated, and continues from where it left off
+- **Incremental builds** — adding new cards to a deck only generates images for the new entries
+- **Manual reimage** — clicking ↻ on a card adds it as `regen: true`, which forces generation regardless of existing image
+
+**Queue data structure:**
+
+```javascript
+let imageQueue = [];      // Array of queue entries, processed in order
+let errorQueue = [];      // Failed items, available for retry
+let completedQueue = [];  // Finished items with results, browsable
+
+// Each queue entry:
+{
+    id: "queue-uuid",
+    entityType: "charPerson",     // AM7 object type
+    entityId: "am7-uuid",        // Source object ID
+    entityName: "Aelindra",      // Display label
+    imagePath: "characters/",    // Subfolder in ~/CardGame/{deckName}/images/
+    regen: false,                // true = force regenerate even if image exists
+    sdConfigKey: "charPerson",   // Which SD config to use
+    status: "pending",           // pending | generating | completed | failed | skipped
+    resultUrl: null,             // Thumbnail URL on completion
+    error: null                  // Error message if failed
 }
-→ Returns: { "queued": 47, "estimatedBatchId": "batch-uuid" }
-
-GET /rest/game/v2/reimage/batch/{batchId}/status
-→ Returns: { "total": 47, "completed": 12, "failed": 0, "inProgress": 2 }
 ```
 
-**WebSocket events for batch progress:**
-| Event | Payload |
-|-------|---------|
-| `game.v2.reimage.batch.progress` | `{ batchId, total, completed, currentCardId }` |
-| `game.v2.reimage.batch.complete` | `{ batchId, total, succeeded, failed }` |
-| `game.v2.reimage.card.ready` | `{ cardId, imageUrl }` (per-card, same as single reimage) |
+**Processing loop (client-side):**
 
-### Image Generation Queue Manager
+```javascript
+async function processQueue() {
+    while (imageQueue.length > 0) {
+        let item = imageQueue[0];
 
-During initial deck build, the full card pool can produce **60–90+ images** across all configs (deck assets, card backs, card style, characters, apparel, items, actions, encounters, skills, magic effects). The queue manager gives the player full control over this process.
+        // Skip-check: does the deck image path already have this image?
+        if (!item.regen) {
+            let exists = await checkDeckImage(item.entityId, item.imagePath);
+            if (exists) {
+                item.status = "skipped";
+                item.resultUrl = exists.thumbnailUrl;
+                completedQueue.push(imageQueue.shift());
+                updateProgress();
+                continue;
+            }
+        }
+
+        // Generate
+        item.status = "generating";
+        updateProgress();
+        try {
+            let result = await reimageEntity(item.entityType, item.entityId, item.sdConfigKey);
+            item.status = "completed";
+            item.resultUrl = result.thumbnailUrl;
+            completedQueue.push(imageQueue.shift());
+        } catch (err) {
+            item.status = "failed";
+            item.error = err.message;
+            errorQueue.push(imageQueue.shift());
+        }
+        updateProgress();
+    }
+}
+```
 
 **Queue Manager UI:**
 
 ```
 +------------------------------------------------------------------+
-|  IMAGE GENERATION QUEUE                          [⏸ Pause] [⏹ Stop] |
+|  IMAGE GENERATION                        [Pause] [Stop] [Resume] |
 +------------------------------------------------------------------+
-|  Progress: 23 / 87 images   ████████░░░░░░░░░░  26%              |
-|  Currently generating: "Iron Sword" (weapon)     [Spinner]        |
-|  Next up: "Chainmail Vest" (apparel/mannequin)                    |
+|  Progress: 23 / 87    ████████░░░░░░░░░░  26%                    |
+|  Generating: "Iron Sword" (weapon)                [Spinner]       |
+|  Skipped: 5    Failed: 1                                          |
 +------------------------------------------------------------------+
-|  Filter: [All] [Pending] [Completed] [Failed]    [🔍 Search]     |
+|  COMPLETED (browsable)                                            |
+|  ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐             |
+|  │ bg │ │back│ │back│ │char│ │arm │ │swrd│ │pot │             |
+|  │ ✅ │ │ ✅ │ │ ✅ │ │ ✅ │ │ ✅ │ │ ✅ │ │ ✅ │             |
+|  └────┘ └────┘ └────┘ └────┘ └────┘ └────┘ └────┘             |
+|  [Click any to preview full-size / ↻ to re-queue]               |
 +------------------------------------------------------------------+
-|  ┌──────────────────────────────────────────────────────────────┐ |
-|  │ ✅ gameBackground (1/3)      [Preview] [Redo]               │ |
-|  │ ✅ gameBackground (2/3)      [Preview] [Redo]               │ |
-|  │ ✅ gameBackground (3/3)      [Preview] [Redo]               │ |
-|  │ ✅ cardBack — Character      [Preview] [Redo]               │ |
-|  │ ✅ cardBack — Apparel        [Preview] [Redo]               │ |
-|  │ ⏳ Iron Sword (weapon)       [Preview] [Skip] [Redo]        │ |
-|  │ ⬚  Chainmail Vest (apparel)  [Skip] [Move Up] [Move Down]  │ |
-|  │ ⬚  Health Potion (consumable)[Skip] [Move Up] [Move Down]  │ |
-|  │ ❌ Wolf Pack (animal) FAILED [Retry] [Skip] [View Error]    │ |
-|  │ ...                                                          │ |
-|  └──────────────────────────────────────────────────────────────┘ |
+|  ERRORS (1)                                                       |
+|  ❌ Wolf Pack (animal) — "SD model timeout"  [Retry] [Skip]      |
 +------------------------------------------------------------------+
-|  [▶ Resume]  [↻ Retry All Failed]  [⏭ Skip All Remaining]       |
+|  [↻ Retry All Failed]  [Skip Remaining]                          |
 +------------------------------------------------------------------+
 ```
 
-**Queue controls:**
+**Controls:**
 
 | Control | Action |
 |---------|--------|
-| **Pause** | Suspend queue processing. Current generation finishes, no new ones start. |
-| **Stop** | Abort all pending items. Current generation finishes. Queue can be restarted later. |
-| **Resume** | Continue processing from where paused/stopped. |
-| **Skip** (per item) | Remove item from queue. Card uses placeholder until manually reimaged later. |
-| **Redo** (per item) | Re-queue a completed image for regeneration. Old image preserved until new one arrives. |
-| **Retry** (failed item) | Re-attempt a failed generation with same parameters. |
-| **Retry All Failed** | Re-queue all failed items at once. |
-| **Move Up / Move Down** | Reorder pending items in the queue (within same priority tier). |
-| **Preview** | Opens full-size image preview of a completed item. |
-| **View Error** | Shows the server error message for a failed generation. |
-| **Skip All Remaining** | Mark all pending items as skipped. Game can start immediately with placeholders. |
+| **Pause** | Stop processing after current item finishes. Queue position preserved. |
+| **Stop** | Abort queue. All pending items remain in the array for later restart. |
+| **Resume** | Continue from current queue position. Re-checks image path for each remaining item. |
+| **Retry** (per error) | Move item from `errorQueue` back to end of `imageQueue` with same params. |
+| **Retry All Failed** | Move all `errorQueue` items back to `imageQueue`. |
+| **Skip Remaining** | Clear remaining `imageQueue`. Cards use placeholders. Game can start immediately. |
+| **↻ Redo** (per completed) | Re-add to end of `imageQueue` with `regen: true`. Old image stays until replaced. |
 
-**Queue persistence:** The queue state is saved to the game session. If the player closes the browser and returns, the queue resumes from where it stopped. Completed images are already stored — only pending items need to resume.
+**Image check:** Uses standard AM7 path lookup — no dedicated gallery endpoint needed:
+```
+GET /rest/resource/data/path?path=~/CardGame/{deckName}/images/{subfolder}/{entityName}
+→ If object exists at that path, image is already generated → skip
+→ If 404, image needs generating
+```
 
-**During gameplay:** The queue manager is accessible from the settings/menu panel as a sidebar. New images generated during gameplay (reimage, encounter draws) are appended to the bottom of the queue and processed in the background.
+**Reimage endpoints (called one at a time by the queue):**
+
+| Entity Type | Endpoint |
+|-------------|----------|
+| charPerson | `GET /rest/olio/charPerson/{id}/reimage/false` |
+| animal | `GET /rest/olio/animal/{id}/reimage` |
+| apparel (mannequin) | `GET /rest/olio/apparel/{id}/reimage` |
+| wearable (icon) | `POST /rest/olio/wearable/{id}/reimage` |
+| item | `GET /rest/olio/item/{id}/reimage` |
+| deckAssets | `POST /rest/game/v2/deckAssets/generate` |
+| cardBack | `POST /rest/game/v2/cardBack/generate/{cardType}` |
+| action/skill/magic | `POST /rest/game/v2/cardImage/generate` |
+
+### Review & Re-Queue Workflow
+
+Since every deck build generates 60–90+ images, the queue is designed as a **generate → review → re-queue** loop. Players don't need to approve every image upfront — images generate in the background and the completed results are browsable as they arrive.
+
+**Per-image reimage button:** Every completed image shows a **reimage button** (↻) inline — on the card itself wherever it appears (hand, character stack, detail view, deck browser) and in the completed results strip of the queue manager. Clicking it adds a `regen: true` entry to the end of the queue. The old image stays visible until the new one replaces it.
+
+**Review workflow:**
+
+```
+DECK BUILD
+    │
+    ├─ 1. BUILD QUEUE
+    │     Client builds imageQueue[] from all cards in deck
+    │     Ordered by priority (background → card backs → characters → etc.)
+    │
+    ├─ 2. PROCESS (one at a time)
+    │     For each item: check image path → skip if exists, else generate
+    │     Progress bar + label updates per item
+    │     Completed items appear in browsable results strip
+    │     Player can browse/play while generation continues
+    │
+    ├─ 3. SPOT REVIEW (during and after)
+    │     Browse completed results strip, click any for full preview
+    │     Unsatisfactory: click ↻ → new entry appended to queue (regen: true)
+    │     Satisfied: no action needed
+    │
+    ├─ 4. ERRORS
+    │     Failed items moved to errorQueue, shown separately
+    │     [Retry] moves back to end of imageQueue
+    │     [Retry All Failed] moves all at once
+    │
+    └─ 5. REPEAT until satisfied
+          Re-queued items generate with same prompt + new random seed
+          New result replaces old in deck images
+          Queue auto-completes when imageQueue is empty
+```
+
+**Image history per card:** Every generation attempt is cached (up to 5 per card in the deck images subfolder). The player can browse previous versions via the card detail view and select any previous version as the active image.
+
+**Inline reimage button placement:**
+
+| Location | Button Style | Behavior |
+|----------|-------------|----------|
+| Queue completed strip | Click thumbnail | Opens preview with [↻ Redo] option |
+| Card face (hand view, hover) | Small ↻ icon overlay, top-right corner | Adds `regen: true` entry to queue |
+| Card detail dialog | `[↻ Reimage]` button below the image | Adds to queue, image history accessible |
+| Character stack sidebar (equipment slots) | Small ↻ icon on hover over wearable icon | Re-queues the wearable icon |
+| Deck browser (all cards grid) | ↻ icon overlay on hover per card | Bulk review: scan grid, click ↻ on bad ones |
+
+**Bulk review mode:** The deck browser includes a **"Review Images"** mode — all cards in a grid (128×192), sorted by generation time. Click ↻ on any bad ones, then "Re-Queue All Flagged" adds them all to `imageQueue` with `regen: true`.
+
+**Queue during gameplay:** If the player starts a game before the queue is empty, processing continues in the background. The ↻ reimage button remains available on every card during gameplay. New images swap in with a fade transition when ready.
+
+**Crash / refresh resilience:** The queue is just a client-side array, and all generated images are stored under `~/CardGame/{deckName}/images/` on the server. If the browser closes, crashes, or is refreshed mid-queue:
+1. On restart, the client rebuilds `imageQueue[]` from the full deck card list (same as initial build)
+2. The processing loop runs the **image path skip-check** on every item
+3. Items whose images already exist at the expected path are skipped instantly (status: `skipped`)
+4. Items not yet generated proceed normally
+5. Net effect: the queue picks up where it left off without re-generating anything
+
+No server-side queue state is needed. The deck image folder IS the persistence layer.
+
+### Config Startup Check
+
+After loading a deck's config (theme, SD, LLM, chat, and voice configs), the client runs a quick **connectivity and asset sanity check** before proceeding to gameplay or full deck build:
+
+1. **Background image exists?** — `GET /rest/resource/data/path?path=~/CardGame/{deckName}/images/deckAssets/gameBackground` → if 404, the image gen server may be unreachable or the deck was never built.
+2. **At least one character image exists?** — Check the first character's portrait path. If missing, image gen may have failed during build.
+3. **LLM reachable?** — Send a minimal ping prompt to the configured LLM endpoint (e.g., "respond with OK"). If it fails, narration and AI opponent won't work.
+
+**On failure:** Show a page toast with the specific failure (e.g., "Image generation server unreachable — check SD config" or "LLM endpoint not responding"). Log to `console.error`. The player can still proceed (the check is non-blocking), but they're warned about degraded functionality.
+
+**On success:** No visible feedback — proceed silently.
 
 ### Setup Test & Preview
 
@@ -2941,12 +3714,13 @@ On **initial configuration** — before the full deck build generates 60–90+ i
 | T1 | SD: deckAssets | Generate 1 gameBackground sample | 1920×1080 background image |
 | T2 | SD: cardBack | Generate 1 card back (Character type) | 744×1039 card back image |
 | T3 | SD: cardStyle | LLM compose style → generate frame overlay | JSON style def + frame image |
-| T4 | SD: charPerson | Generate 1 character portrait | 512×768 portrait image |
-| T5 | SD: apparel (mannequin) | Generate 1 mannequin apparel image | 512×768 mannequin image |
+| T4 | SD: charPerson | Generate 1 character portrait | 1024×1024 + hires portrait image |
+| T5 | SD: apparel (mannequin) | Generate 1 mannequin apparel image | 1024×1024 + hires mannequin image |
+| T5b | SD: wearable (icon) | Generate 1 wearable icon | 512×512 item icon |
 | T6 | SD: animal | Generate 1 creature image | 512×512 creature image |
 | T7 | SD: item (weapon) | Generate 1 weapon image | 512×512 item image |
 | T8 | SD: item (consumable) | Generate 1 consumable image | 512×512 item image |
-| T9 | SD: item (action) | Generate 1 action card illustration | 512×768 action image |
+| T9 | SD: item (action) | Generate 1 action card illustration | 1024×1024 + hires action image |
 | T10 | SD: item (skill) | Generate 1 skill emblem | 512×512 skill image |
 | T11 | SD: item (magicEffect) | Generate 1 magic effect | 512×512 effect image |
 | T12 | SD: cardTypeCornerIcons | Generate 1 corner icon (Character) | 48×48 corner icon |
@@ -3024,31 +3798,45 @@ GET /rest/game/v2/config/test/{testBatchId}/status
 
 ### Card Dimensions
 
-Standard poker card size: **2.5" × 3.5"** (63.5mm × 88.9mm)
+**All cards are the same physical size** — standard poker card: **2.5" × 3.5"** (63.5mm × 88.9mm). No variation by card type. Character cards, action cards, item cards, encounter cards — all identical dimensions.
 
 At 300 DPI: **750 × 1050 pixels** (with 744×1039 safe area inside bleed)
 
 ### Print Layout
 
+**All cards organized on 8.5" × 11" (US Letter) sheets** at high DPI, suitable for home printing or sending directly to a print shop.
+
 **PDF generation** via server endpoint:
 
 ```
 GET /rest/game/cards/print/{deckId}?format=pdf
-→ Returns PDF with cards laid out 3×3 per page (US Letter)
-   or 3×3 per page (A4)
-   with crop marks and bleed area
+→ Returns PDF with all cards laid out 3×3 per page on 8.5" × 11" sheets
+   at 300 DPI, with crop marks and bleed area
+   Ready to send to a print shop as-is
 ```
 
 **Per page layout (US Letter 8.5" × 11"):**
 ```
-+--+--+--+
-|  |  |  |
-+--+--+--+
-|  |  |  |
-+--+--+--+
-|  |  |  |
-+--+--+--+
-= 9 cards per page, 0.25" margins, crop marks at corners
++------+------+------+
+|      |      |      |
+| 2.5" | 2.5" | 2.5" |
+| ×3.5"| ×3.5"| ×3.5"|
+|      |      |      |
++------+------+------+
+|      |      |      |
+| 2.5" | 2.5" | 2.5" |
+| ×3.5"| ×3.5"| ×3.5"|
+|      |      |      |
++------+------+------+
+|      |      |      |
+| 2.5" | 2.5" | 2.5" |
+| ×3.5"| ×3.5"| ×3.5"|
+|      |      |      |
++------+------+------+
+= 9 cards per page
+  0.25" margins between cards and page edges
+  Crop marks at card corners for precision cutting
+  Total printable area: 7.5" × 10.5" (fits 3×3 with margins)
 ```
 
 ### Print Card Template
@@ -3251,24 +4039,42 @@ This is analogous to a "card set" or "expansion" in physical card games. The rul
   },
 
   "encounterDeck": {
-    "threats": { "count": 15, "difficultyRange": [4, 12] },
-    "events": { "count": 10 },
-    "discoveries": { "count": 10 },
-    "npcs": { "count": 8 },
-    "lootItems": { "count": 12, "rarityWeights": { "COMMON": 50, "UNCOMMON": 30, "RARE": 15, "EPIC": 4, "LEGENDARY": 1 } },
-    "skillCards": { "count": 6 },
-    "magicEffects": { "count": 4 }
+    "threats": { "count": 12, "difficultyRange": [4, 10], "maxRarity": "RARE", "note": "Regular threats only — bosses are in the vault" },
+    "events": { "count": 10, "maxRarity": "UNCOMMON" },
+    "discoveries": { "count": 10, "maxRarity": "RARE" },
+    "npcs": { "count": 8, "maxRarity": "RARE", "source": "olio.charPerson.population", "roleAssignment": "random" },
+    "lootItems": { "count": 10, "rarityWeights": { "COMMON": 50, "UNCOMMON": 35, "RARE": 15 } },
+    "skillCards": { "count": 5, "minRarity": "UNCOMMON", "maxRarity": "RARE" },
+    "magicEffects": { "count": 2, "rarity": "RARE" }
+  },
+
+  "treasureVault": {
+    "bossThreats": { "count": 3, "difficultyRange": [12, 16], "minRarity": "EPIC", "note": "Unique/hard creatures shuffled in with items" },
+    "legendaryWeapons": { "count": 2, "rarity": "LEGENDARY" },
+    "epicWeapons": { "count": 3, "rarity": "EPIC" },
+    "epicApparel": { "count": 3, "rarity": "EPIC" },
+    "epicConsumables": { "count": 2, "rarity": "EPIC" },
+    "epicSkills": { "count": 3, "minRarity": "RARE", "maxRarity": "EPIC" },
+    "legendaryMagic": { "count": 2, "rarity": "LEGENDARY" },
+    "drawTriggers": ["discovery_rare", "investigate_crit", "npc_quest_reward", "pot_jackpot_5plus"],
+    "bossDefeatGrantsExtraDraw": true,
+    "refillsOnCampaignSession": true
   },
 
   "balance": {
-    "hungerDrainInterval": 3,
-    "hungerDrainAmount": 10,
-    "escalationPerRound": 2,
+    "hpMax": 20,
+    "moraleMax": 20,
+    "energyFormula": "MAG or INT (by skill type)",
     "apFormula": "floor(END / 5) + 1",
     "apRange": [1, 5],
     "initiativeFormula": "1d20 + AGI",
     "potAnteRequired": true,
-    "roundTimerSeconds": 60
+    "roundTimerSeconds": 60,
+    "positionTimerSeconds": 15,
+    "lazyBonesEnabled": true,
+    "lethargyEnabled": true,
+    "exhaustedEnabled": true,
+    "hoardingReturnTarget": "encounterDeck"
   },
 
   "magicConfig": {
@@ -3376,25 +4182,78 @@ Complete card pool definitions for each theme are maintained in a separate file:
 
 ### Concept
 
-Before a game session begins, the player goes through a **deck building process** that selects a theme, configures a character, draws starter cards, and assembles the encounter deck. Once a deck is "built," all card data is **snapshotted** — a frozen copy of every card's stats, images, and metadata is stored as the authoritative game record. The game session operates entirely from snapshot data, not from live AM7 objects.
+Before a game session begins, the player goes through a **deck building process** that selects a theme, configures a character, draws starter cards, and assembles the encounter deck. Once a deck is "built," all card data is **snapshotted** — a detached copy of each card's game-relevant fields is extracted from the source AM7 object and stored as the authoritative game record. The game session operates entirely from snapshot data, not from live AM7 objects.
+
+**Snapshots are stored as `data.data` objects** — the standard AM7 pattern for custom JSON. Each deck snapshot is a single `data.data` record with `contentType: "application/json"` and the full deck JSON serialized to `dataBytesStore`. This is the same storage pattern used by the existing v1 game save system (see `GameUtil.saveGame()` / `GameUtil.loadGame()`).
+
+```java
+// Server-side: creating a deck snapshot
+BaseRecord snapshot = IOSystem.getActiveContext().getFactory().newInstance("data.data");
+snapshot.set(FieldNames.FIELD_NAME, deckName);
+snapshot.set(FieldNames.FIELD_GROUP_ID, deckDir.get(FieldNames.FIELD_ID));
+snapshot.set(FieldNames.FIELD_CONTENT_TYPE, "application/json");
+snapshot.set("dataBytesStore", deckJsonString.getBytes("UTF-8"));
+IOSystem.getActiveContext().getRecordUtil().createRecord(snapshot);
+```
+
+**Storage path:** `~/CardGame/{deckName}/` — the deck's entire world lives under one AM7 group. All AM7 objects (characters, apparel, wearables, animals, items), all generated images, the deck snapshot, and game saves are stored here:
+
+```
+~/CardGame/{deckName}/
+  ├── characters/       ← charPerson objects for this deck
+  ├── apparel/          ← apparel objects
+  ├── wearables/        ← wearable objects
+  ├── animals/          ← animal objects
+  ├── items/            ← item objects (weapons, consumables)
+  ├── images/           ← ALL generated images (NOT in gallery)
+  │   ├── characters/
+  │   ├── apparel/
+  │   ├── wearables/
+  │   ├── animals/
+  │   ├── items/
+  │   ├── actions/
+  │   ├── encounters/
+  │   ├── skills/
+  │   ├── magicEffects/
+  │   ├── cardBacks/
+  │   ├── cardStyle/
+  │   └── deckAssets/
+  ├── deck.json         ← deck snapshot (data.data)
+  ├── save              ← auto-save state (data.data, written each round)
+  └── {saveObjectId}/   ← mid-game generated assets (images, voice synth)
+```
+
+The deck snapshot (`deck.json`) is a single `data.data` record containing the full snapshot JSON. The auto-save (`save`) is also a `data.data` record storing session deltas. Mid-game generated assets (after-action images, LLM-suggested images, voice synthesis) are stored under a subfolder keyed to the save object ID — see [Mid-Game Asset Storage](#mid-game-asset-storage).
 
 This decoupling means:
+- **Self-contained:** Everything for a deck lives in one group — delete the group, delete the deck
 - **Deletions** of source AM7 objects (characters, items, etc.) don't break in-progress or saved games
 - **Edits** to source objects (stat rebalancing, description changes) don't retroactively alter ongoing games
 - **Image regeneration** can update a card's visual without affecting stats (and vice versa)
 - **Export/print** uses the snapshot, producing consistent output regardless of backend state
+- **No gallery involvement** — images are stored directly under the deck group, not in ~/Gallery/
 
-**What IS snapshotted (frozen at build time):**
+**What IS snapshotted (detached, reduced to game-relevant fields only):**
 - Character stats, needs, equipment slots
 - Card stats (ATK, DEF, durability, effects, requirements)
 - Card names, descriptions, art prompts
 - Image references (URL/ID at time of snapshot)
 
+**Derived stat normalization at snapshot time:** Some stats on AM7 `charPerson` and `animal` records are derived and may not be initially accurate (e.g., health may be partially depleted from Olio simulation activity). When snapshotting characters and animals for the card game, the snapshot process **normalizes derived stats to their maximum values:**
+- `hp` → set to 20 (flat max for all characters)
+- `energy` → set to MAG stat value (Imperial) or INT (Undead/Psionic)
+- `morale` → set to 20 (flat max for all characters)
+- `durability` on equipment → set to `maxDurability`
+
+This ensures every game starts from a clean, predictable state regardless of what the source Olio character was doing before being snapshotted.
+
 **What is NOT snapshotted (referenced by name, loaded fresh):**
 - SD configs (`olio.sd.config`) — loaded from `Ux7/media/cardGame/sd/` by name
 - Prompt configs (`olio.llm.promptConfig`) — loaded from `Ux7/media/cardGame/prompts/` by name
 - Chat configs (`olio.llm.chatConfig`) — loaded from `Ux7/media/cardGame/chat/` by name
-- Theme config itself — the snapshot stores `themeId` + `themeVersion` as a reference
+- Theme config itself — the snapshot stores `themeId` as a reference
+
+**No version tracking on snapshots.** A snapshot is just the detached game assets for that deck — reduced to only the fields the game needs. There is no `snapshotVersion` counter. Re-snapshotting means replacing or adding an entry because the underlying AM7 object was updated (e.g., a card was rebalanced, a character leveled up). The snapshot is overwritten in place.
 
 This split means AI config improvements (better prompts, upgraded models, tuned SD parameters) automatically benefit all game sessions without re-snapshotting, while card stats remain stable within a game.
 
@@ -3457,24 +4316,34 @@ This split means AI config improvements (better prompts, upgraded models, tuned 
 │  • Fixed consumables (Rations, Potions, etc.)           │
 │  • 1-2 Skills (random from pool)                        │
 │  • 0-1 Magic Effects (if stat requirements met)         │
-│  • 8 Action cards + 1 Talk card (always included)       │
+│  • 7 Action cards + 1 Talk card (always included)       │
 │  [Re-draw] button to randomize again (before snapshot)  │
 │                                                         │
-│  Step 4b: ADD CUSTOM ITEMS (optional)                   │
-│  [Add Item] → creates new items in the Olio            │
-│  Universe/World. Items, weapons, consumables, and       │
-│  apparel created here are stored as real AM7 objects    │
-│  (not snapshot-only) so they persist for future decks.  │
-│  Custom items are added to the theme pool for the       │
-│  current deck and any future games using this theme.    │
+│  Step 4b: ADD CUSTOM CONTENT (optional)                 │
+│  [Add Item] → create weapons, consumables, skills      │
+│  [Add Custom Action] → define new action types beyond  │
+│    the 7 standard actions (e.g., Disarm, Taunt, Sneak) │
+│  [Browse Apparel] → pick existing apparel from Olio    │
+│    population to override theme auto-generation         │
+│  [Create Apparel] → build a new outfit layer by layer  │
+│  All custom content stored as real AM7 objects and      │
+│  persists for future decks.                             │
 │                                                         │
-│  Step 5: BUILD ENCOUNTER DECK                           │
+│  Step 5: BUILD ENCOUNTER DECK + TREASURE VAULT          │
 │  Auto-assembled from theme encounterDeck config:        │
-│  • 15 Threats, 10 Events, 10 Discoveries, 8 NPCs       │
-│  • Shuffled into single encounter deck                  │
+│  • Encounter Deck: 12 Threats, 10 Events, 10 Discoveries│
+│    8 NPCs, 10 loot items, 5 skills, 2 magic (★–★★★)    │
+│  • Treasure Vault: ~18 boss + Epic/Legendary (★★★★+)    │
+│  • NPCs randomly drawn from Olio population and         │
+│    assigned roles (trader, ally, quest-giver, etc.)      │
+│  • Both decks shuffled independently                    │
 │                                                         │
 │  Step 6: REVIEW & BUILD                                 │
-│  Preview all cards, adjust if desired, then:            │
+│  Preview all cards — each card shows:                   │
+│  • [🔗 Open in AM7] link to edit source object          │
+│  • [✏ Edit] for inline quick-edit of stats/name         │
+│  • [↻ Reimage] to re-queue the card's image             │
+│  Adjust if desired, then:                               │
 │  [BUILD DECK] → snapshots all cards → game ready        │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
@@ -3612,15 +4481,15 @@ POST /rest/game/v2/apparel/restore/{characterId}
 → Character reverts to their pre-game outfit in the Olio world
 ```
 
-### Custom Item Creation (Step 4b)
+### Custom Content Creation (Step 4b)
 
-During deck configuration, players can create new items that are stored as **real AM7 objects** in the Olio Universe/World — not as snapshot-only cards. This means custom items persist across games and can be reused in future decks.
+During deck configuration, players can create custom items, actions, and apparel — or pick existing apparel from the Olio population. All custom objects are stored as **real AM7 objects** in the Olio Universe/World, not snapshot-only cards. They persist across games and can be reused in future decks.
 
-**Creation flow:**
+#### Custom Items
 
 ```
 [Add Item] button
-  ├── Select type: Weapon / Consumable / Apparel / Skill / Magic Effect
+  ├── Select type: Weapon / Consumable / Skill / Magic Effect
   ├── Fill in card fields (name, stats, effects, requirements)
   │   └── Uses existing formDef.js definitions for olio.item, olio.wearable, etc.
   ├── Item created as AM7 object under the Olio world's item/store paths
@@ -3628,10 +4497,69 @@ During deck configuration, players can create new items that are stored as **rea
   └── Added to current deck's card pool
 ```
 
-**Storage:** Custom items are created under the Olio world's standard paths:
+**Storage:**
 - Weapons/consumables: `{world}/Items/{itemName}`
-- Apparel: `{world}/Apparel/{apparelName}` (with full wearable sublayer structure)
 - Skills: linked to existing `olio.skill` records or new custom skills
+
+#### Custom Actions
+
+Players can define new action types beyond the 7 standard actions (Attack, Flee, Rest, Use Item, Investigate, Craft, Watch) and Talk.
+
+```
+[Add Custom Action] button
+  ├── Name: [__________]  (e.g., "Disarm", "Taunt", "Sneak")
+  ├── Type: Offensive / Defensive / Movement / Social / Discovery / Special
+  ├── Energy Cost: [##]
+  ├── Roll Formula: [Primary stat ▼] + [Secondary stat ▼] (optional)
+  │   e.g., AGI + INT for "Sneak"
+  ├── Opposing Roll: [Opposing stat ▼] or [Fixed DC: ##]
+  ├── Success Effect: [text description or structured effect]
+  │   e.g., "Target drops equipped weapon into pot"
+  ├── Failure Effect: [text description]
+  ├── Requires: [Skill card ▼] (optional — must have matching skill to use)
+  ├── Card Art Prompt: [auto-generated or custom text for SD image gen]
+  └── [Create] → stored as a custom action card in the deck
+```
+
+Custom actions are stored as `data.data` objects (custom JSON) under `{user}/Game/v2/customActions/{deckName}/`. They appear alongside the standard action cards in the hand tray. Each custom action gets an image generated via the `action` SD config subtype.
+
+**Example custom actions:**
+- **Disarm** (Offensive, 10E) — Roll AGI + STR vs target AGI + DEF. Success: target drops weapon into pot.
+- **Taunt** (Social, 5E) — Roll CHA vs target CHA. Success: target must Attack you next position (overrides planned action).
+- **Sneak** (Movement, 8E) — Roll AGI + INT vs encounter difficulty. Success: bypass encounter without fighting.
+- **Heal** (Special, 12E) — No roll. Restore 15 HP. Requires: Medicine skill card.
+
+#### Custom Apparel (Pick or Create)
+
+Players can either **pick existing apparel** from the Olio population or **create new themed apparel**.
+
+**Pick existing apparel:**
+```
+[Browse Apparel] button
+  ├── Opens Olio apparel browser — shows all apparel sets in the world population
+  ├── Each set shows: name, mannequin preview, wearable layers, stats (DEF, MDEF)
+  ├── [Select] picks the apparel set for the active character
+  ├── Selected apparel replaces the auto-generated theme apparel (Step 3b)
+  └── Character portrait re-queued with the selected outfit
+```
+
+This lets players hand-pick outfits for their character instead of relying on the theme auto-generation. Useful when a character already has a distinctive look that should carry into the card game.
+
+**Create new apparel:**
+```
+[Create Apparel] button
+  ├── Select gender template: Male / Female / Unisex
+  ├── Layer editor — fill each wear level:
+  │   ├── BASE (4): [undergarment name] [fabric ▼] [color ▼]
+  │   ├── SUIT (6): [garment name] [fabric ▼] [color ▼]
+  │   ├── OVER (9): [garment name] [fabric ▼] [color ▼]
+  │   ├── OUTER (10): [garment name] [fabric ▼] [color ▼]
+  │   └── (any layer can be left empty)
+  ├── Stat overrides: DEF [##] MDEF [##] Durability [##]
+  ├── [Create] → AM7 apparel + wearable objects created
+  ├── Mannequin image queued for each wearable layer
+  └── Character portrait re-queued with new outfit
+```
 
 **Endpoints:**
 ```
@@ -3642,7 +4570,57 @@ Body: { "worldPath": "...", "type": "weapon", "name": "Flame Tongue", "stats": {
 POST /rest/game/v2/apparel/create
 Body: { "worldPath": "...", "gender": "male", "wearables": [...], "name": "Dragon Scale Armor" }
 → Returns: created AM7 apparel record with full wearable sublayers
+
+POST /rest/game/v2/action/create
+Body: { "deckName": "high-fantasy", "name": "Disarm", "type": "offensive", "energyCost": 10,
+        "rollFormula": "AGI + STR", "opposingRoll": "AGI + DEF", "successEffect": "...", ... }
+→ Returns: created custom action card (data.data object)
+
+GET /rest/game/v2/apparel/browse
+Query: { "worldPath": "..." }
+→ Returns: list of all apparel sets in the world with preview data
 ```
+
+### Object Links in Config (All Steps)
+
+Every card displayed during deck configuration — in the character picker, starter deck draw, encounter deck preview, treasure vault preview, and the Step 6 review grid — includes a clickable **[Open in AM7]** link that opens the underlying AM7 object in the AM7 object editor. This lets the player inspect and edit source objects directly during configuration without leaving the deck builder.
+
+**Link behavior:**
+
+| Card Type | AM7 Object Type | Link Target |
+|-----------|----------------|-------------|
+| Character | `olio.charPerson` | `/view/charPerson/{objectId}` — full character editor (stats, profile, gallery) |
+| Apparel | `olio.apparel` | `/view/apparel/{objectId}` — apparel editor with wearable sublayers |
+| Wearable | `olio.wearable` | `/view/wearable/{objectId}` — individual wearable item editor |
+| Weapon / Consumable | `olio.item` | `/view/item/{objectId}` — item property editor |
+| Animal / Creature | `olio.animal` | `/view/animal/{objectId}` — animal editor (stats, traits) |
+| Encounter | `olio.encounter` | `/view/encounter/{objectId}` — encounter editor (difficulty, behavior, loot) |
+| Skill | `olio.skill` | `/view/skill/{objectId}` — skill definition editor |
+| Magic Effect | `olio.magicEffect` | `/view/magicEffect/{objectId}` — magic effect editor |
+| NPC | `olio.charPerson` | `/view/charPerson/{objectId}` — same as character |
+| Action / Talk | *(no AM7 source)* | No link — these are template cards defined by the theme config |
+
+**Link placement:**
+
+```
+┌──────────────────────────────────────────┐
+│  [Card Preview]                           │
+│  ┌────────────┐                           │
+│  │  Card Image │   Elven Silk Robes       │
+│  │             │   Apparel (Body)         │
+│  │             │   DEF: 2  MDEF: 4        │
+│  └────────────┘   Rarity: ★ Common        │
+│                                           │
+│  [↻ Reimage] [🔗 Open in AM7] [✏ Edit]   │
+└──────────────────────────────────────────┘
+```
+
+- **[Open in AM7]** opens the object in a new browser tab/panel using the AM7 router (`page.nav.go(path)`)
+- **[Edit]** opens an inline edit dialog within the deck builder for quick stat/name changes (writes back to the AM7 object, then the card preview updates in-place)
+- Links use `sourceObjectId` from the card data — action/talk cards (no source object) show no link
+- If the source object has been deleted, the link shows as disabled with a tooltip: "Source object no longer exists"
+
+**Post-edit behavior:** After editing an AM7 object (either via [Open in AM7] or [Edit]), the deck builder detects the change and offers to re-snapshot that card: "Source object was modified. [Re-snapshot] to update card data."
 
 ### Snapshot Data Model
 
@@ -3683,13 +4661,13 @@ When `[BUILD DECK]` is clicked, every card in the player's starter deck and the 
   "player": {
     "characterSnapshot": {
       "sourceObjectId": "am7-char-uuid",
-      "snapshotVersion": 1,
       "name": "Aelindra",
       "race": "ELF",
       "alignment": "NEUTRAL_GOOD",
       "level": 1,
       "stats": { "STR": 10, "AGI": 14, "END": 12, "INT": 16, "MAG": 13, "CHA": 7 },
-      "needs": { "hp": 100, "maxHp": 100, "energy": 76, "maxEnergy": 76, "hunger": 100, "morale": 61 },
+      "needs": { "hp": 20, "maxHp": 20, "energy": 13, "maxEnergy": 13, "morale": 20, "maxMorale": 20 },
+      "_note": "hp normalized to 20 (flat), energy normalized to MAG stat, morale normalized to 20 (flat)"
       "skillSlots": 4,
       "equipSlots": ["head", "body", "handL", "handR", "feet", "ring", "back"],
       "portrait": {
@@ -3703,7 +4681,6 @@ When `[BUILD DECK]` is clicked, every card in the player's starter deck and the 
       {
         "cardSnapshotId": "csnap-uuid",
         "sourceObjectId": "am7-item-uuid",
-        "snapshotVersion": 1,
         "cardType": "apparel",
         "name": "Elven Silk Robes",
         "rarity": "COMMON",
@@ -3726,11 +4703,11 @@ When `[BUILD DECK]` is clicked, every card in the player's starter deck and the 
     {
       "cardSnapshotId": "csnap-uuid",
       "sourceObjectId": "am7-encounter-uuid",
-      "snapshotVersion": 1,
       "cardType": "encounter",
       "subtype": "threat",
       "name": "Dire Wolf Pack",
       "difficulty": 8,
+      "rarity": "UNCOMMON",
       "stats": { "atk": 3, "def": 2, "hp": 25 },
       "behavior": "Attacks lowest HP character first",
       "loot": ["Wolf Pelt", "Raw Meat"],
@@ -3744,16 +4721,35 @@ When `[BUILD DECK]` is clicked, every card in the player's starter deck and the 
     }
   ],
 
+  "treasureVault": [
+    {
+      "cardSnapshotId": "csnap-vault-uuid",
+      "sourceObjectId": "am7-item-uuid",
+      "cardType": "item",
+      "subtype": "weapon",
+      "name": "Sunforged Greatsword",
+      "rarity": "LEGENDARY",
+      "stats": { "atk": 12, "durability": 20, "damageType": "Radiant" },
+      "requires": { "STR": 16 },
+      "artPrompt": "legendary golden greatsword, radiant glow, ornate hilt",
+      "image": {
+        "imageId": null,
+        "imageUrl": null,
+        "imageStatus": "pending",
+        "generatedAt": null
+      }
+    }
+  ],
+
   "actionCards": [
-    { "cardType": "action", "actionType": "ATTACK", "name": "Attack", "snapshotVersion": 1 },
-    { "cardType": "action", "actionType": "DEFEND", "name": "Defend", "snapshotVersion": 1 },
-    { "cardType": "action", "actionType": "FLEE", "name": "Flee", "snapshotVersion": 1 },
-    { "cardType": "action", "actionType": "REST", "name": "Rest", "snapshotVersion": 1 },
-    { "cardType": "action", "actionType": "USE_ITEM", "name": "Use Item", "snapshotVersion": 1 },
-    { "cardType": "action", "actionType": "INVESTIGATE", "name": "Investigate", "snapshotVersion": 1 },
-    { "cardType": "action", "actionType": "CRAFT", "name": "Craft", "snapshotVersion": 1 },
-    { "cardType": "action", "actionType": "WATCH", "name": "Watch", "snapshotVersion": 1 },
-    { "cardType": "talk", "name": "Talk", "snapshotVersion": 1 }
+    { "cardType": "action", "actionType": "ATTACK", "name": "Attack" },
+    { "cardType": "action", "actionType": "FLEE", "name": "Flee" },
+    { "cardType": "action", "actionType": "REST", "name": "Rest" },
+    { "cardType": "action", "actionType": "USE_ITEM", "name": "Use Item" },
+    { "cardType": "action", "actionType": "INVESTIGATE", "name": "Investigate" },
+    { "cardType": "action", "actionType": "CRAFT", "name": "Craft" },
+    { "cardType": "action", "actionType": "WATCH", "name": "Watch" },
+    { "cardType": "talk", "name": "Talk" }
   ],
 
   "metadata": {
@@ -3767,15 +4763,14 @@ When `[BUILD DECK]` is clicked, every card in the player's starter deck and the 
 
 ### Snapshot Fields
 
-Each card snapshot captures:
+Each card snapshot is a reduced/detached copy of the source AM7 object, containing only the fields the game needs:
 
 | Field | Purpose |
 |-------|---------|
-| `cardSnapshotId` | Unique ID for this snapshot record (not the source object ID) |
+| `cardSnapshotId` | Unique ID for this card entry within the deck snapshot |
 | `sourceObjectId` | Reference to the original AM7 object (nullable — action/talk cards have no AM7 source) |
-| `snapshotVersion` | Incrementing version number, bumped on each re-snapshot |
 | `cardType` | Card type identifier (character, apparel, item, action, etc.) |
-| `stats` | Frozen stat block at time of snapshot |
+| `stats` | Detached stat block (only game-relevant fields from the source object) |
 | `image` | Image state: `imageId`, `imageUrl`, `imageStatus` (pending/placeholder/generated), `generatedAt` |
 | `artPrompt` | The SD prompt used for image generation (preserved for re-generation) |
 
@@ -3786,7 +4781,8 @@ SOURCE OBJECTS (AM7 backend)          SNAPSHOT (game session)
 ┌─────────────────────┐              ┌─────────────────────┐
 │ olio.charPerson     │──snapshot──▶│ characterSnapshot   │
 │ olio.item           │──snapshot──▶│ starterCards[]      │
-│ olio.encounter      │──snapshot──▶│ encounterDeck[]     │
+│ olio.encounter      │──snapshot──▶│ encounterDeck[]     │ (★–★★★)
+│ olio.item (rare)    │──snapshot──▶│ treasureVault[]     │ (★★★★–★★★★★)
 │ theme.actionCards    │──snapshot──▶│ actionCards[]       │
 └─────────────────────┘              └─────────────────────┘
          │                                     │
@@ -3820,8 +4816,7 @@ POST /rest/game/v2/deck/{snapshotId}/resnap/image
 Body: { "cardSnapshotId": "csnap-uuid" }
 
 → Regenerates image using stored artPrompt
-→ Updates image fields in snapshot
-→ Bumps snapshotVersion
+→ Updates image fields in snapshot (overwritten in place)
 → Returns updated card snapshot
 ```
 
@@ -3833,8 +4828,7 @@ POST /rest/game/v2/deck/{snapshotId}/resnap/stats
 Body: { "cardSnapshotId": "csnap-uuid" }
 
 → Reads current state of sourceObjectId from AM7
-→ Updates stat fields in snapshot
-→ Bumps snapshotVersion
+→ Updates stat fields in snapshot (overwritten in place)
 → Returns updated card snapshot with diff summary
 ```
 
@@ -3912,15 +4906,47 @@ Snapshots are stored server-side as JSON documents, associated with the user and
       tracked as game-session deltas, not written back to snapshots
    └─ Session state = snapshot + deltas
 
-5. SAVE GAME
-   └─ POST /rest/game/v2/save
-       Body: { snapshotId, sessionState (deltas), eventLog, round }
-       → Snapshot is NOT modified — session deltas saved separately
+5. AUTO-SAVE (every round, automatic)
+   └─ After each round's cleanup phase, the client writes session state
+      to a `data.data` object via standard AM7 CRUD:
+        PUT /rest/resource/data.data
+        Path: ~/CardGame/{deckName}/save
+        Body: {
+          contentType: "application/json",
+          dataBytesStore: JSON.stringify({
+            snapshotId,
+            sessionState (deltas),
+            eventLog,
+            round,
+            phase: "cleanup",
+            timestamp: ISO-8601
+          })
+        }
+   └─ Snapshot is NOT modified — session deltas saved separately
+   └─ No manual save button — saving is invisible and automatic
+   └─ Uses existing AM7 data.data endpoints, no new REST routes needed
+   └─ Mid-game generated assets (images, voice) stored under
+      ~/CardGame/{deckName}/{saveObjectId}/ (see below)
 
-6. END GAME / CAMPAIGN CONTINUE
-   └─ Campaign mode: carry-over cards and stat gains written to
-      a new snapshot (clone + apply deltas)
-   └─ One-off mode: session state discarded, snapshot remains for replay
+6. GAME START SCREEN (per deck)
+   └─ On selecting a built deck, the client checks for an existing save:
+        GET /rest/resource/data.data/path?path=~/CardGame/{deckName}/save
+   └─ If save exists:
+        [Resume Game]  — loads snapshot + merges deltas, resumes at saved round
+        [New Game]     — deletes save data.data object, starts fresh session
+   └─ If no save:
+        [New Game]     — only option
+   └─ No manual load/save UI — it's resume or new, that's it
+
+7. END GAME / CAMPAIGN CONTINUE
+   └─ Campaign mode: only the character card persists — stat gains
+      written back to the charPerson record. Save data.data deleted.
+      Items, apparel, weapons, skills do NOT carry over.
+      Next session rebuilds a fresh deck from the theme pool.
+   └─ One-off mode: save data.data deleted, snapshot remains for replay
+   └─ Mid-game artifacts (after-action images, voice audio) under
+      ~/CardGame/{deckName}/{saveObjectId}/ are LEFT in place.
+      Not cleaned up — they serve as a history/gallery of past sessions.
 ```
 
 ### Session Deltas vs Snapshot
@@ -3934,7 +4960,7 @@ During gameplay, the snapshot is **read-only**. All mutable state (damage taken,
   "round": 7,
   "deltas": {
     "player": {
-      "needs": { "hp": -35, "energy": -20, "hunger": -30, "morale": -10 },
+      "needs": { "hp": -7, "energy": -4, "morale": -2 },
       "durabilityChanges": {
         "csnap-weapon-uuid": -3,
         "csnap-armor-uuid": -1
@@ -3950,6 +4976,7 @@ During gameplay, the snapshot is **read-only**. All mutable state (damage taken,
       }
     },
     "encounterDeckPosition": 12,
+    "treasureVaultPosition": 3,
     "discardPile": ["csnap-enc1-uuid", "csnap-enc2-uuid"]
   }
 }
@@ -3964,6 +4991,38 @@ isConsumed = deltas.consumablesUsed.includes(cardSnapshotId)
 
 This means saving is lightweight (small delta object), loading is a merge of snapshot + deltas, and the snapshot itself remains a clean, reusable starting point.
 
+### Mid-Game Asset Storage
+
+During gameplay, the system generates assets that didn't exist at deck-build time — after-action images, LLM-suggested scene images, voice synthesis audio. These assets are stored under the save's object ID to keep them associated with the specific game session:
+
+```
+~/CardGame/{deckName}/{saveObjectId}/
+  ├── images/           ← After-action images, LLM-suggested scene images
+  │   ├── round-3-resolution.png
+  │   ├── round-5-encounter.png
+  │   └── ...
+  └── voice/            ← Voice synthesis audio files
+      ├── round-3-opening.wav
+      ├── round-3-resolution.wav
+      └── ...
+```
+
+**Why keyed to save object ID:**
+- Starting a new game creates a new save → new asset folder → clean slate
+- Resuming a game reuses the same save → same asset folder → existing audio/images still cached
+- Deleting a save (on game end or new game start) can clean up the subfolder too
+- Multiple deck games don't collide — each save has its own ID
+
+**What goes here (not in the main deck images folder):**
+- After-action images (unique per round, per game session)
+- Voice synthesis audio (narration audio for each trigger point)
+- Any LLM-suggested images generated mid-game (e.g., "generate an image of this scene")
+- Character re-narration audio (when apparel changes trigger narrative updates)
+
+**What stays in the main deck images folder** (`~/CardGame/{deckName}/images/`):
+- Card art (characters, apparel, items, etc.) — these are deck-level, not session-level
+- Card backs, card style, deck assets — shared across all games with this deck
+
 ---
 
 ## Online Implementation
@@ -3972,16 +5031,20 @@ This means saving is lightweight (small delta object), loading is a merge of sna
 
 The v2 client communicates exclusively through the AM7 REST API and WebSocket endpoints. It extends the existing `cardGame.js` infrastructure.
 
+**Streaming chat via WebSocket is already implemented** — the existing `chat.js` / `cardGame.js` WebSocket chat system (`page.wss.send("chat", ...)` with `onchatstart`/`onchatupdate`/`onchatcomplete` handlers) is reused as-is for Talk card conversations. No new WebSocket chat implementation needed. New chat configs are created from the "Open Chat" template (see [Chat System](#chat-system)).
+
 ### New / Extended Endpoints
+
+**Game Session (17 new):**
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `POST /rest/game/v2/newGame` | POST | Initialize a new card game session (generate starter decks, encounter deck) |
-| `POST /rest/game/v2/draw` | POST | Draw card(s) from encounter deck |
+| `POST /rest/game/v2/draw` | POST | Draw card(s) from encounter deck or treasure vault |
 | `POST /rest/game/v2/initiative` | POST | Roll initiative for all participants, returns position map |
 | `POST /rest/game/v2/ante` | POST | Submit pot ante card(s) for the current round |
 | `POST /rest/game/v2/placeStacks` | POST | Submit all action stacks for placement on the action bar |
-| `POST /rest/game/v2/resolvePosition` | POST | Resolve a single action bar position (server-side dice + narration) |
+| `POST /rest/game/v2/resolvePosition` | POST | Resolve a single action bar position (server-side dice + narration + after-action image) |
 | `POST /rest/game/v2/disrupt` | POST | Execute a mid-round disruption (insert, remove, modify) |
 | `GET /rest/game/v2/state` | GET | Get full game state (hand, bar, pot, encounter, needs) |
 | `POST /rest/game/v2/equip` | POST | Equip/unequip apparel or weapon (costs 1 AP as action stack) |
@@ -3989,10 +5052,98 @@ The v2 client communicates exclusively through the AM7 REST API and WebSocket en
 | `POST /rest/game/v2/ai/placement` | POST | Get AI opponent's stack placement for the action bar (Mode 1) |
 | `POST /rest/game/v2/ai/disruptResponse` | POST | Get AI response to a mid-turn disruption |
 | `POST /rest/game/v2/gm/encounter` | POST | Get GM's encounter selection + stack placement (Mode 2) |
+| `POST /rest/game/v2/gm/objective` | POST | Generate or evaluate scenario objective (Mode 2 story mode) |
 | `POST /rest/game/v2/pot/claim` | POST | Round winner claims all pot cards |
-| `GET /rest/game/cards/print/{deckId}` | GET | Generate printable PDF of deck |
 | `POST /rest/game/v2/trade` | POST | Execute trade between players |
 | `POST /rest/game/v2/talk` | POST | Initiate Talk action (opens chat or resolves outcome) |
+
+**Deck Building (8 new):**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `POST /rest/game/v2/deck/build` | POST | Build deck from theme + character, creates snapshot |
+| `GET /rest/game/v2/deck/{snapshotId}` | GET | Load a built deck snapshot |
+| `GET /rest/game/v2/decks` | GET | List all user's built decks |
+| `DELETE /rest/game/v2/deck/{snapshotId}` | DELETE | Delete a built deck |
+| `POST /rest/game/v2/deck/{snapshotId}/resnap/image` | POST | Re-snapshot single card image (overwritten in place) |
+| `POST /rest/game/v2/deck/{snapshotId}/resnap/stats` | POST | Re-snapshot single card stats (overwritten in place) |
+| `POST /rest/game/v2/deck/{snapshotId}/resnap/all` | POST | Re-snapshot entire deck |
+| `POST /rest/game/v2/deck/{snapshotId}/clone` | POST | Clone a deck (for variant builds) |
+
+**Narration & Content Generation (4 new):**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `POST /rest/game/v2/narrate` | POST | Generate LLM narration for a game event (returns text + image prompt) |
+| `POST /rest/game/v2/generateCardStyle` | POST | LLM-compose card style definition from theme |
+| `POST /rest/game/asset/generate` | POST | Generate SD image for non-entity cards (actions, skills, magic, encounters, deck assets) |
+| `GET /rest/game/cards/print/{deckId}` | GET | Generate printable PDF of deck |
+
+**Custom Content Creation (4 new):**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `POST /rest/game/v2/item/create` | POST | Create a custom item (weapon, consumable) for the deck |
+| `POST /rest/game/v2/action/create` | POST | Create a custom action type for the deck |
+| `POST /rest/game/v2/apparel/create` | POST | Create custom apparel for the deck |
+| `GET /rest/game/v2/apparel/browse` | GET | Browse existing Olio apparel for deck inclusion |
+
+**Existing AM7 Endpoints (reused, no new implementation):**
+
+| Endpoint | Method | Reused For |
+|----------|--------|------------|
+| `PUT /rest/resource/data.data` | PUT | Auto-save game state (writes session deltas as data.data JSON) |
+| `GET /rest/resource/data.data/path` | GET | Load saved game / check for existing save |
+| `DELETE /rest/resource/data.data/{id}` | DELETE | Delete save on game end or new game start |
+| `GET /rest/resource/data/path` | GET | Image skip-check (does image exist at deck path?) |
+| `GET /rest/olio/charPerson/{id}/reimage/false` | GET | Character portrait regeneration |
+| `GET /rest/olio/animal/{id}/reimage` | GET | Animal/creature image regeneration |
+| `POST /rest/olio/apparel/{id}/reimage` | POST | Apparel mannequin image regeneration |
+| `POST /rest/olio/wearable/{id}/reimage` | POST | Wearable icon regeneration |
+| `GET /rest/olio/item/{id}/reimage` | GET | Item image regeneration |
+| `POST /rest/face/analyze` | POST | Poker Face emotion capture (from MoodRing) |
+| `POST /rest/voice/{hash}` | POST | Voice synthesis for narration (from Magic8) |
+| `POST /rest/game/concludeChat` | POST | Conclude Talk card conversation, LLM evaluates outcome |
+| **WebSocket chat** | WS | Streaming chat for Talk card — reuses `chat.js`/`cardGame.js` handlers |
+
+### LLM Call Fallback Behavior
+
+All LLM calls (narration, AI opponent decisions, GM encounter generation, scenario objectives, chat conclude, card style composition) follow the same retry/fallback pattern:
+
+```
+1. First attempt → call LLM endpoint
+2. If failure (timeout, 5xx, network error) → RETRY once (same parameters)
+3. If second failure → STOP. Show page toast + log to browser console.
+```
+
+**Page toast:** A non-blocking notification bar at the top of the game UI (auto-dismiss after 8 seconds, or click to dismiss):
+```
+⚠ LLM call failed: {endpoint} — {error message}. Game continues without AI response.
+```
+
+**Console log:** Full error details logged via `console.error()` for debugging:
+```javascript
+console.error('[CardGame] LLM call failed after retry', {
+    endpoint: '/rest/game/v2/narrate',
+    attempt: 2,
+    error: err.message,
+    context: { round, trigger, phase }
+});
+```
+
+**Per-feature graceful degradation on LLM failure:**
+
+| Feature | Behavior on LLM Failure |
+|---------|------------------------|
+| Narration | Skip narration for this trigger point. Subtitle shows "[narration unavailable]". Game continues. |
+| AI Opponent | AI plays a default stack (highest ATK card, no modifiers). Toast warns "AI is playing blind." |
+| GM Encounter | Draw top encounter card with no GM curation. Toast warns "GM unavailable, random encounter." |
+| Scenario Objective | Objective evaluation skipped for this round. Progress unchanged. |
+| Chat Conclude | Chat ends without interaction record. Toast warns "Conversation not evaluated." |
+| Card Style Composition | Fall back to hardcoded default card style (clean white background, simple borders). |
+| After-Action Image | Skip image generation for this round. Event log entry without image. |
+
+No retries beyond the second attempt. No exponential backoff. No queuing for later. Fail fast, inform the player, keep the game moving.
 
 ### WebSocket Events (Extend GameStreamHandler)
 
@@ -4032,14 +5183,14 @@ cardGame-v2.js
 │   ├── ActionBar(stacks[]) — horizontal action bar with all positions
 │   ├── PotView(pot) — center pot card pile with value display
 │   ├── HandTray(cards[], filter) — type-filtered scrollable card tray
-│   ├── NeedBars(needs) — HP/Energy/Hunger/Morale bars + AP display
+│   ├── NeedBars(needs) — HP/Energy/Morale bars + AP display
 │   └── PokerFaceWidget(pokerFace) — emotion emoji + banter level toggle
 ├── Phase UI
 │   ├── DrawPhase — encounter reveal + ante collection
 │   ├── InitiativePhase — roll animation, position assignment
 │   ├── PlacementPhase — drag-and-drop stack building on action bar
 │   ├── ResolutionPhase — per-position resolve with narration + disruption handling
-│   └── CleanupPhase — pot claim, discard, durability, hunger tick
+│   └── CleanupPhase — pot claim, discard, durability, round recovery
 ├── Drag-and-drop (card arrangement for placement phase)
 ├── Chat integration (reuses existing chat system)
 ├── Image pipeline (placeholder → SD generation → update)
@@ -4051,7 +5202,7 @@ cardGame-v2.js
 
 ```
 +------------------------------------------------------------------+
-|  HEADER: Round # | Phase | Initiative | AP: 3/3 | Timer | ⚙      |
+|  HEADER: Round # | Phase | Initiative | AP: 3/3 | Timer | [⏸] | ⚙ |
 +------------------------------------------------------------------+
 |              |                                    |                |
 |  YOUR        |  ┌──────────────────────────────┐ |  OPPONENT /    |
@@ -4067,8 +5218,7 @@ cardGame-v2.js
 |  Needs Bars  |        ▲ [ACTIVE MARKER]          |  Opp Needs    |
 |  HP  [████]  |  [Narration subtitle overlay]      |  HP  [████]   |
 |  NRG [████]  |                                    |  NRG [████]   |
-|  HNG [████]  |  ENCOUNTER CARD (if active)        |  HNG [████]   |
-|  MRL [████]  |                                    |  MRL [████]   |
+|  MRL [████]  |  ENCOUNTER CARD (if active)        |  MRL [████]   |
 |              |  Event Log                         |                |
 |  🎭 Poker    |                                    |  🎭 Poker     |
 +--------------+------------------------------------+----------------+
@@ -4085,7 +5235,8 @@ cardGame-v2.js
 let gameState = {
     mode: 'opponent' | 'gm',
     round: 1,
-    phase: 'draw' | 'initiative' | 'placement' | 'resolution' | 'cleanup',
+    phase: 'initiative' | 'draw' | 'placement' | 'resolution' | 'cleanup',
+    paused: false,                       // Game is paused (timer stopped)
 
     initiative: {
         rolls: {},                       // { playerId: { natural, modifier, total } }
@@ -4126,14 +5277,14 @@ let gameState = {
         },
         hand: [],                        // cards available to play (sorted by type)
         ap: { current: 3, max: 3 },      // Action Points (derived from END)
-        needs: { hp: 100, energy: 80, hunger: 100, morale: 75 },
+        needs: { hp: 20, energy: 14, morale: 20 },
     },
 
     opponent: {                          // AI character (Mode 1) or null (Mode 2)
         character: {},
         characterStack: { /* same structure */ },
         ap: { current: 4, max: 4 },
-        needs: { hp: 100, energy: 80, hunger: 100, morale: 75 },
+        needs: { hp: 20, energy: 14, morale: 20 },
     },
 
     pokerFace: {                         // MoodRing adaptation (online only)
@@ -4146,12 +5297,19 @@ let gameState = {
         lastTransition: null,
     },
 
+    lazyBones: {                         // Timer expiry penalty tracking (per round)
+        expiries: 0,
+        apPenalty: 0,
+        initiativeLost: false,
+        defaulted: false,
+    },
+
     encounter: null,                     // Current encounter card
-    encounterDeck: [],                   // Remaining encounter deck
+    encounterDeck: [],                   // Remaining encounter deck (★–★★★)
+    treasureVault: [],                   // Separate deck for Epic/Legendary (★★★★–★★★★★)
     discardPile: [],                     // Discarded cards
 
     eventLog: [],                        // Round-by-round log
-    hungerTimer: 0,                      // Rounds since last hunger tick
 };
 ```
 
@@ -4167,9 +5325,9 @@ let gameState = {
 ╠══════════════════════════════════════════════╣
 ║                                              ║
 ║  ROUND FLOW:                                 ║
-║  1. Draw encounter + Ante to pot             ║
-║  2. Roll initiative (1d20 + AGI)             ║
-║  3. Place action stacks on bar (open)        ║
+║  1. Roll initiative (1d20 + AGI)             ║
+║  2. Draw from encounter deck (winner first)  ║
+║  3. Place action stacks on bar (open) + Ante ║
 ║  4. Resolve bar left-to-right (interleaved)  ║
 ║  5. Cleanup — round winner claims pot        ║
 ║                                              ║
@@ -4186,20 +5344,26 @@ let gameState = {
 ║  Consumable cores = use-or-lose              ║
 ║  Modifier cards persist unless stolen        ║
 ║                                              ║
+║  DEFENSE: Passive armor (always) + Parry     ║
+║  (if Parry card at NEXT position on bar).    ║
+║  Armor CAN fully block non-critical damage.  ║
+║  Criticals always deal min 2 dmg.            ║
+║                                              ║
 ║  ROLL: 1d20 + char base + action modifiers   ║
-║        vs 1d20 + target defense              ║
+║    vs 1d20 + END + Armor DEF (+ Parry)       ║
 ║                                              ║
 ║  OUTCOMES (attacker - defender):              ║
-║  +10 CRIT HIT: 2× dmg, drop item → pot      ║
-║   +5 Solid Hit: full damage                  ║
-║   +1 Glancing: half damage                   ║
+║  +10 CRIT HIT: 2× dmg (min 2), drop → pot   ║
+║   +5 Solid Hit: full damage (0 if absorbed)  ║
+║   +1 Glancing: half damage (0 if absorbed)   ║
 ║    0 Stalemate: nothing                      ║
 ║   -1 Deflected: weapon -1 dur               ║
 ║   -5 Countered: half dmg to attacker         ║
+║      (armor applies except on crit fail)     ║
 ║  -10 CRIT COUNTER: full dmg to attacker,     ║
 ║      attacker drops item + loses next action ║
-║  Nat 20 = upgrade 1 tier + Nat 1 = down +   ║
-║           drop item                          ║
+║  Nat 20 = ALWAYS SUCCEEDS + upgrade 1 tier  ║
+║  Nat 1  = ALWAYS FAILS + downgrade + drop   ║
 ║                                              ║
 ║  MID-ROUND DISRUPTION:                       ║
 ║  INSERT: add stacks after current position   ║
@@ -4208,15 +5372,46 @@ let gameState = {
 ║                                              ║
 ║  PER-ROUND THREATS (0–3 per round):          ║
 ║  Nat 1 initiative → threat at BEGINNING      ║
-║    → attacks initiative winner, passive def  ║
+║    → attacks the fumbler (who rolled Nat 1)  ║
 ║    → win = keep loot, lose = loot to pot     ║
+║    → killed by threat = lose game instantly  ║
 ║  Scenario/card → threat at END               ║
-║    → round winner faces it, out of AP        ║
-║    → 1 bonus stack OR roll to flee           ║
-║    → lose/flee = LOSE ENTIRE POT             ║
+║    → round winner faces it, 1 bonus stack    ║
+║    → repel (deal dmg) = keep pot             ║
+║    → fail/flee = LOSE POT to opponent        ║
+║    → surviving threat → beginning next round ║
 ║                                              ║
 ║  POT: Ante 1 card/round. Drops/loot → pot.   ║
 ║  Round winner claims all pot cards.           ║
+║  Pot jackpot (5+ cards) → vault draw bonus.  ║
+║                                              ║
+║  TREASURE VAULT (~18 cards, ★★★★–★★★★★):     ║
+║  Boss encounters + epic/legendary items,     ║
+║  shuffled together. Draw triggers:           ║
+║  • ★★★ Discovery encounter                  ║
+║  • Investigate critical success (Nat 20)     ║
+║  • NPC quest reward                          ║
+║  • Pot jackpot (5+ cards)                    ║
+║  Draw a boss? It's an immediate threat!      ║
+║  Beat a vault boss → 1 extra vault draw.     ║
+║  Vault draws are ALSO random (top card).     ║
+║                                              ║
+║  ANTI-HOARDING (action/talk cards only):      ║
+║  LETHARGY (cleanup): Hold 2+ of same action  ║
+║    type, played 0 → keep 1, return extras    ║
+║    to encounter deck.                        ║
+║  EXHAUSTED (mid-resolution): Played same     ║
+║    action 2+ times, last one FAILED, hold    ║
+║    2+ extras → keep 1, return extras.        ║
+║                                              ║
+║  AP: Must use at least 1 AP per round.       ║
+║  Unused AP is lost (no carry to next round). ║
+║                                              ║
+║  LAZY BONES (timer expiry):                  ║
+║  1st: lose initiative + lose 1 AP, restart   ║
+║  2nd: lose another AP, restart               ║
+║  Never act: DEFAULT round — 0 actions,       ║
+║    opponent resolves unopposed               ║
 ║                                              ║
 ║  TALK CARD: Required to communicate.         ║
 ║  MAGIC: Skill Type + min stat + Energy cost  ║
@@ -4232,22 +5427,54 @@ let gameState = {
 | vs AI (Mode 1) | Reduce opponent to 0 HP |
 | Story Mode (Mode 2) | Survive 20 rounds OR complete scenario objective |
 | Free-for-all (multiplayer) | Last player standing (0 HP = eliminated) |
-| Campaign | No single win — survive across sessions, accumulate cards/skills |
+| Campaign | No single win — survive across sessions, level up character (only character card persists between games) |
+
+**No simultaneous defeat:** Because resolution is strictly position-by-position (left to right) and damage applies immediately in real-time, it is impossible for both players to reach 0 HP simultaneously. One player will always hit 0 HP first at a specific bar position, ending the game on the spot. The surviving player wins regardless of what would have happened at later positions.
+
+### Scenario Objectives
+
+Scenario objectives for Story Mode (Mode 2) are deliberately simple. The LLM builds objectives from three inputs already in the game state — no special scenario card type or pre-built encounter composition needed:
+
+**Inputs:**
+1. **Theme context** — the theme's setting, art style, world description, and narrative tone
+2. **Character narratives** — each character's backstory, personality traits, alignment, and current state. Narratives are **re-generated after apparel changes** (equipping new gear changes who the character appears to be, so the narrative updates to match)
+3. **Action stack sequences and outcomes** — the history of what happened each round (which actions were played, in what order, and what the outcomes were)
+
+**How objectives work:**
+- At game start, the GM LLM generates a scenario objective from the theme + character narratives: "Defend the village from three waves of attacks" or "Retrieve the artifact from the goblin cave before nightfall"
+- The objective is a simple text description — survive N rounds, defeat a specific encounter type, accumulate a resource threshold, reach a location, or protect an NPC
+- Each round, the GM evaluates progress toward the objective based on action stack sequences and outcomes
+- The GM narrator weaves objective progress into the round narration: "Two waves down, one to go — but the goblin chieftain approaches..."
+- Objective completion (or failure) is determined by the GM LLM based on the accumulated game history
+
+**Objective types (LLM-generated, not hardcoded):**
+
+| Type | Example | Evaluation Basis |
+|------|---------|-----------------|
+| Survival | "Survive 15 rounds in the wasteland" | Round count reached |
+| Elimination | "Defeat the dragon threatening the kingdom" | Specific encounter threat killed |
+| Collection | "Gather 3 magical components" | Specific item cards gained |
+| Protection | "Keep the merchant alive through the mountain pass" | NPC HP stays above 0 |
+| Exploration | "Investigate 5 different locations" | Investigate actions completed |
+
+**Character re-narration:** When a character equips or unequips apparel/weapons, their narrative is re-generated to reflect the new loadout. This keeps the story coherent — a character who started as a "ragged wanderer" and now wears plate armor becomes a "battle-hardened knight." The GM LLM uses the updated narrative for future objective evaluation and narration.
 
 ### Card Counts Summary
 
-| Card Type | Starter Deck | Encounter Deck | Total (2-player) |
-|-----------|-------------|----------------|-----------------|
-| Character | 1 per player | 0 | 2 |
-| Apparel | 2-3 per player | 3 in encounter | 7-9 |
-| Item (Weapon) | 1-2 per player | 4 in encounter | 6-8 |
-| Item (Consumable) | 3-5 per player | 5 in encounter | 11-15 |
-| Action | 8 per player (1 each type) | 0 | 16 |
-| Talk | 1 per player | 0 | 2 |
-| Skill | 1-2 per player | 6 in encounter | 8-10 |
-| Magic Effect | 0-1 per player | 4 in encounter | 4-6 |
-| Encounter | 0 | 33 | 33 |
-| **Total** | **~18 per player** | **~55** | **~91** |
+| Card Type | Starter Deck | Encounter Deck (★–★★★) | Treasure Vault (★★★★–★★★★★) | Total (2-player) |
+|-----------|-------------|----------------------|---------------------------|-----------------|
+| Character | 1 per player | 0 | 0 | 2 |
+| Apparel | 2-3 per player | 2 in encounter | 3 epic in vault | 9-11 |
+| Item (Weapon) | 1-2 per player | 3 in encounter | 5 (3 epic + 2 legendary) in vault | 11-14 |
+| Item (Consumable) | 3-5 per player | 5 in encounter | 2 epic in vault | 12-17 |
+| Action | 8 per player (1 each type) | 0 | 0 | 16 |
+| Talk | 1 per player | 0 | 0 | 2 |
+| Skill | 1-2 per player | 5 in encounter | 3 rare/epic in vault | 10-13 |
+| Magic Effect | 0-1 per player | 2 in encounter | 2 legendary in vault | 4-6 |
+| Encounter (regular) | 0 | 30 (12 threats + 10 events + 8 NPCs) | 0 | 30 |
+| Discovery | 0 | 10 | 0 | 10 |
+| **Boss Encounters** | **0** | **0** | **3–4 (difficulty 12+)** | **3–4** |
+| **Total** | **~18 per player** | **~57** | **~18–19** | **~111–114** |
 
 ---
 
@@ -4271,9 +5498,9 @@ The rules document is organized into player-facing sections:
 | **Action Points & Stacks** | AP formula, character stack vs action stacks, how to build stacks |
 | **Combat** | Opposed rolls, modifier breakdown, outcome table, critical effects |
 | **The Pot** | Ante rules, drops, winner claims |
-| **Movement & Actions** | All 8 action types with examples |
+| **Movement & Actions** | All 7 action types with examples |
 | **Magic** | Schools, reagents, Energy costs, spell failure |
-| **Needs & Survival** | Health, Energy, Hunger, Morale — what drains them, how to restore |
+| **Needs & Survival** | Health, Energy, Morale — what drains them, how to restore |
 | **Disruption** | Insert, Remove, Modify — when and how they trigger |
 | **Winning** | Opponent mode (reduce HP to 0), GM mode (complete objective) |
 | **Card Reference** | Full card list for the theme with stats and rarity |
@@ -4308,12 +5535,343 @@ base.rules.md (universal)  +  card pool snapshot  +  theme flavor
         {deckName}.rules.md (complete, theme-specific)
 ```
 
+### Cover Page
+
+The rules document (both online help panel and print booklet) uses a **generated cover page** from the deck assets pipeline (`deckAssets.rulesCover`). This keeps the help content visually consistent with the game board and card backs — all three surfaces derive from the same `gameBackground` anchor image.
+
+**Generation flow:**
+```
+gameBackground (anchor)
+    └─── rulesCover (ref weight 0.3, 744×1039)
+            ├── Online: displayed as help panel header image
+            └── Print:  full first page of the booklet
+```
+
+The cover is generated with the highest reference weight (0.3) of any deck asset because it should feel closest to the game board aesthetic. The theme name and "Rules" title are rendered as vector text overlays — not baked into the SD prompt — ensuring crisp, correctly spelled text at any resolution.
+
+If the deck assets have not been generated yet (new theme, first load), the help panel and print view fall back to a solid-color header with the theme name in styled text. Once the `rulesCover` asset generates, it replaces the fallback with a smooth fade transition.
+
 ### REST Endpoints
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/rest/game/rules/{deckId}` | GET | Retrieve rendered rules markdown for a deck |
 | `/rest/game/rules/{deckId}/print` | GET | Retrieve print-optimized HTML version |
+
+---
+
+## Phased Implementation Plan
+
+Build-test-build. Each phase produces a testable artifact. No phase starts until the previous phase's test gate passes. Phases build on each other — earlier phases remain functional as later features are added.
+
+### Phase 1 — Static Card Rendering & Data Model
+
+**Goal:** Render a single card on screen from hardcoded data. Establish the data model.
+
+**Build:**
+- Card rendering component: take a card JSON object → render a styled card with type-colored border, name, stats, placeholder icon (Material Symbol / emoji)
+- `data.data` CRUD wrapper for deck storage at `~/CardGame/{deckName}/`
+- Theme config JSON loader (read a theme config from `Ux7/media/cardGame/`, parse, validate)
+- Card type rendering for all 8 types (Character, Apparel, Item, Action, Talk, Encounter, Skill, Magic Effect)
+
+**Server:**
+- No new endpoints. Uses existing AM7 `data.data` CRUD and `/thumbnail/` serving.
+
+**Test gate:**
+- [ ] Render all 8 card types from hardcoded JSON on screen
+- [ ] Card back renders with correct color per type
+- [ ] Material icon placeholder visible for each card type
+- [ ] Theme config loads from `Ux7/media/cardGame/` and parses without error
+- [ ] Write and read a `data.data` object at `~/CardGame/test-deck/deck.json`
+
+---
+
+### Phase 2 — Deck Builder (Character Selection + Starter Deck)
+
+**Goal:** Pick a character from the Olio population, assign a theme, generate a starter deck structure with real AM7 data.
+
+**Build:**
+- Character picker: browse Olio population, select a `charPerson`
+- Theme selection UI (pick from available themes)
+- Starter deck assembly: given a character + theme config → produce the starter deck JSON (character card, apparel from equipment, weapons, consumables, action cards, talk card, skills, magic effects)
+- Derived stat normalization (hp → 20, energy → MAG, morale → 20)
+- Snapshot system: write the assembled deck as `data.data` at `~/CardGame/{deckName}/deck.json`
+- Deck list view: show all saved decks with character name/portrait
+
+**Server:**
+- `POST /rest/game/v2/character/random` — generate a random character
+- `POST /rest/game/v2/deck/build` — assemble and snapshot a starter deck
+- `GET /rest/game/v2/decks` — list all decks
+
+**Test gate:**
+- [ ] Pick a character from Olio population → see their stats on a character card
+- [ ] Select a theme → starter deck assembles with correct card counts (~15-20 cards)
+- [ ] Character card shows hp: 20, energy: MAG stat, morale: 20 (normalized)
+- [ ] Deck snapshot writes to `~/CardGame/{deckName}/deck.json` and can be reloaded
+- [ ] Deck list shows all created decks
+
+---
+
+### Phase 3 — Image Generation Pipeline
+
+**Goal:** Generate real card art via Stable Diffusion. Replace placeholders with actual images.
+
+**Build:**
+- SD config system: load theme-specific SD configs for each image type
+- Image generation queue manager (client-side): priority queue, progress bar, skip-check on existing images, pause/resume/retry
+- Character portrait generation (reuses existing `charPerson/reimage`)
+- Mannequin pipeline for apparel (reuses existing `apparel/reimage`)
+- Wearable icon generation (new: `wearable/reimage` at 512×512)
+- Item/weapon/consumable icon generation (512×512)
+- Action card illustration generation (1024×1024 + hires)
+- Deck asset generation (backgrounds, card backs, corner icons)
+- Setup test & preview pass (all 23 test items)
+- Config startup check (background exists? character portrait exists? LLM reachable?)
+
+**Server:**
+- `POST /rest/olio/wearable/{id}/reimage` — new: wearable icon generation
+- `POST /rest/game/v2/deckAssets/generate` — batch generate deck-level assets
+- `POST /rest/game/v2/config/test` — run the 23-item test pass
+
+**Test gate:**
+- [ ] Test pass runs and generates 1 sample of every image type
+- [ ] Character portrait generates at 1024×1024 + hires
+- [ ] Mannequin apparel image generates correctly
+- [ ] Item icons generate at 512×512
+- [ ] Queue manager tracks progress, handles errors (retry once → toast)
+- [ ] Skip-check works: refresh mid-queue, queue resumes without re-generating completed images
+- [ ] Full deck image batch (~60-90 images) completes without blocking the UI
+
+---
+
+### Phase 4 — Game State & Round Skeleton
+
+**Goal:** Two sides can take turns. Initiative → placement → resolution marker advances → cleanup. No combat math yet — just the structure.
+
+**Build:**
+- Game state model: `gameState` object with round, phase, initiative, actionBar, player, opponent
+- Initiative phase: roll 1d20 + AGI per side, determine order, assign odd/even positions
+- Equip phase: UI to swap equipment (between rounds, free)
+- Draw & Placement phase: turn-based draw-or-play. Draw 1 card (mandatory), then choose: place action stack (costs 1 AP), draw again, or skip
+- Action bar UI: horizontal bar with interleaved positions, active marker, drag-and-drop from hand tray
+- Hand tray: type-filtered card tray at bottom, drag cards to action bar positions
+- Resolution phase skeleton: marker advances left to right, pauses at each position (no dice/damage yet, just the animation and position tracking)
+- Cleanup phase skeleton: advance round counter, reset AP
+
+**Server:**
+- `POST /rest/game/v2/newGame` — initialize a new game session from a deck snapshot
+
+**Test gate:**
+- [ ] New game loads from a deck snapshot
+- [ ] Initiative roll determines position assignment (winner=odd, loser=even)
+- [ ] Can drag action cards from hand to action bar positions
+- [ ] Placement phase enforces AP limit
+- [ ] Resolution marker animates through all positions left to right
+- [ ] Round advances (round counter increments, AP resets)
+- [ ] Equipment can be changed during equip phase
+
+---
+
+### Phase 5 — Combat Resolution & Needs
+
+**Goal:** Attacks deal damage. HP/Energy/Morale track. The game has stakes.
+
+**Build:**
+- Opposed roll system: 1d20 + character stack mods + action stack mods vs target's 1d20 + passive DEF + parry
+- Outcome table (7 tiers: Critical Hit through Critical Counter)
+- Damage calculation with armor reduction
+- Stat infographic: pre-roll modifier breakdown display
+- Need tracks with Health denomination cards (+1, +2, +5, +10) and Energy denomination cards
+- Morale tracking (counter, not cards)
+- Overheal cap enforcement
+- Round recovery: loser +2 HP, winner +5 HP
+- Round winner determination: 1pt per HP damage + 5pts per successful non-combat action
+- Durability system: armor/weapons lose durability on hits
+- Defeat condition: HP reaches 0 → game over
+- AI opponent (simple): use the printed Solo Opponent Priority table as a heuristic (no LLM yet)
+
+**Server:**
+- No new endpoints. All combat math is client-side with dice simulation.
+
+**Test gate:**
+- [ ] Attack action rolls correctly (1d20 + STR + weapon ATK + skill mods)
+- [ ] Defense rolls passively (1d20 + END + armor DEF + weapon parry)
+- [ ] Outcome table applies correctly (Critical Hit = double damage, etc.)
+- [ ] HP denomination cards decrease on damage, increase on healing
+- [ ] Energy spent on spell placement
+- [ ] Round winner calculated correctly
+- [ ] Durability decreases on armor/weapons
+- [ ] Game ends when HP reaches 0
+- [ ] Simple AI opponent makes reasonable decisions without LLM
+
+---
+
+### Phase 6 — Full Round Mechanics
+
+**Goal:** All action types work. Pot, hoarding, threats, and the full round lifecycle.
+
+**Build:**
+- All 7 action types functional: Attack, Flee, Investigate, Trade, Rest, Use Item, Craft
+- Talk card (player-to-player only at this phase, no LLM chat yet — just dice roll + CHA modifier)
+- Round Pot: mandatory ante, mid-round drops (stolen/destroyed items), winner claims pot
+- Hoarding prevention: Lethargy (cleanup) and Exhausted (mid-resolution) rules
+- Per-round threats: beginning threats (Nat 1 initiative), end threats (from scenario card draws)
+- End threat bonus stack (single stack, any type, no AP cost)
+- Dual wield: 1 Attack card + 2 weapons = 2 separate attack rolls
+- Lazy Bones timer (online: countdown timers; IRL: optional sand timer)
+- Critical effects: item drops, action disabling on Critical Counter
+- Magic system: 3 skill types, energy costs, all spells reusable, fizzle on failed requirements
+
+**Server:**
+- No new endpoints. Client-side logic.
+
+**Test gate:**
+- [ ] All 7 action types resolve with correct formulas
+- [ ] Pot ante enforced, pot accumulates during round, winner claims all
+- [ ] Lethargy strips hoarded duplicates at cleanup
+- [ ] Exhausted strips duplicates on failed repeat action
+- [ ] Beginning threat triggers on Nat 1 initiative
+- [ ] End threat drawn from scenario card, bonus stack resolves
+- [ ] Dual wield produces 2 separate attack rolls
+- [ ] Magic spells cost energy, return to hand, fizzle correctly
+- [ ] Lazy Bones timer penalties escalate (lose initiative → lose AP → default round)
+- [ ] Full game playable from start to defeat with all mechanics
+
+---
+
+### Phase 7 — LLM Integration (AI Opponent + Narrator)
+
+**Goal:** AI opponent uses LLM for intelligent decisions. Narrator describes the action.
+
+**Build:**
+- AI Opponent (Mode 1): LLM-based stack selection via the condensed placement prompt
+- AI mid-turn disruption response prompt
+- AI personality influence (aggressive, cautious, balanced — based on character personality)
+- Narrator system: 5 trigger points (round start, encounter, stack, resolution, round end)
+- Narrator personality profiles (Arena Announcer, DM, War Correspondent, Bard)
+- After-action image generation (768×512 scene from key moment)
+- LLM combat evaluation (enriches outcome narration beyond dice math)
+- LLM interaction evaluation (Talk outcome assessment → `olio.interaction` record)
+- AI Game Master (Mode 2): encounter selection, weighted draws, encounter behavior control
+- Scenario objectives: GM generates objectives from theme + character narratives + action outcomes
+- LLM fallback: retry once → page toast + console.error, per-feature graceful degradation
+- Card Style Composer: LLM generates cardStyleDef JSON → SD generates frame overlay
+
+**Server:**
+- `POST /rest/game/v2/narrate` — trigger narration at a specific point
+- `POST /rest/game/v2/generateCardStyle` — LLM card style composition
+
+**Test gate:**
+- [ ] AI opponent selects stacks via LLM — decisions are coherent and rule-legal
+- [ ] AI responds to mid-turn disruptions within 1 second
+- [ ] Narrator produces text for all 5 trigger points
+- [ ] After-action image generates and appears in event log
+- [ ] LLM combat eval produces richer outcome descriptions
+- [ ] Talk → concludeChat creates `olio.interaction` record
+- [ ] GM mode: LLM selects encounters weighted by narrative arc
+- [ ] Scenario objective generated at game start, progress tracked per round
+- [ ] LLM failure retries once, then shows toast (non-blocking)
+
+---
+
+### Phase 8 — Chat, Voice & Online Features
+
+**Goal:** Talk card triggers LLM-powered NPC conversation. Voice narration. Poker Face.
+
+**Build:**
+- Talk card LLM chat: WebSocket streaming (reuses existing chat.js/gameStream.js), NPC personality from `charPerson`, interaction history from `olio.interaction`
+- Silence rule enforcement: chat UI locked unless Talk card active
+- "Open Chat" chatConfig as connection template (same pattern as v1)
+- Voice synthesis pipeline (reuses Magic8 AudioEngine): narrator voice, per-profile voice selection
+- Voice config fallback: skip if never configured, warn once if configured but fails
+- Subtitle display: word-by-word fade-in, configurable (voice+subs, subs only, off)
+- Poker Face: webcam emotion capture (reuses moodRing.js/camera.js), banter level config, emotion fed to narrator and AI opponent prompts
+- Mid-game asset storage: after-action images, voice audio → `~/CardGame/{deckName}/{saveObjectId}/`
+
+**Server:**
+- No new endpoints. Reuses existing chat, voice, and face analysis endpoints.
+
+**Test gate:**
+- [ ] Talk card opens chat → NPC responds in character via LLM streaming
+- [ ] Interaction history appears in chat dialog
+- [ ] concludeChat creates interaction record
+- [ ] Voice narration plays for each trigger point (if voice configured)
+- [ ] Voice fallback works: no config → skip silently; config fails → text subtitles
+- [ ] Poker Face captures emotion → narrator banter references it
+- [ ] Mid-game assets saved to `~/CardGame/{deckName}/{saveObjectId}/`
+
+---
+
+### Phase 9 — Save/Load & Campaign
+
+**Goal:** Game state persists across sessions. Campaign mode tracks character progression.
+
+**Build:**
+- Auto-save: every round cleanup → write session deltas to `data.data` at `~/CardGame/{deckName}/save`
+- Game start screen: if save exists → [Resume Game] / [New Game]; else → [New Game] only
+- Resume: load snapshot + merge deltas → restore game state
+- New game: delete save `data.data`, start fresh
+- End game cleanup: delete save, leave mid-game artifacts in place
+- Campaign mode: character card persists between games (only the charPerson card — items, apparel can be lost/damaged/stolen during gameplay)
+
+**Server:**
+- No new endpoints. Uses existing `data.data` CRUD.
+
+**Test gate:**
+- [ ] Game auto-saves after each round (invisible to player)
+- [ ] Close browser → reopen → [Resume Game] restores exact game state
+- [ ] [New Game] deletes old save and starts fresh
+- [ ] End game leaves after-action images in `{saveObjectId}/` folder
+- [ ] Campaign: character card carries over, items/apparel do not
+
+---
+
+### Phase 10 — Print & Export
+
+**Goal:** Export a playable print-ready deck. IRL-complete.
+
+**Build:**
+- Print layout: 2.5" × 3.5" cards, 3×3 grid per 8.5" × 11" page at 300 DPI
+- Card fronts + card backs (duplex-ready with registration marks)
+- Crop marks and bleed area
+- Reference card sheet: rules quick reference, solo opponent priority table, resolution marker cut-out, character wheel template
+- PDF export via server-side generation
+- ZIP export (browser-side): cards/, sheets/, theme/, backs/, metadata.json
+- Rules documentation: theme-specific markdown rules rendered as printable pages
+
+**Server:**
+- `GET /rest/game/cards/print/{deckId}?format=pdf` — generate print PDF
+- `GET /rest/game/rules/{deckId}` — retrieve rules markdown
+- `GET /rest/game/rules/{deckId}/print` — print-optimized HTML
+
+**Test gate:**
+- [ ] PDF exports a complete deck with all card fronts and backs
+- [ ] Cards print at correct size (2.5" × 3.5") at 300 DPI
+- [ ] Duplex alignment: fronts and backs register correctly
+- [ ] Reference card includes quick reference rules, solo opponent table, wheel template
+- [ ] ZIP export contains all assets and metadata
+- [ ] Printed deck is playable IRL without any online services
+
+---
+
+### Phase Summary
+
+| Phase | Deliverable | Key Test | Depends On |
+|-------|------------|----------|------------|
+| 1 | Card rendering + data model | 8 card types render on screen | — |
+| 2 | Deck builder + snapshots | Pick character, build deck, save/load snapshot | Phase 1 |
+| 3 | Image generation pipeline | Full deck art batch (~60-90 images) | Phase 2 |
+| 4 | Round skeleton + action bar | Two sides take turns, marker advances | Phase 2 |
+| 5 | Combat + needs tracking | Attacks deal damage, HP tracks, game ends | Phase 4 |
+| 6 | Full round mechanics | All actions, pot, threats, magic, hoarding | Phase 5 |
+| 7 | LLM (AI opponent, narrator) | AI makes intelligent decisions, narration plays | Phase 6 |
+| 8 | Chat, voice, Poker Face | Talk card → NPC chat, voice narration, emotion | Phase 7 |
+| 9 | Save/load + campaign | Auto-save, resume, character persistence | Phase 6 |
+| 10 | Print & export | Print-ready PDF, playable IRL deck | Phase 3 |
+
+**Phases 4-6 can overlap with Phase 3** — gameplay development doesn't block on all images being generated. Placeholder icons work during gameplay testing.
+
+**Phases 9 and 10 are independent** — save/load and print can be built in parallel once their dependencies are met.
 
 ---
 
@@ -4352,10 +5910,10 @@ The `./bak` folder preserves v1 source for reference during development but shou
 
 Items to resolve during implementation:
 
-1. **Campaign persistence format**: How to serialize a player's card collection between sessions. JSON save file? Tie to AM7 `olio.store`?
-2. **Card rarity distribution**: Exact probability of each rarity tier in encounter deck draws.
+1. ~~**Campaign persistence format**~~: Resolved — only the character card persists between sessions (stat gains written back to charPerson). No card collection carry-over. Items/apparel/weapons can be lost, damaged, dropped, or stolen during play. Each new session draws fresh from the theme pool.
+2. ~~**Card rarity distribution**~~: Resolved — encounter deck caps at Rare (★★★). Epic/Legendary cards are in the Treasure Vault, drawn via special actions. See [Treasure Vault](#treasure-vault-unique-deck).
 3. **Balancing magic vs physical**: Energy costs for magic may need tuning — magic is powerful but Energy-expensive. Playtesting required.
 4. **Multiplayer encounter sharing**: In 3-4 player free-for-all, does each player draw their own encounter, or is one shared? Current design: each player draws, but threats can target any player.
 5. **Crafting recipes**: Specific material-to-item recipes for the Craft action. Can derive from existing `olio.builder` templates.
-6. **Scenario cards (Story Mode)**: Pre-built scenario setups for GM mode. Each scenario defines starting conditions, objective, and encounter deck composition.
+6. ~~**Scenario cards (Story Mode)**~~: Resolved — see [Scenario Objectives](#scenario-objectives). Scenarios use theme + character narratives + action stack sequences + outcomes. No special card type needed.
 7. **Level progression**: How stat increases work between campaign sessions. Current proposal: +1 to any stat per session survived, capped at 20.
