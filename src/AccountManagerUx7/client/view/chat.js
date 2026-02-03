@@ -97,16 +97,10 @@
     let showTagSelector = false;
     let selectedImageTags = [];
 
-    // Patch a chat message to replace tag-only tokens with id+tag tokens (chat.js version)
-    async function patchChatImageToken(msgIndex, newContent) {
-        // Always update local state first so the UI reflects the change immediately
-        // This prevents re-generation on redraw even if server patch fails
-        if (chatCfg.history?.messages?.[msgIndex]) {
-            chatCfg.history.messages[msgIndex].content = newContent;
-        }
-
-        // Then try to persist to server
-        if (!inst) return;
+    // Patch image tokens on the server request, then reload history to stay in sync
+    // replacements: array of {from: unresolvedTokenStr, to: resolvedTokenStr}
+    async function patchChatImageToken(replacements) {
+        if (!inst || !replacements || !replacements.length) return;
         try {
             let sessionType = inst.api.sessionType();
             let session = inst.api.session();
@@ -114,22 +108,37 @@
                 console.warn("patchChatImageToken: No session available for server patch");
                 return;
             }
+            // Load the full request from the server
             let q = am7view.viewQuery(am7model.newInstance(sessionType));
             q.field("id", session.id);
             let qr = await page.search(q);
             if (qr && qr.results && qr.results.length > 0) {
                 let req = qr.results[0];
                 if (req.messages) {
-                    let localCount = chatCfg.history?.messages?.length || 0;
-                    let serverIndex = msgIndex + (req.messages.length - localCount);
-                    if (serverIndex >= 0 && serverIndex < req.messages.length) {
-                        req.messages[serverIndex].content = newContent;
+                    let patched = false;
+                    // Search server messages for unresolved tokens and replace them
+                    for (let i = req.messages.length - 1; i >= 0; i--) {
+                        let serverMsg = req.messages[i];
+                        if (!serverMsg.content) continue;
+                        for (let r of replacements) {
+                            if (serverMsg.content.indexOf(r.from) !== -1) {
+                                serverMsg.content = serverMsg.content.replace(r.from, r.to);
+                                patched = true;
+                            }
+                        }
+                    }
+                    if (patched) {
                         await page.patchObject(req);
+                        // Reload history from server so local state matches
+                        let h = await getHistory();
+                        if (h) {
+                            chatCfg.history = h;
+                        }
                     }
                 }
             }
         } catch (e) {
-            console.error("patchChatImageToken server error (local state updated):", e);
+            console.error("patchChatImageToken server error:", e);
         }
     }
 
@@ -147,8 +156,7 @@
         let character = msg.role === "user" ? chatCfg.user : chatCfg.system;
         if (!character) return;
 
-        let newContent = msg.content;
-        let changed = false;
+        let replacements = [];
 
         for (let token of tokens) {
             if (token.id && window.am7imageTokens.cache[token.id]) continue;
@@ -157,14 +165,13 @@
             if (resolved && resolved.image) {
                 if (!token.id) {
                     let newToken = "${image." + resolved.image.objectId + "." + token.tags.join(",") + "}";
-                    newContent = newContent.replace(token.match, newToken);
-                    changed = true;
+                    replacements.push({from: token.match, to: newToken});
                 }
             }
         }
 
-        if (changed) {
-            await patchChatImageToken(msgIndex, newContent);
+        if (replacements.length) {
+            await patchChatImageToken(replacements);
         }
         m.redraw();
     }
