@@ -18,7 +18,8 @@
       "Bash(py:*)",
       "Bash(where:*)",
       "Bash(python -c:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Read(//c/Projects/GitHub/AccountManager7/**)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"
