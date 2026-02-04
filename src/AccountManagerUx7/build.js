@@ -32,7 +32,6 @@ const jsFiles = [
     'client/chat.js',
 
     // View components
-    'client/view/cardGame.js',
     'client/view/cardGame-v2.js',
 
     // UI components

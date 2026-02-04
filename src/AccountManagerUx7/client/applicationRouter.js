@@ -16,7 +16,6 @@
         "/plist/:type/:objectId" : page.views.list().view,
         "/game" : page.views.game,
         "/game/:name" : page.views.game,
-        "/cardGame": page.views.cardGame,
         "/cardGame-v2": page.views.cardGameV2,
         "/hyp": page.views.hyp,
         "/magic8": page.views.magic8

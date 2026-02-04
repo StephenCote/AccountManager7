@@ -1913,16 +1913,11 @@
         // Navigate to the card game with this character
         page.toast("info", "Starting game with " + characterName);
 
-        // Store the selected character for the game
-        if (window.am7cardGame) {
-            am7cardGame.setSelectedCharacter(characterId);
-        } else {
-            // Store in session for pickup by card game
-            sessionStorage.setItem("olio_selected_character", characterId);
-        }
+        // Store in session for pickup by card game
+        sessionStorage.setItem("olio_selected_character", characterId);
 
         // Navigate to the card game view
-        m.route.set("/app/game/cardGame", { character: characterId });
+        m.route.set("/app/game/cardGame-v2", { character: characterId });
     }
 
     // Adopt a character into the Olio worldspace

@@ -1,0 +1,104 @@
+{
+  "themeId": "dark-medieval",
+  "name": "Dark Medieval",
+  "version": "1.0",
+  "description": "Gritty medieval setting with low magic and high mortality",
+
+  "artStyle": {
+    "promptSuffix": "dark medieval, gritty realism, muted tones, grimdark, oil painting style, chiaroscuro lighting",
+    "cardBorderStyle": "iron-riveted",
+    "cardBackVariant": "weathered",
+    "fontFamily": "Segoe UI, system-ui, sans-serif",
+    "colorPalette": {
+      "character": "#8B4513",
+      "apparel": "#5C5C5C",
+      "item": "#556B2F",
+      "action": "#8B0000",
+      "talk": "#4A5568",
+      "encounter": "#4A0E4E",
+      "skill": "#8B6914",
+      "magic": "#2F4F4F"
+    },
+    "backgroundPrompt": "Dark medieval landscape, crumbling stone fortress, overcast stormy sky, muddy roads, crows circling, grim atmosphere, muted desaturated colors, oil painting style",
+    "backgroundConfig": {
+      "width": 1024, "height": 1024, "steps": 40, "cfg": 7, "hires": true
+    },
+    "sdConfig": {
+      "default":   { "style": "art", "steps": 30, "cfg": 7, "width": 512, "height": 512, "denoisingStrength": 0.7 },
+      "character":  { "width": 768, "height": 1024 },
+      "apparel":    { "width": 512, "height": 768 },
+      "item":       { "width": 512, "height": 512 },
+      "action":     { "width": 768, "height": 512, "denoisingStrength": 0.8 },
+      "talk":       { "width": 768, "height": 512, "denoisingStrength": 0.8 },
+      "encounter":  { "width": 768, "height": 768 },
+      "skill":      { "width": 512, "height": 512 },
+      "magic":      { "width": 512, "height": 512, "denoisingStrength": 0.75 }
+    }
+  },
+
+  "characterBuild": {
+    "statRange": [3, 18],
+    "statPointBuy": 68,
+    "skillSlots": 3,
+    "equipSlots": ["head", "body", "handL", "handR", "feet", "ring", "back"],
+    "availableRaces": ["HUMAN"],
+    "availableAlignments": "all"
+  },
+
+  "starterDeck": {
+    "apparel": { "min": 2, "max": 3, "rarity": "COMMON" },
+    "weapons": { "min": 1, "max": 2, "rarity": "COMMON" },
+    "consumables": [
+      { "name": "Hardtack", "count": 2 },
+      { "name": "Bandage", "count": 2 },
+      { "name": "Torch", "count": 1 },
+      { "name": "Waterskin", "count": 1 }
+    ],
+    "skills": { "min": 1, "max": 2 },
+    "magicEffects": { "min": 0, "max": 0 }
+  },
+
+  "encounterDeck": {
+    "threats": { "count": 14, "difficultyRange": [5, 12], "maxRarity": "RARE" },
+    "events": { "count": 12, "maxRarity": "UNCOMMON" },
+    "discoveries": { "count": 8, "maxRarity": "RARE" },
+    "npcs": { "count": 8, "maxRarity": "RARE", "source": "olio.charPerson.population", "roleAssignment": "random" },
+    "lootItems": { "count": 10, "rarityWeights": { "COMMON": 60, "UNCOMMON": 30, "RARE": 10 } },
+    "skillCards": { "count": 4, "minRarity": "UNCOMMON", "maxRarity": "RARE" },
+    "magicEffects": { "count": 1, "rarity": "RARE" }
+  },
+
+  "treasureVault": {
+    "bossThreats": { "count": 4, "difficultyRange": [14, 18], "minRarity": "EPIC" },
+    "legendaryWeapons": { "count": 1, "rarity": "LEGENDARY" },
+    "epicWeapons": { "count": 3, "rarity": "EPIC" },
+    "epicApparel": { "count": 3, "rarity": "EPIC" },
+    "epicConsumables": { "count": 2, "rarity": "EPIC" },
+    "epicSkills": { "count": 2, "minRarity": "RARE", "maxRarity": "EPIC" },
+    "legendaryMagic": { "count": 1, "rarity": "LEGENDARY" },
+    "drawTriggers": ["discovery_rare", "investigate_crit", "npc_quest_reward", "pot_jackpot_5plus"],
+    "bossDefeatGrantsExtraDraw": true,
+    "refillsOnCampaignSession": true
+  },
+
+  "balance": {
+    "hpMax": 20,
+    "moraleMax": 20,
+    "energyFormula": "MAG or INT (by skill type)",
+    "apFormula": "floor(END / 5) + 1",
+    "apRange": [1, 5],
+    "initiativeFormula": "1d20 + AGI",
+    "potAnteRequired": true,
+    "roundTimerSeconds": 60,
+    "positionTimerSeconds": 15,
+    "lazyBonesEnabled": true,
+    "lethargyEnabled": true,
+    "exhaustedEnabled": true,
+    "hoardingReturnTarget": "encounterDeck"
+  },
+
+  "magicConfig": {
+    "enabledSkillTypes": ["Imperial"],
+    "magicEffectPool": ["Cauterize", "Ward of Iron", "Plague Touch", "Bloodletting", "Corpse Light"]
+  }
+}

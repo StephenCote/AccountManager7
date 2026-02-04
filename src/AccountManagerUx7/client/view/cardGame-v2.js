@@ -811,8 +811,7 @@
         allCards.push(...consumables, ...actionCards, talkCard);
 
         let themeName = (theme || activeTheme).name || (theme || activeTheme).themeId || "high-fantasy";
-        let charLabel = charNames.length === 1 ? charNames[0] : charNames.slice(0, 3).join(", ") + (charNames.length > 3 ? " +" + (charNames.length - 3) : "");
-        let deckName = themeName + " - " + charLabel;
+        let deckName = "";
         return {
             themeId: (theme || activeTheme).themeId || "high-fantasy",
             deckName: deckName,
@@ -997,6 +996,7 @@
             cardFrontImageUrl = data.cardFrontImageUrl || null;
             cardBackImageUrl = data.cardBackImageUrl || null;
             flippedCards = {};
+            artDir = null;
             screen = "deckView";
             m.redraw();
             // Auto-refresh character cards from source objects
@@ -1076,7 +1076,8 @@
                     m("div", { class: "cg2-theme-grid" }, [
                         themeOption("high-fantasy", "High Fantasy", "Classic high fantasy with vibrant magic and epic adventures", "auto_fix_high"),
                         themeOption("dark-medieval", "Dark Medieval", "Gritty medieval setting with low magic and high mortality", "skull"),
-                        themeOption("sci-fi", "Sci-Fi", "Far-future space setting with psionic powers and tech items", "rocket_launch")
+                        themeOption("sci-fi", "Sci-Fi", "Far-future space setting with psionic powers and tech items", "rocket_launch"),
+                        themeOption("post-apocalypse", "Post Apocalypse", "Harsh wasteland survival with scavenged gear and mutant threats", "destruction")
                     ]),
                     m("div", { class: "cg2-builder-nav" }, [
                         m("button", { class: "cg2-btn", onclick: () => { screen = "deckList"; m.redraw(); } }, "Cancel"),
@@ -1411,9 +1412,17 @@
     let sdConfigExpanded = false;
     let sdConfigTab = "_default";
 
+    function currentDeckSafeName() {
+        return viewingDeck && viewingDeck.deckName
+            ? viewingDeck.deckName.replace(/[^a-zA-Z0-9_\-]/g, "_")
+            : null;
+    }
+
     async function ensureArtDir(themeId) {
         if (artDir) return artDir;
-        let path = ART_BASE_PATH + "/" + (themeId || "high-fantasy");
+        let deckKey = currentDeckSafeName();
+        let subdir = deckKey || (themeId || "high-fantasy");
+        let path = ART_BASE_PATH + "/" + subdir;
         artDir = await page.makePath("auth.group", "DATA", path);
         return artDir;
     }
@@ -1672,8 +1681,8 @@
             sdEntity.seed = -1;
             sdEntity.imageName = "card-" + side + "-" + (theme.themeId || "default") + "-" + Date.now() + ".png";
 
-            let artPath = "~/CardGame/Art/" + (theme.themeId || "default");
-            let dir = await page.makePath("auth.group", "DATA", artPath);
+            let dir = await ensureArtDir(theme.themeId);
+            if (!dir) throw new Error("Could not create art directory");
             sdEntity.groupPath = dir.path;
 
             let ov = sdOverrides._default || {};
