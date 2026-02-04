@@ -17,6 +17,13 @@
         magic:      { color: "#00695C", bg: "#E0F2F1", icon: "auto_fix_high",  label: "Magic Effect" }
     };
 
+    // Template/utility art types (card front, card back, background)
+    const TEMPLATE_TYPES = {
+        cardFront:  { color: "#795548", icon: "crop_portrait", label: "Card Front" },
+        cardBack:   { color: "#546E7A", icon: "flip_to_back",  label: "Card Back" },
+        background: { color: "#33691E", icon: "landscape",     label: "Background" }
+    };
+
     // Sub-icons for item subtypes
     const ITEM_SUBTYPE_ICONS = {
         weapon:     "swords",
@@ -1322,61 +1329,39 @@
 
     // ── Prompt Builder ────────────────────────────────────────────────
     // Build SD prompts from card data + theme art style
-    function buildCardPrompt(card, theme) {
-        let suffix = (theme && theme.artStyle && theme.artStyle.promptSuffix) || "high fantasy, vibrant colors, detailed illustration";
-        let prompt = "";
-        switch (card.type) {
-            case "character":
-                prompt = "Portrait of " + (card.name || "a warrior") + ", " +
-                    (card.race || "human").toLowerCase() + " " +
-                    (card.alignment || "").toLowerCase() +
-                    (card.age ? ", age " + card.age : "") +
-                    ", RPG character card art, facing viewer";
-                break;
-            case "apparel":
-                prompt = (card.name || "Armor") + ", " +
-                    (card.slot || "body").toLowerCase() + " armor piece, " +
-                    "RPG equipment item, detailed render on neutral background, item card art";
-                break;
-            case "item":
-                if (card.subtype === "weapon") {
-                    prompt = (card.name || "Weapon") + ", " +
-                        (card.damageType || "").toLowerCase() + " " +
-                        (card.range || "melee").toLowerCase() + " weapon, " +
-                        "RPG weapon item, detailed render on neutral background, item card art";
-                } else {
-                    prompt = (card.name || "Potion") + ", " +
-                        "RPG consumable item, glowing, detailed render on neutral background, item card art";
-                }
-                break;
-            case "action":
-                prompt = (card.name || "Action") + " action, " +
-                    (card.actionType || "combat").toLowerCase() + ", " +
-                    "dynamic scene, RPG card illustration, dramatic lighting";
-                break;
-            case "talk":
-                prompt = "Two figures in conversation, " +
-                    "social interaction, RPG card illustration, warm lighting";
-                break;
-            case "encounter":
-                prompt = (card.name || "Monster") + ", " +
-                    (card.subtype || "threat").toLowerCase() + ", " +
-                    "RPG encounter, dramatic atmosphere, full body";
-                break;
-            case "skill":
-                prompt = (card.name || "Skill") + " ability, " +
-                    (card.category || "combat").toLowerCase() + " technique, " +
-                    "RPG skill icon, stylized energy effect, card art";
-                break;
-            case "magic":
-                prompt = (card.name || "Spell") + " spell effect, " +
-                    (card.skillType || "arcane").toLowerCase() + " magic, " +
-                    "magical energy, RPG spell card illustration, mystical atmosphere";
-                break;
-            default:
-                prompt = (card.name || "Card") + ", RPG card illustration";
+    function styleLabel(style) {
+        switch (style) {
+            case "photograph": return "photograph";
+            case "movie":      return "movie still";
+            case "selfie":     return "selfie";
+            case "anime":      return "anime illustration";
+            case "portrait":   return "studio portrait";
+            case "comic":      return "comic book illustration";
+            case "digitalArt": return "digital artwork";
+            case "fashion":    return "fashion photograph";
+            case "vintage":    return "vintage photograph";
+            case "art":        return "painting";
+            default:           return "illustration";
         }
-        return prompt + ", " + suffix;
+    }
+
+    function buildCardPrompt(card, theme, style) {
+        let suffix = (theme && theme.artStyle && theme.artStyle.promptSuffix) || "high fantasy, vibrant colors, detailed illustration";
+
+        // Character cards — server builds its own prompt from person data
+        if (card.type === "character") {
+            let prompt = "Portrait of " + (card.name || "a warrior") + ", " +
+                (card.race || "human").toLowerCase() + " " +
+                (card.alignment || "").toLowerCase() +
+                (card.age ? ", age " + card.age : "") +
+                ", RPG character card art, facing viewer";
+            return prompt + ", " + suffix;
+        }
+
+        // All other card types: "Close-up {style} of {cardType} {typeName} in {suffix}"
+        let sLabel = styleLabel(style);
+        let typeName = card.name || card.type;
+        return "Close-up " + sLabel + " of " + card.type + " " + typeName + " in " + suffix;
     }
 
     // ── Image Generation Queue ────────────────────────────────────────
@@ -1445,7 +1430,11 @@
         let def = newSdOverride();
         let o = { _default: def };
         Object.keys(CARD_TYPES).forEach(t => {
-            // Card types start as copies of _default so they inherit its values
+            let copy = JSON.parse(JSON.stringify(def));
+            copy[am7model.jsonModelKey] = "olio.sd.config";
+            o[t] = copy;
+        });
+        Object.keys(TEMPLATE_TYPES).forEach(t => {
             let copy = JSON.parse(JSON.stringify(def));
             copy[am7model.jsonModelKey] = "olio.sd.config";
             o[t] = copy;
@@ -1512,9 +1501,9 @@
     // Generate a background image to use as img2img basis for card art
     async function generateBackground(theme) {
         let t = theme || activeTheme;
-        let defOv = sdOverrides._default;
-        // Use the override prompt if set, otherwise fall back to theme or default
-        let bgPrompt = (defOv && defOv.description) || (t.artStyle && t.artStyle.backgroundPrompt) || "Fantasy landscape, epic panoramic view, vibrant colors";
+        let bgOv = sdOverrides.background;
+        // Use the background override prompt if set, otherwise fall back to theme or default
+        let bgPrompt = (bgOv && bgOv.description) || (t.artStyle && t.artStyle.backgroundPrompt) || "Fantasy landscape, epic panoramic view, vibrant colors";
 
         backgroundGenerating = true;
         m.redraw();
@@ -1523,19 +1512,16 @@
             let dir = await ensureArtDir(t.themeId);
             if (!dir) throw new Error("Could not create art directory");
 
-            let suffix = (t.artStyle && t.artStyle.promptSuffix) || "fantasy illustration";
             let entity = await am7sd.buildEntity({
                 description: bgPrompt,
-                style: "art",
                 bodyStyle: "landscape",
                 seed: -1,
                 groupPath: dir.path,
                 imageName: "background-" + t.themeId + "-" + Date.now() + ".png"
             });
-            am7sd.applyOverrides(entity, defOv);
+            am7sd.applyOverrides(entity, sdOverrides._default);
+            am7sd.applyOverrides(entity, getCardTypeDelta("background"));
             am7sd.fillStyleDefaults(entity);
-            // Use theme suffix as artStyle so the server prompt matches the theme
-            entity.artStyle = suffix;
 
             let result = await m.request({
                 method: "POST",
@@ -1584,46 +1570,40 @@
     // Uses am7sd to fetch the random template (with full style fields intact)
     // and apply overrides without destroying style-specific prompt composition.
     async function buildSdEntity(card, theme) {
-        // Get template with style defaults filled in
         let entity = await am7sd.buildEntity();
+        let t = theme || activeTheme;
 
         // Apply theme sdConfig defaults, then type-specific overrides
-        let t = theme || activeTheme;
         let artCfg = t.artStyle && t.artStyle.sdConfig;
         if (artCfg) {
             if (artCfg["default"]) Object.assign(entity, artCfg["default"]);
             if (artCfg[card.type])  Object.assign(entity, artCfg[card.type]);
         }
-        // Dimensions come from template defaults (1024x1024), theme artCfg, or sdOverrides
 
-        entity.description = buildCardPrompt(card, theme);
         entity.seed = -1;
 
-        // Apply user SD overrides: _default values first, then only card-type
-        // fields that the user explicitly changed from _default
+        // Apply user SD overrides first so style is final before building prompt
         am7sd.applyOverrides(entity, sdOverrides._default);
         am7sd.applyOverrides(entity, getCardTypeDelta(card.type));
-
-        // Re-fill style defaults after overrides may have changed the style
         am7sd.fillStyleDefaults(entity);
 
+        // Build prompt using the final style
+        entity.description = buildCardPrompt(card, t, entity.style);
+
         // For character cards, the server builds its own prompt from person data
-        // and uses imageSetting for the scene/location — NOT the description field.
-        // The template and overrides carry a random setting from the server;
-        // replace it with the themed background prompt so characters match.
+        // and uses imageSetting for the scene/location.
+        // Default to the theme's background prompt so characters match the setting.
         if (card.type === "character") {
             let setting = backgroundPrompt ||
-                          (sdOverrides._default && sdOverrides._default.description) ||
                           (t.artStyle && t.artStyle.backgroundPrompt);
             if (setting) {
                 entity.imageSetting = setting;
             }
         }
 
-        // Attach background reference image if available (all card types including character)
+        // Attach background reference image if available
         if (backgroundImageId) {
             entity.referenceImageId = backgroundImageId;
-            // Only set denoising for img2img if not already configured
             if (!entity.denoisingStrength || entity.denoisingStrength >= 1.0) {
                 entity.denoisingStrength = 0.7;
             }
@@ -1718,6 +1698,7 @@
             let dir = await ensureArtDir(theme.themeId);
             if (!dir) throw new Error("Could not create art directory");
 
+            let configKey = side === "front" ? "cardFront" : "cardBack";
             let sdEntity = await am7sd.buildEntity({
                 description: prompt,
                 seed: -1,
@@ -1725,13 +1706,14 @@
                 groupPath: dir.path
             });
             am7sd.applyOverrides(sdEntity, sdOverrides._default);
+            am7sd.applyOverrides(sdEntity, getCardTypeDelta(configKey));
             am7sd.fillStyleDefaults(sdEntity);
             if (backgroundImageId) {
                 sdEntity.referenceImageId = backgroundImageId;
                 if (!sdEntity.denoisingStrength || sdEntity.denoisingStrength >= 1.0) sdEntity.denoisingStrength = 0.7;
             }
 
-            console.log("[CardGame v2] generateTemplateArt:", side, sdEntity);
+            console.log("[CardGame v2] generateTemplateArt:", side, configKey, sdEntity);
 
             let result = await m.request({
                 method: "POST",
@@ -2017,6 +1999,17 @@
                                         m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", marginRight: "2px", color: CARD_TYPES[t].color } }, CARD_TYPES[t].icon),
                                         CARD_TYPES[t].label
                                     ])
+                                ),
+                                m("span", { class: "cg2-sd-tab-sep" }),
+                                ...Object.keys(TEMPLATE_TYPES).map(t =>
+                                    m("span", {
+                                        class: "cg2-sd-tab" + (sdConfigTab === t ? " cg2-sd-tab-active" : ""),
+                                        style: { borderBottomColor: sdConfigTab === t ? TEMPLATE_TYPES[t].color : "transparent" },
+                                        onclick() { sdConfigTab = t; m.redraw(); }
+                                    }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", marginRight: "2px", color: TEMPLATE_TYPES[t].color } }, TEMPLATE_TYPES[t].icon),
+                                        TEMPLATE_TYPES[t].label
+                                    ])
                                 )
                             ]),
                             // Fields rendered via standard form system
@@ -2056,7 +2049,7 @@
                                             delete sdOverrideViews[sdConfigTab];
                                             m.redraw();
                                         }
-                                    }, "Clear " + (sdConfigTab === "_default" ? "Default" : CARD_TYPES[sdConfigTab].label)),
+                                    }, "Clear " + (sdConfigTab === "_default" ? "Default" : (CARD_TYPES[sdConfigTab] || TEMPLATE_TYPES[sdConfigTab] || {}).label || sdConfigTab)),
                                     m("button", {
                                         class: "cg2-btn cg2-btn-primary", style: { fontSize: "11px" },
                                         async onclick() {

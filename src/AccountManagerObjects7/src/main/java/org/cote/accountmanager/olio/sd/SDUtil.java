@@ -599,10 +599,12 @@ public class SDUtil {
 			return new ArrayList<>();
 		}
 
-		String prompt = getSDConfigPrompt(sdConfig);
 		String desc = sdConfig.get("description");
+		String prompt;
 		if(desc != null && desc.length() > 0) {
-			prompt = desc + " " + prompt;
+			prompt = desc;
+		} else {
+			prompt = getSDConfigPrompt(sdConfig);
 		}
 
 		SWTxt2Img s2i = new SWTxt2Img();

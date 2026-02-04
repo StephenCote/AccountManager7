@@ -521,6 +521,9 @@
     color: #333; font-weight: 600; background: rgba(184,134,11,0.1);
     border-bottom-color: #B8860B;
 }
+.cg2-sd-tab-sep {
+    width: 1px; align-self: stretch; background: #ccc; margin: 2px 2px;
+}
 
 /* ── Card Flip ────────────────────────────────────── */
 .cg2-card-flipper {
