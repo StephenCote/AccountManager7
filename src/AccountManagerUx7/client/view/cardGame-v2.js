@@ -101,7 +101,7 @@
                 card.race ? m("span", { class: "cg2-race-badge" }, card.race) : null
             ]),
             m("div", { class: "cg2-card-subtitle" }, [
-                (card.race || "") + (card.age ? ", " + card.age : "") + (card.alignment ? " / " + card.alignment : ""),
+                (card.gender ? card.gender.charAt(0).toUpperCase() + " " : "") + (card.race || "") + (card.age ? ", " + card.age : "") + (card.alignment ? " / " + card.alignment : ""),
                 card.level ? m("span", { class: "cg2-level" }, "Lv " + card.level) : null
             ]),
             m("div", { class: "cg2-divider" }),
@@ -658,6 +658,7 @@
         let stats = mapStats(fresh.statistics);
         Object.keys(stats).forEach(k => { stats[k] = clampStat(stats[k]); });
         card.name = fresh.name || card.name;
+        card.gender = str(fresh.gender) || card.gender || null;
         card.race = (str(fresh.race) || "HUMAN").toUpperCase();
         card.alignment = (str(fresh.alignment) || "NEUTRAL").replace(/_/g, " ");
         card.age = fresh.age || card.age;
@@ -674,6 +675,7 @@
         Object.keys(stats).forEach(k => { stats[k] = clampStat(stats[k]); });
         return {
             type: "character", name: char.name || "Unknown",
+            gender: str(char.gender) || null,
             race: (str(char.race) || "HUMAN").toUpperCase(),
             alignment: (str(char.alignment) || "NEUTRAL").replace(/_/g, " "),
             age: char.age || null,
