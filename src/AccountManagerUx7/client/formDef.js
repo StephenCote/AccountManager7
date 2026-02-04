@@ -1155,11 +1155,13 @@
             },
             steps: {
                 label: 'Steps',
-                layout: 'half'
+                layout: 'half',
+                format: 'range'
             },
             refinerSteps: {
                 label: 'Refiner Steps',
-                layout: 'half'
+                layout: 'half',
+                format: 'range'
             },
             hires: {
                 label: 'Hi-Res',
@@ -1167,11 +1169,19 @@
             },
             width: {
                 label: 'Width',
-                layout: 'half'
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['512', '640', '768', '832', '896', '1024', '1152', '1280', '1536', '2048']
+                }
             },
             height: {
                 label: 'Height',
-                layout: 'half'
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['512', '640', '768', '832', '896', '1024', '1152', '1280', '1536', '2048']
+                }
             },
             sampler: {
                 label: 'Sampler',

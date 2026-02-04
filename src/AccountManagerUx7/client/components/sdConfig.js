@@ -220,24 +220,28 @@
 
     // ── applyOverrides ────────────────────────────────────────────────
     // Apply an override object onto an entity.
-    // Override entities use model defaults, so all fields carry real values.
+    // Override entities use model defaults from modelDef, so all fields
+    // carry real values.  Only null/undefined means "no override".
+    function _set(entity, ov, key) {
+        if (ov[key] !== null && ov[key] !== undefined) entity[key] = ov[key];
+    }
     function applyOverrides(entity, ov) {
         if (!ov) return;
-        if (ov.model) entity.model = ov.model;
-        if (ov.refinerModel) entity.refinerModel = ov.refinerModel;
-        if (ov.cfg > 0) entity.cfg = ov.cfg;
-        if (ov.refinerCfg > 0) entity.refinerCfg = ov.refinerCfg;
-        if (ov.steps > 0) entity.steps = ov.steps;
-        if (ov.refinerSteps > 0) entity.refinerSteps = ov.refinerSteps;
-        if (ov.width > 0) entity.width = ov.width;
-        if (ov.height > 0) entity.height = ov.height;
-        if (ov.hires !== null && ov.hires !== undefined) entity.hires = ov.hires;
-        if (ov.sampler) entity.sampler = ov.sampler;
-        if (ov.scheduler) entity.scheduler = ov.scheduler;
-        if (ov.style) entity.style = ov.style;
-        if (ov.denoisingStrength > 0) entity.denoisingStrength = ov.denoisingStrength;
-        if (ov.bodyStyle) entity.bodyStyle = ov.bodyStyle;
-        if (ov.imageSetting) entity.imageSetting = ov.imageSetting;
+        _set(entity, ov, "model");
+        _set(entity, ov, "refinerModel");
+        _set(entity, ov, "cfg");
+        _set(entity, ov, "refinerCfg");
+        _set(entity, ov, "steps");
+        _set(entity, ov, "refinerSteps");
+        _set(entity, ov, "width");
+        _set(entity, ov, "height");
+        _set(entity, ov, "hires");
+        _set(entity, ov, "sampler");
+        _set(entity, ov, "scheduler");
+        _set(entity, ov, "style");
+        _set(entity, ov, "denoisingStrength");
+        _set(entity, ov, "bodyStyle");
+        _set(entity, ov, "imageSetting");
     }
 
     // ── buildEntity ───────────────────────────────────────────────────

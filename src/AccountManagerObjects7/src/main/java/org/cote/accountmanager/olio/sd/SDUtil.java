@@ -64,6 +64,7 @@ public class SDUtil {
 	private String sampler = "DPM++ SDE";
 	
 	private boolean deferRemote = false;
+	private BaseRecord imageAccessUser = null;
 	private SDAPIEnumType apiType = SDAPIEnumType.UNKNOWN;
 	public SDUtil(SDAPIEnumType type) {
 		this.apiType = type;
@@ -81,6 +82,10 @@ public class SDUtil {
 
 	public void setDeferRemote(boolean deferRemote) {
 		this.deferRemote = deferRemote;
+	}
+
+	public void setImageAccessUser(BaseRecord imageAccessUser) {
+		this.imageAccessUser = imageAccessUser;
 	}
 
 	public String getScheduler() {
@@ -571,7 +576,8 @@ public class SDUtil {
 		}
 		Query refQ = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, refImageId);
 		refQ.planMost(true);
-		BaseRecord refImage = IOSystem.getActiveContext().getAccessPoint().find(user, refQ);
+		BaseRecord lookupUser = imageAccessUser != null ? imageAccessUser : user;
+		BaseRecord refImage = IOSystem.getActiveContext().getAccessPoint().find(lookupUser, refQ);
 		if(refImage == null) {
 			logger.warn("Reference image not found: " + refImageId);
 			return;

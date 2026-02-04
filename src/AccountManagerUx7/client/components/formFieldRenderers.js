@@ -86,11 +86,9 @@
         };
 
         let options = vals.map(function(v) {
-            let selected = false;
-            if (ctx.defVal && (ctx.defVal === v || (typeof ctx.defVal == "string" && ctx.defVal.toLowerCase() === v.toLowerCase()))) {
-                selected = true;
-            }
-            let optAttrs = {value: v.toLowerCase()};
+            let vs = String(v);
+            let selected = ctx.defVal != null && String(ctx.defVal).toLowerCase() === vs.toLowerCase();
+            let optAttrs = {value: vs.toLowerCase()};
             if (selected) optAttrs.selected = "true";
             return m("option", optAttrs, v);
         });

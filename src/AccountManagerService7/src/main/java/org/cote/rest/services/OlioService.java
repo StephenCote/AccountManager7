@@ -125,6 +125,7 @@ public class OlioService {
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+		sdu.setImageAccessUser(user);
 
 		if(type.equals(ModelNames.MODEL_DATA)) {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, objectId);

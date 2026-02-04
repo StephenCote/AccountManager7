@@ -110,12 +110,18 @@
         ];
     }
 
-    function renderCharacterBackBody(card) {
+    function renderCharacterBackBody(card, bgImage) {
         let stats = card.stats || {};
         let needs = card.needs || {};
         let equip = card.equipped || {};
         let skills = card.activeSkills || [];
-        return m("div", { class: "cg2-card cg2-card-front cg2-char-back", style: { borderColor: "#B8860B" } }, [
+        let backStyle = { borderColor: "#B8860B" };
+        if (bgImage) {
+            backStyle.backgroundImage = "url('" + bgImage + "')";
+            backStyle.backgroundSize = "cover";
+            backStyle.backgroundPosition = "center";
+        }
+        return m("div", { class: "cg2-card cg2-card-front cg2-char-back", style: backStyle }, [
             cornerIcon("character", "top-left"),
             cornerIcon("character", "top-right"),
             m("div", { class: "cg2-char-back-title" }, card.name || "Unknown"),
@@ -346,9 +352,15 @@
                     case "magic":      bodyFn = renderMagicBody; break;
                     default:           bodyFn = () => [m("div", "Unknown type: " + type)];
                 }
+                let cardStyle = { borderColor: cfg.color };
+                if (vnode.attrs.bgImage) {
+                    cardStyle.backgroundImage = "linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('" + vnode.attrs.bgImage + "')";
+                    cardStyle.backgroundSize = "cover, cover";
+                    cardStyle.backgroundPosition = "center, center";
+                }
                 return m("div", {
                     class: "cg2-card cg2-card-front cg2-card-" + type,
-                    style: { borderColor: cfg.color }
+                    style: cardStyle
                 }, [
                     cornerIcon(type, "top-left"),
                     cornerIcon(type, "top-right"),
@@ -440,12 +452,36 @@
     ];
 
     // ── Theme Config Loader ──────────────────────────────────────────
+    const THEME_DEFAULTS = {
+        "high-fantasy": {
+            name: "High Fantasy",
+            backgroundPrompt: "Vast fantasy kingdom with ancient stone castles, enchanted forests, magical aurora in the sky, crystalline mountains, epic fantasy landscape",
+            promptSuffix: "high fantasy, vibrant colors, detailed illustration"
+        },
+        "dark-medieval": {
+            name: "Dark Medieval",
+            backgroundPrompt: "Grim medieval fortress on a windswept moor, dark stone walls, overcast stormy skies, torchlit battlements, desolate and foreboding landscape",
+            promptSuffix: "dark medieval, muted earth tones, gritty realism"
+        },
+        "sci-fi": {
+            name: "Sci-Fi",
+            backgroundPrompt: "Futuristic space station orbiting a gas giant, nebula backdrop, holographic displays, chrome corridors, sweeping sci-fi vista",
+            promptSuffix: "science fiction, cinematic lighting, sleek futuristic design"
+        },
+        "post-apocalypse": {
+            name: "Post Apocalypse",
+            backgroundPrompt: "Ruined cityscape overgrown with vegetation, crumbling skyscrapers, dusty wasteland, abandoned vehicles, harsh survival outpost",
+            promptSuffix: "post-apocalyptic, desaturated palette, gritty detail"
+        }
+    };
+
     const DEFAULT_THEME = {
         themeId: "high-fantasy",
         name: "High Fantasy",
         version: "1.0",
         artStyle: {
-            promptSuffix: "high fantasy, vibrant colors, detailed illustration",
+            backgroundPrompt: THEME_DEFAULTS["high-fantasy"].backgroundPrompt,
+            promptSuffix: THEME_DEFAULTS["high-fantasy"].promptSuffix,
             colorPalette: {
                 character: "#B8860B", apparel: "#808080", item: "#2E7D32",
                 action: "#C62828", talk: "#1565C0", encounter: "#6A1B9A",
@@ -469,6 +505,13 @@
                 url: "/media/cardGame/" + id + ".json"
             });
             if (resp && resp.themeId) {
+                // Merge theme defaults for backgroundPrompt/promptSuffix if not in JSON
+                let td = THEME_DEFAULTS[resp.themeId];
+                if (td) {
+                    if (!resp.artStyle) resp.artStyle = {};
+                    if (!resp.artStyle.backgroundPrompt) resp.artStyle.backgroundPrompt = td.backgroundPrompt;
+                    if (!resp.artStyle.promptSuffix) resp.artStyle.promptSuffix = td.promptSuffix;
+                }
                 activeTheme = resp;
                 console.log("[CardGame v2] Theme loaded:", resp.themeId);
                 return resp;
@@ -476,8 +519,24 @@
         } catch (e) {
             console.warn("[CardGame v2] Theme config not found, using default. (" + id + ")", e);
         }
-        activeTheme = DEFAULT_THEME;
-        return DEFAULT_THEME;
+        // Build a theme from THEME_DEFAULTS if available, otherwise use DEFAULT_THEME
+        let td = THEME_DEFAULTS[id];
+        if (td && id !== "high-fantasy") {
+            activeTheme = {
+                themeId: id,
+                name: td.name,
+                version: "1.0",
+                artStyle: {
+                    backgroundPrompt: td.backgroundPrompt,
+                    promptSuffix: td.promptSuffix,
+                    colorPalette: DEFAULT_THEME.artStyle.colorPalette
+                },
+                balance: DEFAULT_THEME.balance
+            };
+        } else {
+            activeTheme = DEFAULT_THEME;
+        }
+        return activeTheme;
     }
 
     // ── data.data CRUD Wrapper ───────────────────────────────────────
@@ -1329,6 +1388,7 @@
     let artDir = null;          // cached ~/CardGame/Art/{themeId} group
     let backgroundImageId = null;   // objectId of generated background (used as img2img basis)
     let backgroundThumbUrl = null;  // thumbnail URL of background
+    let backgroundPrompt = null;    // prompt used for the background (used as imageSetting for character cards)
     let backgroundGenerating = false;
     let flippedCards = {};          // { cardIndex: true } for character cards showing back
     let cardFrontImageUrl = null;   // background image for card faces
@@ -1463,8 +1523,10 @@
             let dir = await ensureArtDir(t.themeId);
             if (!dir) throw new Error("Could not create art directory");
 
+            let suffix = (t.artStyle && t.artStyle.promptSuffix) || "fantasy illustration";
             let entity = await am7sd.buildEntity({
                 description: bgPrompt,
+                style: "art",
                 bodyStyle: "landscape",
                 seed: -1,
                 groupPath: dir.path,
@@ -1472,6 +1534,8 @@
             });
             am7sd.applyOverrides(entity, defOv);
             am7sd.fillStyleDefaults(entity);
+            // Use theme suffix as artStyle so the server prompt matches the theme
+            entity.artStyle = suffix;
 
             let result = await m.request({
                 method: "POST",
@@ -1491,6 +1555,7 @@
             if (!result || !result.objectId) throw new Error("Background generation returned no result");
 
             backgroundImageId = result.objectId;
+            backgroundPrompt = bgPrompt;
             backgroundThumbUrl = g_application_path + "/thumbnail/" +
                 am7client.dotPath(am7client.currentOrganization) +
                 "/data.data" + (result.groupPath || dir.path) + "/" + result.name + "/256x256";
@@ -1498,6 +1563,7 @@
             // Save background reference on the deck
             if (viewingDeck) {
                 viewingDeck.backgroundImageId = backgroundImageId;
+                viewingDeck.backgroundPrompt = backgroundPrompt;
                 viewingDeck.backgroundThumbUrl = backgroundThumbUrl;
                 let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
                 await deckStorage.save(safeName, viewingDeck);
@@ -1543,14 +1609,14 @@
 
         // For character cards, the server builds its own prompt from person data
         // and uses imageSetting for the scene/location — NOT the description field.
-        // Derive imageSetting from the theme/background prompt so characters match
-        // the intended theme instead of getting a random unrelated setting.
-        if (card.type === "character" && (!entity.imageSetting || entity.imageSetting === "random")) {
-            let defOv = sdOverrides._default;
-            let themeSetting = (defOv && defOv.description) ||
-                               (t.artStyle && t.artStyle.backgroundPrompt);
-            if (themeSetting) {
-                entity.imageSetting = themeSetting;
+        // The template and overrides carry a random setting from the server;
+        // replace it with the themed background prompt so characters match.
+        if (card.type === "character") {
+            let setting = backgroundPrompt ||
+                          (sdOverrides._default && sdOverrides._default.description) ||
+                          (t.artStyle && t.artStyle.backgroundPrompt);
+            if (setting) {
+                entity.imageSetting = setting;
             }
         }
 
@@ -1867,9 +1933,11 @@
                 // Restore background reference from saved deck
                 if (viewingDeck && viewingDeck.backgroundImageId) {
                     backgroundImageId = viewingDeck.backgroundImageId;
+                    backgroundPrompt = viewingDeck.backgroundPrompt || null;
                     backgroundThumbUrl = viewingDeck.backgroundThumbUrl || null;
                 } else {
                     backgroundImageId = null;
+                    backgroundPrompt = null;
                     backgroundThumbUrl = null;
                 }
                 // Restore SD overrides from saved deck
@@ -1914,37 +1982,6 @@
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "sync"),
                             "Refresh Data"
-                        ])
-                    ]),
-                    // Background panel
-                    m("div", { class: "cg2-bg-panel" }, [
-                        m("div", { class: "cg2-bg-panel-left" }, [
-                            m("span", { style: { fontWeight: 700, fontSize: "13px" } }, "Background Basis"),
-                            backgroundImageId
-                                ? m("span", { style: { fontSize: "11px", color: "#2E7D32", marginLeft: "8px" } }, "Active")
-                                : m("span", { style: { fontSize: "11px", color: "#888", marginLeft: "8px" } }, "None"),
-                            backgroundThumbUrl ? m("img", {
-                                src: backgroundThumbUrl, class: "cg2-bg-thumb",
-                                style: { cursor: "pointer" },
-                                onclick() { showImagePreview(backgroundThumbUrl); }
-                            }) : null
-                        ]),
-                        m("div", { class: "cg2-bg-panel-right" }, [
-                            m("button", {
-                                class: "cg2-btn",
-                                disabled: busy,
-                                onclick() { generateBackground(activeTheme); }
-                            }, [
-                                backgroundGenerating
-                                    ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
-                                    : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "landscape"),
-                                backgroundGenerating ? "Generating..." : (backgroundImageId ? "Regenerate BG" : "Generate BG")
-                            ]),
-                            backgroundImageId ? m("button", {
-                                class: "cg2-btn",
-                                disabled: busy,
-                                onclick() { backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); }
-                            }, "Clear BG") : null
                         ])
                     ]),
                     // SD Config panel (per-type)
@@ -2032,6 +2069,38 @@
                                         }
                                     }, "Save to Deck")
                                 ])
+                            ]),
+                            // Background Basis
+                            m("hr", { style: { margin: "8px 0", border: "none", borderTop: "1px solid #ddd" } }),
+                            m("div", { class: "cg2-bg-panel" }, [
+                                m("div", { class: "cg2-bg-panel-left" }, [
+                                    m("span", { style: { fontWeight: 700, fontSize: "13px" } }, "Background Basis"),
+                                    backgroundImageId
+                                        ? m("span", { style: { fontSize: "11px", color: "#2E7D32", marginLeft: "8px" } }, "Active")
+                                        : m("span", { style: { fontSize: "11px", color: "#888", marginLeft: "8px" } }, "None"),
+                                    backgroundThumbUrl ? m("img", {
+                                        src: backgroundThumbUrl, class: "cg2-bg-thumb",
+                                        style: { cursor: "pointer" },
+                                        onclick() { showImagePreview(backgroundThumbUrl); }
+                                    }) : null
+                                ]),
+                                m("div", { class: "cg2-bg-panel-right" }, [
+                                    m("button", {
+                                        class: "cg2-btn",
+                                        disabled: busy,
+                                        onclick() { generateBackground(activeTheme); }
+                                    }, [
+                                        backgroundGenerating
+                                            ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
+                                            : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "landscape"),
+                                        backgroundGenerating ? "Generating..." : (backgroundImageId ? "Regenerate BG" : "Generate BG")
+                                    ]),
+                                    backgroundImageId ? m("button", {
+                                        class: "cg2-btn",
+                                        disabled: busy,
+                                        onclick() { backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); }
+                                    }, "Clear BG") : null
+                                ])
                             ])
                         ]) : null
                     ]),
@@ -2071,7 +2140,7 @@
                         m("div", { class: "cg2-card-art-wrapper", key: "card-front" }, [
                             m("div", {
                                 class: "cg2-card cg2-card-front cg2-card-front-bg",
-                                style: cardFrontImageUrl ? { backgroundImage: "url(" + cardFrontImageUrl + ")", backgroundSize: "cover", backgroundPosition: "center" } : {},
+                                style: cardFrontImageUrl ? { backgroundImage: "url('" + cardFrontImageUrl + "')", backgroundSize: "cover", backgroundPosition: "center" } : {},
                                 onclick() { if (cardFrontImageUrl) showImagePreview(cardFrontImageUrl); }
                             }, [
                                 m("div", { class: "cg2-back-pattern" }),
@@ -2092,7 +2161,7 @@
                             m("div", {
                                 class: "cg2-card cg2-card-back",
                                 style: cardBackImageUrl
-                                    ? { backgroundImage: "url(" + cardBackImageUrl + ")", backgroundSize: "cover", backgroundPosition: "center", borderColor: "#B8860B" }
+                                    ? { backgroundImage: "url('" + cardBackImageUrl + "')", backgroundSize: "cover", backgroundPosition: "center", borderColor: "#B8860B" }
                                     : { background: CARD_TYPES.item.color, borderColor: CARD_TYPES.item.color },
                                 onclick() { if (cardBackImageUrl) showImagePreview(cardBackImageUrl); }
                             }, [
@@ -2118,11 +2187,10 @@
                             let isFlipped = isChar && flippedCards[i];
 
                             let cardFront = m("div", {
-                                class: isChar ? "cg2-card-flip-front" : "",
-                                style: cardFrontImageUrl ? { backgroundImage: "url(" + cardFrontImageUrl + ")", backgroundSize: "cover", backgroundPosition: "center", borderRadius: "10px" } : {}
-                            }, m(CardFace, { card }));
+                                class: isChar ? "cg2-card-flip-front" : ""
+                            }, m(CardFace, { card, bgImage: cardFrontImageUrl }));
 
-                            let cardBack = isChar ? m("div", { class: "cg2-card-flip-back" }, renderCharacterBackBody(card)) : null;
+                            let cardBack = isChar ? m("div", { class: "cg2-card-flip-back" }, renderCharacterBackBody(card, cardBackImageUrl)) : null;
 
                             let cardContent;
                             if (isChar) {
