@@ -1259,23 +1259,7 @@
 
     const ART_BASE_PATH = "~/CardGame/Art";
 
-    // ── SD Config Template Cache ──────────────────────────────────────
-    let sdConfigTemplate = null;
-    async function getSdConfigTemplate() {
-        if (sdConfigTemplate) return sdConfigTemplate;
-        try {
-            sdConfigTemplate = await m.request({
-                method: "GET",
-                url: g_application_path + "/rest/olio/randomImageConfig",
-                withCredentials: true
-            });
-            console.log("[CardGame v2] SD config template loaded");
-        } catch (e) {
-            console.warn("[CardGame v2] Could not fetch randomImageConfig:", e);
-            sdConfigTemplate = null;
-        }
-        return sdConfigTemplate;
-    }
+    // SD config template fetch delegated to am7sd common utility (sdConfig.js)
 
     // ── Prompt Builder ────────────────────────────────────────────────
     // Build SD prompts from card data + theme art style
@@ -1389,27 +1373,66 @@
     }
 
     // ── SD Config Overrides ────────────────────────────────────────────
-    const SD_MODELS = [
-        "juggernautXL_ragnarokBy.safetensors",
-        "dreamshaperXL_v21TurboDPMSDE",
-        "chilloutmix_Ni",
-        "realismFromHadesXL_lightningV3",
-        "realmixXL_V10.safetensors",
-        "lustifySDXLNSFW_endgame.safetensors",
-        "ponyRealism_V22.safetensors",
-        "sdXL_v10VAEFix.safetensors"
-    ];
-    const SD_STYLES = ["art", "photograph", "movie", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom"];
+    // Each override tab is a proper olio.sd.config instance with model defaults,
+    // rendered via the standard form system (am7model.prepareInstance + forms.sdConfigOverrides).
+    // Card-type tabs inherit from _default — only fields the user explicitly
+    // changed (different from _default) are applied as type-specific overrides.
 
-    function emptySdType() { return { model: "", refinerModel: "", cfg: 0, style: "", promptPrefix: "", denoisingStrength: 0 }; }
+    function newSdOverride() {
+        return am7model.newPrimitive("olio.sd.config");
+    }
     function defaultSdOverrides() {
-        let o = { _default: emptySdType() };
-        Object.keys(CARD_TYPES).forEach(t => { o[t] = emptySdType(); });
+        let def = newSdOverride();
+        let o = { _default: def };
+        Object.keys(CARD_TYPES).forEach(t => {
+            // Card types start as copies of _default so they inherit its values
+            let copy = JSON.parse(JSON.stringify(def));
+            copy[am7model.jsonModelKey] = "olio.sd.config";
+            o[t] = copy;
+        });
         return o;
     }
     let sdOverrides = defaultSdOverrides();
     let sdConfigExpanded = false;
     let sdConfigTab = "_default";
+
+    // Return only fields where the card-type override differs from _default.
+    // This prevents card-type model defaults from overwriting _default settings.
+    function getCardTypeDelta(key) {
+        let ov = sdOverrides[key];
+        let def = sdOverrides._default;
+        if (!ov || !def || key === "_default") return ov;
+        let delta = {};
+        let hasChanges = false;
+        for (let k in ov) {
+            if (k === am7model.jsonModelKey) continue;
+            if (ov[k] !== def[k]) {
+                delta[k] = ov[k];
+                hasChanges = true;
+            }
+        }
+        return hasChanges ? delta : null;
+    }
+
+    // Prepared instances for form rendering — keyed by tab name
+    let sdOverrideInsts = {};
+    let sdOverrideViews = {};
+    function getSdOverrideInst(key) {
+        if (!sdOverrideInsts[key]) {
+            let entity = sdOverrides[key];
+            if (!entity || !entity[am7model.jsonModelKey]) {
+                entity = am7model.prepareEntity(entity || {}, "olio.sd.config");
+                sdOverrides[key] = entity;
+            }
+            sdOverrideInsts[key] = am7model.prepareInstance(entity, am7model.forms.sdConfigOverrides);
+            sdOverrideViews[key] = page.views.object();
+        }
+        return sdOverrideInsts[key];
+    }
+    function resetSdOverrideInsts() {
+        sdOverrideInsts = {};
+        sdOverrideViews = {};
+    }
 
     function currentDeckSafeName() {
         return viewingDeck && viewingDeck.deckName
@@ -1429,8 +1452,9 @@
     // Generate a background image to use as img2img basis for card art
     async function generateBackground(theme) {
         let t = theme || activeTheme;
-        let bgPrompt = (t.artStyle && t.artStyle.backgroundPrompt) || "Fantasy landscape, epic panoramic view, vibrant colors";
-        let bgConfig = (t.artStyle && t.artStyle.backgroundConfig) || {};
+        let defOv = sdOverrides._default;
+        // Use the override prompt if set, otherwise fall back to theme or default
+        let bgPrompt = (defOv && defOv.description) || (t.artStyle && t.artStyle.backgroundPrompt) || "Fantasy landscape, epic panoramic view, vibrant colors";
 
         backgroundGenerating = true;
         m.redraw();
@@ -1439,32 +1463,15 @@
             let dir = await ensureArtDir(t.themeId);
             if (!dir) throw new Error("Could not create art directory");
 
-            let template = await getSdConfigTemplate();
-            if (!template) throw new Error("No SD config template available");
-
-            let entity = Object.assign({}, template);
-            clearStyleFields(entity);
-            let suffix = (t.artStyle && t.artStyle.promptSuffix) || "vibrant colors, detailed illustration";
-            entity.description = bgPrompt;
-            entity.style = "art";
-            entity.artStyle = suffix;
-            entity.bodyStyle = "landscape";
-            entity.imageSetting = "random";
-            entity.steps = bgConfig.steps || 40;
-            entity.cfg = bgConfig.cfg || 7;
-            entity.width = bgConfig.width || 1024;
-            entity.height = bgConfig.height || 1024;
-            entity.hires = bgConfig.hires !== undefined ? bgConfig.hires : true;
-            entity.seed = -1;
-            entity.groupPath = dir.path;
-            entity.imageName = "background-" + t.themeId + "-" + Date.now() + ".png";
-
-            // Apply SD config overrides
-            let ov = sdOverrides._default || {};
-            if (ov.model) entity.model = ov.model;
-            if (ov.refinerModel) entity.refinerModel = ov.refinerModel;
-            if (ov.cfg > 0) entity.cfg = ov.cfg;
-            if (ov.denoisingStrength > 0) entity.denoisingStrength = ov.denoisingStrength;
+            let entity = await am7sd.buildEntity({
+                description: bgPrompt,
+                bodyStyle: "landscape",
+                seed: -1,
+                groupPath: dir.path,
+                imageName: "background-" + t.themeId + "-" + Date.now() + ".png"
+            });
+            am7sd.applyOverrides(entity, defOv);
+            am7sd.fillStyleDefaults(entity);
 
             let result = await m.request({
                 method: "POST",
@@ -1507,89 +1514,57 @@
         m.redraw();
     }
 
-    // Clear all style-specific fields so random template values don't leak through
-    function clearStyleFields(entity) {
-        entity.artStyle = null;
-        entity.stillCamera = null; entity.film = null; entity.lens = null;
-        entity.colorProcess = null; entity.photographer = null;
-        entity.movieCamera = null; entity.movieFilm = null; entity.director = null;
-        entity.selfiePhone = null; entity.selfieAngle = null; entity.selfieLighting = null;
-        entity.animeStudio = null; entity.animeEra = null;
-        entity.portraitLighting = null; entity.portraitBackdrop = null;
-        entity.comicPublisher = null; entity.comicEra = null; entity.comicColoring = null;
-        entity.digitalMedium = null; entity.digitalSoftware = null; entity.digitalArtist = null;
-        entity.fashionMagazine = null; entity.fashionDecade = null;
-        entity.vintageDecade = null; entity.vintageProcessing = null; entity.vintageCamera = null;
-        entity.customPrompt = null; entity.photoStyle = null;
-    }
-
-    // Build a SD config entity for a card, merging theme per-type overrides
+    // Build a SD config entity for a card, merging theme per-type overrides.
+    // Uses am7sd to fetch the random template (with full style fields intact)
+    // and apply overrides without destroying style-specific prompt composition.
     async function buildSdEntity(card, theme) {
-        let template = await getSdConfigTemplate();
-        if (!template) throw new Error("No SD config template available");
-        let entity = Object.assign({}, template);
-
-        // Clear all style-specific fields from the random template
-        clearStyleFields(entity);
+        // Get template with style defaults filled in
+        let entity = await am7sd.buildEntity();
 
         // Apply theme sdConfig defaults, then type-specific overrides
         let t = theme || activeTheme;
         let artCfg = t.artStyle && t.artStyle.sdConfig;
-        let suffix = (t.artStyle && t.artStyle.promptSuffix) || "high fantasy, vibrant colors, detailed illustration";
         if (artCfg) {
             if (artCfg["default"]) Object.assign(entity, artCfg["default"]);
             if (artCfg[card.type])  Object.assign(entity, artCfg[card.type]);
-        } else {
-            entity.steps = 30;
-            entity.cfg = 7;
-            entity.width = card.type === "character" ? 768 : 512;
-            entity.height = card.type === "character" ? 1024 : 512;
         }
-
-        // Force style to "art" and set artStyle (SDUtil reads this for prompt composition)
-        entity.style = "art";
-        entity.artStyle = suffix;
-        entity.bodyStyle = "full body";
-        entity.imageSetting = "random";
+        // Dimensions come from template defaults (1024x1024), theme artCfg, or sdOverrides
 
         entity.description = buildCardPrompt(card, theme);
         entity.seed = -1;
 
-        // Apply user SD overrides: default first, then type-specific
-        function applySdOv(ov) {
-            if (!ov) return;
-            if (ov.model) entity.model = ov.model;
-            if (ov.refinerModel) entity.refinerModel = ov.refinerModel;
-            if (ov.cfg > 0) entity.cfg = ov.cfg;
-            if (ov.style) {
-                entity.style = ov.style;
-                // If user changes style away from art, clear artStyle
-                if (ov.style !== "art") entity.artStyle = null;
-            }
-            if (ov.denoisingStrength > 0) entity.denoisingStrength = ov.denoisingStrength;
-            if (ov.promptPrefix) {
-                entity.description = ov.promptPrefix + ", " + entity.description;
+        // Apply user SD overrides: _default values first, then only card-type
+        // fields that the user explicitly changed from _default
+        am7sd.applyOverrides(entity, sdOverrides._default);
+        am7sd.applyOverrides(entity, getCardTypeDelta(card.type));
+
+        // Re-fill style defaults after overrides may have changed the style
+        am7sd.fillStyleDefaults(entity);
+
+        // For character cards, the server builds its own prompt from person data
+        // and uses imageSetting for the scene/location — NOT the description field.
+        // Derive imageSetting from the theme/background prompt so characters match
+        // the intended theme instead of getting a random unrelated setting.
+        if (card.type === "character" && (!entity.imageSetting || entity.imageSetting === "random")) {
+            let defOv = sdOverrides._default;
+            let themeSetting = (defOv && defOv.description) ||
+                               (t.artStyle && t.artStyle.backgroundPrompt);
+            if (themeSetting) {
+                entity.imageSetting = themeSetting;
             }
         }
-        applySdOv(sdOverrides._default);
-        applySdOv(sdOverrides[card.type]);
 
         // Attach background reference image if available (all card types including character)
         if (backgroundImageId) {
             entity.referenceImageId = backgroundImageId;
+            // Only set denoising for img2img if not already configured
             if (!entity.denoisingStrength || entity.denoisingStrength >= 1.0) {
                 entity.denoisingStrength = 0.7;
             }
         }
 
-        // Ensure cfg has a sane default
-        if (!entity.cfg || entity.cfg <= 0) entity.cfg = 7;
-        if (entity.denoisingStrength == null || entity.denoisingStrength === undefined) {
-            entity.denoisingStrength = 0.75;
-        }
-
         console.log("[CardGame v2] buildSdEntity:", card.type, card.name,
-            "style:", entity.style, "artStyle:", entity.artStyle,
+            "style:", entity.style, "imageSetting:", entity.imageSetting,
             "cfg:", entity.cfg, "denoise:", entity.denoisingStrength,
             "model:", entity.model, "ref:", entity.referenceImageId || "none",
             "w:", entity.width, "h:", entity.height);
@@ -1674,33 +1649,17 @@
         backgroundGenerating = true;
         m.redraw();
         try {
-            let template = await getSdConfigTemplate();
-            if (!template) throw new Error("No SD config template available");
-
-            let sdEntity = Object.assign({}, template);
-            clearStyleFields(sdEntity);
-            sdEntity.description = prompt;
-            sdEntity.style = "art";
-            sdEntity.artStyle = suffix;
-            sdEntity.bodyStyle = "full body";
-            sdEntity.imageSetting = "random";
-            sdEntity.width = 512;
-            sdEntity.height = 768;
-            sdEntity.steps = 30;
-            sdEntity.cfg = 7;
-            sdEntity.hires = true;
-            sdEntity.seed = -1;
-            sdEntity.imageName = "card-" + side + "-" + (theme.themeId || "default") + "-" + Date.now() + ".png";
-
             let dir = await ensureArtDir(theme.themeId);
             if (!dir) throw new Error("Could not create art directory");
-            sdEntity.groupPath = dir.path;
 
-            let ov = sdOverrides._default || {};
-            if (ov.model) sdEntity.model = ov.model;
-            if (ov.refinerModel) sdEntity.refinerModel = ov.refinerModel;
-            if (ov.cfg > 0) sdEntity.cfg = ov.cfg;
-            if (ov.denoisingStrength > 0) sdEntity.denoisingStrength = ov.denoisingStrength;
+            let sdEntity = await am7sd.buildEntity({
+                description: prompt,
+                seed: -1,
+                imageName: "card-" + side + "-" + (theme.themeId || "default") + "-" + Date.now() + ".png",
+                groupPath: dir.path
+            });
+            am7sd.applyOverrides(sdEntity, sdOverrides._default);
+            am7sd.fillStyleDefaults(sdEntity);
             if (backgroundImageId) {
                 sdEntity.referenceImageId = backgroundImageId;
                 if (!sdEntity.denoisingStrength || sdEntity.denoisingStrength >= 1.0) sdEntity.denoisingStrength = 0.7;
@@ -1918,12 +1877,13 @@
                     let base = defaultSdOverrides();
                     let saved = viewingDeck.sdOverrides;
                     Object.keys(base).forEach(k => {
-                        if (saved[k]) base[k] = Object.assign(base[k], saved[k]);
+                        if (saved[k]) Object.assign(base[k], saved[k]);
                     });
                     sdOverrides = base;
                 } else {
                     sdOverrides = defaultSdOverrides();
                 }
+                resetSdOverrideInsts();
                 sdConfigExpanded = false;
                 sdConfigTab = "_default";
                 flippedCards = {};
@@ -1996,12 +1956,11 @@
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", marginRight: "6px", transition: "transform 0.2s", transform: sdConfigExpanded ? "rotate(90deg)" : "" } }, "chevron_right"),
                             m("span", { style: { fontWeight: 600, fontSize: "13px" } }, "SD Config"),
                             (() => {
-                                let active = Object.keys(sdOverrides).filter(k => {
-                                    let ov = sdOverrides[k];
-                                    return ov && (ov.model || ov.refinerModel || ov.cfg > 0 || ov.style || ov.promptPrefix);
+                                let active = Object.keys(sdOverrideInsts).filter(k => {
+                                    return sdOverrideInsts[k] && sdOverrideInsts[k].changes && sdOverrideInsts[k].changes.length > 0;
                                 });
                                 return active.length
-                                    ? m("span", { style: { fontSize: "10px", color: "#2E7D32", marginLeft: "8px" } }, active.length + " type" + (active.length > 1 ? "s" : "") + " configured")
+                                    ? m("span", { style: { fontSize: "10px", color: "#2E7D32", marginLeft: "8px" } }, active.length + " type" + (active.length > 1 ? "s" : "") + " modified")
                                     : null;
                             })()
                         ]),
@@ -2023,85 +1982,23 @@
                                     ])
                                 )
                             ]),
-                            // Fields for selected type
+                            // Fields rendered via standard form system
                             (() => {
-                                let ov = sdOverrides[sdConfigTab] || emptySdType();
-                                let tabLabel = sdConfigTab === "_default" ? "All Types" : CARD_TYPES[sdConfigTab].label;
-                                return [
-                                    m("div", { class: "cg2-sd-row" }, [
-                                        m("div", { class: "cg2-sd-field" }, [
-                                            m("label", { class: "cg2-sd-label" }, "Model"),
-                                            m("select", {
-                                                class: "cg2-sd-select",
-                                                value: ov.model,
-                                                onchange(e) { sdOverrides[sdConfigTab].model = e.target.value; }
-                                            }, [
-                                                m("option", { value: "" }, sdConfigTab === "_default" ? "-- Theme Default --" : "-- Use Default --"),
-                                                ...SD_MODELS.map(v => m("option", { value: v }, v.replace(".safetensors", "")))
-                                            ])
-                                        ]),
-                                        m("div", { class: "cg2-sd-field" }, [
-                                            m("label", { class: "cg2-sd-label" }, "Refiner"),
-                                            m("select", {
-                                                class: "cg2-sd-select",
-                                                value: ov.refinerModel,
-                                                onchange(e) { sdOverrides[sdConfigTab].refinerModel = e.target.value; }
-                                            }, [
-                                                m("option", { value: "" }, "-- None --"),
-                                                ...SD_MODELS.map(v => m("option", { value: v }, v.replace(".safetensors", "")))
-                                            ])
-                                        ])
-                                    ]),
-                                    m("div", { class: "cg2-sd-row" }, [
-                                        m("div", { class: "cg2-sd-field" }, [
-                                            m("label", { class: "cg2-sd-label" }, "Style"),
-                                            m("select", {
-                                                class: "cg2-sd-select",
-                                                value: ov.style,
-                                                onchange(e) { sdOverrides[sdConfigTab].style = e.target.value; }
-                                            }, [
-                                                m("option", { value: "" }, sdConfigTab === "_default" ? "-- Theme Default --" : "-- Use Default --"),
-                                                ...SD_STYLES.map(s => m("option", { value: s }, s.charAt(0).toUpperCase() + s.slice(1)))
-                                            ])
-                                        ]),
-                                        m("div", { class: "cg2-sd-field" }, [
-                                            m("label", { class: "cg2-sd-label" }, "CFG (" + (ov.cfg || "default") + ")"),
-                                            m("input", {
-                                                class: "cg2-sd-range",
-                                                type: "range", min: 0, max: 20, step: 0.5,
-                                                value: ov.cfg,
-                                                oninput(e) { sdOverrides[sdConfigTab].cfg = parseFloat(e.target.value); }
-                                            })
-                                        ]),
-                                        m("div", { class: "cg2-sd-field" }, [
-                                            m("label", { class: "cg2-sd-label" }, "Denoise (" + (ov.denoisingStrength ? ov.denoisingStrength.toFixed(2) : "default") + ")"),
-                                            m("input", {
-                                                class: "cg2-sd-range",
-                                                type: "range", min: 0, max: 1.0, step: 0.05,
-                                                value: ov.denoisingStrength,
-                                                oninput(e) { sdOverrides[sdConfigTab].denoisingStrength = parseFloat(e.target.value); }
-                                            })
-                                        ])
-                                    ]),
-                                    m("div", { class: "cg2-sd-row" }, [
-                                        m("div", { class: "cg2-sd-field", style: { flex: "1" } }, [
-                                            m("label", { class: "cg2-sd-label" }, "Prompt Prefix (" + tabLabel + ")"),
-                                            m("input", {
-                                                class: "cg2-sd-input",
-                                                type: "text",
-                                                placeholder: sdConfigTab === "_default" ? "Prepended to all card prompts" : "Prepended to " + tabLabel + " prompts only",
-                                                value: ov.promptPrefix,
-                                                oninput(e) { sdOverrides[sdConfigTab].promptPrefix = e.target.value; }
-                                            })
-                                        ])
-                                    ])
-                                ];
+                                let inst = getSdOverrideInst(sdConfigTab);
+                                let ov = sdOverrideViews[sdConfigTab];
+                                return m(ov.view, {
+                                    freeForm: true,
+                                    freeFormType: "olio.sd.config",
+                                    freeFormEntity: inst.entity,
+                                    freeFormInstance: inst
+                                });
                             })(),
                             m("div", { style: { display: "flex", justifyContent: "space-between", marginTop: "6px" } }, [
                                 m("button", {
                                     class: "cg2-btn", style: { fontSize: "11px" },
                                     onclick() {
                                         sdOverrides = defaultSdOverrides();
+                                        resetSdOverrideInsts();
                                         sdConfigTab = "_default";
                                         m.redraw();
                                     }
@@ -2110,7 +2007,16 @@
                                     m("button", {
                                         class: "cg2-btn", style: { fontSize: "11px" },
                                         onclick() {
-                                            sdOverrides[sdConfigTab] = emptySdType();
+                                            if (sdConfigTab === "_default") {
+                                                sdOverrides[sdConfigTab] = newSdOverride();
+                                            } else {
+                                                // Reset card type to a copy of _default
+                                                let copy = JSON.parse(JSON.stringify(sdOverrides._default));
+                                                copy[am7model.jsonModelKey] = "olio.sd.config";
+                                                sdOverrides[sdConfigTab] = copy;
+                                            }
+                                            delete sdOverrideInsts[sdConfigTab];
+                                            delete sdOverrideViews[sdConfigTab];
                                             m.redraw();
                                         }
                                     }, "Clear " + (sdConfigTab === "_default" ? "Default" : CARD_TYPES[sdConfigTab].label)),

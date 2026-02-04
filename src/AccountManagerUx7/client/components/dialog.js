@@ -293,74 +293,10 @@
 
     let lastReimage;
 
-    async function loadSDConfig(name){
-        let grp = await page.makePath("auth.group", "DATA", "~/Data/.preferences");
-        if(!grp) return null;
-        try {
-            let q = am7view.viewQuery(am7model.newInstance("data.data"));
-            q.entity.request.push("dataBytesStore");
-            q.field("groupId", grp.id);
-            q.field("name", name);
-            let qr = await page.search(q);
-            if(qr && qr.results && qr.results.length){
-                am7model.updateListModel(qr.results);
-                let obj = qr.results[0];
-                if(obj.dataBytesStore && obj.dataBytesStore.length){
-                    return JSON.parse(uwm.base64Decode(obj.dataBytesStore));
-                }
-            }
-        } catch(e){
-            console.warn("Failed to load SD config: " + name, e);
-        }
-        return null;
-    }
-
-    async function saveSDConfig(name, config){
-        let grp = await page.makePath("auth.group", "DATA", "~/Data/.preferences");
-        if(!grp) return false;
-
-        // Create a clean copy without transient fields
-        let saveConfig = {};
-        let excludeFields = ["narration", "id", "objectId", "ownerId"];
-        for(let k in config){
-            if(!excludeFields.includes(k)){
-                saveConfig[k] = config[k];
-            }
-        }
-
-        let obj;
-        try {
-            obj = await page.searchByName("data.data", grp.objectId, name);
-        } catch(e){
-            // Object doesn't exist yet
-        }
-
-        if(!obj){
-            obj = am7model.newPrimitive("data.data");
-            obj.name = name;
-            obj.mimeType = "application/json";
-            obj.groupId = grp.id;
-            obj.groupPath = grp.path;
-            obj.dataBytesStore = uwm.base64Encode(JSON.stringify(saveConfig));
-            await page.createObject(obj);
-        } else {
-            let patch = {id: obj.id, compressionType: "none", dataBytesStore: uwm.base64Encode(JSON.stringify(saveConfig))};
-            patch[am7model.jsonModelKey] = "data.data";
-            //console.log(patch, saveConfig);
-            await page.patchObject(patch);
-        }
-        return true;
-    }
-
-    function applySDConfig(cinst, config){
-        if(!config) return;
-        let excludeFields = ["narration", "id", "objectId", "groupId", "organizationId", "ownerId", "groupPath", "organizationPath", "seed"];
-        for(let k in config){
-            if(!excludeFields.includes(k) && cinst.api[k]){
-                cinst.api[k](config[k]);
-            }
-        }
-    }
+    // SD config load/save/apply delegated to am7sd common utility (sdConfig.js)
+    function loadSDConfig(name) { return am7sd.loadConfig(name); }
+    function saveSDConfig(name, config) { return am7sd.saveConfig(name, config); }
+    function applySDConfig(cinst, config) { return am7sd.applyConfig(cinst, config); }
 
     // Social sharing context mapping to wear levels
     // Maps wear level names (from wearLevelEnumType) to social sharing tags
@@ -574,11 +510,7 @@
             }
 
             // Load SD config
-            let entity = await m.request({
-                method: 'GET',
-                url: am7client.base() + "/olio/randomImageConfig",
-                withCredentials: true
-            });
+            let entity = await am7sd.fetchTemplate(true);
 
             // Set style to selfie if tags include "selfie"
             if (tags.indexOf("selfie") >= 0) {
@@ -844,7 +776,7 @@
         let isCharPerson = inst.model.name === "olio.charPerson";
 
         //let entity = am7model.newPrimitive("olio.sd.config");
-        let entity = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
+        let entity = await am7sd.fetchTemplate(true);
         let cinst = (lastReimage || am7model.prepareInstance(entity, am7model.forms.sdConfig));
 
         function tempApplyDefaults(){
@@ -868,6 +800,9 @@
         if(charConfig){
             applySDConfig(cinst, charConfig);
         }
+
+        // Fill style-specific defaults after style may have changed from template
+        am7sd.fillStyleDefaults(cinst.entity);
 
         lastReimage = cinst;
 
@@ -1311,7 +1246,7 @@
             }
         };
         am7model.forms.sdConfig.fields.randomConfig.field.command = async function(){
-            let ncfg = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
+            let ncfg = await am7sd.fetchTemplate(true);
             // Do style first since that drives the display
             cinst.api.style(ncfg.style);
             m.redraw();
@@ -1334,7 +1269,7 @@
             return;
         }
 
-        let entity = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
+        let entity = await am7sd.fetchTemplate(true);
         let cinst = am7model.prepareInstance(entity, am7model.forms.sdMannequinConfig);
 
         function tempApplyDefaults(){

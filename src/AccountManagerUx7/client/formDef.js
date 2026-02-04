@@ -1114,6 +1114,101 @@
         }
     };
 
+    /// SD config overrides form for cardGame deck builder
+    /// Renders core generation parameters via the standard form system.
+    forms.sdConfigOverrides = {
+        label: "SD Config",
+        fields: {
+            model: {
+                layout: 'third',
+                label: 'Model',
+                field: {
+                    type: 'list',
+                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix.safetensors']
+                }
+            },
+            refinerModel: {
+                layout: 'third',
+                label: 'Refiner',
+                field: {
+                    type: 'list',
+                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix.safetensors']
+                }
+            },
+            style: {
+                layout: 'one',
+                label: 'Style',
+                field: {
+                    type: 'list',
+                    limit: ['art', 'movie', 'photograph', 'selfie', 'anime', 'portrait', 'comic', 'digitalArt', 'fashion', 'vintage', 'custom']
+                }
+            },
+            cfg: {
+                label: 'CFG',
+                layout: 'half',
+                format: 'range'
+            },
+            refinerCfg: {
+                label: 'Refiner CFG',
+                layout: 'half',
+                format: 'range'
+            },
+            steps: {
+                label: 'Steps',
+                layout: 'half'
+            },
+            refinerSteps: {
+                label: 'Refiner Steps',
+                layout: 'half'
+            },
+            hires: {
+                label: 'Hi-Res',
+                layout: 'one'
+            },
+            width: {
+                label: 'Width',
+                layout: 'half'
+            },
+            height: {
+                label: 'Height',
+                layout: 'half'
+            },
+            sampler: {
+                label: 'Sampler',
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['dpmpp_2m', 'euler_a', 'euler', 'dpmpp_sde', 'ddim']
+                }
+            },
+            scheduler: {
+                label: 'Scheduler',
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['Karras', 'Normal', 'Exponential']
+                }
+            },
+            denoisingStrength: {
+                label: 'Denoising',
+                layout: 'one',
+                format: 'range'
+            },
+            bodyStyle: {
+                label: 'Composition',
+                layout: 'third'
+            },
+            imageSetting: {
+                label: 'Setting',
+                layout: 'third'
+            },
+            description: {
+                label: 'Prompt',
+                layout: 'full'
+            }
+        }
+    };
+
     /// Simplified form for mannequin/apparel imaging - minimal controls
     forms.sdMannequinConfig = {
         label: "Mannequin Config",

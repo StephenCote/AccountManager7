@@ -173,70 +173,7 @@ public class OlioService {
 	}
 	
 	
-	@RolesAllowed({"user"})
-	@GET
-	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/reimage/{hires:[A-Za-z\\\\.]+}")
-	@Produces(MediaType.APPLICATION_JSON)
-	public Response reimageCharacter(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("hires") boolean hires, @Context HttpServletRequest request, @Context HttpServletResponse response){
-		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
-		// sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
-
-		BaseRecord a1 = null;
-		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
-
-		// Create SD config with randomized style defaults, then override with global settings
-		BaseRecord sdConfig = SDUtil.randomSDConfig();
-		String model = context.getInitParameter("sd.model");
-		String refinerModel = context.getInitParameter("sd.refinerModel");
-		if(model != null) {
-			sdConfig.setValue("model", model);
-		}
-		if(refinerModel != null) {
-			sdConfig.setValue("refinerModel", refinerModel);
-		}
-
-		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
-		q.planMost(true);
-		a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-		if(a1 == null) {
-			logger.error("Character not found: " + objectId);
-			return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
-		}
-
-		// Get landscape setting from character's current location
-		String setting = "random";
-		BaseRecord state = a1.get(OlioFieldNames.FIELD_STATE);
-		if(state != null) {
-			BaseRecord location = state.get("currentLocation");
-			if(location != null) {
-				java.util.Set<String> adjacentTerrains = new java.util.HashSet<>();
-				String terrain = location.get(FieldNames.FIELD_TERRAIN_TYPE);
-				if(terrain != null) {
-					adjacentTerrains.add(terrain);
-				}
-				setting = NarrativeUtil.getLandscapeSettingDescription(location, adjacentTerrains);
-				logger.info("Using landscape setting for portrait: " + setting);
-			}
-		}
-
-		// Update narrative before generating portrait image
-		NarrativeUtil.getCreateNarrative(octx, Arrays.asList(a1), setting);
-		sdu.generateSDImages(octx, Arrays.asList(a1), sdConfig, setting, "professional photograph", "full body", null, 1, false, hires, -1);
-		octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
-
-		// Re-populate the profile to get the updated portrait (database was updated via Queue)
-		BaseRecord profile = a1.get(FieldNames.FIELD_PROFILE);
-		if(profile != null) {
-			IOSystem.getActiveContext().getReader().populate(profile, new String[] {"portrait"});
-		}
-		BaseRecord oi = a1.get("profile.portrait");
-		if(oi == null) {
-			return Response.status(200).entity("{\"message\":\"Image generated but portrait not linked\"}").build();
-		}
-
-		return Response.status(200).entity(oi.toFullString()).build();
-	}
+	// GET reimage/{hires} endpoint removed — use POST /{type}/{objectId}/reimage with full SD config body instead
 
 	@RolesAllowed({"user"})
 	@POST
