@@ -7,6 +7,8 @@
     padding: 16px;
     max-width: 1400px;
     margin: 0 auto;
+    overflow-y: auto;
+    flex: 1;
 }
 .cg2-toolbar {
     display: flex; gap: 8px; align-items: center;
@@ -308,6 +310,12 @@
     position: absolute; top: 4px; right: 6px;
     font-size: 16px; color: #B8860B; font-weight: 700;
 }
+.cg2-char-source-badge {
+    position: absolute; bottom: 4px; left: 6px;
+    font-size: 9px; font-weight: 600; padding: 1px 5px;
+    background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7;
+    border-radius: 3px;
+}
 
 /* ── Builder Nav ──────────────────────────────────── */
 .cg2-builder-nav {
@@ -340,6 +348,21 @@
     margin-left: 4px; font-size: 14px; color: #999; cursor: pointer;
 }
 .cg2-selected-chip .cg2-chip-remove:hover { color: #c00; }
+
+/* ── Deck Name ─────────────────────────────────────── */
+.cg2-deck-name-row {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+}
+.cg2-deck-name-label {
+    font-weight: 600; font-size: 13px; color: #555; white-space: nowrap;
+}
+.cg2-deck-name-input {
+    flex: 1; padding: 6px 10px; font-size: 14px; border: 1px solid #ccc;
+    border-radius: 6px; background: #fff; color: #333; font-family: inherit;
+}
+.cg2-deck-name-input:focus {
+    outline: none; border-color: #B8860B; box-shadow: 0 0 0 2px rgba(184,134,11,0.15);
+}
 
 /* ── Review ────────────────────────────────────────── */
 .cg2-review-summary {
@@ -414,6 +437,18 @@
 .cg2-card-art-wrapper:hover .cg2-card-reimage-btn { opacity: 1; }
 .cg2-card-reimage-btn-visible { opacity: 1; }
 .cg2-card-reimage-btn:hover { background: #B8860B; color: #fff; border-color: #B8860B; }
+.cg2-card-actions {
+    position: absolute; bottom: 4px; right: 4px;
+    display: flex; gap: 3px;
+}
+.cg2-card-action-btn {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 1px solid #ccc; background: rgba(255,255,255,0.9);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    color: #666;
+}
+.cg2-card-action-btn:hover { background: #B8860B; color: #fff; border-color: #B8860B; }
 
 /* ── Background Panel ────────────────────────────── */
 .cg2-bg-panel {
@@ -430,6 +465,53 @@
 .cg2-bg-thumb {
     width: 48px; height: 48px; border-radius: 6px; object-fit: cover;
     border: 1px solid #ccc;
+}
+
+/* ── SD Config Panel ──────────────────────────────── */
+.cg2-sd-panel {
+    margin-bottom: 8px; border: 1px solid #e0d8c0; border-radius: 8px;
+    background: #faf8f0; overflow: hidden;
+}
+.cg2-sd-panel-header {
+    display: flex; align-items: center; padding: 8px 12px; cursor: pointer;
+    user-select: none;
+}
+.cg2-sd-panel-header:hover { background: rgba(184,134,11,0.05); }
+.cg2-sd-panel-body {
+    padding: 8px 12px 12px; border-top: 1px solid #e0d8c0;
+}
+.cg2-sd-row {
+    display: flex; gap: 12px; margin-bottom: 8px;
+}
+.cg2-sd-field {
+    flex: 1; display: flex; flex-direction: column; gap: 2px;
+}
+.cg2-sd-label {
+    font-size: 11px; font-weight: 600; color: #666;
+}
+.cg2-sd-select, .cg2-sd-input {
+    padding: 4px 8px; font-size: 12px; border: 1px solid #ccc;
+    border-radius: 4px; background: #fff; color: #333; font-family: inherit;
+}
+.cg2-sd-select:focus, .cg2-sd-input:focus {
+    outline: none; border-color: #B8860B; box-shadow: 0 0 0 2px rgba(184,134,11,0.12);
+}
+.cg2-sd-range {
+    width: 100%; accent-color: #B8860B;
+}
+.cg2-sd-tabs {
+    display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 10px;
+}
+.cg2-sd-tab {
+    display: flex; align-items: center; padding: 3px 8px; font-size: 11px;
+    cursor: pointer; border-radius: 4px 4px 0 0;
+    border-bottom: 2px solid transparent;
+    color: #888; transition: background 0.15s;
+}
+.cg2-sd-tab:hover { background: rgba(184,134,11,0.08); color: #555; }
+.cg2-sd-tab-active {
+    color: #333; font-weight: 600; background: rgba(184,134,11,0.1);
+    border-bottom-color: #B8860B;
 }
 
 /* ── Spin animation ───────────────────────────────── */
@@ -471,6 +553,19 @@
     .cg2-card-art-overlay { background: rgba(30,30,30,0.85); color: #aaa; }
     .cg2-art-overlay-fail { background: rgba(50,20,20,0.9); }
     .cg2-card-reimage-btn { background: rgba(30,30,30,0.9); border-color: #555; }
+    .cg2-card-action-btn { background: rgba(30,30,30,0.9); border-color: #555; color: #aaa; }
     .cg2-bg-panel { background: #2a2500; border-color: #444; }
     .cg2-bg-thumb { border-color: #555; }
+    .cg2-deck-name-label { color: #aaa; }
+    .cg2-deck-name-input { background: #2a2a2a; color: #eee; border-color: #555; }
+    .cg2-deck-name-input:focus { border-color: #B8860B; }
+    .cg2-char-source-badge { background: #1b3a1b; color: #8c8; border-color: #4a8; }
+    .cg2-sd-panel { background: #2a2500; border-color: #444; }
+    .cg2-sd-panel-body { border-top-color: #444; }
+    .cg2-sd-label { color: #aaa; }
+    .cg2-sd-select, .cg2-sd-input { background: #2a2a2a; color: #eee; border-color: #555; }
+    .cg2-sd-select:focus, .cg2-sd-input:focus { border-color: #B8860B; }
+    .cg2-sd-tab { color: #777; }
+    .cg2-sd-tab:hover { background: rgba(184,134,11,0.15); color: #ccc; }
+    .cg2-sd-tab-active { color: #eee; background: rgba(184,134,11,0.2); }
 }

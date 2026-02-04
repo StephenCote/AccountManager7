@@ -3430,6 +3430,11 @@ ul.list-results-overflow {
   border-bottom-right-radius: 0.375rem;
 }
 
+.result-nav .\!next {
+  border-top-right-radius: 0.375rem;
+  border-bottom-right-radius: 0.375rem;
+}
+
 .result-nav .page-current {
   display: inline-flex;
   width: 3rem;
@@ -8270,10 +8275,6 @@ button.button-tab-active:hover:is(.dark *) {
   flex-shrink: 0;
 }
 
-.flex-shrink {
-  flex-shrink: 1;
-}
-
 .flex-grow {
   flex-grow: 1;
 }
@@ -9136,10 +9137,6 @@ button.button-tab-active:hover:is(.dark *) {
 
 .capitalize {
   text-transform: capitalize;
-}
-
-.italic {
-  font-style: italic;
 }
 
 .text-black {

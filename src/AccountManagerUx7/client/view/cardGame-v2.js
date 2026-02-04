@@ -196,7 +196,9 @@
     function renderActionBody(card) {
         return [
             m("div", { class: "cg2-card-image-area" },
-                m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#C62828" } }, "bolt")
+                card.imageUrl
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#C62828" } }, "bolt")
             ),
             m("div", { class: "cg2-card-meta" }, [
                 m("span", "Action Type: " + (card.actionType || "Offensive"))
@@ -214,7 +216,9 @@
     function renderTalkBody(card) {
         return [
             m("div", { class: "cg2-card-image-area" },
-                m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#1565C0" } }, "chat_bubble")
+                card.imageUrl
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#1565C0" } }, "chat_bubble")
             ),
             m("div", { class: "cg2-card-meta" }, [
                 m("span", "Action Type: Social")
@@ -589,6 +593,38 @@
         return char.objectId || char.id || (char.entity && char.entity.objectId);
     }
 
+    // ── Fetch fresh charPerson by objectId (with profile + statistics) ──
+    async function fetchCharPerson(objectId) {
+        let q = am7view.viewQuery("olio.charPerson");
+        q.field("objectId", objectId);
+        q.range(0, 1);
+        q.entity.request.push("profile", "store", "statistics");
+        let qr = await page.search(q);
+        if (qr && qr.results && qr.results.length) {
+            am7model.updateListModel(qr.results);
+            return qr.results[0];
+        }
+        return null;
+    }
+
+    // ── Refresh a character card from its source object ──────────────
+    async function refreshCharacterCard(card) {
+        if (!card.sourceId) return false;
+        let fresh = await fetchCharPerson(card.sourceId);
+        if (!fresh) return false;
+        let stats = mapStats(fresh.statistics);
+        Object.keys(stats).forEach(k => { stats[k] = clampStat(stats[k]); });
+        card.name = fresh.name || card.name;
+        card.race = (str(fresh.race) || "HUMAN").toUpperCase();
+        card.alignment = (str(fresh.alignment) || "NEUTRAL").replace(/_/g, " ");
+        card.age = fresh.age || card.age;
+        card.stats = stats;
+        card.needs = { hp: 20, energy: stats.MAG, morale: 20 };
+        card.portraitUrl = getPortraitUrl(fresh, "256x256");
+        if (card.portraitUrl) card.portraitUrl += "?t=" + Date.now();
+        return true;
+    }
+
     // ── Character Card Builder (single char → card data) ────────────
     function assembleCharacterCard(char) {
         let stats = mapStats(char.statistics);
@@ -729,7 +765,9 @@
 
         allCards.push(...consumables, ...actionCards, talkCard);
 
-        let deckName = charNames.length === 1 ? charNames[0] : charNames.slice(0, 3).join(", ") + (charNames.length > 3 ? " +" + (charNames.length - 3) : "");
+        let themeName = (theme || activeTheme).name || (theme || activeTheme).themeId || "high-fantasy";
+        let charLabel = charNames.length === 1 ? charNames[0] : charNames.slice(0, 3).join(", ") + (charNames.length > 3 ? " +" + (charNames.length - 3) : "");
+        let deckName = themeName + " - " + charLabel;
         return {
             themeId: (theme || activeTheme).themeId || "high-fantasy",
             deckName: deckName,
@@ -753,6 +791,7 @@
     let decksLoading = false;
     let viewingDeck = null;     // loaded deck for viewing
     let buildingDeck = false;
+    let deckNameInput = "";     // user-editable deck name
 
     let gridPath = "/Olio/Universes/My Grid Universe/Worlds/My Grid World";
 
@@ -762,24 +801,65 @@
         charsLoading = true;
         m.redraw();
         try {
+            let allChars = [];
+            let seenIds = new Set();
+
+            // Load from Olio Population
             let popDir = await page.findObject("auth.group", "data", gridPath + "/Population");
-            if (!popDir) {
-                page.toast("warn", "Population directory not found");
-                charsLoading = false; m.redraw();
-                return;
-            }
-            let q = am7view.viewQuery("olio.charPerson");
-            q.field("groupId", popDir.id);
-            q.range(0, 50);
-            q.entity.request.push("store", "statistics");
-            let qr = await page.search(q);
-            if (qr && qr.results && qr.results.length) {
-                am7model.updateListModel(qr.results);
-                availableCharacters = qr.results;
-                console.log("[CardGame v2] Loaded " + availableCharacters.length + " characters");
+            if (popDir) {
+                let q = am7view.viewQuery("olio.charPerson");
+                q.field("groupId", popDir.id);
+                q.range(0, 50);
+                q.entity.request.push("profile", "store", "statistics");
+                let qr = await page.search(q);
+                if (qr && qr.results && qr.results.length) {
+                    am7model.updateListModel(qr.results);
+                    qr.results.forEach(ch => {
+                        let cid = getCharId(ch);
+                        if (cid && !seenIds.has(cid)) {
+                            seenIds.add(cid);
+                            allChars.push(ch);
+                        }
+                    });
+                    console.log("[CardGame v2] Loaded " + qr.results.length + " characters from Population");
+                }
             } else {
-                availableCharacters = [];
-                page.toast("info", "No characters found in population");
+                console.warn("[CardGame v2] Population directory not found");
+            }
+
+            // Load custom characters from ~/Characters
+            try {
+                let customDir = await page.findObject("auth.group", "data", "~/Characters");
+                if (customDir) {
+                    let cq = am7view.viewQuery("olio.charPerson");
+                    cq.field("groupId", customDir.id);
+                    cq.range(0, 50);
+                    cq.entity.request.push("profile", "store", "statistics");
+                    let cqr = await page.search(cq);
+                    if (cqr && cqr.results && cqr.results.length) {
+                        am7model.updateListModel(cqr.results);
+                        let customCount = 0;
+                        cqr.results.forEach(ch => {
+                            let cid = getCharId(ch);
+                            if (cid && !seenIds.has(cid)) {
+                                seenIds.add(cid);
+                                ch._customChar = true;
+                                allChars.push(ch);
+                                customCount++;
+                            }
+                        });
+                        console.log("[CardGame v2] Loaded " + customCount + " custom characters from ~/Characters");
+                    }
+                }
+            } catch (ce) {
+                console.warn("[CardGame v2] Could not load ~/Characters:", ce);
+            }
+
+            availableCharacters = allChars;
+            if (allChars.length === 0) {
+                page.toast("info", "No characters found");
+            } else {
+                console.log("[CardGame v2] Total available characters: " + allChars.length);
             }
         } catch (e) {
             console.error("[CardGame v2] Failed to load characters", e);
@@ -802,6 +882,7 @@
                 if (data) {
                     decks.push({
                         deckName: data.deckName || name,
+                        themeId: data.themeId || null,
                         characterNames: data.characterNames || (data.characterName ? [data.characterName] : ["Unknown"]),
                         portraitUrl: data.portraitUrl || null,
                         createdAt: data.createdAt || null,
@@ -864,10 +945,27 @@
         if (data) {
             viewingDeck = data;
             screen = "deckView";
+            m.redraw();
+            // Auto-refresh character cards from source objects
+            await refreshAllCharacters(data);
         } else {
             page.toast("error", "Failed to load deck");
         }
         m.redraw();
+    }
+
+    async function refreshAllCharacters(deck) {
+        if (!deck || !deck.cards) return;
+        let charCards = deck.cards.filter(c => c.type === "character" && c.sourceId);
+        let refreshed = 0;
+        for (let card of charCards) {
+            let ok = await refreshCharacterCard(card);
+            if (ok) refreshed++;
+        }
+        if (refreshed > 0) {
+            console.log("[CardGame v2] Refreshed " + refreshed + " character cards from source");
+            m.redraw();
+        }
     }
 
     // ── Deck List Component ──────────────────────────────────────────
@@ -879,7 +977,7 @@
                         m("span", { style: { fontWeight: 700, fontSize: "16px" } }, "Your Decks"),
                         m("button", {
                             class: "cg2-btn cg2-btn-primary",
-                            onclick() { screen = "builder"; builderStep = 1; selectedChars = []; builtDeck = null; m.redraw(); }
+                            onclick() { screen = "builder"; builderStep = 1; selectedChars = []; builtDeck = null; deckNameInput = ""; m.redraw(); }
                         }, [m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "4px" } }, "add"), "New Deck"]),
                         decksLoading ? m("span", { class: "cg2-loading" }, "Loading...") : null
                     ]),
@@ -999,6 +1097,7 @@
                             onclick() {
                                 if (!selectedChars.length) return;
                                 builtDeck = assembleStarterDeck(selectedChars, activeTheme);
+                                deckNameInput = builtDeck.deckName || "";
                                 builderStep = 3;
                                 m.redraw();
                             }
@@ -1044,7 +1143,8 @@
                 m("br"),
                 ["INT", "MAG", "CHA"].map(s => m("span", { key: s }, s + ":" + clampStat(stats[s])))
             ]),
-            isSelected ? m("div", { class: "cg2-char-badge" }, "\u2713") : null
+            isSelected ? m("div", { class: "cg2-char-badge" }, "\u2713") : null,
+            ch._customChar ? m("div", { class: "cg2-char-source-badge" }, "Custom") : null
         ]);
     }
 
@@ -1057,6 +1157,16 @@
                 let charCard = cards.find(c => c.type === "character");
                 return m("div", [
                     m("div", { class: "cg2-section-title" }, "Step 3: Review & Build Deck"),
+                    m("div", { class: "cg2-deck-name-row" }, [
+                        m("label", { class: "cg2-deck-name-label" }, "Deck Name"),
+                        m("input", {
+                            class: "cg2-deck-name-input",
+                            type: "text",
+                            value: deckNameInput,
+                            oninput(e) { deckNameInput = e.target.value; },
+                            placeholder: "Enter a name for this deck"
+                        })
+                    ]),
                     m("div", { class: "cg2-review-summary" }, [
                         m("span", { class: "cg2-review-stat" }, "Theme: " + (builtDeck.themeId || "high-fantasy")),
                         m("span", { class: "cg2-review-stat" }, "Characters: " + (builtDeck.characterNames || []).join(", ")),
@@ -1071,8 +1181,11 @@
                         m("button", { class: "cg2-btn", onclick: () => { builderStep = 2; m.redraw(); } }, "\u2190 Back"),
                         m("button", {
                             class: "cg2-btn cg2-btn-primary",
-                            disabled: buildingDeck,
-                            onclick: () => saveDeck(builtDeck)
+                            disabled: buildingDeck || !deckNameInput.trim(),
+                            onclick() {
+                                builtDeck.deckName = deckNameInput.trim();
+                                saveDeck(builtDeck);
+                            }
                         }, buildingDeck ? "Saving..." : "Build & Save Deck")
                     ])
                 ]);
@@ -1175,6 +1288,29 @@
     let backgroundThumbUrl = null;  // thumbnail URL of background
     let backgroundGenerating = false;
 
+    // ── SD Config Overrides ────────────────────────────────────────────
+    const SD_MODELS = [
+        "juggernautXL_ragnarokBy.safetensors",
+        "dreamshaperXL_v21TurboDPMSDE",
+        "chilloutmix_Ni",
+        "realismFromHadesXL_lightningV3",
+        "realmixXL_V10.safetensors",
+        "lustifySDXLNSFW_endgame.safetensors",
+        "ponyRealism_V22.safetensors",
+        "sdXL_v10VAEFix.safetensors"
+    ];
+    const SD_STYLES = ["art", "photograph", "movie", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom"];
+
+    function emptySdType() { return { model: "", refinerModel: "", cfg: 0, style: "", promptPrefix: "", denoisingStrength: 0 }; }
+    function defaultSdOverrides() {
+        let o = { _default: emptySdType() };
+        Object.keys(CARD_TYPES).forEach(t => { o[t] = emptySdType(); });
+        return o;
+    }
+    let sdOverrides = defaultSdOverrides();
+    let sdConfigExpanded = false;
+    let sdConfigTab = "_default";
+
     async function ensureArtDir(themeId) {
         if (artDir) return artDir;
         let path = ART_BASE_PATH + "/" + (themeId || "high-fantasy");
@@ -1274,12 +1410,40 @@
         entity.description = buildCardPrompt(card, theme);
         entity.seed = -1;
 
+        // Apply user SD overrides: default first, then type-specific
+        function applySdOv(ov) {
+            if (!ov) return;
+            if (ov.model) entity.model = ov.model;
+            if (ov.refinerModel) entity.refinerModel = ov.refinerModel;
+            if (ov.cfg > 0) entity.cfg = ov.cfg;
+            if (ov.style) entity.style = ov.style;
+            if (ov.denoisingStrength > 0) entity.denoisingStrength = ov.denoisingStrength;
+            if (ov.promptPrefix) {
+                entity.description = ov.promptPrefix + ", " + entity.description;
+            }
+        }
+        applySdOv(sdOverrides._default);
+        applySdOv(sdOverrides[card.type]);
+
         // Attach background reference image if available
         if (backgroundImageId && card.type !== "character") {
             entity.referenceImageId = backgroundImageId;
-            // denoisingStrength may already be set by theme per-type config
-            if (!entity.denoisingStrength) entity.denoisingStrength = 0.7;
+            // Set denoisingStrength for img2img — override template value
+            if (!entity.denoisingStrength || entity.denoisingStrength >= 1.0) {
+                entity.denoisingStrength = 0.75;
+            }
         }
+
+        // Ensure cfg has a sane default (SDUtil requires it)
+        if (!entity.cfg || entity.cfg <= 0) entity.cfg = 7;
+        // Ensure denoisingStrength is set even without background ref
+        if (entity.denoisingStrength == null || entity.denoisingStrength === undefined) {
+            entity.denoisingStrength = 0.75;
+        }
+
+        console.log("[CardGame v2] buildSdEntity:", card.type, card.name,
+            "style:", entity.style, "cfg:", entity.cfg, "denoise:", entity.denoisingStrength,
+            "model:", entity.model, "ref:", entity.referenceImageId || "none");
 
         return entity;
     }
@@ -1322,21 +1486,29 @@
             }
         });
 
+        console.log("[CardGame v2] generateArt response:", JSON.stringify({
+            objectId: result && result.objectId, name: result && result.name,
+            groupPath: result && result.groupPath, groupId: result && result.groupId
+        }));
+
         if (!result || !result.objectId) throw new Error("generateArt returned no result");
 
         // Move result into art directory if server put it elsewhere
-        if (result.groupId !== dir.id) {
+        if (result.groupId && dir.id && result.groupId !== dir.id) {
             await page.moveObject(result, dir);
             result.groupId = dir.id;
             result.groupPath = dir.path;
         }
 
-        // Build thumbnail URL for card use
+        // Build thumbnail URL for card use — use dir.path as fallback
+        let gp = result.groupPath || dir.path;
+        let rname = result.name || sdEntity.imageName;
         let thumbUrl = g_application_path + "/thumbnail/" +
             am7client.dotPath(am7client.currentOrganization) +
-            "/data.data" + result.groupPath + "/" + result.name + "/256x256";
+            "/data.data" + gp + "/" + rname + "/256x256?t=" + Date.now();
 
-        return { objectId: result.objectId, name: result.name, groupPath: result.groupPath, thumbUrl: thumbUrl };
+        console.log("[CardGame v2] Card art URL:", thumbUrl);
+        return { objectId: result.objectId, name: rname, groupPath: gp, thumbUrl: thumbUrl };
     }
 
     // Process the art queue one item at a time
@@ -1375,11 +1547,9 @@
                     deckCard.imageUrl = result.thumbUrl;
                     deckCard.artObjectId = result.objectId;
                 }
-                if (result.reimaged) {
-                    // Refresh portraitUrl with cache-buster so the renderer picks up the new image
-                    if (deckCard.portraitUrl) {
-                        deckCard.portraitUrl = deckCard.portraitUrl.split("?")[0] + "?t=" + Date.now();
-                    }
+                if (result.reimaged && deckCard.sourceId) {
+                    // Re-fetch the charPerson to get the updated portrait
+                    await refreshCharacterCard(deckCard);
                 }
             }
         } catch (e) {
@@ -1503,6 +1673,19 @@
                     backgroundImageId = null;
                     backgroundThumbUrl = null;
                 }
+                // Restore SD overrides from saved deck
+                if (viewingDeck && viewingDeck.sdOverrides) {
+                    let base = defaultSdOverrides();
+                    let saved = viewingDeck.sdOverrides;
+                    Object.keys(base).forEach(k => {
+                        if (saved[k]) base[k] = Object.assign(base[k], saved[k]);
+                    });
+                    sdOverrides = base;
+                } else {
+                    sdOverrides = defaultSdOverrides();
+                }
+                sdConfigExpanded = false;
+                sdConfigTab = "_default";
             },
             view() {
                 if (!viewingDeck) return m("div", "No deck loaded");
@@ -1513,7 +1696,20 @@
                     m("div", { class: "cg2-toolbar" }, [
                         m("button", { class: "cg2-btn", onclick: () => { screen = "deckList"; viewingDeck = null; cancelArtQueue(); artTotal = 0; backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); } }, "\u2190 Back to Decks"),
                         m("span", { style: { fontWeight: 700, fontSize: "16px", marginLeft: "8px" } }, viewingDeck.deckName || "Deck"),
-                        m("span", { style: { color: "#888", fontSize: "12px", marginLeft: "12px" } }, cards.length + " cards")
+                        m("span", { style: { color: "#888", fontSize: "12px", marginLeft: "12px" } }, cards.length + " cards"),
+                        m("button", {
+                            class: "cg2-btn", style: { marginLeft: "auto", fontSize: "11px" },
+                            disabled: busy,
+                            title: "Re-fetch all character data from source objects",
+                            async onclick() {
+                                await refreshAllCharacters(viewingDeck);
+                                page.toast("success", "Character data refreshed");
+                                m.redraw();
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "sync"),
+                            "Refresh Data"
+                        ])
                     ]),
                     // Background panel
                     m("div", { class: "cg2-bg-panel" }, [
@@ -1544,20 +1740,164 @@
                             }, "Clear BG") : null
                         ])
                     ]),
+                    // SD Config panel (per-type)
+                    m("div", { class: "cg2-sd-panel" }, [
+                        m("div", {
+                            class: "cg2-sd-panel-header",
+                            onclick() { sdConfigExpanded = !sdConfigExpanded; m.redraw(); }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", marginRight: "6px", transition: "transform 0.2s", transform: sdConfigExpanded ? "rotate(90deg)" : "" } }, "chevron_right"),
+                            m("span", { style: { fontWeight: 600, fontSize: "13px" } }, "SD Config"),
+                            (() => {
+                                let active = Object.keys(sdOverrides).filter(k => {
+                                    let ov = sdOverrides[k];
+                                    return ov && (ov.model || ov.refinerModel || ov.cfg > 0 || ov.style || ov.promptPrefix);
+                                });
+                                return active.length
+                                    ? m("span", { style: { fontSize: "10px", color: "#2E7D32", marginLeft: "8px" } }, active.length + " type" + (active.length > 1 ? "s" : "") + " configured")
+                                    : null;
+                            })()
+                        ]),
+                        sdConfigExpanded ? m("div", { class: "cg2-sd-panel-body" }, [
+                            // Type tabs
+                            m("div", { class: "cg2-sd-tabs" }, [
+                                m("span", {
+                                    class: "cg2-sd-tab" + (sdConfigTab === "_default" ? " cg2-sd-tab-active" : ""),
+                                    onclick() { sdConfigTab = "_default"; m.redraw(); }
+                                }, "Default"),
+                                ...Object.keys(CARD_TYPES).map(t =>
+                                    m("span", {
+                                        class: "cg2-sd-tab" + (sdConfigTab === t ? " cg2-sd-tab-active" : ""),
+                                        style: { borderBottomColor: sdConfigTab === t ? CARD_TYPES[t].color : "transparent" },
+                                        onclick() { sdConfigTab = t; m.redraw(); }
+                                    }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", marginRight: "2px", color: CARD_TYPES[t].color } }, CARD_TYPES[t].icon),
+                                        CARD_TYPES[t].label
+                                    ])
+                                )
+                            ]),
+                            // Fields for selected type
+                            (() => {
+                                let ov = sdOverrides[sdConfigTab] || emptySdType();
+                                let tabLabel = sdConfigTab === "_default" ? "All Types" : CARD_TYPES[sdConfigTab].label;
+                                return [
+                                    m("div", { class: "cg2-sd-row" }, [
+                                        m("div", { class: "cg2-sd-field" }, [
+                                            m("label", { class: "cg2-sd-label" }, "Model"),
+                                            m("select", {
+                                                class: "cg2-sd-select",
+                                                value: ov.model,
+                                                onchange(e) { sdOverrides[sdConfigTab].model = e.target.value; }
+                                            }, [
+                                                m("option", { value: "" }, sdConfigTab === "_default" ? "-- Theme Default --" : "-- Use Default --"),
+                                                ...SD_MODELS.map(v => m("option", { value: v }, v.replace(".safetensors", "")))
+                                            ])
+                                        ]),
+                                        m("div", { class: "cg2-sd-field" }, [
+                                            m("label", { class: "cg2-sd-label" }, "Refiner"),
+                                            m("select", {
+                                                class: "cg2-sd-select",
+                                                value: ov.refinerModel,
+                                                onchange(e) { sdOverrides[sdConfigTab].refinerModel = e.target.value; }
+                                            }, [
+                                                m("option", { value: "" }, "-- None --"),
+                                                ...SD_MODELS.map(v => m("option", { value: v }, v.replace(".safetensors", "")))
+                                            ])
+                                        ])
+                                    ]),
+                                    m("div", { class: "cg2-sd-row" }, [
+                                        m("div", { class: "cg2-sd-field" }, [
+                                            m("label", { class: "cg2-sd-label" }, "Style"),
+                                            m("select", {
+                                                class: "cg2-sd-select",
+                                                value: ov.style,
+                                                onchange(e) { sdOverrides[sdConfigTab].style = e.target.value; }
+                                            }, [
+                                                m("option", { value: "" }, sdConfigTab === "_default" ? "-- Theme Default --" : "-- Use Default --"),
+                                                ...SD_STYLES.map(s => m("option", { value: s }, s.charAt(0).toUpperCase() + s.slice(1)))
+                                            ])
+                                        ]),
+                                        m("div", { class: "cg2-sd-field" }, [
+                                            m("label", { class: "cg2-sd-label" }, "CFG (" + (ov.cfg || "default") + ")"),
+                                            m("input", {
+                                                class: "cg2-sd-range",
+                                                type: "range", min: 0, max: 20, step: 0.5,
+                                                value: ov.cfg,
+                                                oninput(e) { sdOverrides[sdConfigTab].cfg = parseFloat(e.target.value); }
+                                            })
+                                        ]),
+                                        m("div", { class: "cg2-sd-field" }, [
+                                            m("label", { class: "cg2-sd-label" }, "Denoise (" + (ov.denoisingStrength ? ov.denoisingStrength.toFixed(2) : "default") + ")"),
+                                            m("input", {
+                                                class: "cg2-sd-range",
+                                                type: "range", min: 0, max: 1.0, step: 0.05,
+                                                value: ov.denoisingStrength,
+                                                oninput(e) { sdOverrides[sdConfigTab].denoisingStrength = parseFloat(e.target.value); }
+                                            })
+                                        ])
+                                    ]),
+                                    m("div", { class: "cg2-sd-row" }, [
+                                        m("div", { class: "cg2-sd-field", style: { flex: "1" } }, [
+                                            m("label", { class: "cg2-sd-label" }, "Prompt Prefix (" + tabLabel + ")"),
+                                            m("input", {
+                                                class: "cg2-sd-input",
+                                                type: "text",
+                                                placeholder: sdConfigTab === "_default" ? "Prepended to all card prompts" : "Prepended to " + tabLabel + " prompts only",
+                                                value: ov.promptPrefix,
+                                                oninput(e) { sdOverrides[sdConfigTab].promptPrefix = e.target.value; }
+                                            })
+                                        ])
+                                    ])
+                                ];
+                            })(),
+                            m("div", { style: { display: "flex", justifyContent: "space-between", marginTop: "6px" } }, [
+                                m("button", {
+                                    class: "cg2-btn", style: { fontSize: "11px" },
+                                    onclick() {
+                                        sdOverrides = defaultSdOverrides();
+                                        sdConfigTab = "_default";
+                                        m.redraw();
+                                    }
+                                }, "Reset All"),
+                                m("div", { style: { display: "flex", gap: "6px" } }, [
+                                    m("button", {
+                                        class: "cg2-btn", style: { fontSize: "11px" },
+                                        onclick() {
+                                            sdOverrides[sdConfigTab] = emptySdType();
+                                            m.redraw();
+                                        }
+                                    }, "Clear " + (sdConfigTab === "_default" ? "Default" : CARD_TYPES[sdConfigTab].label)),
+                                    m("button", {
+                                        class: "cg2-btn cg2-btn-primary", style: { fontSize: "11px" },
+                                        async onclick() {
+                                            if (viewingDeck) {
+                                                viewingDeck.sdOverrides = JSON.parse(JSON.stringify(sdOverrides));
+                                                let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+                                                await deckStorage.save(safeName, viewingDeck);
+                                                page.toast("success", "SD config saved to deck");
+                                            }
+                                        }
+                                    }, "Save to Deck")
+                                ])
+                            ])
+                        ]) : null
+                    ]),
                     // Art toolbar
                     m("div", { class: "cg2-toolbar" }, [
                         m("button", {
                             class: "cg2-btn cg2-btn-primary",
                             disabled: busy,
+                            title: "Generate art only for cards that don't have images yet",
                             onclick() { queueDeckArt(viewingDeck); }
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "4px" } }, "auto_awesome"),
-                            queueActive ? "Generating..." : "Generate Art"
+                            queueActive ? "Generating..." : "Generate Missing Art"
                         ]),
                         m("button", {
-                            class: "cg2-btn",
+                            class: "cg2-btn cg2-btn-danger",
                             style: { marginLeft: "4px" },
                             disabled: busy,
+                            title: "Clear all existing art and regenerate every card",
                             onclick() {
                                 cards.forEach(c => { delete c.imageUrl; delete c.artObjectId; delete c.portraitUrl; });
                                 queueDeckArt(viewingDeck);
@@ -1592,21 +1932,55 @@
                                     m("span", { class: "material-symbols-outlined" }, "error"),
                                     m("div", { style: { fontSize: "10px" } }, artJob.error || "Failed")
                                 ]) : null,
-                                !busy ? m("button", {
-                                    class: "cg2-card-reimage-btn cg2-card-reimage-btn-visible",
-                                    title: buildCardPrompt(card, activeTheme),
-                                    onclick() {
-                                        delete card.imageUrl;
-                                        delete card.artObjectId;
-                                        if (card.type === "character") delete card.portraitUrl;
-                                        artQueue = [{ card, cardIndex: i, status: "pending", result: null, error: null }];
-                                        artCompleted = 0;
-                                        artTotal = 1;
-                                        artPaused = false;
-                                        artDir = null;
-                                        processArtQueue();
-                                    }
-                                }, m("span", { class: "material-symbols-outlined", style: { fontSize: "16px" } }, "auto_awesome")) : null
+                                // Per-card action buttons
+                                !busy ? m("div", { class: "cg2-card-actions" }, [
+                                    // Reimage button
+                                    m("button", {
+                                        class: "cg2-card-action-btn",
+                                        title: "Regenerate art\n" + buildCardPrompt(card, activeTheme),
+                                        onclick() {
+                                            delete card.imageUrl;
+                                            delete card.artObjectId;
+                                            if (card.type === "character") delete card.portraitUrl;
+                                            artQueue = [{ card, cardIndex: i, status: "pending", result: null, error: null }];
+                                            artCompleted = 0;
+                                            artTotal = 1;
+                                            artPaused = false;
+                                            artDir = null;
+                                            processArtQueue();
+                                        }
+                                    }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "auto_awesome")),
+                                    // Refresh data from source object (character cards only)
+                                    card.sourceId && card.type === "character" ? m("button", {
+                                        class: "cg2-card-action-btn",
+                                        title: "Refresh card data from source object",
+                                        async onclick() {
+                                            let ok = await refreshCharacterCard(card);
+                                            if (ok) {
+                                                page.toast("success", "Refreshed: " + card.name);
+                                            } else {
+                                                page.toast("warn", "Could not refresh " + card.name);
+                                            }
+                                            m.redraw();
+                                        }
+                                    }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "sync")) : null,
+                                    // Source object link (character cards)
+                                    card.sourceId ? m("button", {
+                                        class: "cg2-card-action-btn",
+                                        title: "Open source object",
+                                        onclick() {
+                                            window.open("#/object/olio.charPerson/" + card.sourceId, "_blank");
+                                        }
+                                    }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "open_in_new")) : null,
+                                    // Art object link (non-character cards with generated art)
+                                    !card.sourceId && card.artObjectId ? m("button", {
+                                        class: "cg2-card-action-btn",
+                                        title: "Open generated art object",
+                                        onclick() {
+                                            window.open("#/object/data.data/" + card.artObjectId, "_blank");
+                                        }
+                                    }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "open_in_new")) : null
+                                ]) : null
                             ]);
                         })
                     )
