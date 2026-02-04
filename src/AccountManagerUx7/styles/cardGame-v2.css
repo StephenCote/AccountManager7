@@ -1,0 +1,476 @@
+/* ═══════════════════════════════════════════════════════
+   Card Game v2 Styles
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Layout ─────────────────────────────────────────── */
+.cg2-container {
+    padding: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+.cg2-toolbar {
+    display: flex; gap: 8px; align-items: center;
+    margin-bottom: 16px; flex-wrap: wrap;
+}
+.cg2-toolbar button {
+    padding: 4px 12px; border-radius: 4px; border: 1px solid #ccc;
+    cursor: pointer; font-size: 13px; background: #fff;
+}
+.cg2-toolbar button.active {
+    background: #333; color: #fff; border-color: #333;
+}
+.cg2-section-title {
+    font-size: 15px; font-weight: 600; margin: 16px 0 8px;
+    color: #555; text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* ── Card Grid ──────────────────────────────────────── */
+.cg2-card-grid {
+    display: flex; flex-wrap: wrap; gap: 16px;
+    justify-content: flex-start;
+}
+
+/* ── Card Base ──────────────────────────────────────── */
+.cg2-card {
+    width: 250px; height: 370px;
+    border-radius: 10px;
+    border: 3px solid #ccc;
+    position: relative;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    transition: transform 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+}
+.cg2-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.22);
+}
+
+/* ── Card Front ─────────────────────────────────────── */
+.cg2-card-front {
+    background: #fff;
+    display: flex; flex-direction: column;
+    padding: 28px 12px 10px;
+}
+.cg2-card-name {
+    font-size: 15px; font-weight: 700;
+    text-align: center;
+    margin-bottom: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cg2-card-body {
+    flex: 1;
+    overflow-y: auto;
+    display: flex; flex-direction: column;
+    gap: 2px;
+}
+.cg2-card-subtitle {
+    font-size: 11px; color: #777;
+    text-align: center;
+    display: flex; justify-content: center; gap: 8px;
+}
+.cg2-level { font-weight: 600; }
+.cg2-divider {
+    height: 1px; background: #e0e0e0; margin: 4px 0;
+}
+
+/* ── Card Back ──────────────────────────────────────── */
+.cg2-card-back {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: #fff;
+}
+.cg2-back-pattern {
+    position: absolute; inset: 8px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 6px;
+    pointer-events: none;
+}
+.cg2-back-icon {
+    font-size: 56px !important;
+    opacity: 0.9;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+.cg2-back-label {
+    font-size: 14px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 2px;
+    opacity: 0.85;
+}
+
+/* ── Portrait / Image Area ──────────────────────────── */
+.cg2-card-portrait {
+    display: flex; align-items: center; justify-content: center;
+    height: 72px; position: relative;
+}
+.cg2-portrait-img {
+    height: 68px; width: 68px; object-fit: cover; border-radius: 50%;
+    border: 2px solid #B8860B;
+}
+.cg2-race-badge {
+    position: absolute; right: 8px; top: 4px;
+    font-size: 10px; background: rgba(0,0,0,0.6); color: #fff;
+    padding: 1px 6px; border-radius: 8px;
+}
+.cg2-card-image-area {
+    display: flex; align-items: center; justify-content: center;
+    height: 72px;
+}
+.cg2-card-img {
+    max-height: 68px; max-width: 100%; object-fit: contain; border-radius: 4px;
+}
+.cg2-placeholder-icon {
+    font-size: 52px !important; opacity: 0.35;
+}
+
+/* ── Stats ──────────────────────────────────────────── */
+.cg2-stat-grid {
+    display: flex; flex-direction: column; gap: 2px;
+}
+.cg2-stat-row {
+    display: flex; justify-content: space-around;
+}
+.cg2-stat-cell {
+    display: flex; flex-direction: column; align-items: center; width: 48px;
+}
+.cg2-stat-abbrev {
+    font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase;
+}
+.cg2-stat-val {
+    font-size: 16px; font-weight: 700;
+}
+
+/* ── Need Bars ──────────────────────────────────────── */
+.cg2-need-row {
+    display: flex; align-items: center; gap: 4px;
+    height: 18px;
+}
+.cg2-need-label {
+    width: 28px; font-size: 10px; font-weight: 700; color: #666;
+    text-align: right;
+}
+.cg2-need-track {
+    flex: 1; height: 10px; background: #e0e0e0; border-radius: 5px;
+    overflow: hidden;
+}
+.cg2-need-fill {
+    height: 100%; border-radius: 5px;
+    transition: width 0.3s;
+}
+.cg2-need-value {
+    width: 42px; font-size: 10px; font-weight: 600; text-align: left;
+}
+
+/* ── Equip / Slots ──────────────────────────────────── */
+.cg2-equip-row {
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+    font-size: 10px;
+}
+.cg2-section-label {
+    font-weight: 600; color: #888; white-space: nowrap;
+}
+.cg2-slot {
+    display: inline-block;
+    padding: 1px 4px; margin: 1px;
+    border: 1px solid #ccc; border-radius: 3px;
+    font-size: 9px; color: #999; background: #fafafa;
+}
+.cg2-slot-filled {
+    background: #e8f5e9; border-color: #81c784; color: #2e7d32;
+}
+
+/* ── Card Meta / Detail Fields ──────────────────────── */
+.cg2-card-meta {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: #555; padding: 0 2px;
+}
+.cg2-rarity { display: flex; gap: 1px; }
+.cg2-card-stats-line {
+    display: flex; gap: 10px; padding: 2px 0;
+}
+.cg2-mod {
+    font-weight: 700; font-size: 13px;
+}
+.cg2-mod-atk { color: #c62828; }
+.cg2-card-detail {
+    font-size: 11px; color: #444; padding: 1px 0;
+}
+.cg2-card-special {
+    font-size: 11px; color: #1565C0; font-style: italic; padding: 2px 0;
+}
+.cg2-card-effect {
+    font-size: 12px; font-weight: 600; color: #333; padding: 2px 0;
+}
+.cg2-roll {
+    font-family: monospace; font-size: 11px; color: #555;
+}
+.cg2-card-warning {
+    color: #c62828; font-weight: 600;
+}
+.cg2-flavor {
+    font-size: 10px; color: #999; font-style: italic;
+    text-align: center; margin-top: auto; padding-top: 4px;
+}
+.cg2-use-or-lose {
+    font-size: 12px; font-weight: 800; color: #c62828;
+    text-align: center; margin-top: 8px;
+    letter-spacing: 1px;
+}
+.cg2-use-or-lose-sub {
+    font-size: 10px; color: #888; text-align: center; padding: 2px 4px;
+}
+.cg2-card-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: auto; padding-top: 4px;
+    font-size: 10px; color: #777;
+}
+.cg2-durability { font-weight: 600; }
+.cg2-energy-cost { font-weight: 600; color: #1E88E5; }
+
+/* ── Buttons ──────────────────────────────────────── */
+.cg2-btn {
+    padding: 6px 14px; border-radius: 5px; border: 1px solid #ccc;
+    cursor: pointer; font-size: 13px; background: #fff; color: #333;
+    display: inline-flex; align-items: center; gap: 4px;
+}
+.cg2-btn:hover { background: #f0f0f0; }
+.cg2-btn:disabled { opacity: 0.5; cursor: default; }
+.cg2-btn-primary { background: #B8860B; color: #fff; border-color: #B8860B; }
+.cg2-btn-primary:hover { background: #9a7209; }
+.cg2-btn-danger { color: #c62828; border-color: #c62828; }
+.cg2-btn-danger:hover { background: #fce4ec; }
+
+/* ── Empty State ──────────────────────────────────── */
+.cg2-empty-state {
+    text-align: center; padding: 40px; color: #999; font-size: 14px;
+}
+
+/* ── Deck Grid ────────────────────────────────────── */
+.cg2-deck-grid {
+    display: flex; flex-wrap: wrap; gap: 12px;
+}
+.cg2-deck-card {
+    display: flex; gap: 12px; align-items: center;
+    padding: 12px; border: 1px solid #e0e0e0; border-radius: 8px;
+    width: 320px; background: #fafafa;
+    transition: box-shadow 0.15s;
+}
+.cg2-deck-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.cg2-deck-portrait img {
+    width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+    border: 2px solid #B8860B;
+}
+.cg2-deck-info { flex: 1; min-width: 0; }
+.cg2-deck-name { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cg2-deck-meta { font-size: 11px; color: #888; }
+.cg2-deck-actions { display: flex; flex-direction: column; gap: 4px; }
+
+/* ── Theme Select ─────────────────────────────────── */
+.cg2-theme-grid {
+    display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;
+}
+.cg2-theme-card {
+    width: 200px; padding: 16px; border: 2px solid #e0e0e0; border-radius: 8px;
+    text-align: center; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.cg2-theme-card:hover { border-color: #B8860B; background: #fffbf0; }
+.cg2-theme-selected { border-color: #B8860B; background: #FDF5E6; }
+.cg2-theme-name { font-weight: 700; font-size: 14px; margin-top: 6px; }
+.cg2-theme-desc { font-size: 11px; color: #777; margin-top: 4px; }
+.cg2-theme-badge { font-size: 11px; color: #B8860B; font-weight: 700; margin-top: 6px; }
+
+/* ── Character Picker ─────────────────────────────── */
+.cg2-char-grid {
+    display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;
+    max-height: 420px; overflow-y: auto; padding-right: 4px;
+}
+.cg2-char-card {
+    width: 140px; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;
+    text-align: center; cursor: pointer; position: relative;
+    transition: border-color 0.15s, background 0.15s;
+}
+.cg2-char-card:hover { border-color: #B8860B; background: #fffbf0; }
+.cg2-char-selected { border-color: #B8860B; background: #FDF5E6; }
+.cg2-char-card-new { border-style: dashed; }
+.cg2-char-portrait img {
+    width: 64px; height: 64px; border-radius: 50%; object-fit: cover;
+    border: 2px solid #ccc;
+}
+.cg2-char-selected .cg2-char-portrait img { border-color: #B8860B; }
+.cg2-char-name { font-weight: 700; font-size: 13px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cg2-char-meta { font-size: 10px; color: #888; }
+.cg2-char-stats-mini { font-size: 9px; color: #666; margin-top: 4px; }
+.cg2-char-stats-mini span { margin-right: 4px; }
+.cg2-char-badge {
+    position: absolute; top: 4px; right: 6px;
+    font-size: 16px; color: #B8860B; font-weight: 700;
+}
+
+/* ── Builder Nav ──────────────────────────────────── */
+.cg2-builder-nav {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 0; border-top: 1px solid #e0e0e0;
+    position: sticky; bottom: 0; background: #fff; z-index: 10;
+    margin-top: 16px;
+}
+
+/* ── Selected Character Chips ────────────────────── */
+.cg2-selected-chips {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;
+}
+.cg2-selected-chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px 4px 4px;
+    background: #f9f5eb; border: 1px solid #B8860B; border-radius: 16px;
+    font-size: 12px; cursor: pointer; transition: background 0.15s;
+}
+.cg2-selected-chip:hover { background: #f0e8d4; }
+.cg2-selected-chip img {
+    width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+}
+.cg2-selected-chip .cg2-chip-icon {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #B8860B; color: #fff; display: flex; align-items: center;
+    justify-content: center; font-size: 14px;
+}
+.cg2-selected-chip .cg2-chip-remove {
+    margin-left: 4px; font-size: 14px; color: #999; cursor: pointer;
+}
+.cg2-selected-chip .cg2-chip-remove:hover { color: #c00; }
+
+/* ── Review ────────────────────────────────────────── */
+.cg2-review-summary {
+    display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px;
+    font-size: 13px;
+}
+.cg2-review-stat {
+    padding: 4px 10px; background: #f5f5f5; border-radius: 4px;
+    border: 1px solid #e0e0e0;
+}
+
+/* ── Loading ───────────────────────────────────────── */
+.cg2-loading { color: #888; font-size: 13px; font-style: italic; }
+
+/* ── Art Generation Progress ──────────────────────── */
+.cg2-art-progress {
+    margin: 12px 0; padding: 12px; background: #f9f9f9;
+    border: 1px solid #e0e0e0; border-radius: 8px;
+}
+.cg2-art-progress-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+}
+.cg2-art-progress-bar {
+    height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden;
+}
+.cg2-art-progress-fill {
+    height: 100%; background: #B8860B; border-radius: 3px;
+    transition: width 0.3s ease;
+}
+.cg2-art-progress-current {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 8px; font-size: 12px; color: #666;
+}
+.cg2-art-progress-actions {
+    display: flex; gap: 6px; margin-top: 8px;
+}
+.cg2-art-failures {
+    margin-top: 8px; font-size: 11px;
+}
+.cg2-art-fail-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 3px 0; color: #c00; border-bottom: 1px solid #f0e0e0;
+}
+
+/* ── Card Art Wrapper / Overlay ───────────────────── */
+.cg2-card-art-wrapper {
+    position: relative;
+}
+.cg2-card-art-badge {
+    position: absolute; top: 6px; left: 6px;
+    display: flex; align-items: center; gap: 3px;
+    padding: 2px 6px; background: rgba(0,128,0,0.85); color: #fff;
+    border-radius: 4px; font-size: 10px; font-weight: 600;
+}
+.cg2-card-art-overlay {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.85); border-radius: 8px;
+    font-size: 12px; color: #666; gap: 4px;
+}
+.cg2-art-overlay-fail {
+    background: rgba(255,240,240,0.9); color: #c00;
+}
+.cg2-card-reimage-btn {
+    position: absolute; bottom: 6px; right: 6px;
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 1px solid #ccc; background: rgba(255,255,255,0.9);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    opacity: 0;
+}
+.cg2-card-art-wrapper:hover .cg2-card-reimage-btn { opacity: 1; }
+.cg2-card-reimage-btn-visible { opacity: 1; }
+.cg2-card-reimage-btn:hover { background: #B8860B; color: #fff; border-color: #B8860B; }
+
+/* ── Background Panel ────────────────────────────── */
+.cg2-bg-panel {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; margin-bottom: 8px;
+    background: #f5f0e6; border: 1px solid #e0d8c0; border-radius: 8px;
+}
+.cg2-bg-panel-left {
+    display: flex; align-items: center; gap: 8px;
+}
+.cg2-bg-panel-right {
+    display: flex; align-items: center; gap: 6px;
+}
+.cg2-bg-thumb {
+    width: 48px; height: 48px; border-radius: 6px; object-fit: cover;
+    border: 1px solid #ccc;
+}
+
+/* ── Spin animation ───────────────────────────────── */
+@keyframes cg2-spin { to { transform: rotate(360deg); } }
+.cg2-spin { animation: cg2-spin 1s linear infinite; }
+
+/* ── Dark mode ─────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+    .cg2-card-front { background: #1e1e1e; }
+    .cg2-card-name { filter: brightness(1.3); }
+    .cg2-divider { background: #444; }
+    .cg2-card-detail, .cg2-card-meta { color: #bbb; }
+    .cg2-stat-val { color: #eee; }
+    .cg2-need-track { background: #444; }
+    .cg2-slot { background: #2a2a2a; border-color: #555; color: #888; }
+    .cg2-slot-filled { background: #1b3a1b; border-color: #4a8; color: #8c8; }
+    .cg2-flavor { color: #777; }
+    .cg2-toolbar button { background: #2a2a2a; color: #ccc; border-color: #555; }
+    .cg2-toolbar button.active { background: #eee; color: #111; }
+    .cg2-btn { background: #2a2a2a; color: #ccc; border-color: #555; }
+    .cg2-btn:hover { background: #333; }
+    .cg2-btn-primary { background: #B8860B; color: #fff; border-color: #B8860B; }
+    .cg2-btn-danger { color: #ef5350; border-color: #ef5350; }
+    .cg2-deck-card { background: #1e1e1e; border-color: #444; }
+    .cg2-theme-card { border-color: #444; }
+    .cg2-theme-card:hover { background: #2a2500; border-color: #B8860B; }
+    .cg2-theme-selected { background: #2a2500; border-color: #B8860B; }
+    .cg2-char-card { border-color: #444; }
+    .cg2-char-card:hover { background: #2a2500; }
+    .cg2-char-selected { background: #2a2500; border-color: #B8860B; }
+    .cg2-review-stat { background: #2a2a2a; border-color: #444; color: #ccc; }
+    .cg2-empty-state { color: #666; }
+    .cg2-builder-nav { background: #1e1e1e; border-top-color: #444; }
+    .cg2-selected-chip { background: #2a2500; border-color: #B8860B; color: #ccc; }
+    .cg2-selected-chip:hover { background: #3a3200; }
+    .cg2-art-progress { background: #2a2a2a; border-color: #444; }
+    .cg2-art-progress-bar { background: #444; }
+    .cg2-art-progress-current { color: #aaa; }
+    .cg2-card-art-overlay { background: rgba(30,30,30,0.85); color: #aaa; }
+    .cg2-art-overlay-fail { background: rgba(50,20,20,0.9); }
+    .cg2-card-reimage-btn { background: rgba(30,30,30,0.9); border-color: #555; }
+    .cg2-bg-panel { background: #2a2500; border-color: #444; }
+    .cg2-bg-thumb { border-color: #555; }
+}

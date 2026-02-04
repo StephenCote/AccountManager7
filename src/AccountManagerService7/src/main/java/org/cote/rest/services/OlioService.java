@@ -554,4 +554,50 @@ public class OlioService {
 		return Response.status(200).entity(sb.toString()).build();
 	}
 
+	/// Card game art generation — txt2img from prompt + groupPath, no pre-existing object needed
+	/// POST body: SD config JSON with additional fields: groupPath (target directory), imageName (output file name)
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/generateArt")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response generateArt(String json, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord imp = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(imp == null) {
+			logger.error("generateArt: Invalid config");
+			return Response.status(400).entity("{\"error\":\"Invalid config\"}").build();
+		}
+		if(imp.get("model") == null) {
+			imp.setValue("model", context.getInitParameter("sd.model"));
+		}
+		if(imp.get("refinerModel") == null) {
+			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+		}
+
+		String groupPath = imp.get("groupPath");
+		String imageName = imp.get("imageName");
+		logger.info("generateArt: groupPath=" + groupPath + " imageName=" + imageName + " description=" + imp.get("description"));
+		if(groupPath == null || groupPath.isEmpty()) {
+			logger.error("generateArt: groupPath is required");
+			return Response.status(400).entity("{\"error\":\"groupPath is required\"}").build();
+		}
+		if(imageName == null || imageName.isEmpty()) {
+			imageName = "card-art-" + System.currentTimeMillis() + ".png";
+		}
+
+		try {
+			SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
+			sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+
+			List<BaseRecord> images = sdu.createImage(user, groupPath, imp, imageName, 1, imp.get("hires"), imp.get("seed"));
+			if(images.size() > 0) {
+				return Response.status(200).entity(images.get(0).toFullString()).build();
+			}
+			return Response.status(500).entity("{\"error\":\"No images generated\"}").build();
+		} catch(Exception e) {
+			logger.error("generateArt: " + e.getMessage());
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}").build();
+		}
+	}
+
 }

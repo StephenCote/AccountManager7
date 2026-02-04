@@ -277,6 +277,16 @@
 			"name": "negativePrompt",
 			"type": "string",
 			"description": "Negative prompt for image generation. Quality exclusions applied by default when empty."
+		},
+		{
+			"name": "groupPath",
+			"type": "string",
+			"description": "Target group path for generated image storage."
+		},
+		{
+			"name": "imageName",
+			"type": "string",
+			"description": "Output file name for the generated image."
 		}
 	]
 }
