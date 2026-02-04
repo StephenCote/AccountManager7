@@ -33,6 +33,7 @@ const jsFiles = [
 
     // View components
     'client/view/cardGame.js',
+    'client/view/cardGame-v2.js',
 
     // UI components
     'client/components/advGrid.js',
@@ -104,7 +105,8 @@ const cssFiles = [
     'node_modules/codemirror/lib/codemirror.css',
     'node_modules/codemirror/theme/neat.css',
     'node_modules/codemirror/addon/lint/lint.css',
-    'styles/pageStyle.css'
+    'styles/pageStyle.css',
+    'styles/cardGame-v2.css'
 ];
 
 async function build() {

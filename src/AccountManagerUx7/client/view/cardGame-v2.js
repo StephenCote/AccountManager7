@@ -89,14 +89,15 @@
 
     function renderCharacterBody(card) {
         let stats = card.stats || {};
-        let needs = card.needs || {};
-        let equip = card.equipped || {};
-        let skills = card.activeSkills || [];
         return [
             m("div", { class: "cg2-card-portrait" }, [
                 card.portraitUrl
-                    ? m("img", { src: card.portraitUrl, class: "cg2-portrait-img" })
-                    : m("span", { class: "material-symbols-outlined", style: { fontSize: "64px", color: "#B8860B" } }, "person"),
+                    ? m("img", {
+                        src: card.portraitUrl, class: "cg2-portrait-img",
+                        style: { cursor: "pointer" },
+                        onclick(e) { e.stopPropagation(); showImagePreview(card.portraitUrl); }
+                    })
+                    : m("span", { class: "material-symbols-outlined", style: { fontSize: "80px", color: "#B8860B" } }, "person"),
                 card.race ? m("span", { class: "cg2-race-badge" }, card.race) : null
             ]),
             m("div", { class: "cg2-card-subtitle" }, [
@@ -105,32 +106,48 @@
             ]),
             m("div", { class: "cg2-divider" }),
             m(StatBlock, { stats }),
-            m("div", { class: "cg2-divider" }),
-            m(NeedBar, { label: "Health", abbrev: "HP", current: needs.hp || 20, max: 20, color: "#e53935" }),
-            m(NeedBar, { label: "Energy", abbrev: "NRG", current: needs.energy || 14, max: stats.MAG || 14, color: "#1E88E5" }),
-            m(NeedBar, { label: "Morale", abbrev: "MRL", current: needs.morale || 20, max: 20, color: "#43A047" }),
-            m("div", { class: "cg2-divider" }),
-            m("div", { class: "cg2-equip-row" }, [
-                m("span", { class: "cg2-section-label" }, "Skill Slots:"),
-                m("span", skills.map((s, i) => m("span", { class: "cg2-slot" + (s ? " cg2-slot-filled" : "") }, s ? s.name : "\u2013")))
-            ]),
-            m("div", { class: "cg2-equip-row" }, [
-                m("span", { class: "cg2-section-label" }, "Equip:"),
-                m("span", ["head", "body", "handL", "handR", "feet", "ring", "back"].map(slot =>
-                    m("span", {
-                        class: "cg2-slot" + (equip[slot] ? " cg2-slot-filled" : ""),
-                        title: slot
-                    }, equip[slot] ? equip[slot].name : slot.charAt(0).toUpperCase())
-                ))
-            ])
+            m("div", { style: { marginTop: "auto", textAlign: "center", fontSize: "10px", color: "#999", fontStyle: "italic" } }, "click to flip")
         ];
+    }
+
+    function renderCharacterBackBody(card) {
+        let stats = card.stats || {};
+        let needs = card.needs || {};
+        let equip = card.equipped || {};
+        let skills = card.activeSkills || [];
+        return m("div", { class: "cg2-card cg2-card-front cg2-char-back", style: { borderColor: "#B8860B" } }, [
+            cornerIcon("character", "top-left"),
+            cornerIcon("character", "top-right"),
+            m("div", { class: "cg2-char-back-title" }, card.name || "Unknown"),
+            m("div", { class: "cg2-card-body" }, [
+                m(NeedBar, { label: "Health", abbrev: "HP", current: needs.hp || 20, max: 20, color: "#e53935" }),
+                m(NeedBar, { label: "Energy", abbrev: "NRG", current: needs.energy || 14, max: stats.MAG || 14, color: "#1E88E5" }),
+                m(NeedBar, { label: "Morale", abbrev: "MRL", current: needs.morale || 20, max: 20, color: "#43A047" }),
+                m("div", { class: "cg2-divider" }),
+                m("div", { class: "cg2-equip-row" }, [
+                    m("span", { class: "cg2-section-label" }, "Skill Slots:"),
+                    m("span", skills.map(s => m("span", { class: "cg2-slot" + (s ? " cg2-slot-filled" : "") }, s ? s.name : "\u2013")))
+                ]),
+                m("div", { class: "cg2-equip-row" }, [
+                    m("span", { class: "cg2-section-label" }, "Equip:"),
+                    m("span", ["head", "body", "handL", "handR", "feet", "ring", "back"].map(slot =>
+                        m("span", {
+                            class: "cg2-slot" + (equip[slot] ? " cg2-slot-filled" : ""),
+                            title: slot
+                        }, equip[slot] ? equip[slot].name : slot.charAt(0).toUpperCase())
+                    ))
+                ]),
+                m("div", { style: { marginTop: "auto", textAlign: "center", fontSize: "10px", color: "#999", fontStyle: "italic" } }, "click to flip")
+            ]),
+            cornerIcon("character", "bottom-right")
+        ]);
     }
 
     function renderApparelBody(card) {
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon" }, "checkroom")
             ),
             m("div", { class: "cg2-card-meta" }, [
@@ -154,7 +171,7 @@
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon" }, "swords")
             ),
             m("div", { class: "cg2-card-meta" }, [
@@ -179,7 +196,7 @@
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon" }, "science")
             ),
             m("div", { class: "cg2-card-meta" }, [
@@ -197,7 +214,7 @@
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#C62828" } }, "bolt")
             ),
             m("div", { class: "cg2-card-meta" }, [
@@ -217,7 +234,7 @@
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#1565C0" } }, "chat_bubble")
             ),
             m("div", { class: "cg2-card-meta" }, [
@@ -243,7 +260,7 @@
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#6A1B9A" } }, "blur_on")
             ),
             m("div", { class: "cg2-card-meta" }, [
@@ -269,7 +286,7 @@
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#E65100" } }, "star")
             ),
             m("div", { class: "cg2-card-meta" }, [
@@ -289,7 +306,7 @@
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#00695C" } }, "auto_fix_high")
             ),
             m("div", { class: "cg2-card-meta" }, [
@@ -559,16 +576,40 @@
 
     // ── Phase 2: Stat Mapping ────────────────────────────────────────
     // Map Olio charPerson.statistics fields → card game 6-stat model
+    function statVal(v, fallback) { return (v != null && v !== undefined) ? v : fallback; }
     function mapStats(statistics) {
         if (!statistics) return { STR: 8, AGI: 8, END: 8, INT: 8, MAG: 8, CHA: 8 };
+        // If statistics is only partially loaded (objectId ref without values), return defaults
+        if (statistics.objectId && statistics.physicalStrength == null && statistics.agility == null) {
+            return { STR: 8, AGI: 8, END: 8, INT: 8, MAG: 8, CHA: 8 };
+        }
         return {
-            STR: statistics.physicalStrength || 8,
-            AGI: statistics.agility || 8,
-            END: statistics.physicalEndurance || 8,
-            INT: statistics.intelligence || 8,
-            MAG: statistics.magic || 8,
-            CHA: statistics.charisma || 8
+            STR: statVal(statistics.physicalStrength, 8),
+            AGI: statVal(statistics.agility, 8),
+            END: statVal(statistics.physicalEndurance, 8),
+            INT: statVal(statistics.intelligence, 8),
+            MAG: statVal(statistics.magic, 8),
+            CHA: statVal(statistics.charisma, 8)
         };
+    }
+
+    // Resolve partially-loaded statistics (secondary query when only objectId is present)
+    async function resolveStatistics(charObj) {
+        if (!charObj || !charObj.statistics) return;
+        let s = charObj.statistics;
+        if (s.objectId && s.physicalStrength == null && s.agility == null) {
+            try {
+                let sq = am7view.viewQuery("olio.statistics");
+                sq.field("objectId", s.objectId);
+                let sqr = await page.search(sq);
+                if (sqr && sqr.results && sqr.results.length > 0) {
+                    charObj.statistics = sqr.results[0];
+                    console.log("[CardGame v2] Resolved statistics for " + (charObj.name || charObj.objectId));
+                }
+            } catch (e) {
+                console.warn("[CardGame v2] Failed to resolve statistics", e);
+            }
+        }
     }
 
     function clampStat(v) { return Math.max(1, Math.min(20, Math.round(v))); }
@@ -602,7 +643,9 @@
         let qr = await page.search(q);
         if (qr && qr.results && qr.results.length) {
             am7model.updateListModel(qr.results);
-            return qr.results[0];
+            let char = qr.results[0];
+            await resolveStatistics(char);
+            return char;
         }
         return null;
     }
@@ -855,6 +898,11 @@
                 console.warn("[CardGame v2] Could not load ~/Characters:", ce);
             }
 
+            // Resolve partially-loaded statistics for all characters
+            for (let ch of allChars) {
+                await resolveStatistics(ch);
+            }
+
             availableCharacters = allChars;
             if (allChars.length === 0) {
                 page.toast("info", "No characters found");
@@ -944,6 +992,9 @@
         let data = await deckStorage.load(storageName);
         if (data) {
             viewingDeck = data;
+            cardFrontImageUrl = data.cardFrontImageUrl || null;
+            cardBackImageUrl = data.cardBackImageUrl || null;
+            flippedCards = {};
             screen = "deckView";
             m.redraw();
             // Auto-refresh character cards from source objects
@@ -984,15 +1035,20 @@
                     savedDecks.length === 0 && !decksLoading
                         ? m("div", { class: "cg2-empty-state" }, "No decks yet. Create one to get started.")
                         : m("div", { class: "cg2-deck-grid" },
-                            savedDecks.map(d =>
-                                m("div", { class: "cg2-deck-card" }, [
+                            savedDecks.map(d => {
+                                let themeName = d.themeId ? d.themeId.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : null;
+                                return m("div", { class: "cg2-deck-card" }, [
                                     m("div", { class: "cg2-deck-portrait" },
                                         d.portraitUrl
                                             ? m("img", { src: d.portraitUrl })
-                                            : m("span", { class: "material-symbols-outlined", style: { fontSize: "48px", color: "#B8860B" } }, "person")
+                                            : m("span", { class: "material-symbols-outlined", style: { fontSize: "48px", color: "#B8860B" } }, "playing_cards")
                                     ),
                                     m("div", { class: "cg2-deck-info" }, [
                                         m("div", { class: "cg2-deck-name" }, d.deckName),
+                                        themeName ? m("div", { class: "cg2-deck-theme-badge" }, [
+                                            m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", verticalAlign: "middle", marginRight: "3px" } }, "auto_fix_high"),
+                                            themeName
+                                        ]) : null,
                                         m("div", { class: "cg2-deck-meta" }, (d.characterNames || []).join(", ") + " \u2022 " + d.cardCount + " cards"),
                                         d.createdAt ? m("div", { class: "cg2-deck-meta" }, new Date(d.createdAt).toLocaleDateString()) : null
                                     ]),
@@ -1000,7 +1056,8 @@
                                         m("button", { class: "cg2-btn", onclick: () => viewDeck(d.storageName) }, "View"),
                                         m("button", { class: "cg2-btn cg2-btn-danger", onclick: () => deleteDeck(d.storageName) }, "Delete")
                                     ])
-                                ])
+                                ]);
+                            }
                             )
                         )
                 ]);
@@ -1287,6 +1344,47 @@
     let backgroundImageId = null;   // objectId of generated background (used as img2img basis)
     let backgroundThumbUrl = null;  // thumbnail URL of background
     let backgroundGenerating = false;
+    let flippedCards = {};          // { cardIndex: true } for character cards showing back
+    let cardFrontImageUrl = null;   // background image for card faces
+    let cardBackImageUrl = null;    // background image for card backs
+
+    // Show image preview overlay
+    let previewImageUrl = null;
+    function showImagePreview(url) {
+        if (!url) return;
+        // Upgrade to larger thumbnail size for preview
+        previewImageUrl = url.replace(/\/\d+x\d+/, "/512x512");
+        m.redraw();
+    }
+    function closeImagePreview() {
+        previewImageUrl = null;
+        m.redraw();
+    }
+    function ImagePreviewOverlay() {
+        return {
+            view() {
+                if (!previewImageUrl) return null;
+                return m("div", {
+                    style: {
+                        position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+                        background: "rgba(0,0,0,0.8)", zIndex: 9999,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        cursor: "pointer"
+                    },
+                    onclick: closeImagePreview
+                }, [
+                    m("img", {
+                        src: previewImageUrl,
+                        style: { maxWidth: "90vw", maxHeight: "90vh", objectFit: "contain", borderRadius: "8px", boxShadow: "0 4px 24px rgba(0,0,0,0.5)" }
+                    }),
+                    m("span", {
+                        class: "material-symbols-outlined",
+                        style: { position: "absolute", top: "16px", right: "16px", color: "#fff", fontSize: "32px", cursor: "pointer" }
+                    }, "close")
+                ]);
+            }
+        };
+    }
 
     // ── SD Config Overrides ────────────────────────────────────────────
     const SD_MODELS = [
@@ -1448,13 +1546,16 @@
         return entity;
     }
 
-    // Generate art for a single card — character portraits use the quick endpoint
+    // Generate art for a single card — character portraits use the reimage endpoint
     async function generateCardArt(card, theme) {
-        // Character portraits: use the existing charPerson/reimage endpoint
+        // Character portraits: use the charPerson/reimage endpoint with SD config
         if (card.type === "character" && card.sourceId) {
+            let sdEntity = await buildSdEntity(card, theme);
+            // POST with sdConfig so the server can apply referenceImageId, model, style, etc.
             await m.request({
-                method: "GET",
-                url: g_application_path + "/rest/olio/charPerson/" + card.sourceId + "/reimage/false",
+                method: "POST",
+                url: g_application_path + "/rest/olio/charPerson/" + card.sourceId + "/reimage",
+                body: sdEntity,
                 withCredentials: true
             });
             // The portrait is updated on the charPerson server-side;
@@ -1509,6 +1610,67 @@
 
         console.log("[CardGame v2] Card art URL:", thumbUrl);
         return { objectId: result.objectId, name: rname, groupPath: gp, thumbUrl: thumbUrl };
+    }
+
+    // Generate template art for card front/back backgrounds
+    async function generateTemplateArt(side) {
+        let theme = activeTheme;
+        let suffix = (theme.artStyle && theme.artStyle.promptSuffix) || "fantasy illustration";
+        let prompt = side === "front"
+            ? "ornate card face design, decorative parchment border, golden filigree frame, card game template, " + suffix
+            : "ornate card back design, intricate repeating pattern, card game template, " + suffix;
+        let sdEntity = {
+            description: prompt,
+            style: "art",
+            artStyle: suffix,
+            width: 512, height: 768,
+            steps: 30, cfg: 7, hires: true,
+            imageName: "card-" + side + "-" + (theme.themeId || "default") + ".png",
+            groupPath: "~/CardGame/Art/" + (theme.themeId || "default")
+        };
+        let ov = sdOverrides._default || {};
+        if (ov.model) sdEntity.model = ov.model;
+        if (ov.refinerModel) sdEntity.refinerModel = ov.refinerModel;
+        if (ov.cfg > 0) sdEntity.cfg = ov.cfg;
+        if (ov.denoisingStrength > 0) sdEntity.denoisingStrength = ov.denoisingStrength;
+        if (backgroundImageId) {
+            sdEntity.referenceImageId = backgroundImageId;
+            if (!sdEntity.denoisingStrength || sdEntity.denoisingStrength >= 1.0) sdEntity.denoisingStrength = 0.7;
+        }
+        backgroundGenerating = true;
+        m.redraw();
+        try {
+            let dir = await page.makePath("auth.group", "DATA", sdEntity.groupPath);
+            let result = await m.request({
+                method: "POST",
+                url: g_application_path + "/rest/olio/generateArt",
+                body: sdEntity,
+                withCredentials: true
+            });
+            let gp = result.groupPath || dir.path;
+            let rname = result.name || sdEntity.imageName;
+            let thumbUrl = g_application_path + "/thumbnail/" +
+                am7client.dotPath(am7client.currentOrganization) +
+                "/data.data" + gp + "/" + rname + "/512x768?t=" + Date.now();
+            if (side === "front") {
+                cardFrontImageUrl = thumbUrl;
+                if (viewingDeck) viewingDeck.cardFrontImageUrl = thumbUrl;
+            } else {
+                cardBackImageUrl = thumbUrl;
+                if (viewingDeck) viewingDeck.cardBackImageUrl = thumbUrl;
+            }
+            // Auto-save deck with new template URLs
+            if (viewingDeck) {
+                let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+                await deckStorage.save(safeName, viewingDeck);
+            }
+            page.toast("success", "Card " + side + " art generated");
+        } catch (e) {
+            console.error("[CardGame v2] Template art failed:", e);
+            page.toast("error", "Card " + side + " art generation failed");
+        }
+        backgroundGenerating = false;
+        m.redraw();
     }
 
     // Process the art queue one item at a time
@@ -1686,6 +1848,7 @@
                 }
                 sdConfigExpanded = false;
                 sdConfigTab = "_default";
+                flippedCards = {};
             },
             view() {
                 if (!viewingDeck) return m("div", "No deck loaded");
@@ -1696,6 +1859,10 @@
                     m("div", { class: "cg2-toolbar" }, [
                         m("button", { class: "cg2-btn", onclick: () => { screen = "deckList"; viewingDeck = null; cancelArtQueue(); artTotal = 0; backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); } }, "\u2190 Back to Decks"),
                         m("span", { style: { fontWeight: 700, fontSize: "16px", marginLeft: "8px" } }, viewingDeck.deckName || "Deck"),
+                        viewingDeck.themeId ? m("span", { class: "cg2-deck-theme-badge", style: { marginLeft: "8px" } }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", verticalAlign: "middle", marginRight: "3px" } }, "auto_fix_high"),
+                            viewingDeck.themeId.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+                        ]) : null,
                         m("span", { style: { color: "#888", fontSize: "12px", marginLeft: "12px" } }, cards.length + " cards"),
                         m("button", {
                             class: "cg2-btn", style: { marginLeft: "auto", fontSize: "11px" },
@@ -1719,7 +1886,9 @@
                                 ? m("span", { style: { fontSize: "11px", color: "#2E7D32", marginLeft: "8px" } }, "Active")
                                 : m("span", { style: { fontSize: "11px", color: "#888", marginLeft: "8px" } }, "None"),
                             backgroundThumbUrl ? m("img", {
-                                src: backgroundThumbUrl, class: "cg2-bg-thumb"
+                                src: backgroundThumbUrl, class: "cg2-bg-thumb",
+                                style: { cursor: "pointer" },
+                                onclick() { showImagePreview(backgroundThumbUrl); }
                             }) : null
                         ]),
                         m("div", { class: "cg2-bg-panel-right" }, [
@@ -1912,14 +2081,77 @@
                     ]),
                     // Art generation progress
                     m(ArtQueueProgress),
-                    // Card grid
-                    m("div", { class: "cg2-card-grid" },
-                        cards.map((card, i) => {
+                    // Card grid — card front, card back, then all card faces
+                    m("div", { class: "cg2-card-grid" }, [
+                        // Card Front template
+                        m("div", { class: "cg2-card-art-wrapper", key: "card-front" }, [
+                            m("div", {
+                                class: "cg2-card cg2-card-front cg2-card-front-bg",
+                                style: cardFrontImageUrl ? { backgroundImage: "url(" + cardFrontImageUrl + ")", backgroundSize: "cover", backgroundPosition: "center" } : {},
+                                onclick() { if (cardFrontImageUrl) showImagePreview(cardFrontImageUrl); }
+                            }, [
+                                m("div", { class: "cg2-back-pattern" }),
+                                m("span", { class: "material-symbols-outlined cg2-back-icon" }, "style"),
+                                m("div", { class: "cg2-back-label" }, "CARD FRONT")
+                            ]),
+                            m("div", { style: { textAlign: "center", fontSize: "10px", color: "#888", marginTop: "4px" } }, "Card Front"),
+                            !busy ? m("div", { class: "cg2-card-actions" }, [
+                                m("button", {
+                                    class: "cg2-card-action-btn",
+                                    title: "Generate card front background",
+                                    onclick(e) { e.stopPropagation(); generateTemplateArt("front"); }
+                                }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "auto_awesome"))
+                            ]) : null
+                        ]),
+                        // Card Back template
+                        m("div", { class: "cg2-card-art-wrapper", key: "card-back" }, [
+                            m("div", {
+                                class: "cg2-card cg2-card-back",
+                                style: cardBackImageUrl
+                                    ? { backgroundImage: "url(" + cardBackImageUrl + ")", backgroundSize: "cover", backgroundPosition: "center", borderColor: "#B8860B" }
+                                    : { background: CARD_TYPES.item.color, borderColor: CARD_TYPES.item.color },
+                                onclick() { if (cardBackImageUrl) showImagePreview(cardBackImageUrl); }
+                            }, [
+                                m("div", { class: "cg2-back-pattern" }),
+                                m("span", { class: "material-symbols-outlined cg2-back-icon" }, CARD_TYPES.item.icon),
+                                m("div", { class: "cg2-back-label" }, "CARD BACK")
+                            ]),
+                            m("div", { style: { textAlign: "center", fontSize: "10px", color: "#888", marginTop: "4px" } }, "Card Back"),
+                            !busy ? m("div", { class: "cg2-card-actions" }, [
+                                m("button", {
+                                    class: "cg2-card-action-btn",
+                                    title: "Generate card back background",
+                                    onclick(e) { e.stopPropagation(); generateTemplateArt("back"); }
+                                }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "auto_awesome"))
+                            ]) : null
+                        ]),
+                        // Card faces
+                        ...cards.map((card, i) => {
                             let artJob = artQueue.find(j => j.cardIndex === i);
                             let isGenerating = artJob && artJob.status === "processing";
                             let hasArt = card.imageUrl || (card.type === "character" && card.portraitUrl);
+                            let isChar = card.type === "character";
+                            let isFlipped = isChar && flippedCards[i];
+
+                            let cardFront = m("div", {
+                                class: isChar ? "cg2-card-flip-front" : "",
+                                style: cardFrontImageUrl ? { backgroundImage: "url(" + cardFrontImageUrl + ")", backgroundSize: "cover", backgroundPosition: "center", borderRadius: "10px" } : {}
+                            }, m(CardFace, { card }));
+
+                            let cardBack = isChar ? m("div", { class: "cg2-card-flip-back" }, renderCharacterBackBody(card)) : null;
+
+                            let cardContent;
+                            if (isChar) {
+                                cardContent = m("div", {
+                                    class: "cg2-card-flipper" + (isFlipped ? " cg2-flipped" : ""),
+                                    onclick() { flippedCards[i] = !flippedCards[i]; }
+                                }, m("div", { class: "cg2-card-flipper-inner" }, [cardFront, cardBack]));
+                            } else {
+                                cardContent = cardFront;
+                            }
+
                             return m("div", { class: "cg2-card-art-wrapper", key: card.name + "-" + i }, [
-                                m(CardFace, { card }),
+                                cardContent,
                                 hasArt ? m("div", { class: "cg2-card-art-badge" }, [
                                     m("span", { class: "material-symbols-outlined", style: { fontSize: "12px" } }, "image"),
                                     " Art"
@@ -1932,13 +2164,20 @@
                                     m("span", { class: "material-symbols-outlined" }, "error"),
                                     m("div", { style: { fontSize: "10px" } }, artJob.error || "Failed")
                                 ]) : null,
+                                // Image preview on click (non-character cards with art)
+                                !isChar && hasArt ? m("div", {
+                                    class: "cg2-card-art-badge",
+                                    style: { cursor: "pointer", right: "6px", left: "auto", top: "6px" },
+                                    onclick() { showImagePreview(card.imageUrl); }
+                                }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "zoom_in")) : null,
                                 // Per-card action buttons
                                 !busy ? m("div", { class: "cg2-card-actions" }, [
                                     // Reimage button
                                     m("button", {
                                         class: "cg2-card-action-btn",
                                         title: "Regenerate art\n" + buildCardPrompt(card, activeTheme),
-                                        onclick() {
+                                        onclick(e) {
+                                            e.stopPropagation();
                                             delete card.imageUrl;
                                             delete card.artObjectId;
                                             if (card.type === "character") delete card.portraitUrl;
@@ -1954,7 +2193,8 @@
                                     card.sourceId && card.type === "character" ? m("button", {
                                         class: "cg2-card-action-btn",
                                         title: "Refresh card data from source object",
-                                        async onclick() {
+                                        async onclick(e) {
+                                            e.stopPropagation();
                                             let ok = await refreshCharacterCard(card);
                                             if (ok) {
                                                 page.toast("success", "Refreshed: " + card.name);
@@ -1968,7 +2208,8 @@
                                     card.sourceId ? m("button", {
                                         class: "cg2-card-action-btn",
                                         title: "Open source object",
-                                        onclick() {
+                                        onclick(e) {
+                                            e.stopPropagation();
                                             window.open("#/object/olio.charPerson/" + card.sourceId, "_blank");
                                         }
                                     }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "open_in_new")) : null,
@@ -1976,14 +2217,16 @@
                                     !card.sourceId && card.artObjectId ? m("button", {
                                         class: "cg2-card-action-btn",
                                         title: "Open generated art object",
-                                        onclick() {
+                                        onclick(e) {
+                                            e.stopPropagation();
                                             window.open("#/object/data.data/" + card.artObjectId, "_blank");
                                         }
                                     }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "open_in_new")) : null
                                 ]) : null
                             ]);
                         })
-                    )
+                    ]),
+                    m(ImagePreviewOverlay)
                 ]);
             }
         };
