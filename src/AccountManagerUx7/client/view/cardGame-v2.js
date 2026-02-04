@@ -965,11 +965,10 @@
         buildingDeck = false;
         if (result) {
             page.toast("success", "Deck saved: " + deck.deckName);
-            screen = "deckList";
             builtDeck = null;
             selectedChars = [];
             m.redraw();
-            await loadSavedDecks();
+            await viewDeck(safeName);
         } else {
             page.toast("error", "Failed to save deck");
             m.redraw();
@@ -1444,8 +1443,13 @@
             if (!template) throw new Error("No SD config template available");
 
             let entity = Object.assign({}, template);
+            clearStyleFields(entity);
+            let suffix = (t.artStyle && t.artStyle.promptSuffix) || "vibrant colors, detailed illustration";
             entity.description = bgPrompt;
             entity.style = "art";
+            entity.artStyle = suffix;
+            entity.bodyStyle = "landscape";
+            entity.imageSetting = "random";
             entity.steps = bgConfig.steps || 40;
             entity.cfg = bgConfig.cfg || 7;
             entity.width = bgConfig.width || 1024;
@@ -1454,6 +1458,13 @@
             entity.seed = -1;
             entity.groupPath = dir.path;
             entity.imageName = "background-" + t.themeId + "-" + Date.now() + ".png";
+
+            // Apply SD config overrides
+            let ov = sdOverrides._default || {};
+            if (ov.model) entity.model = ov.model;
+            if (ov.refinerModel) entity.refinerModel = ov.refinerModel;
+            if (ov.cfg > 0) entity.cfg = ov.cfg;
+            if (ov.denoisingStrength > 0) entity.denoisingStrength = ov.denoisingStrength;
 
             let result = await m.request({
                 method: "POST",
