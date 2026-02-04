@@ -1485,25 +1485,50 @@
         m.redraw();
     }
 
+    // Clear all style-specific fields so random template values don't leak through
+    function clearStyleFields(entity) {
+        entity.artStyle = null;
+        entity.stillCamera = null; entity.film = null; entity.lens = null;
+        entity.colorProcess = null; entity.photographer = null;
+        entity.movieCamera = null; entity.movieFilm = null; entity.director = null;
+        entity.selfiePhone = null; entity.selfieAngle = null; entity.selfieLighting = null;
+        entity.animeStudio = null; entity.animeEra = null;
+        entity.portraitLighting = null; entity.portraitBackdrop = null;
+        entity.comicPublisher = null; entity.comicEra = null; entity.comicColoring = null;
+        entity.digitalMedium = null; entity.digitalSoftware = null; entity.digitalArtist = null;
+        entity.fashionMagazine = null; entity.fashionDecade = null;
+        entity.vintageDecade = null; entity.vintageProcessing = null; entity.vintageCamera = null;
+        entity.customPrompt = null; entity.photoStyle = null;
+    }
+
     // Build a SD config entity for a card, merging theme per-type overrides
     async function buildSdEntity(card, theme) {
         let template = await getSdConfigTemplate();
         if (!template) throw new Error("No SD config template available");
         let entity = Object.assign({}, template);
 
+        // Clear all style-specific fields from the random template
+        clearStyleFields(entity);
+
         // Apply theme sdConfig defaults, then type-specific overrides
-        let artCfg = (theme || activeTheme).artStyle && (theme || activeTheme).artStyle.sdConfig;
+        let t = theme || activeTheme;
+        let artCfg = t.artStyle && t.artStyle.sdConfig;
+        let suffix = (t.artStyle && t.artStyle.promptSuffix) || "high fantasy, vibrant colors, detailed illustration";
         if (artCfg) {
             if (artCfg["default"]) Object.assign(entity, artCfg["default"]);
             if (artCfg[card.type])  Object.assign(entity, artCfg[card.type]);
         } else {
-            // Fallback when theme has no sdConfig
-            entity.style = "art";
             entity.steps = 30;
             entity.cfg = 7;
             entity.width = card.type === "character" ? 768 : 512;
             entity.height = card.type === "character" ? 1024 : 512;
         }
+
+        // Force style to "art" and set artStyle (SDUtil reads this for prompt composition)
+        entity.style = "art";
+        entity.artStyle = suffix;
+        entity.bodyStyle = "full body";
+        entity.imageSetting = "random";
 
         entity.description = buildCardPrompt(card, theme);
         entity.seed = -1;
@@ -1514,7 +1539,11 @@
             if (ov.model) entity.model = ov.model;
             if (ov.refinerModel) entity.refinerModel = ov.refinerModel;
             if (ov.cfg > 0) entity.cfg = ov.cfg;
-            if (ov.style) entity.style = ov.style;
+            if (ov.style) {
+                entity.style = ov.style;
+                // If user changes style away from art, clear artStyle
+                if (ov.style !== "art") entity.artStyle = null;
+            }
             if (ov.denoisingStrength > 0) entity.denoisingStrength = ov.denoisingStrength;
             if (ov.promptPrefix) {
                 entity.description = ov.promptPrefix + ", " + entity.description;
@@ -1523,25 +1552,25 @@
         applySdOv(sdOverrides._default);
         applySdOv(sdOverrides[card.type]);
 
-        // Attach background reference image if available
-        if (backgroundImageId && card.type !== "character") {
+        // Attach background reference image if available (all card types including character)
+        if (backgroundImageId) {
             entity.referenceImageId = backgroundImageId;
-            // Set denoisingStrength for img2img — override template value
             if (!entity.denoisingStrength || entity.denoisingStrength >= 1.0) {
-                entity.denoisingStrength = 0.75;
+                entity.denoisingStrength = 0.7;
             }
         }
 
-        // Ensure cfg has a sane default (SDUtil requires it)
+        // Ensure cfg has a sane default
         if (!entity.cfg || entity.cfg <= 0) entity.cfg = 7;
-        // Ensure denoisingStrength is set even without background ref
         if (entity.denoisingStrength == null || entity.denoisingStrength === undefined) {
             entity.denoisingStrength = 0.75;
         }
 
         console.log("[CardGame v2] buildSdEntity:", card.type, card.name,
-            "style:", entity.style, "cfg:", entity.cfg, "denoise:", entity.denoisingStrength,
-            "model:", entity.model, "ref:", entity.referenceImageId || "none");
+            "style:", entity.style, "artStyle:", entity.artStyle,
+            "cfg:", entity.cfg, "denoise:", entity.denoisingStrength,
+            "model:", entity.model, "ref:", entity.referenceImageId || "none",
+            "w:", entity.width, "h:", entity.height);
 
         return entity;
     }
@@ -1619,34 +1648,61 @@
         let prompt = side === "front"
             ? "ornate card face design, decorative parchment border, golden filigree frame, card game template, " + suffix
             : "ornate card back design, intricate repeating pattern, card game template, " + suffix;
-        let sdEntity = {
-            description: prompt,
-            style: "art",
-            artStyle: suffix,
-            width: 512, height: 768,
-            steps: 30, cfg: 7, hires: true,
-            imageName: "card-" + side + "-" + (theme.themeId || "default") + ".png",
-            groupPath: "~/CardGame/Art/" + (theme.themeId || "default")
-        };
-        let ov = sdOverrides._default || {};
-        if (ov.model) sdEntity.model = ov.model;
-        if (ov.refinerModel) sdEntity.refinerModel = ov.refinerModel;
-        if (ov.cfg > 0) sdEntity.cfg = ov.cfg;
-        if (ov.denoisingStrength > 0) sdEntity.denoisingStrength = ov.denoisingStrength;
-        if (backgroundImageId) {
-            sdEntity.referenceImageId = backgroundImageId;
-            if (!sdEntity.denoisingStrength || sdEntity.denoisingStrength >= 1.0) sdEntity.denoisingStrength = 0.7;
-        }
+
         backgroundGenerating = true;
         m.redraw();
         try {
-            let dir = await page.makePath("auth.group", "DATA", sdEntity.groupPath);
+            let template = await getSdConfigTemplate();
+            if (!template) throw new Error("No SD config template available");
+
+            let sdEntity = Object.assign({}, template);
+            clearStyleFields(sdEntity);
+            sdEntity.description = prompt;
+            sdEntity.style = "art";
+            sdEntity.artStyle = suffix;
+            sdEntity.bodyStyle = "full body";
+            sdEntity.imageSetting = "random";
+            sdEntity.width = 512;
+            sdEntity.height = 768;
+            sdEntity.steps = 30;
+            sdEntity.cfg = 7;
+            sdEntity.hires = true;
+            sdEntity.seed = -1;
+            sdEntity.imageName = "card-" + side + "-" + (theme.themeId || "default") + "-" + Date.now() + ".png";
+
+            let artPath = "~/CardGame/Art/" + (theme.themeId || "default");
+            let dir = await page.makePath("auth.group", "DATA", artPath);
+            sdEntity.groupPath = dir.path;
+
+            let ov = sdOverrides._default || {};
+            if (ov.model) sdEntity.model = ov.model;
+            if (ov.refinerModel) sdEntity.refinerModel = ov.refinerModel;
+            if (ov.cfg > 0) sdEntity.cfg = ov.cfg;
+            if (ov.denoisingStrength > 0) sdEntity.denoisingStrength = ov.denoisingStrength;
+            if (backgroundImageId) {
+                sdEntity.referenceImageId = backgroundImageId;
+                if (!sdEntity.denoisingStrength || sdEntity.denoisingStrength >= 1.0) sdEntity.denoisingStrength = 0.7;
+            }
+
+            console.log("[CardGame v2] generateTemplateArt:", side, sdEntity);
+
             let result = await m.request({
                 method: "POST",
                 url: g_application_path + "/rest/olio/generateArt",
                 body: sdEntity,
-                withCredentials: true
+                withCredentials: true,
+                extract: function(xhr) {
+                    let body = null;
+                    try { body = JSON.parse(xhr.responseText); } catch(e) {}
+                    if (xhr.status !== 200) {
+                        throw new Error((body && body.error) || "HTTP " + xhr.status);
+                    }
+                    return body;
+                }
             });
+
+            if (!result || !result.objectId) throw new Error("Template art returned no result");
+
             let gp = result.groupPath || dir.path;
             let rname = result.name || sdEntity.imageName;
             let thumbUrl = g_application_path + "/thumbnail/" +
@@ -1667,7 +1723,7 @@
             page.toast("success", "Card " + side + " art generated");
         } catch (e) {
             console.error("[CardGame v2] Template art failed:", e);
-            page.toast("error", "Card " + side + " art generation failed");
+            page.toast("error", "Card " + side + " art failed: " + (e.message || "Unknown error"));
         }
         backgroundGenerating = false;
         m.redraw();
@@ -2210,7 +2266,7 @@
                                         title: "Open source object",
                                         onclick(e) {
                                             e.stopPropagation();
-                                            window.open("#/object/olio.charPerson/" + card.sourceId, "_blank");
+                                            window.open("#/view/olio.charPerson/" + card.sourceId, "_blank");
                                         }
                                     }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "open_in_new")) : null,
                                     // Art object link (non-character cards with generated art)
@@ -2219,7 +2275,7 @@
                                         title: "Open generated art object",
                                         onclick(e) {
                                             e.stopPropagation();
-                                            window.open("#/object/data.data/" + card.artObjectId, "_blank");
+                                            window.open("#/view/data.data/" + card.artObjectId, "_blank");
                                         }
                                     }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "open_in_new")) : null
                                 ]) : null
