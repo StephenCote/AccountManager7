@@ -1755,60 +1755,21 @@
         m.redraw();
 
         try {
-            let char = await fetchCharPerson(card.sourceId);
+            // Load full character with all nested data (store, apparel, wearables)
+            am7client.clearCache("olio.charPerson");
+            let char = await am7client.getFull("olio.charPerson", card.sourceId);
             if (!char) throw new Error("Could not load character");
 
-            // Find active (inuse) apparel from the store via members API
-            let storeRef = char.store;
-            if (!storeRef) throw new Error("Character has no store");
-            let storeObjId = storeRef.objectId || storeRef;
-
-            am7client.clearCache("olio.store");
-            // Load the full store object to ensure membership queries work
-            let sto = await page.searchFirst("olio.store", undefined, undefined, storeObjId);
-            if (!sto) {
-                // Fallback: try getFull
-                sto = await am7client.getFull("olio.store", storeObjId);
-            }
-            if (!sto || !sto.objectId) throw new Error("Could not load store");
-            storeObjId = sto.objectId;
-
-            let storeApparelList = await new Promise(res => {
-                am7client.members("olio.store", storeObjId, "olio.apparel", 0, 50, res);
-            });
-            if (!storeApparelList || !storeApparelList.length) {
+            // Get apparel from the full store object
+            if (!char.store || !char.store.apparel || !char.store.apparel.length) {
                 throw new Error("No apparel found in store");
             }
 
-            // Load full apparel details for all store apparel to find the active one
-            am7client.clearCache("olio.apparel");
-            let aq = am7view.viewQuery("olio.apparel");
-            aq.range(0, 50);
-            let allOids = storeApparelList.map(a => a.objectId).join(",");
-            let oidFld = aq.field("objectId", allOids);
-            oidFld.comparator = "in";
-            let aqr = await page.search(aq);
-            if (!aqr || !aqr.results || !aqr.results.length) {
-                throw new Error("Could not load apparel details");
-            }
-            let activeApparel = aqr.results.find(a => a.inuse) || aqr.results[0];
-            let app = activeApparel;
-            if (!app.wearables || !app.wearables.length) {
+            let activeApparel = char.store.apparel.find(a => a.inuse) || char.store.apparel[0];
+            if (!activeApparel.wearables || !activeApparel.wearables.length) {
                 throw new Error("No wearables found in apparel");
             }
-
-            // Load full wearable details
-            let wq = am7view.viewQuery("olio.wearable");
-            wq.range(0, 20);
-            let woids = app.wearables.map(w => w.objectId).join(",");
-            wq.field("groupId", app.wearables[0].groupId);
-            let wfld = wq.field("objectId", woids);
-            wfld.comparator = "in";
-            let wqr = await page.search(wq);
-            if (!wqr || !wqr.results || !wqr.results.length) {
-                throw new Error("Could not load wearable details");
-            }
-            let wears = wqr.results;
+            let wears = activeApparel.wearables;
 
             // Get sorted unique wear levels
             let lvls = [...new Set(wears.sort((a, b) => {
@@ -1827,23 +1788,51 @@
                 dressedDown = await am7olio.dressApparel(activeApparel, false);
             }
 
+            // Update narrative to reflect fully undressed state
+            am7client.clearCache("olio.charPerson");
+            await m.request({ method: 'GET', url: am7client.base() + "/olio/olio.charPerson/" + card.sourceId + "/narrate", withCredentials: true });
+
             let images = [];
-            let totalImages = lvls.length;
+            let totalImages = lvls.length + 1; // +1 for undressed
             let baseSeed = -1;
 
             // Build base SD entity for character reimage
             let sdBase = await buildSdEntity(card, activeTheme);
 
-            // Generate image at each wear level
+            // Generate first image fully undressed (NONE level)
+            sequenceProgress = "Generating image 1 of " + totalImages + " (NONE)...";
+            m.redraw();
+
+            let sdEntity = Object.assign({}, sdBase);
+            sdEntity.seed = baseSeed;
+
+            let x = await m.request({
+                method: "POST",
+                url: g_application_path + "/rest/olio/olio.charPerson/" + card.sourceId + "/reimage",
+                body: sdEntity,
+                withCredentials: true
+            });
+
+            if (x) {
+                let seedAttr = (x.attributes || []).filter(a => a.name == "seed");
+                if (seedAttr.length) baseSeed = seedAttr[0].value;
+                await am7client.patchAttribute(x, "wearLevel", "NONE/0");
+                images.push(x);
+            }
+
+            // Generate image at each wear level (dressing up progressively)
             for (let i = 0; i < lvls.length; i++) {
-                // Dress up one level
                 await am7olio.dressApparel(activeApparel, true);
 
-                sequenceProgress = "Generating image " + (i + 1) + " of " + totalImages + " (" + lvls[i] + ")...";
+                // Update narrative so reimage reflects the new clothing state
+                am7client.clearCache("olio.charPerson");
+                await m.request({ method: 'GET', url: am7client.base() + "/olio/olio.charPerson/" + card.sourceId + "/narrate", withCredentials: true });
+
+                sequenceProgress = "Generating image " + (images.length + 1) + " of " + totalImages + " (" + lvls[i] + ")...";
                 m.redraw();
 
-                let useSeed = (images.length === 0) ? baseSeed : (parseInt(baseSeed) + images.length);
-                let sdEntity = Object.assign({}, sdBase);
+                let useSeed = (parseInt(baseSeed) + images.length);
+                sdEntity = Object.assign({}, sdBase);
                 sdEntity.seed = useSeed;
 
                 let x = await m.request({
@@ -1856,12 +1845,6 @@
                 if (!x) {
                     page.toast("error", "Failed to create image at level " + lvls[i]);
                     break;
-                }
-
-                // Extract seed from first image if random
-                if (images.length === 0) {
-                    let seedAttr = (x.attributes || []).filter(a => a.name == "seed");
-                    if (seedAttr.length) baseSeed = seedAttr[0].value;
                 }
 
                 // Tag image with wear level
@@ -2478,7 +2461,13 @@
         for (let card of charCards) {
             try {
                 page.toast("info", "Outfitting " + card.name + "...", -1);
-                let char = await fetchCharPerson(card.sourceId);
+
+                // Load full character with all nested store/apparel/wearable data
+                am7client.clearCache("olio.charPerson");
+                am7client.clearCache("olio.apparel");
+                am7client.clearCache("olio.wearable");
+                am7client.clearCache("olio.store");
+                let char = await am7client.getFull("olio.charPerson", card.sourceId);
                 if (!char) {
                     console.warn("[CardGame v2] Could not fetch char:", card.sourceId);
                     continue;
@@ -2501,47 +2490,30 @@
                     continue;
                 }
 
-                // 1. Load store to get its objectId (store IS a directory container)
                 let storeObjId = char.store ? char.store.objectId : null;
-                let sto = storeObjId ? await page.searchFirst("olio.store", undefined, undefined, storeObjId) : null;
-                if (!sto) {
+                if (!storeObjId) {
                     console.warn("[CardGame v2] No store for char:", card.name);
                     continue;
                 }
 
-                // 2. Deactivate current apparel — use members API for full list
-                am7client.clearCache("olio.store");
-                let storeApparelList = await new Promise(res => {
-                    am7client.members("olio.store", storeObjId, "olio.apparel", 0, 50, res);
-                });
-                if (storeApparelList && storeApparelList.length) {
-                    for (let apRef of storeApparelList) {
-                        am7client.clearCache("olio.apparel");
-                        let aq = am7view.viewQuery("olio.apparel");
-                        aq.field("objectId", apRef.objectId);
-                        let aqr = await page.search(aq);
-                        if (aqr && aqr.results && aqr.results.length) {
-                            let fullAp = aqr.results[0];
-                            if (fullAp.inuse) {
-                                if (fullAp.wearables && fullAp.wearables.length) {
-                                    let wq = am7view.viewQuery("olio.wearable");
-                                    wq.range(0, 20);
-                                    let woids = fullAp.wearables.map(w => w.objectId).join(",");
-                                    wq.field("groupId", fullAp.wearables[0].groupId);
-                                    let wfld = wq.field("objectId", woids);
-                                    wfld.comparator = "in";
-                                    let wqr = await page.search(wq);
-                                    if (wqr && wqr.results) {
-                                        let patches = wqr.results
-                                            .filter(w => w.inuse)
-                                            .map(w => page.patchObject({ schema: "olio.wearable", id: w.id, inuse: false }));
-                                        await Promise.all(patches);
-                                    }
-                                }
-                                await page.patchObject({ schema: "olio.apparel", id: fullAp.id, inuse: false });
-                            }
-                        }
+                // 2. Deactivate ALL current apparel from the full store data
+                let existingApparel = (char.store.apparel || []);
+                for (let ap of existingApparel) {
+                    // Deactivate wearables first
+                    if (ap.wearables && ap.wearables.length) {
+                        let wPatches = ap.wearables.filter(w => w.inuse).map(w =>
+                            page.patchObject({ schema: "olio.wearable", id: w.id, inuse: false })
+                        );
+                        if (wPatches.length) await Promise.all(wPatches);
                     }
+                    // Deactivate apparel
+                    if (ap.inuse) {
+                        await page.patchObject({ schema: "olio.apparel", id: ap.id, inuse: false });
+                    }
+                    // Remove old apparel from store membership so it won't interfere
+                    await new Promise(res => {
+                        am7client.member("olio.store", storeObjId, "apparel", "olio.apparel", ap.objectId, false, res);
+                    });
                 }
 
                 // 2b. Clear existing items from store
@@ -2620,11 +2592,15 @@
                 await Promise.all(inusePatches);
 
                 // 8. Clear caches so subsequent reads reflect new state
-                await am7client.clearCache("olio.wearable");
-                await am7client.clearCache("olio.apparel");
-                await am7client.clearCache("olio.store");
+                am7client.clearCache("olio.wearable");
+                am7client.clearCache("olio.apparel");
+                am7client.clearCache("olio.store");
+                am7client.clearCache("olio.charPerson");
 
-                // 9. Refresh character card data
+                // 9. Update narrative to reflect new outfit for imaging
+                await m.request({ method: 'GET', url: am7client.base() + "/olio/olio.charPerson/" + card.sourceId + "/narrate", withCredentials: true });
+
+                // 10. Refresh character card data
                 await refreshCharacterCard(card);
                 processed++;
                 console.log("[CardGame v2] Applied " + cat + " outfit to " + card.name);

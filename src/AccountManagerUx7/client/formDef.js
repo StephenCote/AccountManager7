@@ -5308,4 +5308,32 @@
         narrate
     };
     am7model.forms = forms;
+
+    // Dynamically update SD model field limits from the server
+    if (typeof am7sd !== "undefined" && am7sd.fetchModels) {
+        am7sd.fetchModels().then(function(models) {
+            if (models && models.length > 0) {
+                let mf = am7model.getModelField("olio.sd.config", "model");
+                if (mf) mf.limit = models;
+                let rf = am7model.getModelField("olio.sd.config", "refinerModel");
+                if (rf) rf.limit = models;
+                if (forms.sdConfig && forms.sdConfig.fields) {
+                    if (forms.sdConfig.fields.model && forms.sdConfig.fields.model.field) {
+                        forms.sdConfig.fields.model.field.limit = models;
+                    }
+                    if (forms.sdConfig.fields.refinerModel && forms.sdConfig.fields.refinerModel.field) {
+                        forms.sdConfig.fields.refinerModel.field.limit = models;
+                    }
+                }
+                if (forms.sdConfigOverrides && forms.sdConfigOverrides.fields) {
+                    if (forms.sdConfigOverrides.fields.model && forms.sdConfigOverrides.fields.model.field) {
+                        forms.sdConfigOverrides.fields.model.field.limit = models;
+                    }
+                    if (forms.sdConfigOverrides.fields.refinerModel && forms.sdConfigOverrides.fields.refinerModel.field) {
+                        forms.sdConfigOverrides.fields.refinerModel.field.limit = models;
+                    }
+                }
+            }
+        });
+    }
 }());

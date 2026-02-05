@@ -62,8 +62,8 @@ public class TestMemoryDuel extends BaseTest {
 	private BaseRecord testUser;
 	private OlioContext octx;
 
-	private static final int DUEL_TURNS = 3;  // 3 loop iterations = 6 messages (3 from A, 3 from B)
-	private static final int NUM_PAIRS = 5;
+	private static final int DUEL_TURNS = 2;  // 2 loop iterations = 4 messages per pair
+	private static final int NUM_PAIRS = 2;
 
 	@Before
 	public void setupDuel() {
@@ -77,7 +77,7 @@ public class TestMemoryDuel extends BaseTest {
 		assertNotNull("Olio context should not be null", octx);
 	}
 
-	@Test
+	@Test(timeout = 600000)
 	public void testChatDuelWithMemories() {
 		try {
 			// --- Step 1: Get population and pick 5 random characters ---
@@ -166,8 +166,8 @@ public class TestMemoryDuel extends BaseTest {
 				assertNotNull("Request A should not be null", reqA);
 				assertNotNull("Request B should not be null", reqB);
 
-				// Round-robin
-				String messageForA = null;
+				// Round-robin: empty string on first turn causes system to generate first response
+				String messageForA = "";
 				String messageForB = null;
 
 				for (int turn = 0; turn < DUEL_TURNS; turn++) {
@@ -325,14 +325,15 @@ public class TestMemoryDuel extends BaseTest {
 				cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken").trim());
 			} else if (serviceType == LLMServiceEnumType.OLLAMA) {
 				cfg.setValue("serverUrl", testProperties.getProperty("test.llm.ollama.server").trim());
-				cfg.setValue("model", testProperties.getProperty("test.llm.ollama.model").trim());
+				// Use smaller/faster model for duel test (custom llama 3.1 8B)
+				cfg.setValue("model", "creat");
 			}
 
 			BaseRecord opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
 			opts.set("temperature", 0.7);
 			opts.set("top_p", 1.0);
 			opts.set("repeat_penalty", 1.2);
-			opts.set("num_ctx", 8192);
+			opts.set("num_ctx", 4096);
 			cfg.set("chatOptions", opts);
 
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);

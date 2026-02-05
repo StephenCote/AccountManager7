@@ -29,6 +29,7 @@ const SessionConfigEditor = {
         this.loadingSdDetails = false;
         this.fetchingRandomSd = false;
         this.randomSdExtras = null;  // style-specific fields from randomImageConfig
+        this.sdModelList = ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors','lustifySDXLNSFW_endgame.safetensors','ponyRealism_V22.safetensors','sdXL_v10VAEFix'];
 
         this._loadOptions();
     },
@@ -203,6 +204,14 @@ const SessionConfigEditor = {
                     if (!this.selectedImageGroups.find(g => g.objectId === grp.objectId)) {
                         this.selectedImageGroups.push({ id: grp.id, objectId: grp.objectId, name: grp.name });
                     }
+                }
+            }
+
+            // Load SD model list from server
+            if (typeof am7sd !== "undefined" && am7sd.fetchModels) {
+                let models = await am7sd.fetchModels();
+                if (models && models.length > 0) {
+                    this.sdModelList = models;
                 }
             }
 
@@ -1236,7 +1245,7 @@ const SessionConfigEditor = {
                                         onchange: (e) => this.config.imageGeneration.sdInline.model = e.target.value
                                     }, [
                                         m('option', { value: '' }, '-- Select Model --'),
-                                        ...['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors','lustifySDXLNSFW_endgame.safetensors','ponyRealism_V22.safetensors','sdXL_v10VAEFix'].map(v =>
+                                        ...this.sdModelList.map(v =>
                                             m('option', { value: v }, v)
                                         )
                                     ])
@@ -1248,7 +1257,7 @@ const SessionConfigEditor = {
                                         onchange: (e) => this.config.imageGeneration.sdInline.refinerModel = e.target.value
                                     }, [
                                         m('option', { value: '' }, '-- None --'),
-                                        ...['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors','lustifySDXLNSFW_endgame.safetensors','ponyRealism_V22.safetensors','sdXL_v10VAEFix'].map(v =>
+                                        ...this.sdModelList.map(v =>
                                             m('option', { value: v }, v)
                                         )
                                     ])

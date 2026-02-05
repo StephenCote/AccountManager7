@@ -106,6 +106,19 @@ public class OlioService {
 	}
 
 	@RolesAllowed({"user"})
+	@GET
+	@Path("/sdModels")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response listSDModels(@Context HttpServletRequest request, @Context HttpServletResponse response){
+		SDUtil sdu = new SDUtil(
+			SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")),
+			context.getInitParameter("sd.server")
+		);
+		java.util.List<String> models = sdu.listModels();
+		return Response.status(200).entity(JSONUtil.exportObject(models)).build();
+	}
+
+	@RolesAllowed({"user"})
 	@POST
 	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/reimage")
 	@Produces(MediaType.APPLICATION_JSON)

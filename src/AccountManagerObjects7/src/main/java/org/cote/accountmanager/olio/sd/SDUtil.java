@@ -31,6 +31,7 @@ import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Txt2Img;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Util;
 import org.cote.accountmanager.olio.sd.swarm.SWImageInfo;
 import org.cote.accountmanager.olio.sd.swarm.SWImageResponse;
+import org.cote.accountmanager.olio.sd.swarm.SWModelListResponse;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -144,6 +145,24 @@ public class SDUtil {
 		return ClientUtil.post(SWImageResponse.class, ClientUtil.getResource(autoserver + "/API/GenerateText2Image"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
 	}
 	
+	public List<String> listModels() {
+		List<String> models = new ArrayList<>();
+		try {
+			SWModelListResponse resp = ClientUtil.post(
+				SWModelListResponse.class,
+				ClientUtil.getResource(autoserver + "/API/ListModels"),
+				"{\"path\":\"\",\"depth\":2}",
+				MediaType.APPLICATION_JSON_TYPE
+			);
+			if (resp != null && resp.getFiles() != null) {
+				models.addAll(resp.getFiles());
+			}
+		} catch (Exception e) {
+			logger.warn("Could not list models from SD server: " + e.getMessage());
+		}
+		return models;
+	}
+
 	public int getSteps() {
 		return steps;
 	}

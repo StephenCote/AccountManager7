@@ -8,6 +8,8 @@
 (function () {
 
     let _templateCache = null;
+    let _modelListCache = null;
+    let _modelListPromise = null;
 
     // ── Style-specific field names ────────────────────────────────────
     const STYLE_FIELDS = [
@@ -272,10 +274,41 @@
         return entity;
     }
 
+    // ── fetchModels ────────────────────────────────────────────────────
+    // Fetch available SD model names from the server (cached).
+    // Returns array of model filename strings.
+    async function fetchModels(forceRefresh) {
+        if (_modelListCache && !forceRefresh) return _modelListCache;
+        if (_modelListPromise && !forceRefresh) return _modelListPromise;
+        _modelListPromise = (async () => {
+            try {
+                let models = await m.request({
+                    method: "GET",
+                    url: am7client.base() + "/olio/sdModels",
+                    withCredentials: true
+                });
+                if (Array.isArray(models) && models.length > 0) {
+                    _modelListCache = models;
+                }
+            } catch (e) {
+                console.warn("[am7sd] Could not fetch SD models:", e);
+            }
+            _modelListPromise = null;
+            return _modelListCache || [];
+        })();
+        return _modelListPromise;
+    }
+
+    function getModelList() {
+        return _modelListCache || [];
+    }
+
     // ── Public API ────────────────────────────────────────────────────
     if (typeof window !== "undefined") {
         window.am7sd = {
             fetchTemplate: fetchTemplate,
+            fetchModels: fetchModels,
+            getModelList: getModelList,
             loadConfig: loadConfig,
             saveConfig: saveConfig,
             applyConfig: applyConfig,
