@@ -17,12 +17,14 @@ import org.cote.accountmanager.agent.MemoryUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
@@ -35,6 +37,7 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -142,19 +145,16 @@ public class TestMemoryDuel extends BaseTest {
 				systemConvs.get(usrOid).add(convIdB);
 				userConvs.get(sysOid).add(convIdB);
 
-				// Create chatConfig A
+				// Create chatConfig A: sysChar as system, usrChar as user
 				BaseRecord cfgA = createDuelChatConfig(
 						"Duel " + pairIdx + " A " + UUID.randomUUID().toString().substring(0, 6),
 						sysChar, usrChar, setting, "system");
 				assertNotNull("ChatConfig A should not be null", cfgA);
 
-				// Create chatConfig B by copying A and swapping roles
-				BaseRecord cfgB = cfgA.copyRecord();
-				cfgB.setValue("systemCharacter", usrChar);
-				cfgB.setValue("userCharacter", sysChar);
-				cfgB.setValue("startMode", "user");
-				cfgB.setValue("useNLP", false);
-				cfgB.setValue("setting", setting);
+				// Create chatConfig B independently (avoid copyRecord StackOverflow on nested models)
+				BaseRecord cfgB = createDuelChatConfig(
+						"Duel " + pairIdx + " B " + UUID.randomUUID().toString().substring(0, 6),
+						usrChar, sysChar, setting, "user");
 
 				Chat chatA = new Chat(testUser, cfgA, promptConfig);
 				Chat chatB = new Chat(testUser, cfgB, promptConfig);
@@ -337,10 +337,18 @@ public class TestMemoryDuel extends BaseTest {
 
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 			if (cfg != null) {
-				MemoryReader memReader = new MemoryReader();
-				cfg = memReader.read(cfg);
+				// Re-read with controlled depth to avoid StackOverflow on deeply nested models
+				BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(
+						testUser, ModelNames.MODEL_GROUP, "~/Chat", "DATA",
+						testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+				Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG,
+						FieldNames.FIELD_NAME, name);
+				q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+				OlioUtil.planMost(q);
+				OlioUtil.limitSubplanFields(q.plan(), OlioModelNames.MODEL_CHAT_CONFIG, "event");
+				cfg = IOSystem.getActiveContext().getSearch().findRecord(q);
 			}
-		} catch (Exception e) {
+		} catch (StackOverflowError | Exception e) {
 			logger.error("Error creating chat config: " + e.getMessage());
 			return null;
 		}

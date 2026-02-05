@@ -49,10 +49,10 @@
     "apparel": { "min": 2, "max": 3, "rarity": "COMMON" },
     "weapons": { "min": 1, "max": 2, "rarity": "COMMON" },
     "consumables": [
-      { "name": "Ration", "count": 2 },
-      { "name": "Health Potion", "count": 1 },
-      { "name": "Bandage", "count": 1 },
-      { "name": "Torch", "count": 1 }
+      { "name": "Ration", "count": 2, "effect": "Restore 3 Energy" },
+      { "name": "Health Potion", "count": 1, "effect": "Restore 8 HP" },
+      { "name": "Bandage", "count": 1, "effect": "Restore 4 HP" },
+      { "name": "Torch", "count": 1, "effect": "+2 to Investigate rolls this round" }
     ],
     "skills": { "min": 1, "max": 2 },
     "magicEffects": { "min": 0, "max": 1, "condition": "MAG >= 10 OR INT >= 12" }
@@ -100,6 +100,18 @@
   "magicConfig": {
     "enabledSkillTypes": ["Imperial", "Undead", "Psionic"],
     "magicEffectPool": ["Fireball", "Ice Wall", "Mind Read", "Raise Thrall", "Healing Light", "Thunder Strike", "Shield of Faith", "Shadow Step"]
+  },
+
+  "cardNames": {
+    "meleeWeapon": { "name": "Short Sword", "damageType": "Slashing" },
+    "rangedWeapon": { "name": "Hunting Bow", "damageType": "Piercing" },
+    "bodyArmor": "Leather Armor",
+    "boots": "Worn Boots",
+    "strSkill": { "name": "Swordsmanship", "category": "Combat", "modifier": "+2 to Attack rolls with Slashing weapons" },
+    "agiSkill": { "name": "Quick Reflexes", "category": "Defense", "modifier": "+2 to Flee and initiative rolls" },
+    "defaultSkill": { "name": "Survival", "category": "Survival", "modifier": "+1 to Investigate and Rest rolls" },
+    "healMagic": { "name": "Healing Light", "effectType": "Restorative", "skillType": "Imperial", "effect": "Restore 6 HP to self or ally" },
+    "intMagic": { "name": "Mind Read", "effectType": "Discovery", "skillType": "Psionic", "effect": "View opponent's next planned action stack" }
   },
 
   "outfits": {

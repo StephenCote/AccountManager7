@@ -49,10 +49,10 @@
     "apparel": { "min": 2, "max": 3, "rarity": "COMMON" },
     "weapons": { "min": 1, "max": 2, "rarity": "COMMON" },
     "consumables": [
-      { "name": "Hardtack", "count": 2 },
-      { "name": "Bandage", "count": 2 },
-      { "name": "Torch", "count": 1 },
-      { "name": "Waterskin", "count": 1 }
+      { "name": "Hardtack", "count": 2, "effect": "Restore 3 Energy" },
+      { "name": "Bandage", "count": 2, "effect": "Restore 4 HP" },
+      { "name": "Torch", "count": 1, "effect": "+2 to Investigate rolls this round" },
+      { "name": "Waterskin", "count": 1, "effect": "Restore 2 Energy" }
     ],
     "skills": { "min": 1, "max": 2 },
     "magicEffects": { "min": 0, "max": 0 }
@@ -100,6 +100,18 @@
   "magicConfig": {
     "enabledSkillTypes": ["Imperial"],
     "magicEffectPool": ["Cauterize", "Ward of Iron", "Plague Touch", "Bloodletting", "Corpse Light"]
+  },
+
+  "cardNames": {
+    "meleeWeapon": { "name": "Broad Dagger", "damageType": "Slashing" },
+    "rangedWeapon": { "name": "Crossbow", "damageType": "Piercing" },
+    "bodyArmor": "Boiled Leather Cuirass",
+    "boots": "Iron-shod Boots",
+    "strSkill": { "name": "Blade Mastery", "category": "Combat", "modifier": "+2 to Attack rolls with Slashing weapons" },
+    "agiSkill": { "name": "Dark Instincts", "category": "Defense", "modifier": "+2 to Flee and initiative rolls" },
+    "defaultSkill": { "name": "Grim Endurance", "category": "Survival", "modifier": "+1 to Investigate and Rest rolls" },
+    "healMagic": { "name": "Cauterize", "effectType": "Restorative", "skillType": "Imperial", "effect": "Restore 6 HP to self or ally" },
+    "intMagic": { "name": "Witch Sight", "effectType": "Discovery", "skillType": "Imperial", "effect": "View opponent's next planned action stack" }
   },
 
   "outfits": {

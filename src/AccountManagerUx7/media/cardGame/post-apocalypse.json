@@ -49,11 +49,11 @@
     "apparel": { "min": 1, "max": 3, "rarity": "COMMON" },
     "weapons": { "min": 1, "max": 2, "rarity": "COMMON" },
     "consumables": [
-      { "name": "Canned Food", "count": 2 },
-      { "name": "Dirty Bandage", "count": 1 },
-      { "name": "Purified Water", "count": 1 },
-      { "name": "Scrap Metal", "count": 2 },
-      { "name": "Flare", "count": 1 }
+      { "name": "Canned Food", "count": 2, "effect": "Restore 3 Energy" },
+      { "name": "Dirty Bandage", "count": 1, "effect": "Restore 4 HP" },
+      { "name": "Purified Water", "count": 1, "effect": "Restore 2 Energy" },
+      { "name": "Scrap Metal", "count": 2, "effect": "Repair 2 durability on one item" },
+      { "name": "Flare", "count": 1, "effect": "+2 to Investigate rolls this round" }
     ],
     "skills": { "min": 1, "max": 2 },
     "magicEffects": { "min": 0, "max": 0 }
@@ -101,6 +101,18 @@
   "magicConfig": {
     "enabledSkillTypes": [],
     "magicEffectPool": ["Rad Burst", "Mutant Surge", "Toxin Cloud", "Adrenaline Rush"]
+  },
+
+  "cardNames": {
+    "meleeWeapon": { "name": "Machete", "damageType": "Slashing" },
+    "rangedWeapon": { "name": "Pipe Rifle", "damageType": "Piercing" },
+    "bodyArmor": "Scrap Plate Vest",
+    "boots": "Taped-up Boots",
+    "strSkill": { "name": "Brawler's Instinct", "category": "Combat", "modifier": "+2 to Attack rolls with melee weapons" },
+    "agiSkill": { "name": "Wasteland Reflexes", "category": "Defense", "modifier": "+2 to Flee and initiative rolls" },
+    "defaultSkill": { "name": "Scavenging", "category": "Survival", "modifier": "+1 to Investigate and Rest rolls" },
+    "healMagic": { "name": "Adrenaline Surge", "effectType": "Restorative", "skillType": "Imperial", "effect": "Restore 6 HP to self or ally" },
+    "intMagic": { "name": "Mutant Sense", "effectType": "Discovery", "skillType": "Psionic", "effect": "View opponent's next planned action stack" }
   },
 
   "outfits": {

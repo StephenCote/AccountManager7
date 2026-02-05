@@ -9,6 +9,7 @@
     margin: 0 auto;
     overflow-y: auto;
     flex: 1;
+    color: #333;
 }
 .cg2-toolbar {
     display: flex; gap: 8px; align-items: center;
@@ -16,7 +17,7 @@
 }
 .cg2-toolbar button {
     padding: 4px 12px; border-radius: 4px; border: 1px solid #ccc;
-    cursor: pointer; font-size: 13px; background: #fff;
+    cursor: pointer; font-size: 13px; background: #fff; color: #333;
 }
 .cg2-toolbar button.active {
     background: #333; color: #fff; border-color: #333;
@@ -643,66 +644,65 @@
 @keyframes cg2-spin { to { transform: rotate(360deg); } }
 .cg2-spin { animation: cg2-spin 1s linear infinite; }
 
-/* ── Dark mode ─────────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-    .cg2-card-front { background: #1e1e1e; }
-    .cg2-card-name { filter: brightness(1.3); text-shadow: 0 1px 4px rgba(0,0,0,0.5), 0 0 2px rgba(0,0,0,0.3); }
-    .cg2-divider { background: #444; }
-    .cg2-card-detail, .cg2-card-meta { color: #bbb; }
-    .cg2-stat-val { color: #eee; }
-    .cg2-need-track { background: #444; }
-    .cg2-slot { background: #2a2a2a; border-color: #555; color: #888; }
-    .cg2-slot-filled { background: #1b3a1b; border-color: #4a8; color: #8c8; }
-    .cg2-flavor { color: #777; }
-    .cg2-toolbar button { background: #2a2a2a; color: #ccc; border-color: #555; }
-    .cg2-toolbar button.active { background: #eee; color: #111; }
-    .cg2-btn { background: #2a2a2a; color: #ccc; border-color: #555; }
-    .cg2-btn:hover { background: #333; }
-    .cg2-btn-primary { background: #B8860B; color: #fff; border-color: #B8860B; }
-    .cg2-btn-danger { color: #ef5350; border-color: #ef5350; }
-    .cg2-deck-card { background: #1e1e1e; border-color: #444; }
-    .cg2-deck-theme-badge { background: #2a2500; color: #d4a40a; border-color: #5a4a10; }
-    .cg2-theme-card { border-color: #444; }
-    .cg2-theme-card:hover { background: #2a2500; border-color: #B8860B; }
-    .cg2-theme-selected { background: #2a2500; border-color: #B8860B; }
-    .cg2-char-card { border-color: #444; }
-    .cg2-char-card:hover { background: #2a2500; }
-    .cg2-char-selected { background: #2a2500; border-color: #B8860B; }
-    .cg2-review-stat { background: #2a2a2a; border-color: #444; color: #ccc; }
-    .cg2-empty-state { color: #666; }
-    .cg2-builder-nav { background: #1e1e1e; border-top-color: #444; }
-    .cg2-selected-chip { background: #2a2500; border-color: #B8860B; color: #ccc; }
-    .cg2-selected-chip:hover { background: #3a3200; }
-    .cg2-art-progress { background: #2a2a2a; border-color: #444; }
-    .cg2-art-progress-bar { background: #444; }
-    .cg2-art-progress-current { color: #aaa; }
-    .cg2-card-art-overlay { background: rgba(30,30,30,0.85); color: #aaa; }
-    .cg2-art-overlay-fail { background: rgba(50,20,20,0.9); }
-    .cg2-card-reimage-btn { background: rgba(30,30,30,0.9); border-color: #555; }
-    .cg2-card-action-btn { background: rgba(30,30,30,0.9); border-color: #555; color: #aaa; }
-    .cg2-bg-panel { background: #2a2500; border-color: #444; }
-    .cg2-bg-thumb { border-color: #555; }
-    .cg2-deck-name-label { color: #aaa; }
-    .cg2-deck-name-input { background: #2a2a2a; color: #eee; border-color: #555; }
-    .cg2-deck-name-input:focus { border-color: #B8860B; }
-    .cg2-char-source-badge { background: #1b3a1b; color: #8c8; border-color: #4a8; }
-    .cg2-sd-panel { background: #2a2500; border-color: #444; }
-    .cg2-sd-panel-body { border-top-color: #444; }
-    .cg2-sd-label { color: #aaa; }
-    .cg2-sd-select, .cg2-sd-input { background: #2a2a2a; color: #eee; border-color: #555; }
-    .cg2-sd-select:focus, .cg2-sd-input:focus { border-color: #B8860B; }
-    .cg2-sd-tab { color: #777; }
-    .cg2-sd-tab:hover { background: rgba(184,134,11,0.15); color: #ccc; }
-    .cg2-sd-tab-active { color: #eee; background: rgba(184,134,11,0.2); }
-    .cg2-char-back { background: #1e1e1e; }
-    .cg2-card-front-bg { background: linear-gradient(135deg, #2a2500 0%, #1e1a10 50%, #2a2500 100%); }
-    .cg2-card-editor { background: #1e1e1e; border-color: #444; }
-    .cg2-card-editor-header { border-bottom-color: #444; }
-    .cg2-card-editor-actions { border-top-color: #444; }
-    .cg2-edit-field label { color: #aaa; }
-    .cg2-edit-field input, .cg2-edit-field select { background: #2a2a2a; color: #eee; border-color: #555; }
-    .cg2-edit-field input:focus, .cg2-edit-field select:focus { border-color: #B8860B; }
-    .cg2-add-card-dropdown { background: #2a2a2a; border-color: #444; }
-    .cg2-add-card-option:hover { background: #3a3520; }
-    .cg2-card-edit-actions .cg2-card-action-btn { background: rgba(30,30,30,0.9); border-color: #555; color: #aaa; }
-}
+/* ── Dark mode (class-based, matches Tailwind darkMode: 'class') ── */
+.dark .cg2-container { color: #ccc; }
+.dark .cg2-card-front { background: #1e1e1e; }
+.dark .cg2-card-name { filter: brightness(1.3); text-shadow: 0 1px 4px rgba(0,0,0,0.5), 0 0 2px rgba(0,0,0,0.3); }
+.dark .cg2-divider { background: #444; }
+.dark .cg2-card-detail, .dark .cg2-card-meta { color: #bbb; }
+.dark .cg2-stat-val { color: #eee; }
+.dark .cg2-need-track { background: #444; }
+.dark .cg2-slot { background: #2a2a2a; border-color: #555; color: #888; }
+.dark .cg2-slot-filled { background: #1b3a1b; border-color: #4a8; color: #8c8; }
+.dark .cg2-flavor { color: #777; }
+.dark .cg2-toolbar button { background: #2a2a2a; color: #ccc; border-color: #555; }
+.dark .cg2-toolbar button.active { background: #eee; color: #111; }
+.dark .cg2-btn { background: #2a2a2a; color: #ccc; border-color: #555; }
+.dark .cg2-btn:hover { background: #333; }
+.dark .cg2-btn-primary { background: #B8860B; color: #fff; border-color: #B8860B; }
+.dark .cg2-btn-danger { color: #ef5350; border-color: #ef5350; }
+.dark .cg2-deck-card { background: #1e1e1e; border-color: #444; }
+.dark .cg2-deck-theme-badge { background: #2a2500; color: #d4a40a; border-color: #5a4a10; }
+.dark .cg2-theme-card { border-color: #444; }
+.dark .cg2-theme-card:hover { background: #2a2500; border-color: #B8860B; }
+.dark .cg2-theme-selected { background: #2a2500; border-color: #B8860B; }
+.dark .cg2-char-card { border-color: #444; }
+.dark .cg2-char-card:hover { background: #2a2500; }
+.dark .cg2-char-selected { background: #2a2500; border-color: #B8860B; }
+.dark .cg2-review-stat { background: #2a2a2a; border-color: #444; color: #ccc; }
+.dark .cg2-empty-state { color: #666; }
+.dark .cg2-builder-nav { background: #1e1e1e; border-top-color: #444; }
+.dark .cg2-selected-chip { background: #2a2500; border-color: #B8860B; color: #ccc; }
+.dark .cg2-selected-chip:hover { background: #3a3200; }
+.dark .cg2-art-progress { background: #2a2a2a; border-color: #444; }
+.dark .cg2-art-progress-bar { background: #444; }
+.dark .cg2-art-progress-current { color: #aaa; }
+.dark .cg2-card-art-overlay { background: rgba(30,30,30,0.85); color: #aaa; }
+.dark .cg2-art-overlay-fail { background: rgba(50,20,20,0.9); }
+.dark .cg2-card-reimage-btn { background: rgba(30,30,30,0.9); border-color: #555; }
+.dark .cg2-card-action-btn { background: rgba(30,30,30,0.9); border-color: #555; color: #aaa; }
+.dark .cg2-bg-panel { background: #2a2500; border-color: #444; }
+.dark .cg2-bg-thumb { border-color: #555; }
+.dark .cg2-deck-name-label { color: #aaa; }
+.dark .cg2-deck-name-input { background: #2a2a2a; color: #eee; border-color: #555; }
+.dark .cg2-deck-name-input:focus { border-color: #B8860B; }
+.dark .cg2-char-source-badge { background: #1b3a1b; color: #8c8; border-color: #4a8; }
+.dark .cg2-sd-panel { background: #2a2500; border-color: #444; }
+.dark .cg2-sd-panel-body { border-top-color: #444; }
+.dark .cg2-sd-label { color: #aaa; }
+.dark .cg2-sd-select, .dark .cg2-sd-input { background: #2a2a2a; color: #eee; border-color: #555; }
+.dark .cg2-sd-select:focus, .dark .cg2-sd-input:focus { border-color: #B8860B; }
+.dark .cg2-sd-tab { color: #777; }
+.dark .cg2-sd-tab:hover { background: rgba(184,134,11,0.15); color: #ccc; }
+.dark .cg2-sd-tab-active { color: #eee; background: rgba(184,134,11,0.2); }
+.dark .cg2-char-back { background: #1e1e1e; }
+.dark .cg2-card-front-bg { background: linear-gradient(135deg, #2a2500 0%, #1e1a10 50%, #2a2500 100%); }
+.dark .cg2-card-editor { background: #1e1e1e; border-color: #444; }
+.dark .cg2-card-editor-header { border-bottom-color: #444; }
+.dark .cg2-card-editor-actions { border-top-color: #444; }
+.dark .cg2-edit-field label { color: #aaa; }
+.dark .cg2-edit-field input, .dark .cg2-edit-field select { background: #2a2a2a; color: #eee; border-color: #555; }
+.dark .cg2-edit-field input:focus, .dark .cg2-edit-field select:focus { border-color: #B8860B; }
+.dark .cg2-add-card-dropdown { background: #2a2a2a; border-color: #444; }
+.dark .cg2-add-card-option:hover { background: #3a3520; }
+.dark .cg2-card-edit-actions .cg2-card-action-btn { background: rgba(30,30,30,0.9); border-color: #555; color: #aaa; }

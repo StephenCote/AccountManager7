@@ -49,10 +49,10 @@
     "apparel": { "min": 2, "max": 3, "rarity": "COMMON" },
     "weapons": { "min": 1, "max": 2, "rarity": "COMMON" },
     "consumables": [
-      { "name": "Ration Pack", "count": 2 },
-      { "name": "Medkit", "count": 1 },
-      { "name": "Stim Pack", "count": 1 },
-      { "name": "Flare", "count": 1 }
+      { "name": "Ration Pack", "count": 2, "effect": "Restore 3 Energy" },
+      { "name": "Medkit", "count": 1, "effect": "Restore 8 HP" },
+      { "name": "Stim Pack", "count": 1, "effect": "Restore 4 HP and +1 AP this round" },
+      { "name": "Flare", "count": 1, "effect": "+2 to Investigate rolls this round" }
     ],
     "skills": { "min": 1, "max": 2 },
     "magicEffects": { "min": 0, "max": 1, "condition": "MAG >= 10 OR INT >= 12" }
@@ -100,6 +100,18 @@
   "magicConfig": {
     "enabledSkillTypes": ["Psionic", "Imperial"],
     "magicEffectPool": ["Neural Shock", "Kinetic Barrier", "Mind Link", "Phase Shift", "Plasma Surge", "Gravity Well", "Nano Heal", "EMP Pulse"]
+  },
+
+  "cardNames": {
+    "meleeWeapon": { "name": "Vibroblade", "damageType": "Energy" },
+    "rangedWeapon": { "name": "Laser Carbine", "damageType": "Energy" },
+    "bodyArmor": "Composite Vest",
+    "boots": "Mag-lock Boots",
+    "strSkill": { "name": "CQC Training", "category": "Combat", "modifier": "+2 to Attack rolls with melee weapons" },
+    "agiSkill": { "name": "Neural Accelerator", "category": "Defense", "modifier": "+2 to Flee and initiative rolls" },
+    "defaultSkill": { "name": "Field Ops Protocol", "category": "Survival", "modifier": "+1 to Investigate and Rest rolls" },
+    "healMagic": { "name": "Nano Heal", "effectType": "Restorative", "skillType": "Psionic", "effect": "Restore 6 HP to self or ally" },
+    "intMagic": { "name": "Neural Scan", "effectType": "Discovery", "skillType": "Psionic", "effect": "View opponent's next planned action stack" }
   },
 
   "outfits": {

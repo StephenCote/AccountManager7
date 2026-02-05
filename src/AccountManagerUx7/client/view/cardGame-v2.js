@@ -719,6 +719,8 @@
     // ── Refresh a character card from its source object ──────────────
     async function refreshCharacterCard(card) {
         if (!card.sourceId) return false;
+        am7client.clearCache("olio.charPerson");
+        am7client.clearCache("data.data");
         let fresh = await fetchCharPerson(card.sourceId);
         if (!fresh) return false;
         let stats = mapStats(fresh.statistics);
@@ -759,6 +761,7 @@
     function assembleCharEquipment(char) {
         let stats = mapStats(char.statistics);
         Object.keys(stats).forEach(k => { stats[k] = clampStat(stats[k]); });
+        let cn = (activeTheme && activeTheme.cardNames) || {};
 
         let apparelCards = [];
         if (char.store && char.store.apparel) {
@@ -783,47 +786,54 @@
         }
         if (apparelCards.length === 0) {
             apparelCards.push(
-                { type: "apparel", name: "Leather Armor", slot: "Body", rarity: "COMMON", def: 2, hpBonus: 0, durability: 5, special: null },
-                { type: "apparel", name: "Worn Boots", slot: "Feet", rarity: "COMMON", def: 1, hpBonus: 0, durability: 4, special: null }
+                { type: "apparel", name: cn.bodyArmor || "Leather Armor", slot: "Body", rarity: "COMMON", def: 2, hpBonus: 0, durability: 5, special: null },
+                { type: "apparel", name: cn.boots || "Worn Boots", slot: "Feet", rarity: "COMMON", def: 1, hpBonus: 0, durability: 4, special: null }
             );
         }
 
+        let mw = cn.meleeWeapon || {};
+        let rw = cn.rangedWeapon || {};
         let weaponCard = {
-            type: "item", subtype: "weapon", name: "Short Sword",
+            type: "item", subtype: "weapon", name: mw.name || "Short Sword",
             slot: "Hand (1H)", rarity: "COMMON", atk: 3, range: "Melee",
-            damageType: "Slashing", requires: { STR: 6 }, special: null, durability: 8
+            damageType: mw.damageType || "Slashing", requires: { STR: 6 }, special: null, durability: 8
         };
         if (stats.AGI > stats.STR) {
             weaponCard = {
-                type: "item", subtype: "weapon", name: "Hunting Bow",
+                type: "item", subtype: "weapon", name: rw.name || "Hunting Bow",
                 slot: "Hand (2H)", rarity: "COMMON", atk: 3, range: "Ranged",
-                damageType: "Piercing", requires: { AGI: 6 }, special: null, durability: 8
+                damageType: rw.damageType || "Piercing", requires: { AGI: 6 }, special: null, durability: 8
             };
         }
 
+        let ss = cn.strSkill || {};
+        let as = cn.agiSkill || {};
+        let ds = cn.defaultSkill || {};
         let skillCards = [];
         if (stats.STR >= 10) {
-            skillCards.push({ type: "skill", name: "Swordsmanship", category: "Combat", modifier: "+2 to Attack rolls with Slashing weapons", requires: { STR: 10 }, tier: "COMMON" });
+            skillCards.push({ type: "skill", name: ss.name || "Swordsmanship", category: ss.category || "Combat", modifier: ss.modifier || "+2 to Attack rolls with Slashing weapons", requires: { STR: 10 }, tier: "COMMON" });
         }
         if (stats.AGI >= 10) {
-            skillCards.push({ type: "skill", name: "Quick Reflexes", category: "Defense", modifier: "+2 to Flee and initiative rolls", requires: { AGI: 10 }, tier: "COMMON" });
+            skillCards.push({ type: "skill", name: as.name || "Quick Reflexes", category: as.category || "Defense", modifier: as.modifier || "+2 to Flee and initiative rolls", requires: { AGI: 10 }, tier: "COMMON" });
         }
         if (skillCards.length === 0) {
-            skillCards.push({ type: "skill", name: "Survival", category: "Survival", modifier: "+1 to Investigate and Rest rolls", requires: {}, tier: "COMMON" });
+            skillCards.push({ type: "skill", name: ds.name || "Survival", category: ds.category || "Survival", modifier: ds.modifier || "+1 to Investigate and Rest rolls", requires: {}, tier: "COMMON" });
         }
 
+        let hm = cn.healMagic || {};
+        let im = cn.intMagic || {};
         let magicCards = [];
         if (stats.MAG >= 10) {
             magicCards.push({
-                type: "magic", name: "Healing Light", effectType: "Restorative", skillType: "Imperial",
-                requires: { MAG: 10 }, effect: "Restore 6 HP to self or ally",
-                stackWith: "Character + Action (Use Item) + Imperial skill", energyCost: 6, reusable: true
+                type: "magic", name: hm.name || "Healing Light", effectType: hm.effectType || "Restorative", skillType: hm.skillType || "Imperial",
+                requires: { MAG: 10 }, effect: hm.effect || "Restore 6 HP to self or ally",
+                stackWith: "Character + Action (Use Item) + " + (hm.skillType || "Imperial") + " skill", energyCost: 6, reusable: true
             });
         }
         if (stats.INT >= 12) {
             magicCards.push({
-                type: "magic", name: "Mind Read", effectType: "Discovery", skillType: "Psionic",
-                requires: { INT: 12 }, effect: "View opponent's next planned action stack",
+                type: "magic", name: im.name || "Mind Read", effectType: im.effectType || "Discovery", skillType: im.skillType || "Psionic",
+                requires: { INT: 12 }, effect: im.effect || "View opponent's next planned action stack",
                 stackWith: "Character + Action (Investigate)", energyCost: 4, reusable: true
             });
         }
@@ -856,13 +866,24 @@
         });
 
         // Shared deck cards (one set regardless of player count)
-        let consumables = [
-            { type: "item", subtype: "consumable", name: "Ration", rarity: "COMMON", effect: "Restore 3 Energy" },
-            { type: "item", subtype: "consumable", name: "Ration", rarity: "COMMON", effect: "Restore 3 Energy" },
-            { type: "item", subtype: "consumable", name: "Health Potion", rarity: "COMMON", effect: "Restore 8 HP" },
-            { type: "item", subtype: "consumable", name: "Bandage", rarity: "COMMON", effect: "Restore 4 HP" },
-            { type: "item", subtype: "consumable", name: "Torch", rarity: "COMMON", effect: "+2 to Investigate rolls this round" }
-        ];
+        let curTheme = theme || activeTheme;
+        let themeConsumables = (curTheme && curTheme.starterDeck && curTheme.starterDeck.consumables) || [];
+        let consumables = [];
+        if (themeConsumables.length > 0) {
+            themeConsumables.forEach(c => {
+                for (let i = 0; i < (c.count || 1); i++) {
+                    consumables.push({ type: "item", subtype: "consumable", name: c.name, rarity: "COMMON", effect: c.effect || "" });
+                }
+            });
+        } else {
+            consumables = [
+                { type: "item", subtype: "consumable", name: "Ration", rarity: "COMMON", effect: "Restore 3 Energy" },
+                { type: "item", subtype: "consumable", name: "Ration", rarity: "COMMON", effect: "Restore 3 Energy" },
+                { type: "item", subtype: "consumable", name: "Health Potion", rarity: "COMMON", effect: "Restore 8 HP" },
+                { type: "item", subtype: "consumable", name: "Bandage", rarity: "COMMON", effect: "Restore 4 HP" },
+                { type: "item", subtype: "consumable", name: "Torch", rarity: "COMMON", effect: "+2 to Investigate rolls this round" }
+            ];
+        }
         let actionCards = [
             { type: "action", name: "Attack", actionType: "Offensive", stackWith: "Character + Weapon (required) + Skill (optional)", roll: "1d20 + STR + ATK vs target DEF", onHit: "Deal weapon ATK + STR as damage", energyCost: 0 },
             { type: "action", name: "Flee", actionType: "Movement", stackWith: "Character only", roll: "1d20 + AGI vs encounter difficulty", onHit: "Escape the encounter", energyCost: 0 },
@@ -1738,12 +1759,22 @@
             if (!char) throw new Error("Could not load character");
 
             // Find active (inuse) apparel from the store via members API
-            let sto = char.store;
-            if (!sto) throw new Error("Character has no store");
+            let storeRef = char.store;
+            if (!storeRef) throw new Error("Character has no store");
+            let storeObjId = storeRef.objectId || storeRef;
 
             am7client.clearCache("olio.store");
+            // Load the full store object to ensure membership queries work
+            let sto = await page.searchFirst("olio.store", undefined, undefined, storeObjId);
+            if (!sto) {
+                // Fallback: try getFull
+                sto = await am7client.getFull("olio.store", storeObjId);
+            }
+            if (!sto || !sto.objectId) throw new Error("Could not load store");
+            storeObjId = sto.objectId;
+
             let storeApparelList = await new Promise(res => {
-                am7client.members("olio.store", sto.objectId, "olio.apparel", 0, 50, res);
+                am7client.members("olio.store", storeObjId, "olio.apparel", 0, 50, res);
             });
             if (!storeApparelList || !storeApparelList.length) {
                 throw new Error("No apparel found in store");
@@ -2513,7 +2544,7 @@
                     }
                 }
 
-                // 2b. Clear existing items from store (items are only for posing in card game)
+                // 2b. Clear existing items from store
                 let storeItemList = await new Promise(res => {
                     am7client.members("olio.store", storeObjId, "olio.item", 0, 50, res);
                 });
@@ -2521,6 +2552,18 @@
                     for (let itemRef of storeItemList) {
                         await new Promise(res => {
                             am7client.member("olio.store", storeObjId, "items", "olio.item", itemRef.objectId, false, res);
+                        });
+                    }
+                }
+
+                // 2c. Clear existing inventory entries from store
+                let storeInvList = await new Promise(res => {
+                    am7client.members("olio.store", storeObjId, "olio.inventoryEntry", 0, 50, res);
+                });
+                if (storeInvList && storeInvList.length) {
+                    for (let invRef of storeInvList) {
+                        await new Promise(res => {
+                            am7client.member("olio.store", storeObjId, "inventory", "olio.inventoryEntry", invRef.objectId, false, res);
                         });
                     }
                 }

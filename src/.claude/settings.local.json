@@ -21,7 +21,8 @@
       "Bash(findstr:*)",
       "Read(//c/Projects/GitHub/AccountManager7/**)",
       "Bash(find:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(curl:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"
