@@ -1752,6 +1752,7 @@
         if (!card || !card.sourceId || sequenceCardId) return;
         sequenceCardId = card.sourceId;
         sequenceProgress = "Loading character...";
+        page.toast("info", "Image Sequence: Loading character...", -1);
         m.redraw();
 
         try {
@@ -1782,6 +1783,7 @@
 
             // Dress down completely
             sequenceProgress = "Dressing down...";
+            page.toast("info", "Image Sequence: Dressing down...", -1);
             m.redraw();
             let dressedDown = true;
             while (dressedDown === true) {
@@ -1801,6 +1803,7 @@
 
             // Generate first image fully undressed (NONE level)
             sequenceProgress = "Generating image 1 of " + totalImages + " (NONE)...";
+            page.toast("info", "Image Sequence: Generating 1 of " + totalImages + " (NONE)...", -1);
             m.redraw();
 
             let sdEntity = Object.assign({}, sdBase);
@@ -1829,6 +1832,7 @@
                 await m.request({ method: 'GET', url: am7client.base() + "/olio/olio.charPerson/" + card.sourceId + "/narrate", withCredentials: true });
 
                 sequenceProgress = "Generating image " + (images.length + 1) + " of " + totalImages + " (" + lvls[i] + ")...";
+                page.toast("info", "Image Sequence: Generating " + (images.length + 1) + " of " + totalImages + " (" + lvls[i] + ")...", -1);
                 m.redraw();
 
                 let useSeed = (parseInt(baseSeed) + images.length);

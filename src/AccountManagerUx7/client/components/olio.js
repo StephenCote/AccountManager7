@@ -60,14 +60,20 @@
     }
 
     async function dressCharacter(inst, dressUp){
-        // Use getFull to get properly populated nested store/apparel with inuse flags
-        await am7client.clearCache("olio.charPerson");
-        let char = await am7client.getFull("olio.charPerson", inst.api.objectId());
-        if(!char || !char.store || !char.store.apparel || !char.store.apparel.length){
-            page.toast("error", "No apparel found in character store");
+        // Get store reference from character
+        let storeRef = inst.api.store();
+        if(!storeRef || !storeRef.objectId){
+            page.toast("error", "No store found for character");
             return;
         }
-        let appl = char.store.apparel;
+        // Use getFull on store to get properly populated apparel with inuse flags
+        await am7client.clearCache("olio.store");
+        let sto = await am7client.getFull("olio.store", storeRef.objectId);
+        if(!sto || !sto.apparel || !sto.apparel.length){
+            page.toast("error", "No apparel found in store");
+            return;
+        }
+        let appl = sto.apparel;
 
         let activeAp = appl.find(a => a.inuse) || appl[0];
         let bdress = await dressApparel(activeAp, dressUp);

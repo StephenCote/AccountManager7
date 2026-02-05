@@ -520,52 +520,39 @@
             let charType = character[am7model.jsonModelKey] || "olio.charPerson";
             let charName = character.name || (character.firstName + " " + character.lastName);
 
-            // Save current portrait so we can restore it after reimage
+            // Get character record for profile info
             let charRecord = await page.searchFirst(charType, undefined, undefined, character.objectId);
             let originalPortraitId = charRecord && charRecord.profile && charRecord.profile.portrait ? charRecord.profile.portrait.id : null;
             let profileId = charRecord && charRecord.profile ? charRecord.profile.id : null;
 
             // Dress character to target wear level
             let originalWearStates = [];
-            if (charRecord && charRecord.store) {
-                let sto = await page.searchFirst("olio.store", undefined, undefined, charRecord.store.objectId);
+            if (charRecord && charRecord.store && charRecord.store.objectId) {
+                // Use getFull on store to get apparel with proper inuse flags
+                await am7client.clearCache("olio.store");
+                let sto = await am7client.getFull("olio.store", charRecord.store.objectId);
                 if (sto && sto.apparel && sto.apparel.length) {
                     let activeAp = sto.apparel.find(a => a.inuse) || sto.apparel[0];
+                    // Use getFull on apparel to get wearables with proper inuse flags
                     await am7client.clearCache("olio.apparel");
-                    let aq = am7view.viewQuery("olio.apparel");
-                    aq.field("objectId", activeAp.objectId);
-                    let aqr = await page.search(aq);
-                    if (aqr && aqr.results && aqr.results.length) {
-                        am7model.updateListModel(aqr.results);
-                        let app = aqr.results[0];
-                        if (app.wearables && app.wearables.length) {
-                            let q = am7view.viewQuery("olio.wearable");
-                            q.range(0, 20);
-                            let oids = app.wearables.map(a => a.objectId).join(",");
-                            q.field("groupId", app.wearables[0].groupId);
-                            let fld = q.field("objectId", oids);
-                            fld.comparator = "in";
-                            let qr = await page.search(q);
-                            if (qr && qr.results && qr.results.length) {
-                                am7model.updateListModel(qr.results);
-                                let wears = qr.results;
-                                let targetIdx = am7model.enums.wearLevelEnumType.indexOf(targetLevel);
-                                let patches = [];
-                                wears.forEach(function(w) {
-                                    if (w.level) {
-                                        originalWearStates.push({id: w.id, inuse: w.inuse});
-                                        let lvl = am7model.enums.wearLevelEnumType.indexOf(w.level.toUpperCase());
-                                        let shouldWear = (targetLevel !== "NONE" && lvl <= targetIdx);
-                                        if (w.inuse !== shouldWear) {
-                                            patches.push({schema: 'olio.wearable', id: w.id, inuse: shouldWear});
-                                        }
-                                    }
-                                });
-                                if (patches.length) {
-                                    await am7client.clearCache();
-                                    await Promise.all(patches.map(function(p) { return page.patchObject(p); }));
+                    let app = await am7client.getFull("olio.apparel", activeAp.objectId);
+                    if (app && app.wearables && app.wearables.length) {
+                        let wears = app.wearables;
+                        let targetIdx = am7model.enums.wearLevelEnumType.indexOf(targetLevel);
+                        let patches = [];
+                        wears.forEach(function(w) {
+                            if (w.level) {
+                                originalWearStates.push({id: w.id, inuse: w.inuse});
+                                let lvl = am7model.enums.wearLevelEnumType.indexOf(w.level.toUpperCase());
+                                let shouldWear = (targetLevel !== "NONE" && lvl <= targetIdx);
+                                if (w.inuse !== shouldWear) {
+                                    patches.push({schema: 'olio.wearable', id: w.id, inuse: shouldWear});
                                 }
                             }
+                        });
+                        if (patches.length) {
+                            await am7client.clearCache();
+                            await Promise.all(patches.map(function(p) { return page.patchObject(p); }));
                         }
                     }
                 }
@@ -722,38 +709,25 @@
     }
 
     async function getCurrentWearLevel(inst){
-        // Get character's store and apparel
-        let sto = await page.searchFirst("olio.store", undefined, undefined, inst.api.store().objectId);
+        // Get store with getFull to get apparel with inuse flags
+        let storeRef = inst.api.store();
+        if(!storeRef || !storeRef.objectId){
+            return null;
+        }
+        await am7client.clearCache("olio.store");
+        let sto = await am7client.getFull("olio.store", storeRef.objectId);
         if(!sto || !sto.apparel || !sto.apparel.length){
             return null;
         }
         let activeAp = sto.apparel.find(a => a.inuse) || sto.apparel[0];
 
-        // Load the apparel and wearables
+        // Get full apparel to get wearables with inuse flags
         await am7client.clearCache("olio.apparel");
-        let aq = am7view.viewQuery("olio.apparel");
-        aq.field("objectId", activeAp.objectId);
-        let aqr = await page.search(aq);
-        let app;
-        if(aqr && aqr.results && aqr.results.length){
-            app = aqr.results[0];
-        }
+        let app = await am7client.getFull("olio.apparel", activeAp.objectId);
         if(!app || !app.wearables || !app.wearables.length){
             return null;
         }
-
-        // Load full wearable details
-        let q = am7view.viewQuery("olio.wearable");
-        q.range(0, 20);
-        let oids = app.wearables.map((a) => a.objectId).join(",");
-        q.field("groupId", app.wearables[0].groupId);
-        let fld = q.field("objectId", oids);
-        fld.comparator = "in";
-        let qr = await page.search(q);
-        if(!qr || !qr.results || !qr.results.length){
-            return null;
-        }
-        let wears = qr.results;
+        let wears = app.wearables;
 
         // Find the current max level that is in use
         let maxLevel = -1;
@@ -1041,42 +1015,29 @@
         };
         am7model.forms.sdConfig.fields.createApparelSequence.field.command = async function(){
             if(!isCharPerson) return;
-            // Get character's store and apparel
-            let sto = await page.searchFirst("olio.store", undefined, undefined, inst.api.store().objectId);
-            let appl = sto.apparel;
-            if(!appl || !appl.length){
-                page.toast("error", "No apparel found in store " + sto.name);
+            // Get store with getFull to get apparel with proper inuse flags
+            let storeRef = inst.api.store();
+            if(!storeRef || !storeRef.objectId){
+                page.toast("error", "No store found for character");
                 return;
             }
+            await am7client.clearCache("olio.store");
+            let sto = await am7client.getFull("olio.store", storeRef.objectId);
+            if(!sto || !sto.apparel || !sto.apparel.length){
+                page.toast("error", "No apparel found in store");
+                return;
+            }
+            let appl = sto.apparel;
             let activeAp = appl.find(a => a.inuse) || appl[0];
 
-            // Load the apparel and wearables
-            am7client.clearCache("olio.apparel");
-            let aq = am7view.viewQuery("olio.apparel");
-            aq.field("objectId", activeAp.objectId);
-            let aqr = await page.search(aq);
-            let app;
-            if(aqr && aqr.results && aqr.results.length){
-                app = aqr.results[0];
-            }
+            // Get full apparel to get wearables with proper inuse flags
+            await am7client.clearCache("olio.apparel");
+            let app = await am7client.getFull("olio.apparel", activeAp.objectId);
             if(!app || !app.wearables || !app.wearables.length){
                 page.toast("error", "No wearables found in apparel");
                 return;
             }
-
-            // Load full wearable details
-            let q = am7view.viewQuery("olio.wearable");
-            q.range(0, 20);
-            let oids = app.wearables.map((a) => a.objectId).join(",");
-            q.field("groupId", app.wearables[0].groupId);
-            let fld = q.field("objectId", oids);
-            fld.comparator = "in";
-            let qr = await page.search(q);
-            if(!qr || !qr.results || !qr.results.length){
-                page.toast("error", "No wearables found");
-                return;
-            }
-            let wears = qr.results;
+            let wears = app.wearables;
 
             // Get sorted unique wear levels present in wearables
             let lvls = [...new Set(wears.sort((a, b) => {
