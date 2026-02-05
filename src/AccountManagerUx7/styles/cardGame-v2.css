@@ -83,6 +83,24 @@
     height: 1px; background: #e0e0e0; margin: 4px 0;
 }
 
+/* ── Incomplete Card Indicator ─────────────────────── */
+.cg2-incomplete-badge {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 18px;
+    font-weight: 900;
+    color: #F9A825;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    z-index: 5;
+    cursor: help;
+}
+.cg2-card-compact .cg2-incomplete-badge {
+    font-size: 14px;
+    top: 2px;
+}
+
 /* ── Card Back ──────────────────────────────────────── */
 .cg2-card-back {
     display: flex; flex-direction: column;
@@ -762,6 +780,50 @@
     color: #ccc;
 }
 
+/* ── Header Placement Controls ────────────────────── */
+.cg2-header-placement {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    justify-content: center;
+}
+.cg2-header-turn {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 6px;
+    background: #f0f0f0;
+    color: #666;
+}
+.cg2-header-turn.cg2-your-turn {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+.dark .cg2-header-turn {
+    background: #333;
+    color: #aaa;
+}
+.dark .cg2-header-turn.cg2-your-turn {
+    background: #1b3a1b;
+    color: #8c8;
+}
+.cg2-header-ap {
+    font-size: 13px;
+    color: #B8860B;
+    font-weight: 600;
+}
+.cg2-header-ap strong {
+    font-weight: 800;
+}
+.cg2-btn-sm {
+    padding: 4px 10px !important;
+    font-size: 12px !important;
+}
+.cg2-btn-sm .material-symbols-outlined {
+    font-size: 14px !important;
+}
+
 /* ── Game Main Layout ──────────────────────────────── */
 .cg2-game-main {
     display: flex;
@@ -771,7 +833,7 @@
 
 /* ── Character Sidebars ────────────────────────────── */
 .cg2-game-sidebar {
-    width: 180px;
+    width: 190px;
     padding: 12px;
     background: rgba(255,255,255,0.7);
     border-right: 1px solid #e0d8c0;
@@ -789,6 +851,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    align-items: center;
 }
 .cg2-sidebar-label {
     font-size: 11px;
@@ -796,6 +859,15 @@
     text-transform: uppercase;
     color: #888;
     letter-spacing: 1px;
+    align-self: flex-start;
+}
+.cg2-sidebar-card-wrap {
+    transform: scale(0.85);
+    transform-origin: top center;
+    margin-bottom: -20px;
+}
+.cg2-sidebar-card-wrap .cg2-card {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 .cg2-sidebar-portrait {
     width: 80px;
@@ -848,7 +920,110 @@
 .dark .cg2-hand-count {
     color: #aaa;
 }
-/* ── Character Card Stack ─────────────────────────── */
+/* ── Fanned Card Stack ────────────────────────────── */
+.cg2-fanned-stack {
+    margin-top: 8px;
+    padding: 8px 4px;
+    width: 100%;
+}
+.cg2-stack-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    text-align: center;
+}
+.cg2-fanned-cards {
+    display: flex;
+    justify-content: center;
+    position: relative;
+    height: 100px;
+    perspective: 600px;
+}
+.cg2-fanned-card-wrap {
+    position: absolute;
+    left: 50%;
+    margin-left: -35px;
+    cursor: pointer;
+    transition: transform 0.3s ease, z-index 0s;
+    transform-style: preserve-3d;
+}
+.cg2-fanned-card-wrap:hover {
+    z-index: 100 !important;
+    transform: translateX(var(--fan-x, 0)) rotate(0deg) translateY(-10px) scale(1.1) !important;
+}
+.cg2-fanned-card-inner {
+    position: relative;
+    width: 70px;
+    height: 98px;
+    transition: transform 0.5s;
+    transform-style: preserve-3d;
+}
+.cg2-fanned-card-wrap.cg2-flipped .cg2-fanned-card-inner {
+    transform: rotateY(180deg);
+}
+.cg2-fanned-face {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.cg2-fanned-face .cg2-card {
+    width: 100% !important;
+    height: 100% !important;
+}
+.cg2-fanned-face .cg2-card.cg2-card-compact {
+    width: 100% !important;
+    height: 100% !important;
+}
+.cg2-fanned-back {
+    transform: rotateY(180deg);
+}
+.cg2-fanned-more {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    font-size: 11px;
+    background: #B8860B;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 700;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Empty stack placeholder */
+.cg2-fanned-empty .cg2-stack-label {
+    color: #aaa;
+}
+.cg2-stack-placeholder {
+    width: 70px;
+    height: 98px;
+    border: 2px dashed #ccc;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    background: rgba(0,0,0,0.02);
+}
+.dark .cg2-stack-placeholder {
+    border-color: #555;
+    background: rgba(255,255,255,0.02);
+}
+.cg2-stack-placeholder .material-symbols-outlined {
+    font-size: 24px;
+    color: #bbb;
+}
+.dark .cg2-stack-placeholder .material-symbols-outlined {
+    color: #666;
+}
+
+/* Legacy small stack icons (kept for reference) */
 .cg2-char-stack {
     margin-top: 8px;
     padding: 8px;
@@ -857,18 +1032,6 @@
 }
 .dark .cg2-char-stack {
     background: rgba(255,255,255,0.03);
-}
-.cg2-stack-label {
-    font-size: 10px;
-    font-weight: 600;
-    color: #888;
-    text-transform: uppercase;
-    margin-bottom: 6px;
-    text-align: center;
-}
-.cg2-stack-empty .cg2-stack-label {
-    color: #aaa;
-    font-style: italic;
 }
 .cg2-stack-cards {
     display: flex;
@@ -1033,6 +1196,197 @@
 .cg2-init-winner p {
     margin: 0;
     font-size: 12px;
+}
+
+/* ── Initiative Countdown ─────────────────────────── */
+.cg2-init-countdown {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 40px 0;
+}
+.cg2-countdown-number {
+    width: 120px;
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 72px;
+    font-weight: 900;
+    color: #B8860B;
+    background: linear-gradient(135deg, #FDF5E6 0%, #f5e6c8 100%);
+    border-radius: 50%;
+    border: 4px solid #B8860B;
+    box-shadow: 0 8px 32px rgba(184,134,11,0.3);
+    animation: cg2-countdown-pulse 1s ease-in-out infinite;
+}
+.dark .cg2-countdown-number {
+    background: linear-gradient(135deg, #2a2500 0%, #3a3010 100%);
+}
+@keyframes cg2-countdown-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+/* ── D20 Dice Animation ───────────────────────────── */
+.cg2-dice-container {
+    display: flex;
+    justify-content: center;
+    margin: 12px 0;
+    perspective: 300px;
+}
+.cg2-d20 {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #B8860B 0%, #8B6914 50%, #DAA520 100%);
+    border-radius: 12px;
+    position: relative;
+    box-shadow:
+        0 4px 8px rgba(0,0,0,0.3),
+        inset 0 2px 4px rgba(255,255,255,0.2),
+        inset 0 -2px 4px rgba(0,0,0,0.2);
+    transform-style: preserve-3d;
+}
+.cg2-d20::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 10px;
+    pointer-events: none;
+}
+.cg2-d20-face {
+    font-size: 28px;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+.cg2-d20-rolling {
+    animation: cg2-dice-roll 0.15s ease-in-out infinite;
+}
+@keyframes cg2-dice-roll {
+    0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+    25% { transform: rotateX(90deg) rotateY(45deg) rotateZ(15deg); }
+    50% { transform: rotateX(180deg) rotateY(90deg) rotateZ(-10deg); }
+    75% { transform: rotateX(270deg) rotateY(135deg) rotateZ(5deg); }
+    100% { transform: rotateX(360deg) rotateY(180deg) rotateZ(0deg); }
+}
+.cg2-d20-final {
+    animation: cg2-dice-land 0.5s ease-out forwards;
+}
+@keyframes cg2-dice-land {
+    0% { transform: scale(1.2) rotateZ(10deg); }
+    50% { transform: scale(0.9) rotateZ(-5deg); }
+    100% { transform: scale(1) rotateZ(0deg); }
+}
+.cg2-d20-winner {
+    box-shadow:
+        0 0 20px rgba(184,134,11,0.8),
+        0 4px 8px rgba(0,0,0,0.3),
+        inset 0 2px 4px rgba(255,255,255,0.2);
+    animation: cg2-dice-winner 1s ease-in-out infinite;
+}
+@keyframes cg2-dice-winner {
+    0%, 100% { box-shadow: 0 0 20px rgba(184,134,11,0.8), 0 4px 8px rgba(0,0,0,0.3); }
+    50% { box-shadow: 0 0 40px rgba(184,134,11,1), 0 4px 8px rgba(0,0,0,0.3); }
+}
+.cg2-roll-breakdown {
+    font-size: 13px;
+    color: #555;
+    margin-top: 8px;
+}
+.dark .cg2-roll-breakdown {
+    color: #aaa;
+}
+.cg2-roll-breakdown strong {
+    color: #B8860B;
+    font-size: 15px;
+}
+
+/* ── Initiative Cards (Flippable) ─────────────────── */
+.cg2-init-cards {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    margin: 20px 0;
+    perspective: 1000px;
+}
+.cg2-init-card-wrap {
+    width: 140px;
+    height: 196px;
+    cursor: pointer;
+    transform-style: preserve-3d;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.cg2-init-card-wrap.cg2-init-flipped {
+    transform: rotateY(180deg);
+}
+.cg2-init-card-wrap.cg2-init-winner-card {
+    filter: drop-shadow(0 0 12px rgba(184,134,11,0.6));
+}
+.cg2-init-card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+}
+.cg2-init-card-front,
+.cg2-init-card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+}
+.cg2-init-card-front .cg2-card {
+    width: 100% !important;
+    height: 100% !important;
+}
+.cg2-init-card-back {
+    transform: rotateY(180deg);
+    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+    border: 2px solid #B8860B;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cg2-init-back-content {
+    text-align: center;
+    padding: 12px;
+}
+.cg2-init-back-label {
+    font-size: 14px;
+    font-weight: 700;
+    color: #B8860B;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.cg2-init-winner-badge {
+    margin-top: 12px;
+    padding: 6px 12px;
+    background: linear-gradient(135deg, #B8860B 0%, #DAA520 100%);
+    border-radius: 16px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    animation: cg2-winner-glow 1s ease-in-out infinite alternate;
+}
+.cg2-init-winner-badge .material-symbols-outlined {
+    font-size: 14px;
+}
+@keyframes cg2-winner-glow {
+    from { box-shadow: 0 0 8px rgba(184,134,11,0.6); }
+    to { box-shadow: 0 0 20px rgba(218,165,32,0.9); }
 }
 
 /* ── Equip Phase ───────────────────────────────────── */
@@ -1325,17 +1679,23 @@
 }
 .cg2-hand-cards {
     display: flex;
-    gap: 12px;
+    gap: 16px;
     overflow-x: auto;
-    padding-bottom: 8px;
+    padding: 8px 4px 12px;
+    align-items: flex-end;
 }
 .cg2-hand-card-wrapper {
     cursor: grab;
-    transition: all 0.15s;
+    transition: all 0.2s;
     user-select: none;
+    flex-shrink: 0;
 }
 .cg2-hand-card-wrapper:hover {
-    transform: translateY(-4px);
+    transform: translateY(-12px) scale(1.05);
+    z-index: 10;
+}
+.cg2-hand-card-wrapper:hover .cg2-card {
+    box-shadow: 0 12px 24px rgba(0,0,0,0.3);
 }
 .cg2-hand-card-wrapper:active {
     cursor: grabbing;

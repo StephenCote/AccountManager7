@@ -510,18 +510,18 @@ Generated from the player's AM7 character data. Each player begins with:
 
 A communal deck drawn from **randomly** during the Draw Phase. Contains common-to-rare content — the everyday encounters, supplies, and dangers of the world. All draws are random (shuffled deck, top card).
 
-| Subtype | Count (2-player) | Rarity Range | Notes |
-|---------|-----------------|-------------|-------|
-| Threat encounters (animals/creatures) | 8 | ★–★★★ | Regular threats only (difficulty 4–10). Bosses are in the Vault. |
-| Hostile NPC encounters | 4 | ★–★★★ | Real Olio population characters drawn as hostile. Can be fought OR subdued via Talk. |
-| Event encounters | 10 | ★–★★ | Weather, terrain effects, time-of-day |
-| Discovery encounters | 10 | ★–★★ | Loot finds, resource caches |
-| Friendly NPC encounters | 8 | ★–★★★ | Real Olio population characters — trader, ally, quest-giver, etc. |
-| Item cards (loot) | 10 | ★–★★★ | Weapons, apparel, consumables — Common to Rare only |
-| Skill cards (learnable) | 5 | ★★–★★★ | Found through encounters |
-| Magic Effect cards | 2 | ★★★ | Rare, found through Discovery or NPC |
+| Subtype | 2P | 3P | 4P | Rarity Range | Notes |
+|---------|----|----|-----|-------------|-------|
+| Threat encounters (animals/creatures) | 8 | 12 | 16 | ★–★★★ | Regular threats only (difficulty 4–10). Bosses are in the Vault. |
+| Hostile NPC encounters | 4 | 6 | 8 | ★–★★★ | Real Olio population characters drawn as hostile. Can be fought OR subdued via Talk. |
+| Event encounters | 10 | 14 | 18 | ★–★★ | Weather, terrain effects, time-of-day |
+| Discovery encounters | 10 | 13 | 16 | ★–★★ | Loot finds, resource caches |
+| Friendly NPC encounters | 8 | 10 | 12 | ★–★★★ | Real Olio population characters — trader, ally, quest-giver, etc. |
+| Item cards (loot) | 10 | 14 | 18 | ★–★★★ | Weapons, apparel, consumables — Common to Rare only |
+| Skill cards (learnable) | 5 | 7 | 9 | ★★–★★★ | Found through encounters |
+| Magic Effect cards | 2 | 3 | 4 | ★★★ | Rare, found through Discovery or NPC |
 
-**Total encounter deck**: ~57 cards for 2 players. Add ~15 per additional player.
+**Total encounter deck**: 57 cards (2P) → 72 cards (3P) → 87 cards (4P). Formula: 57 + 15 per additional player.
 
 **Hostile NPC encounters:** Some NPCs are dealt into the threat portion of the encounter deck as hostile characters. When drawn, they behave like threats — they get AP, fill action bar positions, and attack. However, unlike animal threats, hostile NPCs can be **subdued through non-violence** using the Talk card:
 
@@ -540,24 +540,24 @@ The vault contains two categories of cards, shuffled together:
 
 **Boss Encounters (unique/hard animals & creatures):**
 
-| Subtype | Count (2-player) | Rarity | Notes |
-|---------|-----------------|--------|-------|
-| Boss threats | 3–4 | ★★★★–★★★★★ | Difficulty 12+, unique abilities, multi-round mechanics |
+| Subtype | 2P | 3P | 4P | Rarity | Notes |
+|---------|----|----|-----|--------|-------|
+| Boss threats | 4 | 5 | 6 | ★★★★–★★★★★ | Difficulty 12+, unique abilities, multi-round mechanics |
 
 These are the hardest creatures in the theme — dragons, liches, behemoths, AI core defenders. They have higher stats, unique behaviors (phasing, regeneration, multi-attack), and better loot attached. When drawn from the vault, they become **immediate encounter threats** — placed at the end of the current round's action bar just like a scenario-triggered threat. You opened the vault and something came out.
 
 **High-Rarity Items & Skills:**
 
-| Subtype | Count (2-player) | Rarity | Notes |
-|---------|-----------------|--------|-------|
-| Legendary weapons | 2 | ★★★★★ | Named artifacts with unique abilities |
-| Epic weapons | 3 | ★★★★ | Superior versions of common weapon types |
-| Epic apparel | 3 | ★★★★ | Set pieces, enchanted armor |
-| Epic consumables | 2 | ★★★★ | Elixirs, powerful one-use items |
-| Rare/Epic skills | 3 | ★★★–★★★★ | Advanced combat/magic techniques |
-| Legendary magic effects | 2 | ★★★★★ | Game-changing spells |
+| Subtype | 2P | 3P | 4P | Rarity | Notes |
+|---------|----|----|-----|--------|-------|
+| Legendary weapons | 2 | 2 | 3 | ★★★★★ | Named artifacts with unique abilities |
+| Epic weapons | 3 | 4 | 5 | ★★★★ | Superior versions of common weapon types |
+| Epic apparel | 3 | 4 | 5 | ★★★★ | Set pieces, enchanted armor |
+| Epic consumables | 2 | 3 | 4 | ★★★★ | Elixirs, powerful one-use items |
+| Rare/Epic skills | 3 | 4 | 4 | ★★★–★★★★ | Advanced combat/magic techniques |
+| Legendary magic effects | 2 | 2 | 3 | ★★★★★ | Game-changing spells |
 
-**Total treasure vault**: ~18–19 cards for 2 players. Add ~5 per additional player.
+**Total treasure vault**: 18 cards (2P) → 23 cards (3P) → 28 cards (4P). Formula: 18 + 5 per additional player.
 
 #### How to Draw from the Treasure Vault
 
@@ -5461,20 +5461,186 @@ Scenario objectives for Story Mode (Mode 2) are deliberately simple. The LLM bui
 
 ### Card Counts Summary
 
-| Card Type | Starter Deck | Encounter Deck (★–★★★) | Treasure Vault (★★★★–★★★★★) | Total (2-player) |
-|-----------|-------------|----------------------|---------------------------|-----------------|
-| Character | 1 per player | 0 | 0 | 2 |
-| Apparel | 2-3 per player | 2 in encounter | 3 epic in vault | 9-11 |
-| Item (Weapon) | 1-2 per player | 3 in encounter | 5 (3 epic + 2 legendary) in vault | 11-14 |
-| Item (Consumable) | 3-5 per player | 5 in encounter | 2 epic in vault | 12-17 |
-| Action | 8 per player (1 each type) | 0 | 0 | 16 |
-| Talk | 1 per player | 0 | 0 | 2 |
-| Skill | 1-2 per player | 5 in encounter | 3 rare/epic in vault | 10-13 |
-| Magic Effect | 0-1 per player | 2 in encounter | 2 legendary in vault | 4-6 |
-| Encounter (regular) | 0 | 30 (12 threats + 10 events + 8 NPCs) | 0 | 30 |
-| Discovery | 0 | 10 | 0 | 10 |
-| **Boss Encounters** | **0** | **0** | **3–4 (difficulty 12+)** | **3–4** |
-| **Total** | **~18 per player** | **~57** | **~18–19** | **~111–114** |
+| Card Type | Starter Deck | Encounter Deck (★–★★★) | Treasure Vault (★★★★–★★★★★) | 2P Total | 3P Total | 4P Total |
+|-----------|-------------|----------------------|---------------------------|----------|----------|----------|
+| Character | 1 per player | 0 | 0 | 2 | 3 | 4 |
+| Apparel | 2-3 per player | 2/3/4 in encounter | 3/4/5 epic in vault | 9-11 | 13-15 | 17-20 |
+| Item (Weapon) | 1-2 per player | 4/6/8 in encounter | 5/6/8 in vault | 11-13 | 15-18 | 20-24 |
+| Item (Consumable) | 3-5 per player | 16/24/32 in encounter | 2/3/4 epic in vault | 24-29 | 33-41 | 44-54 |
+| Action | 8 per player (1 each type) | 0 | 0 | 16 | 24 | 32 |
+| Talk | 1 per player | 0 | 0 | 2 | 3 | 4 |
+| Skill | 1-2 per player | 5/7/9 in encounter | 3/4/4 rare/epic in vault | 10-12 | 14-17 | 18-21 |
+| Magic Effect | 0-1 per player | 2/3/4 in encounter | 2/2/3 legendary in vault | 4-6 | 6-9 | 9-12 |
+| Encounter (regular) | 0 | 30/42/54 | 0 | 30 | 42 | 54 |
+| Discovery | 0 | 10/13/16 | 0 | 10 | 13 | 16 |
+| **Boss Encounters** | **0** | **0** | **4/5/6 (difficulty 12+)** | **4** | **5** | **6** |
+| **Total** | **~18 per player** | **57/72/87** | **18/23/28** | **~111** | **~149** | **~187** |
+
+### Deck Balancing by Player Count
+
+The game scales from 2 to 4 players. Card counts must increase to prevent deck exhaustion and maintain strategic depth. The following tables provide **optimal card counts** by player count.
+
+#### Scaling Formula
+
+| Deck | Base (2 players) | Per Additional Player |
+|------|-----------------|----------------------|
+| Starter Deck | ~18 cards | N/A (each player gets their own) |
+| Encounter Deck | 57 cards | +15 cards |
+| Treasure Vault | 18 cards | +5 cards |
+
+#### Consumable Distribution (Critical for Survival)
+
+Consumables are the **primary recovery mechanism** for Health, Energy, and utility. These must scale properly to avoid death spirals.
+
+| Consumable Type | 2 Players | 3 Players | 4 Players | Purpose |
+|-----------------|-----------|-----------|-----------|---------|
+| **Health Potions** | 4 | 6 | 8 | Restore 20-40 HP |
+| **Bandages** | 3 | 4 | 6 | Restore 10-15 HP, stop bleed |
+| **Rations/Food** | 6 | 9 | 12 | Restore 15-25 Energy, reduce hunger |
+| **Water/Drinks** | 4 | 6 | 8 | Restore 10-20 Energy, reduce thirst |
+| **Energy Elixirs** | 2 | 3 | 4 | Restore 30-50 Energy |
+| **Morale Items** | 2 | 3 | 4 | Restore 10-20 Morale (wine, books, etc.) |
+| **Antidotes/Cures** | 2 | 3 | 4 | Remove poison, disease, curse |
+| **Utility (torch, rope)** | 4 | 6 | 8 | Enable exploration, escape |
+| **Total Consumables** | **27** | **40** | **54** |
+
+**Distribution rule:** 60% in Encounter Deck, 30% in Starter Decks, 10% in Treasure Vault (epic versions).
+
+#### Weapon & Armor Distribution
+
+Equipment cards must provide variety without flooding the deck.
+
+| Equipment Type | 2 Players | 3 Players | 4 Players | Rarity Split |
+|---------------|-----------|-----------|-----------|--------------|
+| **1H Weapons** | 4 | 6 | 8 | 50% Common, 30% Uncommon, 20% Rare |
+| **2H Weapons** | 3 | 4 | 6 | 40% Common, 40% Uncommon, 20% Rare |
+| **Ranged Weapons** | 3 | 4 | 5 | 40% Common, 40% Uncommon, 20% Rare |
+| **Shields** | 2 | 3 | 4 | 50% Common, 50% Uncommon |
+| **Body Armor** | 3 | 4 | 6 | 50% Common, 30% Uncommon, 20% Rare |
+| **Head Armor** | 2 | 3 | 4 | 50% Common, 50% Uncommon |
+| **Accessories** | 3 | 4 | 5 | 40% Uncommon, 40% Rare, 20% Epic |
+| **Total Equipment** | **20** | **28** | **38** |
+
+**Epic/Legendary equipment:** Vault-only. Add 2 legendary weapons, 3 epic weapons, 3 epic armor per game (does not scale with player count — vault is fixed-size endgame content).
+
+#### Skill Card Distribution
+
+Skills provide character progression and build diversity.
+
+| Skill Category | 2 Players | 3 Players | 4 Players | Examples |
+|---------------|-----------|-----------|-----------|----------|
+| **Combat Skills** | 3 | 4 | 6 | Power Strike, Parry, Critical Eye |
+| **Magic Skills** | 2 | 3 | 4 | Elemental Mastery, Arcane Focus |
+| **Stealth/Utility** | 2 | 3 | 4 | Lockpick, Stealth, Survival |
+| **Social Skills** | 2 | 3 | 4 | Persuasion, Intimidate, Barter |
+| **Total Skills** | **9** | **13** | **18** |
+
+#### Magic Effect Card Distribution
+
+Magic provides powerful but costly options. Keep counts low to maintain rarity feel.
+
+| Magic Type | 2 Players | 3 Players | 4 Players | Rarity |
+|-----------|-----------|-----------|-----------|--------|
+| **Attack Spells** | 2 | 3 | 4 | Rare |
+| **Heal/Buff Spells** | 2 | 3 | 4 | Rare |
+| **Utility Spells** | 1 | 2 | 2 | Rare |
+| **Legendary Spells** | 2 | 2 | 3 | Legendary (Vault) |
+| **Total Magic** | **7** | **10** | **13** |
+
+#### Encounter Distribution
+
+Encounters drive gameplay variety. Balance threat density to avoid overwhelming players.
+
+| Encounter Type | 2 Players | 3 Players | 4 Players | Notes |
+|---------------|-----------|-----------|-----------|-------|
+| **Animal/Creature Threats** | 8 | 12 | 16 | Difficulty 4-10 |
+| **Hostile NPCs** | 4 | 6 | 8 | Can be subdued via Talk |
+| **Friendly NPCs** | 8 | 10 | 12 | Traders, quest-givers |
+| **Events** | 10 | 14 | 18 | Weather, terrain, time-based |
+| **Discoveries** | 10 | 13 | 16 | Loot, resources, vault keys |
+| **Boss Threats (Vault)** | 4 | 5 | 6 | Difficulty 12+ |
+| **Total Encounters** | **44** | **60** | **76** |
+
+**Threat ratio rule:** (Animal + Hostile NPC) ÷ Total Encounters ≤ 30%. Too many threats causes grind; too few causes boredom.
+
+#### Complete Deck Totals by Player Count
+
+| Component | 2 Players | 3 Players | 4 Players |
+|-----------|-----------|-----------|-----------|
+| **Starter Decks** | 36 (18×2) | 54 (18×3) | 72 (18×4) |
+| **Encounter Deck** | 57 | 72 | 87 |
+| **Treasure Vault** | 18 | 23 | 28 |
+| **Grand Total** | **111** | **149** | **187** |
+
+#### Balance Testing Targets
+
+When playtesting, verify these metrics:
+
+| Metric | Target Range | Problem if Outside |
+|--------|-------------|-------------------|
+| Average rounds per game | 8-15 | <8: too fast, >15: drags |
+| Consumables drawn per player | 5-8 | <5: death spiral, >8: no tension |
+| Vault draws per game | 2-4 | <2: feels pointless, >4: too easy |
+| Player eliminations before round 10 | 0-1 | >1: balance too punishing |
+| Deck exhaustion rate | 60-80% | <60%: deck too large, >80%: run out |
+
+#### Code Implementation Reference
+
+The deck builder should use these constants:
+
+```javascript
+const DECK_SCALING = {
+    encounter: { base: 57, perPlayer: 15 },
+    vault: { base: 18, perPlayer: 5 },
+
+    consumables: {
+        healthPotion: { base: 4, perPlayer: 2 },
+        bandage: { base: 3, perPlayer: 1.5 },
+        ration: { base: 6, perPlayer: 3 },
+        water: { base: 4, perPlayer: 2 },
+        energyElixir: { base: 2, perPlayer: 1 },
+        moraleItem: { base: 2, perPlayer: 1 },
+        antidote: { base: 2, perPlayer: 1 },
+        utility: { base: 4, perPlayer: 2 }
+    },
+
+    equipment: {
+        weapon1H: { base: 4, perPlayer: 2 },
+        weapon2H: { base: 3, perPlayer: 1.5 },
+        ranged: { base: 3, perPlayer: 1 },
+        shield: { base: 2, perPlayer: 1 },
+        bodyArmor: { base: 3, perPlayer: 1.5 },
+        headArmor: { base: 2, perPlayer: 1 },
+        accessory: { base: 3, perPlayer: 1 }
+    },
+
+    skills: {
+        combat: { base: 3, perPlayer: 1.5 },
+        magic: { base: 2, perPlayer: 1 },
+        stealth: { base: 2, perPlayer: 1 },
+        social: { base: 2, perPlayer: 1 }
+    },
+
+    magic: {
+        attack: { base: 2, perPlayer: 1 },
+        healBuff: { base: 2, perPlayer: 1 },
+        utility: { base: 1, perPlayer: 0.5 }
+    },
+
+    encounters: {
+        animalThreat: { base: 8, perPlayer: 4 },
+        hostileNPC: { base: 4, perPlayer: 2 },
+        friendlyNPC: { base: 8, perPlayer: 2 },
+        event: { base: 10, perPlayer: 4 },
+        discovery: { base: 10, perPlayer: 3 }
+    }
+};
+
+function getCardCount(category, type, playerCount) {
+    const config = DECK_SCALING[category][type];
+    return Math.round(config.base + (playerCount - 2) * config.perPlayer);
+}
+```
 
 ---
 
@@ -5644,11 +5810,11 @@ Build-test-build. Each phase produces a testable artifact. No phase starts until
 
 ---
 
-### Phase 4 — Game State & Round Skeleton
+### Phase 4 — Game State & Round Skeleton ✅ COMPLETE
 
 **Goal:** Two sides can take turns. Initiative → placement → resolution marker advances → cleanup. No combat math yet — just the structure.
 
-**Build:**
+**Build:** ✅
 - Game state model: `gameState` object with round, phase, initiative, actionBar, player, opponent
 - Initiative phase: roll 1d20 + AGI per side, determine order, assign odd/even positions
 - Equip phase: UI to swap equipment (between rounds, free)
@@ -5658,17 +5824,38 @@ Build-test-build. Each phase produces a testable artifact. No phase starts until
 - Resolution phase skeleton: marker advances left to right, pauses at each position (no dice/damage yet, just the animation and position tracking)
 - Cleanup phase skeleton: advance round counter, reset AP
 
+**Additional Implementations (Phase 4.5):**
+- ✅ AP calculation from END stat: `Math.max(2, Math.floor(END/5) + 1)` — minimum 2 AP
+- ✅ Auto-end turn when 0 AP remaining
+- ✅ Drawing cards costs 1 AP
+- ✅ Character selection screen: click card to select and start game
+- ✅ Character sidebars use CardFace components (full card style)
+- ✅ Hand cards displayed as full-size cards (not compact)
+- ✅ FannedCardStack component with 3D flip animation on double-click
+- ✅ Empty card placeholders with dotted borders
+- ✅ Placement controls condensed to header bar (turn indicator, AP display, Draw/Pass buttons)
+- ✅ Yellow asterisk indicator for incomplete/unclear card effects (`isCardIncomplete()`)
+- ✅ Toast message handling: indefinite toasts cleared after long-running operations
+- ✅ Random weapon + armor auto-equipped at game start (`dealInitialStack()`)
+- ✅ Initiative countdown animation (5 seconds)
+- ✅ Animated D20 dice roll visualization (tumbling dice, landing animation)
+- ✅ Flippable initiative cards (character front, dice result back)
+- ✅ Round 2+ action bar positions properly rebuilt
+
 **Server:**
 - `POST /rest/game/v2/newGame` — initialize a new game session from a deck snapshot
 
 **Test gate:**
-- [ ] New game loads from a deck snapshot
-- [ ] Initiative roll determines position assignment (winner=odd, loser=even)
-- [ ] Can drag action cards from hand to action bar positions
-- [ ] Placement phase enforces AP limit
-- [ ] Resolution marker animates through all positions left to right
-- [ ] Round advances (round counter increments, AP resets)
-- [ ] Equipment can be changed during equip phase
+- [x] New game loads from a deck snapshot
+- [x] Initiative roll determines position assignment (winner=odd, loser=even)
+- [x] Can drag action cards from hand to action bar positions
+- [x] Placement phase enforces AP limit
+- [x] Resolution marker animates through all positions left to right
+- [x] Round advances (round counter increments, AP resets)
+- [x] Equipment can be changed during equip phase
+- [x] AP calculated from END stat with minimum 2
+- [x] Cards in sidebar use full CardFace components
+- [x] Initiative shows animated countdown and dice roll
 
 ---
 
@@ -5677,18 +5864,73 @@ Build-test-build. Each phase produces a testable artifact. No phase starts until
 **Goal:** Attacks deal damage. HP/Energy/Morale track. The game has stakes.
 
 **Build:**
-- Opposed roll system: 1d20 + character stack mods + action stack mods vs target's 1d20 + passive DEF + parry
-- Outcome table (7 tiers: Critical Hit through Critical Counter)
-- Damage calculation with armor reduction
-- Stat infographic: pre-roll modifier breakdown display
-- Need tracks with Health denomination cards (+1, +2, +5, +10) and Energy denomination cards
-- Morale tracking (counter, not cards)
-- Overheal cap enforcement
-- Round recovery: loser +2 HP, winner +5 HP
-- Round winner determination: 1pt per HP damage + 5pts per successful non-combat action
-- Durability system: armor/weapons lose durability on hits
-- Defeat condition: HP reaches 0 → game over
-- AI opponent (simple): use the printed Solo Opponent Priority table as a heuristic (no LLM yet)
+
+#### 5.1 — Card Effect System
+- Define effect types: `damage`, `heal`, `buff`, `debuff`, `status`, `draw`, `discard`
+- Card effect parser: read `card.effect` string and extract values
+- Effect application functions: `applyDamage()`, `applyHeal()`, `applyBuff()`, etc.
+- Status effect system: `stunned`, `poisoned`, `shielded`, `weakened`, `enraged`
+- Status duration tracking (expires at round end, after N turns, or on trigger)
+
+#### 5.2 — Opposed Roll System
+- Attack roll: `1d20 + STR + weapon.atk + skill mods`
+- Defense roll: `1d20 + END + armor.def + weapon.parry (if applicable)`
+- Roll comparison: attacker wins ties
+- Animated dice roll visualization (reuse D20 component from initiative)
+- Roll result display with modifier breakdown
+
+#### 5.3 — Outcome Table (7 Tiers)
+| Roll Difference | Outcome | Effect |
+|-----------------|---------|--------|
+| ≥10 over | Critical Hit | 2× damage, may trigger weapon special |
+| 5-9 over | Strong Hit | Full damage |
+| 1-4 over | Glancing Hit | Half damage (round down) |
+| Tie | Clash | Both take 1 damage |
+| 1-4 under | Deflect | No damage, attacker loses initiative next round |
+| 5-9 under | Parry | No damage, defender may counter (free attack) |
+| ≥10 under | Critical Counter | Attacker takes half their own damage |
+
+#### 5.4 — Damage Calculation
+- Base damage: `weapon.atk + STR modifier`
+- Armor reduction: `max(0, damage - armor.def)`
+- Minimum 1 damage on any successful hit
+- Critical multiplier applied before armor
+- Elemental/type bonuses (fire vs undead, etc.) — future enhancement
+
+#### 5.5 — Need Tracks UI
+- HP bar with denomination breakdown visualization
+- Energy bar (for magic users)
+- Morale bar (affects Talk cards)
+- Animated damage/heal numbers floating above character
+- Health warning states: `<50%` (yellow), `<25%` (red, pulsing)
+
+#### 5.6 — Round Recovery & Winner
+- Round winner: most total points (1pt per HP damage + 5pts per successful Talk/non-combat)
+- Winner gets +5 HP recovery, loser gets +2 HP
+- Overheal cap: cannot exceed max HP
+- Victory/defeat announcements
+
+#### 5.7 — Defeat & Game Over
+- HP ≤ 0 triggers defeat
+- Game over screen with stats summary
+- Option to restart or return to deck builder
+- Morale ≤ 0 = surrender (Talk victory condition)
+
+#### 5.8 — AI Opponent (Simple Heuristic)
+- Priority table from Solo Opponent rules:
+  1. If HP < 25%: prioritize defensive/heal actions
+  2. If opponent HP < 25%: prioritize offensive actions
+  3. If has buff cards: use them early
+  4. Default: balanced attack/defense selection
+- Random selection within priority tier
+- No LLM — pure rule-based decisions
+
+#### 5.9 — Resolution Phase Animation
+- Position highlights as active during resolution
+- Card flip reveal for placed cards
+- Dice roll animation with result
+- Damage/effect application animation
+- Card discard animation (consumables)
 
 **Server:**
 - No new endpoints. All combat math is client-side with dice simulation.
@@ -5697,12 +5939,15 @@ Build-test-build. Each phase produces a testable artifact. No phase starts until
 - [ ] Attack action rolls correctly (1d20 + STR + weapon ATK + skill mods)
 - [ ] Defense rolls passively (1d20 + END + armor DEF + weapon parry)
 - [ ] Outcome table applies correctly (Critical Hit = double damage, etc.)
-- [ ] HP denomination cards decrease on damage, increase on healing
+- [ ] HP decreases on damage, increases on healing
 - [ ] Energy spent on spell placement
 - [ ] Round winner calculated correctly
-- [ ] Durability decreases on armor/weapons
 - [ ] Game ends when HP reaches 0
 - [ ] Simple AI opponent makes reasonable decisions without LLM
+- [ ] Talk cards affect morale
+- [ ] Status effects apply and expire correctly
+- [ ] Modifier breakdown displays before rolls
+- [ ] Animated resolution with dice and damage numbers
 
 ---
 

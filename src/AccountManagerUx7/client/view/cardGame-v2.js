@@ -343,6 +343,26 @@
         ];
     }
 
+    // ── Check if card is incomplete (missing clear effect) ────────────
+    function isCardIncomplete(card) {
+        if (!card) return true;
+        let type = card.type;
+        // Character cards are complete if they have stats
+        if (type === "character") return !card.stats;
+        // Action/skill/magic/talk need effect or clear mechanics
+        if (type === "action") return !card.onHit && !card.roll && !card.effect;
+        if (type === "skill") return !card.modifier && !card.effect;
+        if (type === "magic") return !card.effect;
+        if (type === "talk") return !card.effect && !card.speechType;
+        // Items need effect or stats
+        if (type === "item") return !card.effect && !card.atk && !card.def;
+        // Apparel needs def or effect
+        if (type === "apparel") return !card.def && !card.effect;
+        // Encounters need behavior or stats
+        if (type === "encounter") return !card.behavior && !card.atk;
+        return false;
+    }
+
     // ── CardFace Component ───────────────────────────────────────────
     function CardFace() {
         return {
@@ -352,6 +372,7 @@
                 let type = card.type;
                 let cfg = CARD_TYPES[type] || CARD_TYPES.item;
                 let compact = vnode.attrs.compact;
+                let incomplete = isCardIncomplete(card);
                 let bodyFn;
                 switch (type) {
                     case "character":  bodyFn = renderCharacterBody; break;
@@ -379,6 +400,11 @@
                 }, [
                     cornerIcon(type, "top-left"),
                     cornerIcon(type, "top-right"),
+                    // Incomplete indicator (yellow asterisk)
+                    incomplete ? m("div", {
+                        class: "cg2-incomplete-badge",
+                        title: "Card effect incomplete - needs definition"
+                    }, "*") : null,
                     m("div", { class: "cg2-card-name", style: { color: cfg.color } }, card.name || "Unnamed"),
                     compact ? null : m("div", { class: "cg2-card-body" }, bodyFn(card)),
                     cornerIcon(type, "bottom-right")
@@ -1904,6 +1930,7 @@
             sequenceCardId = null;
             m.redraw();
 
+            page.clearToast();  // Clear indefinite progress toast
             if (images.length > 0) {
                 page.toast("success", "Created " + images.length + " images for " + card.name);
 
@@ -1931,6 +1958,7 @@
 
         } catch (e) {
             console.error("[CardGame v2] Image sequence failed:", e);
+            page.clearToast();  // Clear indefinite progress toast
             page.toast("error", "Image sequence failed: " + e.message);
             sequenceProgress = "";
             sequenceCardId = null;
@@ -2728,11 +2756,13 @@
 
             } catch (e) {
                 console.error("[CardGame v2] Failed to outfit " + card.name, e);
+                page.clearToast();  // Clear indefinite progress toast
                 page.toast("error", "Failed to outfit " + card.name);
             }
         }
 
         applyingOutfits = false;
+        page.clearToast();  // Clear indefinite progress toast
         if (processed > 0) {
             if (!skipSave) {
                 let safeName = (deck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
@@ -2834,6 +2864,58 @@
     let gameState = null;  // null when not in game
     let gameCharSelection = null;  // { characters: [], selected: null } when picking character
 
+    // ── Initiative Animation State ───────────────────────────────────────
+    let initAnimState = {
+        countdown: 5,           // Countdown from 5
+        rolling: false,         // Whether dice are animating
+        rollComplete: false,    // Whether final roll is shown
+        playerDiceFace: 1,      // Current displayed face during animation
+        opponentDiceFace: 1,
+        animInterval: null      // Animation interval ID
+    };
+
+    function resetInitAnimState() {
+        if (initAnimState.animInterval) clearInterval(initAnimState.animInterval);
+        initAnimState = {
+            countdown: 5,
+            rolling: false,
+            rollComplete: false,
+            playerDiceFace: 1,
+            opponentDiceFace: 1,
+            animInterval: null
+        };
+    }
+
+    function startInitiativeAnimation() {
+        resetInitAnimState();
+
+        // Start countdown
+        let countdownInterval = setInterval(() => {
+            initAnimState.countdown--;
+            m.redraw();
+
+            if (initAnimState.countdown <= 0) {
+                clearInterval(countdownInterval);
+                // Start dice rolling animation
+                initAnimState.rolling = true;
+                initAnimState.animInterval = setInterval(() => {
+                    initAnimState.playerDiceFace = Math.floor(Math.random() * 20) + 1;
+                    initAnimState.opponentDiceFace = Math.floor(Math.random() * 20) + 1;
+                    m.redraw();
+                }, 80);
+
+                // After 2 seconds of rolling, show final result
+                setTimeout(() => {
+                    clearInterval(initAnimState.animInterval);
+                    initAnimState.rolling = false;
+                    initAnimState.rollComplete = true;
+                    runInitiativePhase();  // Actually compute the roll
+                    m.redraw();
+                }, 2000);
+            }
+        }, 1000);
+    }
+
     function createGameState(deck, selectedCharacter) {
         // Use selected character or find first one
         let cards = deck.cards || [];
@@ -2851,18 +2933,18 @@
             ? otherChars[Math.floor(Math.random() * otherChars.length)]
             : null;
 
-        // Calculate initial AP from END: floor(END/5) + 1
+        // Calculate initial AP from END: floor(END/5) + 1, minimum 2 AP
         // Check for both uppercase and lowercase stat names, with proper numeric validation
         let playerStats = playerCharCard.stats || {};
         let rawPlayerEnd = playerStats.END ?? playerStats.end ?? playerStats.endurance;
         let playerEnd = (typeof rawPlayerEnd === "number" && rawPlayerEnd > 0) ? rawPlayerEnd : 12;  // Default 12 = 3 AP
-        let playerAp = Math.floor(playerEnd / 5) + 1;
+        let playerAp = Math.max(2, Math.floor(playerEnd / 5) + 1);  // Minimum 2 AP for playability
 
         // Calculate initial energy from MAG
         let rawPlayerMag = playerStats.MAG ?? playerStats.mag ?? playerStats.magic;
         let playerMag = (typeof rawPlayerMag === "number" && rawPlayerMag > 0) ? rawPlayerMag : 12;
 
-        console.log("[CardGame v2] Player character:", playerCharCard.name, "raw stats:", playerStats);
+        console.log("[CardGame v2] Player character:", playerCharCard.name, "raw stats:", JSON.stringify(playerStats));
         console.log("[CardGame v2] Player END:", playerEnd, "(raw:", rawPlayerEnd, ") → AP:", playerAp, "| MAG:", playerMag);
 
         // Opponent stats - use actual opponent character if available
@@ -2871,7 +2953,7 @@
             : Object.assign({}, playerStats);
         let rawOppEnd = opponentStats.END ?? opponentStats.end ?? opponentStats.endurance;
         let opponentEnd = (typeof rawOppEnd === "number" && rawOppEnd > 0) ? rawOppEnd : 12;
-        let opponentAp = Math.floor(opponentEnd / 5) + 1;
+        let opponentAp = Math.max(2, Math.floor(opponentEnd / 5) + 1);  // Minimum 2 AP
         let rawOppMag = opponentStats.MAG ?? opponentStats.mag ?? opponentStats.magic;
         let opponentMag = (typeof rawOppMag === "number" && rawOppMag > 0) ? rawOppMag : 12;
 
@@ -2880,11 +2962,19 @@
         // Separate cards by type (cards already defined above)
         let actionCards = cards.filter(c => c.type === "action");
         let talkCards = cards.filter(c => c.type === "talk");
-        let itemCards = cards.filter(c => c.type === "item");
-        let apparelCards = cards.filter(c => c.type === "apparel");
+        let itemCards = shuffle(cards.filter(c => c.type === "item"));
+        let apparelCards = shuffle(cards.filter(c => c.type === "apparel"));
         let skillCards = cards.filter(c => c.type === "skill");
         let magicCards = cards.filter(c => c.type === "magic");
         let encounterCards = cards.filter(c => c.type === "encounter");
+
+        // Split items and apparel for player vs opponent (so they get different equipment)
+        let itemMid = Math.ceil(itemCards.length / 2);
+        let apparelMid = Math.ceil(apparelCards.length / 2);
+        let playerItems = itemCards.slice(0, itemMid);
+        let opponentItems = itemCards.slice(itemMid);
+        let playerApparel = apparelCards.slice(0, apparelMid);
+        let opponentApparel = apparelCards.slice(apparelMid);
 
         // Create playable card pool (actions, skills, magic, talk)
         let playableCards = [...actionCards, ...talkCards, ...skillCards, ...magicCards];
@@ -2965,7 +3055,7 @@
                 drawPile: playerDrawPile,
                 discardPile: [],
                 // Card stack: modifier cards placed on character (apparel, items, buffs)
-                cardStack: dealInitialStack(apparelCards, itemCards),
+                cardStack: dealInitialStack(playerApparel, playerItems),
                 roundPoints: 0
             },
 
@@ -2991,7 +3081,7 @@
                 drawPile: opponentDrawPile,
                 discardPile: [],
                 // Card stack: modifier cards placed on character
-                cardStack: dealInitialStack(apparelCards.slice(1), itemCards.slice(1)),
+                cardStack: dealInitialStack(opponentApparel, opponentItems),
                 roundPoints: 0
             },
 
@@ -3032,30 +3122,42 @@
         return a;
     }
 
-    // Deal initial modifier cards to character stack
+    // Deal initial modifier cards to character stack (weapon + armor + apparel)
     function dealInitialStack(apparelCards, itemCards) {
         let stack = [];
-        // Add 1-2 random apparel cards if available
-        if (apparelCards.length > 0) {
-            let shuffledApparel = shuffle([...apparelCards]);
-            stack.push(...shuffledApparel.slice(0, Math.min(2, shuffledApparel.length)));
-        }
-        // Find a weapon from item cards, or create a basic one
+
+        // 1. Always add a weapon - find one from deck or create basic
         let weapons = itemCards.filter(i => i.subtype === "weapon");
         if (weapons.length > 0) {
             stack.push(shuffle([...weapons])[0]);
         } else {
-            // Everyone gets a basic weapon
             stack.push({
                 type: "item", subtype: "weapon", name: "Basic Blade",
                 slot: "Hand (1H)", rarity: "COMMON", atk: 2, range: "Melee",
                 damageType: "Slashing", effect: "+2 ATK"
             });
         }
-        // If no apparel available, add basic garb
-        if (apparelCards.length === 0) {
+
+        // 2. Always add armor - find one from deck or create basic
+        let armors = itemCards.filter(i => i.subtype === "armor");
+        if (armors.length > 0) {
+            stack.push(shuffle([...armors])[0]);
+        } else {
+            stack.push({
+                type: "item", subtype: "armor", name: "Basic Armor",
+                slot: "Body", rarity: "COMMON", def: 2,
+                effect: "+2 DEF"
+            });
+        }
+
+        // 3. Add 1 random apparel card if available, or basic garb
+        if (apparelCards.length > 0) {
+            let shuffledApparel = shuffle([...apparelCards]);
+            stack.push(shuffledApparel[0]);
+        } else {
             stack.push({ type: "apparel", name: "Basic Garb", slot: "Body", def: 1, effect: "+1 DEF" });
         }
+
         console.log("[CardGame v2] Initial card stack:", stack.map(c => c.name));
         return stack;
     }
@@ -3178,6 +3280,14 @@
         // Draw cards for new round (1 card each)
         drawCardsForActor(gameState.player, 1);
         drawCardsForActor(gameState.opponent, 1);
+
+        // Reset initiative animation state so it replays
+        resetInitAnimState();
+
+        // Clear previous initiative results
+        gameState.initiative.playerRoll = null;
+        gameState.initiative.opponentRoll = null;
+        gameState.initiative.winner = null;
 
         console.log("[CardGame v2] Starting round", gameState.round);
         m.redraw();
@@ -3562,11 +3672,15 @@
                     ]);
                 }
 
+                let isPlacement = gameState.phase === GAME_PHASES.DRAW_PLACEMENT;
+                let isPlayerTurn = gameState.currentTurn === "player";
+                let player = gameState.player;
+
                 return m("div", { class: "cg2-game-container" }, [
-                    // Header
+                    // Header with inline placement controls
                     m("div", { class: "cg2-game-header" }, [
                         m("button", {
-                            class: "cg2-btn",
+                            class: "cg2-btn cg2-btn-sm",
                             onclick() {
                                 if (confirm("Exit game? Progress will be lost.")) {
                                     gameState = null;
@@ -3574,9 +3688,47 @@
                                     m.redraw();
                                 }
                             }
-                        }, "\u2190 Exit Game"),
-                        m("span", { class: "cg2-game-title" }, gameState.deckName || "Card Game"),
-                        m("span", { class: "cg2-round-badge" }, "Round " + gameState.round),
+                        }, "\u2190 Exit"),
+                        m("span", { class: "cg2-round-badge" }, "R" + gameState.round),
+
+                        // Placement phase inline controls
+                        isPlacement ? m("div", { class: "cg2-header-placement" }, [
+                            m("span", { class: "cg2-header-turn" + (isPlayerTurn ? " cg2-your-turn" : "") },
+                                isPlayerTurn ? "Your turn" : "Opponent..."
+                            ),
+                            m("span", { class: "cg2-header-ap" }, [
+                                "AP: ", m("strong", (player.ap - player.apUsed) + "/" + player.ap)
+                            ]),
+                            isPlayerTurn ? [
+                                m("button", {
+                                    class: "cg2-btn cg2-btn-sm",
+                                    disabled: (player.drawPile.length === 0 && player.discardPile.length === 0) ||
+                                              (player.apUsed >= player.ap),
+                                    title: "Draw a card (costs 1 AP)",
+                                    onclick() {
+                                        if (player.apUsed < player.ap) {
+                                            drawCardsForActor(player, 1);
+                                            player.apUsed++;
+                                            m.redraw();
+                                            setTimeout(() => { checkAutoEndTurn(); }, 100);
+                                        }
+                                    }
+                                }, [
+                                    m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "add_card"),
+                                    " Draw"
+                                ]),
+                                m("button", {
+                                    class: "cg2-btn cg2-btn-sm cg2-btn-primary",
+                                    onclick() {
+                                        checkPlacementComplete();
+                                        if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
+                                            endTurn();
+                                        }
+                                    }
+                                }, player.apUsed > 0 ? "End" : "Pass")
+                            ] : null
+                        ]) : null,
+
                         m("span", { class: "cg2-phase-badge" }, formatPhase(gameState.phase))
                     ]),
 
@@ -3589,16 +3741,13 @@
 
                         // Center: Action Bar + Phase UI
                         m("div", { class: "cg2-game-center" }, [
-                            // Phase-specific UI
+                            // Phase-specific UI (placement is now in header)
                             gameState.phase === GAME_PHASES.INITIATIVE ? m(InitiativePhaseUI) : null,
-                            // EQUIP phase skipped - handled in hand as modifiers
-                            gameState.phase === GAME_PHASES.DRAW_PLACEMENT ? m(PlacementPhaseUI) : null,
                             gameState.phase === GAME_PHASES.RESOLUTION ? m(ResolutionPhaseUI) : null,
                             gameState.phase === GAME_PHASES.CLEANUP ? m(CleanupPhaseUI) : null,
 
                             // Action Bar (visible in placement and resolution)
-                            (gameState.phase === GAME_PHASES.DRAW_PLACEMENT ||
-                             gameState.phase === GAME_PHASES.RESOLUTION)
+                            (isPlacement || gameState.phase === GAME_PHASES.RESOLUTION)
                                 ? m(ActionBar)
                                 : null
                         ]),
@@ -3629,27 +3778,96 @@
         return labels[phase] || phase;
     }
 
+    // ── Fanned Card Stack Component ─────────────────────────────────────
+    // Track which cards are flipped in the stack
+    let stackFlipped = {};  // { "player-0": true, "opponent-1": false }
+
+    function FannedCardStack() {
+        return {
+            view(vnode) {
+                let { cards, stackId, label, maxShow } = vnode.attrs;
+                maxShow = maxShow || 3;
+                let cardList = cards || [];
+
+                // Empty placeholder
+                if (cardList.length === 0) {
+                    return m("div", { class: "cg2-fanned-stack cg2-fanned-empty" }, [
+                        m("div", { class: "cg2-stack-label" }, label || "Empty"),
+                        m("div", { class: "cg2-stack-placeholder" }, [
+                            m("span", { class: "material-symbols-outlined" }, "add_card")
+                        ])
+                    ]);
+                }
+
+                return m("div", { class: "cg2-fanned-stack" }, [
+                    m("div", { class: "cg2-stack-label" }, (label || "Stack") + " (" + cardList.length + ")"),
+                    m("div", { class: "cg2-fanned-cards" },
+                        cardList.slice(0, maxShow).map((card, i) => {
+                            let flipKey = stackId + "-" + i;
+                            let isFlipped = stackFlipped[flipKey];
+                            let fanAngle = (i - (Math.min(cardList.length, maxShow) - 1) / 2) * 8;
+                            let fanOffset = i * 25;
+
+                            return m("div", {
+                                key: flipKey,
+                                class: "cg2-fanned-card-wrap" + (isFlipped ? " cg2-flipped" : ""),
+                                style: {
+                                    zIndex: 10 + i,
+                                    transform: "translateX(" + fanOffset + "px) rotate(" + fanAngle + "deg)"
+                                },
+                                onclick(e) {
+                                    e.stopPropagation();
+                                    // Double-click to flip
+                                },
+                                ondblclick(e) {
+                                    e.stopPropagation();
+                                    stackFlipped[flipKey] = !stackFlipped[flipKey];
+                                    m.redraw();
+                                },
+                                title: card.name + (card.effect ? ": " + card.effect : "") + "\n(Double-click to flip)"
+                            }, [
+                                m("div", { class: "cg2-fanned-card-inner" }, [
+                                    // Front face
+                                    m("div", { class: "cg2-fanned-face cg2-fanned-front" },
+                                        m(CardFace, { card, compact: true })
+                                    ),
+                                    // Back face
+                                    m("div", { class: "cg2-fanned-face cg2-fanned-back" },
+                                        m(CardBack, { type: card.type })
+                                    )
+                                ])
+                            ]);
+                        }),
+                        // Show "+N more" badge if more cards
+                        cardList.length > maxShow
+                            ? m("div", { class: "cg2-fanned-more" }, "+" + (cardList.length - maxShow))
+                            : null
+                    )
+                ]);
+            }
+        };
+    }
+
     // ── Character Sidebar Component ───────────────────────────────────
     function CharacterSidebar() {
         return {
             view(vnode) {
                 let { actor, label, isOpponent } = vnode.attrs;
                 let char = actor.character || {};
-                let stats = char.stats || {};
+                let stackId = isOpponent ? "opponent" : "player";
+
+                // Build a character card with live stats
+                let liveChar = Object.assign({}, char, {
+                    needs: { hp: actor.hp, energy: actor.energy, morale: actor.morale }
+                });
 
                 return m("div", { class: "cg2-char-sidebar" + (isOpponent ? " cg2-opponent" : "") }, [
                     m("div", { class: "cg2-sidebar-label" }, label),
-                    m("div", { class: "cg2-sidebar-portrait" },
-                        char.portraitUrl
-                            ? m("img", { src: char.portraitUrl })
-                            : m("span", { class: "material-symbols-outlined" }, "person")
-                    ),
-                    m("div", { class: "cg2-sidebar-name" }, char.name || "Unknown"),
 
-                    // Need bars
-                    m(NeedBar, { label: "HP", abbrev: "HP", current: actor.hp, max: actor.maxHp, color: "#e53935" }),
-                    m(NeedBar, { label: "Energy", abbrev: "NRG", current: actor.energy, max: actor.maxEnergy, color: "#1E88E5" }),
-                    m(NeedBar, { label: "Morale", abbrev: "MRL", current: actor.morale, max: actor.maxMorale, color: "#43A047" }),
+                    // Character card using CardFace
+                    m("div", { class: "cg2-sidebar-card-wrap" }, [
+                        m(CardFace, { card: liveChar, bgImage: char.portraitUrl })
+                    ]),
 
                     // AP indicator
                     m("div", { class: "cg2-ap-indicator" }, [
@@ -3666,28 +3884,13 @@
                         m("span", " " + (actor.drawPile ? actor.drawPile.length : 0) + " deck")
                     ]),
 
-                    // Character card stack (modifier cards placed on character)
-                    actor.cardStack && actor.cardStack.length > 0
-                        ? m("div", { class: "cg2-char-stack" }, [
-                            m("div", { class: "cg2-stack-label" }, "Modifiers (" + actor.cardStack.length + ")"),
-                            m("div", { class: "cg2-stack-cards" },
-                                actor.cardStack.slice(0, 3).map((card, i) =>
-                                    m("div", {
-                                        class: "cg2-stack-card cg2-stack-card-" + card.type,
-                                        title: card.name + (card.effect ? ": " + card.effect : ""),
-                                        style: { zIndex: 10 - i, marginLeft: i > 0 ? "-20px" : "0" }
-                                    }, [
-                                        m("span", { class: "material-symbols-outlined cg2-stack-icon" }, cardTypeIcon(card.type)),
-                                        actor.cardStack.length > 3 && i === 2
-                                            ? m("span", { class: "cg2-stack-more" }, "+" + (actor.cardStack.length - 3))
-                                            : null
-                                    ])
-                                )
-                            )
-                        ])
-                        : m("div", { class: "cg2-char-stack cg2-stack-empty" }, [
-                            m("div", { class: "cg2-stack-label" }, "No modifiers")
-                        ])
+                    // Fanned card stack (modifier cards on character)
+                    m(FannedCardStack, {
+                        cards: actor.cardStack,
+                        stackId: stackId + "-mods",
+                        label: "Modifiers",
+                        maxShow: 3
+                    })
                 ]);
             }
         };
@@ -3695,55 +3898,114 @@
 
     // ── Initiative Phase UI ───────────────────────────────────────────
     function InitiativePhaseUI() {
+        let playerFlipped = false;
+        let opponentFlipped = false;
+
         return {
+            oninit() {
+                // Start animation when component mounts (if not already rolling)
+                if (!initAnimState.rolling && !initAnimState.rollComplete && initAnimState.countdown === 5) {
+                    startInitiativeAnimation();
+                }
+            },
             view() {
                 let init = gameState.initiative;
+                let anim = initAnimState;
+                let player = gameState.player;
+                let opponent = gameState.opponent;
+
+                // Cards flip when rolling starts or results are shown
+                let showFlipped = anim.rolling || anim.rollComplete;
+
+                // Helper to render initiative card
+                function renderInitCard(who, character, roll, isWinner, diceFace, flipped) {
+                    let isFlipped = showFlipped || flipped;
+                    return m("div", {
+                        class: "cg2-init-card-wrap" + (isFlipped ? " cg2-init-flipped" : "") + (isWinner ? " cg2-init-winner-card" : ""),
+                        onclick() {
+                            // Allow manual flip after results
+                            if (anim.rollComplete) {
+                                if (who === "player") playerFlipped = !playerFlipped;
+                                else opponentFlipped = !opponentFlipped;
+                            }
+                        }
+                    }, [
+                        m("div", { class: "cg2-init-card-inner" }, [
+                            // Front: Character card
+                            m("div", { class: "cg2-init-card-front" }, [
+                                m(CardFace, { card: character, compact: true })
+                            ]),
+                            // Back: Dice roll result
+                            m("div", { class: "cg2-init-card-back" }, [
+                                m("div", { class: "cg2-init-back-content" }, [
+                                    m("div", { class: "cg2-init-back-label" }, who === "player" ? "You" : "Opponent"),
+                                    m("div", { class: "cg2-dice-container" }, [
+                                        m("div", {
+                                            class: "cg2-d20" +
+                                                (anim.rolling ? " cg2-d20-rolling" : " cg2-d20-final") +
+                                                (isWinner && anim.rollComplete ? " cg2-d20-winner" : "")
+                                        }, [
+                                            m("span", { class: "cg2-d20-face" }, anim.rolling ? diceFace : (roll ? roll.raw : "?"))
+                                        ])
+                                    ]),
+                                    roll && anim.rollComplete ? m("div", { class: "cg2-roll-breakdown" }, [
+                                        m("span", roll.raw),
+                                        m("span", " + "),
+                                        m("span", { class: "cg2-mod" }, roll.modifier),
+                                        m("span", " AGI = "),
+                                        m("strong", roll.total)
+                                    ]) : null,
+                                    isWinner && anim.rollComplete ? m("div", { class: "cg2-init-winner-badge" }, [
+                                        m("span", { class: "material-symbols-outlined" }, "star"),
+                                        " Winner!"
+                                    ]) : null
+                                ])
+                            ])
+                        ])
+                    ]);
+                }
+
+                // During countdown phase - show cards face up
+                if (anim.countdown > 0) {
+                    return m("div", { class: "cg2-phase-panel cg2-initiative-panel" }, [
+                        m("h2", "Initiative Phase"),
+                        m("p", "Preparing to roll for turn order..."),
+                        m("div", { class: "cg2-init-countdown" }, [
+                            m("div", { class: "cg2-countdown-number" }, anim.countdown)
+                        ]),
+                        m("div", { class: "cg2-init-cards" }, [
+                            renderInitCard("player", player.character, null, false, 1, false),
+                            m("div", { class: "cg2-init-vs" }, "VS"),
+                            renderInitCard("opponent", opponent.character, null, false, 1, false)
+                        ])
+                    ]);
+                }
+
+                // During rolling or showing results
                 return m("div", { class: "cg2-phase-panel cg2-initiative-panel" }, [
                     m("h2", "Initiative Phase"),
-                    m("p", "Rolling for turn order..."),
+                    m("p", anim.rolling ? "Rolling the dice..." : "Turn order determined!"),
 
-                    m("div", { class: "cg2-init-rolls" }, [
-                        m("div", { class: "cg2-init-roll" + (init.winner === "player" ? " cg2-winner" : "") }, [
-                            m("div", { class: "cg2-init-label" }, "You"),
-                            init.playerRoll
-                                ? m("div", { class: "cg2-init-result" }, [
-                                    m("span", { class: "cg2-dice" }, init.playerRoll.raw),
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod" }, init.playerRoll.modifier + " AGI"),
-                                    m("span", " = "),
-                                    m("span", { class: "cg2-total" }, init.playerRoll.total)
-                                ])
-                                : m("div", { class: "cg2-init-pending" }, "...")
-                        ]),
+                    m("div", { class: "cg2-init-cards" }, [
+                        renderInitCard("player", player.character, init.playerRoll, init.winner === "player", anim.playerDiceFace, playerFlipped),
                         m("div", { class: "cg2-init-vs" }, "VS"),
-                        m("div", { class: "cg2-init-roll" + (init.winner === "opponent" ? " cg2-winner" : "") }, [
-                            m("div", { class: "cg2-init-label" }, "Opponent"),
-                            init.opponentRoll
-                                ? m("div", { class: "cg2-init-result" }, [
-                                    m("span", { class: "cg2-dice" }, init.opponentRoll.raw),
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod" }, init.opponentRoll.modifier + " AGI"),
-                                    m("span", " = "),
-                                    m("span", { class: "cg2-total" }, init.opponentRoll.total)
-                                ])
-                                : m("div", { class: "cg2-init-pending" }, "...")
-                        ])
+                        renderInitCard("opponent", opponent.character, init.opponentRoll, init.winner === "opponent", anim.opponentDiceFace, opponentFlipped)
                     ]),
 
-                    init.winner
+                    anim.rollComplete && init.winner
                         ? m("div", { class: "cg2-init-winner" }, [
                             m("strong", init.winner === "player" ? "You win initiative!" : "Opponent wins initiative!"),
                             m("p", init.winner === "player"
-                                ? "You get odd positions (1, 3, 5...)"
-                                : "You get even positions (2, 4, 6...)")
+                                ? "You go first with odd positions (1, 3, 5...)"
+                                : "Opponent goes first. You get even positions (2, 4, 6...)")
                         ])
                         : null,
 
-                    m("button", {
+                    anim.rollComplete ? m("button", {
                         class: "cg2-btn cg2-btn-primary",
                         style: { marginTop: "16px" },
                         onclick() { advancePhase(); }
-                    }, "Continue to Equip Phase")
+                    }, "Continue to Placement Phase") : null
                 ]);
             }
         };
@@ -3789,66 +4051,6 @@
                     item
                         ? m("span", { class: "cg2-slot-item" }, item.name)
                         : m("span", { class: "cg2-slot-empty" }, "Empty")
-                ]);
-            }
-        };
-    }
-
-    // ── Placement Phase UI ────────────────────────────────────────────
-    function PlacementPhaseUI() {
-        return {
-            view() {
-                let isPlayerTurn = gameState.currentTurn === "player";
-                let player = gameState.player;
-
-                return m("div", { class: "cg2-phase-panel cg2-placement-panel" }, [
-                    m("h2", "Draw & Placement Phase"),
-                    m("p", { class: "cg2-turn-indicator" + (isPlayerTurn ? " cg2-your-turn" : "") },
-                        isPlayerTurn ? "Your turn! Drag cards to the action bar." : "Opponent is placing cards..."
-                    ),
-
-                    m("div", { class: "cg2-ap-display" }, [
-                        m("span", "AP Remaining: "),
-                        m("strong", (player.ap - player.apUsed) + "/" + player.ap),
-                        m("span", { style: "margin-left: 16px" }, "Hand: "),
-                        m("strong", player.hand.length + " cards")
-                    ]),
-
-                    // Action buttons when player's turn
-                    isPlayerTurn
-                        ? m("div", { class: "cg2-placement-actions" }, [
-                            // Draw Card button (costs 1 AP)
-                            m("button", {
-                                class: "cg2-btn",
-                                disabled: (player.drawPile.length === 0 && player.discardPile.length === 0) ||
-                                          (player.apUsed >= player.ap),  // No AP left
-                                title: "Draw a card (costs 1 AP)",
-                                onclick() {
-                                    if (player.apUsed < player.ap) {
-                                        drawCardsForActor(player, 1);
-                                        player.apUsed++;  // Drawing costs 1 AP
-                                        console.log("[CardGame v2] Player drew a card, AP used:", player.apUsed + "/" + player.ap);
-                                        m.redraw();
-                                        // Check if out of AP and auto-end turn
-                                        setTimeout(() => { checkAutoEndTurn(); }, 100);
-                                    }
-                                }
-                            }, [
-                                m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle;margin-right:4px" }, "add_card"),
-                                "Draw (1 AP)"
-                            ]),
-                            // End/Pass Turn button
-                            m("button", {
-                                class: "cg2-btn cg2-btn-primary",
-                                onclick() {
-                                    checkPlacementComplete();
-                                    if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
-                                        endTurn();
-                                    }
-                                }
-                            }, player.apUsed > 0 ? "End Turn" : "Pass Turn")
-                        ])
-                        : null
                 ]);
             }
         };
@@ -4019,7 +4221,7 @@
                                         e.dataTransfer.setData("text/plain", JSON.stringify(card));
                                         e.dataTransfer.effectAllowed = "move";
                                     }
-                                }, m(CardFace, { card, bgImage: cardFrontBg, compact: true }))
+                                }, m(CardFace, { card, bgImage: cardFrontBg }))
                             )
                             : m("div", { class: "cg2-hand-empty" }, "No cards of this type")
                     )
