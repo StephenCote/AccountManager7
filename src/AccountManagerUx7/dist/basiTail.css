@@ -9135,6 +9135,10 @@ button.button-tab-active:hover:is(.dark *) {
   text-transform: uppercase;
 }
 
+.lowercase {
+  text-transform: lowercase;
+}
+
 .capitalize {
   text-transform: capitalize;
 }

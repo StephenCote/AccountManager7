@@ -92,6 +92,12 @@
         return m("span", { class: "material-symbols-outlined", style }, icon);
     }
 
+    // Get icon for card type (for stack display)
+    function cardTypeIcon(type) {
+        let cfg = CARD_TYPES[type] || CARD_TYPES.item;
+        return cfg.icon;
+    }
+
     // ── Card Face Renderers (per type) ───────────────────────────────
 
     function renderCharacterBody(card) {
@@ -345,6 +351,7 @@
                 if (!card || !card.type) return m("div.cg2-card.cg2-card-empty", "No card");
                 let type = card.type;
                 let cfg = CARD_TYPES[type] || CARD_TYPES.item;
+                let compact = vnode.attrs.compact;
                 let bodyFn;
                 switch (type) {
                     case "character":  bodyFn = renderCharacterBody; break;
@@ -365,14 +372,15 @@
                     cardStyle.backgroundSize = "cover, cover";
                     cardStyle.backgroundPosition = "center, center";
                 }
+                let cardClass = "cg2-card cg2-card-front cg2-card-" + type + (compact ? " cg2-card-compact" : "");
                 return m("div", {
-                    class: "cg2-card cg2-card-front cg2-card-" + type,
+                    class: cardClass,
                     style: cardStyle
                 }, [
                     cornerIcon(type, "top-left"),
                     cornerIcon(type, "top-right"),
                     m("div", { class: "cg2-card-name", style: { color: cfg.color } }, card.name || "Unnamed"),
-                    m("div", { class: "cg2-card-body" }, bodyFn(card)),
+                    compact ? null : m("div", { class: "cg2-card-body" }, bodyFn(card)),
                     cornerIcon(type, "bottom-right")
                 ]);
             }
@@ -912,7 +920,7 @@
     }
 
     // ── Phase 2: View State ──────────────────────────────────────────
-    let screen = "deckList";    // "deckList" | "builder" | "deckView"
+    let screen = "deckList";    // "deckList" | "builder" | "deckView" | "game"
     let builderStep = 1;        // 1=theme, 2=character, 3=review/build
     let availableCharacters = [];
     let charsLoading = false;
@@ -1097,6 +1105,26 @@
         m.redraw();
     }
 
+    // ── Play Deck (start game directly) ───────────────────────────────
+    async function playDeck(storageName) {
+        let data = await deckStorage.load(storageName);
+        if (data) {
+            viewingDeck = data;
+            // Load the deck's theme
+            if (data.themeId) {
+                await loadThemeConfig(data.themeId);
+            }
+            // Reset game state and character selection for fresh start
+            gameState = null;
+            gameCharSelection = null;
+            screen = "game";
+            m.redraw();
+        } else {
+            page.toast("error", "Failed to load deck");
+        }
+        m.redraw();
+    }
+
     async function refreshAllCharacters(deck) {
         if (!deck || !deck.cards) return;
         let charCards = deck.cards.filter(c => c.type === "character" && c.sourceId);
@@ -1145,6 +1173,14 @@
                                         d.createdAt ? m("div", { class: "cg2-deck-meta" }, new Date(d.createdAt).toLocaleDateString()) : null
                                     ]),
                                     m("div", { class: "cg2-deck-actions" }, [
+                                        m("button", {
+                                            class: "cg2-btn cg2-btn-primary",
+                                            onclick: () => playDeck(d.storageName),
+                                            title: "Start a game with this deck"
+                                        }, [
+                                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "2px" } }, "play_arrow"),
+                                            "Play"
+                                        ]),
                                         m("button", { class: "cg2-btn", onclick: () => viewDeck(d.storageName) }, "View"),
                                         m("button", { class: "cg2-btn cg2-btn-danger", onclick: () => deleteDeck(d.storageName) }, "Delete")
                                     ])
@@ -1756,21 +1792,27 @@
         m.redraw();
 
         try {
-            // Load full character with all nested data (store, apparel, wearables)
+            // Load character to get store reference
             am7client.clearCache("olio.charPerson");
-            let char = await am7client.getFull("olio.charPerson", card.sourceId);
-            if (!char) throw new Error("Could not load character");
+            let char = await page.searchFirst("olio.charPerson", undefined, undefined, card.sourceId);
+            if (!char || !char.store || !char.store.objectId) throw new Error("Could not load character store");
 
-            // Get apparel from the full store object
-            if (!char.store || !char.store.apparel || !char.store.apparel.length) {
+            // Use getFull on store to get apparel with proper inuse flags
+            await am7client.clearCache("olio.store");
+            let sto = await am7client.getFull("olio.store", char.store.objectId);
+            if (!sto || !sto.apparel || !sto.apparel.length) {
                 throw new Error("No apparel found in store");
             }
 
-            let activeApparel = char.store.apparel.find(a => a.inuse) || char.store.apparel[0];
-            if (!activeApparel.wearables || !activeApparel.wearables.length) {
+            let activeApparel = sto.apparel.find(a => a.inuse) || sto.apparel[0];
+
+            // Use getFull on apparel to get wearables with proper inuse flags
+            await am7client.clearCache("olio.apparel");
+            let fullApparel = await am7client.getFull("olio.apparel", activeApparel.objectId);
+            if (!fullApparel || !fullApparel.wearables || !fullApparel.wearables.length) {
                 throw new Error("No wearables found in apparel");
             }
-            let wears = activeApparel.wearables;
+            let wears = fullApparel.wearables;
 
             // Get sorted unique wear levels
             let lvls = [...new Set(wears.sort((a, b) => {
@@ -1864,10 +1906,24 @@
 
             if (images.length > 0) {
                 page.toast("success", "Created " + images.length + " images for " + card.name);
-                // Refresh the card portrait to latest image
-                await refreshCharacterCard(card);
+
+                // Update card portrait to the LAST generated image (fully dressed)
+                let lastImage = images[images.length - 1];
+                if (lastImage && lastImage.objectId) {
+                    let orgPath = am7client.dotPath(am7client.currentOrganization);
+                    card.portraitUrl = g_application_path + "/thumbnail/" + orgPath +
+                        "/data.data/" + lastImage.objectId + "/256x256?t=" + Date.now();
+                    console.log("[CardGame v2] Updated card portrait to last sequence image:", card.portraitUrl);
+
+                    // Save the deck with updated portrait
+                    if (viewingDeck) {
+                        let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+                        await deckStorage.save(safeName, viewingDeck);
+                    }
+                }
+
                 m.redraw();
-                // Open the gallery picker so user can choose a portrait
+                // Open the gallery picker so user can choose a different portrait if desired
                 openGalleryPicker(card);
             } else {
                 page.toast("warn", "No images were generated");
@@ -2738,6 +2794,1240 @@
         };
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    // ══ PHASE 4: Game State & Round Skeleton ═══════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+
+    // ── Game Phases ───────────────────────────────────────────────────
+    const GAME_PHASES = {
+        INITIATIVE: "initiative",
+        EQUIP: "equip",
+        DRAW_PLACEMENT: "draw_placement",
+        RESOLUTION: "resolution",
+        CLEANUP: "cleanup"
+    };
+
+    // ── LLM Connectivity ──────────────────────────────────────────────
+    let llmStatus = { checked: false, available: false, error: null };
+
+    async function checkLlmConnectivity() {
+        llmStatus = { checked: false, available: false, error: null };
+        m.redraw();
+        try {
+            // Test LLM connectivity by fetching chat prompt endpoint
+            let response = await m.request({
+                method: 'GET',
+                url: g_application_path + "/rest/chat/prompt",
+                withCredentials: true
+            });
+            llmStatus = { checked: true, available: true, error: null };
+            console.log("[CardGame v2] LLM connectivity check passed");
+        } catch (err) {
+            llmStatus = { checked: true, available: false, error: err.message || "LLM service unavailable" };
+            console.warn("[CardGame v2] LLM connectivity check failed:", err);
+        }
+        m.redraw();
+        return llmStatus.available;
+    }
+
+    // ── Game State Model ──────────────────────────────────────────────
+    let gameState = null;  // null when not in game
+    let gameCharSelection = null;  // { characters: [], selected: null } when picking character
+
+    function createGameState(deck, selectedCharacter) {
+        // Use selected character or find first one
+        let cards = deck.cards || [];
+        let allCharacters = cards.filter(c => c.type === "character");
+        let playerCharCard = selectedCharacter || allCharacters[0];
+
+        if (!playerCharCard) {
+            console.error("[CardGame v2] No character card found in deck");
+            return null;
+        }
+
+        // Pick an opponent from remaining characters, or create a generic one
+        let otherChars = allCharacters.filter(c => c !== playerCharCard);
+        let opponentCharCard = otherChars.length > 0
+            ? otherChars[Math.floor(Math.random() * otherChars.length)]
+            : null;
+
+        // Calculate initial AP from END: floor(END/5) + 1
+        // Check for both uppercase and lowercase stat names, with proper numeric validation
+        let playerStats = playerCharCard.stats || {};
+        let rawPlayerEnd = playerStats.END ?? playerStats.end ?? playerStats.endurance;
+        let playerEnd = (typeof rawPlayerEnd === "number" && rawPlayerEnd > 0) ? rawPlayerEnd : 12;  // Default 12 = 3 AP
+        let playerAp = Math.floor(playerEnd / 5) + 1;
+
+        // Calculate initial energy from MAG
+        let rawPlayerMag = playerStats.MAG ?? playerStats.mag ?? playerStats.magic;
+        let playerMag = (typeof rawPlayerMag === "number" && rawPlayerMag > 0) ? rawPlayerMag : 12;
+
+        console.log("[CardGame v2] Player character:", playerCharCard.name, "raw stats:", playerStats);
+        console.log("[CardGame v2] Player END:", playerEnd, "(raw:", rawPlayerEnd, ") → AP:", playerAp, "| MAG:", playerMag);
+
+        // Opponent stats - use actual opponent character if available
+        let opponentStats = opponentCharCard
+            ? Object.assign({}, opponentCharCard.stats || {})
+            : Object.assign({}, playerStats);
+        let rawOppEnd = opponentStats.END ?? opponentStats.end ?? opponentStats.endurance;
+        let opponentEnd = (typeof rawOppEnd === "number" && rawOppEnd > 0) ? rawOppEnd : 12;
+        let opponentAp = Math.floor(opponentEnd / 5) + 1;
+        let rawOppMag = opponentStats.MAG ?? opponentStats.mag ?? opponentStats.magic;
+        let opponentMag = (typeof rawOppMag === "number" && rawOppMag > 0) ? rawOppMag : 12;
+
+        console.log("[CardGame v2] Opponent END:", opponentEnd, "(raw:", rawOppEnd, ") → AP:", opponentAp, "| MAG:", opponentMag);
+
+        // Separate cards by type (cards already defined above)
+        let actionCards = cards.filter(c => c.type === "action");
+        let talkCards = cards.filter(c => c.type === "talk");
+        let itemCards = cards.filter(c => c.type === "item");
+        let apparelCards = cards.filter(c => c.type === "apparel");
+        let skillCards = cards.filter(c => c.type === "skill");
+        let magicCards = cards.filter(c => c.type === "magic");
+        let encounterCards = cards.filter(c => c.type === "encounter");
+
+        // Create playable card pool (actions, skills, magic, talk)
+        let playableCards = [...actionCards, ...talkCards, ...skillCards, ...magicCards];
+
+        console.log("[CardGame v2] Card counts - action:", actionCards.length,
+            "talk:", talkCards.length, "skill:", skillCards.length,
+            "magic:", magicCards.length, "playable total:", playableCards.length);
+
+        // If deck has no playable cards, create basic cards
+        if (playableCards.length === 0) {
+            console.log("[CardGame v2] No playable cards in deck, using default starter cards");
+            playableCards = [
+                { type: "action", name: "Strike", actionType: "Offensive", energyCost: 0 },
+                { type: "action", name: "Strike", actionType: "Offensive", energyCost: 0 },
+                { type: "action", name: "Guard", actionType: "Defensive", energyCost: 0 },
+                { type: "action", name: "Guard", actionType: "Defensive", energyCost: 0 },
+                { type: "action", name: "Rest", actionType: "Recovery", energyCost: 0 },
+                { type: "action", name: "Feint", actionType: "Utility", energyCost: 0 },
+                { type: "talk", name: "Taunt", speechType: "Provoke", energyCost: 0 },
+                { type: "talk", name: "Persuade", speechType: "Charm", energyCost: 0 }
+            ];
+        }
+
+        // Create draw piles for both sides (shuffle and split)
+        let shuffledPool = shuffle([...playableCards, ...playableCards]); // Double the pool
+        let midPoint = Math.floor(shuffledPool.length / 2);
+        let playerDrawPile = shuffledPool.slice(0, midPoint);
+        let opponentDrawPile = shuffledPool.slice(midPoint);
+
+        // Deal initial hands (5 cards each)
+        let initialHandSize = 5;
+        let playerHand = playerDrawPile.splice(0, initialHandSize);
+        let opponentHand = opponentDrawPile.splice(0, initialHandSize);
+
+        console.log("[CardGame v2] Initial hands dealt - player:", playerHand.length, "opponent:", opponentHand.length);
+        console.log("[CardGame v2] Player hand:", playerHand.map(c => c.name));
+        console.log("[CardGame v2] Draw piles - player:", playerDrawPile.length, "opponent:", opponentDrawPile.length);
+
+        return {
+            // Meta
+            deckName: deck.deckName,
+            themeId: deck.themeId,
+            startedAt: Date.now(),
+
+            // Round tracking
+            round: 1,
+            phase: GAME_PHASES.INITIATIVE,
+
+            // Initiative
+            initiative: {
+                playerRoll: null,      // { raw, modifier, total }
+                opponentRoll: null,
+                winner: null,          // "player" | "opponent"
+                playerPositions: [],   // [1,3,5,...] or [2,4,6,...]
+                opponentPositions: []
+            },
+
+            // Action Bar
+            actionBar: {
+                totalPositions: 0,
+                positions: [],  // [{ owner, stack, resolved }]
+                resolveIndex: -1  // current resolution position (-1 = not started)
+            },
+
+            // Player state
+            player: {
+                character: playerCharCard,
+                hp: 20,
+                maxHp: 20,
+                energy: playerMag,
+                maxEnergy: playerMag,
+                morale: 20,
+                maxMorale: 20,
+                ap: playerAp,
+                maxAp: playerAp,
+                apUsed: 0,
+                hand: playerHand,
+                drawPile: playerDrawPile,
+                discardPile: [],
+                // Card stack: modifier cards placed on character (apparel, items, buffs)
+                cardStack: dealInitialStack(apparelCards, itemCards),
+                roundPoints: 0
+            },
+
+            // Opponent state (AI) - use actual character from deck if available
+            opponent: {
+                name: opponentCharCard ? (opponentCharCard.name || "Opponent") : "Challenger",
+                character: opponentCharCard || {
+                    type: "character",
+                    name: "Challenger",
+                    stats: opponentStats,
+                    portraitUrl: null
+                },
+                hp: 20,
+                maxHp: 20,
+                energy: opponentMag,
+                maxEnergy: opponentMag,
+                morale: 20,
+                maxMorale: 20,
+                ap: opponentAp,
+                maxAp: opponentAp,
+                apUsed: 0,
+                hand: opponentHand,
+                drawPile: opponentDrawPile,
+                discardPile: [],
+                // Card stack: modifier cards placed on character
+                cardStack: dealInitialStack(apparelCards.slice(1), itemCards.slice(1)),
+                roundPoints: 0
+            },
+
+            // Encounter deck (shuffled)
+            encounterDeck: shuffle([...encounterCards]),
+
+            // Round pot
+            pot: [],
+
+            // Timing
+            turnTimer: null,
+            isPaused: false,
+
+            // Turn tracking for draw/placement
+            currentTurn: null,  // "player" | "opponent"
+            turnActions: []     // log of actions this placement phase
+        };
+    }
+
+    // ── Dice Rolling ──────────────────────────────────────────────────
+    function rollD20() {
+        return Math.floor(Math.random() * 20) + 1;
+    }
+
+    function rollInitiative(stats) {
+        let raw = rollD20();
+        let modifier = (stats && stats.AGI) || 0;
+        return { raw, modifier, total: raw + modifier };
+    }
+
+    // ── Array Shuffle (Fisher-Yates) ──────────────────────────────────
+    function shuffle(arr) {
+        let a = arr.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+            let j = Math.floor(Math.random() * (i + 1));
+            [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+    }
+
+    // Deal initial modifier cards to character stack
+    function dealInitialStack(apparelCards, itemCards) {
+        let stack = [];
+        // Add 1-2 random apparel cards if available
+        if (apparelCards.length > 0) {
+            let shuffledApparel = shuffle([...apparelCards]);
+            stack.push(...shuffledApparel.slice(0, Math.min(2, shuffledApparel.length)));
+        }
+        // Find a weapon from item cards, or create a basic one
+        let weapons = itemCards.filter(i => i.subtype === "weapon");
+        if (weapons.length > 0) {
+            stack.push(shuffle([...weapons])[0]);
+        } else {
+            // Everyone gets a basic weapon
+            stack.push({
+                type: "item", subtype: "weapon", name: "Basic Blade",
+                slot: "Hand (1H)", rarity: "COMMON", atk: 2, range: "Melee",
+                damageType: "Slashing", effect: "+2 ATK"
+            });
+        }
+        // If no apparel available, add basic garb
+        if (apparelCards.length === 0) {
+            stack.push({ type: "apparel", name: "Basic Garb", slot: "Body", def: 1, effect: "+1 DEF" });
+        }
+        console.log("[CardGame v2] Initial card stack:", stack.map(c => c.name));
+        return stack;
+    }
+
+    // ── Initiative Phase ──────────────────────────────────────────────
+    function runInitiativePhase() {
+        if (!gameState) return;
+
+        let playerStats = gameState.player.character.stats || {};
+        let opponentStats = gameState.opponent.character.stats || {};
+
+        gameState.initiative.playerRoll = rollInitiative(playerStats);
+        gameState.initiative.opponentRoll = rollInitiative(opponentStats);
+
+        // Determine winner (re-roll ties handled here simply by random)
+        let pTotal = gameState.initiative.playerRoll.total;
+        let oTotal = gameState.initiative.opponentRoll.total;
+
+        if (pTotal > oTotal) {
+            gameState.initiative.winner = "player";
+        } else if (oTotal > pTotal) {
+            gameState.initiative.winner = "opponent";
+        } else {
+            // Tie-breaker: random
+            gameState.initiative.winner = Math.random() < 0.5 ? "player" : "opponent";
+        }
+
+        // Calculate total positions
+        let playerAp = gameState.player.ap;
+        let opponentAp = gameState.opponent.ap;
+        let totalPositions = playerAp + opponentAp;
+
+        // Assign positions: winner gets odd (1,3,5...), loser gets even (2,4,6...)
+        let winnerPositions = [];
+        let loserPositions = [];
+        for (let i = 1; i <= totalPositions; i++) {
+            if (i % 2 === 1) winnerPositions.push(i);
+            else loserPositions.push(i);
+        }
+
+        if (gameState.initiative.winner === "player") {
+            gameState.initiative.playerPositions = winnerPositions;
+            gameState.initiative.opponentPositions = loserPositions;
+        } else {
+            gameState.initiative.playerPositions = loserPositions;
+            gameState.initiative.opponentPositions = winnerPositions;
+        }
+
+        // Build action bar positions
+        gameState.actionBar.totalPositions = totalPositions;
+        gameState.actionBar.positions = [];
+        for (let i = 1; i <= totalPositions; i++) {
+            let owner = gameState.initiative.playerPositions.includes(i) ? "player" : "opponent";
+            gameState.actionBar.positions.push({
+                index: i,
+                owner: owner,
+                stack: null,  // { coreCard, modifiers: [] }
+                resolved: false
+            });
+        }
+
+        console.log("[CardGame v2] Initiative:", gameState.initiative);
+        m.redraw();
+    }
+
+    // ── Phase Transitions ─────────────────────────────────────────────
+    function advancePhase() {
+        if (!gameState) return;
+
+        let phases = [
+            GAME_PHASES.INITIATIVE,
+            // EQUIP phase skipped - armor/item cards handled as modifiers in hand
+            GAME_PHASES.DRAW_PLACEMENT,
+            GAME_PHASES.RESOLUTION,
+            GAME_PHASES.CLEANUP
+        ];
+
+        let currentIdx = phases.indexOf(gameState.phase);
+        if (currentIdx < phases.length - 1) {
+            gameState.phase = phases[currentIdx + 1];
+            console.log("[CardGame v2] Phase advanced to:", gameState.phase);
+
+            // Phase-specific initialization
+            if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
+                // Initiative winner goes first
+                gameState.currentTurn = gameState.initiative.winner;
+                // Check if the current player has 0 AP - auto-skip their turn
+                checkAutoEndTurn();
+            } else if (gameState.phase === GAME_PHASES.RESOLUTION) {
+                gameState.actionBar.resolveIndex = 0;
+            }
+        } else {
+            // Cleanup complete -> next round
+            startNextRound();
+        }
+        m.redraw();
+    }
+
+    function startNextRound() {
+        if (!gameState) return;
+
+        gameState.round++;
+        gameState.phase = GAME_PHASES.INITIATIVE;
+
+        // Reset AP
+        gameState.player.apUsed = 0;
+        gameState.opponent.apUsed = 0;
+
+        // Reset round points
+        gameState.player.roundPoints = 0;
+        gameState.opponent.roundPoints = 0;
+
+        // Clear action bar
+        gameState.actionBar.positions = [];
+        gameState.actionBar.resolveIndex = -1;
+
+        // Clear pot (winner claimed it)
+        gameState.pot = [];
+
+        // Draw cards for new round (1 card each)
+        drawCardsForActor(gameState.player, 1);
+        drawCardsForActor(gameState.opponent, 1);
+
+        console.log("[CardGame v2] Starting round", gameState.round);
+        m.redraw();
+    }
+
+    // ── Draw Cards Helper ─────────────────────────────────────────────
+    function drawCardsForActor(actor, count) {
+        for (let i = 0; i < count; i++) {
+            // If draw pile empty, shuffle discard into draw
+            if (actor.drawPile.length === 0 && actor.discardPile.length > 0) {
+                actor.drawPile = shuffle([...actor.discardPile]);
+                actor.discardPile = [];
+                console.log("[CardGame v2] Reshuffled discard pile into draw pile");
+            }
+
+            if (actor.drawPile.length > 0) {
+                let card = actor.drawPile.shift();
+                actor.hand.push(card);
+                console.log("[CardGame v2] Drew card:", card.name);
+            }
+        }
+    }
+
+    // ── Placement Actions ─────────────────────────────────────────────
+    function placeCard(positionIndex, card, isModifier = false) {
+        if (!gameState) return false;
+        if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return false;
+
+        let pos = gameState.actionBar.positions.find(p => p.index === positionIndex);
+        if (!pos) return false;
+
+        // Check ownership
+        let currentPlayer = gameState.currentTurn;
+        if (pos.owner !== currentPlayer) {
+            console.warn("[CardGame v2] Cannot place on opponent's position");
+            return false;
+        }
+
+        if (isModifier) {
+            // Add modifier to existing stack
+            if (!pos.stack) {
+                console.warn("[CardGame v2] No core card to modify");
+                return false;
+            }
+            pos.stack.modifiers.push(card);
+        } else {
+            // Place core card (action/talk)
+            if (pos.stack && pos.stack.coreCard) {
+                console.warn("[CardGame v2] Position already has a core card");
+                return false;
+            }
+
+            // Check AP
+            let actor = currentPlayer === "player" ? gameState.player : gameState.opponent;
+            if (actor.apUsed >= actor.ap) {
+                console.warn("[CardGame v2] No AP remaining");
+                return false;
+            }
+
+            pos.stack = { coreCard: card, modifiers: [] };
+            actor.apUsed++;
+
+            // Remove card from hand
+            if (currentPlayer === "player") {
+                let idx = gameState.player.hand.findIndex(c => c === card || (c.name === card.name && c.type === card.type));
+                if (idx >= 0) gameState.player.hand.splice(idx, 1);
+            }
+        }
+
+        console.log("[CardGame v2] Placed card at position", positionIndex, card.name);
+        m.redraw();
+
+        // Check if player is out of AP and auto-end their turn
+        if (currentPlayer === "player") {
+            setTimeout(() => { checkAutoEndTurn(); }, 100);
+        }
+        return true;
+    }
+
+    function removeCardFromPosition(positionIndex) {
+        if (!gameState) return;
+        let pos = gameState.actionBar.positions.find(p => p.index === positionIndex);
+        if (!pos || !pos.stack) return;
+
+        let currentPlayer = gameState.currentTurn;
+        if (pos.owner !== currentPlayer) return;
+
+        // Return cards to hand
+        if (currentPlayer === "player") {
+            if (pos.stack.coreCard) {
+                gameState.player.hand.push(pos.stack.coreCard);
+                gameState.player.apUsed--;
+            }
+            pos.stack.modifiers.forEach(mod => gameState.player.hand.push(mod));
+        }
+
+        pos.stack = null;
+        m.redraw();
+    }
+
+    function endTurn() {
+        if (!gameState) return;
+        if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return;
+
+        // Switch turn
+        gameState.currentTurn = gameState.currentTurn === "player" ? "opponent" : "player";
+
+        // Check if the current player has 0 AP - auto-skip their turn
+        checkAutoEndTurn();
+    }
+
+    // Auto-end turn if current player has no AP remaining
+    function checkAutoEndTurn() {
+        if (!gameState) return;
+        if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return;
+
+        let current = gameState.currentTurn === "player" ? gameState.player : gameState.opponent;
+        let apRemaining = current.ap - current.apUsed;
+
+        console.log("[CardGame v2] checkAutoEndTurn:", gameState.currentTurn, "AP remaining:", apRemaining);
+
+        if (apRemaining <= 0) {
+            // No AP left, check if placement is complete or switch turns
+            checkPlacementComplete();
+            if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return;  // Phase advanced
+
+            // If still in placement, it means other player still has AP - switch to them
+            let other = gameState.currentTurn === "player" ? gameState.opponent : gameState.player;
+            if (other.apUsed < other.ap) {
+                gameState.currentTurn = gameState.currentTurn === "player" ? "opponent" : "player";
+                // Recursively check the new current player
+                setTimeout(() => { checkAutoEndTurn(); m.redraw(); }, 300);
+            }
+        } else if (gameState.currentTurn === "opponent") {
+            // Opponent has AP, let AI place cards
+            setTimeout(() => {
+                aiPlaceCards();
+                m.redraw();
+            }, 500);
+        }
+        m.redraw();
+    }
+
+    // ── Simple AI Card Placement ──────────────────────────────────────
+    function aiPlaceCards() {
+        if (!gameState) return;
+
+        let opp = gameState.opponent;
+        let positions = gameState.initiative.opponentPositions;
+
+        console.log("[CardGame v2] AI placing cards. Hand:", opp.hand.length, "AP:", opp.ap - opp.apUsed);
+
+        // Simple AI: place playable cards on available positions
+        for (let posIdx of positions) {
+            if (opp.apUsed >= opp.ap) break;
+
+            // If hand is empty, try to draw a card (costs 1 AP)
+            if (opp.hand.length === 0) {
+                if (opp.drawPile.length > 0 || opp.discardPile.length > 0) {
+                    drawCardsForActor(opp, 1);
+                    opp.apUsed++;  // Drawing costs 1 AP
+                    console.log("[CardGame v2] AI drew a card, AP used:", opp.apUsed + "/" + opp.ap);
+                    if (opp.apUsed >= opp.ap) break;  // Out of AP after drawing
+                } else {
+                    break;  // No cards to draw
+                }
+            }
+
+            let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
+            if (!pos || pos.stack) continue;
+
+            // Find a playable card from hand (action, talk, skill, magic)
+            let playable = opp.hand.find(c =>
+                c.type === "action" || c.type === "talk" ||
+                c.type === "skill" || c.type === "magic"
+            );
+            if (playable) {
+                // Check energy cost
+                if (playable.energyCost && playable.energyCost > opp.energy) {
+                    continue; // Can't afford it
+                }
+
+                pos.stack = { coreCard: playable, modifiers: [] };
+                opp.apUsed++;
+
+                // Deduct energy if needed
+                if (playable.energyCost) {
+                    opp.energy -= playable.energyCost;
+                }
+
+                // Remove from hand
+                let idx = opp.hand.indexOf(playable);
+                if (idx >= 0) opp.hand.splice(idx, 1);
+
+                console.log("[CardGame v2] AI placed:", playable.name, "at position", posIdx);
+            }
+        }
+
+        // AI placement done, switch back to player or end placement
+        checkPlacementComplete();
+    }
+
+    function checkPlacementComplete() {
+        if (!gameState) return;
+
+        let playerDone = gameState.player.apUsed >= gameState.player.ap;
+        let opponentDone = gameState.opponent.apUsed >= gameState.opponent.ap;
+
+        if (playerDone && opponentDone) {
+            advancePhase(); // Move to resolution
+        } else {
+            gameState.currentTurn = playerDone ? "opponent" : "player";
+        }
+    }
+
+    // ── Resolution Phase ──────────────────────────────────────────────
+    let resolutionAnimating = false;
+
+    function advanceResolution() {
+        if (!gameState) return;
+        if (gameState.phase !== GAME_PHASES.RESOLUTION) return;
+        if (resolutionAnimating) return;
+
+        let bar = gameState.actionBar;
+        if (bar.resolveIndex >= bar.positions.length) {
+            // Resolution complete
+            advancePhase();
+            return;
+        }
+
+        let pos = bar.positions[bar.resolveIndex];
+        if (pos.resolved) {
+            bar.resolveIndex++;
+            advanceResolution();
+            return;
+        }
+
+        // Mark as resolving (animation will play)
+        resolutionAnimating = true;
+
+        // Simulate resolution (Phase 5 will add actual combat)
+        setTimeout(() => {
+            pos.resolved = true;
+            resolutionAnimating = false;
+            bar.resolveIndex++;
+
+            // Move played cards to owner's discard pile
+            if (pos.stack && pos.stack.coreCard) {
+                let owner = pos.owner === "player" ? gameState.player : gameState.opponent;
+                owner.discardPile.push(pos.stack.coreCard);
+                pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
+            }
+
+            m.redraw();
+
+            // Auto-advance if more positions
+            if (bar.resolveIndex < bar.positions.length) {
+                setTimeout(() => advanceResolution(), 500);
+            } else {
+                advancePhase();
+            }
+        }, 800);
+
+        m.redraw();
+    }
+
+    // ── Character Selection UI ────────────────────────────────────────
+    function CharacterSelectUI() {
+        return {
+            view() {
+                if (!gameCharSelection) return null;
+                let chars = gameCharSelection.characters || [];
+
+                return m("div", { class: "cg2-game-container" }, [
+                    m("div", { class: "cg2-game-header" }, [
+                        m("button", {
+                            class: "cg2-btn",
+                            onclick() {
+                                gameCharSelection = null;
+                                screen = "deckView";
+                                m.redraw();
+                            }
+                        }, "\u2190 Back"),
+                        m("span", { class: "cg2-game-title" }, "Select Your Character")
+                    ]),
+
+                    m("div", { class: "cg2-char-select-container" }, [
+                        m("div", { class: "cg2-phase-panel" }, [
+                            m("h2", "Choose Your Character"),
+                            m("p", "Select which character you want to play (" + chars.length + " available). The other characters will be your opponents."),
+
+                            // LLM Status Indicator
+                            m("div", { class: "cg2-llm-status" }, [
+                                !llmStatus.checked
+                                    ? m("span", { class: "cg2-llm-checking" }, [
+                                        m("span", { class: "material-symbols-outlined cg2-spin" }, "sync"),
+                                        " Checking LLM connectivity..."
+                                    ])
+                                    : llmStatus.available
+                                        ? m("span", { class: "cg2-llm-online" }, [
+                                            m("span", { class: "material-symbols-outlined" }, "check_circle"),
+                                            " LLM Online"
+                                        ])
+                                        : m("span", { class: "cg2-llm-offline" }, [
+                                            m("span", { class: "material-symbols-outlined" }, "error"),
+                                            " LLM Offline - AI opponent will use basic strategy"
+                                        ])
+                            ]),
+
+                            m("p", { style: { marginBottom: "16px" } }, "Click a character to start"),
+
+                            m("div", { class: "cg2-char-select-grid" },
+                                chars.map(char =>
+                                    m("div", {
+                                        class: "cg2-char-select-wrapper",
+                                        onclick() {
+                                            // Click to select and immediately start game
+                                            gameCharSelection.selected = char;
+                                            gameState = createGameState(viewingDeck, char);
+                                            gameCharSelection = null;
+                                            if (gameState) {
+                                                runInitiativePhase();
+                                            }
+                                            m.redraw();
+                                        }
+                                    }, [
+                                        // Use CardFace for consistent card styling
+                                        m(CardFace, { card: char, bgImage: char.portraitUrl })
+                                    ])
+                                )
+                            )
+                        ])
+                    ])
+                ]);
+            }
+        };
+    }
+
+    // ── Game View Component ───────────────────────────────────────────
+    function GameView() {
+        return {
+            oninit() {
+                // Check LLM connectivity at game start
+                if (!llmStatus.checked) {
+                    checkLlmConnectivity();
+                }
+
+                if (!gameState && viewingDeck) {
+                    // Always let player pick from all characters
+                    let allChars = (viewingDeck.cards || []).filter(c => c.type === "character");
+                    console.log("[CardGame v2] Game init - found " + allChars.length + " character cards:", allChars.map(c => c.name));
+
+                    if (allChars.length > 0 && !gameCharSelection) {
+                        // Show character selection for ALL characters
+                        gameCharSelection = { characters: allChars, selected: null };
+                    } else if (gameCharSelection?.selected) {
+                        // Character selected - start game
+                        gameState = createGameState(viewingDeck, gameCharSelection.selected);
+                        gameCharSelection = null;
+                        if (gameState) {
+                            runInitiativePhase();
+                        }
+                    } else if (allChars.length === 0) {
+                        console.error("[CardGame v2] No characters in deck");
+                    }
+                }
+            },
+            view() {
+                // Character selection screen
+                if (gameCharSelection && !gameState) {
+                    return m(CharacterSelectUI);
+                }
+
+                if (!gameState) {
+                    return m("div", { class: "cg2-game-error" }, [
+                        m("h2", "Game Error"),
+                        m("p", "No game state available. Please load a deck first."),
+                        m("button", {
+                            class: "cg2-btn",
+                            onclick() { screen = "deckList"; m.redraw(); }
+                        }, "Back to Decks")
+                    ]);
+                }
+
+                return m("div", { class: "cg2-game-container" }, [
+                    // Header
+                    m("div", { class: "cg2-game-header" }, [
+                        m("button", {
+                            class: "cg2-btn",
+                            onclick() {
+                                if (confirm("Exit game? Progress will be lost.")) {
+                                    gameState = null;
+                                    screen = "deckView";
+                                    m.redraw();
+                                }
+                            }
+                        }, "\u2190 Exit Game"),
+                        m("span", { class: "cg2-game-title" }, gameState.deckName || "Card Game"),
+                        m("span", { class: "cg2-round-badge" }, "Round " + gameState.round),
+                        m("span", { class: "cg2-phase-badge" }, formatPhase(gameState.phase))
+                    ]),
+
+                    // Main game area
+                    m("div", { class: "cg2-game-main" }, [
+                        // Left sidebar: Player character
+                        m("div", { class: "cg2-game-sidebar cg2-player-side" }, [
+                            m(CharacterSidebar, { actor: gameState.player, label: "You" })
+                        ]),
+
+                        // Center: Action Bar + Phase UI
+                        m("div", { class: "cg2-game-center" }, [
+                            // Phase-specific UI
+                            gameState.phase === GAME_PHASES.INITIATIVE ? m(InitiativePhaseUI) : null,
+                            // EQUIP phase skipped - handled in hand as modifiers
+                            gameState.phase === GAME_PHASES.DRAW_PLACEMENT ? m(PlacementPhaseUI) : null,
+                            gameState.phase === GAME_PHASES.RESOLUTION ? m(ResolutionPhaseUI) : null,
+                            gameState.phase === GAME_PHASES.CLEANUP ? m(CleanupPhaseUI) : null,
+
+                            // Action Bar (visible in placement and resolution)
+                            (gameState.phase === GAME_PHASES.DRAW_PLACEMENT ||
+                             gameState.phase === GAME_PHASES.RESOLUTION)
+                                ? m(ActionBar)
+                                : null
+                        ]),
+
+                        // Right sidebar: Opponent
+                        m("div", { class: "cg2-game-sidebar cg2-opponent-side" }, [
+                            m(CharacterSidebar, { actor: gameState.opponent, label: "Opponent", isOpponent: true })
+                        ])
+                    ]),
+
+                    // Bottom: Hand Tray (visible in placement phase)
+                    gameState.phase === GAME_PHASES.DRAW_PLACEMENT
+                        ? m(HandTray)
+                        : null
+                ]);
+            }
+        };
+    }
+
+    function formatPhase(phase) {
+        let labels = {
+            [GAME_PHASES.INITIATIVE]: "Initiative",
+            [GAME_PHASES.EQUIP]: "Equip",
+            [GAME_PHASES.DRAW_PLACEMENT]: "Placement",
+            [GAME_PHASES.RESOLUTION]: "Resolution",
+            [GAME_PHASES.CLEANUP]: "Cleanup"
+        };
+        return labels[phase] || phase;
+    }
+
+    // ── Character Sidebar Component ───────────────────────────────────
+    function CharacterSidebar() {
+        return {
+            view(vnode) {
+                let { actor, label, isOpponent } = vnode.attrs;
+                let char = actor.character || {};
+                let stats = char.stats || {};
+
+                return m("div", { class: "cg2-char-sidebar" + (isOpponent ? " cg2-opponent" : "") }, [
+                    m("div", { class: "cg2-sidebar-label" }, label),
+                    m("div", { class: "cg2-sidebar-portrait" },
+                        char.portraitUrl
+                            ? m("img", { src: char.portraitUrl })
+                            : m("span", { class: "material-symbols-outlined" }, "person")
+                    ),
+                    m("div", { class: "cg2-sidebar-name" }, char.name || "Unknown"),
+
+                    // Need bars
+                    m(NeedBar, { label: "HP", abbrev: "HP", current: actor.hp, max: actor.maxHp, color: "#e53935" }),
+                    m(NeedBar, { label: "Energy", abbrev: "NRG", current: actor.energy, max: actor.maxEnergy, color: "#1E88E5" }),
+                    m(NeedBar, { label: "Morale", abbrev: "MRL", current: actor.morale, max: actor.maxMorale, color: "#43A047" }),
+
+                    // AP indicator
+                    m("div", { class: "cg2-ap-indicator" }, [
+                        m("span", "AP: "),
+                        m("span", { class: "cg2-ap-value" }, (actor.ap - actor.apUsed) + "/" + actor.ap)
+                    ]),
+
+                    // Hand and deck counts
+                    m("div", { class: "cg2-hand-count" }, [
+                        m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "playing_cards"),
+                        m("span", " " + (actor.hand ? actor.hand.length : 0) + " hand"),
+                        m("span", { style: "margin-left:8px" }),
+                        m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "layers"),
+                        m("span", " " + (actor.drawPile ? actor.drawPile.length : 0) + " deck")
+                    ]),
+
+                    // Character card stack (modifier cards placed on character)
+                    actor.cardStack && actor.cardStack.length > 0
+                        ? m("div", { class: "cg2-char-stack" }, [
+                            m("div", { class: "cg2-stack-label" }, "Modifiers (" + actor.cardStack.length + ")"),
+                            m("div", { class: "cg2-stack-cards" },
+                                actor.cardStack.slice(0, 3).map((card, i) =>
+                                    m("div", {
+                                        class: "cg2-stack-card cg2-stack-card-" + card.type,
+                                        title: card.name + (card.effect ? ": " + card.effect : ""),
+                                        style: { zIndex: 10 - i, marginLeft: i > 0 ? "-20px" : "0" }
+                                    }, [
+                                        m("span", { class: "material-symbols-outlined cg2-stack-icon" }, cardTypeIcon(card.type)),
+                                        actor.cardStack.length > 3 && i === 2
+                                            ? m("span", { class: "cg2-stack-more" }, "+" + (actor.cardStack.length - 3))
+                                            : null
+                                    ])
+                                )
+                            )
+                        ])
+                        : m("div", { class: "cg2-char-stack cg2-stack-empty" }, [
+                            m("div", { class: "cg2-stack-label" }, "No modifiers")
+                        ])
+                ]);
+            }
+        };
+    }
+
+    // ── Initiative Phase UI ───────────────────────────────────────────
+    function InitiativePhaseUI() {
+        return {
+            view() {
+                let init = gameState.initiative;
+                return m("div", { class: "cg2-phase-panel cg2-initiative-panel" }, [
+                    m("h2", "Initiative Phase"),
+                    m("p", "Rolling for turn order..."),
+
+                    m("div", { class: "cg2-init-rolls" }, [
+                        m("div", { class: "cg2-init-roll" + (init.winner === "player" ? " cg2-winner" : "") }, [
+                            m("div", { class: "cg2-init-label" }, "You"),
+                            init.playerRoll
+                                ? m("div", { class: "cg2-init-result" }, [
+                                    m("span", { class: "cg2-dice" }, init.playerRoll.raw),
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod" }, init.playerRoll.modifier + " AGI"),
+                                    m("span", " = "),
+                                    m("span", { class: "cg2-total" }, init.playerRoll.total)
+                                ])
+                                : m("div", { class: "cg2-init-pending" }, "...")
+                        ]),
+                        m("div", { class: "cg2-init-vs" }, "VS"),
+                        m("div", { class: "cg2-init-roll" + (init.winner === "opponent" ? " cg2-winner" : "") }, [
+                            m("div", { class: "cg2-init-label" }, "Opponent"),
+                            init.opponentRoll
+                                ? m("div", { class: "cg2-init-result" }, [
+                                    m("span", { class: "cg2-dice" }, init.opponentRoll.raw),
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod" }, init.opponentRoll.modifier + " AGI"),
+                                    m("span", " = "),
+                                    m("span", { class: "cg2-total" }, init.opponentRoll.total)
+                                ])
+                                : m("div", { class: "cg2-init-pending" }, "...")
+                        ])
+                    ]),
+
+                    init.winner
+                        ? m("div", { class: "cg2-init-winner" }, [
+                            m("strong", init.winner === "player" ? "You win initiative!" : "Opponent wins initiative!"),
+                            m("p", init.winner === "player"
+                                ? "You get odd positions (1, 3, 5...)"
+                                : "You get even positions (2, 4, 6...)")
+                        ])
+                        : null,
+
+                    m("button", {
+                        class: "cg2-btn cg2-btn-primary",
+                        style: { marginTop: "16px" },
+                        onclick() { advancePhase(); }
+                    }, "Continue to Equip Phase")
+                ]);
+            }
+        };
+    }
+
+    // ── Equip Phase UI ────────────────────────────────────────────────
+    function EquipPhaseUI() {
+        return {
+            view() {
+                let player = gameState.player;
+                let equipped = player.equipped;
+
+                return m("div", { class: "cg2-phase-panel cg2-equip-panel" }, [
+                    m("h2", "Equip Phase"),
+                    m("p", "Adjust your equipment before combat. (Free action)"),
+
+                    m("div", { class: "cg2-equip-slots" }, [
+                        m(EquipSlot, { slot: "head", label: "Head", item: equipped.head }),
+                        m(EquipSlot, { slot: "body", label: "Body", item: equipped.body }),
+                        m(EquipSlot, { slot: "handL", label: "Left Hand", item: equipped.handL }),
+                        m(EquipSlot, { slot: "handR", label: "Right Hand", item: equipped.handR }),
+                        m(EquipSlot, { slot: "feet", label: "Feet", item: equipped.feet }),
+                        m(EquipSlot, { slot: "ring", label: "Ring", item: equipped.ring }),
+                        m(EquipSlot, { slot: "back", label: "Back", item: equipped.back })
+                    ]),
+
+                    m("button", {
+                        class: "cg2-btn cg2-btn-primary",
+                        style: { marginTop: "16px" },
+                        onclick() { advancePhase(); }
+                    }, "Continue to Placement Phase")
+                ]);
+            }
+        };
+    }
+
+    function EquipSlot() {
+        return {
+            view(vnode) {
+                let { slot, label, item } = vnode.attrs;
+                return m("div", { class: "cg2-equip-slot" + (item ? " cg2-slot-filled" : "") }, [
+                    m("span", { class: "cg2-slot-label" }, label),
+                    item
+                        ? m("span", { class: "cg2-slot-item" }, item.name)
+                        : m("span", { class: "cg2-slot-empty" }, "Empty")
+                ]);
+            }
+        };
+    }
+
+    // ── Placement Phase UI ────────────────────────────────────────────
+    function PlacementPhaseUI() {
+        return {
+            view() {
+                let isPlayerTurn = gameState.currentTurn === "player";
+                let player = gameState.player;
+
+                return m("div", { class: "cg2-phase-panel cg2-placement-panel" }, [
+                    m("h2", "Draw & Placement Phase"),
+                    m("p", { class: "cg2-turn-indicator" + (isPlayerTurn ? " cg2-your-turn" : "") },
+                        isPlayerTurn ? "Your turn! Drag cards to the action bar." : "Opponent is placing cards..."
+                    ),
+
+                    m("div", { class: "cg2-ap-display" }, [
+                        m("span", "AP Remaining: "),
+                        m("strong", (player.ap - player.apUsed) + "/" + player.ap),
+                        m("span", { style: "margin-left: 16px" }, "Hand: "),
+                        m("strong", player.hand.length + " cards")
+                    ]),
+
+                    // Action buttons when player's turn
+                    isPlayerTurn
+                        ? m("div", { class: "cg2-placement-actions" }, [
+                            // Draw Card button (costs 1 AP)
+                            m("button", {
+                                class: "cg2-btn",
+                                disabled: (player.drawPile.length === 0 && player.discardPile.length === 0) ||
+                                          (player.apUsed >= player.ap),  // No AP left
+                                title: "Draw a card (costs 1 AP)",
+                                onclick() {
+                                    if (player.apUsed < player.ap) {
+                                        drawCardsForActor(player, 1);
+                                        player.apUsed++;  // Drawing costs 1 AP
+                                        console.log("[CardGame v2] Player drew a card, AP used:", player.apUsed + "/" + player.ap);
+                                        m.redraw();
+                                        // Check if out of AP and auto-end turn
+                                        setTimeout(() => { checkAutoEndTurn(); }, 100);
+                                    }
+                                }
+                            }, [
+                                m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle;margin-right:4px" }, "add_card"),
+                                "Draw (1 AP)"
+                            ]),
+                            // End/Pass Turn button
+                            m("button", {
+                                class: "cg2-btn cg2-btn-primary",
+                                onclick() {
+                                    checkPlacementComplete();
+                                    if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
+                                        endTurn();
+                                    }
+                                }
+                            }, player.apUsed > 0 ? "End Turn" : "Pass Turn")
+                        ])
+                        : null
+                ]);
+            }
+        };
+    }
+
+    // ── Resolution Phase UI ───────────────────────────────────────────
+    function ResolutionPhaseUI() {
+        return {
+            view() {
+                let bar = gameState.actionBar;
+                let currentPos = bar.positions[bar.resolveIndex];
+
+                return m("div", { class: "cg2-phase-panel cg2-resolution-panel" }, [
+                    m("h2", "Resolution Phase"),
+                    m("p", "Resolving actions left to right..."),
+
+                    currentPos
+                        ? m("div", { class: "cg2-resolving-info" }, [
+                            m("span", "Resolving position " + currentPos.index + " "),
+                            m("span", { class: "cg2-owner-badge" }, currentPos.owner === "player" ? "(You)" : "(Opponent)"),
+                            currentPos.stack && currentPos.stack.coreCard
+                                ? m("span", { class: "cg2-action-name" }, ": " + currentPos.stack.coreCard.name)
+                                : m("span", { class: "cg2-empty-slot" }, ": Empty")
+                        ])
+                        : m("div", "All positions resolved!"),
+
+                    !resolutionAnimating && bar.resolveIndex < bar.positions.length
+                        ? m("button", {
+                            class: "cg2-btn cg2-btn-primary",
+                            onclick() { advanceResolution(); }
+                        }, "Resolve Next")
+                        : null,
+
+                    bar.resolveIndex >= bar.positions.length
+                        ? m("button", {
+                            class: "cg2-btn cg2-btn-primary",
+                            onclick() { advancePhase(); }
+                        }, "Continue to Cleanup")
+                        : null
+                ]);
+            }
+        };
+    }
+
+    // ── Cleanup Phase UI ──────────────────────────────────────────────
+    function CleanupPhaseUI() {
+        return {
+            view() {
+                return m("div", { class: "cg2-phase-panel cg2-cleanup-panel" }, [
+                    m("h2", "Cleanup Phase"),
+                    m("p", "Round " + gameState.round + " complete!"),
+
+                    m("div", { class: "cg2-round-summary" }, [
+                        m("div", "Your round points: " + gameState.player.roundPoints),
+                        m("div", "Opponent round points: " + gameState.opponent.roundPoints)
+                    ]),
+
+                    m("button", {
+                        class: "cg2-btn cg2-btn-primary",
+                        onclick() { startNextRound(); advancePhase(); }
+                    }, "Start Round " + (gameState.round + 1))
+                ]);
+            }
+        };
+    }
+
+    // ── Action Bar Component ──────────────────────────────────────────
+    function ActionBar() {
+        return {
+            view() {
+                let bar = gameState.actionBar;
+                let isPlacement = gameState.phase === GAME_PHASES.DRAW_PLACEMENT;
+                let isResolution = gameState.phase === GAME_PHASES.RESOLUTION;
+
+                return m("div", { class: "cg2-action-bar" }, [
+                    m("div", { class: "cg2-action-bar-label" }, "Action Bar"),
+                    m("div", { class: "cg2-action-bar-track" },
+                        bar.positions.map((pos, i) => {
+                            let isActive = isResolution && bar.resolveIndex === i;
+                            let isResolved = pos.resolved;
+                            let isPlayerPos = pos.owner === "player";
+                            let canDrop = isPlacement && isPlayerPos && gameState.currentTurn === "player";
+
+                            return m("div", {
+                                key: pos.index,
+                                class: "cg2-action-position" +
+                                       (isPlayerPos ? " cg2-player-pos" : " cg2-opponent-pos") +
+                                       (isActive ? " cg2-active" : "") +
+                                       (isResolved ? " cg2-resolved" : "") +
+                                       (canDrop ? " cg2-droppable" : ""),
+                                ondragover(e) {
+                                    if (canDrop) e.preventDefault();
+                                },
+                                ondrop(e) {
+                                    if (!canDrop) return;
+                                    e.preventDefault();
+                                    let cardData = e.dataTransfer.getData("text/plain");
+                                    try {
+                                        let card = JSON.parse(cardData);
+                                        placeCard(pos.index, card);
+                                    } catch (err) {
+                                        console.error("[CardGame v2] Drop error:", err);
+                                    }
+                                }
+                            }, [
+                                m("div", { class: "cg2-pos-number" }, pos.index),
+                                m("div", { class: "cg2-pos-owner" }, isPlayerPos ? "You" : "Opp"),
+                                pos.stack && pos.stack.coreCard
+                                    ? m("div", { class: "cg2-pos-card" }, [
+                                        m("div", { class: "cg2-pos-card-name" }, pos.stack.coreCard.name),
+                                        pos.stack.modifiers.length > 0
+                                            ? m("div", { class: "cg2-pos-mods" }, "+" + pos.stack.modifiers.length + " mod")
+                                            : null
+                                    ])
+                                    : m("div", { class: "cg2-pos-empty" }, canDrop ? "Drop here" : "\u2013"),
+
+                                // Resolution marker
+                                isActive ? m("div", { class: "cg2-resolve-marker" }, "\u25B6") : null
+                            ]);
+                        })
+                    )
+                ]);
+            }
+        };
+    }
+
+    // ── Hand Tray Component ───────────────────────────────────────────
+    let handTrayFilter = "all";  // "all" | "action" | "skill" | "magic" | "item"
+
+    function HandTray() {
+        return {
+            view() {
+                let hand = gameState.player.hand || [];
+                let filteredHand = handTrayFilter === "all"
+                    ? hand
+                    : hand.filter(c => c.type === handTrayFilter);
+
+                // Get card front image from deck if available
+                let cardFrontBg = viewingDeck && viewingDeck.cardFrontImageUrl
+                    ? viewingDeck.cardFrontImageUrl : null;
+
+                return m("div", { class: "cg2-hand-tray" }, [
+                    // Header with label and filter tabs
+                    m("div", { class: "cg2-hand-header" }, [
+                        m("span", { class: "cg2-hand-label" }, [
+                            m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;margin-right:4px" }, "playing_cards"),
+                            "Your Hand (" + hand.length + ")"
+                        ]),
+                        m("div", { class: "cg2-hand-tabs" }, [
+                            ["all", "action", "skill", "magic", "talk"].map(f =>
+                                m("span", {
+                                    class: "cg2-hand-tab" + (handTrayFilter === f ? " cg2-tab-active" : ""),
+                                    onclick() { handTrayFilter = f; }
+                                }, f.charAt(0).toUpperCase() + f.slice(1))
+                            )
+                        ])
+                    ]),
+
+                    // Cards - using proper card styling
+                    m("div", { class: "cg2-hand-cards" },
+                        filteredHand.length > 0
+                            ? filteredHand.map((card, i) =>
+                                m("div", {
+                                    key: card.name + "-" + i,
+                                    class: "cg2-hand-card-wrapper",
+                                    draggable: true,
+                                    ondragstart(e) {
+                                        e.dataTransfer.setData("text/plain", JSON.stringify(card));
+                                        e.dataTransfer.effectAllowed = "move";
+                                    }
+                                }, m(CardFace, { card, bgImage: cardFrontBg, compact: true }))
+                            )
+                            : m("div", { class: "cg2-hand-empty" }, "No cards of this type")
+                    )
+                ]);
+            }
+        };
+    }
+
     // ── Deck View Screen (updated with art generation) ────────────────
     function DeckView() {
         return {
@@ -2811,6 +4101,21 @@
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "checkroom"),
                             applyingOutfits ? "Outfitting..." : "Apply Theme Outfits"
+                        ]),
+                        m("button", {
+                            class: "cg2-btn cg2-btn-primary",
+                            style: { fontSize: "11px", marginLeft: "8px" },
+                            disabled: busy,
+                            title: "Start a new game with this deck",
+                            onclick() {
+                                gameState = null; // Reset any existing game
+                                gameCharSelection = null; // Reset character selection
+                                screen = "game";
+                                m.redraw();
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "play_arrow"),
+                            "Play Game"
                         ])
                     ]),
                     // SD Config panel (per-type)
@@ -3206,7 +4511,8 @@
                             builderStep === 2 ? m(BuilderCharacterStep) : null,
                             builderStep === 3 ? m(BuilderReviewStep) : null
                         ] : null,
-                        screen === "deckView" ? m(DeckView) : null
+                        screen === "deckView" ? m(DeckView) : null,
+                        screen === "game" ? m(GameView) : null
                     ])
                 ]),
                 page.components.dialog.loadDialog(),
@@ -3236,7 +4542,16 @@
         queueDeckArt,
         generateCardArt,
         buildCardPrompt,
-        artQueue: () => artQueue
+        artQueue: () => artQueue,
+        // Phase 4
+        GAME_PHASES,
+        createGameState,
+        gameState: () => gameState,
+        rollD20,
+        rollInitiative,
+        advancePhase,
+        placeCard,
+        advanceResolution
     };
 
 }());

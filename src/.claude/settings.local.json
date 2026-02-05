@@ -26,7 +26,8 @@
       "Bash(kill:*)",
       "Bash(tasklist:*)",
       "Bash(cmd /c:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(node --check:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"
