@@ -2409,7 +2409,8 @@
         }
         let q = am7view.viewQuery("data.color");
         q.field("groupId", grp.id);
-        q.field("name", key);
+        let qf = q.field("name", key);
+        qf.comparator = "like";
         q.range(0, 1);
         let qr = await page.search(q);
         if (qr && qr.results && qr.results.length) {

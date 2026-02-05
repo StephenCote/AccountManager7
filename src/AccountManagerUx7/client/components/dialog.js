@@ -1794,7 +1794,7 @@
                     ]) : null
                 ]);
             },
-            submit: async function(data) {
+            confirm: async function(data) {
                 endDialog();
                 // Refresh the character view to show updated apparel
                 page.clearContextObject(inst.api.objectId());

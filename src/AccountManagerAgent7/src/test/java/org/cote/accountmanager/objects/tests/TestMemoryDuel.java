@@ -12,6 +12,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.cote.accountmanager.agent.MemoryUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -26,11 +30,15 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
+import org.cote.accountmanager.olio.llm.IChatListener;
+import org.cote.accountmanager.olio.llm.IChatHandler;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -48,13 +56,16 @@ import org.junit.Test;
 /**
  * Chat duel integration test for the memory/engram system.
  *
- * 1) Initializes an Olio population and picks 5 random characters.
- * 2) Creates 5 duel pairs where each character is the system in one pair,
+ * 1) Initializes an Olio population and picks characters.
+ * 2) Creates duel pairs where each character is the system in one pair,
  *    with a randomly selected different character as user.
  * 3) Uses alg.prompt.json as the RPG prompt template.
- * 4) Runs a 6-turn round-robin for each pair (A starts as system, B swaps roles).
+ * 4) Runs round-robin turns for each pair (A starts as system, B swaps roles).
  * 5) Creates memories from each conversation and verifies that a randomly
  *    picked character has memories from both system and user conversations.
+ *
+ * Uses streaming mode with synchronous completion latch because the ollama
+ * non-streaming endpoint may be unresponsive.
  */
 public class TestMemoryDuel extends BaseTest {
 
@@ -62,8 +73,9 @@ public class TestMemoryDuel extends BaseTest {
 	private BaseRecord testUser;
 	private OlioContext octx;
 
-	private static final int DUEL_TURNS = 2;  // 2 loop iterations = 4 messages per pair
+	private static final int DUEL_TURNS = 2;
 	private static final int NUM_PAIRS = 2;
+	private static final int STREAM_TIMEOUT_SECONDS = 120;
 
 	@Before
 	public void setupDuel() {
@@ -80,7 +92,7 @@ public class TestMemoryDuel extends BaseTest {
 	@Test(timeout = 600000)
 	public void testChatDuelWithMemories() {
 		try {
-			// --- Step 1: Get population and pick 5 random characters ---
+			// --- Step 1: Get population and pick characters ---
 			List<BaseRecord> realms = octx.getRealms();
 			assertTrue("Expected at least one realm", realms.size() > 0);
 			BaseRecord realm = realms.get(0);
@@ -101,7 +113,7 @@ public class TestMemoryDuel extends BaseTest {
 			BaseRecord promptConfig = loadAlgPromptConfig(testUser);
 			assertNotNull("Prompt config should not be null", promptConfig);
 
-			// --- Step 3: Generate a fixed setting (not random default) ---
+			// --- Step 3: Generate a fixed setting ---
 			String setting = NarrativeUtil.getRandomSetting();
 			logger.info("Setting for all duels: " + setting);
 
@@ -116,7 +128,7 @@ public class TestMemoryDuel extends BaseTest {
 
 			Random rand = new Random();
 
-			// --- Step 4: Create 5 duel pairs and run round-robin ---
+			// --- Step 4: Create duel pairs and run round-robin ---
 			for (int pairIdx = 0; pairIdx < NUM_PAIRS; pairIdx++) {
 				BaseRecord sysChar = picked.get(pairIdx);
 
@@ -138,55 +150,83 @@ public class TestMemoryDuel extends BaseTest {
 				String convIdA = "duel-" + pairIdx + "-A-" + UUID.randomUUID().toString().substring(0, 8);
 				String convIdB = "duel-" + pairIdx + "-B-" + UUID.randomUUID().toString().substring(0, 8);
 
-				// Config A: sysChar=system, usrChar=user → sysChar has a system conv, usrChar has a user conv
+				// Config A: sysChar=system, usrChar=user
 				systemConvs.get(sysOid).add(convIdA);
 				userConvs.get(usrOid).add(convIdA);
-				// Config B: roles swapped → usrChar has a system conv, sysChar has a user conv
+				// Config B: roles swapped
 				systemConvs.get(usrOid).add(convIdB);
 				userConvs.get(sysOid).add(convIdB);
 
-				// Create chatConfig A: sysChar as system, usrChar as user
 				BaseRecord cfgA = createDuelChatConfig(
 						"Duel " + pairIdx + " A " + UUID.randomUUID().toString().substring(0, 6),
 						sysChar, usrChar, setting, "system");
 				assertNotNull("ChatConfig A should not be null", cfgA);
 
-				// Create chatConfig B independently (avoid copyRecord StackOverflow on nested models)
 				BaseRecord cfgB = createDuelChatConfig(
 						"Duel " + pairIdx + " B " + UUID.randomUUID().toString().substring(0, 6),
 						usrChar, sysChar, setting, "user");
+				assertNotNull("ChatConfig B should not be null", cfgB);
 
 				Chat chatA = new Chat(testUser, cfgA, promptConfig);
 				Chat chatB = new Chat(testUser, cfgB, promptConfig);
 				chatA.setPersistSession(false);
 				chatB.setPersistSession(false);
 
+				// Set up streaming listeners for synchronous waiting
+				DuelStreamListener listenerA = new DuelStreamListener("A");
+				DuelStreamListener listenerB = new DuelStreamListener("B");
+				chatA.setListener(listenerA);
+				chatB.setListener(listenerB);
+
 				OpenAIRequest reqA = chatA.getChatPrompt();
 				OpenAIRequest reqB = chatB.getChatPrompt();
 				assertNotNull("Request A should not be null", reqA);
 				assertNotNull("Request B should not be null", reqB);
 
-				// Round-robin: empty string on first turn causes system to generate first response
+				// Enable streaming mode
+				reqA.setStream(true);
+				reqB.setStream(true);
+
+				// Round-robin: empty string on first turn so system generates first
 				String messageForA = "";
 				String messageForB = null;
 
 				for (int turn = 0; turn < DUEL_TURNS; turn++) {
 					logger.info("--- Pair " + (pairIdx + 1) + " Turn " + (turn + 1) + "/" + DUEL_TURNS + " ---");
 
-					// A speaks (first turn: null = system initiates)
+					// A speaks
+					listenerA.reset();
 					chatA.continueChat(reqA, messageForA);
+					boolean completedA = listenerA.awaitCompletion(STREAM_TIMEOUT_SECONDS);
+					assertTrue("Chat A should complete within timeout on turn " + (turn + 1), completedA);
+					assertFalse("Chat A should not have errors", listenerA.hasError());
+
+					// handleResponse to add assistant message to req
+					OpenAIResponse respA = listenerA.getResponse();
+					assertNotNull("Response from A should not be null", respA);
+					chatA.handleResponse(reqA, respA, false);
+
 					List<OpenAIMessage> msgsA = reqA.getMessages();
 					assertTrue("Request A should have messages after turn", msgsA.size() > 0);
 					messageForB = msgsA.get(msgsA.size() - 1).getContent();
-					assertNotNull("Response from A should not be null", messageForB);
+					assertNotNull("Response content from A should not be null", messageForB);
 					logger.info(sysName + ": " + truncate(messageForB, 150));
 
-					// B responds with A's output as user input
+					// B responds with A's output
+					listenerB.reset();
 					chatB.continueChat(reqB, messageForB);
+					boolean completedB = listenerB.awaitCompletion(STREAM_TIMEOUT_SECONDS);
+					assertTrue("Chat B should complete within timeout on turn " + (turn + 1), completedB);
+					assertFalse("Chat B should not have errors", listenerB.hasError());
+
+					OpenAIResponse respB = listenerB.getResponse();
+					assertNotNull("Response from B should not be null", respB);
+					chatB.handleResponse(reqB, respB, false);
+
 					List<OpenAIMessage> msgsB = reqB.getMessages();
 					assertTrue("Request B should have messages after turn", msgsB.size() > 0);
 					messageForA = msgsB.get(msgsB.size() - 1).getContent();
-					assertNotNull("Response from B should not be null", messageForA);
+					assertNotNull("Response content from B should not be null", messageForA);
 					logger.info(usrName + ": " + truncate(messageForA, 150));
 				}
 
@@ -209,9 +249,6 @@ public class TestMemoryDuel extends BaseTest {
 			logger.info("System conversation count: " + sysConvIds.size());
 			logger.info("User conversation count: " + usrConvIds.size());
 
-			// Each character is system in exactly one pair (pairIdx == their index)
-			// and may be user in 0 or more pairs (randomly selected)
-			// But because of the B-swap, every character is also in a user conv for their own pair
 			assertTrue(testCharName + " should have at least 1 system conversation", sysConvIds.size() >= 1);
 			assertTrue(testCharName + " should have at least 1 user conversation", usrConvIds.size() >= 1);
 
@@ -259,11 +296,97 @@ public class TestMemoryDuel extends BaseTest {
 		}
 	}
 
-	// --- Helper Methods ---
+	// --- Streaming Listener for Synchronous Duel ---
 
 	/**
-	 * Loads alg.prompt.json from classpath resources and creates a prompt config record.
+	 * A chat listener that uses a CountDownLatch for synchronous waiting on
+	 * streaming responses. Each call to reset() creates a fresh latch for the
+	 * next turn.
 	 */
+	private class DuelStreamListener implements IChatListener {
+		private final String tag;
+		private volatile CountDownLatch latch;
+		private final AtomicReference<OpenAIResponse> responseRef = new AtomicReference<>();
+		private final AtomicBoolean errorFlag = new AtomicBoolean(false);
+		private final AtomicReference<String> errorMsg = new AtomicReference<>();
+
+		DuelStreamListener(String tag) {
+			this.tag = tag;
+			this.latch = new CountDownLatch(1);
+		}
+
+		void reset() {
+			latch = new CountDownLatch(1);
+			responseRef.set(null);
+			errorFlag.set(false);
+			errorMsg.set(null);
+		}
+
+		boolean awaitCompletion(int timeoutSeconds) throws InterruptedException {
+			return latch.await(timeoutSeconds, TimeUnit.SECONDS);
+		}
+
+		OpenAIResponse getResponse() {
+			return responseRef.get();
+		}
+
+		boolean hasError() {
+			return errorFlag.get();
+		}
+
+		@Override
+		public void oncomplete(BaseRecord user, OpenAIRequest request, OpenAIResponse response) {
+			logger.info("Stream " + tag + " complete");
+			responseRef.set(response);
+			latch.countDown();
+		}
+
+		@Override
+		public void onupdate(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String message) {
+			// Streaming chunk received - no-op, response accumulates in Chat.chat()
+		}
+
+		@Override
+		public void onerror(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String msg) {
+			logger.error("Stream " + tag + " error: " + msg);
+			errorFlag.set(true);
+			errorMsg.set(msg);
+			latch.countDown();
+		}
+
+		@Override
+		public boolean isStopStream(OpenAIRequest request) {
+			return false;
+		}
+
+		@Override
+		public void stopStream(OpenAIRequest request) {
+			// no-op
+		}
+
+		@Override
+		public boolean isRequesting(OpenAIRequest request) {
+			return latch.getCount() > 0;
+		}
+
+		@Override
+		public OpenAIRequest sendMessageToServer(BaseRecord user, ChatRequest request) {
+			return null;
+		}
+
+		@Override
+		public ChatRequest getMessage(BaseRecord user, ChatRequest messageRequest) {
+			return null;
+		}
+
+		@Override
+		public void addChatHandler(IChatHandler handler) {
+			// no-op
+		}
+	}
+
+	// --- Helper Methods ---
+
 	private BaseRecord loadAlgPromptConfig(BaseRecord user) {
 		BaseRecord opcfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_PROMPT_CONFIG,
 				"Memory Duel Prompt", "~/Chat");
@@ -290,9 +413,6 @@ public class TestMemoryDuel extends BaseTest {
 		return opcfg;
 	}
 
-	/**
-	 * Creates and persists a chatConfig for a duel pair with LLM service configuration.
-	 */
 	private BaseRecord createDuelChatConfig(String name, BaseRecord sysChar, BaseRecord usrChar,
 			String setting, String startMode) {
 
@@ -325,7 +445,6 @@ public class TestMemoryDuel extends BaseTest {
 				cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken").trim());
 			} else if (serviceType == LLMServiceEnumType.OLLAMA) {
 				cfg.setValue("serverUrl", testProperties.getProperty("test.llm.ollama.server").trim());
-				// Use smaller/faster model for duel test (custom llama 3.1 8B)
 				cfg.setValue("model", "creat");
 			}
 
@@ -338,7 +457,7 @@ public class TestMemoryDuel extends BaseTest {
 
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 			if (cfg != null) {
-				// Re-read with controlled depth to avoid StackOverflow on deeply nested models
+				// Re-read with controlled depth to avoid StackOverflow
 				BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(
 						testUser, ModelNames.MODEL_GROUP, "~/Chat", "DATA",
 						testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -356,18 +475,13 @@ public class TestMemoryDuel extends BaseTest {
 		return cfg;
 	}
 
-	/**
-	 * Creates memory records from a completed conversation.
-	 * Generates one summary memory plus one memory per assistant response.
-	 * Returns the total number of memories created.
-	 */
 	private int createMemoriesFromConversation(OpenAIRequest req, String conversationId,
 			String systemName, String userName) {
 
 		List<OpenAIMessage> msgs = req.getMessages();
 		int memoryCount = 0;
 
-		// Build a conversation summary from all non-system messages
+		// Build conversation summary from all non-system messages
 		StringBuilder convoText = new StringBuilder();
 		for (int i = 1; i < msgs.size(); i++) {
 			OpenAIMessage msg = msgs.get(i);
@@ -380,7 +494,7 @@ public class TestMemoryDuel extends BaseTest {
 
 		if (convoText.length() == 0) return 0;
 
-		// Create one summary memory for the whole conversation
+		// Summary memory for the whole conversation
 		BaseRecord summaryMem = MemoryUtil.createMemory(
 				testUser,
 				convoText.toString(),
@@ -389,7 +503,7 @@ public class TestMemoryDuel extends BaseTest {
 				"am7://duel/" + conversationId, conversationId);
 		if (summaryMem != null) memoryCount++;
 
-		// Create individual memories from each assistant response
+		// Individual memories from each assistant response
 		for (int i = 1; i < msgs.size(); i++) {
 			OpenAIMessage msg = msgs.get(i);
 			if (!"assistant".equals(msg.getRole())) continue;

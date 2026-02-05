@@ -25,7 +25,8 @@
       "Bash(curl:*)",
       "Bash(kill:*)",
       "Bash(tasklist:*)",
-      "Bash(cmd /c:*)"
+      "Bash(cmd /c:*)",
+      "Bash(tee:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"
