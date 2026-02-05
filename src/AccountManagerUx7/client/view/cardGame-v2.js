@@ -1349,8 +1349,10 @@
         }
     }
 
-    function buildCardPrompt(card, theme, style) {
-        let suffix = (theme && theme.artStyle && theme.artStyle.promptSuffix) || "high fantasy, vibrant colors, detailed illustration";
+    function buildCardPrompt(card, theme, style, customSuffix) {
+        let suffix = customSuffix ||
+            (theme && theme.artStyle && theme.artStyle.promptSuffix) ||
+            "high fantasy, vibrant colors, detailed illustration";
 
         // Character cards — server builds its own prompt from person data
         if (card.type === "character") {
@@ -1587,16 +1589,11 @@
         am7sd.applyOverrides(entity, getCardTypeDelta(card.type));
         am7sd.fillStyleDefaults(entity);
 
-        // Use tab-specific prompt if set, then _default prompt, then auto-generated
+        // Tab-specific or default prompt used as the "in ___" suffix
         let typeOv = sdOverrides[card.type];
         let defOv = sdOverrides._default;
-        if (typeOv && typeOv.description) {
-            entity.description = typeOv.description;
-        } else if (defOv && defOv.description) {
-            entity.description = defOv.description;
-        } else {
-            entity.description = buildCardPrompt(card, t, entity.style);
-        }
+        let customSuffix = (typeOv && typeOv.description) || (defOv && defOv.description) || null;
+        entity.description = buildCardPrompt(card, t, entity.style, customSuffix);
 
         // For character cards, the server builds its own prompt from person data
         // and uses imageSetting for the scene/location.
