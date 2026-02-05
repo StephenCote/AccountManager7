@@ -1278,6 +1278,206 @@
     }
 
     // ── Builder Step 3: Review & Build ───────────────────────────────
+    // ── Card Editor State (inline CRUD) ─────────────────────────────
+    let editingCard = null;         // card object being edited (null = not editing)
+    let editingCardIndex = -1;      // index in builtDeck.cards (-1 = new card)
+    let addCardTypeOpen = false;    // dropdown open for "Add Card" type selector
+
+    // Card type templates for new cards
+    let CARD_TEMPLATES = {
+        action: {
+            type: "action", name: "", actionType: "Offensive",
+            stackWith: "", roll: "", onHit: "", energyCost: 0
+        },
+        "item-weapon": {
+            type: "item", subtype: "weapon", name: "", fabric: "",
+            slot: "Hand (1H)", rarity: "COMMON", atk: 3, range: "Melee",
+            damageType: "Slashing", requires: {}, special: null, durability: 8
+        },
+        "item-consumable": {
+            type: "item", subtype: "consumable", name: "", fabric: "",
+            rarity: "COMMON", effect: ""
+        },
+        apparel: {
+            type: "apparel", name: "", fabric: "",
+            slot: "Body", rarity: "COMMON", def: 1, hpBonus: 0,
+            durability: 5, special: null
+        },
+        skill: {
+            type: "skill", name: "", category: "Combat",
+            modifier: "", requires: {}, tier: "COMMON"
+        },
+        magic: {
+            type: "magic", name: "", effectType: "Offensive",
+            skillType: "Imperial", requires: {},
+            effect: "", stackWith: "", energyCost: 4, reusable: true
+        }
+    };
+
+    function startAddCard(templateKey) {
+        editingCard = JSON.parse(JSON.stringify(CARD_TEMPLATES[templateKey]));
+        editingCardIndex = -1;
+        addCardTypeOpen = false;
+        m.redraw();
+    }
+
+    function startEditCard(card, index) {
+        editingCard = JSON.parse(JSON.stringify(card));
+        editingCardIndex = index;
+        m.redraw();
+    }
+
+    function saveEditingCard() {
+        if (!editingCard || !builtDeck) return;
+        // Build display name from fabric + name if fabric present
+        if (editingCard.fabric && editingCard.name && !editingCard.name.startsWith(editingCard.fabric)) {
+            editingCard._displayName = editingCard.fabric + " " + editingCard.name;
+        }
+        if (editingCardIndex >= 0) {
+            builtDeck.cards[editingCardIndex] = editingCard;
+        } else {
+            builtDeck.cards.push(editingCard);
+        }
+        builtDeck.cardCount = builtDeck.cards.length;
+        editingCard = null;
+        editingCardIndex = -1;
+        m.redraw();
+    }
+
+    function cancelEditingCard() {
+        editingCard = null;
+        editingCardIndex = -1;
+        m.redraw();
+    }
+
+    function deleteCard(index) {
+        if (!builtDeck) return;
+        builtDeck.cards.splice(index, 1);
+        builtDeck.cardCount = builtDeck.cards.length;
+        m.redraw();
+    }
+
+    // Simple field editor for card properties
+    function cardField(label, key, opts) {
+        opts = opts || {};
+        let val = editingCard[key];
+        if (opts.type === "number") {
+            return m("div", { class: "cg2-edit-field" }, [
+                m("label", label),
+                m("input", {
+                    type: "number", value: val || 0,
+                    min: opts.min || 0, max: opts.max || 999,
+                    oninput(e) { editingCard[key] = parseFloat(e.target.value) || 0; }
+                })
+            ]);
+        }
+        if (opts.type === "select") {
+            return m("div", { class: "cg2-edit-field" }, [
+                m("label", label),
+                m("select", {
+                    value: val || "",
+                    onchange(e) { editingCard[key] = e.target.value; }
+                }, (opts.options || []).map(o => m("option", { value: o }, o)))
+            ]);
+        }
+        // Default: text
+        return m("div", { class: "cg2-edit-field" }, [
+            m("label", label),
+            m("input", {
+                type: "text", value: val || "",
+                placeholder: opts.placeholder || "",
+                oninput(e) { editingCard[key] = e.target.value; }
+            })
+        ]);
+    }
+
+    // Render form fields based on card type
+    function CardEditorFields() {
+        return {
+            view() {
+                if (!editingCard) return null;
+                let t = editingCard.type;
+                let sub = editingCard.subtype;
+                let fields = [
+                    cardField("Name", "name", { placeholder: "Card name" })
+                ];
+
+                if (t === "action") {
+                    fields.push(
+                        cardField("Action Type", "actionType", { type: "select", options: ["Offensive", "Movement", "Discovery", "Social", "Recovery", "Utility", "Creation"] }),
+                        cardField("Stack With", "stackWith", { placeholder: "e.g. Character + Weapon" }),
+                        cardField("Roll", "roll", { placeholder: "e.g. 1d20 + STR" }),
+                        cardField("On Hit", "onHit", { placeholder: "Effect on success" }),
+                        cardField("Energy Cost", "energyCost", { type: "number", min: 0, max: 20 })
+                    );
+                } else if (t === "item" && sub === "weapon") {
+                    fields.push(
+                        cardField("Material", "fabric", { placeholder: "e.g. steel, iron" }),
+                        cardField("Slot", "slot", { type: "select", options: ["Hand (1H)", "Hand (2H)"] }),
+                        cardField("Rarity", "rarity", { type: "select", options: ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"] }),
+                        cardField("ATK", "atk", { type: "number", min: 0, max: 20 }),
+                        cardField("Range", "range", { type: "select", options: ["Melee", "Ranged", "Reach"] }),
+                        cardField("Damage Type", "damageType", { type: "select", options: ["Slashing", "Piercing", "Bludgeoning", "Fire", "Ice", "Lightning", "Poison"] }),
+                        cardField("Special", "special", { placeholder: "Special ability (optional)" }),
+                        cardField("Durability", "durability", { type: "number", min: 1, max: 99 })
+                    );
+                } else if (t === "item" && sub === "consumable") {
+                    fields.push(
+                        cardField("Material", "fabric", { placeholder: "e.g. herbal, glass" }),
+                        cardField("Rarity", "rarity", { type: "select", options: ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"] }),
+                        cardField("Effect", "effect", { placeholder: "e.g. Restore 8 HP" })
+                    );
+                } else if (t === "apparel") {
+                    fields.push(
+                        cardField("Material", "fabric", { placeholder: "e.g. leather, wool" }),
+                        cardField("Slot", "slot", { type: "select", options: ["Head", "Body", "Feet", "Back", "Ring", "Hand"] }),
+                        cardField("Rarity", "rarity", { type: "select", options: ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"] }),
+                        cardField("DEF", "def", { type: "number", min: 0, max: 20 }),
+                        cardField("HP Bonus", "hpBonus", { type: "number", min: 0, max: 20 }),
+                        cardField("Special", "special", { placeholder: "Special ability (optional)" }),
+                        cardField("Durability", "durability", { type: "number", min: 1, max: 99 })
+                    );
+                } else if (t === "skill") {
+                    fields.push(
+                        cardField("Category", "category", { type: "select", options: ["Combat", "Defense", "Survival", "Social", "Crafting", "Discovery", "Magic"] }),
+                        cardField("Modifier", "modifier", { placeholder: "e.g. +2 to Attack rolls" }),
+                        cardField("Tier", "tier", { type: "select", options: ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"] })
+                    );
+                } else if (t === "magic") {
+                    fields.push(
+                        cardField("Effect Type", "effectType", { type: "select", options: ["Offensive", "Defensive", "Restorative", "Discovery", "Utility"] }),
+                        cardField("Skill Type", "skillType", { type: "select", options: ["Imperial", "Undead", "Psionic", "Elemental", "Nature"] }),
+                        cardField("Effect", "effect", { placeholder: "e.g. Deal 6 fire damage" }),
+                        cardField("Stack With", "stackWith", { placeholder: "e.g. Character + Action" }),
+                        cardField("Energy Cost", "energyCost", { type: "number", min: 0, max: 20 }),
+                        cardField("Reusable", "reusable", { type: "select", options: ["true", "false"] })
+                    );
+                }
+
+                return m("div", { class: "cg2-card-editor" }, [
+                    m("div", { class: "cg2-card-editor-header" }, [
+                        m("span", { style: { fontWeight: 700, fontSize: "14px" } },
+                            editingCardIndex >= 0 ? "Edit Card" : "Add Card"),
+                        m("span", {
+                            class: "material-symbols-outlined",
+                            style: { cursor: "pointer", fontSize: "18px", color: "#888" },
+                            onclick: cancelEditingCard
+                        }, "close")
+                    ]),
+                    m("div", { class: "cg2-card-editor-fields" }, fields),
+                    m("div", { class: "cg2-card-editor-actions" }, [
+                        m("button", { class: "cg2-btn", onclick: cancelEditingCard }, "Cancel"),
+                        m("button", {
+                            class: "cg2-btn cg2-btn-primary",
+                            disabled: !editingCard.name || !editingCard.name.trim(),
+                            onclick: saveEditingCard
+                        }, editingCardIndex >= 0 ? "Update" : "Add to Deck")
+                    ])
+                ]);
+            }
+        };
+    }
+
     function BuilderReviewStep() {
         return {
             view() {
@@ -1302,9 +1502,60 @@
                         m("span", { class: "cg2-review-stat" }, "Cards: " + cards.length),
                         charCard ? m("span", { class: "cg2-review-stat" }, "HP: " + charCard.needs.hp + " | NRG: " + charCard.needs.energy + " | MRL: " + charCard.needs.morale) : null
                     ]),
-                    m("div", { class: "cg2-section-title" }, "All Cards"),
+                    // Add Card toolbar
+                    m("div", { class: "cg2-toolbar", style: { justifyContent: "space-between" } }, [
+                        m("div", { class: "cg2-section-title", style: { margin: 0 } }, "All Cards"),
+                        m("div", { style: { position: "relative" } }, [
+                            m("button", {
+                                class: "cg2-btn cg2-btn-primary",
+                                style: { fontSize: "11px" },
+                                onclick() { addCardTypeOpen = !addCardTypeOpen; m.redraw(); }
+                            }, [
+                                m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "add"),
+                                "Add Card"
+                            ]),
+                            addCardTypeOpen ? m("div", { class: "cg2-add-card-dropdown" },
+                                [
+                                    { key: "action", label: "Action", icon: "bolt", color: CARD_TYPES.action.color },
+                                    { key: "item-weapon", label: "Weapon", icon: "swords", color: CARD_TYPES.item.color },
+                                    { key: "item-consumable", label: "Consumable", icon: "science", color: CARD_TYPES.item.color },
+                                    { key: "apparel", label: "Apparel", icon: "checkroom", color: CARD_TYPES.apparel.color },
+                                    { key: "skill", label: "Skill", icon: "star", color: CARD_TYPES.skill.color },
+                                    { key: "magic", label: "Magic Effect", icon: "auto_fix_high", color: CARD_TYPES.magic.color }
+                                ].map(item =>
+                                    m("div", {
+                                        class: "cg2-add-card-option",
+                                        onclick() { startAddCard(item.key); }
+                                    }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", color: item.color, marginRight: "6px" } }, item.icon),
+                                        item.label
+                                    ])
+                                )
+                            ) : null
+                        ])
+                    ]),
+                    // Card editor panel (shown when editing/adding)
+                    editingCard ? m(CardEditorFields) : null,
+                    // Card grid with edit/delete overlays
                     m("div", { class: "cg2-card-grid" },
-                        cards.map((card, i) => m(CardFace, { key: card.name + "-" + i, card }))
+                        cards.map((card, i) => {
+                            let isCharacter = card.type === "character";
+                            return m("div", { class: "cg2-card-art-wrapper", key: card.name + "-" + i }, [
+                                m(CardFace, { card }),
+                                !isCharacter ? m("div", { class: "cg2-card-edit-actions" }, [
+                                    m("button", {
+                                        class: "cg2-card-action-btn",
+                                        title: "Edit card",
+                                        onclick(e) { e.stopPropagation(); startEditCard(card, i); }
+                                    }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "edit")),
+                                    m("button", {
+                                        class: "cg2-card-action-btn cg2-card-action-btn-danger",
+                                        title: "Remove card",
+                                        onclick(e) { e.stopPropagation(); deleteCard(i); }
+                                    }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "delete"))
+                                ]) : null
+                            ]);
+                        })
                     ),
                     m("div", { class: "cg2-builder-nav" }, [
                         m("button", { class: "cg2-btn", onclick: () => { builderStep = 2; m.redraw(); } }, "\u2190 Back"),
@@ -1364,10 +1615,12 @@
             return prompt + ", " + suffix;
         }
 
-        // All other card types: "Close-up {style} of {cardType} {typeName} in {suffix}"
+        // All other card types: emphasize type+name with double parentheses for SD weighting
+        // Combine material + name for display (material is in fabric/material field, not in name)
         let sLabel = styleLabel(style);
-        let typeName = card.name || card.type;
-        return "Close-up " + sLabel + " of " + card.type + " " + typeName + " in " + suffix;
+        let baseName = card.name || card.type;
+        let typeName = (card.fabric || card.material) ? (card.fabric || card.material) + " " + baseName : baseName;
+        return "Close-up " + sLabel + " of ((" + card.type + " " + typeName + ")) in " + suffix;
     }
 
     // ── Image Generation Queue ────────────────────────────────────────
@@ -1418,6 +1671,118 @@
                         class: "material-symbols-outlined",
                         style: { position: "absolute", top: "16px", right: "16px", color: "#fff", fontSize: "32px", cursor: "pointer" }
                     }, "close")
+                ]);
+            }
+        };
+    }
+
+    // ── Gallery Picker (pick portrait from charPerson image gallery) ──
+    let galleryPickerCard = null;    // card being picked for
+    let galleryImages = [];
+    let galleryLoading = false;
+
+    async function openGalleryPicker(card) {
+        if (!card || !card.sourceId) return;
+        galleryLoading = true;
+        galleryPickerCard = card;
+        galleryImages = [];
+        m.redraw();
+        try {
+            let char = await fetchCharPerson(card.sourceId);
+            if (char && char.profile && char.profile.portrait && char.profile.portrait.groupId) {
+                let q = am7client.newQuery("data.data");
+                q.field("groupId", char.profile.portrait.groupId);
+                q.entity.request.push("id", "objectId", "name", "groupId", "groupPath", "contentType");
+                q.range(0, 100);
+                q.sort("createdDate");
+                q.order("descending");
+                let qr = await page.search(q);
+                if (qr && qr.results) {
+                    galleryImages = qr.results.filter(r => r.contentType && r.contentType.match(/^image\//i));
+                }
+            }
+            if (!galleryImages.length) {
+                page.toast("warn", "No gallery images found for " + card.name);
+                galleryPickerCard = null;
+            }
+        } catch (e) {
+            console.error("[CardGame v2] Gallery load failed", e);
+            page.toast("error", "Failed to load gallery");
+            galleryPickerCard = null;
+        }
+        galleryLoading = false;
+        m.redraw();
+    }
+
+    function closeGalleryPicker() {
+        galleryPickerCard = null;
+        galleryImages = [];
+        m.redraw();
+    }
+
+    function GalleryPickerOverlay() {
+        return {
+            view() {
+                if (!galleryPickerCard) return null;
+                let orgPath = am7client.dotPath(am7client.currentOrganization);
+                return m("div", {
+                    style: {
+                        position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+                        background: "rgba(0,0,0,0.8)", zIndex: 9999,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        cursor: "default"
+                    },
+                    onclick: closeGalleryPicker
+                }, [
+                    m("div", {
+                        style: {
+                            background: "#fff", borderRadius: "12px", padding: "16px",
+                            maxWidth: "600px", maxHeight: "80vh", overflow: "auto",
+                            boxShadow: "0 8px 32px rgba(0,0,0,0.4)"
+                        },
+                        onclick(e) { e.stopPropagation(); }
+                    }, [
+                        m("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" } }, [
+                            m("span", { style: { fontWeight: 700, fontSize: "14px" } }, "Pick Portrait: " + (galleryPickerCard.name || "Character")),
+                            m("span", {
+                                class: "material-symbols-outlined",
+                                style: { cursor: "pointer", fontSize: "20px", color: "#888" },
+                                onclick: closeGalleryPicker
+                            }, "close")
+                        ]),
+                        galleryLoading
+                            ? m("div", { style: { textAlign: "center", padding: "24px" } }, [
+                                m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "24px" } }, "progress_activity"),
+                                " Loading..."
+                            ])
+                            : m("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px" } },
+                                galleryImages.map(function (img) {
+                                    let src = g_application_path + "/thumbnail/" + orgPath + "/data.data" + img.groupPath + "/" + img.name + "/96x96";
+                                    let fullSrc = g_application_path + "/thumbnail/" + orgPath + "/data.data" + img.groupPath + "/" + img.name + "/256x256";
+                                    let selected = galleryPickerCard.portraitUrl && galleryPickerCard.portraitUrl.indexOf("/" + img.name + "/") !== -1;
+                                    return m("img", {
+                                        src: src,
+                                        width: 96, height: 96,
+                                        style: {
+                                            objectFit: "cover", borderRadius: "6px", cursor: "pointer",
+                                            border: "3px solid " + (selected ? "#B8860B" : "transparent"),
+                                            transition: "border-color 0.15s"
+                                        },
+                                        title: img.name,
+                                        onclick: function () {
+                                            galleryPickerCard.portraitUrl = fullSrc + "?t=" + Date.now();
+                                            // Save deck with new portrait
+                                            if (viewingDeck) {
+                                                let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+                                                deckStorage.save(safeName, viewingDeck);
+                                            }
+                                            closeGalleryPicker();
+                                            page.toast("success", "Portrait updated");
+                                        }
+                                    });
+                                })
+                            )
+                    ])
                 ]);
             }
         };
@@ -1872,6 +2237,160 @@
         m.redraw();
     }
 
+    // ── Theme Apparel Swap ─────────────────────────────────────────────
+    // Lookup colors from /Library/Colors, cache results
+    let colorCache = {};
+    async function lookupColor(colorName) {
+        if (!colorName) return null;
+        let key = colorName.charAt(0).toUpperCase() + colorName.slice(1).toLowerCase();
+        if (colorCache[key]) return colorCache[key];
+        let grp = await page.findObject("auth.group", "data", "/Library/Colors");
+        if (!grp) {
+            console.warn("[CardGame v2] /Library/Colors group not found");
+            return null;
+        }
+        let q = am7view.viewQuery("data.color");
+        q.field("groupId", grp.id);
+        q.field("name", key);
+        q.range(0, 1);
+        let qr = await page.search(q);
+        if (qr && qr.results && qr.results.length) {
+            colorCache[key] = { id: qr.results[0].id };
+            return colorCache[key];
+        }
+        console.warn("[CardGame v2] Color not found:", key);
+        return null;
+    }
+
+    let applyingOutfits = false;
+    async function applyThemeOutfits(deck, theme) {
+        if (!deck || !deck.cards || applyingOutfits) return;
+        let thm = theme || activeTheme;
+        if (!thm.outfits) {
+            page.toast("warn", "Theme has no outfit definitions");
+            return;
+        }
+        applyingOutfits = true;
+        m.redraw();
+
+        let charCards = deck.cards.filter(c => c.type === "character" && c.sourceId);
+        if (!charCards.length) {
+            page.toast("warn", "No character cards with source IDs");
+            applyingOutfits = false;
+            m.redraw();
+            return;
+        }
+
+        let categories = ["scrappy", "functional", "fancy"];
+        let processed = 0;
+
+        for (let card of charCards) {
+            try {
+                page.toast("info", "Outfitting " + card.name + "...", -1);
+                let char = await fetchCharPerson(card.sourceId);
+                if (!char) {
+                    console.warn("[CardGame v2] Could not fetch char:", card.sourceId);
+                    continue;
+                }
+
+                // Determine gender for outfit selection
+                let gender = str(char.gender).toLowerCase();
+                if (gender !== "male" && gender !== "female") gender = "male";
+                let genderOutfits = thm.outfits[gender];
+                if (!genderOutfits) {
+                    console.warn("[CardGame v2] No outfits for gender:", gender);
+                    continue;
+                }
+
+                // Pick random category
+                let cat = categories[Math.floor(Math.random() * categories.length)];
+                let outfitDef = genderOutfits[cat];
+                if (!outfitDef) {
+                    console.warn("[CardGame v2] No outfit for category:", cat);
+                    continue;
+                }
+
+                // 1. Deactivate current apparel
+                if (char.store && char.store.apparel) {
+                    for (let ap of char.store.apparel) {
+                        if (ap.inuse) {
+                            await page.patchObject({ schema: "olio.apparel", id: ap.id, inuse: false });
+                            if (ap.wearables) {
+                                for (let w of ap.wearables) {
+                                    if (w.inuse) {
+                                        await page.patchObject({ schema: "olio.wearable", id: w.id, inuse: false });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Get store group for creating objects
+                let storeGroupId = char.store ? char.store.groupId : null;
+                if (!storeGroupId && char.store && char.store.objectId) {
+                    let sto = await page.searchFirst("olio.store", undefined, undefined, char.store.objectId);
+                    if (sto) storeGroupId = sto.groupId;
+                }
+
+                // 3. Create wearables with color lookups
+                let createdWearables = [];
+                for (let wDef of outfitDef.wearables) {
+                    let colorRef = await lookupColor(wDef.color);
+                    let wearable = {
+                        schema: "olio.wearable",
+                        name: wDef.name,
+                        location: wDef.location,
+                        fabric: wDef.fabric,
+                        gender: wDef.gender || gender,
+                        level: wDef.level || "SUIT",
+                        inuse: true
+                    };
+                    if (storeGroupId) wearable.groupId = storeGroupId;
+                    if (colorRef) wearable.color = colorRef;
+                    let created = await page.createObject(wearable);
+                    if (created) createdWearables.push(created);
+                }
+
+                // 4. Create apparel with wearable references
+                let displayName = outfitDef.name;
+                let apparel = {
+                    schema: "olio.apparel",
+                    name: displayName,
+                    type: outfitDef.type || "casual",
+                    gender: outfitDef.gender || gender,
+                    inuse: true,
+                    wearables: createdWearables.map(w => ({ id: w.id }))
+                };
+                if (storeGroupId) apparel.groupId = storeGroupId;
+                let createdApparel = await page.createObject(apparel);
+
+                // 5. Add to character's store
+                if (createdApparel && char.store) {
+                    await page.member("olio.store", char.store.objectId, "olio.apparel", createdApparel.objectId, true);
+                }
+
+                // 6. Refresh character card data
+                await refreshCharacterCard(card);
+                processed++;
+                console.log("[CardGame v2] Applied " + cat + " outfit to " + card.name);
+
+            } catch (e) {
+                console.error("[CardGame v2] Failed to outfit " + card.name, e);
+                page.toast("error", "Failed to outfit " + card.name);
+            }
+        }
+
+        applyingOutfits = false;
+        if (processed > 0) {
+            // Save deck
+            let safeName = (deck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+            await deckStorage.save(safeName, deck);
+            page.toast("success", "Applied outfits to " + processed + " character(s)");
+        }
+        m.redraw();
+    }
+
     // ── Art Queue Progress Bar Component ──────────────────────────────
     function ArtQueueProgress() {
         return {
@@ -1985,6 +2504,17 @@
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "sync"),
                             "Refresh Data"
+                        ]),
+                        m("button", {
+                            class: "cg2-btn", style: { fontSize: "11px", marginLeft: "4px" },
+                            disabled: busy || applyingOutfits,
+                            title: "Create theme-appropriate outfits and assign to characters",
+                            async onclick() {
+                                await applyThemeOutfits(viewingDeck, activeTheme);
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "checkroom"),
+                            applyingOutfits ? "Outfitting..." : "Apply Theme Outfits"
                         ])
                     ]),
                     // SD Config panel (per-type)
@@ -2263,6 +2793,15 @@
                                             processArtQueue();
                                         }
                                     }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "auto_awesome")),
+                                    // Gallery picker (character cards only)
+                                    card.sourceId && card.type === "character" ? m("button", {
+                                        class: "cg2-card-action-btn",
+                                        title: "Pick portrait from gallery",
+                                        onclick(e) {
+                                            e.stopPropagation();
+                                            openGalleryPicker(card);
+                                        }
+                                    }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "photo_library")) : null,
                                     // Refresh data from source object (character cards only)
                                     card.sourceId && card.type === "character" ? m("button", {
                                         class: "cg2-card-action-btn",
@@ -2300,7 +2839,8 @@
                             ]);
                         })
                     ]),
-                    m(ImagePreviewOverlay)
+                    m(ImagePreviewOverlay),
+                    m(GalleryPickerOverlay)
                 ]);
             }
         };

@@ -59,10 +59,11 @@
     padding: 28px 12px 10px;
 }
 .cg2-card-name {
-    font-size: 15px; font-weight: 700;
+    font-size: 15px; font-weight: 800;
     text-align: center;
     margin-bottom: 4px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 0 1px rgba(0,0,0,0.15);
 }
 .cg2-card-body {
     flex: 1;
@@ -71,9 +72,10 @@
     gap: 2px;
 }
 .cg2-card-subtitle {
-    font-size: 11px; color: #777;
+    font-size: 11px; color: #777; font-weight: 600;
     text-align: center;
     display: flex; justify-content: center; gap: 8px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.15);
 }
 .cg2-level { font-weight: 600; }
 .cg2-divider {
@@ -140,10 +142,12 @@
     display: flex; flex-direction: column; align-items: center; width: 48px;
 }
 .cg2-stat-abbrev {
-    font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase;
+    font-size: 10px; font-weight: 800; color: #888; text-transform: uppercase;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.12);
 }
 .cg2-stat-val {
-    font-size: 16px; font-weight: 700;
+    font-size: 16px; font-weight: 800;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 /* ── Need Bars ──────────────────────────────────────── */
@@ -152,8 +156,9 @@
     height: 18px;
 }
 .cg2-need-label {
-    width: 28px; font-size: 10px; font-weight: 700; color: #666;
+    width: 28px; font-size: 10px; font-weight: 800; color: #666;
     text-align: right;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.12);
 }
 .cg2-need-track {
     flex: 1; height: 10px; background: #e0e0e0; border-radius: 5px;
@@ -164,7 +169,8 @@
     transition: width 0.3s;
 }
 .cg2-need-value {
-    width: 42px; font-size: 10px; font-weight: 600; text-align: left;
+    width: 42px; font-size: 10px; font-weight: 700; text-align: left;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.12);
 }
 
 /* ── Equip / Slots ──────────────────────────────────── */
@@ -173,7 +179,8 @@
     font-size: 10px;
 }
 .cg2-section-label {
-    font-weight: 600; color: #888; white-space: nowrap;
+    font-weight: 700; color: #888; white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.12);
 }
 .cg2-slot {
     display: inline-block;
@@ -188,30 +195,37 @@
 /* ── Card Meta / Detail Fields ──────────────────────── */
 .cg2-card-meta {
     display: flex; justify-content: space-between; align-items: center;
-    font-size: 11px; color: #555; padding: 0 2px;
+    font-size: 11px; color: #555; font-weight: 600; padding: 0 2px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.12);
 }
 .cg2-rarity { display: flex; gap: 1px; }
 .cg2-card-stats-line {
     display: flex; gap: 10px; padding: 2px 0;
 }
 .cg2-mod {
-    font-weight: 700; font-size: 13px;
+    font-weight: 800; font-size: 13px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 .cg2-mod-atk { color: #c62828; }
 .cg2-card-detail {
-    font-size: 11px; color: #444; padding: 1px 0;
+    font-size: 11px; color: #444; font-weight: 600; padding: 1px 0;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 .cg2-card-special {
-    font-size: 11px; color: #1565C0; font-style: italic; padding: 2px 0;
+    font-size: 11px; color: #1565C0; font-weight: 600; font-style: italic; padding: 2px 0;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 .cg2-card-effect {
-    font-size: 12px; font-weight: 600; color: #333; padding: 2px 0;
+    font-size: 12px; font-weight: 700; color: #333; padding: 2px 0;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.15);
 }
 .cg2-roll {
-    font-family: monospace; font-size: 11px; color: #555;
+    font-family: monospace; font-size: 11px; font-weight: 600; color: #555;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 .cg2-card-warning {
-    color: #c62828; font-weight: 600;
+    color: #c62828; font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.15);
 }
 .cg2-flavor {
     font-size: 10px; color: #999; font-style: italic;
@@ -457,6 +471,57 @@
     color: #666;
 }
 .cg2-card-action-btn:hover { background: #B8860B; color: #fff; border-color: #B8860B; }
+.cg2-card-action-btn-danger:hover { background: #c62828; border-color: #c62828; }
+
+/* ── Card Editor (inline CRUD) ───────────────────── */
+.cg2-card-editor {
+    background: #fafafa; border: 1px solid #ddd; border-radius: 8px;
+    padding: 14px; margin: 10px 0;
+}
+.cg2-card-editor-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #eee;
+}
+.cg2-card-editor-fields {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.cg2-edit-field {
+    display: flex; flex-direction: column; gap: 2px;
+}
+.cg2-edit-field label {
+    font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase;
+}
+.cg2-edit-field input, .cg2-edit-field select {
+    padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px;
+    font-size: 12px; background: #fff;
+}
+.cg2-edit-field input:focus, .cg2-edit-field select:focus {
+    border-color: #B8860B; outline: none;
+}
+.cg2-card-editor-actions {
+    display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px;
+    padding-top: 8px; border-top: 1px solid #eee;
+}
+
+/* ── Add Card Dropdown ───────────────────────────── */
+.cg2-add-card-dropdown {
+    position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 100;
+    background: #fff; border: 1px solid #ddd; border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 160px;
+    overflow: hidden;
+}
+.cg2-add-card-option {
+    display: flex; align-items: center; padding: 8px 12px;
+    cursor: pointer; font-size: 12px; transition: background 0.15s;
+}
+.cg2-add-card-option:hover { background: #f5f0e0; }
+
+/* ── Card Edit Actions (review step) ─────────────── */
+.cg2-card-edit-actions {
+    position: absolute; top: 4px; right: 4px;
+    display: flex; gap: 3px; opacity: 0; transition: opacity 0.15s;
+}
+.cg2-card-art-wrapper:hover .cg2-card-edit-actions { opacity: 1; }
 
 /* ── Background Panel ────────────────────────────── */
 .cg2-bg-panel {
@@ -629,4 +694,13 @@
     .cg2-sd-tab-active { color: #eee; background: rgba(184,134,11,0.2); }
     .cg2-char-back { background: #1e1e1e; }
     .cg2-card-front-bg { background: linear-gradient(135deg, #2a2500 0%, #1e1a10 50%, #2a2500 100%); }
+    .cg2-card-editor { background: #1e1e1e; border-color: #444; }
+    .cg2-card-editor-header { border-bottom-color: #444; }
+    .cg2-card-editor-actions { border-top-color: #444; }
+    .cg2-edit-field label { color: #aaa; }
+    .cg2-edit-field input, .cg2-edit-field select { background: #2a2a2a; color: #eee; border-color: #555; }
+    .cg2-edit-field input:focus, .cg2-edit-field select:focus { border-color: #B8860B; }
+    .cg2-add-card-dropdown { background: #2a2a2a; border-color: #444; }
+    .cg2-add-card-option:hover { background: #3a3520; }
+    .cg2-card-edit-actions .cg2-card-action-btn { background: rgba(30,30,30,0.9); border-color: #555; color: #aaa; }
 }
