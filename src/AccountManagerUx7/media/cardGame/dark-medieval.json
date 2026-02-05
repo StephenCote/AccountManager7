@@ -110,6 +110,9 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
+          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "male" },
           { "schema": "olio.wearable", "name": "tattered tunic", "location": ["torso"], "fabric": "linen", "color": "Brown", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "worn breeches", "location": ["leg"], "fabric": "wool", "color": "Gray", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "frayed belt", "location": ["waist"], "fabric": "hemp", "color": "Brown", "level": "SUIT", "gender": "male" },
@@ -122,6 +125,9 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
+          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "male" },
           { "schema": "olio.wearable", "name": "padded gambeson", "location": ["torso"], "fabric": "wool", "color": "Brown", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "sturdy trousers", "location": ["leg"], "fabric": "wool", "color": "Black", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "belt with pouch", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
@@ -135,6 +141,9 @@
         "type": "formal",
         "gender": "male",
         "wearables": [
+          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "male" },
           { "schema": "olio.wearable", "name": "embroidered doublet", "location": ["torso"], "fabric": "silk", "color": "Black", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "fine hose", "location": ["leg"], "fabric": "silk", "color": "Black", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "cloak with clasp", "location": ["back"], "fabric": "velvet", "color": "Red", "level": "OVER", "gender": "male" },
@@ -150,6 +159,9 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
+          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "patched bodice", "location": ["torso"], "fabric": "linen", "color": "Brown", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "threadbare skirt", "location": ["leg"], "fabric": "wool", "color": "Gray", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "knotted sash", "location": ["waist"], "fabric": "linen", "color": "Brown", "level": "SUIT", "gender": "female" },
@@ -162,6 +174,9 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
+          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "fitted vest", "location": ["torso"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "durable skirt with leggings", "location": ["leg"], "fabric": "wool", "color": "Green", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "wide belt with tools", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
@@ -175,6 +190,9 @@
         "type": "formal",
         "gender": "female",
         "wearables": [
+          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "brocade gown", "location": ["torso", "leg"], "fabric": "silk", "color": "Black", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "lace-trimmed chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "lined mantle", "location": ["back"], "fabric": "fur", "color": "Black", "level": "OVER", "gender": "female" },

@@ -1749,18 +1749,19 @@
                 throw new Error("No apparel found in store");
             }
 
-            // Find the inuse apparel (prefer first inuse, fallback to first)
-            let activeApparel = storeApparelList.find(a => a.inuse) || storeApparelList[0];
-
-            // Load full apparel details
+            // Load full apparel details for all store apparel to find the active one
             am7client.clearCache("olio.apparel");
             let aq = am7view.viewQuery("olio.apparel");
-            aq.field("objectId", activeApparel.objectId);
+            aq.range(0, 50);
+            let allOids = storeApparelList.map(a => a.objectId).join(",");
+            let oidFld = aq.field("objectId", allOids);
+            oidFld.comparator = "in";
             let aqr = await page.search(aq);
             if (!aqr || !aqr.results || !aqr.results.length) {
                 throw new Error("Could not load apparel details");
             }
-            let app = aqr.results[0];
+            let activeApparel = aqr.results.find(a => a.inuse) || aqr.results[0];
+            let app = activeApparel;
             if (!app.wearables || !app.wearables.length) {
                 throw new Error("No wearables found in apparel");
             }
@@ -2427,6 +2428,22 @@
         let categories = ["scrappy", "functional", "fancy"];
         let processed = 0;
 
+        // Find the world-level Apparel and Wearables groups (siblings of Population, Items, etc.)
+        let apparelDir = await page.findObject("auth.group", "data", gridPath + "/Apparel");
+        if (!apparelDir) {
+            page.toast("error", "Apparel directory not found at " + gridPath + "/Apparel");
+            applyingOutfits = false;
+            m.redraw();
+            return;
+        }
+        let wearableDir = await page.findObject("auth.group", "data", gridPath + "/Wearables");
+        if (!wearableDir) {
+            page.toast("error", "Wearables directory not found at " + gridPath + "/Wearables");
+            applyingOutfits = false;
+            m.redraw();
+            return;
+        }
+
         for (let card of charCards) {
             try {
                 page.toast("info", "Outfitting " + card.name + "...", -1);
@@ -2503,15 +2520,15 @@
                 if (storeItemList && storeItemList.length) {
                     for (let itemRef of storeItemList) {
                         await new Promise(res => {
-                            am7client.member("olio.store", storeObjId, "store.item", "olio.item", itemRef.objectId, false, res);
+                            am7client.member("olio.store", storeObjId, "items", "olio.item", itemRef.objectId, false, res);
                         });
                     }
                 }
 
-                // 3. Create apparel FIRST in the store group (store likeInherits data.directory)
+                // 3. Create apparel in the world-level Apparel directory
                 let apparel = {
                     schema: "olio.apparel",
-                    groupId: sto.id,
+                    groupId: apparelDir.id,
                     name: outfitDef.name,
                     type: outfitDef.type || "casual",
                     gender: outfitDef.gender || gender
@@ -2522,13 +2539,13 @@
                     continue;
                 }
 
-                // 4. Create wearables in the apparel group (apparel likeInherits data.directory)
+                // 4. Create wearables in the world-level Wearables directory
                 let createdWearables = [];
                 for (let wDef of outfitDef.wearables) {
                     let colorRef = await lookupColor(wDef.color);
                     let wearable = {
                         schema: "olio.wearable",
-                        groupId: createdApparel.id,
+                        groupId: wearableDir.id,
                         name: wDef.name,
                         location: wDef.location,
                         fabric: wDef.fabric,
@@ -2545,9 +2562,9 @@
                     await page.member("olio.apparel", createdApparel.objectId, "olio.wearable", cw.objectId, true);
                 }
 
-                // 6. Link apparel to store via membership (participantModel: "store.apparel")
+                // 6. Link apparel to store via membership (field name: "apparel")
                 await new Promise(res => {
-                    am7client.member("olio.store", storeObjId, "store.apparel", "olio.apparel", createdApparel.objectId, true, res);
+                    am7client.member("olio.store", storeObjId, "apparel", "olio.apparel", createdApparel.objectId, true, res);
                 });
 
                 // 7. Patch inuse = true on all wearables and the apparel

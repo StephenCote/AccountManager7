@@ -20,7 +20,8 @@
       "Bash(python -c:*)",
       "Bash(findstr:*)",
       "Read(//c/Projects/GitHub/AccountManager7/**)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(timeout:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

@@ -110,6 +110,9 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
+          { "schema": "olio.wearable", "name": "compression shirt", "location": ["torso"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "compression shorts", "location": ["leg"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "liner socks", "location": ["foot"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "male" },
           { "schema": "olio.wearable", "name": "stained undershirt", "location": ["torso"], "fabric": "synthetic", "color": "Gray", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "patched cargo pants", "location": ["leg"], "fabric": "canvas", "color": "Olive", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "frayed utility belt", "location": ["waist"], "fabric": "nylon", "color": "Black", "level": "SUIT", "gender": "male" },
@@ -122,6 +125,9 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
+          { "schema": "olio.wearable", "name": "compression shirt", "location": ["torso"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "compression shorts", "location": ["leg"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "liner socks", "location": ["foot"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "male" },
           { "schema": "olio.wearable", "name": "fitted jumpsuit", "location": ["torso", "leg"], "fabric": "neoprene", "color": "Navy", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "tool harness", "location": ["waist"], "fabric": "nylon", "color": "Black", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "tactical jacket", "location": ["back"], "fabric": "synthetic", "color": "Gray", "level": "OVER", "gender": "male" },
@@ -134,6 +140,9 @@
         "type": "formal",
         "gender": "male",
         "wearables": [
+          { "schema": "olio.wearable", "name": "compression shirt", "location": ["torso"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "compression shorts", "location": ["leg"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "liner socks", "location": ["foot"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "male" },
           { "schema": "olio.wearable", "name": "tailored tunic", "location": ["torso"], "fabric": "silk", "color": "White", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "pressed trousers", "location": ["leg"], "fabric": "silk", "color": "Black", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "ceremonial sash", "location": ["waist"], "fabric": "satin", "color": "Blue", "level": "SUIT", "gender": "male" },
@@ -149,6 +158,9 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
+          { "schema": "olio.wearable", "name": "compression top", "location": ["chest"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "compression shorts", "location": ["leg"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "liner socks", "location": ["foot"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "faded tank top", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "torn leggings", "location": ["leg"], "fabric": "synthetic", "color": "Black", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "knotted wire belt", "location": ["waist"], "fabric": "nylon", "color": "Gray", "level": "SUIT", "gender": "female" },
@@ -161,6 +173,9 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
+          { "schema": "olio.wearable", "name": "compression top", "location": ["chest"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "compression shorts", "location": ["leg"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "liner socks", "location": ["foot"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "fitted flight suit", "location": ["torso", "leg"], "fabric": "neoprene", "color": "Navy", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "equipment belt", "location": ["waist"], "fabric": "nylon", "color": "Black", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "utility vest", "location": ["back"], "fabric": "synthetic", "color": "Gray", "level": "OVER", "gender": "female" },
@@ -173,6 +188,9 @@
         "type": "formal",
         "gender": "female",
         "wearables": [
+          { "schema": "olio.wearable", "name": "compression top", "location": ["chest"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "compression shorts", "location": ["leg"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "liner socks", "location": ["foot"], "fabric": "synthetic", "color": "Gray", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "structured gown", "location": ["torso", "leg"], "fabric": "silk", "color": "White", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "shimmer wrap", "location": ["back"], "fabric": "satin", "color": "Silver", "level": "OVER", "gender": "female" },
           { "schema": "olio.wearable", "name": "rank choker", "location": ["neck"], "fabric": "titanium", "color": "Silver", "level": "SUIT", "gender": "female" },

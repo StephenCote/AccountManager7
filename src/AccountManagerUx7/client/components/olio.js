@@ -66,7 +66,8 @@
             page.toast("error", "No apparel found in store " + sto.name);
             return;
         }
-        let bdress = await dressApparel(appl[0], dressUp);
+        let activeAp = appl.find(a => a.inuse) || appl[0];
+        let bdress = await dressApparel(activeAp, dressUp);
         if(bdress){
             await am7model.forms.commands.narrate(undefined, inst);
         }

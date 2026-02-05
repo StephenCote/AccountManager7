@@ -111,6 +111,9 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
+          { "schema": "olio.wearable", "name": "stained undershirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "worn briefs", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
           { "schema": "olio.wearable", "name": "torn undershirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "shredded jeans", "location": ["leg"], "fabric": "denim", "color": "Blue", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "scrap-wire belt", "location": ["waist"], "fabric": "wire", "color": "Gray", "level": "SUIT", "gender": "male" },
@@ -123,6 +126,9 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
+          { "schema": "olio.wearable", "name": "stained undershirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "worn briefs", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
           { "schema": "olio.wearable", "name": "reinforced vest", "location": ["torso"], "fabric": "canvas", "color": "Olive", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "cargo pants", "location": ["leg"], "fabric": "canvas", "color": "Tan", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "ammo belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
@@ -136,6 +142,9 @@
         "type": "formal",
         "gender": "male",
         "wearables": [
+          { "schema": "olio.wearable", "name": "stained undershirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "worn briefs", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
           { "schema": "olio.wearable", "name": "studded jacket", "location": ["torso"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "reinforced trousers", "location": ["leg"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" },
           { "schema": "olio.wearable", "name": "trophy belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
@@ -151,6 +160,9 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
+          { "schema": "olio.wearable", "name": "faded bralette", "location": ["chest"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "worn shorts", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "knotted crop top", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "cut-off shorts", "location": ["leg"], "fabric": "denim", "color": "Blue", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "braided cord belt", "location": ["waist"], "fabric": "rope", "color": "Brown", "level": "SUIT", "gender": "female" },
@@ -163,6 +175,9 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
+          { "schema": "olio.wearable", "name": "faded bralette", "location": ["chest"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "worn shorts", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "fitted tank with shoulder guard", "location": ["torso"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "patched cargo pants", "location": ["leg"], "fabric": "canvas", "color": "Olive", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "tool belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
@@ -176,6 +191,9 @@
         "type": "formal",
         "gender": "female",
         "wearables": [
+          { "schema": "olio.wearable", "name": "faded bralette", "location": ["chest"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "worn shorts", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
           { "schema": "olio.wearable", "name": "fitted corset top", "location": ["torso"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "long split skirt", "location": ["leg"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" },
           { "schema": "olio.wearable", "name": "chain belt with charms", "location": ["waist"], "fabric": "steel", "color": "Silver", "level": "SUIT", "gender": "female" },
