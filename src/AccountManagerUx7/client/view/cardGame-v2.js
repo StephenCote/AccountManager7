@@ -2340,6 +2340,18 @@
                     // Re-fetch the charPerson to get the updated portrait
                     await refreshCharacterCard(deckCard);
                 }
+
+                // Propagate art to duplicate cards
+                if (next.duplicateIndices && next.duplicateIndices.length > 0 && result.thumbUrl) {
+                    next.duplicateIndices.forEach(dupeIdx => {
+                        let dupeCard = viewingDeck.cards[dupeIdx];
+                        if (dupeCard) {
+                            dupeCard.imageUrl = result.thumbUrl;
+                            dupeCard.artObjectId = result.objectId;
+                        }
+                    });
+                    console.log("[CardGame v2] Shared art with " + next.duplicateIndices.length + " duplicate(s) of " + deckCard.name);
+                }
             }
         } catch (e) {
             console.error("[CardGame v2] Art generation failed for:", next.card.name, e);
@@ -2354,6 +2366,16 @@
         processArtQueue();
     }
 
+    // Build a unique signature for a card to detect duplicates
+    function cardSignature(card) {
+        if (card.type === "character") {
+            // Characters are unique by sourceId
+            return "char:" + (card.sourceId || card.name);
+        }
+        // Items/powers: type + name + material/fabric
+        return (card.type || "") + ":" + (card.name || "") + ":" + (card.fabric || card.material || "");
+    }
+
     // Queue art generation for all cards in a deck
     function queueDeckArt(deck) {
         if (!deck || !deck.cards) return;
@@ -2363,26 +2385,60 @@
         artPaused = false;
         artDir = null;
 
+        // Track unique cards and their duplicates
+        let uniqueCards = {};  // signature -> { cardIndex, duplicateIndices: [] }
+
         deck.cards.forEach((card, i) => {
             // Skip cards that already have art
             if (card.type === "character" && card.portraitUrl) return;
             if (card.type !== "character" && card.imageUrl) return;
 
-            artQueue.push({ card: card, cardIndex: i, status: "pending", result: null, error: null });
-            artTotal++;
+            let sig = cardSignature(card);
+            if (uniqueCards[sig]) {
+                // This is a duplicate - will share art with the first one
+                uniqueCards[sig].duplicateIndices.push(i);
+            } else {
+                // First occurrence - queue for generation
+                uniqueCards[sig] = { cardIndex: i, duplicateIndices: [] };
+                artQueue.push({ card: card, cardIndex: i, status: "pending", result: null, error: null, duplicateIndices: [] });
+                artTotal++;
+            }
         });
+
+        // Attach duplicate indices to queued items
+        artQueue.forEach(job => {
+            let sig = cardSignature(job.card);
+            if (uniqueCards[sig]) {
+                job.duplicateIndices = uniqueCards[sig].duplicateIndices;
+            }
+        });
+
+        let dupeCount = Object.values(uniqueCards).reduce((sum, u) => sum + u.duplicateIndices.length, 0);
+        if (dupeCount > 0) {
+            console.log("[CardGame v2] Found " + dupeCount + " duplicate cards that will share art");
+        }
 
         if (artTotal === 0) {
             page.toast("info", "All cards already have art");
             return;
         }
 
-        console.log("[CardGame v2] Queued " + artTotal + " cards for art generation");
+        console.log("[CardGame v2] Queued " + artTotal + " unique cards for art generation");
         processArtQueue();
     }
 
-    function pauseArtQueue() {
+    async function saveArtProgress() {
+        if (viewingDeck && artCompleted > 0) {
+            let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+            await deckStorage.save(safeName, viewingDeck);
+            console.log("[CardGame v2] Deck saved with " + artCompleted + " completed art images");
+        }
+    }
+
+    async function pauseArtQueue() {
         artPaused = true;
+        await saveArtProgress();
+        page.toast("info", "Art generation paused. Progress saved (" + artCompleted + " of " + artTotal + ")");
         m.redraw();
     }
 
@@ -2392,10 +2448,14 @@
         processArtQueue();
     }
 
-    function cancelArtQueue() {
+    async function cancelArtQueue() {
         artQueue.forEach(j => { if (j.status === "pending") j.status = "cancelled"; });
         artPaused = false;
         artProcessing = false;
+        await saveArtProgress();
+        if (artCompleted > 0) {
+            page.toast("info", "Art generation cancelled. Progress saved (" + artCompleted + " of " + artTotal + ")");
+        }
         m.redraw();
     }
 
@@ -2857,40 +2917,39 @@
                                         }
                                     }, "Save to Deck")
                                 ])
-                            ]),
-                            // Background Basis
-                            m("hr", { style: { margin: "8px 0", border: "none", borderTop: "1px solid #ddd" } }),
-                            m("div", { class: "cg2-bg-panel" }, [
-                                m("div", { class: "cg2-bg-panel-left" }, [
-                                    m("span", { style: { fontWeight: 700, fontSize: "13px" } }, "Background Basis"),
-                                    backgroundImageId
-                                        ? m("span", { style: { fontSize: "11px", color: "#2E7D32", marginLeft: "8px" } }, "Active")
-                                        : m("span", { style: { fontSize: "11px", color: "#888", marginLeft: "8px" } }, "None"),
-                                    backgroundThumbUrl ? m("img", {
-                                        src: backgroundThumbUrl, class: "cg2-bg-thumb",
-                                        style: { cursor: "pointer" },
-                                        onclick() { showImagePreview(backgroundThumbUrl); }
-                                    }) : null
-                                ]),
-                                m("div", { class: "cg2-bg-panel-right" }, [
-                                    m("button", {
-                                        class: "cg2-btn",
-                                        disabled: busy,
-                                        onclick() { generateBackground(activeTheme); }
-                                    }, [
-                                        backgroundGenerating
-                                            ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
-                                            : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "landscape"),
-                                        backgroundGenerating ? "Generating..." : (backgroundImageId ? "Regenerate BG" : "Generate BG")
-                                    ]),
-                                    backgroundImageId ? m("button", {
-                                        class: "cg2-btn",
-                                        disabled: busy,
-                                        onclick() { backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); }
-                                    }, "Clear BG") : null
-                                ])
                             ])
                         ]) : null
+                    ]),
+                    // Background Basis (always visible, outside SD config)
+                    m("div", { class: "cg2-bg-panel", style: { margin: "8px 0" } }, [
+                        m("div", { class: "cg2-bg-panel-left" }, [
+                            m("span", { style: { fontWeight: 700, fontSize: "13px" } }, "Background Basis"),
+                            backgroundImageId
+                                ? m("span", { style: { fontSize: "11px", color: "#2E7D32", marginLeft: "8px" } }, "Active")
+                                : m("span", { style: { fontSize: "11px", color: "#888", marginLeft: "8px" } }, "None"),
+                            backgroundThumbUrl ? m("img", {
+                                src: backgroundThumbUrl, class: "cg2-bg-thumb",
+                                style: { cursor: "pointer" },
+                                onclick() { showImagePreview(backgroundThumbUrl); }
+                            }) : null
+                        ]),
+                        m("div", { class: "cg2-bg-panel-right" }, [
+                            m("button", {
+                                class: "cg2-btn",
+                                disabled: busy,
+                                onclick() { generateBackground(activeTheme); }
+                            }, [
+                                backgroundGenerating
+                                    ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
+                                    : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "landscape"),
+                                backgroundGenerating ? "Generating..." : (backgroundImageId ? "Regenerate BG" : "Generate BG")
+                            ]),
+                            backgroundImageId ? m("button", {
+                                class: "cg2-btn",
+                                disabled: busy,
+                                onclick() { backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); }
+                            }, "Clear BG") : null
+                        ])
                     ]),
                     // Art toolbar
                     m("div", { class: "cg2-toolbar" }, [
