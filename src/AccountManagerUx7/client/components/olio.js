@@ -60,12 +60,15 @@
     }
 
     async function dressCharacter(inst, dressUp){
-        let sto = await page.searchFirst("olio.store", undefined, undefined, inst.api.store().objectId);
-        let appl = sto.apparel;
-        if(!appl || !appl.length){
-            page.toast("error", "No apparel found in store " + sto.name);
+        // Use getFull to get properly populated nested store/apparel with inuse flags
+        await am7client.clearCache("olio.charPerson");
+        let char = await am7client.getFull("olio.charPerson", inst.api.objectId());
+        if(!char || !char.store || !char.store.apparel || !char.store.apparel.length){
+            page.toast("error", "No apparel found in character store");
             return;
         }
+        let appl = char.store.apparel;
+
         let activeAp = appl.find(a => a.inuse) || appl[0];
         let bdress = await dressApparel(activeAp, dressUp);
         if(bdress){
@@ -73,7 +76,8 @@
         }
     }
     async function dressApparel(vapp, dressUp){
-        am7client.clearCache("olio.apparel");
+
+        await am7client.clearCache("olio.apparel");
         let aq = am7view.viewQuery("olio.apparel");
         aq.field("objectId", vapp.objectId);
         let aqr = await page.search(aq);
@@ -214,7 +218,7 @@
     }
 
     async function setNarDescription(inst, cinst){
-        am7client.clearCache("olio.narrative");
+        await am7client.clearCache("olio.narrative");
         let nar = await page.searchFirst("olio.narrative", undefined, undefined, inst.api.narrative().objectId);
         let pro = (inst.api.gender() == "male" ? "He" : "She");
         cinst.api.description(inst.api.firstName() + " is a " + nar.physicalDescription + " " + pro + " is " + nar.outfitDescription + ".");

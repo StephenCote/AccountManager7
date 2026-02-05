@@ -73,9 +73,9 @@ public class TestMemoryDuel extends BaseTest {
 	private BaseRecord testUser;
 	private OlioContext octx;
 
-	private static final int DUEL_TURNS = 2;
-	private static final int NUM_PAIRS = 2;
-	private static final int STREAM_TIMEOUT_SECONDS = 120;
+	private static final int DUEL_TURNS = 1;   // Single turn to minimize LLM calls
+	private static final int NUM_PAIRS = 2;    // Need at least 2 chars to pick different system/user
+	private static final int STREAM_TIMEOUT_SECONDS = 300; // 5 minutes per turn
 
 	@Before
 	public void setupDuel() {
@@ -387,27 +387,30 @@ public class TestMemoryDuel extends BaseTest {
 
 	// --- Helper Methods ---
 
+	/**
+	 * Creates a minimal prompt config for fast testing.
+	 * Uses a very short system prompt to minimize LLM processing time.
+	 */
 	private BaseRecord loadAlgPromptConfig(BaseRecord user) {
 		BaseRecord opcfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_PROMPT_CONFIG,
-				"Memory Duel Prompt", "~/Chat");
+				"Memory Duel Simple Prompt", "~/Chat");
 		if (opcfg != null) {
 			return opcfg;
 		}
 
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
-		plist.parameter(FieldNames.FIELD_NAME, "Memory Duel Prompt");
-
-		BaseRecord ipcfg = JSONUtil.importObject(
-				ResourceUtil.getInstance().getResource("olio/llm/alg.prompt.json"),
-				LooseRecord.class,
-				RecordDeserializerConfig.getUnfilteredModule());
-		assertNotNull("Imported alg.prompt.json should not be null", ipcfg);
+		plist.parameter(FieldNames.FIELD_NAME, "Memory Duel Simple Prompt");
 
 		try {
 			BaseRecord pcfg = IOSystem.getActiveContext().getFactory()
-					.newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, ipcfg, plist);
+					.newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, null, plist);
+			// Minimal system prompt to keep inference fast
+			List<String> sys = new ArrayList<>();
+			sys.add("You are {{systemCharacter.firstName}}, a {{systemCharacter.age}}-year-old {{systemCharacter.gender}}.");
+			sys.add("Respond briefly in character to the user who is {{userCharacter.firstName}}.");
+			pcfg.set("system", sys);
 			opcfg = IOSystem.getActiveContext().getAccessPoint().create(user, pcfg);
-		} catch (FactoryException e) {
+		} catch (Exception e) {
 			logger.error("Error creating prompt config", e);
 		}
 		return opcfg;
@@ -445,7 +448,8 @@ public class TestMemoryDuel extends BaseTest {
 				cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken").trim());
 			} else if (serviceType == LLMServiceEnumType.OLLAMA) {
 				cfg.setValue("serverUrl", testProperties.getProperty("test.llm.ollama.server").trim());
-				cfg.setValue("model", "creat");
+				// qwen3:8b is faster than creat (smaller quantization Q4_K_M vs Q8_0)
+				cfg.setValue("model", "qwen3:8b");
 			}
 
 			BaseRecord opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);

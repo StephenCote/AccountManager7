@@ -531,7 +531,7 @@
                 let sto = await page.searchFirst("olio.store", undefined, undefined, charRecord.store.objectId);
                 if (sto && sto.apparel && sto.apparel.length) {
                     let activeAp = sto.apparel.find(a => a.inuse) || sto.apparel[0];
-                    am7client.clearCache("olio.apparel");
+                    await am7client.clearCache("olio.apparel");
                     let aq = am7view.viewQuery("olio.apparel");
                     aq.field("objectId", activeAp.objectId);
                     let aqr = await page.search(aq);
@@ -730,7 +730,7 @@
         let activeAp = sto.apparel.find(a => a.inuse) || sto.apparel[0];
 
         // Load the apparel and wearables
-        am7client.clearCache("olio.apparel");
+        await am7client.clearCache("olio.apparel");
         let aq = am7view.viewQuery("olio.apparel");
         aq.field("objectId", activeAp.objectId);
         let aqr = await page.search(aq);
@@ -1096,6 +1096,8 @@
             while(dressedDown == true){
                 dressedDown = await am7olio.dressApparel(activeAp, false);
             }
+            // Update server narrative to reflect fully undressed state
+            await am7model.forms.commands.narrate(undefined, inst);
 
             // Store original seed
             let baseSeed = cinst.api.seed();
@@ -1113,7 +1115,7 @@
 
             // Create nude image first if needed
             if(includeNude){
-                await am7olio.setNarDescription(inst, cinst);
+                // Server narrative already updated after dress-down above
                 page.toast("info", "Creating image 1 of " + totalImages + " (level: NUDE)...", -1);
                 let imgEntity = Object.assign({}, cinst.entity);
                 imgEntity.seed = baseSeed;
@@ -1147,8 +1149,8 @@
                 // Dress up to this level first (we start fully undressed)
                 await am7olio.dressApparel(activeAp, true);
 
-                // Update narration description for current outfit
-                await am7olio.setNarDescription(inst, cinst);
+                // Update server narrative to reflect current clothing state
+                await am7model.forms.commands.narrate(undefined, inst);
 
                 // Set seed (base seed + image count for 2nd+ images)
                 let useSeed = (images.length === 0) ? baseSeed : (parseInt(baseSeed) + images.length);
