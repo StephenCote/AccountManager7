@@ -1062,6 +1062,10 @@
             cardBackImageUrl = data.cardBackImageUrl || null;
             flippedCards = {};
             artDir = null;
+            // Load the deck's theme so prompts use the correct suffix
+            if (data.themeId) {
+                await loadThemeConfig(data.themeId);
+            }
             screen = "deckView";
             m.redraw();
             // Auto-refresh character cards from source objects
@@ -1427,19 +1431,9 @@
         return am7model.newPrimitive("olio.sd.config");
     }
     function defaultSdOverrides() {
-        let def = newSdOverride();
-        let o = { _default: def };
-        Object.keys(CARD_TYPES).forEach(t => {
-            let copy = JSON.parse(JSON.stringify(def));
-            copy[am7model.jsonModelKey] = "olio.sd.config";
-            o[t] = copy;
-        });
-        Object.keys(TEMPLATE_TYPES).forEach(t => {
-            let copy = JSON.parse(JSON.stringify(def));
-            copy[am7model.jsonModelKey] = "olio.sd.config";
-            o[t] = copy;
-        });
-        return o;
+        // Only _default is pre-populated; other tabs lazily inherit from _default
+        // when first visited (see getSdOverrideInst)
+        return { _default: newSdOverride() };
     }
     let sdOverrides = defaultSdOverrides();
     let sdConfigExpanded = false;
@@ -1469,6 +1463,12 @@
     function getSdOverrideInst(key) {
         if (!sdOverrideInsts[key]) {
             let entity = sdOverrides[key];
+            // For non-default tabs without saved data, start from current _default
+            if (!entity && key !== "_default" && sdOverrides._default) {
+                entity = JSON.parse(JSON.stringify(sdOverrides._default));
+                entity[am7model.jsonModelKey] = "olio.sd.config";
+                sdOverrides[key] = entity;
+            }
             if (!entity || !entity[am7model.jsonModelKey]) {
                 entity = am7model.prepareEntity(entity || {}, "olio.sd.config");
                 sdOverrides[key] = entity;
@@ -1587,8 +1587,16 @@
         am7sd.applyOverrides(entity, getCardTypeDelta(card.type));
         am7sd.fillStyleDefaults(entity);
 
-        // Build prompt using the final style
-        entity.description = buildCardPrompt(card, t, entity.style);
+        // Use tab-specific prompt if set, then _default prompt, then auto-generated
+        let typeOv = sdOverrides[card.type];
+        let defOv = sdOverrides._default;
+        if (typeOv && typeOv.description) {
+            entity.description = typeOv.description;
+        } else if (defOv && defOv.description) {
+            entity.description = defOv.description;
+        } else {
+            entity.description = buildCardPrompt(card, t, entity.style);
+        }
 
         // For character cards, the server builds its own prompt from person data
         // and uses imageSetting for the scene/location.
@@ -1687,18 +1695,28 @@
     // Generate template art for card front/back backgrounds
     async function generateTemplateArt(side) {
         let theme = activeTheme;
-        let suffix = (theme.artStyle && theme.artStyle.promptSuffix) || "fantasy illustration";
-        let prompt = side === "front"
-            ? "ornate card face design, decorative parchment border, golden filigree frame, card game template, " + suffix
-            : "ornate card back design, intricate repeating pattern, card game template, " + suffix;
+        let configKey = side === "front" ? "cardFront" : "cardBack";
+        let ov = sdOverrides[configKey];
+        let defOv = sdOverrides._default;
+
+        // Use tab-specific prompt, then _default prompt, then hardcoded fallback
+        let prompt;
+        if (ov && ov.description) {
+            prompt = ov.description;
+        } else if (defOv && defOv.description) {
+            prompt = defOv.description;
+        } else {
+            let suffix = (theme.artStyle && theme.artStyle.promptSuffix) || "fantasy illustration";
+            prompt = side === "front"
+                ? "ornate card face design, decorative parchment border, golden filigree frame, card game template, " + suffix
+                : "ornate card back design, intricate repeating pattern, card game template, " + suffix;
+        }
 
         backgroundGenerating = true;
         m.redraw();
         try {
             let dir = await ensureArtDir(theme.themeId);
             if (!dir) throw new Error("Could not create art directory");
-
-            let configKey = side === "front" ? "cardFront" : "cardBack";
             let sdEntity = await am7sd.buildEntity({
                 description: prompt,
                 seed: -1,
@@ -1924,12 +1942,18 @@
                 }
                 // Restore SD overrides from saved deck
                 if (viewingDeck && viewingDeck.sdOverrides) {
-                    let base = defaultSdOverrides();
                     let saved = viewingDeck.sdOverrides;
-                    Object.keys(base).forEach(k => {
-                        if (saved[k]) Object.assign(base[k], saved[k]);
+                    sdOverrides = { _default: newSdOverride() };
+                    // Merge saved _default with model defaults
+                    if (saved._default) Object.assign(sdOverrides._default, saved._default);
+                    // Restore any explicitly-saved non-default tabs
+                    Object.keys(saved).forEach(k => {
+                        if (k !== "_default" && saved[k]) {
+                            let copy = JSON.parse(JSON.stringify(saved[k]));
+                            copy[am7model.jsonModelKey] = "olio.sd.config";
+                            sdOverrides[k] = copy;
+                        }
                     });
-                    sdOverrides = base;
                 } else {
                     sdOverrides = defaultSdOverrides();
                 }
@@ -2054,6 +2078,14 @@
                                         class: "cg2-btn cg2-btn-primary", style: { fontSize: "11px" },
                                         async onclick() {
                                             if (viewingDeck) {
+                                                // Fill any undefined types from _default before saving
+                                                let allKeys = Object.keys(CARD_TYPES).concat(Object.keys(TEMPLATE_TYPES));
+                                                allKeys.forEach(k => {
+                                                    if (!sdOverrides[k]) {
+                                                        sdOverrides[k] = JSON.parse(JSON.stringify(sdOverrides._default));
+                                                        sdOverrides[k][am7model.jsonModelKey] = "olio.sd.config";
+                                                    }
+                                                });
                                                 viewingDeck.sdOverrides = JSON.parse(JSON.stringify(sdOverrides));
                                                 let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
                                                 await deckStorage.save(safeName, viewingDeck);
