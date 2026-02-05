@@ -1689,6 +1689,7 @@
                         let aP = [];
                         members.forEach((t)=>{
                             aP.push(new Promise((res, rej)=>{
+                                console.log(uname);
                                 console.log(cinst.entity[am7model.jsonModelKey], inst.api[pname]().objectId, t[am7model.jsonModelKey], t.objectId);
                                 am7client.member(cinst.entity[am7model.jsonModelKey], inst.api[pname]().objectId, uname, t[am7model.jsonModelKey], t.objectId, true, function(v){
                                     res(v);

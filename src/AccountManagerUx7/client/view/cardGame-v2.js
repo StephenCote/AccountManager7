@@ -2461,7 +2461,7 @@
                     continue;
                 }
 
-                // 2. Deactivate current apparel — use members API for full list (no pagination limit)
+                // 2. Deactivate current apparel — use members API for full list
                 am7client.clearCache("olio.store");
                 let storeApparelList = await new Promise(res => {
                     am7client.members("olio.store", storeObjId, "olio.apparel", 0, 50, res);
@@ -2496,10 +2496,22 @@
                     }
                 }
 
+                // 2b. Clear existing items from store (items are only for posing in card game)
+                let storeItemList = await new Promise(res => {
+                    am7client.members("olio.store", storeObjId, "olio.item", 0, 50, res);
+                });
+                if (storeItemList && storeItemList.length) {
+                    for (let itemRef of storeItemList) {
+                        await new Promise(res => {
+                            am7client.member("olio.store", storeObjId, "store.item", "olio.item", itemRef.objectId, false, res);
+                        });
+                    }
+                }
+
                 // 3. Create apparel FIRST in the store group (store likeInherits data.directory)
                 let apparel = {
                     schema: "olio.apparel",
-                    groupId: sto.objectId,
+                    groupId: sto.id,
                     name: outfitDef.name,
                     type: outfitDef.type || "casual",
                     gender: outfitDef.gender || gender
@@ -2516,7 +2528,7 @@
                     let colorRef = await lookupColor(wDef.color);
                     let wearable = {
                         schema: "olio.wearable",
-                        groupId: createdApparel.objectId,
+                        groupId: createdApparel.id,
                         name: wDef.name,
                         location: wDef.location,
                         fabric: wDef.fabric,
@@ -2533,8 +2545,10 @@
                     await page.member("olio.apparel", createdApparel.objectId, "olio.wearable", cw.objectId, true);
                 }
 
-                // 6. Link apparel to store via membership
-                await page.member("olio.store", storeObjId, "olio.apparel", createdApparel.objectId, true);
+                // 6. Link apparel to store via membership (participantModel: "store.apparel")
+                await new Promise(res => {
+                    am7client.member("olio.store", storeObjId, "store.apparel", "olio.apparel", createdApparel.objectId, true, res);
+                });
 
                 // 7. Patch inuse = true on all wearables and the apparel
                 let inusePatches = createdWearables.map(cw =>

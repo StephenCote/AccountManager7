@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -36,7 +37,8 @@ public class MemoryUtil {
 		BaseRecord memory = null;
 		try {
 			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, MEMORY_GROUP_PATH);
-			plist.parameter(FieldNames.FIELD_NAME, summary != null ? summary.substring(0, Math.min(summary.length(), 64)) : "Memory");
+			String baseName = summary != null ? summary.substring(0, Math.min(summary.length(), 48)) : "Memory";
+			plist.parameter(FieldNames.FIELD_NAME, baseName + " " + UUID.randomUUID().toString().substring(0, 8));
 
 			memory = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_MEMORY, user, null, plist);
 			memory.set("content", content);
