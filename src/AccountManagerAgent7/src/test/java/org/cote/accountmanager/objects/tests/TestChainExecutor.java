@@ -8,14 +8,18 @@ import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.cote.accountmanager.agent.AM7AgentTool;
 import org.cote.accountmanager.agent.AgentToolManager;
 import org.cote.accountmanager.agent.ChainExecutor;
 import org.cote.accountmanager.agent.PlanExecutionError;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -470,6 +474,181 @@ public class TestChainExecutor extends BaseTest {
 			assertTrue("Plan should be marked executed", (boolean) plan.get("executed"));
 			assertEquals(StepStatusEnumType.COMPLETED, steps.get(0).getEnum("stepStatus"));
 
+		} catch (Exception e) {
+			logger.error(e);
+			fail("Exception: " + e.getMessage());
+		}
+	}
+
+	@Test
+	public void testMultiStepAnalysisChain() {
+		try {
+			// --- Set up event tracking ---
+			List<BaseRecord> events = new ArrayList<>();
+			long testStartTime = System.currentTimeMillis();
+			chainExec.setListener((user, event) -> {
+				events.add(event);
+			});
+
+			// --- Build the 4-step plan: TOOL -> LLM -> TOOL -> LLM ---
+			BaseRecord plan = RecordFactory.newInstance(ModelNames.MODEL_PLAN);
+			plan.set(FieldNames.FIELD_NAME, "Multi-Step Analysis - " + UUID.randomUUID().toString());
+			plan.set("planQuery", "Analyze available models and suggest useful queries for person data");
+			plan.set("maxSteps", 20);
+			plan.set("chainMode", true);
+			plan.set("executed", false);
+
+			String planPromptName = "ChainAnalysis Prompt " + UUID.randomUUID().toString();
+			String planChatName = testChatConfigPrefix + " ChainAnalysis";
+			plan.set("planPromptConfigName", planPromptName);
+			plan.set("planChatName", planChatName);
+
+			List<BaseRecord> steps = plan.get("steps");
+
+			// ========== STEP 1: TOOL - describeAllModels ==========
+			BaseRecord step1 = RecordFactory.newInstance(ModelNames.MODEL_PLAN_STEP);
+			step1.setValue("step", 1);
+			step1.setValue("stepType", StepTypeEnumType.TOOL);
+			step1.setValue("toolName", "describeAllModels");
+			toolManager.preparePlanStep(step1);
+			steps.add(step1);
+
+			// ========== STEP 2: LLM - Analyze models ==========
+			BaseRecord step2 = RecordFactory.newInstance(ModelNames.MODEL_PLAN_STEP);
+			step2.setValue("step", 2);
+			step2.setValue("stepType", StepTypeEnumType.LLM);
+			String step2PromptName = "ChainAnalysis Step2 " + UUID.randomUUID().toString();
+			step2.setValue("promptConfigName", step2PromptName);
+
+			// Create an input that references the modelList from step 1
+			List<BaseRecord> step2Inputs = step2.get("inputs");
+			BaseRecord step2Input = RecordFactory.newInstance("dev.parameter");
+			step2Input.setValue("name", "modelAnalysis");
+			step2Input.setValue("valueType", FieldEnumType.STRING);
+			step2Input.setFlex("value", "Analyze the following models and identify which ones relate to people or characters:\n{{modelList}}");
+			step2Inputs.add(step2Input);
+
+			// Configure the prompt config for step 2
+			BaseRecord step2Prompt = toolManager.getCreatePromptConfig(step2PromptName);
+			assertNotNull("Step 2 prompt config is null", step2Prompt);
+			List<String> step2Sys = step2Prompt.get("system");
+			step2Sys.clear();
+			step2Sys.add("You are a data model analyst. When given a list of models, identify which models relate to people, characters, or personal attributes. Be concise. Limit response to 200 words.");
+			IOSystem.getActiveContext().getAccessPoint().update(testUser1, step2Prompt);
+			steps.add(step2);
+
+			// ========== STEP 3: TOOL - describeModel("olio.charPerson") ==========
+			BaseRecord step3 = RecordFactory.newInstance(ModelNames.MODEL_PLAN_STEP);
+			step3.setValue("step", 3);
+			step3.setValue("stepType", StepTypeEnumType.TOOL);
+			step3.setValue("toolName", "describeModel");
+			toolManager.preparePlanStep(step3);
+
+			// Set the modelName input value AFTER preparePlanStep (which clears inputs)
+			List<BaseRecord> step3Inputs = step3.get("inputs");
+			for (BaseRecord input : step3Inputs) {
+				if ("modelName".equals(input.get("name"))) {
+					input.setFlex("value", "olio.charPerson");
+				}
+			}
+			steps.add(step3);
+
+			// ========== STEP 4: LLM - Suggest queries ==========
+			BaseRecord step4 = RecordFactory.newInstance(ModelNames.MODEL_PLAN_STEP);
+			step4.setValue("step", 4);
+			step4.setValue("stepType", StepTypeEnumType.LLM);
+			String step4PromptName = "ChainAnalysis Step4 " + UUID.randomUUID().toString();
+			step4.setValue("promptConfigName", step4PromptName);
+			// No explicit inputs -- composeLLMMessage will use full accumulated chainContext
+
+			BaseRecord step4Prompt = toolManager.getCreatePromptConfig(step4PromptName);
+			assertNotNull("Step 4 prompt config is null", step4Prompt);
+			List<String> step4Sys = step4Prompt.get("system");
+			step4Sys.clear();
+			step4Sys.add("You are a query advisor. Based on the model schema and analysis provided in the context, suggest 3-5 useful queries that could be run against the charPerson model. Each suggestion should include the field name, comparator, and example value. Be concise. Limit response to 200 words.");
+			IOSystem.getActiveContext().getAccessPoint().update(testUser1, step4Prompt);
+			steps.add(step4);
+
+			// --- Execute the chain ---
+			logger.info("Starting multi-step analysis chain with " + steps.size() + " steps");
+			chainExec.executeChain(plan);
+
+			// ===== ASSERTIONS =====
+
+			// 1. Plan completed
+			assertTrue("Plan should be marked executed", (boolean) plan.get("executed"));
+
+			// 2. All 4 original steps should have COMPLETED status
+			assertTrue("Should have at least 4 steps", steps.size() >= 4);
+			for (int i = 0; i < 4; i++) {
+				BaseRecord s = steps.get(i);
+				assertEquals("Step " + (i + 1) + " should be COMPLETED",
+					StepStatusEnumType.COMPLETED, s.getEnum("stepStatus"));
+			}
+
+			// 3. totalExecutedSteps should be at least 4
+			int totalExecuted = (int) plan.get("totalExecutedSteps");
+			assertTrue("Should have executed at least 4 steps, got " + totalExecuted, totalExecuted >= 4);
+
+			// 4. Verify context accumulation
+			Map<String, Object> ctx = chainExec.getChainContext();
+			assertNotNull("chainContext should not be null", ctx);
+			assertTrue("chainContext should contain 'modelList'", ctx.containsKey("modelList"));
+			assertNotNull("modelList value should not be null", ctx.get("modelList"));
+			assertTrue("chainContext should contain 'modelDescription'", ctx.containsKey("modelDescription"));
+			assertNotNull("modelDescription value should not be null", ctx.get("modelDescription"));
+
+			// 5. Verify step outputs are populated
+			for (int i = 0; i < 4; i++) {
+				BaseRecord s = steps.get(i);
+				BaseRecord output = s.get("output");
+				assertNotNull("Step " + (i + 1) + " output should not be null", output);
+			}
+
+			// 6. Verify step 3 output contains charPerson schema details
+			String modelDescOutput = ctx.get("modelDescription").toString();
+			assertTrue("modelDescription should describe charPerson",
+				modelDescOutput.contains("charPerson") || modelDescOutput.contains("olio"));
+
+			// 7. Verify events
+			assertFalse("Should have received events", events.isEmpty());
+
+			long stepStartCount = events.stream().filter(e -> "stepStart".equals(e.get("eventType"))).count();
+			long stepCompleteCount = events.stream().filter(e -> "stepComplete".equals(e.get("eventType"))).count();
+			assertTrue("Should have at least 4 stepStart events, got " + stepStartCount, stepStartCount >= 4);
+			assertTrue("Should have at least 4 stepComplete events, got " + stepCompleteCount, stepCompleteCount >= 4);
+
+			boolean hasChainComplete = events.stream().anyMatch(e -> "chainComplete".equals(e.get("eventType")));
+			assertTrue("Should have chainComplete event", hasChainComplete);
+
+			// 8. Verify events include both TOOL and LLM step types
+			List<BaseRecord> startEvents = events.stream()
+				.filter(e -> "stepStart".equals(e.get("eventType")))
+				.collect(Collectors.toList());
+			boolean hasTool = startEvents.stream().anyMatch(e -> "TOOL".equals(e.get("stepType")));
+			boolean hasLLM = startEvents.stream().anyMatch(e -> "LLM".equals(e.get("stepType")));
+			assertTrue("Should have TOOL step events", hasTool);
+			assertTrue("Should have LLM step events", hasLLM);
+
+			// 9. Verify timestamps are monotonically non-decreasing
+			long prevTs = 0;
+			for (BaseRecord e : events) {
+				long ts = (long) e.get("timestamp");
+				assertTrue("Timestamp should be >= test start time", ts >= testStartTime);
+				assertTrue("Timestamps should be monotonically non-decreasing", ts >= prevTs);
+				prevTs = ts;
+			}
+
+			// 10. Verify context was saved to plan
+			String ctxJson = plan.get("chainContextJson");
+			assertNotNull("chainContextJson should be populated after execution", ctxJson);
+			assertFalse("chainContextJson should not be empty", ctxJson.isEmpty());
+
+			logger.info("Multi-step analysis chain completed: " + totalExecuted + " steps, " + events.size() + " events");
+
+		} catch (PlanExecutionError e) {
+			logger.error(e);
+			fail("PlanExecutionError: " + e.getMessage());
 		} catch (Exception e) {
 			logger.error(e);
 			fail("Exception: " + e.getMessage());

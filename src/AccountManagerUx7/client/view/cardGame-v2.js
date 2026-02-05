@@ -1222,15 +1222,18 @@
                         m("button", { class: "cg2-btn", onclick: () => { builderStep = 1; m.redraw(); } }, "\u2190 Back"),
                         m("button", {
                             class: "cg2-btn cg2-btn-primary",
-                            disabled: !selectedChars.length,
-                            onclick() {
-                                if (!selectedChars.length) return;
+                            disabled: !selectedChars.length || applyingOutfits,
+                            async onclick() {
+                                if (!selectedChars.length || applyingOutfits) return;
                                 builtDeck = assembleStarterDeck(selectedChars, activeTheme);
                                 deckNameInput = builtDeck.deckName || "";
+                                if (activeTheme && activeTheme.outfits) {
+                                    await applyThemeOutfits(builtDeck, activeTheme, true);
+                                }
                                 builderStep = 3;
                                 m.redraw();
                             }
-                        }, "Next: Review Deck \u2192")
+                        }, applyingOutfits ? "Applying Outfits..." : "Next: Review Deck \u2192")
                     ])
                 ]);
             }
@@ -1718,6 +1721,146 @@
         galleryPickerCard = null;
         galleryImages = [];
         m.redraw();
+    }
+
+    // ── Image Sequence Generation (apparel dress-up progression) ─────
+    let sequenceCardId = null;   // sourceId of card currently sequencing
+    let sequenceProgress = "";
+
+    async function generateImageSequence(card) {
+        if (!card || !card.sourceId || sequenceCardId) return;
+        sequenceCardId = card.sourceId;
+        sequenceProgress = "Loading character...";
+        m.redraw();
+
+        try {
+            let char = await fetchCharPerson(card.sourceId);
+            if (!char) throw new Error("Could not load character");
+
+            // Find active (inuse) apparel from the store via members API
+            let sto = char.store;
+            if (!sto) throw new Error("Character has no store");
+
+            am7client.clearCache("olio.store");
+            let storeApparelList = await new Promise(res => {
+                am7client.members("olio.store", sto.objectId, "olio.apparel", 0, 50, res);
+            });
+            if (!storeApparelList || !storeApparelList.length) {
+                throw new Error("No apparel found in store");
+            }
+
+            // Find the inuse apparel (prefer first inuse, fallback to first)
+            let activeApparel = storeApparelList.find(a => a.inuse) || storeApparelList[0];
+
+            // Load full apparel details
+            am7client.clearCache("olio.apparel");
+            let aq = am7view.viewQuery("olio.apparel");
+            aq.field("objectId", activeApparel.objectId);
+            let aqr = await page.search(aq);
+            if (!aqr || !aqr.results || !aqr.results.length) {
+                throw new Error("Could not load apparel details");
+            }
+            let app = aqr.results[0];
+            if (!app.wearables || !app.wearables.length) {
+                throw new Error("No wearables found in apparel");
+            }
+
+            // Load full wearable details
+            let wq = am7view.viewQuery("olio.wearable");
+            wq.range(0, 20);
+            let woids = app.wearables.map(w => w.objectId).join(",");
+            wq.field("groupId", app.wearables[0].groupId);
+            let wfld = wq.field("objectId", woids);
+            wfld.comparator = "in";
+            let wqr = await page.search(wq);
+            if (!wqr || !wqr.results || !wqr.results.length) {
+                throw new Error("Could not load wearable details");
+            }
+            let wears = wqr.results;
+
+            // Get sorted unique wear levels
+            let lvls = [...new Set(wears.sort((a, b) => {
+                let aL = am7model.enums.wearLevelEnumType.findIndex(we => we == a.level.toUpperCase());
+                let bL = am7model.enums.wearLevelEnumType.findIndex(we => we == b.level.toUpperCase());
+                return aL < bL ? -1 : aL > bL ? 1 : 0;
+            }).map(w => w.level.toUpperCase()))];
+
+            if (!lvls.length) throw new Error("No wear levels found");
+
+            // Dress down completely
+            sequenceProgress = "Dressing down...";
+            m.redraw();
+            let dressedDown = true;
+            while (dressedDown === true) {
+                dressedDown = await am7olio.dressApparel(activeApparel, false);
+            }
+
+            let images = [];
+            let totalImages = lvls.length;
+            let baseSeed = -1;
+
+            // Build base SD entity for character reimage
+            let sdBase = await buildSdEntity(card, activeTheme);
+
+            // Generate image at each wear level
+            for (let i = 0; i < lvls.length; i++) {
+                // Dress up one level
+                await am7olio.dressApparel(activeApparel, true);
+
+                sequenceProgress = "Generating image " + (i + 1) + " of " + totalImages + " (" + lvls[i] + ")...";
+                m.redraw();
+
+                let useSeed = (images.length === 0) ? baseSeed : (parseInt(baseSeed) + images.length);
+                let sdEntity = Object.assign({}, sdBase);
+                sdEntity.seed = useSeed;
+
+                let x = await m.request({
+                    method: "POST",
+                    url: g_application_path + "/rest/olio/olio.charPerson/" + card.sourceId + "/reimage",
+                    body: sdEntity,
+                    withCredentials: true
+                });
+
+                if (!x) {
+                    page.toast("error", "Failed to create image at level " + lvls[i]);
+                    break;
+                }
+
+                // Extract seed from first image if random
+                if (images.length === 0) {
+                    let seedAttr = (x.attributes || []).filter(a => a.name == "seed");
+                    if (seedAttr.length) baseSeed = seedAttr[0].value;
+                }
+
+                // Tag image with wear level
+                let levelIndex = am7model.enums.wearLevelEnumType.findIndex(we => we == lvls[i]);
+                await am7client.patchAttribute(x, "wearLevel", lvls[i] + "/" + levelIndex);
+
+                images.push(x);
+            }
+
+            sequenceProgress = "";
+            sequenceCardId = null;
+            m.redraw();
+
+            if (images.length > 0) {
+                page.toast("success", "Created " + images.length + " images for " + card.name);
+                // Refresh the card portrait to latest image
+                await refreshCharacterCard(card);
+                m.redraw();
+                // Open the gallery picker so user can choose a portrait
+                openGalleryPicker(card);
+            } else {
+                page.toast("warn", "No images were generated");
+            }
+
+        } catch (e) {
+            console.error("[CardGame v2] Image sequence failed:", e);
+            page.toast("error", "Image sequence failed: " + e.message);
+            sequenceProgress = "";
+            sequenceCardId = null;
+            m.redraw();
+        }
     }
 
     function GalleryPickerOverlay() {
@@ -2263,7 +2406,7 @@
     }
 
     let applyingOutfits = false;
-    async function applyThemeOutfits(deck, theme) {
+    async function applyThemeOutfits(deck, theme, skipSave) {
         if (!deck || !deck.cards || applyingOutfits) return;
         let thm = theme || activeTheme;
         if (!thm.outfits) {
@@ -2310,67 +2453,104 @@
                     continue;
                 }
 
-                // 1. Deactivate current apparel
-                if (char.store && char.store.apparel) {
-                    for (let ap of char.store.apparel) {
-                        if (ap.inuse) {
-                            await page.patchObject({ schema: "olio.apparel", id: ap.id, inuse: false });
-                            if (ap.wearables) {
-                                for (let w of ap.wearables) {
-                                    if (w.inuse) {
-                                        await page.patchObject({ schema: "olio.wearable", id: w.id, inuse: false });
+                // 1. Load store to get its objectId (store IS a directory container)
+                let storeObjId = char.store ? char.store.objectId : null;
+                let sto = storeObjId ? await page.searchFirst("olio.store", undefined, undefined, storeObjId) : null;
+                if (!sto) {
+                    console.warn("[CardGame v2] No store for char:", card.name);
+                    continue;
+                }
+
+                // 2. Deactivate current apparel — use members API for full list (no pagination limit)
+                am7client.clearCache("olio.store");
+                let storeApparelList = await new Promise(res => {
+                    am7client.members("olio.store", storeObjId, "olio.apparel", 0, 50, res);
+                });
+                if (storeApparelList && storeApparelList.length) {
+                    for (let apRef of storeApparelList) {
+                        am7client.clearCache("olio.apparel");
+                        let aq = am7view.viewQuery("olio.apparel");
+                        aq.field("objectId", apRef.objectId);
+                        let aqr = await page.search(aq);
+                        if (aqr && aqr.results && aqr.results.length) {
+                            let fullAp = aqr.results[0];
+                            if (fullAp.inuse) {
+                                if (fullAp.wearables && fullAp.wearables.length) {
+                                    let wq = am7view.viewQuery("olio.wearable");
+                                    wq.range(0, 20);
+                                    let woids = fullAp.wearables.map(w => w.objectId).join(",");
+                                    wq.field("groupId", fullAp.wearables[0].groupId);
+                                    let wfld = wq.field("objectId", woids);
+                                    wfld.comparator = "in";
+                                    let wqr = await page.search(wq);
+                                    if (wqr && wqr.results) {
+                                        let patches = wqr.results
+                                            .filter(w => w.inuse)
+                                            .map(w => page.patchObject({ schema: "olio.wearable", id: w.id, inuse: false }));
+                                        await Promise.all(patches);
                                     }
                                 }
+                                await page.patchObject({ schema: "olio.apparel", id: fullAp.id, inuse: false });
                             }
                         }
                     }
                 }
 
-                // 2. Get store group for creating objects
-                let storeGroupId = char.store ? char.store.groupId : null;
-                if (!storeGroupId && char.store && char.store.objectId) {
-                    let sto = await page.searchFirst("olio.store", undefined, undefined, char.store.objectId);
-                    if (sto) storeGroupId = sto.groupId;
+                // 3. Create apparel FIRST in the store group (store likeInherits data.directory)
+                let apparel = {
+                    schema: "olio.apparel",
+                    groupId: sto.objectId,
+                    name: outfitDef.name,
+                    type: outfitDef.type || "casual",
+                    gender: outfitDef.gender || gender
+                };
+                let createdApparel = await page.createObject(apparel);
+                if (!createdApparel) {
+                    console.warn("[CardGame v2] Failed to create apparel for", card.name);
+                    continue;
                 }
 
-                // 3. Create wearables with color lookups
+                // 4. Create wearables in the apparel group (apparel likeInherits data.directory)
                 let createdWearables = [];
                 for (let wDef of outfitDef.wearables) {
                     let colorRef = await lookupColor(wDef.color);
                     let wearable = {
                         schema: "olio.wearable",
+                        groupId: createdApparel.objectId,
                         name: wDef.name,
                         location: wDef.location,
                         fabric: wDef.fabric,
                         gender: wDef.gender || gender,
-                        level: wDef.level || "SUIT",
-                        inuse: true
+                        level: wDef.level || "SUIT"
                     };
-                    if (storeGroupId) wearable.groupId = storeGroupId;
                     if (colorRef) wearable.color = colorRef;
                     let created = await page.createObject(wearable);
                     if (created) createdWearables.push(created);
                 }
 
-                // 4. Create apparel with wearable references
-                let displayName = outfitDef.name;
-                let apparel = {
-                    schema: "olio.apparel",
-                    name: displayName,
-                    type: outfitDef.type || "casual",
-                    gender: outfitDef.gender || gender,
-                    inuse: true,
-                    wearables: createdWearables.map(w => ({ id: w.id }))
-                };
-                if (storeGroupId) apparel.groupId = storeGroupId;
-                let createdApparel = await page.createObject(apparel);
-
-                // 5. Add to character's store
-                if (createdApparel && char.store) {
-                    await page.member("olio.store", char.store.objectId, "olio.apparel", createdApparel.objectId, true);
+                // 5. Link wearables to apparel via membership
+                for (let cw of createdWearables) {
+                    await page.member("olio.apparel", createdApparel.objectId, "olio.wearable", cw.objectId, true);
                 }
 
-                // 6. Refresh character card data
+                // 6. Link apparel to store via membership
+                await page.member("olio.store", storeObjId, "olio.apparel", createdApparel.objectId, true);
+
+                // 7. Patch inuse = true on all wearables and the apparel
+                let inusePatches = createdWearables.map(cw =>
+                    page.patchObject({ schema: "olio.wearable", id: cw.id, inuse: true })
+                );
+                inusePatches.push(
+                    page.patchObject({ schema: "olio.apparel", id: createdApparel.id, inuse: true })
+                );
+                await Promise.all(inusePatches);
+
+                // 8. Clear caches so subsequent reads reflect new state
+                await am7client.clearCache("olio.wearable");
+                await am7client.clearCache("olio.apparel");
+                await am7client.clearCache("olio.store");
+
+                // 9. Refresh character card data
                 await refreshCharacterCard(card);
                 processed++;
                 console.log("[CardGame v2] Applied " + cat + " outfit to " + card.name);
@@ -2383,9 +2563,10 @@
 
         applyingOutfits = false;
         if (processed > 0) {
-            // Save deck
-            let safeName = (deck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
-            await deckStorage.save(safeName, deck);
+            if (!skipSave) {
+                let safeName = (deck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+                await deckStorage.save(safeName, deck);
+            }
             page.toast("success", "Applied outfits to " + processed + " character(s)");
         }
         m.redraw();
@@ -2802,6 +2983,20 @@
                                             openGalleryPicker(card);
                                         }
                                     }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "photo_library")) : null,
+                                    // Image sequence (character cards only) — dress-up progression
+                                    card.sourceId && card.type === "character" ? (function() {
+                                        let isThisCard = sequenceCardId === card.sourceId;
+                                        return m("button", {
+                                            class: "cg2-card-action-btn",
+                                            title: isThisCard ? sequenceProgress : "Generate apparel image sequence",
+                                            disabled: !!sequenceCardId,
+                                            onclick(e) {
+                                                e.stopPropagation();
+                                                generateImageSequence(card);
+                                            }
+                                        }, isThisCard ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px" } }, "progress_activity")
+                                            : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "burst_mode"));
+                                    })() : null,
                                     // Refresh data from source object (character cards only)
                                     card.sourceId && card.type === "character" ? m("button", {
                                         class: "cg2-card-action-btn",

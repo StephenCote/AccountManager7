@@ -101,5 +101,88 @@
   "magicConfig": {
     "enabledSkillTypes": [],
     "magicEffectPool": ["Rad Burst", "Mutant Surge", "Toxin Cloud", "Adrenaline Rush"]
+  },
+
+  "outfits": {
+    "male": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Scavenger's Rags",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "torn undershirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "shredded jeans", "location": ["leg"], "fabric": "denim", "color": "Blue", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "scrap-wire belt", "location": ["waist"], "fabric": "wire", "color": "Gray", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "taped-up boots", "location": ["foot"], "fabric": "rubber", "color": "Black", "level": "SUIT", "gender": "male" }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Wastelander's Gear",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "reinforced vest", "location": ["torso"], "fabric": "canvas", "color": "Olive", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "cargo pants", "location": ["leg"], "fabric": "canvas", "color": "Tan", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "ammo belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "dust cloak", "location": ["back"], "fabric": "canvas", "color": "Brown", "level": "OVER", "gender": "male" },
+          { "schema": "olio.wearable", "name": "steel-toed boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Warlord's Regalia",
+        "type": "formal",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "studded jacket", "location": ["torso"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "reinforced trousers", "location": ["leg"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "trophy belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "salvaged greatcoat", "location": ["back"], "fabric": "canvas", "color": "Olive", "level": "OVER", "gender": "male" },
+          { "schema": "olio.wearable", "name": "combat boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+        ]
+      }
+    },
+    "female": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Survivor's Wraps",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "knotted crop top", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "cut-off shorts", "location": ["leg"], "fabric": "denim", "color": "Blue", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "braided cord belt", "location": ["waist"], "fabric": "rope", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "mismatched shoes", "location": ["foot"], "fabric": "rubber", "color": "Black", "level": "SUIT", "gender": "female" }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Road Warrior's Kit",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "fitted tank with shoulder guard", "location": ["torso"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "patched cargo pants", "location": ["leg"], "fabric": "canvas", "color": "Olive", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "tool belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "hooded poncho", "location": ["back"], "fabric": "canvas", "color": "Tan", "level": "OVER", "gender": "female" },
+          { "schema": "olio.wearable", "name": "laced combat boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Chieftain's Finery",
+        "type": "formal",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "fitted corset top", "location": ["torso"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "long split skirt", "location": ["leg"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "chain belt with charms", "location": ["waist"], "fabric": "steel", "color": "Silver", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "fur-collared cloak", "location": ["back"], "fabric": "fur", "color": "Brown", "level": "OVER", "gender": "female" },
+          { "schema": "olio.wearable", "name": "tall boots with buckles", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" }
+        ]
+      }
+    }
   }
 }

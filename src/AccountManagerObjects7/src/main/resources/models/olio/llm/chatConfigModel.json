@@ -204,6 +204,11 @@
 			"foreign": true,
 			"followReference": false,
 			"description": "Development: Using a policy to route conversation requests through conditional rules and logic."
+		},
+		{
+			"name": "extractMemories",
+			"type": "boolean",
+			"description": "When true, the agent layer will automatically extract discrete memories (engrams) from chat sessions after save."
 		}
 
 	]

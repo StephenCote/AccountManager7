@@ -235,6 +235,7 @@
     font-size: 12px; font-weight: 800; color: #c62828;
     text-align: center; margin-top: 8px;
     letter-spacing: 1px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.15);
 }
 .cg2-use-or-lose-sub {
     font-size: 10px; color: #888; text-align: center; padding: 2px 4px;
@@ -242,10 +243,11 @@
 .cg2-card-footer {
     display: flex; justify-content: space-between; align-items: center;
     margin-top: auto; padding-top: 4px;
-    font-size: 10px; color: #777;
+    font-size: 10px; color: #777; font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
-.cg2-durability { font-weight: 600; }
-.cg2-energy-cost { font-weight: 600; color: #1E88E5; }
+.cg2-durability { font-weight: 700; }
+.cg2-energy-cost { font-weight: 700; color: #1E88E5; }
 
 /* ── Buttons ──────────────────────────────────────── */
 .cg2-btn {
@@ -644,7 +646,7 @@
 /* ── Dark mode ─────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
     .cg2-card-front { background: #1e1e1e; }
-    .cg2-card-name { filter: brightness(1.3); }
+    .cg2-card-name { filter: brightness(1.3); text-shadow: 0 1px 4px rgba(0,0,0,0.5), 0 0 2px rgba(0,0,0,0.3); }
     .cg2-divider { background: #444; }
     .cg2-card-detail, .cg2-card-meta { color: #bbb; }
     .cg2-stat-val { color: #eee; }

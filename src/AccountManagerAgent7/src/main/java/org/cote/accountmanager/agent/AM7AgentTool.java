@@ -169,5 +169,21 @@ public class AM7AgentTool {
     	return SchemaUtil.getModelDescription(modelName);
     }
 
+    @AgentTool(
+		description = "Search memories for relevant context based on a semantic query. Returns formatted memory context.",
+		returnName = "memories",
+		returnType = FieldEnumType.STRING
+	)
+    public String searchMemories(
+    	@AgentToolParameter(name = "query", type = FieldEnumType.STRING) String query,
+    	@AgentToolParameter(name = "limit", type = FieldEnumType.INT) int limit
+    ) {
+    	if (limit <= 0) limit = 10;
+    	List<BaseRecord> results = MemoryUtil.searchMemories(toolUser, query, limit, 0.5);
+    	if (results.isEmpty()) {
+    		return "No relevant memories found.";
+    	}
+    	return MemoryUtil.formatMemoriesAsContext(results);
+    }
 
 }

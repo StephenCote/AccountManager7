@@ -530,9 +530,10 @@
             if (charRecord && charRecord.store) {
                 let sto = await page.searchFirst("olio.store", undefined, undefined, charRecord.store.objectId);
                 if (sto && sto.apparel && sto.apparel.length) {
+                    let activeAp = sto.apparel.find(a => a.inuse) || sto.apparel[0];
                     am7client.clearCache("olio.apparel");
                     let aq = am7view.viewQuery("olio.apparel");
-                    aq.field("objectId", sto.apparel[0].objectId);
+                    aq.field("objectId", activeAp.objectId);
                     let aqr = await page.search(aq);
                     if (aqr && aqr.results && aqr.results.length) {
                         am7model.updateListModel(aqr.results);
@@ -726,11 +727,12 @@
         if(!sto || !sto.apparel || !sto.apparel.length){
             return null;
         }
+        let activeAp = sto.apparel.find(a => a.inuse) || sto.apparel[0];
 
         // Load the apparel and wearables
         am7client.clearCache("olio.apparel");
         let aq = am7view.viewQuery("olio.apparel");
-        aq.field("objectId", sto.apparel[0].objectId);
+        aq.field("objectId", activeAp.objectId);
         let aqr = await page.search(aq);
         let app;
         if(aqr && aqr.results && aqr.results.length){
@@ -1046,11 +1048,12 @@
                 page.toast("error", "No apparel found in store " + sto.name);
                 return;
             }
+            let activeAp = appl.find(a => a.inuse) || appl[0];
 
             // Load the apparel and wearables
             am7client.clearCache("olio.apparel");
             let aq = am7view.viewQuery("olio.apparel");
-            aq.field("objectId", appl[0].objectId);
+            aq.field("objectId", activeAp.objectId);
             let aqr = await page.search(aq);
             let app;
             if(aqr && aqr.results && aqr.results.length){
@@ -1091,7 +1094,7 @@
             page.toast("info", "Dressing down completely...", -1);
             let dressedDown = true;
             while(dressedDown == true){
-                dressedDown = await am7olio.dressApparel(appl[0], false);
+                dressedDown = await am7olio.dressApparel(activeAp, false);
             }
 
             // Store original seed
@@ -1142,7 +1145,7 @@
 
             for(let i = 0; i < lvls.length; i++){
                 // Dress up to this level first (we start fully undressed)
-                await am7olio.dressApparel(appl[0], true);
+                await am7olio.dressApparel(activeAp, true);
 
                 // Update narration description for current outfit
                 await am7olio.setNarDescription(inst, cinst);
@@ -1736,9 +1739,9 @@
             // Invoked from character - the entity IS the character
             characterId = inst.entity.objectId || inst.entity.id;
             gender = inst.entity.gender || "female";
-            // Get the character's current apparel if any
+            // Get the character's current apparel (prefer inuse)
             if (inst.entity.store && inst.entity.store.apparel && inst.entity.store.apparel.length > 0) {
-                currentApparel = inst.entity.store.apparel[0];
+                currentApparel = inst.entity.store.apparel.find(a => a.inuse) || inst.entity.store.apparel[0];
             }
         } else if (modelName === "olio.apparel") {
             // Invoked from apparel - try to get the associated character

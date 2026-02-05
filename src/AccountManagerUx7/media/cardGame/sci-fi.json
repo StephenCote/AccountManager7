@@ -100,5 +100,85 @@
   "magicConfig": {
     "enabledSkillTypes": ["Psionic", "Imperial"],
     "magicEffectPool": ["Neural Shock", "Kinetic Barrier", "Mind Link", "Phase Shift", "Plasma Surge", "Gravity Well", "Nano Heal", "EMP Pulse"]
+  },
+
+  "outfits": {
+    "male": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Drifter's Scraps",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "stained undershirt", "location": ["torso"], "fabric": "synthetic", "color": "Gray", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "patched cargo pants", "location": ["leg"], "fabric": "canvas", "color": "Olive", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "frayed utility belt", "location": ["waist"], "fabric": "nylon", "color": "Black", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "worn sneakers", "location": ["foot"], "fabric": "rubber", "color": "Gray", "level": "SUIT", "gender": "male" }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Crew Utility Suit",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "fitted jumpsuit", "location": ["torso", "leg"], "fabric": "neoprene", "color": "Navy", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "tool harness", "location": ["waist"], "fabric": "nylon", "color": "Black", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "tactical jacket", "location": ["back"], "fabric": "synthetic", "color": "Gray", "level": "OVER", "gender": "male" },
+          { "schema": "olio.wearable", "name": "grip boots", "location": ["foot"], "fabric": "rubber", "color": "Black", "level": "SUIT", "gender": "male" }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Officer's Dress Uniform",
+        "type": "formal",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "tailored tunic", "location": ["torso"], "fabric": "silk", "color": "White", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "pressed trousers", "location": ["leg"], "fabric": "silk", "color": "Black", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "ceremonial sash", "location": ["waist"], "fabric": "satin", "color": "Blue", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "long coat", "location": ["back"], "fabric": "synthetic", "color": "Navy", "level": "OVER", "gender": "male" },
+          { "schema": "olio.wearable", "name": "polished boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+        ]
+      }
+    },
+    "female": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Refugee's Layers",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "faded tank top", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "torn leggings", "location": ["leg"], "fabric": "synthetic", "color": "Black", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "knotted wire belt", "location": ["waist"], "fabric": "nylon", "color": "Gray", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "duct-taped shoes", "location": ["foot"], "fabric": "rubber", "color": "Gray", "level": "SUIT", "gender": "female" }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Tech Specialist Suit",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "fitted flight suit", "location": ["torso", "leg"], "fabric": "neoprene", "color": "Navy", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "equipment belt", "location": ["waist"], "fabric": "nylon", "color": "Black", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "utility vest", "location": ["back"], "fabric": "synthetic", "color": "Gray", "level": "OVER", "gender": "female" },
+          { "schema": "olio.wearable", "name": "mag-lock boots", "location": ["foot"], "fabric": "rubber", "color": "Black", "level": "SUIT", "gender": "female" }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Diplomat's Formal Wear",
+        "type": "formal",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "structured gown", "location": ["torso", "leg"], "fabric": "silk", "color": "White", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "shimmer wrap", "location": ["back"], "fabric": "satin", "color": "Silver", "level": "OVER", "gender": "female" },
+          { "schema": "olio.wearable", "name": "rank choker", "location": ["neck"], "fabric": "titanium", "color": "Silver", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "heeled boots", "location": ["foot"], "fabric": "leather", "color": "White", "level": "SUIT", "gender": "female" }
+        ]
+      }
+    }
   }
 }

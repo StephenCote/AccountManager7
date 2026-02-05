@@ -1,0 +1,52 @@
+{
+	"name": "tool.memory",
+	"inherits": ["data.directory"],
+	"vectorize": true,
+	"description": "Discrete memory entry (engram) capturing key notes, discoveries, behaviors, outcomes, and insights from conversations and agent interactions. Inherits createdDate/modifiedDate from data.directory for extraction timestamps.",
+	"fields": [
+		{
+			"name": "content",
+			"type": "string",
+			"description": "Full memory text"
+		},
+		{
+			"name": "summary",
+			"type": "string",
+			"maxLength": 512,
+			"description": "Concise one-line summary"
+		},
+		{
+			"name": "memoryType",
+			"type": "enum",
+			"baseClass": "org.cote.accountmanager.schema.type.MemoryTypeEnumType",
+			"maxLength": 32,
+			"default": "NOTE"
+		},
+		{
+			"name": "importance",
+			"type": "int",
+			"default": 5,
+			"description": "1 (low) to 10 (critical)"
+		},
+		{
+			"name": "sourceUri",
+			"type": "string",
+			"description": "am7:// URI to source conversation, chat config, or plan"
+		},
+		{
+			"name": "sourceContext",
+			"type": "string",
+			"maxLength": 512,
+			"description": "Brief description of originating context"
+		},
+		{
+			"name": "annotations",
+			"type": "string"
+		},
+		{
+			"name": "conversationId",
+			"type": "string",
+			"maxLength": 128
+		}
+	]
+}

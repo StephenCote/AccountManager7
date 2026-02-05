@@ -618,7 +618,7 @@ public class AgentToolManager {
 		return toolsArray.toString(2);
 	}
 
-	protected BaseRecord getCreatePromptConfig(String name) {
+	public BaseRecord getCreatePromptConfig(String name) {
 		BaseRecord opcfg = DocumentUtil.getRecord(toolUser, OlioModelNames.MODEL_PROMPT_CONFIG, name, "~/Chat");
 		if (opcfg != null) {
 			return opcfg;

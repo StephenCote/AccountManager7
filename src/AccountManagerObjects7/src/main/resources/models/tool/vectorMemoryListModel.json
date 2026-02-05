@@ -1,0 +1,13 @@
+{
+	"name": "tool.vectorMemoryList",
+	"ephemeral": true,
+	"factory": "org.cote.accountmanager.factory.VectorMemoryListFactory",
+	"fields": [
+		{
+			"name": "vectors",
+			"baseType": "model",
+			"baseModel": "tool.vectorMemory",
+			"type": "list"
+		}
+	]
+}

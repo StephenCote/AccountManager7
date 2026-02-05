@@ -100,5 +100,88 @@
   "magicConfig": {
     "enabledSkillTypes": ["Imperial", "Undead", "Psionic"],
     "magicEffectPool": ["Fireball", "Ice Wall", "Mind Read", "Raise Thrall", "Healing Light", "Thunder Strike", "Shield of Faith", "Shadow Step"]
+  },
+
+  "outfits": {
+    "male": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Peasant's Castoffs",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "patched tunic", "location": ["torso"], "fabric": "linen", "color": "Brown", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "loose breeches", "location": ["leg"], "fabric": "cotton", "color": "Tan", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "rope belt", "location": ["waist"], "fabric": "hemp", "color": "Brown", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "worn sandals", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Adventurer's Kit",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "reinforced jerkin", "location": ["torso"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "sturdy trousers", "location": ["leg"], "fabric": "wool", "color": "Green", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "belt with pouches", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "traveling cloak", "location": ["back"], "fabric": "wool", "color": "Green", "level": "OVER", "gender": "male" },
+          { "schema": "olio.wearable", "name": "tall boots", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Noble's Court Attire",
+        "type": "formal",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "embroidered doublet", "location": ["torso"], "fabric": "silk", "color": "Blue", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "tailored hose", "location": ["leg"], "fabric": "silk", "color": "Blue", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "fur-trimmed mantle", "location": ["back"], "fabric": "velvet", "color": "Purple", "level": "OVER", "gender": "male" },
+          { "schema": "olio.wearable", "name": "signet ring", "location": ["finger"], "fabric": "gold", "color": "Gold", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "polished shoes", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+        ]
+      }
+    },
+    "female": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Waif's Rags",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "threadbare shift", "location": ["torso"], "fabric": "linen", "color": "Gray", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "tattered skirt", "location": ["leg"], "fabric": "cotton", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "knotted cord belt", "location": ["waist"], "fabric": "hemp", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "bare-sole wraps", "location": ["foot"], "fabric": "linen", "color": "Gray", "level": "SUIT", "gender": "female" }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Ranger's Garb",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "fitted bodice", "location": ["torso"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "riding skirt with leggings", "location": ["leg"], "fabric": "wool", "color": "Green", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "utility belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "hooded cloak", "location": ["back"], "fabric": "wool", "color": "Green", "level": "OVER", "gender": "female" },
+          { "schema": "olio.wearable", "name": "knee-high boots", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Lady's Court Gown",
+        "type": "formal",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "flowing gown", "location": ["torso", "leg"], "fabric": "silk", "color": "Blue", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "embroidered chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "fur-lined stole", "location": ["back"], "fabric": "velvet", "color": "Purple", "level": "OVER", "gender": "female" },
+          { "schema": "olio.wearable", "name": "jeweled circlet", "location": ["head"], "fabric": "gold", "color": "Gold", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "satin slippers", "location": ["foot"], "fabric": "silk", "color": "White", "level": "SUIT", "gender": "female" }
+        ]
+      }
+    }
   }
 }

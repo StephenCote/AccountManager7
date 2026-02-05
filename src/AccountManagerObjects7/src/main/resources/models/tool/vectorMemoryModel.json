@@ -1,0 +1,19 @@
+{
+	"name": "tool.vectorMemory",
+	"inherits": ["data.vectorModelStore"],
+	"description": "Vector store for memory chunks. Inherits embedding, chunk, content, vectorReference from data.vectorModelStore.",
+	"fields": [
+		{
+			"name": "memoryType",
+			"type": "string",
+			"maxLength": 32,
+			"description": "Denormalized from tool.memory for search filtering"
+		},
+		{
+			"name": "conversationId",
+			"type": "string",
+			"maxLength": 128,
+			"description": "Denormalized from tool.memory for conversation scoping"
+		}
+	]
+}
