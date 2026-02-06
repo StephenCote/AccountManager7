@@ -27,6 +27,39 @@
 
     /* Font scaling */
     --card-font-scale: 1;
+
+    /* Card type colors (Phase 7.0) */
+    --card-character-color: #B8860B;
+    --card-character-bg: #FDF5E6;
+    --card-apparel-color: #808080;
+    --card-apparel-bg: #F5F5F5;
+    --card-item-color: #2E7D32;
+    --card-item-bg: #F1F8E9;
+    --card-action-color: #C62828;
+    --card-action-bg: #FFF3F0;
+    --card-talk-color: #1565C0;
+    --card-talk-bg: #E3F2FD;
+    --card-encounter-color: #6A1B9A;
+    --card-encounter-bg: #F3E5F5;
+    --card-skill-color: #E65100;
+    --card-skill-bg: #FFF3E0;
+    --card-magic-color: #00695C;
+    --card-magic-bg: #E0F2F1;
+
+    /* Semantic colors */
+    --color-success: #43A047;
+    --color-danger: #e53935;
+    --color-warning: #FFB300;
+    --color-info: #1E88E5;
+    --color-hp: #e53935;
+    --color-energy: #1E88E5;
+    --color-morale: #43A047;
+
+    /* Spacing scale */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
 }
 
 /* Tablet breakpoint (768-1199px) */
@@ -1417,6 +1450,43 @@
 }
 .dark .cg2-action-status { color: #bbb; }
 .dark .cg2-action-status strong { color: #DAA520; }
+/* Outcome colors in status bar */
+.cg2-status-outcome.cg2-outcome-hit { color: #43A047; }
+.cg2-status-outcome.cg2-outcome-counter { color: #e53935; }
+.cg2-status-outcome.cg2-outcome-miss { color: #888; }
+/* Narrator text overlay */
+.cg2-narration-overlay {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 600px;
+    z-index: 100;
+    animation: cg2-narration-fade-in 0.5s ease-out;
+}
+@keyframes cg2-narration-fade-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.cg2-narration-text {
+    background: linear-gradient(135deg, rgba(30,30,30,0.95), rgba(20,20,20,0.98));
+    color: #f0e6d3;
+    padding: 16px 24px;
+    border-radius: 12px;
+    font-size: 15px;
+    line-height: 1.5;
+    font-style: italic;
+    border: 2px solid #B8860B;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.cg2-narration-icon {
+    color: #B8860B;
+    font-size: 24px;
+    flex-shrink: 0;
+}
 .cg2-action-buttons {
     display: flex;
     gap: 12px;
@@ -2203,6 +2273,7 @@
 }
 .cg2-init-card-back {
     transform: rotateY(180deg);
+    transform-style: flat;  /* Prevent children from inheriting 3D context (fixes mirrored text) */
     background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
     border: 2px solid #B8860B;
     display: flex;
@@ -2473,6 +2544,23 @@
 }
 .cg2-action-position.cg2-resolved {
     opacity: 0.6;
+}
+/* Locked positions (no AP remaining) */
+.cg2-action-position.cg2-locked {
+    background: rgba(128, 128, 128, 0.15);
+    border-color: #aaa;
+    border-style: dashed;
+}
+.dark .cg2-action-position.cg2-locked {
+    background: rgba(80, 80, 80, 0.3);
+    border-color: #555;
+}
+.cg2-pos-empty.cg2-pos-locked {
+    color: #999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
 }
 /* Threat positions (beginning threat from Nat 1) */
 .cg2-action-position.cg2-threat-pos {
@@ -3321,6 +3409,34 @@
 .dark .cg2-round-points {
     color: #aaa;
 }
+/* Round recovery display */
+.cg2-round-recovery {
+    border-top: 1px solid rgba(0,0,0,0.1);
+    padding-top: 12px;
+    margin-top: 12px;
+}
+.dark .cg2-round-recovery {
+    border-color: rgba(255,255,255,0.1);
+}
+.cg2-recovery-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+.cg2-recovery-label {
+    font-weight: 600;
+    color: #888;
+    min-width: 55px;
+    text-align: right;
+}
+.cg2-recovery-row .cg2-winner {
+    color: #4caf50;
+    font-weight: 600;
+}
+/* Legacy HP recovery styles */
 .cg2-hp-recovery {
     border-top: 1px solid rgba(0,0,0,0.1);
     padding-top: 12px;
@@ -3658,6 +3774,37 @@
     justify-content: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     z-index: 5;
+}
+/* Remove button on placed cards */
+.cg2-pos-remove-btn {
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: none;
+    background: #e53935;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.15s, transform 0.15s;
+    z-index: 10;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+.cg2-pos-remove-btn .material-symbols-outlined {
+    font-size: 14px;
+}
+.cg2-pos-core-card:hover .cg2-pos-remove-btn {
+    opacity: 1;
+}
+.cg2-pos-remove-btn:hover {
+    transform: scale(1.15);
+    background: #c62828;
 }
 /* Modifier list below core card */
 .cg2-pos-modifiers-list {

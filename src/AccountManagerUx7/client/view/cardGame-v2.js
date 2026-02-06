@@ -31,6 +31,101 @@
         consumable: "science"
     };
 
+    // ── Card Render Configuration (Phase 7.0 consolidation) ─────────
+    // Defines fields to render for each card type - replaces 8 separate render*Body functions
+    const CARD_RENDER_CONFIG = {
+        apparel: {
+            placeholderIcon: "checkroom",
+            headerField: { field: "slot", default: "Body", icon: "back_hand", showRarity: true },
+            details: [
+                { type: "stats", fields: ["def", "hpBonus"], labels: { def: "DEF +", hpBonus: "HP +" } },
+                { field: "special", icon: "auto_awesome" },
+                { field: "flavor", type: "flavor" }
+            ],
+            footer: [{ field: "durability", icon: "build", suffix: " Dur", default: "\u221E" }]
+        },
+        weapon: {
+            placeholderIcon: "swords",
+            headerField: { field: "slot", default: "Hand (1H)", icon: "back_hand", showRarity: true },
+            details: [
+                { type: "stats", fields: ["atk", "range"], labels: { atk: "ATK +" }, defaults: { range: "Melee" }, atkClass: "cg2-mod-atk" },
+                { field: "damageType", icon: "flash_on", default: "Slashing" },
+                { field: "requires", icon: "key", type: "requires" },
+                { field: "special", icon: "auto_awesome" }
+            ],
+            footer: [{ field: "durability", icon: "build", suffix: " Dur", default: "\u221E" }]
+        },
+        consumable: {
+            placeholderIcon: "science",
+            headerField: { label: "Consumable", icon: "science", showRarity: true },
+            details: [
+                { field: "effect", icon: "auto_awesome" },
+                { type: "warning", text: "USE IT OR LOSE IT" }
+            ],
+            footer: []
+        },
+        action: {
+            placeholderIcon: "bolt",
+            placeholderColor: "#C62828",
+            details: [
+                { field: "actionType", icon: "category", default: "Offensive" },
+                { field: "stackWith", icon: "layers" },
+                { field: "roll", icon: "casino", class: "cg2-roll" },
+                { field: "onHit", icon: "gps_fixed" }
+            ],
+            footer: [{ field: "energyCost", icon: "bolt", suffix: " Energy", default: 0, class: "cg2-energy-cost" }]
+        },
+        talk: {
+            placeholderIcon: "chat_bubble",
+            placeholderColor: "#1565C0",
+            details: [
+                { label: "Social", icon: "category" },
+                { label: "LLM chat + CHA mod", icon: "computer" },
+                { label: "1d20 + CHA vs target", icon: "casino" },
+                { label: "Required for communication", icon: "block", class: "cg2-card-warning" }
+            ],
+            footer: [{ field: "energyCost", icon: "bolt", suffix: " Energy", default: 5, class: "cg2-energy-cost" }]
+        },
+        encounter: {
+            placeholderIcon: "blur_on",
+            placeholderColor: "#6A1B9A",
+            headerField: { field: "subtype", default: "Threat", icon: "warning", showRarity: true },
+            details: [
+                { field: "difficulty", icon: "signal_cellular_alt", prefix: "DC " },
+                { type: "stats", fields: ["atk", "def", "hp"], labels: { atk: "ATK +", def: "DEF +", hp: "HP " }, atkClass: "cg2-mod-atk" },
+                { field: "behavior", icon: "psychology_alt" },
+                { field: "loot", icon: "inventory_2", type: "array" }
+            ],
+            footer: []
+        },
+        skill: {
+            placeholderIcon: "star",
+            placeholderColor: "#E65100",
+            details: [
+                { field: "category", icon: "psychology", default: "Combat" },
+                { field: "modifier", icon: "tune" },
+                { field: "requires", icon: "key", type: "requires" },
+                { field: "tier", icon: "military_tech" }
+            ],
+            footer: [{ label: "Unlimited", icon: "all_inclusive", class: "cg2-uses" }]
+        },
+        magic: {
+            placeholderIcon: "auto_fix_high",
+            placeholderColor: "#00695C",
+            details: [
+                { field: "effectType", icon: "category", default: "Offensive" },
+                { field: "skillType", icon: "psychology", default: "Imperial" },
+                { field: "requires", icon: "key", type: "requires" },
+                { field: "effect", icon: "auto_awesome" },
+                { field: "stackWith", icon: "layers" }
+            ],
+            footer: [
+                { field: "energyCost", icon: "bolt", suffix: " Energy", default: 0, class: "cg2-energy-cost" },
+                { field: "reusable", icon: "sync", altIcon: "local_fire_department", trueLabel: "Reusable", falseLabel: "Consumable" }
+            ]
+        }
+    };
+
     // ── Rarity Display ───────────────────────────────────────────────
     function rarityStars(rarity) {
         let n = ({ COMMON: 1, UNCOMMON: 2, RARE: 3, EPIC: 4, LEGENDARY: 5 })[rarity] || 1;
@@ -101,15 +196,16 @@
 
     // ── Card Face Renderers (per type) ───────────────────────────────
 
-    function renderCharacterBody(card) {
+    function renderCharacterBody(card, options) {
         let stats = card.stats || {};
+        let noPreview = options?.noPreview;
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.portraitUrl
                     ? m("img", {
                         src: card.portraitUrl, class: "cg2-card-img",
-                        style: { cursor: "pointer" },
-                        onclick(e) { e.stopPropagation(); showImagePreview(card.portraitUrl); }
+                        style: noPreview ? {} : { cursor: "pointer" },
+                        onclick: noPreview ? null : function(e) { e.stopPropagation(); showImagePreview(card.portraitUrl); }
                     })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#B8860B" } }, "person")
             ),
@@ -167,81 +263,6 @@
         ]);
     }
 
-    function renderApparelBody(card) {
-        return [
-            m("div", { class: "cg2-card-image-area" },
-                card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
-                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon" }, "checkroom")
-            ),
-            m("div", { class: "cg2-card-details" }, [
-                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
-                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "back_hand"),
-                    m("span", card.slot || "Body"),
-                    m("span", { class: "cg2-rarity", style: { marginLeft: "auto" } }, rarityStars(card.rarity))
-                ]),
-                (card.def || card.hpBonus) ? m("div", { class: "cg2-card-stats-line" }, [
-                    card.def ? m("span", { class: "cg2-mod" }, "DEF +" + card.def) : null,
-                    card.hpBonus ? m("span", { class: "cg2-mod" }, "HP +" + card.hpBonus) : null
-                ]) : null,
-                iconDetail("auto_awesome", card.special),
-                card.flavor ? m("div", { class: "cg2-flavor" }, "\u201C" + card.flavor + "\u201D") : null
-            ]),
-            m("div", { class: "cg2-card-footer" }, [
-                iconDetail("build", (card.durability || "\u221E") + " Dur", "cg2-durability")
-            ])
-        ];
-    }
-
-    function renderWeaponBody(card) {
-        return [
-            m("div", { class: "cg2-card-image-area" },
-                card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
-                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon" }, "swords")
-            ),
-            m("div", { class: "cg2-card-details" }, [
-                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
-                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "back_hand"),
-                    m("span", card.slot || "Hand (1H)"),
-                    m("span", { class: "cg2-rarity", style: { marginLeft: "auto" } }, rarityStars(card.rarity))
-                ]),
-                m("div", { class: "cg2-card-stats-line" }, [
-                    card.atk ? m("span", { class: "cg2-mod cg2-mod-atk" }, "ATK +" + card.atk) : null,
-                    m("span", { class: "cg2-mod" }, card.range || "Melee")
-                ]),
-                iconDetail("flash_on", card.damageType || "Slashing"),
-                card.requires && Object.keys(card.requires).length ? iconDetail("key", Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")) : null,
-                iconDetail("auto_awesome", card.special)
-            ]),
-            m("div", { class: "cg2-card-footer" }, [
-                iconDetail("build", (card.durability || "\u221E") + " Dur", "cg2-durability")
-            ])
-        ];
-    }
-
-    function renderConsumableBody(card) {
-        return [
-            m("div", { class: "cg2-card-image-area" },
-                card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
-                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon" }, "science")
-            ),
-            m("div", { class: "cg2-card-details" }, [
-                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
-                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "science"),
-                    m("span", "Consumable"),
-                    m("span", { class: "cg2-rarity", style: { marginLeft: "auto" } }, rarityStars(card.rarity))
-                ]),
-                iconDetail("auto_awesome", card.effect),
-                m("div", { class: "cg2-use-or-lose" }, [
-                    m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", marginRight: "4px" } }, "warning"),
-                    "USE IT OR LOSE IT"
-                ])
-            ])
-        ];
-    }
-
     // Helper: render a detail row with icon instead of text prefix
     // Icons: stack=layers, roll=casino, hit=gps_fixed, effect=auto_awesome, type=category,
     //        require=key, tier=military_tech, cost=bolt, uses=all_inclusive, skill=psychology,
@@ -254,107 +275,118 @@
         ]);
     }
 
-    function renderActionBody(card) {
-        return [
-            m("div", { class: "cg2-card-image-area" },
-                card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
-                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#C62828" } }, "bolt")
-            ),
-            m("div", { class: "cg2-card-details" }, [
-                iconDetail("category", card.actionType || "Offensive"),
-                iconDetail("layers", card.stackWith),
-                iconDetail("casino", card.roll, "cg2-roll"),
-                iconDetail("gps_fixed", card.onHit)
-            ]),
-            m("div", { class: "cg2-card-footer" }, [
-                iconDetail("bolt", (card.energyCost || 0) + " Energy", "cg2-energy-cost")
-            ])
-        ];
-    }
+    // ── Unified Card Body Renderer (Phase 7.0) ──────────────────────
+    // Uses CARD_RENDER_CONFIG to render card body based on type
+    function renderCardBody(card, type, options) {
+        let config = CARD_RENDER_CONFIG[type];
+        if (!config) return [m("div", "Unknown type: " + type)];
 
-    function renderTalkBody(card) {
-        return [
-            m("div", { class: "cg2-card-image-area" },
-                card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
-                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#1565C0" } }, "chat_bubble")
-            ),
-            m("div", { class: "cg2-card-details" }, [
-                iconDetail("category", "Social"),
-                iconDetail("computer", "LLM chat + CHA mod"),
-                iconDetail("casino", "1d20 + CHA vs target"),
-                iconDetail("block", "Required for communication", "cg2-card-warning")
-            ]),
-            m("div", { class: "cg2-card-footer" }, [
-                iconDetail("bolt", (card.energyCost || 5) + " Energy", "cg2-energy-cost")
-            ])
-        ];
-    }
+        let imageUrl = card.imageUrl || card.portraitUrl;
+        let placeholderColor = config.placeholderColor || CARD_TYPES[type]?.color;
+        let noPreview = options?.noPreview;
 
-    function renderEncounterBody(card) {
-        return [
-            m("div", { class: "cg2-card-image-area" },
-                card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
-                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#6A1B9A" } }, "blur_on")
-            ),
-            m("div", { class: "cg2-card-details" }, [
-                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
-                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "warning"),
-                    m("span", card.subtype || "Threat"),
-                    m("span", { class: "cg2-rarity", style: { marginLeft: "auto" } }, rarityStars(card.rarity))
-                ]),
-                card.difficulty != null ? iconDetail("signal_cellular_alt", "DC " + card.difficulty) : null,
-                (card.atk || card.def || card.hp) ? m("div", { class: "cg2-card-stats-line" }, [
-                    card.atk ? m("span", { class: "cg2-mod cg2-mod-atk" }, "ATK +" + card.atk) : null,
-                    card.def ? m("span", { class: "cg2-mod" }, "DEF +" + card.def) : null,
-                    card.hp ? m("span", { class: "cg2-mod" }, "HP " + card.hp) : null
-                ]) : null,
-                iconDetail("psychology_alt", card.behavior),
-                card.loot && card.loot.length ? iconDetail("inventory_2", card.loot.join(", ")) : null
-            ])
-        ];
-    }
+        // Image area
+        let imageArea = m("div", { class: "cg2-card-image-area" },
+            imageUrl
+                ? m("img", {
+                    src: imageUrl,
+                    class: "cg2-card-img",
+                    style: noPreview ? {} : { cursor: "pointer" },
+                    onclick: noPreview ? null : function(e) { e.stopPropagation(); showImagePreview(imageUrl); }
+                })
+                : m("span", {
+                    class: "material-symbols-outlined cg2-placeholder-icon",
+                    style: placeholderColor ? { color: placeholderColor } : {}
+                }, config.placeholderIcon)
+        );
 
-    function renderSkillBody(card) {
-        return [
-            m("div", { class: "cg2-card-image-area" },
-                card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
-                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#E65100" } }, "star")
-            ),
-            m("div", { class: "cg2-card-details" }, [
-                iconDetail("psychology", card.category || "Combat"),
-                iconDetail("tune", card.modifier),
-                card.requires && Object.keys(card.requires).length ? iconDetail("key", Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")) : null,
-                iconDetail("military_tech", card.tier)
-            ]),
-            m("div", { class: "cg2-card-footer" }, [
-                iconDetail("all_inclusive", "Unlimited", "cg2-uses")
-            ])
-        ];
-    }
+        // Details section
+        let details = [];
 
-    function renderMagicBody(card) {
-        return [
-            m("div", { class: "cg2-card-image-area" },
-                card.imageUrl
-                    ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
-                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#00695C" } }, "auto_fix_high")
-            ),
-            m("div", { class: "cg2-card-details" }, [
-                iconDetail("category", card.effectType || "Offensive"),
-                iconDetail("psychology", card.skillType || "Imperial"),
-                card.requires && Object.keys(card.requires).length ? iconDetail("key", Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")) : null,
-                iconDetail("auto_awesome", card.effect),
-                iconDetail("layers", card.stackWith)
-            ]),
-            m("div", { class: "cg2-card-footer" }, [
-                iconDetail("bolt", (card.energyCost || 0) + " Energy", "cg2-energy-cost"),
-                iconDetail(card.reusable ? "sync" : "local_fire_department", card.reusable ? "Reusable" : "Consumable")
-            ])
-        ];
+        // Header field (first row with slot/type + rarity)
+        if (config.headerField) {
+            let hf = config.headerField;
+            let value = hf.label || card[hf.field] || hf.default;
+            details.push(m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
+                m("span", { class: "material-symbols-outlined cg2-detail-icon" }, hf.icon),
+                m("span", value),
+                hf.showRarity ? m("span", { class: "cg2-rarity", style: { marginLeft: "auto" } }, rarityStars(card.rarity)) : null
+            ]));
+        }
+
+        // Render each detail field
+        if (config.details) {
+            for (let d of config.details) {
+                if (d.type === "stats") {
+                    // Stats line (multiple stats in one row)
+                    let statElements = d.fields
+                        .filter(f => card[f] != null)
+                        .map(f => m("span", {
+                            class: "cg2-mod" + (f === "atk" && d.atkClass ? " " + d.atkClass : "")
+                        }, (d.labels?.[f] || "") + card[f]));
+                    // Add defaults for fields that need them
+                    if (d.defaults) {
+                        for (let [k, v] of Object.entries(d.defaults)) {
+                            if (!card[k] && !statElements.find(el => el.text?.includes(k))) {
+                                statElements.push(m("span", { class: "cg2-mod" }, v));
+                            }
+                        }
+                    }
+                    if (statElements.length) {
+                        details.push(m("div", { class: "cg2-card-stats-line" }, statElements));
+                    }
+                } else if (d.type === "requires" && card.requires && Object.keys(card.requires).length) {
+                    details.push(iconDetail(d.icon, Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")));
+                } else if (d.type === "array" && card[d.field]?.length) {
+                    details.push(iconDetail(d.icon, card[d.field].join(", ")));
+                } else if (d.type === "flavor" && card[d.field]) {
+                    details.push(m("div", { class: "cg2-flavor" }, "\u201C" + card[d.field] + "\u201D"));
+                } else if (d.type === "warning") {
+                    details.push(m("div", { class: "cg2-use-or-lose" }, [
+                        m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", marginRight: "4px" } }, "warning"),
+                        d.text
+                    ]));
+                } else if (d.label) {
+                    // Static label
+                    details.push(iconDetail(d.icon, d.label, d.class));
+                } else if (d.field) {
+                    // Dynamic field
+                    let value = card[d.field];
+                    if (value == null && d.default != null) value = d.default;
+                    if (value != null) {
+                        let text = (d.prefix || "") + value + (d.suffix || "");
+                        details.push(iconDetail(d.icon, text, d.class));
+                    }
+                }
+            }
+        }
+
+        // Footer section
+        let footer = null;
+        if (config.footer && config.footer.length) {
+            let footerItems = [];
+            for (let f of config.footer) {
+                if (f.label) {
+                    footerItems.push(iconDetail(f.icon, f.label, f.class));
+                } else if (f.field === "reusable") {
+                    // Boolean toggle for reusable/consumable
+                    let isReusable = card.reusable;
+                    footerItems.push(iconDetail(isReusable ? f.icon : f.altIcon, isReusable ? f.trueLabel : f.falseLabel));
+                } else {
+                    let value = card[f.field];
+                    if (value == null && f.default != null) value = f.default;
+                    if (value != null) {
+                        let text = (f.prefix || "") + value + (f.suffix || "");
+                        footerItems.push(iconDetail(f.icon, text, f.class));
+                    }
+                }
+            }
+            if (footerItems.length) {
+                footer = m("div", { class: "cg2-card-footer" }, footerItems);
+            }
+        }
+
+        return [imageArea, m("div", { class: "cg2-card-details" }, details), footer];
     }
 
     // ── Render compact stats for action bar display ───────────────────
@@ -449,20 +481,23 @@
                 let compact = vnode.attrs.compact;
                 let full = vnode.attrs.full;
                 let incomplete = isCardIncomplete(card);
-                let bodyFn;
-                switch (type) {
-                    case "character":  bodyFn = renderCharacterBody; break;
-                    case "apparel":    bodyFn = renderApparelBody; break;
-                    case "item":
-                        bodyFn = card.subtype === "consumable" ? renderConsumableBody : renderWeaponBody;
-                        break;
-                    case "action":     bodyFn = renderActionBody; break;
-                    case "talk":       bodyFn = renderTalkBody; break;
-                    case "encounter":  bodyFn = renderEncounterBody; break;
-                    case "skill":      bodyFn = renderSkillBody; break;
-                    case "magic":      bodyFn = renderMagicBody; break;
-                    default:           bodyFn = () => [m("div", "Unknown type: " + type)];
+
+                // Determine render type: character is special (has StatBlock),
+                // items use subtype, others use unified renderer
+                let renderType = type;
+                if (type === "item") {
+                    renderType = card.subtype === "consumable" ? "consumable" : "weapon";
                 }
+
+                // Options for render functions (e.g., noPreview disables image click)
+                let renderOpts = { noPreview: vnode.attrs.noPreview };
+
+                // Use unified renderCardBody for types with config, special handling for character
+                let bodyFn = type === "character"
+                    ? () => renderCharacterBody(card, renderOpts)
+                    : (CARD_RENDER_CONFIG[renderType]
+                        ? () => renderCardBody(card, renderType, renderOpts)
+                        : () => [m("div", "Unknown type: " + type)]);
                 let cardStyle = { borderColor: cfg.color };
                 if (vnode.attrs.bgImage) {
                     cardStyle.backgroundImage = "linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('" + vnode.attrs.bgImage + "')";
@@ -1265,6 +1300,141 @@
         m.redraw();
     }
 
+    // ── Character Generation (Phase 7.1) ─────────────────────────────
+    let characterTemplates = null;
+    let generatingCharacters = false;
+
+    async function loadCharacterTemplates() {
+        if (characterTemplates) return characterTemplates;
+        try {
+            characterTemplates = await m.request({
+                method: 'GET',
+                url: 'media/cardGame/character-templates.json'
+            });
+            return characterTemplates;
+        } catch (e) {
+            console.error('[CardGame] Failed to load character templates:', e);
+            return null;
+        }
+    }
+
+    // Generate balanced characters from templates for a deck
+    async function generateCharactersFromTemplates(deckName, themeId, count = 8) {
+        const templates = await loadCharacterTemplates();
+        if (!templates || !templates.templates) {
+            page.toast('error', 'Character templates not available');
+            return [];
+        }
+
+        generatingCharacters = true;
+        m.redraw();
+
+        // Shuffle and select unique templates
+        const shuffled = [...templates.templates].sort(() => Math.random() - 0.5);
+        const selectedTemplates = shuffled.slice(0, Math.min(count, shuffled.length));
+
+        const characters = [];
+
+        try {
+            // Find or create deck's Characters group
+            const charGroupPath = "~/CardGame/" + deckName + "/Characters";
+            await page.makePath("auth.group", "DATA", charGroupPath);
+
+            for (const template of selectedTemplates) {
+                try {
+                    // Step 1: Create random base character via server (name, gender, age)
+                    const randomResult = await m.request({
+                        method: 'GET',
+                        url: g_application_path + '/rest/resource/olio.charPerson/new/random',
+                        withCredentials: true
+                    });
+
+                    if (!randomResult) {
+                        console.warn('[CardGame] Failed to create random character, skipping');
+                        continue;
+                    }
+
+                    // The random character has basic info, now we patch with template stats
+                    let baseChar = randomResult;
+
+                    // Step 2: Apply template statistics
+                    if (baseChar.statistics) {
+                        const statMapping = {
+                            STR: 'physicalStrength',
+                            AGI: 'agility',
+                            END: 'physicalEndurance',
+                            INT: 'intelligence',
+                            MAG: 'creativity',  // MAG maps to creativity for magic computation
+                            CHA: 'charisma'
+                        };
+                        for (const [shortName, value] of Object.entries(template.statistics)) {
+                            const fullName = statMapping[shortName];
+                            if (fullName && baseChar.statistics[fullName] !== undefined) {
+                                baseChar.statistics[fullName] = value;
+                            }
+                        }
+                    }
+
+                    // Step 3: Apply template alignment and trade
+                    if (template.alignment) {
+                        baseChar.alignment = template.alignment;
+                    }
+                    const themeClass = template.themeVariants?.[themeId]?.trade || template.class;
+                    baseChar.trades = [themeClass];
+
+                    // Step 4: Create the character on server
+                    baseChar.groupPath = charGroupPath;
+                    const created = await am7client.create("olio.charPerson", baseChar);
+
+                    if (created) {
+                        // Fetch full character with resolved stats
+                        const fullChar = await am7client.getFull("olio.charPerson", created.objectId);
+                        if (fullChar) {
+                            characters.push(fullChar);
+                        }
+                    }
+                } catch (charErr) {
+                    console.error('[CardGame] Error creating character from template:', charErr);
+                }
+            }
+
+            page.toast('success', `Generated ${characters.length} characters`);
+        } catch (err) {
+            console.error('[CardGame] Character generation failed:', err);
+            page.toast('error', 'Character generation failed');
+        }
+
+        generatingCharacters = false;
+        m.redraw();
+        return characters;
+    }
+
+    // Convert charPerson to card format for deck
+    function charPersonToCard(charPerson) {
+        const stats = charPerson.statistics || {};
+        return {
+            id: charPerson.objectId,
+            objectId: charPerson.objectId,
+            type: "character",
+            name: charPerson.name || (charPerson.firstName + " " + charPerson.lastName),
+            gender: charPerson.gender,
+            race: charPerson.race,
+            age: charPerson.age,
+            alignment: charPerson.alignment,
+            trade: charPerson.trades?.[0] || "",
+            portraitUrl: charPerson.profile?.portrait ?
+                g_application_path + "/media/" + charPerson.profile.portrait.objectId + "/thumbnail" : null,
+            stats: {
+                STR: stats.physicalStrength || 10,
+                AGI: stats.agility || 10,
+                END: stats.physicalEndurance || 10,
+                INT: stats.intelligence || 10,
+                MAG: stats.magic || stats.creativity || 10,
+                CHA: stats.charisma || 10
+            }
+        };
+    }
+
     // ── View Deck ────────────────────────────────────────────────────
     async function viewDeck(storageName) {
         let data = await deckStorage.load(storageName);
@@ -1429,16 +1599,63 @@
             view() {
                 return m("div", [
                     m("div", { class: "cg2-section-title" }, "Step 2: Select Character for Deck"),
+                    // Generate Characters panel (Phase 7.1)
+                    m("div", { class: "cg2-gen-panel", style: { marginBottom: "16px", padding: "12px", background: "#f9f9f9", borderRadius: "8px", border: "1px solid #e0e0e0" } }, [
+                        m("div", { style: { fontWeight: 600, marginBottom: "8px" } }, "Quick Start: Generate Balanced Characters"),
+                        m("p", { style: { fontSize: "12px", color: "#666", margin: "0 0 12px 0" } },
+                            "Creates 8 characters with balanced stats from templates. Each character has a unique name and appearance, but stats are balanced for fair gameplay."),
+                        m("button", {
+                            class: "cg2-btn cg2-btn-primary",
+                            disabled: generatingCharacters,
+                            style: { display: "flex", alignItems: "center", gap: "8px" },
+                            async onclick() {
+                                if (generatingCharacters) return;
+                                const themeId = activeTheme?.themeId || "high-fantasy";
+                                const deckName = deckNameInput || "NewDeck";
+                                const generated = await generateCharactersFromTemplates(deckName, themeId, 8);
+                                if (generated.length > 0) {
+                                    // Add generated characters to available list and auto-select them
+                                    for (const charPerson of generated) {
+                                        availableCharacters.push(charPerson);
+                                        if (selectedChars.length < 8) {
+                                            selectedChars.push(charPerson);
+                                        }
+                                    }
+                                }
+                                m.redraw();
+                            }
+                        }, [
+                            generatingCharacters
+                                ? m("span", { class: "material-symbols-outlined cg2-spin" }, "progress_activity")
+                                : m("span", { class: "material-symbols-outlined" }, "auto_awesome"),
+                            generatingCharacters ? "Generating..." : "Generate 8 Characters"
+                        ])
+                    ]),
                     charsLoading
                         ? m("div", { class: "cg2-loading" }, "Loading characters...")
                         : m("div", { class: "cg2-char-grid" }, [
                             ...availableCharacters.map(ch => charPickerCard(ch)),
                             m("div", {
                                 class: "cg2-char-card cg2-char-card-new",
-                                onclick() { page.toast("info", "Random character generation requires server endpoint"); }
+                                disabled: generatingCharacters,
+                                async onclick() {
+                                    if (generatingCharacters) return;
+                                    const themeId = activeTheme?.themeId || "high-fantasy";
+                                    const deckName = deckNameInput || "NewDeck";
+                                    const generated = await generateCharactersFromTemplates(deckName, themeId, 1);
+                                    if (generated.length > 0) {
+                                        availableCharacters.push(generated[0]);
+                                        if (selectedChars.length < 8) {
+                                            selectedChars.push(generated[0]);
+                                        }
+                                    }
+                                    m.redraw();
+                                }
                             }, [
-                                m("span", { class: "material-symbols-outlined", style: { fontSize: "48px", color: "#888" } }, "add_circle"),
-                                m("div", { style: { fontWeight: 600, marginTop: "8px" } }, "New Random"),
+                                generatingCharacters
+                                    ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "48px", color: "#888" } }, "progress_activity")
+                                    : m("span", { class: "material-symbols-outlined", style: { fontSize: "48px", color: "#888" } }, "add_circle"),
+                                m("div", { style: { fontWeight: 600, marginTop: "8px" } }, "Add One"),
                                 m("div", { style: { fontSize: "10px", color: "#999" } }, "Generate Character")
                             ])
                         ]),
@@ -3551,10 +3768,11 @@
         if (playableCards.length === 0) {
             console.log("[CardGame v2] No playable cards in deck, using default starter cards");
             playableCards = [
-                { type: "action", name: "Strike", actionType: "Offensive", energyCost: 0 },
-                { type: "action", name: "Strike", actionType: "Offensive", energyCost: 0 },
+                { type: "action", name: "Attack", actionType: "Offensive", energyCost: 0 },
+                { type: "action", name: "Attack", actionType: "Offensive", energyCost: 0 },
                 { type: "action", name: "Guard", actionType: "Defensive", energyCost: 0 },
                 { type: "action", name: "Guard", actionType: "Defensive", energyCost: 0 },
+                { type: "action", name: "Rest", actionType: "Recovery", energyCost: 0 },
                 { type: "action", name: "Rest", actionType: "Recovery", energyCost: 0 },
                 { type: "action", name: "Feint", actionType: "Utility", energyCost: 0 },
                 { type: "talk", name: "Taunt", speechType: "Provoke", energyCost: 0 },
@@ -3695,15 +3913,229 @@
         return state;
     }
 
-    // ── Dice Rolling ──────────────────────────────────────────────────
+    // Initialize LLM components (Director and Narrator) for a game
+    async function initializeLLMComponents(state, deck) {
+        const themeId = deck?.themeId || activeTheme?.themeId || "high-fantasy";
+        const opponentChar = state?.opponent?.character;
+
+        // Initialize AI Director (optional - falls back to FIFO if unavailable)
+        try {
+            gameDirector = new CardGameDirector();
+            const directorOk = await gameDirector.initialize(opponentChar, themeId);
+            if (!directorOk) {
+                console.log("[CardGame v2] LLM Director unavailable, using fallback AI");
+                gameDirector = null;
+            }
+        } catch (err) {
+            console.warn("[CardGame v2] Failed to initialize Director:", err);
+            gameDirector = null;
+        }
+
+        // Initialize Narrator (optional - silent if unavailable)
+        try {
+            gameNarrator = new CardGameNarrator();
+            const narratorOk = await gameNarrator.initialize("arena-announcer", themeId);
+            if (!narratorOk) {
+                console.log("[CardGame v2] LLM Narrator unavailable");
+                gameNarrator = null;
+            } else {
+                // Narrator initialized - request game start narration
+                narrateGameStart();
+            }
+        } catch (err) {
+            console.warn("[CardGame v2] Failed to initialize Narrator:", err);
+            gameNarrator = null;
+        }
+    }
+
+    // Request narration for game start
+    async function narrateGameStart() {
+        if (!gameState) return;
+
+        const playerName = gameState.player?.character?.name || "Player";
+        const opponentName = gameState.opponent?.character?.name || "Opponent";
+
+        // Try LLM narration
+        if (gameNarrator && gameNarrator.initialized) {
+            try {
+                const narration = await gameNarrator.narrate("game_start", {
+                    playerName,
+                    opponentName,
+                    round: 1
+                });
+                if (narration?.text) {
+                    showNarrationSubtitle(narration.text);
+                    return;
+                }
+            } catch (e) {
+                console.warn("[CardGame v2] Game start narration failed:", e);
+            }
+        }
+
+        // Fallback text if LLM unavailable
+        showNarrationSubtitle(`The arena awaits! ${playerName} faces ${opponentName} in a battle of wits and steel. Let the cards decide your fate!`);
+    }
+
+    // Request narration for game end
+    async function narrateGameEnd(winner) {
+        if (!gameState) return;
+
+        const playerName = gameState.player?.character?.name || "Player";
+        const opponentName = gameState.opponent?.character?.name || "Opponent";
+        const isVictory = winner === "player";
+        const winnerName = isVictory ? playerName : opponentName;
+        const loserName = isVictory ? opponentName : playerName;
+
+        // Try LLM narration
+        if (gameNarrator && gameNarrator.initialized) {
+            try {
+                const narration = await gameNarrator.narrate("game_end", {
+                    winner: winnerName,
+                    loser: loserName,
+                    isPlayerVictory: isVictory,
+                    rounds: gameState.round
+                });
+                if (narration?.text) {
+                    showNarrationSubtitle(narration.text);
+                    return;
+                }
+            } catch (e) {
+                console.warn("[CardGame v2] Game end narration failed:", e);
+            }
+        }
+
+        // Fallback text if LLM unavailable
+        if (isVictory) {
+            showNarrationSubtitle(`Victory! ${playerName} stands triumphant over ${opponentName} after ${gameState.round} rounds of fierce combat!`);
+        } else {
+            showNarrationSubtitle(`Defeat... ${opponentName} has bested ${playerName}. The arena falls silent after ${gameState.round} rounds.`);
+        }
+    }
+
+    // Request narration for round start
+    async function narrateRoundStart() {
+        if (!gameState) return;
+
+        let playerName = gameState.player.character?.name || "Player";
+        let opponentName = gameState.opponent.character?.name || "Opponent";
+
+        // Try LLM narration
+        if (gameNarrator && gameNarrator.initialized) {
+            try {
+                const narration = await gameNarrator.narrate("round_start", {
+                    roundNumber: gameState.round,
+                    playerName,
+                    opponentName,
+                    playerHp: gameState.player.hp,
+                    opponentHp: gameState.opponent.hp,
+                    playerEnergy: gameState.player.energy,
+                    opponentEnergy: gameState.opponent.energy
+                });
+                if (narration?.text) {
+                    showNarrationSubtitle(narration.text);
+                    return;
+                }
+            } catch (e) {
+                console.warn("[CardGame v2] Round start narration failed:", e);
+            }
+        }
+
+        // Fallback text (only for round 2+ since round 1 has game_start)
+        if (gameState.round > 1) {
+            let tensionText = "";
+            if (gameState.player.hp < 10 || gameState.opponent.hp < 10) {
+                tensionText = " The tension mounts as both combatants show signs of wear.";
+            }
+            showNarrationSubtitle(`Round ${gameState.round} begins!${tensionText}`);
+        }
+    }
+
+    // Request narration for round end
+    async function narrateRoundEnd(roundWinner) {
+        if (!gameState) return;
+
+        let playerName = gameState.player.character?.name || "Player";
+        let opponentName = gameState.opponent.character?.name || "Opponent";
+        let winnerName = roundWinner === "player" ? playerName : roundWinner === "opponent" ? opponentName : "Neither";
+
+        // Try LLM narration
+        if (gameNarrator && gameNarrator.initialized) {
+            try {
+                const narration = await gameNarrator.narrate("round_end", {
+                    roundNumber: gameState.round,
+                    roundWinner: winnerName,
+                    playerName,
+                    opponentName,
+                    playerHp: gameState.player.hp,
+                    opponentHp: gameState.opponent.hp
+                });
+                if (narration?.text) {
+                    showNarrationSubtitle(narration.text);
+                    return;
+                }
+            } catch (e) {
+                console.warn("[CardGame v2] Round end narration failed:", e);
+            }
+        }
+
+        // Fallback text
+        if (roundWinner === "tie") {
+            showNarrationSubtitle(`Round ${gameState.round} ends in a stalemate!`);
+        } else {
+            showNarrationSubtitle(`${winnerName} takes Round ${gameState.round}!`);
+        }
+    }
+
+    // Show narrator text as a subtitle overlay
+    function showNarrationSubtitle(text) {
+        if (!text) return;
+        // Store in game state for UI to display
+        if (gameState) {
+            gameState.narrationText = text;
+            gameState.narrationTime = Date.now();
+            m.redraw();
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                if (gameState && gameState.narrationTime && Date.now() - gameState.narrationTime >= 4900) {
+                    gameState.narrationText = null;
+                    m.redraw();
+                }
+            }, 5000);
+        }
+    }
+
+    // ── Dice Utilities (Phase 7.0) ──────────────────────────────────────
+    // Centralized dice rolling for testability and consistency
+    const DiceUtils = {
+        // Roll a die with specified sides (default d20)
+        roll(sides = 20) {
+            return Math.floor(Math.random() * sides) + 1;
+        },
+
+        // Roll with a single modifier, returning breakdown
+        rollWithMod(stat = 0, statName = "") {
+            const raw = this.roll(20);
+            const total = raw + stat;
+            const breakdown = statName ? `${raw} + ${stat} ${statName} = ${total}` : `${raw} + ${stat} = ${total}`;
+            return { raw, modifier: stat, total, breakdown, isCrit: raw === 20, isFumble: raw === 1 };
+        },
+
+        // Initiative roll (d20 + AGI)
+        initiative(stats) {
+            const raw = this.roll(20);
+            const modifier = (stats && stats.AGI) || 0;
+            return { raw, modifier, total: raw + modifier };
+        }
+    };
+
+    // Backwards compatibility
     function rollD20() {
-        return Math.floor(Math.random() * 20) + 1;
+        return DiceUtils.roll(20);
     }
 
     function rollInitiative(stats) {
-        let raw = rollD20();
-        let modifier = (stats && stats.AGI) || 0;
-        return { raw, modifier, total: raw + modifier };
+        return DiceUtils.initiative(stats);
     }
 
     // ── Combat Roll System (Phase 5) ─────────────────────────────────
@@ -4406,10 +4838,28 @@
     }
 
     function resolveThreatCombat() {
-        if (!gameState || !gameState.threatResponse) return;
+        console.log("[CardGame v2] resolveThreatCombat called, phase:", gameState?.phase,
+            "threatResponse:", !!gameState?.threatResponse,
+            "threats:", gameState?.threatResponse?.threats?.length || 0);
+
+        if (!gameState || !gameState.threatResponse) {
+            console.warn("[CardGame v2] resolveThreatCombat: No threat response state");
+            return;
+        }
 
         let threats = gameState.threatResponse.threats;
         let defenseStack = gameState.threatResponse.defenseStack || [];
+
+        if (!threats || threats.length === 0) {
+            console.warn("[CardGame v2] resolveThreatCombat: No threats to resolve");
+            // Still need to advance phase
+            gameState.threatResponse.resolved = true;
+            gameState.threatResponse.active = false;
+            gameState.player.threatResponseAP = 0;
+            gameState.opponent.threatResponseAP = 0;
+            enterDrawPlacementPhase();
+            return;
+        }
 
         // Resolve each threat as combat
         threats.forEach(threat => {
@@ -4491,6 +4941,16 @@
         gameState.player.threatResponseAP = 0;
         gameState.opponent.threatResponseAP = 0;
 
+        // Check for game over after threat combat
+        let winner = checkGameOver();
+        if (winner) {
+            console.log("[CardGame v2] Game over from threat combat - winner:", winner);
+            gameState.winner = winner;
+            gameState.phase = "GAME_OVER";
+            m.redraw();
+            return;
+        }
+
         // Continue to draw/placement phase
         enterDrawPlacementPhase();
     }
@@ -4566,6 +5026,16 @@
         gameState.player.threatResponseAP = 0;
         gameState.opponent.threatResponseAP = 0;
 
+        // Check for game over after end threat combat
+        let winner = checkGameOver();
+        if (winner) {
+            console.log("[CardGame v2] Game over from end threat - winner:", winner);
+            gameState.winner = winner;
+            gameState.phase = "GAME_OVER";
+            m.redraw();
+            return;
+        }
+
         startNextRound();
     }
 
@@ -4617,6 +5087,16 @@
     function startNextRound() {
         if (!gameState) return;
 
+        // Check for game over BEFORE starting next round
+        let winner = checkGameOver();
+        if (winner) {
+            console.log("[CardGame v2] Game over detected at round start - winner:", winner);
+            gameState.winner = winner;
+            gameState.phase = "GAME_OVER";
+            m.redraw();
+            return;
+        }
+
         // Tick down status effect durations at end of round
         tickStatusEffects(gameState.player);
         tickStatusEffects(gameState.opponent);
@@ -4626,6 +5106,16 @@
         let opponentEffects = processStatusEffectsTurnStart(gameState.opponent);
         if (playerEffects.length > 0 || opponentEffects.length > 0) {
             console.log("[CardGame v2] Status effects triggered:", { player: playerEffects, opponent: opponentEffects });
+        }
+
+        // Check again after status effects (poison could kill)
+        winner = checkGameOver();
+        if (winner) {
+            console.log("[CardGame v2] Game over from status effects - winner:", winner);
+            gameState.winner = winner;
+            gameState.phase = "GAME_OVER";
+            m.redraw();
+            return;
         }
 
         gameState.round++;
@@ -4689,6 +5179,11 @@
 
         console.log("[CardGame v2] Starting round", gameState.round, "- Pot has", gameState.pot.length, "cards");
         m.redraw();
+
+        // Trigger round start narration (non-blocking)
+        if (gameState.round > 1) {
+            narrateRoundStart();
+        }
 
         // Start initiative animation for round 2+ (oninit won't fire again)
         setTimeout(() => {
@@ -4924,14 +5419,28 @@
 
         // Determine if this card should be a modifier or core
         let isModifier = forceModifier;
-        if (!forceModifier && pos.stack && pos.stack.coreCard) {
-            // Position already has a core card - this must be a modifier
+        let hasExistingCore = pos.stack && pos.stack.coreCard;
+
+        if (!forceModifier && hasExistingCore) {
+            // Position already has a core card
             if (isModifierCardType(card.type)) {
+                // This is a modifier - add to existing stack
                 isModifier = true;
+            } else if (isCoreCardType(card.type)) {
+                // This is another core card - replace the existing one
+                console.log("[CardGame v2] Replacing existing card at position", positionIndex);
+                removeCardFromPosition(positionIndex, true);  // Remove without redraw
+                // Stack is now cleared, fall through to place new core
             } else {
                 console.warn("[CardGame v2] Position already has a core card, and", card.type, "cannot be a modifier");
                 return false;
             }
+        }
+
+        // Double-check stack state after potential removal
+        if (!isModifier && pos.stack && pos.stack.coreCard) {
+            console.error("[CardGame v2] Stack still has core card after removal - blocking duplicate");
+            return false;
         }
 
         if (isModifier) {
@@ -4989,25 +5498,46 @@
         return true;
     }
 
-    function removeCardFromPosition(positionIndex) {
-        if (!gameState) return;
+    function removeCardFromPosition(positionIndex, skipRedraw = false) {
+        if (!gameState) return false;
+        if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return false;
+
         let pos = gameState.actionBar.positions.find(p => p.index === positionIndex);
-        if (!pos || !pos.stack) return;
+        if (!pos || !pos.stack) return false;
 
         let currentPlayer = gameState.currentTurn;
-        if (pos.owner !== currentPlayer) return;
+        if (pos.owner !== currentPlayer) return false;
 
-        // Return cards to hand
-        if (currentPlayer === "player") {
-            if (pos.stack.coreCard) {
-                gameState.player.hand.push(pos.stack.coreCard);
-                gameState.player.apUsed--;
+        let actor = currentPlayer === "player" ? gameState.player : gameState.opponent;
+
+        // Return cards to hand and refund costs
+        if (pos.stack.coreCard) {
+            actor.hand.push(pos.stack.coreCard);
+            actor.apUsed = Math.max(0, actor.apUsed - 1);
+
+            // Refund energy cost
+            if (pos.stack.coreCard.energyCost) {
+                actor.energy = Math.min(actor.maxEnergy, actor.energy + pos.stack.coreCard.energyCost);
             }
-            pos.stack.modifiers.forEach(mod => gameState.player.hand.push(mod));
+
+            // Remove from types played tracking
+            let actionKey = pos.stack.coreCard.name;
+            if (actor.typesPlayedThisRound && actor.typesPlayedThisRound[actionKey]) {
+                actor.typesPlayedThisRound[actionKey]--;
+                if (actor.typesPlayedThisRound[actionKey] <= 0) {
+                    delete actor.typesPlayedThisRound[actionKey];
+                }
+            }
+
+            console.log("[CardGame v2] Removed", pos.stack.coreCard.name, "from position", positionIndex);
         }
 
+        // Return modifiers to hand
+        pos.stack.modifiers.forEach(mod => actor.hand.push(mod));
+
         pos.stack = null;
-        m.redraw();
+        if (!skipRedraw) m.redraw();
+        return true;
     }
 
     function endTurn() {
@@ -5075,8 +5605,587 @@
         m.redraw();
     }
 
+    // ── CardGameDirector (Phase 7 LLM) ─────────────────────────────────
+    // LLM-powered AI opponent decision making
+    let gameDirector = null;
+
+    class CardGameDirector {
+        constructor() {
+            this.chatRequest = null;
+            this.chatConfig = null;
+            this.promptConfig = null;
+            this.initialized = false;
+            this.personality = null;
+            this.lastDirective = null;
+            this.lastError = null;
+            this.consecutiveErrors = 0;
+        }
+
+        async initialize(opponentChar, themeId) {
+            try {
+                console.log("[CardGameDirector] Initializing for theme:", themeId);
+
+                // Find ~/Chat directory
+                const chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
+                if (!chatDir) {
+                    console.warn("[CardGameDirector] ~/Chat not found, using fallback AI");
+                    return false;
+                }
+
+                // Find "Open Chat" template
+                const chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0);
+                const templateCfg = chatConfigs.find(c => c.name === "Open Chat");
+                if (!templateCfg) {
+                    console.warn("[CardGameDirector] 'Open Chat' config not found");
+                    return false;
+                }
+
+                const fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
+                if (!fullTemplate) return false;
+
+                // Extract personality from opponent character
+                this.personality = this._extractPersonality(opponentChar);
+
+                // Create system prompt for card game AI
+                const systemPrompt = this._buildSystemPrompt(opponentChar, themeId);
+
+                // Create prompt config
+                this.promptConfig = await this._ensurePromptConfig(chatDir, systemPrompt);
+                if (!this.promptConfig) return false;
+
+                // Create chat config with low temperature for consistent decisions
+                this.chatConfig = await this._ensureChatConfig(chatDir, fullTemplate, 0.4);
+                if (!this.chatConfig) return false;
+
+                // Create chat request
+                this.chatRequest = await am7chat.getChatRequest('CardGame AI Opponent', this.chatConfig, this.promptConfig);
+                if (!this.chatRequest) return false;
+
+                this.initialized = true;
+                console.log("[CardGameDirector] Initialized successfully");
+                return true;
+            } catch (err) {
+                console.error("[CardGameDirector] Initialization failed:", err);
+                this.lastError = err.message;
+                return false;
+            }
+        }
+
+        _extractPersonality(charPerson) {
+            if (!charPerson) return "balanced";
+            const alignment = charPerson.alignment || "";
+            if (alignment.includes("EVIL") || alignment.includes("CHAOTIC")) return "aggressive";
+            if (alignment.includes("LAWFUL") || alignment.includes("GOOD")) return "tactical";
+            return "balanced";
+        }
+
+        _buildSystemPrompt(opponentChar, themeId) {
+            const name = opponentChar?.name || "AI Opponent";
+            const personality = this.personality || "balanced";
+
+            return `You are ${name}, an AI opponent in a card game. Theme: ${themeId}.
+Personality: ${personality}
+
+You receive game state JSON and respond with placement decision JSON.
+Goal: reduce player HP or morale to 0.
+
+Response format:
+{"stacks":[{"position":2,"coreCard":"Attack"}],"strategy":"brief"}
+
+Rules:
+- "position" must be from availablePositions array
+- "coreCard" must match a card name in your hand exactly
+- Optional: "modifiers" array of skill card names from hand
+- Place up to your AP cards
+- Consider energy costs
+
+Reply with ONLY the JSON object, no markdown or text.`;
+        }
+
+        async _ensurePromptConfig(chatDir, systemPrompt) {
+            try {
+                // Search for existing prompt config
+                let q = am7client.newQuery("olio.llm.promptConfig");
+                q.field("groupId", chatDir.objectId);
+                q.field("name", "CardGame AI Prompt");
+                let existing = await am7client.search(q);
+
+                let promptCfg;
+                if (existing && existing.results && existing.results.length > 0) {
+                    promptCfg = existing.results[0];
+                    // Update system prompt
+                    promptCfg.systemPrompt = systemPrompt;
+                    await am7client.patch("olio.llm.promptConfig", promptCfg);
+                } else {
+                    // Create new
+                    promptCfg = am7model.newPrimitive("olio.llm.promptConfig");
+                    promptCfg.name = "CardGame AI Prompt";
+                    promptCfg.groupPath = "~/Chat";
+                    promptCfg.systemPrompt = systemPrompt;
+                    promptCfg = await am7client.create("olio.llm.promptConfig", promptCfg);
+                }
+                return promptCfg;
+            } catch (err) {
+                console.error("[CardGameDirector] Failed to ensure prompt config:", err);
+                return null;
+            }
+        }
+
+        async _ensureChatConfig(chatDir, template, temperature) {
+            try {
+                // Clone template with modified settings
+                let q = am7client.newQuery("olio.llm.chatConfig");
+                q.field("groupId", chatDir.objectId);
+                q.field("name", "CardGame AI Chat");
+                let existing = await am7client.search(q);
+
+                let chatCfg;
+                if (existing && existing.results && existing.results.length > 0) {
+                    chatCfg = await am7client.getFull("olio.llm.chatConfig", existing.results[0].objectId);
+                } else {
+                    // Clone from template
+                    chatCfg = JSON.parse(JSON.stringify(template));
+                    chatCfg.objectId = null;
+                    chatCfg.id = 0;
+                    chatCfg.name = "CardGame AI Chat";
+                    chatCfg.groupPath = "~/Chat";
+                    if (chatCfg.chat) {
+                        chatCfg.chat.temperature = temperature;
+                    }
+                    chatCfg = await am7client.create("olio.llm.chatConfig", chatCfg);
+                }
+                return chatCfg;
+            } catch (err) {
+                console.error("[CardGameDirector] Failed to ensure chat config:", err);
+                return null;
+            }
+        }
+
+        async requestPlacement(gameState) {
+            if (!this.initialized || !this.chatRequest) {
+                return this._fifoFallback(gameState);
+            }
+
+            const prompt = this._buildPlacementPrompt(gameState);
+
+            try {
+                const response = await am7chat.chat(this.chatRequest, prompt);
+                const content = this._extractContent(response);
+                const directive = this._parseDirective(content);
+
+                if (directive && directive.stacks) {
+                    this.lastDirective = directive;
+                    this.consecutiveErrors = 0;
+                    console.log("[CardGameDirector] LLM decision:", directive);
+                    return directive;
+                }
+
+                // Retry once on parse failure
+                console.warn("[CardGameDirector] Parse failed, retrying...");
+                const retryResponse = await am7chat.chat(this.chatRequest, prompt + "\n\nIMPORTANT: Output ONLY valid JSON, no markdown.");
+                const retryContent = this._extractContent(retryResponse);
+                const retryDirective = this._parseDirective(retryContent);
+
+                if (retryDirective && retryDirective.stacks) {
+                    this.lastDirective = retryDirective;
+                    return retryDirective;
+                }
+
+                page.toast("warn", "AI decision unclear, using default");
+                return this._fifoFallback(gameState);
+
+            } catch (err) {
+                this.consecutiveErrors++;
+                this.lastError = err.message;
+                console.error("[CardGameDirector] Placement request failed:", err);
+
+                if (this.consecutiveErrors === 1) {
+                    page.toast("warn", "AI unavailable, using default placement");
+                }
+
+                return this._fifoFallback(gameState);
+            }
+        }
+
+        _buildPlacementPrompt(gameState) {
+            const opp = gameState.opponent;
+            const player = gameState.player;
+
+            return JSON.stringify({
+                type: "placement",
+                round: gameState.roundNumber,
+                yourTurn: gameState.currentTurn === "opponent",
+                ai: {
+                    ap: opp.ap - opp.apUsed,
+                    energy: opp.needs?.energy || 14,
+                    hp: opp.needs?.hp || 20,
+                    morale: opp.needs?.morale || 20,
+                    hand: opp.hand.map(c => ({
+                        name: c.name,
+                        type: c.type,
+                        energyCost: c.energyCost || 0,
+                        atk: c.atk,
+                        effect: c.effect || c.onHit
+                    }))
+                },
+                player: {
+                    hp: player.needs?.hp || 20,
+                    energy: player.needs?.energy || 14,
+                    morale: player.needs?.morale || 20
+                },
+                availablePositions: gameState.initiative.opponentPositions
+            }, null, 0);
+        }
+
+        _extractContent(response) {
+            if (!response) return "";
+            if (response.messages && response.messages.length > 0) {
+                const lastMsg = response.messages[response.messages.length - 1];
+                return lastMsg.content || lastMsg.text || "";
+            }
+            return response.content || response.text || String(response);
+        }
+
+        _parseDirective(content) {
+            if (!content) return null;
+
+            // Log raw content for debugging
+            console.log("[CardGameDirector] Raw response:", content.substring(0, 200));
+
+            // Strip markdown code blocks and any leading/trailing text
+            let cleaned = content
+                .replace(/```json\s*/gi, "")
+                .replace(/```\s*/g, "")
+                .replace(/^[^{]*/, "")  // Remove anything before first {
+                .replace(/[^}]*$/, "")  // Remove anything after last }
+                .trim();
+
+            if (!cleaned) {
+                console.warn("[CardGameDirector] No JSON found in response");
+                return null;
+            }
+
+            // Fix common JSON issues: trailing commas, single quotes
+            cleaned = cleaned
+                .replace(/,(\s*[}\]])/g, "$1")  // Remove trailing commas
+                .replace(/'/g, '"');  // Convert single quotes to double
+
+            try {
+                const parsed = JSON.parse(cleaned);
+                // Validate structure
+                if (parsed && parsed.stacks && Array.isArray(parsed.stacks)) {
+                    return parsed;
+                }
+                console.warn("[CardGameDirector] Invalid structure - missing stacks array");
+                return null;
+            } catch (e) {
+                console.warn("[CardGameDirector] JSON parse failed:", e.message, "Content:", cleaned.substring(0, 100));
+                return null;
+            }
+        }
+
+        _fifoFallback(gameState) {
+            // Reuse existing simple AI logic
+            const opp = gameState.opponent;
+            const positions = gameState.initiative.opponentPositions;
+            const coreCards = opp.hand.filter(c => isCoreCardType(c.type));
+
+            const stacks = [];
+            let cardsUsed = [];
+
+            for (const posIdx of positions) {
+                if (stacks.length >= opp.ap - opp.apUsed) break;
+                if (coreCards.length === 0) break;
+
+                const playable = coreCards.find(c => c.name === "Attack") ||
+                                coreCards.find(c => c.type === "action") ||
+                                coreCards[0];
+
+                if (playable && (!playable.energyCost || playable.energyCost <= opp.needs?.energy)) {
+                    stacks.push({
+                        position: posIdx,
+                        coreCard: playable.name,
+                        modifiers: [],
+                        target: "player"
+                    });
+                    coreCards.splice(coreCards.indexOf(playable), 1);
+                    cardsUsed.push(playable);
+                }
+            }
+
+            return { stacks, fallback: true };
+        }
+    }
+
+    // ── CardGameNarrator (Phase 7 LLM) ────────────────────────────────
+    // LLM-powered narration at key game moments
+    let gameNarrator = null;
+
+    class CardGameNarrator {
+        static TRIGGER_POINTS = {
+            GAME_START: "game_start",
+            ROUND_START: "round_start",
+            ENCOUNTER_REVEAL: "encounter_reveal",
+            STACK_REVEAL: "stack_reveal",
+            RESOLUTION: "resolution",
+            ROUND_END: "round_end",
+            GAME_END: "game_end"
+        };
+
+        static PROFILES = {
+            "arena-announcer": {
+                name: "Arena Announcer",
+                personality: "Bombastic sports commentator. Over-the-top excitement, play-by-play analysis.",
+                maxSentences: { game_start: 3, round_start: 2, resolution: 4, round_end: 1, game_end: 3 }
+            },
+            "dungeon-master": {
+                name: "Dungeon Master",
+                personality: "Classic tabletop DM. Atmospheric, descriptive, world-building.",
+                maxSentences: { game_start: 3, round_start: 2, resolution: 4, round_end: 2, game_end: 3 }
+            },
+            "war-correspondent": {
+                name: "War Correspondent",
+                personality: "Gritty battlefield reporter. Terse, factual with emotional undertones.",
+                maxSentences: { game_start: 2, round_start: 1, resolution: 3, round_end: 1, game_end: 2 }
+            },
+            "bard": {
+                name: "Bard",
+                personality: "Poetic narrator. Speaks in rhythm, references lore, foreshadows.",
+                maxSentences: { game_start: 3, round_start: 2, resolution: 5, round_end: 2, game_end: 4 }
+            }
+        };
+
+        constructor() {
+            this.chatRequest = null;
+            this.profile = "arena-announcer";
+            this.initialized = false;
+            this.lastNarration = null;
+            this.enabled = true;
+        }
+
+        async initialize(profileId, themeId) {
+            this.profile = profileId || "arena-announcer";
+            const profileConfig = CardGameNarrator.PROFILES[this.profile];
+
+            try {
+                const chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
+                if (!chatDir) return false;
+
+                const chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0);
+                const templateCfg = chatConfigs.find(c => c.name === "Open Chat");
+                if (!templateCfg) return false;
+
+                const fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
+                if (!fullTemplate) return false;
+
+                const systemPrompt = this._buildNarratorPrompt(profileConfig, themeId);
+                const promptConfig = await this._ensurePromptConfig(chatDir, systemPrompt);
+                if (!promptConfig) return false;
+
+                const chatConfig = await this._ensureChatConfig(chatDir, fullTemplate, 0.7);
+                if (!chatConfig) return false;
+
+                this.chatRequest = await am7chat.getChatRequest("CardGame Narrator", chatConfig, promptConfig);
+                this.initialized = !!this.chatRequest;
+
+                console.log("[CardGameNarrator] Initialized with profile:", this.profile);
+                return this.initialized;
+            } catch (err) {
+                console.error("[CardGameNarrator] Initialization failed:", err);
+                return false;
+            }
+        }
+
+        _buildNarratorPrompt(profileConfig, themeId) {
+            return `You are a ${profileConfig.name} narrating a card game battle. Theme: ${themeId}.
+
+Personality: ${profileConfig.personality}
+
+You will receive game events and must provide brief, engaging narration.
+Keep responses concise - usually 1-3 sentences.
+Match the tone to the event (dramatic for combat, tense for close calls).
+
+For RESOLUTION events, also suggest a scene for image generation:
+Add a line starting with "IMAGE:" describing a single dramatic moment.
+
+Respond with plain text narration only. No JSON, no markdown.`;
+        }
+
+        async _ensurePromptConfig(chatDir, systemPrompt) {
+            try {
+                let q = am7client.newQuery("olio.llm.promptConfig");
+                q.field("groupId", chatDir.objectId);
+                q.field("name", "CardGame Narrator Prompt");
+                let existing = await am7client.search(q);
+
+                let cfg;
+                if (existing?.results?.length > 0) {
+                    cfg = existing.results[0];
+                    cfg.systemPrompt = systemPrompt;
+                    await am7client.patch("olio.llm.promptConfig", cfg);
+                } else {
+                    cfg = am7model.newPrimitive("olio.llm.promptConfig");
+                    cfg.name = "CardGame Narrator Prompt";
+                    cfg.groupPath = "~/Chat";
+                    cfg.systemPrompt = systemPrompt;
+                    cfg = await am7client.create("olio.llm.promptConfig", cfg);
+                }
+                return cfg;
+            } catch (err) {
+                return null;
+            }
+        }
+
+        async _ensureChatConfig(chatDir, template, temperature) {
+            try {
+                let q = am7client.newQuery("olio.llm.chatConfig");
+                q.field("groupId", chatDir.objectId);
+                q.field("name", "CardGame Narrator Chat");
+                let existing = await am7client.search(q);
+
+                if (existing?.results?.length > 0) {
+                    return await am7client.getFull("olio.llm.chatConfig", existing.results[0].objectId);
+                }
+
+                let cfg = JSON.parse(JSON.stringify(template));
+                cfg.objectId = null;
+                cfg.id = 0;
+                cfg.name = "CardGame Narrator Chat";
+                cfg.groupPath = "~/Chat";
+                if (cfg.chat) cfg.chat.temperature = temperature;
+                return await am7client.create("olio.llm.chatConfig", cfg);
+            } catch (err) {
+                return null;
+            }
+        }
+
+        async narrate(trigger, context) {
+            if (!this.enabled || !this.initialized || !this.chatRequest) {
+                return { text: null, imagePrompt: null };
+            }
+
+            const prompt = this._buildTriggerPrompt(trigger, context);
+
+            try {
+                const response = await am7chat.chat(this.chatRequest, prompt);
+                const content = response?.messages?.slice(-1)[0]?.content || "";
+
+                const parsed = this._parseNarration(content);
+                this.lastNarration = parsed;
+
+                return parsed;
+            } catch (err) {
+                console.error("[CardGameNarrator] Narration failed:", err);
+                return { text: null, imagePrompt: null };
+            }
+        }
+
+        _buildTriggerPrompt(trigger, context) {
+            const profile = CardGameNarrator.PROFILES[this.profile];
+            const maxSentences = profile?.maxSentences?.[trigger] || 3;
+
+            let prompt = `EVENT: ${trigger.toUpperCase()}\n`;
+
+            switch (trigger) {
+                case "game_start":
+                    prompt += `A new battle begins!\n`;
+                    prompt += `${context.playerName} faces ${context.opponentName}\n`;
+                    prompt += `Introduce both combatants dramatically.\n`;
+                    break;
+
+                case "game_end":
+                    prompt += `The battle is over after ${context.rounds} rounds!\n`;
+                    prompt += `Winner: ${context.winner}\n`;
+                    prompt += `Defeated: ${context.loser}\n`;
+                    prompt += context.isPlayerVictory
+                        ? `Celebrate the player's triumph!\n`
+                        : `Acknowledge the player's defeat with dignity.\n`;
+                    break;
+
+                case "round_start":
+                    prompt += `Round ${context.roundNumber}\n`;
+                    prompt += `Player HP: ${context.playerHp}/20, Opponent HP: ${context.opponentHp}/20\n`;
+                    break;
+
+                case "resolution":
+                    prompt += `Player played: ${context.playerStack || "nothing"}\n`;
+                    prompt += `Player roll: ${context.playerRoll?.raw || "?"} + mods = ${context.playerRoll?.total || "?"}\n`;
+                    prompt += `Opponent played: ${context.opponentStack || "nothing"}\n`;
+                    prompt += `Opponent roll: ${context.opponentRoll?.raw || "?"} + mods = ${context.opponentRoll?.total || "?"}\n`;
+                    prompt += `Result: ${context.outcome} (${context.damage || 0} damage)\n`;
+                    break;
+
+                case "round_end":
+                    prompt += `Round ${context.roundNumber} complete\n`;
+                    prompt += `Player HP: ${context.playerHp}, Opponent HP: ${context.opponentHp}\n`;
+                    break;
+            }
+
+            prompt += `\nNarrate in ${maxSentences} sentences or less.`;
+            if (trigger === "resolution") {
+                prompt += `\nAlso add "IMAGE:" line for scene generation.`;
+            }
+
+            return prompt;
+        }
+
+        _parseNarration(content) {
+            const lines = content.split("\n");
+            let text = "";
+            let imagePrompt = null;
+
+            for (const line of lines) {
+                if (line.trim().toUpperCase().startsWith("IMAGE:")) {
+                    imagePrompt = line.replace(/^IMAGE:\s*/i, "").trim();
+                } else if (line.trim()) {
+                    text += (text ? " " : "") + line.trim();
+                }
+            }
+
+            return { text, imagePrompt };
+        }
+    }
+
+    // Apply AI decision from CardGameDirector to game state
+    function applyAIDecision(decision) {
+        if (!gameState || !decision || !decision.stacks) return;
+
+        const opp = gameState.opponent;
+
+        for (const stack of decision.stacks) {
+            const pos = gameState.actionBar.positions.find(p => p.index === stack.position);
+            if (!pos || pos.stack) continue;
+
+            // Find the core card by name
+            const coreCard = opp.hand.find(c => c.name === stack.coreCard);
+            if (!coreCard) continue;
+
+            // Check energy
+            if (coreCard.energyCost && coreCard.energyCost > (opp.needs?.energy || 0)) continue;
+
+            // Find modifier cards
+            const modifiers = (stack.modifiers || [])
+                .map(name => opp.hand.find(c => c.name === name))
+                .filter(Boolean);
+
+            // Place the stack
+            pos.stack = { coreCard, modifiers };
+            opp.apUsed++;
+
+            if (coreCard.energyCost) {
+                opp.needs.energy = (opp.needs.energy || 14) - coreCard.energyCost;
+            }
+
+            // Remove cards from hand
+            opp.hand = opp.hand.filter(c => c !== coreCard && !modifiers.includes(c));
+
+            console.log("[CardGame v2] AI placed:", coreCard.name, "at position", stack.position);
+        }
+    }
+
     // ── Simple AI Card Placement ──────────────────────────────────────
-    function aiPlaceCards() {
+    // Now with optional LLM integration via CardGameDirector
+    async function aiPlaceCards() {
         if (!gameState) return;
 
         let opp = gameState.opponent;
@@ -5084,7 +6193,22 @@
 
         console.log("[CardGame v2] AI placing cards. Hand:", opp.hand.length, "AP:", opp.ap - opp.apUsed);
 
-        // Separate cards by type for smarter placement
+        // Try LLM-based placement if director is available
+        if (gameDirector && gameDirector.initialized) {
+            try {
+                const decision = await gameDirector.requestPlacement(gameState);
+                if (decision && decision.stacks && !decision.fallback) {
+                    applyAIDecision(decision);
+                    checkPlacementComplete();
+                    m.redraw();
+                    return;
+                }
+            } catch (err) {
+                console.warn("[CardGame v2] Director placement failed, using fallback:", err);
+            }
+        }
+
+        // Fallback: Simple FIFO placement
         let coreCards = opp.hand.filter(c => isCoreCardType(c.type));
         let modifierCards = opp.hand.filter(c => c.type === "skill");
 
@@ -5285,6 +6409,28 @@
                 // Resolve combat (pass stack for skill modifiers)
                 resolveCombat(attacker, defender, pos.stack);
                 resolutionPhase = "result";
+
+                // Trigger narrator for resolution (non-blocking)
+                if (gameNarrator && gameNarrator.initialized && currentCombatResult) {
+                    (async () => {
+                        try {
+                            const narration = await gameNarrator.narrate("resolution", {
+                                playerStack: pos.owner === "player" ? (pos.stack?.coreCard?.name || "nothing") : null,
+                                opponentStack: pos.owner === "opponent" ? (pos.stack?.coreCard?.name || "nothing") : null,
+                                playerRoll: currentCombatResult.attackRoll,
+                                opponentRoll: currentCombatResult.defenseRoll,
+                                outcome: currentCombatResult.outcome?.label || "Hit",
+                                damage: currentCombatResult.damageDealt || 0
+                            });
+                            if (narration?.text) {
+                                showNarrationSubtitle(narration.text);
+                            }
+                        } catch (e) {
+                            console.warn("[CardGame v2] Narrator failed:", e);
+                        }
+                    })();
+                }
+
                 m.redraw();
 
                 // After showing result, mark as resolved
@@ -5411,10 +6557,18 @@
 
                     // Rest action: restore HP and Energy
                     if (card.name === "Rest") {
+                        let hpBefore = owner.hp;
+                        let energyBefore = owner.energy;
+                        let moraleBefore = owner.morale;
                         owner.hp = Math.min(owner.maxHp, owner.hp + 2);
                         owner.energy = Math.min(owner.maxEnergy, owner.energy + 3);
                         owner.morale = Math.min(owner.maxMorale, owner.morale + 2);
-                        console.log("[CardGame v2]", pos.owner, "rested: +2 HP, +3 Energy, +2 Morale");
+                        console.log("[CardGame v2]", pos.owner, "rested:",
+                            "HP", hpBefore, "->", owner.hp, "(max:" + owner.maxHp + ")",
+                            "| Energy", energyBefore, "->", owner.energy,
+                            "| Morale", moraleBefore, "->", owner.morale);
+                    } else {
+                        console.log("[CardGame v2] Non-combat action card:", card.name, card.type);
                     }
 
                     // Guard/Defend action: gain shielded status
@@ -5783,19 +6937,22 @@
                                     let isWorst = char === worstChar;
                                     return m("div", {
                                         class: "cg2-char-select-wrapper",
-                                        onclick() {
+                                        async onclick() {
                                             // Click to select and immediately start game
                                             gameCharSelection.selected = char;
                                             gameState = createGameState(viewingDeck, char);
                                             gameCharSelection = null;
                                             if (gameState) {
+                                                // Initialize LLM components in background (non-blocking)
+                                                initializeLLMComponents(gameState, viewingDeck);
                                                 runInitiativePhase();
                                             }
                                             m.redraw();
                                         }
                                     }, [
                                         // Use CardFace for consistent card styling (card front bg, not portrait)
-                                        m(CardFace, { card: char, bgImage: cardFrontBg }),
+                                        // noPreview: true prevents image click from opening preview instead of selecting
+                                        m(CardFace, { card: char, bgImage: cardFrontBg, noPreview: true }),
                                         // Best character indicator (gold check)
                                         isBest ? m("div", { class: "cg2-char-badge cg2-char-best", title: "Highest total stats" }, [
                                             m("span", { class: "material-symbols-outlined" }, "check_circle")
@@ -5836,6 +6993,7 @@
                         gameState = createGameState(viewingDeck, gameCharSelection.selected);
                         gameCharSelection = null;
                         if (gameState) {
+                            initializeLLMComponents(gameState, viewingDeck);
                             runInitiativePhase();
                         }
                     } else if (allChars.length === 0) {
@@ -5939,6 +7097,16 @@
                                 // Action Bar (visible in placement and resolution)
                                 (isPlacement || gameState.phase === GAME_PHASES.RESOLUTION)
                                     ? m(ActionBar)
+                                    : null,
+
+                                // Narrator text overlay
+                                gameState.narrationText
+                                    ? m("div", { class: "cg2-narration-overlay" }, [
+                                        m("div", { class: "cg2-narration-text" }, [
+                                            m("span", { class: "material-symbols-outlined cg2-narration-icon" }, "campaign"),
+                                            gameState.narrationText
+                                        ])
+                                    ])
                                     : null
                             ]),
 
@@ -5962,7 +7130,15 @@
                                             : gameState.phase === GAME_PHASES.DRAW_PLACEMENT
                                                 ? (isPlayerTurn ? "Place cards on the action bar" : "Opponent is placing...")
                                                 : gameState.phase === GAME_PHASES.RESOLUTION
-                                                    ? "Resolving actions..."
+                                                    ? (currentCombatResult && resolutionPhase === "result"
+                                                        ? [
+                                                            m("strong", { class: "cg2-status-outcome cg2-outcome-" + (currentCombatResult.outcome.damageMultiplier > 0 ? "hit" : currentCombatResult.outcome.damageMultiplier < 0 ? "counter" : "miss") },
+                                                                currentCombatResult.outcome.label),
+                                                            currentCombatResult.damageResult
+                                                                ? m("span", " - " + currentCombatResult.damageResult.finalDamage + " HP to " + currentCombatResult.defenderName)
+                                                                : null
+                                                        ]
+                                                        : "Resolving actions...")
                                                     : gameState.phase === GAME_PHASES.CLEANUP
                                                         ? "Round complete!"
                                                         : ""
@@ -6507,10 +7683,17 @@
                         m("button", {
                             class: "cg2-btn cg2-btn-primary cg2-btn-threat",
                             onclick: () => {
+                                console.log("[CardGame v2] Face Threat clicked, phase:", gameState.phase);
                                 if (gameState.phase === GAME_PHASES.THREAT_RESPONSE) {
                                     resolveThreatCombat();
                                 } else if (gameState.phase === GAME_PHASES.END_THREAT) {
                                     resolveEndThreatCombat();
+                                } else {
+                                    console.warn("[CardGame v2] Face Threat: unexpected phase", gameState.phase);
+                                    // Try to resolve anyway
+                                    if (gameState.threatResponse && gameState.threatResponse.active) {
+                                        resolveThreatCombat();
+                                    }
                                 }
                             }
                         }, [
@@ -6728,9 +7911,10 @@
                             ]) : null
                     ]) : null,
 
-                    // Progress bar
-                    m("div", { class: "cg2-resolution-progress" },
-                        resolutionAnimating ? "Resolving..." : "Next action in 3s...")
+                    // Progress indicator (only during rolling, outcome shown in status bar)
+                    resolutionPhase === "rolling"
+                        ? m("div", { class: "cg2-resolution-progress" }, "Rolling...")
+                        : null
 
                 ]) : m("div", { class: "cg2-non-combat-overlay" }, [
                     // Non-combat action display
@@ -6762,20 +7946,30 @@
                         gameState.roundWinner = "player";
                         gameState.player.hpRecovery = 5;
                         gameState.opponent.hpRecovery = 2;
+                        gameState.player.energyRecovery = 3;
+                        gameState.opponent.energyRecovery = 1;
                     } else if (oppPts > playerPts) {
                         gameState.roundWinner = "opponent";
                         gameState.player.hpRecovery = 2;
                         gameState.opponent.hpRecovery = 5;
+                        gameState.player.energyRecovery = 1;
+                        gameState.opponent.energyRecovery = 3;
                     } else {
-                        // Tie - both get +2
+                        // Tie - both get base recovery
                         gameState.roundWinner = "tie";
                         gameState.player.hpRecovery = 2;
                         gameState.opponent.hpRecovery = 2;
+                        gameState.player.energyRecovery = 2;
+                        gameState.opponent.energyRecovery = 2;
                     }
 
                     // Apply HP recovery (capped at maxHp)
                     gameState.player.hp = Math.min(gameState.player.maxHp, gameState.player.hp + gameState.player.hpRecovery);
                     gameState.opponent.hp = Math.min(gameState.opponent.maxHp, gameState.opponent.hp + gameState.opponent.hpRecovery);
+
+                    // Apply Energy recovery (capped at maxEnergy)
+                    gameState.player.energy = Math.min(gameState.player.maxEnergy, gameState.player.energy + gameState.player.energyRecovery);
+                    gameState.opponent.energy = Math.min(gameState.opponent.maxEnergy, gameState.opponent.energy + gameState.opponent.energyRecovery);
 
                     // Winner claims the pot
                     if (gameState.roundWinner !== "tie") {
@@ -6802,8 +7996,10 @@
 
                     gameState.cleanupApplied = true;
                     console.log("[CardGame v2] Cleanup - Round winner:", gameState.roundWinner,
-                        "Player HP:", gameState.player.hp, "(+" + gameState.player.hpRecovery + ")",
-                        "Opponent HP:", gameState.opponent.hp, "(+" + gameState.opponent.hpRecovery + ")");
+                        "| Player HP:", gameState.player.hp, "(+" + gameState.player.hpRecovery + ")",
+                        "Energy:", gameState.player.energy, "(+" + gameState.player.energyRecovery + ")",
+                        "| Opponent HP:", gameState.opponent.hp, "(+" + gameState.opponent.hpRecovery + ")",
+                        "Energy:", gameState.opponent.energy, "(+" + gameState.opponent.energyRecovery + ")");
                 }
             },
             view() {
@@ -6822,14 +8018,22 @@
                             m("span", " | "),
                             m("span", "Opponent: " + gameState.opponent.roundPoints)
                         ]),
-                        m("div", { class: "cg2-hp-recovery" }, [
-                            m("div", "HP Recovery:"),
-                            m("div", { class: "cg2-recovery-detail" }, [
+                        m("div", { class: "cg2-round-recovery" }, [
+                            m("div", { class: "cg2-recovery-row" }, [
+                                m("span", { class: "cg2-recovery-label" }, "HP:"),
                                 m("span", { class: gameState.roundWinner === "player" ? "cg2-winner" : "" },
-                                    "You: +" + gameState.player.hpRecovery + " HP (" + gameState.player.hp + "/" + gameState.player.maxHp + ")"),
+                                    "You +" + gameState.player.hpRecovery),
                                 m("span", " | "),
                                 m("span", { class: gameState.roundWinner === "opponent" ? "cg2-winner" : "" },
-                                    "Opponent: +" + gameState.opponent.hpRecovery + " HP (" + gameState.opponent.hp + "/" + gameState.opponent.maxHp + ")")
+                                    "Opp +" + gameState.opponent.hpRecovery)
+                            ]),
+                            m("div", { class: "cg2-recovery-row" }, [
+                                m("span", { class: "cg2-recovery-label" }, "Energy:"),
+                                m("span", { class: gameState.roundWinner === "player" ? "cg2-winner" : "" },
+                                    "You +" + gameState.player.energyRecovery),
+                                m("span", " | "),
+                                m("span", { class: gameState.roundWinner === "opponent" ? "cg2-winner" : "" },
+                                    "Opp +" + gameState.opponent.energyRecovery)
                             ])
                         ]),
                         // Pot claim info
@@ -6920,7 +8124,16 @@
 
     // ── Game Over UI ──────────────────────────────────────────────────
     function GameOverUI() {
+        let narratedEnd = false;
+
         return {
+            oninit() {
+                // Trigger end game narration once
+                if (!narratedEnd && gameState && gameState.winner) {
+                    narratedEnd = true;
+                    narrateGameEnd(gameState.winner);
+                }
+            },
             view() {
                 let isVictory = gameState.winner === "player";
                 let player = gameState.player;
@@ -6956,12 +8169,13 @@
                         m("div", { class: "cg2-game-over-actions" }, [
                             m("button", {
                                 class: "cg2-btn cg2-btn-primary",
-                                onclick() {
+                                async onclick() {
                                     // Restart with same characters
                                     let deck = viewingDeck;
                                     let playerChar = player.character;
                                     gameState = createGameState(deck, playerChar);
                                     if (gameState) {
+                                        initializeLLMComponents(gameState, deck);
                                         runInitiativePhase();
                                     }
                                     m.redraw();
@@ -6997,6 +8211,7 @@
                 let bar = gameState.actionBar;
                 let isPlacement = gameState.phase === GAME_PHASES.DRAW_PLACEMENT;
                 let isResolution = gameState.phase === GAME_PHASES.RESOLUTION;
+                let cardFrontBg = viewingDeck?.cardFrontImageUrl || null;
 
                 return m("div", { class: "cg2-action-bar" }, [
                     m("div", { class: "cg2-action-bar-label" }, "Action Bar"),
@@ -7006,7 +8221,10 @@
                             let isResolved = pos.resolved;
                             let isPlayerPos = pos.owner === "player";
                             let isThreatPos = pos.isThreat;
+                            let playerOutOfAP = gameState.player.apUsed >= gameState.player.ap;
                             let canDrop = isPlacement && isPlayerPos && gameState.currentTurn === "player" && !isThreatPos;
+                            // Mark empty player positions as locked if out of AP
+                            let isLocked = isPlacement && isPlayerPos && !pos.stack && playerOutOfAP && !isThreatPos;
 
                             return m("div", {
                                 key: pos.index,
@@ -7014,12 +8232,13 @@
                                        (isThreatPos ? " cg2-threat-pos" : (isPlayerPos ? " cg2-player-pos" : " cg2-opponent-pos")) +
                                        (isActive ? " cg2-active" : "") +
                                        (isResolved ? " cg2-resolved" : "") +
-                                       (canDrop ? " cg2-droppable" : ""),
+                                       (isLocked ? " cg2-locked" : "") +
+                                       (canDrop && !isLocked ? " cg2-droppable" : ""),
                                 ondragover(e) {
-                                    if (canDrop) e.preventDefault();
+                                    if (canDrop && !isLocked) e.preventDefault();
                                 },
                                 ondrop(e) {
-                                    if (!canDrop) return;
+                                    if (!canDrop || isLocked) return;
                                     e.preventDefault();
                                     let cardData = e.dataTransfer.getData("text/plain");
                                     try {
@@ -7062,11 +8281,20 @@
                                                 },
                                                 title: pos.stack.coreCard.name + (pos.stack.modifiers.length > 0 ? " + " + pos.stack.modifiers.length + " modifier(s)" : "") + " (click to enlarge)"
                                             }, [
-                                                m(CardFace, { card: pos.stack.coreCard, compact: true }),
+                                                m(CardFace, { card: pos.stack.coreCard, bgImage: cardFrontBg, compact: true }),
                                                 // Stack count badge
                                                 pos.stack.modifiers.length > 0
                                                     ? m("div", { class: "cg2-stack-count" }, "+" + pos.stack.modifiers.length)
-                                                    : null
+                                                    : null,
+                                                // Remove button (only during placement phase for player's cards)
+                                                canDrop ? m("button", {
+                                                    class: "cg2-pos-remove-btn",
+                                                    onclick(e) {
+                                                        e.stopPropagation();
+                                                        removeCardFromPosition(pos.index);
+                                                    },
+                                                    title: "Remove card (return to hand)"
+                                                }, m("span", { class: "material-symbols-outlined" }, "close")) : null
                                             ]),
                                             // Modifier list (shown below for clarity)
                                             pos.stack.modifiers.length > 0
@@ -7089,7 +8317,9 @@
                                                 )
                                                 : null
                                         ])
-                                        : m("div", { class: "cg2-pos-empty" }, canDrop ? "Drop here" : "\u2013"),
+                                        : m("div", { class: "cg2-pos-empty" + (isLocked ? " cg2-pos-locked" : "") },
+                                            isLocked ? [m("span", { class: "material-symbols-outlined", style: "font-size:14px" }, "lock"), " No AP"]
+                                                     : (canDrop ? "Drop here" : "\u2013")),
 
                                 // Resolution marker
                                 isActive ? m("div", { class: "cg2-resolve-marker" }, "\u25B6") : null
