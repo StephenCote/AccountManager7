@@ -2460,14 +2460,30 @@
         return (card.type || "") + ":" + (card.name || "") + ":" + (card.fabric || card.material || "");
     }
 
-    // Queue art generation for all cards in a deck
-    function queueDeckArt(deck) {
+    // Queue art generation for all cards in a deck (including front/back templates)
+    async function queueDeckArt(deck) {
         if (!deck || !deck.cards) return;
         artQueue = [];
         artCompleted = 0;
         artTotal = 0;
         artPaused = false;
         artDir = null;
+
+        // First, check if card front/back templates need generation
+        let needFront = !deck.cardFrontImageUrl && !cardFrontImageUrl;
+        let needBack = !deck.cardBackImageUrl && !cardBackImageUrl;
+
+        if (needFront || needBack) {
+            console.log("[CardGame v2] Generating missing card templates first...");
+            if (needFront) {
+                console.log("[CardGame v2] Generating card front template...");
+                await generateTemplateArt("front");
+            }
+            if (needBack) {
+                console.log("[CardGame v2] Generating card back template...");
+                await generateTemplateArt("back");
+            }
+        }
 
         // Track unique cards and their duplicates
         let uniqueCards = {};  // signature -> { cardIndex, duplicateIndices: [] }
@@ -3065,7 +3081,13 @@
                 character: opponentCharCard || {
                     type: "character",
                     name: "Challenger",
+                    race: "UNKNOWN",
+                    alignment: "NEUTRAL",
+                    level: 1,
                     stats: opponentStats,
+                    needs: { hp: 20, energy: opponentMag, morale: 20 },
+                    equipped: { head: null, body: null, handL: null, handR: null, feet: null, ring: null, back: null },
+                    activeSkills: [null, null, null, null],
                     portraitUrl: null
                 },
                 hp: 20,
@@ -3110,6 +3132,199 @@
         let raw = rollD20();
         let modifier = (stats && stats.AGI) || 0;
         return { raw, modifier, total: raw + modifier };
+    }
+
+    // ── Combat Roll System (Phase 5) ─────────────────────────────────
+    // Get total ATK bonus from actor's card stack (weapons)
+    function getActorATK(actor) {
+        let total = 0;
+        (actor.cardStack || []).forEach(card => {
+            if (card.atk) total += card.atk;
+        });
+        return total;
+    }
+
+    // Get total DEF bonus from actor's card stack (armor, apparel)
+    function getActorDEF(actor) {
+        let total = 0;
+        (actor.cardStack || []).forEach(card => {
+            if (card.def) total += card.def;
+        });
+        return total;
+    }
+
+    // Get skill modifier from stack modifiers
+    // Parses skill card modifier strings like "+2 to Attack rolls"
+    function getStackSkillMod(stack, actionType) {
+        if (!stack || !stack.modifiers) return 0;
+        let total = 0;
+        stack.modifiers.forEach(mod => {
+            if (mod.type === "skill" && mod.modifier) {
+                // Parse modifier string like "+2 to Attack rolls"
+                let match = mod.modifier.match(/\+(\d+)/);
+                if (match) {
+                    // Check if this skill applies to this action type
+                    let modLower = mod.modifier.toLowerCase();
+                    if (actionType === "attack" && (modLower.includes("attack") || modLower.includes("combat"))) {
+                        total += parseInt(match[1], 10);
+                    } else if (actionType === "defense" && (modLower.includes("defense") || modLower.includes("parry"))) {
+                        total += parseInt(match[1], 10);
+                    } else if (actionType === "talk" && (modLower.includes("talk") || modLower.includes("social") || modLower.includes("charisma"))) {
+                        total += parseInt(match[1], 10);
+                    }
+                }
+            }
+        });
+        return total;
+    }
+
+    // Roll attack: 1d20 + STR + weapon ATK + skill mods (from stack)
+    function rollAttack(attacker, stack) {
+        let raw = rollD20();
+        let stats = attacker.character.stats || {};
+        let strMod = stats.STR || 0;
+        let atkBonus = getActorATK(attacker);
+        let skillMod = getStackSkillMod(stack, "attack");
+        let total = raw + strMod + atkBonus + skillMod;
+
+        return {
+            raw,
+            strMod,
+            atkBonus,
+            skillMod,
+            total,
+            formula: "1d20 + STR + ATK" + (skillMod ? " + Skill" : ""),
+            breakdown: `${raw} + ${strMod} STR + ${atkBonus} ATK` + (skillMod ? ` + ${skillMod} Skill` : "") + ` = ${total}`
+        };
+    }
+
+    // Roll defense: 1d20 + END + armor DEF + weapon parry (if applicable)
+    function rollDefense(defender) {
+        let raw = rollD20();
+        let stats = defender.character.stats || {};
+        let endMod = stats.END || 0;
+        let defBonus = getActorDEF(defender);
+        // Parry: check if defender has a weapon with parry property
+        let parryBonus = 0;
+        (defender.cardStack || []).forEach(card => {
+            if (card.parry) parryBonus += card.parry;
+        });
+        let total = raw + endMod + defBonus + parryBonus;
+
+        return {
+            raw,
+            endMod,
+            defBonus,
+            parryBonus,
+            total,
+            formula: "1d20 + END + DEF" + (parryBonus ? " + Parry" : ""),
+            breakdown: `${raw} + ${endMod} END + ${defBonus} DEF` + (parryBonus ? ` + ${parryBonus} Parry` : "") + ` = ${total}`
+        };
+    }
+
+    // Outcome table (7 tiers based on roll difference)
+    const COMBAT_OUTCOMES = {
+        CRITICAL_HIT:    { minDiff: 10, label: "Critical Hit!", damageMultiplier: 2, effect: "double damage" },
+        STRONG_HIT:      { minDiff: 5,  label: "Strong Hit", damageMultiplier: 1, effect: "full damage" },
+        GLANCING_HIT:    { minDiff: 1,  label: "Glancing Hit", damageMultiplier: 0.5, effect: "half damage" },
+        CLASH:           { minDiff: 0,  label: "Clash!", damageMultiplier: 0, effect: "both take 1 damage", bothTakeDamage: 1 },
+        DEFLECT:         { maxDiff: -1, label: "Deflected", damageMultiplier: 0, effect: "no damage, lose initiative" },
+        PARRY:           { maxDiff: -5, label: "Parried!", damageMultiplier: 0, effect: "defender may counter", allowCounter: true },
+        CRITICAL_COUNTER:{ maxDiff: -10, label: "Critical Counter!", damageMultiplier: -0.5, effect: "attacker takes half damage" }
+    };
+
+    function getCombatOutcome(attackRoll, defenseRoll) {
+        let diff = attackRoll.total - defenseRoll.total;
+
+        if (diff >= 10) return { ...COMBAT_OUTCOMES.CRITICAL_HIT, diff };
+        if (diff >= 5)  return { ...COMBAT_OUTCOMES.STRONG_HIT, diff };
+        if (diff >= 1)  return { ...COMBAT_OUTCOMES.GLANCING_HIT, diff };
+        if (diff === 0) return { ...COMBAT_OUTCOMES.CLASH, diff };
+        if (diff >= -4) return { ...COMBAT_OUTCOMES.DEFLECT, diff };
+        if (diff >= -9) return { ...COMBAT_OUTCOMES.PARRY, diff };
+        return { ...COMBAT_OUTCOMES.CRITICAL_COUNTER, diff };
+    }
+
+    // Calculate damage: base = weapon ATK + STR, modified by outcome
+    function calculateDamage(attacker, outcome) {
+        let stats = attacker.character.stats || {};
+        let strMod = stats.STR || 0;
+        let weaponAtk = getActorATK(attacker);
+        let baseDamage = weaponAtk + strMod;
+
+        // Apply outcome multiplier
+        let finalDamage = Math.floor(baseDamage * outcome.damageMultiplier);
+        // Minimum 1 damage on any successful hit
+        if (outcome.damageMultiplier > 0 && finalDamage < 1) finalDamage = 1;
+
+        return {
+            baseDamage,
+            multiplier: outcome.damageMultiplier,
+            finalDamage,
+            breakdown: `(${weaponAtk} ATK + ${strMod} STR) × ${outcome.damageMultiplier} = ${finalDamage}`
+        };
+    }
+
+    // Apply damage to a target actor
+    function applyDamage(actor, damage) {
+        let def = getActorDEF(actor);
+        let reduced = Math.max(1, damage - def);  // Minimum 1 damage
+        actor.hp = Math.max(0, actor.hp - reduced);
+        return {
+            rawDamage: damage,
+            armorReduction: def,
+            finalDamage: reduced,
+            newHp: actor.hp
+        };
+    }
+
+    // Store current combat resolution for UI display
+    let currentCombatResult = null;
+
+    // Resolve combat between attacker and defender
+    function resolveCombat(attackerActor, defenderActor, stack) {
+        let attackRoll = rollAttack(attackerActor, stack);
+        let defenseRoll = rollDefense(defenderActor);
+        let outcome = getCombatOutcome(attackRoll, defenseRoll);
+        let damage = calculateDamage(attackerActor, outcome);
+        let damageResult = null;
+        let selfDamageResult = null;
+
+        // Apply effects based on outcome
+        if (outcome.damageMultiplier > 0) {
+            // Hit - apply damage to defender
+            damageResult = applyDamage(defenderActor, damage.finalDamage);
+        } else if (outcome.damageMultiplier < 0) {
+            // Critical counter - attacker takes damage
+            selfDamageResult = applyDamage(attackerActor, damage.finalDamage * -1);
+        } else if (outcome.bothTakeDamage) {
+            // Clash - both take fixed damage
+            damageResult = applyDamage(defenderActor, outcome.bothTakeDamage);
+            selfDamageResult = applyDamage(attackerActor, outcome.bothTakeDamage);
+        }
+
+        let result = {
+            attackRoll,
+            defenseRoll,
+            outcome,
+            damage,
+            damageResult,
+            selfDamageResult,
+            attackerName: attackerActor.character.name || "Attacker",
+            defenderName: defenderActor.character.name || "Defender"
+        };
+
+        console.log("[CardGame v2] Combat resolved:", result);
+        currentCombatResult = result;
+        return result;
+    }
+
+    // Check if game is over (either actor HP <= 0)
+    function checkGameOver() {
+        if (!gameState) return null;
+        if (gameState.player.hp <= 0) return "opponent";
+        if (gameState.opponent.hp <= 0) return "player";
+        return null;
     }
 
     // ── Array Shuffle (Fisher-Yates) ──────────────────────────────────
@@ -3244,10 +3459,26 @@
             if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
                 // Initiative winner goes first
                 gameState.currentTurn = gameState.initiative.winner;
-                // Check if the current player has 0 AP - auto-skip their turn
-                checkAutoEndTurn();
+                console.log("[CardGame v2] Placement phase started. Current turn:", gameState.currentTurn);
+
+                // If AI goes first, trigger AI placement
+                if (gameState.currentTurn === "opponent") {
+                    setTimeout(() => {
+                        if (gameState && gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
+                            console.log("[CardGame v2] Triggering AI placement (goes first)");
+                            aiPlaceCards();
+                            m.redraw();
+                        }
+                    }, 500);
+                }
             } else if (gameState.phase === GAME_PHASES.RESOLUTION) {
                 gameState.actionBar.resolveIndex = 0;
+                // Auto-start resolution
+                setTimeout(() => {
+                    if (gameState && gameState.phase === GAME_PHASES.RESOLUTION) {
+                        advanceResolution();
+                    }
+                }, 500);
             }
         } else {
             // Cleanup complete -> next round
@@ -3277,9 +3508,20 @@
         // Clear pot (winner claimed it)
         gameState.pot = [];
 
-        // Draw cards for new round (1 card each)
-        drawCardsForActor(gameState.player, 1);
-        drawCardsForActor(gameState.opponent, 1);
+        // Auto-draw at start of rounds 2+
+        // Draw cards to refill hand (up to 5 cards, draw difference)
+        let targetHandSize = 5;
+        let playerDraw = Math.max(0, targetHandSize - gameState.player.hand.length);
+        let opponentDraw = Math.max(0, targetHandSize - gameState.opponent.hand.length);
+
+        if (playerDraw > 0) {
+            console.log("[CardGame v2] Round", gameState.round, "- Player draws", playerDraw, "cards");
+            drawCardsForActor(gameState.player, playerDraw);
+        }
+        if (opponentDraw > 0) {
+            console.log("[CardGame v2] Round", gameState.round, "- Opponent draws", opponentDraw, "cards");
+            drawCardsForActor(gameState.opponent, opponentDraw);
+        }
 
         // Reset initiative animation state so it replays
         resetInitAnimState();
@@ -3291,6 +3533,13 @@
 
         console.log("[CardGame v2] Starting round", gameState.round);
         m.redraw();
+
+        // Start initiative animation for round 2+ (oninit won't fire again)
+        setTimeout(() => {
+            if (gameState && gameState.phase === GAME_PHASES.INITIATIVE) {
+                startInitiativeAnimation();
+            }
+        }, 100);
     }
 
     // ── Draw Cards Helper ─────────────────────────────────────────────
@@ -3312,7 +3561,17 @@
     }
 
     // ── Placement Actions ─────────────────────────────────────────────
-    function placeCard(positionIndex, card, isModifier = false) {
+    // Determine if a card type can be a core card (action that drives the stack)
+    function isCoreCardType(cardType) {
+        return cardType === "action" || cardType === "talk" || cardType === "magic";
+    }
+
+    // Determine if a card type can be a modifier (stacks on top of core)
+    function isModifierCardType(cardType) {
+        return cardType === "skill" || cardType === "magic" || cardType === "item";
+    }
+
+    function placeCard(positionIndex, card, forceModifier = false) {
         if (!gameState) return false;
         if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return false;
 
@@ -3326,38 +3585,65 @@
             return false;
         }
 
+        let actor = currentPlayer === "player" ? gameState.player : gameState.opponent;
+
+        // Determine if this card should be a modifier or core
+        let isModifier = forceModifier;
+        if (!forceModifier && pos.stack && pos.stack.coreCard) {
+            // Position already has a core card - this must be a modifier
+            if (isModifierCardType(card.type)) {
+                isModifier = true;
+            } else {
+                console.warn("[CardGame v2] Position already has a core card, and", card.type, "cannot be a modifier");
+                return false;
+            }
+        }
+
         if (isModifier) {
-            // Add modifier to existing stack
-            if (!pos.stack) {
-                console.warn("[CardGame v2] No core card to modify");
+            // Add modifier to existing stack (no AP cost for modifiers)
+            if (!pos.stack || !pos.stack.coreCard) {
+                console.warn("[CardGame v2] No core card to modify - place an action first");
                 return false;
             }
             pos.stack.modifiers.push(card);
+            console.log("[CardGame v2] Added modifier", card.name, "to stack at position", positionIndex);
         } else {
-            // Place core card (action/talk)
-            if (pos.stack && pos.stack.coreCard) {
-                console.warn("[CardGame v2] Position already has a core card");
+            // Place core card (action/talk/magic)
+            if (!isCoreCardType(card.type)) {
+                // Skill dropped on empty slot - can't be core
+                console.warn("[CardGame v2]", card.type, "cards need an action card first");
                 return false;
             }
 
-            // Check AP
-            let actor = currentPlayer === "player" ? gameState.player : gameState.opponent;
+            // Check AP for core cards
             if (actor.apUsed >= actor.ap) {
                 console.warn("[CardGame v2] No AP remaining");
+                return false;
+            }
+
+            // Check energy cost
+            if (card.energyCost && card.energyCost > actor.energy) {
+                console.warn("[CardGame v2] Not enough energy for", card.name);
                 return false;
             }
 
             pos.stack = { coreCard: card, modifiers: [] };
             actor.apUsed++;
 
-            // Remove card from hand
-            if (currentPlayer === "player") {
-                let idx = gameState.player.hand.findIndex(c => c === card || (c.name === card.name && c.type === card.type));
-                if (idx >= 0) gameState.player.hand.splice(idx, 1);
+            // Deduct energy if needed
+            if (card.energyCost) {
+                actor.energy -= card.energyCost;
             }
+
+            console.log("[CardGame v2] Placed core card", card.name, "at position", positionIndex);
         }
 
-        console.log("[CardGame v2] Placed card at position", positionIndex, card.name);
+        // Remove card from hand
+        if (currentPlayer === "player") {
+            let idx = gameState.player.hand.findIndex(c => c === card || (c.name === card.name && c.type === card.type));
+            if (idx >= 0) gameState.player.hand.splice(idx, 1);
+        }
+
         m.redraw();
 
         // Check if player is out of AP and auto-end their turn
@@ -3440,49 +3726,60 @@
 
         console.log("[CardGame v2] AI placing cards. Hand:", opp.hand.length, "AP:", opp.ap - opp.apUsed);
 
-        // Simple AI: place playable cards on available positions
+        // Separate cards by type for smarter placement
+        let coreCards = opp.hand.filter(c => isCoreCardType(c.type));
+        let modifierCards = opp.hand.filter(c => c.type === "skill");
+
+        // Phase 1: Place core cards (actions, talk, magic) on available positions
         for (let posIdx of positions) {
             if (opp.apUsed >= opp.ap) break;
-
-            // If hand is empty, try to draw a card (costs 1 AP)
-            if (opp.hand.length === 0) {
-                if (opp.drawPile.length > 0 || opp.discardPile.length > 0) {
-                    drawCardsForActor(opp, 1);
-                    opp.apUsed++;  // Drawing costs 1 AP
-                    console.log("[CardGame v2] AI drew a card, AP used:", opp.apUsed + "/" + opp.ap);
-                    if (opp.apUsed >= opp.ap) break;  // Out of AP after drawing
-                } else {
-                    break;  // No cards to draw
-                }
-            }
+            if (coreCards.length === 0) break;
 
             let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
             if (!pos || pos.stack) continue;
 
-            // Find a playable card from hand (action, talk, skill, magic)
-            let playable = opp.hand.find(c =>
-                c.type === "action" || c.type === "talk" ||
-                c.type === "skill" || c.type === "magic"
-            );
+            // Find a playable core card (prefer Attack)
+            let playable = coreCards.find(c => c.name === "Attack") ||
+                          coreCards.find(c => c.type === "action") ||
+                          coreCards[0];
+
             if (playable) {
                 // Check energy cost
                 if (playable.energyCost && playable.energyCost > opp.energy) {
-                    continue; // Can't afford it
+                    coreCards = coreCards.filter(c => c !== playable);
+                    continue;
                 }
 
                 pos.stack = { coreCard: playable, modifiers: [] };
                 opp.apUsed++;
 
-                // Deduct energy if needed
                 if (playable.energyCost) {
                     opp.energy -= playable.energyCost;
                 }
 
-                // Remove from hand
+                // Remove from hand and tracking arrays
                 let idx = opp.hand.indexOf(playable);
                 if (idx >= 0) opp.hand.splice(idx, 1);
+                coreCards = coreCards.filter(c => c !== playable);
 
-                console.log("[CardGame v2] AI placed:", playable.name, "at position", posIdx);
+                console.log("[CardGame v2] AI placed core:", playable.name, "at position", posIdx);
+            }
+        }
+
+        // Phase 2: Add skill modifiers to placed stacks (no AP cost)
+        for (let posIdx of positions) {
+            if (modifierCards.length === 0) break;
+
+            let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
+            if (!pos || !pos.stack || !pos.stack.coreCard) continue;
+
+            // Add one skill modifier to this stack
+            let skill = modifierCards.shift();
+            if (skill) {
+                pos.stack.modifiers.push(skill);
+                let idx = opp.hand.indexOf(skill);
+                if (idx >= 0) opp.hand.splice(idx, 1);
+                console.log("[CardGame v2] AI added modifier:", skill.name, "to position", posIdx);
             }
         }
 
@@ -3505,6 +3802,9 @@
 
     // ── Resolution Phase ──────────────────────────────────────────────
     let resolutionAnimating = false;
+    let resolutionPhase = "idle";  // "idle" | "rolling" | "result" | "done"
+    let resolutionDiceFaces = { attack: 1, defense: 1 };
+    let resolutionDiceInterval = null;
 
     function advanceResolution() {
         if (!gameState) return;
@@ -3513,7 +3813,14 @@
 
         let bar = gameState.actionBar;
         if (bar.resolveIndex >= bar.positions.length) {
-            // Resolution complete
+            // Resolution complete - check for game over
+            let winner = checkGameOver();
+            if (winner) {
+                gameState.winner = winner;
+                gameState.phase = "GAME_OVER";
+                m.redraw();
+                return;
+            }
             advancePhase();
             return;
         }
@@ -3525,31 +3832,146 @@
             return;
         }
 
-        // Mark as resolving (animation will play)
-        resolutionAnimating = true;
+        // Determine if this is a combat action
+        let card = pos.stack?.coreCard;
+        let isAttack = card && card.name === "Attack";
 
-        // Simulate resolution (Phase 5 will add actual combat)
-        setTimeout(() => {
-            pos.resolved = true;
-            resolutionAnimating = false;
-            bar.resolveIndex++;
+        if (isAttack) {
+            // Combat resolution with dice animation
+            resolutionAnimating = true;
+            resolutionPhase = "rolling";
+            currentCombatResult = null;
 
-            // Move played cards to owner's discard pile
-            if (pos.stack && pos.stack.coreCard) {
-                let owner = pos.owner === "player" ? gameState.player : gameState.opponent;
-                owner.discardPile.push(pos.stack.coreCard);
-                pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
-            }
+            // Start dice animation
+            resolutionDiceInterval = setInterval(() => {
+                resolutionDiceFaces.attack = rollD20();
+                resolutionDiceFaces.defense = rollD20();
+                m.redraw();
+            }, 80);
 
             m.redraw();
 
-            // Auto-advance if more positions
-            if (bar.resolveIndex < bar.positions.length) {
-                setTimeout(() => advanceResolution(), 500);
-            } else {
-                advancePhase();
-            }
-        }, 800);
+            // After 1.5 seconds, resolve the combat
+            setTimeout(() => {
+                clearInterval(resolutionDiceInterval);
+                resolutionDiceInterval = null;
+
+                // Determine attacker and defender
+                let attacker = pos.owner === "player" ? gameState.player : gameState.opponent;
+                let defender = pos.owner === "player" ? gameState.opponent : gameState.player;
+
+                // Resolve combat (pass stack for skill modifiers)
+                resolveCombat(attacker, defender, pos.stack);
+                resolutionPhase = "result";
+                m.redraw();
+
+                // After showing result, mark as resolved
+                setTimeout(() => {
+                    pos.resolved = true;
+                    pos.combatResult = currentCombatResult;
+                    resolutionAnimating = false;
+                    resolutionPhase = "done";
+                    bar.resolveIndex++;
+
+                    // Move played cards to owner's discard pile
+                    if (pos.stack && pos.stack.coreCard) {
+                        let owner = pos.owner === "player" ? gameState.player : gameState.opponent;
+                        owner.discardPile.push(pos.stack.coreCard);
+                        pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
+                    }
+
+                    // Check for game over after each combat
+                    let winner = checkGameOver();
+                    if (winner) {
+                        gameState.winner = winner;
+                        gameState.phase = "GAME_OVER";
+                        m.redraw();
+                        return;
+                    }
+
+                    m.redraw();
+
+                    // Auto-advance after 3 seconds total between actions
+                    if (bar.resolveIndex < bar.positions.length) {
+                        setTimeout(() => advanceResolution(), 1500);  // 1.5s after result shown
+                    } else {
+                        setTimeout(() => advancePhase(), 1000);
+                    }
+                }, 1500);  // Show result for 1.5 seconds (total ~3s per action)
+            }, 1500);  // Roll dice for 1.5 seconds
+        } else {
+            // Non-combat action (Rest, Flee, etc.) - simple resolution
+            resolutionAnimating = true;
+            currentCombatResult = null;
+
+            setTimeout(() => {
+                pos.resolved = true;
+                resolutionAnimating = false;
+                bar.resolveIndex++;
+
+                // Handle non-combat actions
+                if (card) {
+                    let owner = pos.owner === "player" ? gameState.player : gameState.opponent;
+                    let target = pos.owner === "player" ? gameState.opponent : gameState.player;
+
+                    // Rest action: restore HP and Energy
+                    if (card.name === "Rest") {
+                        owner.hp = Math.min(owner.maxHp, owner.hp + 2);
+                        owner.energy = Math.min(owner.maxEnergy, owner.energy + 3);
+                        console.log("[CardGame v2]", pos.owner, "rested: +2 HP, +3 Energy");
+                    }
+
+                    // Talk action: CHA-based morale effect
+                    if (card.type === "talk") {
+                        let ownerCha = owner.character.stats?.CHA || 10;
+                        let targetCha = target.character.stats?.CHA || 10;
+                        let skillMod = getStackSkillMod(pos.stack, "talk");
+
+                        // Roll: 1d20 + CHA + skill vs 1d20 + CHA
+                        let ownerRoll = rollD20() + ownerCha + skillMod;
+                        let targetRoll = rollD20() + targetCha;
+
+                        if (ownerRoll > targetRoll) {
+                            // Success: reduce target morale, boost own morale
+                            let moraleDmg = Math.max(1, Math.floor((ownerRoll - targetRoll) / 2));
+                            target.morale = Math.max(0, target.morale - moraleDmg);
+                            owner.morale = Math.min(owner.maxMorale, owner.morale + 1);
+                            console.log("[CardGame v2]", pos.owner, "Talk success! Target morale -" + moraleDmg + ", own +1");
+                            console.log("[CardGame v2] Talk roll:", ownerRoll, "vs", targetRoll);
+                        } else {
+                            // Failed: own morale drops slightly
+                            owner.morale = Math.max(0, owner.morale - 1);
+                            console.log("[CardGame v2]", pos.owner, "Talk failed. Own morale -1");
+                            console.log("[CardGame v2] Talk roll:", ownerRoll, "vs", targetRoll);
+                        }
+
+                        // Check for morale defeat
+                        if (target.morale <= 0) {
+                            console.log("[CardGame v2] Target surrendered due to morale!");
+                            gameState.winner = pos.owner;
+                            gameState.phase = "GAME_OVER";
+                            m.redraw();
+                            return;
+                        }
+                    }
+
+                    // Move played cards to discard pile
+                    owner.discardPile.push(card);
+                    if (pos.stack.modifiers) {
+                        pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
+                    }
+                }
+
+                m.redraw();
+
+                // Auto-advance after ~3 seconds total
+                if (bar.resolveIndex < bar.positions.length) {
+                    setTimeout(() => advanceResolution(), 2000);
+                } else {
+                    setTimeout(() => advancePhase(), 1000);
+                }
+            }, 1000);  // Show action result for 1 second
+        }
 
         m.redraw();
     }
@@ -3672,6 +4094,11 @@
                     ]);
                 }
 
+                // Game Over screen
+                if (gameState.phase === "GAME_OVER") {
+                    return m(GameOverUI);
+                }
+
                 let isPlacement = gameState.phase === GAME_PHASES.DRAW_PLACEMENT;
                 let isPlayerTurn = gameState.currentTurn === "player";
                 let player = gameState.player;
@@ -3773,7 +4200,8 @@
             [GAME_PHASES.EQUIP]: "Equip",
             [GAME_PHASES.DRAW_PLACEMENT]: "Placement",
             [GAME_PHASES.RESOLUTION]: "Resolution",
-            [GAME_PHASES.CLEANUP]: "Cleanup"
+            [GAME_PHASES.CLEANUP]: "Cleanup",
+            "GAME_OVER": "Game Over"
         };
         return labels[phase] || phase;
     }
@@ -4062,34 +4490,139 @@
             view() {
                 let bar = gameState.actionBar;
                 let currentPos = bar.positions[bar.resolveIndex];
+                let card = currentPos?.stack?.coreCard;
+                let isAttack = card && card.name === "Attack";
+                let isRolling = resolutionPhase === "rolling";
+                let showResult = resolutionPhase === "result" || resolutionPhase === "done";
+                let combat = currentCombatResult;
 
                 return m("div", { class: "cg2-phase-panel cg2-resolution-panel" }, [
                     m("h2", "Resolution Phase"),
-                    m("p", "Resolving actions left to right..."),
 
                     currentPos
                         ? m("div", { class: "cg2-resolving-info" }, [
-                            m("span", "Resolving position " + currentPos.index + " "),
-                            m("span", { class: "cg2-owner-badge" }, currentPos.owner === "player" ? "(You)" : "(Opponent)"),
-                            currentPos.stack && currentPos.stack.coreCard
-                                ? m("span", { class: "cg2-action-name" }, ": " + currentPos.stack.coreCard.name)
+                            m("span", "Position " + currentPos.index + " "),
+                            m("span", { class: "cg2-owner-badge cg2-owner-" + currentPos.owner },
+                                currentPos.owner === "player" ? "(You)" : "(Opponent)"),
+                            card
+                                ? m("span", { class: "cg2-action-name" }, ": " + card.name)
                                 : m("span", { class: "cg2-empty-slot" }, ": Empty")
                         ])
                         : m("div", "All positions resolved!"),
 
-                    !resolutionAnimating && bar.resolveIndex < bar.positions.length
-                        ? m("button", {
-                            class: "cg2-btn cg2-btn-primary",
-                            onclick() { advanceResolution(); }
-                        }, "Resolve Next")
-                        : null,
+                    // Combat display (Attack action)
+                    isAttack && (isRolling || showResult) ? m("div", { class: "cg2-combat-display" }, [
+                        // Attacker vs Defender header
+                        m("div", { class: "cg2-combat-header" }, [
+                            m("span", { class: "cg2-combatant cg2-attacker" },
+                                combat ? combat.attackerName : (currentPos.owner === "player" ? "You" : "Opponent")),
+                            m("span", { class: "cg2-combat-vs" }, "attacks"),
+                            m("span", { class: "cg2-combatant cg2-defender" },
+                                combat ? combat.defenderName : (currentPos.owner === "player" ? "Opponent" : "You"))
+                        ]),
 
-                    bar.resolveIndex >= bar.positions.length
-                        ? m("button", {
-                            class: "cg2-btn cg2-btn-primary",
-                            onclick() { advancePhase(); }
-                        }, "Continue to Cleanup")
-                        : null
+                        // Dice display
+                        m("div", { class: "cg2-combat-dice-row" }, [
+                            // Attack dice
+                            m("div", { class: "cg2-combat-roll-card" }, [
+                                m("div", { class: "cg2-roll-label" }, "Attack Roll"),
+                                m("div", { class: "cg2-dice-container" }, [
+                                    m("div", {
+                                        class: "cg2-d20 cg2-d20-attack" +
+                                            (isRolling ? " cg2-d20-rolling" : " cg2-d20-final")
+                                    }, [
+                                        m("span", { class: "cg2-d20-face" },
+                                            isRolling ? resolutionDiceFaces.attack : (combat ? combat.attackRoll.raw : "?"))
+                                    ])
+                                ]),
+                                combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
+                                    m("span", combat.attackRoll.raw),
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod" }, combat.attackRoll.strMod + " STR"),
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod cg2-mod-atk" }, combat.attackRoll.atkBonus + " ATK"),
+                                    m("span", " = "),
+                                    m("strong", combat.attackRoll.total)
+                                ]) : null
+                            ]),
+
+                            // VS
+                            m("div", { class: "cg2-combat-vs-divider" }, "vs"),
+
+                            // Defense dice
+                            m("div", { class: "cg2-combat-roll-card" }, [
+                                m("div", { class: "cg2-roll-label" }, "Defense Roll"),
+                                m("div", { class: "cg2-dice-container" }, [
+                                    m("div", {
+                                        class: "cg2-d20 cg2-d20-defense" +
+                                            (isRolling ? " cg2-d20-rolling" : " cg2-d20-final")
+                                    }, [
+                                        m("span", { class: "cg2-d20-face" },
+                                            isRolling ? resolutionDiceFaces.defense : (combat ? combat.defenseRoll.raw : "?"))
+                                    ])
+                                ]),
+                                combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
+                                    m("span", combat.defenseRoll.raw),
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod" }, combat.defenseRoll.endMod + " END"),
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod" }, combat.defenseRoll.defBonus + " DEF"),
+                                    combat.defenseRoll.parryBonus ? [
+                                        m("span", " + "),
+                                        m("span", { class: "cg2-mod" }, combat.defenseRoll.parryBonus + " Parry")
+                                    ] : null,
+                                    m("span", " = "),
+                                    m("strong", combat.defenseRoll.total)
+                                ]) : null
+                            ])
+                        ]),
+
+                        // Outcome display
+                        combat && showResult ? m("div", { class: "cg2-combat-outcome" }, [
+                            m("div", {
+                                class: "cg2-outcome-label cg2-outcome-" +
+                                    (combat.outcome.damageMultiplier > 0 ? "hit" :
+                                     combat.outcome.damageMultiplier < 0 ? "counter" : "miss")
+                            }, [
+                                m("span", { class: "cg2-outcome-text" }, combat.outcome.label),
+                                m("span", { class: "cg2-outcome-diff" },
+                                    " (" + (combat.outcome.diff >= 0 ? "+" : "") + combat.outcome.diff + ")")
+                            ]),
+                            m("div", { class: "cg2-outcome-effect" }, combat.outcome.effect),
+
+                            // Damage display
+                            combat.damageResult ? m("div", { class: "cg2-damage-display" }, [
+                                m("span", { class: "cg2-damage-number cg2-damage-dealt" },
+                                    "-" + combat.damageResult.finalDamage + " HP"),
+                                m("span", { class: "cg2-damage-target" },
+                                    " to " + combat.defenderName)
+                            ]) : null,
+
+                            combat.selfDamageResult ? m("div", { class: "cg2-damage-display" }, [
+                                m("span", { class: "cg2-damage-number cg2-damage-self" },
+                                    "-" + combat.selfDamageResult.finalDamage + " HP"),
+                                m("span", { class: "cg2-damage-target" },
+                                    " to " + combat.attackerName + " (counter!)")
+                            ]) : null
+                        ]) : null
+
+                    ]) : null,
+
+                    // Non-combat action or waiting
+                    !isAttack && resolutionAnimating ? m("div", { class: "cg2-resolving-action" }, [
+                        m("span", { class: "material-symbols-outlined cg2-spin" }, "sync"),
+                        " Resolving..."
+                    ]) : null,
+
+                    // Progress indicator
+                    m("div", { class: "cg2-resolution-progress" },
+                        "Position " + (bar.resolveIndex + 1) + " of " + bar.positions.length),
+
+                    // Auto-advancing indicator (no manual buttons needed)
+                    bar.resolveIndex < bar.positions.length
+                        ? m("div", { class: "cg2-auto-advance-hint" },
+                            resolutionAnimating ? "Resolving..." : "Next action in 3s...")
+                        : m("div", { class: "cg2-auto-advance-hint" }, "Advancing to cleanup...")
                 ]);
             }
         };
@@ -4112,6 +4645,70 @@
                         class: "cg2-btn cg2-btn-primary",
                         onclick() { startNextRound(); advancePhase(); }
                     }, "Start Round " + (gameState.round + 1))
+                ]);
+            }
+        };
+    }
+
+    // ── Game Over UI ──────────────────────────────────────────────────
+    function GameOverUI() {
+        return {
+            view() {
+                let isVictory = gameState.winner === "player";
+                let player = gameState.player;
+                let opponent = gameState.opponent;
+                let rounds = gameState.round;
+
+                return m("div", { class: "cg2-game-container" }, [
+                    m("div", { class: "cg2-game-over" }, [
+                        m("div", {
+                            class: "cg2-game-over-title " + (isVictory ? "cg2-victory" : "cg2-defeat")
+                        }, isVictory ? "Victory!" : "Defeat"),
+
+                        m("div", { class: "cg2-game-over-subtitle" },
+                            isVictory
+                                ? opponent.character.name + " has been defeated!"
+                                : "You have been defeated by " + opponent.character.name),
+
+                        m("div", { class: "cg2-game-over-stats" }, [
+                            m("div", { class: "cg2-game-over-stat" }, [
+                                m("div", { class: "cg2-game-over-stat-value" }, rounds),
+                                m("div", { class: "cg2-game-over-stat-label" }, "Rounds")
+                            ]),
+                            m("div", { class: "cg2-game-over-stat" }, [
+                                m("div", { class: "cg2-game-over-stat-value" }, player.hp + "/" + player.maxHp),
+                                m("div", { class: "cg2-game-over-stat-label" }, "Your HP")
+                            ]),
+                            m("div", { class: "cg2-game-over-stat" }, [
+                                m("div", { class: "cg2-game-over-stat-value" }, opponent.hp + "/" + opponent.maxHp),
+                                m("div", { class: "cg2-game-over-stat-label" }, "Opponent HP")
+                            ])
+                        ]),
+
+                        m("div", { class: "cg2-game-over-actions" }, [
+                            m("button", {
+                                class: "cg2-btn cg2-btn-primary",
+                                onclick() {
+                                    // Restart with same characters
+                                    let deck = viewingDeck;
+                                    let playerChar = player.character;
+                                    gameState = createGameState(deck, playerChar);
+                                    if (gameState) {
+                                        runInitiativePhase();
+                                    }
+                                    m.redraw();
+                                }
+                            }, "Play Again"),
+                            m("button", {
+                                class: "cg2-btn",
+                                onclick() {
+                                    gameState = null;
+                                    screen = "deckView";
+                                    m.redraw();
+                                }
+                            }, "Back to Deck")
+                        ])
+                    ])
                 ]);
             }
         };
@@ -4473,9 +5070,17 @@
                             class: "cg2-btn cg2-btn-danger",
                             style: { marginLeft: "4px" },
                             disabled: busy,
-                            title: "Clear all existing art and regenerate every card",
+                            title: "Clear all existing art and regenerate every card (including front/back)",
                             onclick() {
+                                // Clear all card art
                                 cards.forEach(c => { delete c.imageUrl; delete c.artObjectId; delete c.portraitUrl; });
+                                // Clear front/back template art
+                                cardFrontImageUrl = null;
+                                cardBackImageUrl = null;
+                                if (viewingDeck) {
+                                    delete viewingDeck.cardFrontImageUrl;
+                                    delete viewingDeck.cardBackImageUrl;
+                                }
                                 queueDeckArt(viewingDeck);
                             }
                         }, [
@@ -4753,7 +5358,17 @@
         rollInitiative,
         advancePhase,
         placeCard,
-        advanceResolution
+        advanceResolution,
+        // Phase 5 - Combat
+        rollAttack,
+        rollDefense,
+        getCombatOutcome,
+        calculateDamage,
+        applyDamage,
+        resolveCombat,
+        checkGameOver,
+        COMBAT_OUTCOMES,
+        currentCombatResult: () => currentCombatResult
     };
 
 }());

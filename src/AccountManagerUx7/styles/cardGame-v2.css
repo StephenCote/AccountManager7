@@ -1313,26 +1313,25 @@
     justify-content: center;
     gap: 24px;
     margin: 20px 0;
-    perspective: 1000px;
 }
 .cg2-init-card-wrap {
     width: 140px;
     height: 196px;
     cursor: pointer;
-    transform-style: preserve-3d;
-    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.cg2-init-card-wrap.cg2-init-flipped {
-    transform: rotateY(180deg);
-}
-.cg2-init-card-wrap.cg2-init-winner-card {
-    filter: drop-shadow(0 0 12px rgba(184,134,11,0.6));
+    perspective: 1000px;  /* Each card gets its own perspective context */
 }
 .cg2-init-card-inner {
     position: relative;
     width: 100%;
     height: 100%;
     transform-style: preserve-3d;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.cg2-init-card-wrap.cg2-init-flipped .cg2-init-card-inner {
+    transform: rotateY(180deg);
+}
+.cg2-init-card-wrap.cg2-init-winner-card {
+    filter: drop-shadow(0 0 12px rgba(184,134,11,0.6));
 }
 .cg2-init-card-front,
 .cg2-init-card-back {
@@ -1970,4 +1969,255 @@
 @keyframes cg2-spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Phase 5 — Combat Resolution Styles
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Combat Display Container ─────────────────────────── */
+.cg2-combat-display {
+    padding: 20px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 12px;
+    margin: 16px 0;
+    border: 2px solid #B8860B;
+}
+
+/* ── Combat Header (Attacker vs Defender) ─────────────── */
+.cg2-combat-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    font-size: 16px;
+}
+.cg2-combatant {
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 6px;
+}
+.cg2-attacker {
+    background: linear-gradient(135deg, #c62828 0%, #e53935 100%);
+    color: #fff;
+}
+.cg2-defender {
+    background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%);
+    color: #fff;
+}
+.cg2-combat-vs {
+    color: #B8860B;
+    font-weight: 600;
+    font-style: italic;
+}
+
+/* ── Combat Dice Row ──────────────────────────────────── */
+.cg2-combat-dice-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 24px;
+    margin: 20px 0;
+}
+.cg2-combat-roll-card {
+    padding: 16px 24px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    text-align: center;
+    min-width: 180px;
+}
+.cg2-roll-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+}
+.cg2-combat-vs-divider {
+    font-size: 20px;
+    font-weight: 800;
+    color: #B8860B;
+    align-self: center;
+    margin-top: 20px;
+}
+
+/* ── Attack/Defense Dice Colors ───────────────────────── */
+.cg2-d20-attack {
+    background: linear-gradient(135deg, #c62828 0%, #b71c1c 100%);
+}
+.cg2-d20-defense {
+    background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+}
+
+/* ── Combat Roll Breakdown ────────────────────────────── */
+.cg2-combat-roll-card .cg2-roll-breakdown {
+    font-size: 12px;
+    color: #ccc;
+    margin-top: 12px;
+    line-height: 1.6;
+}
+.cg2-combat-roll-card .cg2-roll-breakdown strong {
+    color: #B8860B;
+    font-size: 16px;
+}
+.cg2-combat-roll-card .cg2-mod {
+    color: #81c784;
+    font-weight: 600;
+}
+.cg2-combat-roll-card .cg2-mod-atk {
+    color: #ef9a9a;
+}
+
+/* ── Combat Outcome ───────────────────────────────────── */
+.cg2-combat-outcome {
+    text-align: center;
+    padding: 16px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    margin-top: 16px;
+}
+.cg2-outcome-label {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+.cg2-outcome-hit {
+    color: #ff5252;
+    text-shadow: 0 0 10px rgba(255,82,82,0.5);
+}
+.cg2-outcome-miss {
+    color: #64b5f6;
+}
+.cg2-outcome-counter {
+    color: #ffa726;
+    text-shadow: 0 0 10px rgba(255,167,38,0.5);
+}
+.cg2-outcome-text {
+    display: inline;
+}
+.cg2-outcome-diff {
+    font-size: 14px;
+    opacity: 0.8;
+}
+.cg2-outcome-effect {
+    font-size: 13px;
+    color: #aaa;
+    font-style: italic;
+    margin-top: 4px;
+}
+
+/* ── Damage Display ───────────────────────────────────── */
+.cg2-damage-display {
+    margin-top: 12px;
+    font-size: 15px;
+}
+.cg2-damage-number {
+    font-weight: 800;
+    font-size: 18px;
+}
+.cg2-damage-dealt {
+    color: #ff5252;
+    text-shadow: 0 0 8px rgba(255,82,82,0.4);
+}
+.cg2-damage-self {
+    color: #ffa726;
+}
+.cg2-damage-target {
+    color: #bbb;
+}
+
+/* ── Resolving Action Indicator ───────────────────────── */
+.cg2-resolving-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    color: #888;
+    font-size: 14px;
+}
+
+/* ── Resolution Progress ──────────────────────────────── */
+.cg2-resolution-progress {
+    font-size: 12px;
+    color: #888;
+    text-align: center;
+    margin: 12px 0;
+}
+
+/* ── Auto-Advance Hint ───────────────────────────────── */
+.cg2-auto-advance-hint {
+    font-size: 12px;
+    color: #666;
+    font-style: italic;
+    text-align: center;
+    margin-top: 8px;
+    padding: 8px;
+    background: rgba(0,0,0,0.05);
+    border-radius: 4px;
+}
+.dark .cg2-auto-advance-hint {
+    background: rgba(255,255,255,0.05);
+    color: #999;
+}
+
+/* ── Owner Badge Colors ───────────────────────────────── */
+.cg2-owner-player {
+    color: #81c784 !important;
+}
+.cg2-owner-opponent {
+    color: #ef9a9a !important;
+}
+
+/* ── Game Over Screen ─────────────────────────────────── */
+.cg2-game-over {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    text-align: center;
+}
+.cg2-game-over-title {
+    font-size: 32px;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+.cg2-game-over-title.cg2-victory {
+    color: #B8860B;
+    text-shadow: 0 0 20px rgba(184,134,11,0.5);
+}
+.cg2-game-over-title.cg2-defeat {
+    color: #c62828;
+}
+.cg2-game-over-subtitle {
+    font-size: 16px;
+    color: #888;
+    margin-bottom: 24px;
+}
+.cg2-game-over-stats {
+    display: flex;
+    gap: 32px;
+    margin: 20px 0;
+}
+.cg2-game-over-stat {
+    text-align: center;
+}
+.cg2-game-over-stat-label {
+    font-size: 12px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.cg2-game-over-stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #B8860B;
+}
+.cg2-game-over-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
 }
