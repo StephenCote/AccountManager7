@@ -3903,6 +3903,17 @@
                 bonusAP: 0,        // AP for threat response (limited)
                 defenseStack: null,// Stack placed for defense
                 resolved: false
+            },
+
+            // Chat state (Phase 8)
+            chat: {
+                active: false,
+                messages: [],      // [{ role: "player"|"npc", text, timestamp }]
+                npcName: null,
+                inputText: "",
+                pending: false,    // Waiting for LLM response
+                talkCard: null,    // The Talk card that opened this chat
+                talkPosition: null // The action bar position for resolution
             }
         };
 
@@ -3946,145 +3957,107 @@
             console.warn("[CardGame v2] Failed to initialize Narrator:", err);
             gameNarrator = null;
         }
+
+        // Initialize Chat Manager for Talk cards (optional)
+        try {
+            gameChatManager = new CardGameChatManager();
+            const chatOk = await gameChatManager.initialize(opponentChar, themeId);
+            if (!chatOk) {
+                console.log("[CardGame v2] LLM Chat Manager unavailable, Talk cards use fallback");
+                gameChatManager = null;
+            }
+        } catch (err) {
+            console.warn("[CardGame v2] Failed to initialize Chat Manager:", err);
+            gameChatManager = null;
+        }
     }
 
-    // Request narration for game start
-    async function narrateGameStart() {
+    // ── Unified Narration System ────────────────────────────────────────
+    // Centralized narration with LLM and fallback support
+    async function triggerNarration(trigger, extraContext = {}) {
         if (!gameState) return;
 
         const playerName = gameState.player?.character?.name || "Player";
         const opponentName = gameState.opponent?.character?.name || "Opponent";
+        const baseContext = { playerName, opponentName };
 
-        // Try LLM narration
-        if (gameNarrator && gameNarrator.initialized) {
-            try {
-                const narration = await gameNarrator.narrate("game_start", {
-                    playerName,
-                    opponentName,
-                    round: 1
-                });
-                if (narration?.text) {
-                    showNarrationSubtitle(narration.text);
-                    return;
-                }
-            } catch (e) {
-                console.warn("[CardGame v2] Game start narration failed:", e);
+        // Build trigger-specific context
+        let context, fallbackText;
+        switch (trigger) {
+            case "game_start":
+                context = { ...baseContext, round: 1 };
+                fallbackText = `The arena awaits! ${playerName} faces ${opponentName} in a battle of wits and steel. Let the cards decide your fate!`;
+                break;
+
+            case "game_end": {
+                const isVictory = extraContext.winner === "player";
+                const winnerName = isVictory ? playerName : opponentName;
+                const loserName = isVictory ? opponentName : playerName;
+                context = { winner: winnerName, loser: loserName, isPlayerVictory: isVictory, rounds: gameState.round };
+                fallbackText = isVictory
+                    ? `Victory! ${playerName} stands triumphant over ${opponentName} after ${gameState.round} rounds of fierce combat!`
+                    : `Defeat... ${opponentName} has bested ${playerName}. The arena falls silent after ${gameState.round} rounds.`;
+                break;
             }
-        }
 
-        // Fallback text if LLM unavailable
-        showNarrationSubtitle(`The arena awaits! ${playerName} faces ${opponentName} in a battle of wits and steel. Let the cards decide your fate!`);
-    }
-
-    // Request narration for game end
-    async function narrateGameEnd(winner) {
-        if (!gameState) return;
-
-        const playerName = gameState.player?.character?.name || "Player";
-        const opponentName = gameState.opponent?.character?.name || "Opponent";
-        const isVictory = winner === "player";
-        const winnerName = isVictory ? playerName : opponentName;
-        const loserName = isVictory ? opponentName : playerName;
-
-        // Try LLM narration
-        if (gameNarrator && gameNarrator.initialized) {
-            try {
-                const narration = await gameNarrator.narrate("game_end", {
-                    winner: winnerName,
-                    loser: loserName,
-                    isPlayerVictory: isVictory,
-                    rounds: gameState.round
-                });
-                if (narration?.text) {
-                    showNarrationSubtitle(narration.text);
-                    return;
-                }
-            } catch (e) {
-                console.warn("[CardGame v2] Game end narration failed:", e);
-            }
-        }
-
-        // Fallback text if LLM unavailable
-        if (isVictory) {
-            showNarrationSubtitle(`Victory! ${playerName} stands triumphant over ${opponentName} after ${gameState.round} rounds of fierce combat!`);
-        } else {
-            showNarrationSubtitle(`Defeat... ${opponentName} has bested ${playerName}. The arena falls silent after ${gameState.round} rounds.`);
-        }
-    }
-
-    // Request narration for round start
-    async function narrateRoundStart() {
-        if (!gameState) return;
-
-        let playerName = gameState.player.character?.name || "Player";
-        let opponentName = gameState.opponent.character?.name || "Opponent";
-
-        // Try LLM narration
-        if (gameNarrator && gameNarrator.initialized) {
-            try {
-                const narration = await gameNarrator.narrate("round_start", {
+            case "round_start":
+                context = {
+                    ...baseContext,
                     roundNumber: gameState.round,
-                    playerName,
-                    opponentName,
                     playerHp: gameState.player.hp,
                     opponentHp: gameState.opponent.hp,
                     playerEnergy: gameState.player.energy,
                     opponentEnergy: gameState.opponent.energy
-                });
-                if (narration?.text) {
-                    showNarrationSubtitle(narration.text);
-                    return;
-                }
-            } catch (e) {
-                console.warn("[CardGame v2] Round start narration failed:", e);
-            }
-        }
+                };
+                if (gameState.round <= 1) return; // Round 1 uses game_start
+                const tension = (gameState.player.hp < 10 || gameState.opponent.hp < 10)
+                    ? " The tension mounts as both combatants show signs of wear." : "";
+                fallbackText = `Round ${gameState.round} begins!${tension}`;
+                break;
 
-        // Fallback text (only for round 2+ since round 1 has game_start)
-        if (gameState.round > 1) {
-            let tensionText = "";
-            if (gameState.player.hp < 10 || gameState.opponent.hp < 10) {
-                tensionText = " The tension mounts as both combatants show signs of wear.";
-            }
-            showNarrationSubtitle(`Round ${gameState.round} begins!${tensionText}`);
-        }
-    }
-
-    // Request narration for round end
-    async function narrateRoundEnd(roundWinner) {
-        if (!gameState) return;
-
-        let playerName = gameState.player.character?.name || "Player";
-        let opponentName = gameState.opponent.character?.name || "Opponent";
-        let winnerName = roundWinner === "player" ? playerName : roundWinner === "opponent" ? opponentName : "Neither";
-
-        // Try LLM narration
-        if (gameNarrator && gameNarrator.initialized) {
-            try {
-                const narration = await gameNarrator.narrate("round_end", {
+            case "round_end": {
+                const roundWinner = extraContext.roundWinner || "tie";
+                const winName = roundWinner === "player" ? playerName : roundWinner === "opponent" ? opponentName : "Neither";
+                context = {
+                    ...baseContext,
                     roundNumber: gameState.round,
-                    roundWinner: winnerName,
-                    playerName,
-                    opponentName,
+                    roundWinner: winName,
                     playerHp: gameState.player.hp,
                     opponentHp: gameState.opponent.hp
-                });
+                };
+                fallbackText = roundWinner === "tie"
+                    ? `Round ${gameState.round} ends in a stalemate!`
+                    : `${winName} takes Round ${gameState.round}!`;
+                break;
+            }
+
+            default:
+                context = { ...baseContext, ...extraContext };
+                fallbackText = null;
+        }
+
+        // Try LLM narration
+        if (gameNarrator?.initialized) {
+            try {
+                const narration = await gameNarrator.narrate(trigger, context);
                 if (narration?.text) {
                     showNarrationSubtitle(narration.text);
                     return;
                 }
             } catch (e) {
-                console.warn("[CardGame v2] Round end narration failed:", e);
+                console.warn(`[CardGame v2] ${trigger} narration failed:`, e);
             }
         }
 
         // Fallback text
-        if (roundWinner === "tie") {
-            showNarrationSubtitle(`Round ${gameState.round} ends in a stalemate!`);
-        } else {
-            showNarrationSubtitle(`${winnerName} takes Round ${gameState.round}!`);
-        }
+        if (fallbackText) showNarrationSubtitle(fallbackText);
     }
+
+    // Convenience wrappers for backward compatibility
+    function narrateGameStart() { return triggerNarration("game_start"); }
+    function narrateGameEnd(winner) { return triggerNarration("game_end", { winner }); }
+    function narrateRoundStart() { return triggerNarration("round_start"); }
+    function narrateRoundEnd(roundWinner) { return triggerNarration("round_end", { roundWinner }); }
 
     // Show narrator text as a subtitle overlay
     function showNarrationSubtitle(text) {
@@ -5605,70 +5578,182 @@
         m.redraw();
     }
 
-    // ── CardGameDirector (Phase 7 LLM) ─────────────────────────────────
-    // LLM-powered AI opponent decision making
-    let gameDirector = null;
-
-    class CardGameDirector {
+    // ── CardGameLLM Base Class ────────────────────────────────────────
+    // Shared LLM infrastructure for Director, Narrator, and Chat
+    class CardGameLLM {
         constructor() {
             this.chatRequest = null;
             this.chatConfig = null;
             this.promptConfig = null;
             this.initialized = false;
+            this.lastError = null;
+        }
+
+        // Find the ~/Chat directory
+        static async findChatDir() {
+            const chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
+            if (!chatDir) {
+                console.warn("[CardGameLLM] ~/Chat not found");
+            }
+            return chatDir;
+        }
+
+        // Get the "Open Chat" template config
+        static async getOpenChatTemplate(chatDir) {
+            const chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0);
+            const templateCfg = chatConfigs.find(c => c.name === "Open Chat");
+            if (!templateCfg) {
+                console.warn("[CardGameLLM] 'Open Chat' config not found");
+                return null;
+            }
+            return am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
+        }
+
+        // Ensure a prompt config exists (create or update)
+        static async ensurePromptConfig(chatDir, name, systemPrompt) {
+            try {
+                let q = am7client.newQuery("olio.llm.promptConfig");
+                q.field("groupId", chatDir.objectId);
+                q.field("name", name);
+                let existing = await am7client.search(q);
+
+                let cfg;
+                if (existing?.results?.length > 0) {
+                    cfg = existing.results[0];
+                    cfg.systemPrompt = systemPrompt;
+                    await am7client.patch("olio.llm.promptConfig", cfg);
+                } else {
+                    cfg = am7model.newPrimitive("olio.llm.promptConfig");
+                    cfg.name = name;
+                    cfg.groupPath = "~/Chat";
+                    cfg.systemPrompt = systemPrompt;
+                    cfg = await am7client.create("olio.llm.promptConfig", cfg);
+                }
+                return cfg;
+            } catch (err) {
+                console.error("[CardGameLLM] ensurePromptConfig failed:", err);
+                return null;
+            }
+        }
+
+        // Ensure a chat config exists (create from template or return existing)
+        static async ensureChatConfig(chatDir, template, name, temperature) {
+            try {
+                let q = am7client.newQuery("olio.llm.chatConfig");
+                q.field("groupId", chatDir.objectId);
+                q.field("name", name);
+                let existing = await am7client.search(q);
+
+                if (existing?.results?.length > 0) {
+                    return am7client.getFull("olio.llm.chatConfig", existing.results[0].objectId);
+                }
+
+                // Clone from template
+                let cfg = JSON.parse(JSON.stringify(template));
+                cfg.objectId = null;
+                cfg.id = 0;
+                cfg.name = name;
+                cfg.groupPath = "~/Chat";
+                if (cfg.chat) cfg.chat.temperature = temperature;
+                return am7client.create("olio.llm.chatConfig", cfg);
+            } catch (err) {
+                console.error("[CardGameLLM] ensureChatConfig failed:", err);
+                return null;
+            }
+        }
+
+        // Extract text content from LLM response
+        static extractContent(response) {
+            if (!response) return "";
+            if (response.messages?.length > 0) {
+                const lastMsg = response.messages[response.messages.length - 1];
+                return lastMsg.content || lastMsg.text || "";
+            }
+            return response.content || response.text || String(response);
+        }
+
+        // Clean JSON from LLM response (strip markdown, fix common issues)
+        static cleanJsonResponse(content) {
+            if (!content) return null;
+
+            let cleaned = content
+                .replace(/```json\s*/gi, "")
+                .replace(/```\s*/g, "")
+                .replace(/^[^{]*/, "")
+                .replace(/[^}]*$/, "")
+                .trim();
+
+            if (!cleaned) return null;
+
+            // Fix common JSON issues
+            cleaned = cleaned
+                .replace(/,(\s*[}\]])/g, "$1")
+                .replace(/'/g, '"');
+
+            return cleaned;
+        }
+
+        // Initialize LLM with standard pattern
+        async initializeLLM(chatName, promptName, systemPrompt, temperature) {
+            try {
+                const chatDir = await CardGameLLM.findChatDir();
+                if (!chatDir) return false;
+
+                const template = await CardGameLLM.getOpenChatTemplate(chatDir);
+                if (!template) return false;
+
+                this.promptConfig = await CardGameLLM.ensurePromptConfig(chatDir, promptName, systemPrompt);
+                if (!this.promptConfig) return false;
+
+                this.chatConfig = await CardGameLLM.ensureChatConfig(chatDir, template, chatName, temperature);
+                if (!this.chatConfig) return false;
+
+                this.chatRequest = await am7chat.getChatRequest(chatName, this.chatConfig, this.promptConfig);
+                this.initialized = !!this.chatRequest;
+                return this.initialized;
+            } catch (err) {
+                this.lastError = err.message;
+                console.error("[CardGameLLM] initializeLLM failed:", err);
+                return false;
+            }
+        }
+
+        // Send a message and get response
+        async chat(prompt) {
+            if (!this.initialized || !this.chatRequest) return null;
+            try {
+                return await am7chat.chat(this.chatRequest, prompt);
+            } catch (err) {
+                this.lastError = err.message;
+                throw err;
+            }
+        }
+    }
+
+    // ── CardGameDirector (Phase 7 LLM) ─────────────────────────────────
+    // LLM-powered AI opponent decision making
+    let gameDirector = null;
+
+    class CardGameDirector extends CardGameLLM {
+        constructor() {
+            super();
             this.personality = null;
             this.lastDirective = null;
-            this.lastError = null;
             this.consecutiveErrors = 0;
         }
 
         async initialize(opponentChar, themeId) {
-            try {
-                console.log("[CardGameDirector] Initializing for theme:", themeId);
-
-                // Find ~/Chat directory
-                const chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
-                if (!chatDir) {
-                    console.warn("[CardGameDirector] ~/Chat not found, using fallback AI");
-                    return false;
-                }
-
-                // Find "Open Chat" template
-                const chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0);
-                const templateCfg = chatConfigs.find(c => c.name === "Open Chat");
-                if (!templateCfg) {
-                    console.warn("[CardGameDirector] 'Open Chat' config not found");
-                    return false;
-                }
-
-                const fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
-                if (!fullTemplate) return false;
-
-                // Extract personality from opponent character
-                this.personality = this._extractPersonality(opponentChar);
-
-                // Create system prompt for card game AI
-                const systemPrompt = this._buildSystemPrompt(opponentChar, themeId);
-
-                // Create prompt config
-                this.promptConfig = await this._ensurePromptConfig(chatDir, systemPrompt);
-                if (!this.promptConfig) return false;
-
-                // Create chat config with low temperature for consistent decisions
-                this.chatConfig = await this._ensureChatConfig(chatDir, fullTemplate, 0.4);
-                if (!this.chatConfig) return false;
-
-                // Create chat request
-                this.chatRequest = await am7chat.getChatRequest('CardGame AI Opponent', this.chatConfig, this.promptConfig);
-                if (!this.chatRequest) return false;
-
-                this.initialized = true;
-                console.log("[CardGameDirector] Initialized successfully");
-                return true;
-            } catch (err) {
-                console.error("[CardGameDirector] Initialization failed:", err);
-                this.lastError = err.message;
-                return false;
-            }
+            console.log("[CardGameDirector] Initializing for theme:", themeId);
+            this.personality = this._extractPersonality(opponentChar);
+            const systemPrompt = this._buildSystemPrompt(opponentChar, themeId);
+            const ok = await this.initializeLLM(
+                "CardGame AI Opponent",
+                "CardGame AI Prompt",
+                systemPrompt,
+                0.4  // Low temperature for consistent decisions
+            );
+            if (ok) console.log("[CardGameDirector] Initialized successfully");
+            return ok;
         }
 
         _extractPersonality(charPerson) {
@@ -5702,65 +5787,6 @@ Rules:
 Reply with ONLY the JSON object, no markdown or text.`;
         }
 
-        async _ensurePromptConfig(chatDir, systemPrompt) {
-            try {
-                // Search for existing prompt config
-                let q = am7client.newQuery("olio.llm.promptConfig");
-                q.field("groupId", chatDir.objectId);
-                q.field("name", "CardGame AI Prompt");
-                let existing = await am7client.search(q);
-
-                let promptCfg;
-                if (existing && existing.results && existing.results.length > 0) {
-                    promptCfg = existing.results[0];
-                    // Update system prompt
-                    promptCfg.systemPrompt = systemPrompt;
-                    await am7client.patch("olio.llm.promptConfig", promptCfg);
-                } else {
-                    // Create new
-                    promptCfg = am7model.newPrimitive("olio.llm.promptConfig");
-                    promptCfg.name = "CardGame AI Prompt";
-                    promptCfg.groupPath = "~/Chat";
-                    promptCfg.systemPrompt = systemPrompt;
-                    promptCfg = await am7client.create("olio.llm.promptConfig", promptCfg);
-                }
-                return promptCfg;
-            } catch (err) {
-                console.error("[CardGameDirector] Failed to ensure prompt config:", err);
-                return null;
-            }
-        }
-
-        async _ensureChatConfig(chatDir, template, temperature) {
-            try {
-                // Clone template with modified settings
-                let q = am7client.newQuery("olio.llm.chatConfig");
-                q.field("groupId", chatDir.objectId);
-                q.field("name", "CardGame AI Chat");
-                let existing = await am7client.search(q);
-
-                let chatCfg;
-                if (existing && existing.results && existing.results.length > 0) {
-                    chatCfg = await am7client.getFull("olio.llm.chatConfig", existing.results[0].objectId);
-                } else {
-                    // Clone from template
-                    chatCfg = JSON.parse(JSON.stringify(template));
-                    chatCfg.objectId = null;
-                    chatCfg.id = 0;
-                    chatCfg.name = "CardGame AI Chat";
-                    chatCfg.groupPath = "~/Chat";
-                    if (chatCfg.chat) {
-                        chatCfg.chat.temperature = temperature;
-                    }
-                    chatCfg = await am7client.create("olio.llm.chatConfig", chatCfg);
-                }
-                return chatCfg;
-            } catch (err) {
-                console.error("[CardGameDirector] Failed to ensure chat config:", err);
-                return null;
-            }
-        }
-
         async requestPlacement(gameState) {
             if (!this.initialized || !this.chatRequest) {
                 return this._fifoFallback(gameState);
@@ -5770,7 +5796,7 @@ Reply with ONLY the JSON object, no markdown or text.`;
 
             try {
                 const response = await am7chat.chat(this.chatRequest, prompt);
-                const content = this._extractContent(response);
+                const content = CardGameLLM.extractContent(response);
                 const directive = this._parseDirective(content);
 
                 if (directive && directive.stacks) {
@@ -5783,7 +5809,7 @@ Reply with ONLY the JSON object, no markdown or text.`;
                 // Retry once on parse failure
                 console.warn("[CardGameDirector] Parse failed, retrying...");
                 const retryResponse = await am7chat.chat(this.chatRequest, prompt + "\n\nIMPORTANT: Output ONLY valid JSON, no markdown.");
-                const retryContent = this._extractContent(retryResponse);
+                const retryContent = CardGameLLM.extractContent(retryResponse);
                 const retryDirective = this._parseDirective(retryContent);
 
                 if (retryDirective && retryDirective.stacks) {
@@ -5837,49 +5863,25 @@ Reply with ONLY the JSON object, no markdown or text.`;
             }, null, 0);
         }
 
-        _extractContent(response) {
-            if (!response) return "";
-            if (response.messages && response.messages.length > 0) {
-                const lastMsg = response.messages[response.messages.length - 1];
-                return lastMsg.content || lastMsg.text || "";
-            }
-            return response.content || response.text || String(response);
-        }
-
         _parseDirective(content) {
             if (!content) return null;
-
-            // Log raw content for debugging
             console.log("[CardGameDirector] Raw response:", content.substring(0, 200));
 
-            // Strip markdown code blocks and any leading/trailing text
-            let cleaned = content
-                .replace(/```json\s*/gi, "")
-                .replace(/```\s*/g, "")
-                .replace(/^[^{]*/, "")  // Remove anything before first {
-                .replace(/[^}]*$/, "")  // Remove anything after last }
-                .trim();
-
+            const cleaned = CardGameLLM.cleanJsonResponse(content);
             if (!cleaned) {
                 console.warn("[CardGameDirector] No JSON found in response");
                 return null;
             }
 
-            // Fix common JSON issues: trailing commas, single quotes
-            cleaned = cleaned
-                .replace(/,(\s*[}\]])/g, "$1")  // Remove trailing commas
-                .replace(/'/g, '"');  // Convert single quotes to double
-
             try {
                 const parsed = JSON.parse(cleaned);
-                // Validate structure
-                if (parsed && parsed.stacks && Array.isArray(parsed.stacks)) {
+                if (parsed?.stacks && Array.isArray(parsed.stacks)) {
                     return parsed;
                 }
                 console.warn("[CardGameDirector] Invalid structure - missing stacks array");
                 return null;
             } catch (e) {
-                console.warn("[CardGameDirector] JSON parse failed:", e.message, "Content:", cleaned.substring(0, 100));
+                console.warn("[CardGameDirector] JSON parse failed:", e.message);
                 return null;
             }
         }
@@ -5921,7 +5923,7 @@ Reply with ONLY the JSON object, no markdown or text.`;
     // LLM-powered narration at key game moments
     let gameNarrator = null;
 
-    class CardGameNarrator {
+    class CardGameNarrator extends CardGameLLM {
         static TRIGGER_POINTS = {
             GAME_START: "game_start",
             ROUND_START: "round_start",
@@ -5956,9 +5958,8 @@ Reply with ONLY the JSON object, no markdown or text.`;
         };
 
         constructor() {
-            this.chatRequest = null;
+            super();
             this.profile = "arena-announcer";
-            this.initialized = false;
             this.lastNarration = null;
             this.enabled = true;
         }
@@ -5966,34 +5967,15 @@ Reply with ONLY the JSON object, no markdown or text.`;
         async initialize(profileId, themeId) {
             this.profile = profileId || "arena-announcer";
             const profileConfig = CardGameNarrator.PROFILES[this.profile];
-
-            try {
-                const chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
-                if (!chatDir) return false;
-
-                const chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0);
-                const templateCfg = chatConfigs.find(c => c.name === "Open Chat");
-                if (!templateCfg) return false;
-
-                const fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
-                if (!fullTemplate) return false;
-
-                const systemPrompt = this._buildNarratorPrompt(profileConfig, themeId);
-                const promptConfig = await this._ensurePromptConfig(chatDir, systemPrompt);
-                if (!promptConfig) return false;
-
-                const chatConfig = await this._ensureChatConfig(chatDir, fullTemplate, 0.7);
-                if (!chatConfig) return false;
-
-                this.chatRequest = await am7chat.getChatRequest("CardGame Narrator", chatConfig, promptConfig);
-                this.initialized = !!this.chatRequest;
-
-                console.log("[CardGameNarrator] Initialized with profile:", this.profile);
-                return this.initialized;
-            } catch (err) {
-                console.error("[CardGameNarrator] Initialization failed:", err);
-                return false;
-            }
+            const systemPrompt = this._buildNarratorPrompt(profileConfig, themeId);
+            const ok = await this.initializeLLM(
+                "CardGame Narrator",
+                "CardGame Narrator Prompt",
+                systemPrompt,
+                0.7  // Higher temperature for creative narration
+            );
+            if (ok) console.log("[CardGameNarrator] Initialized with profile:", this.profile);
+            return ok;
         }
 
         _buildNarratorPrompt(profileConfig, themeId) {
@@ -6011,68 +5993,17 @@ Add a line starting with "IMAGE:" describing a single dramatic moment.
 Respond with plain text narration only. No JSON, no markdown.`;
         }
 
-        async _ensurePromptConfig(chatDir, systemPrompt) {
-            try {
-                let q = am7client.newQuery("olio.llm.promptConfig");
-                q.field("groupId", chatDir.objectId);
-                q.field("name", "CardGame Narrator Prompt");
-                let existing = await am7client.search(q);
-
-                let cfg;
-                if (existing?.results?.length > 0) {
-                    cfg = existing.results[0];
-                    cfg.systemPrompt = systemPrompt;
-                    await am7client.patch("olio.llm.promptConfig", cfg);
-                } else {
-                    cfg = am7model.newPrimitive("olio.llm.promptConfig");
-                    cfg.name = "CardGame Narrator Prompt";
-                    cfg.groupPath = "~/Chat";
-                    cfg.systemPrompt = systemPrompt;
-                    cfg = await am7client.create("olio.llm.promptConfig", cfg);
-                }
-                return cfg;
-            } catch (err) {
-                return null;
-            }
-        }
-
-        async _ensureChatConfig(chatDir, template, temperature) {
-            try {
-                let q = am7client.newQuery("olio.llm.chatConfig");
-                q.field("groupId", chatDir.objectId);
-                q.field("name", "CardGame Narrator Chat");
-                let existing = await am7client.search(q);
-
-                if (existing?.results?.length > 0) {
-                    return await am7client.getFull("olio.llm.chatConfig", existing.results[0].objectId);
-                }
-
-                let cfg = JSON.parse(JSON.stringify(template));
-                cfg.objectId = null;
-                cfg.id = 0;
-                cfg.name = "CardGame Narrator Chat";
-                cfg.groupPath = "~/Chat";
-                if (cfg.chat) cfg.chat.temperature = temperature;
-                return await am7client.create("olio.llm.chatConfig", cfg);
-            } catch (err) {
-                return null;
-            }
-        }
-
         async narrate(trigger, context) {
             if (!this.enabled || !this.initialized || !this.chatRequest) {
                 return { text: null, imagePrompt: null };
             }
 
-            const prompt = this._buildTriggerPrompt(trigger, context);
-
             try {
-                const response = await am7chat.chat(this.chatRequest, prompt);
-                const content = response?.messages?.slice(-1)[0]?.content || "";
-
+                const prompt = this._buildTriggerPrompt(trigger, context);
+                const response = await this.chat(prompt);
+                const content = CardGameLLM.extractContent(response);
                 const parsed = this._parseNarration(content);
                 this.lastNarration = parsed;
-
                 return parsed;
             } catch (err) {
                 console.error("[CardGameNarrator] Narration failed:", err);
@@ -6180,6 +6111,146 @@ Respond with plain text narration only. No JSON, no markdown.`;
             opp.hand = opp.hand.filter(c => c !== coreCard && !modifiers.includes(c));
 
             console.log("[CardGame v2] AI placed:", coreCard.name, "at position", stack.position);
+        }
+    }
+
+    // ── CardGameChatManager (Phase 8 LLM) ─────────────────────────────
+    // LLM-powered NPC conversation for Talk cards
+    let gameChatManager = null;
+
+    class CardGameChatManager extends CardGameLLM {
+        constructor() {
+            super();
+            this.npcName = null;
+            this.npcPersonality = null;
+            this.interactionHistory = [];
+            this.currentConversation = [];
+            this.chatActive = false;
+        }
+
+        async initialize(npcCharacter, themeId) {
+            this.npcName = npcCharacter?.name || "NPC";
+            this.npcPersonality = this._extractNpcPersonality(npcCharacter);
+            const systemPrompt = this._buildChatPrompt(npcCharacter, themeId);
+
+            const ok = await this.initializeLLM(
+                "CardGame NPC Chat",
+                "CardGame NPC Chat Prompt",
+                systemPrompt,
+                0.8  // Higher temperature for varied dialogue
+            );
+            if (ok) console.log("[CardGameChatManager] Initialized for NPC:", this.npcName);
+            return ok;
+        }
+
+        _extractNpcPersonality(charPerson) {
+            if (!charPerson) return { tone: "neutral", traits: [] };
+            const traits = charPerson.personality?.split(",").map(t => t.trim()) || [];
+            const alignment = charPerson.alignment || "NEUTRAL";
+            let tone = "neutral";
+            if (alignment.includes("EVIL")) tone = "hostile";
+            else if (alignment.includes("GOOD")) tone = "friendly";
+            else if (alignment.includes("CHAOTIC")) tone = "unpredictable";
+            return { tone, traits, alignment };
+        }
+
+        _buildChatPrompt(npcCharacter, themeId) {
+            const name = npcCharacter?.name || "Unknown";
+            const desc = npcCharacter?.description || "";
+            const personality = this.npcPersonality;
+
+            return `You are ${name}, an NPC in a card game battle. Theme: ${themeId}.
+${desc ? `Description: ${desc}` : ""}
+Personality traits: ${personality.traits.join(", ") || "mysterious"}
+Disposition: ${personality.tone}
+
+You are being addressed by your opponent during combat via a Talk card.
+Respond in character with 1-3 sentences. Stay true to your personality.
+${personality.tone === "hostile" ? "You are hostile but can be persuaded." : ""}
+${personality.tone === "friendly" ? "You are open to conversation." : ""}
+
+If the player is trying to:
+- Taunt: React according to your personality (angry, amused, dismissive)
+- Persuade: Consider their words but stay in character
+- Intimidate: Show fear or defiance based on your traits
+- Negotiate: Be open or closed depending on alignment
+
+Respond naturally in character. No game mechanics, just dialogue.`;
+        }
+
+        async startConversation() {
+            this.chatActive = true;
+            this.currentConversation = [];
+            console.log("[CardGameChatManager] Conversation started with:", this.npcName);
+            return true;
+        }
+
+        async sendMessage(playerMessage) {
+            if (!this.initialized || !this.chatActive) {
+                return { text: "...", error: true };
+            }
+
+            try {
+                // Build context with recent conversation
+                const contextMessages = this.currentConversation.slice(-4)
+                    .map(m => `${m.role === "player" ? "Player" : this.npcName}: ${m.text}`)
+                    .join("\n");
+
+                const prompt = contextMessages
+                    ? `Previous exchange:\n${contextMessages}\n\nPlayer: ${playerMessage}\n\n${this.npcName}:`
+                    : `Player: ${playerMessage}\n\n${this.npcName}:`;
+
+                const response = await this.chat(prompt);
+                const npcReply = CardGameLLM.extractContent(response).trim();
+
+                // Store in conversation history
+                this.currentConversation.push({ role: "player", text: playerMessage });
+                this.currentConversation.push({ role: "npc", text: npcReply });
+
+                return { text: npcReply, speaker: this.npcName };
+            } catch (err) {
+                console.error("[CardGameChatManager] Message failed:", err);
+                return { text: "...", error: true };
+            }
+        }
+
+        async concludeConversation() {
+            this.chatActive = false;
+
+            // Create interaction record for future context
+            const interaction = {
+                timestamp: Date.now(),
+                npcName: this.npcName,
+                messages: [...this.currentConversation],
+                outcome: this._evaluateOutcome()
+            };
+
+            this.interactionHistory.push(interaction);
+            console.log("[CardGameChatManager] Conversation concluded. Outcome:", interaction.outcome);
+
+            return interaction;
+        }
+
+        _evaluateOutcome() {
+            // Simple heuristic based on conversation length and content
+            const msgCount = this.currentConversation.length;
+            if (msgCount === 0) return "silent";
+            if (msgCount <= 2) return "brief";
+            if (msgCount <= 4) return "moderate";
+            return "extensive";
+        }
+
+        loadInteractionHistory(history) {
+            this.interactionHistory = history || [];
+        }
+
+        getInteractionSummary() {
+            return this.interactionHistory.map(i => ({
+                npc: i.npcName,
+                when: new Date(i.timestamp).toLocaleDateString(),
+                outcome: i.outcome,
+                preview: i.messages[0]?.text?.substring(0, 50) + "..."
+            }));
         }
     }
 
@@ -6725,37 +6796,39 @@ Respond with plain text narration only. No JSON, no markdown.`;
                         }
                     }
 
-                    // Talk action: CHA-based morale effect
+                    // Talk action: Open chat UI for player, dice roll for AI
                     if (card.type === "talk") {
-                        let ownerCha = owner.character.stats?.CHA || 10;
-                        let targetCha = target.character.stats?.CHA || 10;
-                        let skillMod = getStackSkillMod(pos.stack, "talk");
-
-                        // Roll: 1d20 + CHA + skill vs 1d20 + CHA
-                        let ownerRoll = rollD20() + ownerCha + skillMod;
-                        let targetRoll = rollD20() + targetCha;
-
-                        if (ownerRoll > targetRoll) {
-                            // Success: reduce target morale, boost own morale
-                            let moraleDmg = Math.max(1, Math.floor((ownerRoll - targetRoll) / 2));
-                            target.morale = Math.max(0, target.morale - moraleDmg);
-                            owner.morale = Math.min(owner.maxMorale, owner.morale + 1);
-                            console.log("[CardGame v2]", pos.owner, "Talk success! Target morale -" + moraleDmg + ", own +1");
-                            console.log("[CardGame v2] Talk roll:", ownerRoll, "vs", targetRoll);
+                        if (pos.owner === "player" && gameChatManager) {
+                            // Player Talk: Open chat UI (Phase 8)
+                            openTalkChat(card, bar.resolveIndex);
+                            // Resolution continues when chat ends
+                            return;  // Don't auto-advance - chat will handle it
                         } else {
-                            // Failed: own morale drops slightly
-                            owner.morale = Math.max(0, owner.morale - 1);
-                            console.log("[CardGame v2]", pos.owner, "Talk failed. Own morale -1");
-                            console.log("[CardGame v2] Talk roll:", ownerRoll, "vs", targetRoll);
-                        }
+                            // Opponent Talk or no chat manager: Use dice roll
+                            let ownerCha = owner.character.stats?.CHA || 10;
+                            let targetCha = target.character.stats?.CHA || 10;
+                            let skillMod = getStackSkillMod(pos.stack, "talk");
 
-                        // Check for morale defeat
-                        if (target.morale <= 0) {
-                            console.log("[CardGame v2] Target surrendered due to morale!");
-                            gameState.winner = pos.owner;
-                            gameState.phase = "GAME_OVER";
-                            m.redraw();
-                            return;
+                            let ownerRoll = rollD20() + ownerCha + skillMod;
+                            let targetRoll = rollD20() + targetCha;
+
+                            if (ownerRoll > targetRoll) {
+                                let moraleDmg = Math.max(1, Math.floor((ownerRoll - targetRoll) / 2));
+                                target.morale = Math.max(0, target.morale - moraleDmg);
+                                owner.morale = Math.min(owner.maxMorale, owner.morale + 1);
+                                console.log("[CardGame v2]", pos.owner, "Talk success! Target morale -" + moraleDmg + ", own +1");
+                            } else {
+                                owner.morale = Math.max(0, owner.morale - 1);
+                                console.log("[CardGame v2]", pos.owner, "Talk failed. Own morale -1");
+                            }
+
+                            if (target.morale <= 0) {
+                                console.log("[CardGame v2] Target surrendered due to morale!");
+                                gameState.winner = pos.owner;
+                                gameState.phase = "GAME_OVER";
+                                m.redraw();
+                                return;
+                            }
                         }
                     }
 
@@ -7107,7 +7180,10 @@ Respond with plain text narration only. No JSON, no markdown.`;
                                             gameState.narrationText
                                         ])
                                     ])
-                                    : null
+                                    : null,
+
+                                // Talk card chat overlay (Phase 8)
+                                gameState.chat?.active ? m(TalkChatUI) : null
                             ]),
 
                             // Consistent Action Panel (always visible) - status and button inline
@@ -8123,6 +8199,201 @@ Respond with plain text narration only. No JSON, no markdown.`;
                 ]);
             }
         };
+    }
+
+    // ── Talk Card Chat UI (Phase 8) ───────────────────────────────────
+    function TalkChatUI() {
+        let inputRef = null;
+
+        async function sendMessage() {
+            if (!gameState?.chat?.active || gameState.chat.pending) return;
+            const text = gameState.chat.inputText?.trim();
+            if (!text) return;
+
+            // Add player message
+            gameState.chat.messages.push({
+                role: "player",
+                text: text,
+                timestamp: Date.now()
+            });
+            gameState.chat.inputText = "";
+            gameState.chat.pending = true;
+            m.redraw();
+
+            // Get NPC response
+            if (gameChatManager?.initialized) {
+                try {
+                    const response = await gameChatManager.sendMessage(text);
+                    if (response && !response.error) {
+                        gameState.chat.messages.push({
+                            role: "npc",
+                            text: response.text,
+                            speaker: response.speaker,
+                            timestamp: Date.now()
+                        });
+                    }
+                } catch (err) {
+                    console.warn("[TalkChatUI] Chat failed:", err);
+                    gameState.chat.messages.push({
+                        role: "npc",
+                        text: "...",
+                        timestamp: Date.now()
+                    });
+                }
+            } else {
+                // Fallback: simple response
+                gameState.chat.messages.push({
+                    role: "npc",
+                    text: "*nods silently*",
+                    timestamp: Date.now()
+                });
+            }
+
+            gameState.chat.pending = false;
+            m.redraw();
+
+            // Auto-scroll to bottom
+            setTimeout(() => {
+                const msgArea = document.querySelector(".cg2-chat-messages");
+                if (msgArea) msgArea.scrollTop = msgArea.scrollHeight;
+            }, 50);
+        }
+
+        function endChat() {
+            if (!gameState?.chat?.active) return;
+
+            // Conclude conversation
+            if (gameChatManager?.initialized) {
+                gameChatManager.concludeConversation();
+            }
+
+            // Calculate morale effect based on conversation
+            const msgCount = gameState.chat.messages.length;
+            const playerMsgs = gameState.chat.messages.filter(m => m.role === "player").length;
+
+            // Apply morale effects based on conversation quality
+            if (msgCount >= 4 && playerMsgs >= 2) {
+                // Good conversation: player gains morale, opponent loses some
+                gameState.player.morale = Math.min(gameState.player.maxMorale, gameState.player.morale + 2);
+                gameState.opponent.morale = Math.max(0, gameState.opponent.morale - 1);
+                page.toast("info", "Productive conversation! +2 morale");
+            } else if (msgCount >= 2) {
+                // Brief exchange
+                gameState.player.morale = Math.min(gameState.player.maxMorale, gameState.player.morale + 1);
+                page.toast("info", "Brief exchange. +1 morale");
+            }
+
+            // Mark Talk card position as resolved
+            if (gameState.chat.talkPosition !== null) {
+                const pos = gameState.actionBar.positions[gameState.chat.talkPosition];
+                if (pos) pos.resolved = true;
+            }
+
+            // Close chat
+            gameState.chat.active = false;
+            gameState.chat.messages = [];
+            gameState.chat.talkCard = null;
+            gameState.chat.talkPosition = null;
+
+            m.redraw();
+        }
+
+        return {
+            view() {
+                if (!gameState?.chat?.active) return null;
+
+                const npcName = gameState.chat.npcName || "Opponent";
+                const npcPortrait = gameState.opponent?.character?.portraitUrl;
+
+                return m("div", { class: "cg2-chat-overlay" }, [
+                    m("div", { class: "cg2-chat-panel" }, [
+                        // Header
+                        m("div", { class: "cg2-chat-header" }, [
+                            npcPortrait
+                                ? m("img", { class: "cg2-chat-portrait", src: npcPortrait, alt: npcName })
+                                : m("span", { class: "material-symbols-outlined cg2-chat-portrait-icon" }, "person"),
+                            m("span", { class: "cg2-chat-npc-name" }, npcName),
+                            m("button", {
+                                class: "cg2-btn cg2-btn-sm",
+                                onclick: endChat,
+                                title: "End conversation"
+                            }, [
+                                m("span", { class: "material-symbols-outlined" }, "close")
+                            ])
+                        ]),
+
+                        // Messages
+                        m("div", { class: "cg2-chat-messages" },
+                            gameState.chat.messages.length === 0
+                                ? m("div", { class: "cg2-chat-hint" }, `Start a conversation with ${npcName}...`)
+                                : gameState.chat.messages.map(msg =>
+                                    m("div", {
+                                        class: "cg2-chat-message cg2-chat-" + msg.role
+                                    }, [
+                                        m("span", { class: "cg2-chat-speaker" },
+                                            msg.role === "player" ? "You" : (msg.speaker || npcName)),
+                                        m("span", { class: "cg2-chat-text" }, msg.text)
+                                    ])
+                                )
+                        ),
+
+                        // Input
+                        m("div", { class: "cg2-chat-input-area" }, [
+                            m("input", {
+                                type: "text",
+                                class: "cg2-chat-input",
+                                placeholder: "Type your message...",
+                                value: gameState.chat.inputText || "",
+                                disabled: gameState.chat.pending,
+                                oninput: e => { gameState.chat.inputText = e.target.value; },
+                                onkeydown: e => { if (e.key === "Enter") sendMessage(); },
+                                oncreate: v => { inputRef = v.dom; v.dom.focus(); }
+                            }),
+                            m("button", {
+                                class: "cg2-btn cg2-btn-primary cg2-chat-send",
+                                onclick: sendMessage,
+                                disabled: gameState.chat.pending || !gameState.chat.inputText?.trim()
+                            }, gameState.chat.pending
+                                ? m("span", { class: "material-symbols-outlined cg2-spin" }, "sync")
+                                : m("span", { class: "material-symbols-outlined" }, "send")
+                            )
+                        ]),
+
+                        // End conversation button
+                        m("div", { class: "cg2-chat-actions" }, [
+                            m("button", {
+                                class: "cg2-btn cg2-btn-secondary",
+                                onclick: endChat
+                            }, "End Conversation")
+                        ])
+                    ])
+                ]);
+            }
+        };
+    }
+
+    // Open chat for Talk card
+    function openTalkChat(talkCard, positionIndex) {
+        if (!gameState) return;
+
+        const npcName = gameState.opponent?.character?.name || "Opponent";
+
+        // Initialize chat state
+        gameState.chat.active = true;
+        gameState.chat.messages = [];
+        gameState.chat.npcName = npcName;
+        gameState.chat.inputText = "";
+        gameState.chat.pending = false;
+        gameState.chat.talkCard = talkCard;
+        gameState.chat.talkPosition = positionIndex;
+
+        // Start conversation in chat manager
+        if (gameChatManager?.initialized) {
+            gameChatManager.startConversation();
+        }
+
+        console.log("[CardGame v2] Talk chat opened with:", npcName);
+        m.redraw();
     }
 
     // ── Game Over UI ──────────────────────────────────────────────────

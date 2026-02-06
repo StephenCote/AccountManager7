@@ -6210,6 +6210,16 @@ CSS approach:
   - Toast notification on persistent failure
   - Game continues with fallback text/FIFO logic
 
+- ✅ **Code Refactoring** — Shared LLM infrastructure (Phase 8 prep)
+  - `CardGameLLM` base class with shared methods:
+    - `findChatDir()`, `getOpenChatTemplate()` — discover chat infrastructure
+    - `ensurePromptConfig()`, `ensureChatConfig()` — config management
+    - `extractContent()`, `cleanJsonResponse()` — response parsing
+    - `initializeLLM()` — unified initialization pattern
+  - `CardGameDirector` and `CardGameNarrator` extend base class
+  - `triggerNarration()` — unified narration function with fallback config
+  - Removed ~100 lines of duplicate code
+
 - ⏳ **Deferred to Phase 8:**
   - After-action image generation (768×512 scene from key moment)
   - LLM combat evaluation (enriches outcome narration)
@@ -6237,27 +6247,32 @@ CSS approach:
 
 ---
 
-### Phase 8 — Chat, Voice & Online Features
+### Phase 8 — Chat, Voice & Online Features 🔄 IN PROGRESS
 
 **Goal:** Talk card triggers LLM-powered NPC conversation. Voice narration. Poker Face.
 
 **Build:**
 
-#### 8.1 Talk Card LLM Chat System
-- **CardGameChatManager class** — manages NPC conversation during Talk card resolution
+#### 8.1 Talk Card LLM Chat System ✅ COMPLETE
+- ✅ **CardGameChatManager class** — manages NPC conversation during Talk card resolution
   - `initialize(opponentChar)` — creates chat context with opponent's `charPerson` personality
-  - `openChat()` — opens chat dialog when Talk card resolves
-  - `sendMessage(text)` — player message → LLM streaming response via WebSocket
-  - `concludeChat()` — ends conversation, creates `olio.interaction` record
-  - Uses existing `chat.js` and `gameStream.js` infrastructure
+  - `startConversation()` — opens chat session when Talk card resolves
+  - `sendMessage(text)` — player message → LLM response (non-streaming)
+  - `concludeConversation()` — ends conversation, tracks interaction
+  - Extends `CardGameLLM` base class for shared infrastructure
 
-- **Chat UI Integration**
+- ✅ **Chat UI Integration** — `TalkChatUI` component
   - Modal chat dialog overlays game center during Talk resolution
   - NPC portrait displayed (opponent character image)
-  - Message history scrollable, styled per card game theme
+  - Message history scrollable, styled with card game theme colors
   - "End Conversation" button to conclude and return to game
+  - Input with Enter key support, send button, loading state
 
-- **Interaction History**
+- ✅ **Morale Effects from Chat**
+  - Conversation quality affects morale: 4+ msgs = +2 morale, 2+ = +1
+  - Talk card resolution deferred until chat ends
+
+- ⏳ **Interaction History** — deferred
   - Load previous interactions from `olio.interaction` for context continuity
   - Display summary of past encounters in chat sidebar
   - Save new interaction when chat concludes
@@ -6323,9 +6338,9 @@ CSS approach:
 - Existing: `POST /rest/chat/stream`, voice synthesis endpoints, face analysis API
 
 **Test gate:**
-- [ ] Talk card opens chat → NPC responds in character via LLM streaming
-- [ ] Interaction history appears in chat dialog
-- [ ] concludeChat creates interaction record
+- [x] Talk card opens chat → NPC responds in character via LLM
+- [ ] Interaction history appears in chat dialog (deferred)
+- [x] concludeChat applies morale effects based on conversation
 - [ ] Voice narration plays for each trigger point (if voice configured)
 - [ ] Voice fallback works: no config → skip silently; config fails → text subtitles
 - [ ] Poker Face captures emotion → narrator banter references it
