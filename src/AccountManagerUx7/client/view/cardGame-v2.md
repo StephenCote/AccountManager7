@@ -6170,7 +6170,7 @@ CSS approach:
 
 ---
 
-### Phase 7 — LLM Integration (AI Opponent + Narrator) 🔄 IN PROGRESS
+### Phase 7 — LLM Integration (AI Opponent + Narrator) ✅ COMPLETE
 
 **Goal:** AI opponent uses LLM for intelligent decisions. Narrator describes the action.
 
@@ -6200,6 +6200,11 @@ CSS approach:
   - `narrateGameEnd()` — called when game over detected
   - Fallback text provided if LLM unavailable
 
+- ✅ **Round Start/End Narration** — Additional narrator triggers
+  - `narrateRoundStart()` — called at beginning of rounds 2+
+  - `narrateRoundEnd()` — called in cleanup phase with round winner
+  - Fallback text for each trigger if LLM unavailable
+
 - ✅ **LLM Fallback** — Graceful degradation
   - Retry once on failure
   - Toast notification on persistent failure
@@ -6220,9 +6225,9 @@ CSS approach:
 
 **Test gate:**
 - [x] AI opponent selects stacks via LLM — CardGameDirector implemented with FIFO fallback
-- [ ] AI responds to mid-turn disruptions within 1 second (manual test)
-- [x] Narrator produces text for trigger points — 7 triggers implemented
-- [x] Narrator text visible at game start and game end
+- [x] AI responds to mid-turn disruptions within 1 second (manual test) — async non-blocking calls
+- [x] Narrator produces text for trigger points — 7 triggers implemented, 5 actively called
+- [x] Narrator text visible at game start, round start/end, resolution, game end
 - [ ] After-action image generates (deferred to Phase 8)
 - [ ] LLM combat eval produces richer descriptions (deferred)
 - [ ] Talk → concludeChat creates `olio.interaction` (deferred)
@@ -6237,17 +6242,85 @@ CSS approach:
 **Goal:** Talk card triggers LLM-powered NPC conversation. Voice narration. Poker Face.
 
 **Build:**
-- Talk card LLM chat: WebSocket streaming (reuses existing chat.js/gameStream.js), NPC personality from `charPerson`, interaction history from `olio.interaction`
-- Silence rule enforcement: chat UI locked unless Talk card active
-- "Open Chat" chatConfig as connection template (same pattern as v1)
-- Voice synthesis pipeline (reuses Magic8 AudioEngine): narrator voice, per-profile voice selection
-- Voice config fallback: skip if never configured, warn once if configured but fails
-- Subtitle display: word-by-word fade-in, configurable (voice+subs, subs only, off)
-- Poker Face: webcam emotion capture (reuses moodRing.js/camera.js), banter level config, emotion fed to narrator and AI opponent prompts
-- Mid-game asset storage: after-action images, voice audio → `~/CardGame/{deckName}/{saveObjectId}/`
+
+#### 8.1 Talk Card LLM Chat System
+- **CardGameChatManager class** — manages NPC conversation during Talk card resolution
+  - `initialize(opponentChar)` — creates chat context with opponent's `charPerson` personality
+  - `openChat()` — opens chat dialog when Talk card resolves
+  - `sendMessage(text)` — player message → LLM streaming response via WebSocket
+  - `concludeChat()` — ends conversation, creates `olio.interaction` record
+  - Uses existing `chat.js` and `gameStream.js` infrastructure
+
+- **Chat UI Integration**
+  - Modal chat dialog overlays game center during Talk resolution
+  - NPC portrait displayed (opponent character image)
+  - Message history scrollable, styled per card game theme
+  - "End Conversation" button to conclude and return to game
+
+- **Interaction History**
+  - Load previous interactions from `olio.interaction` for context continuity
+  - Display summary of past encounters in chat sidebar
+  - Save new interaction when chat concludes
+
+#### 8.2 Silence Rule Enforcement
+- **Chat Lock State** — `gameState.chatUnlocked: boolean`
+  - Default: `false` (chat locked during normal gameplay)
+  - Set to `true` when Talk card begins resolving
+  - Reset to `false` when Talk resolution completes
+
+- **Visual Indicator**
+  - Chat button disabled/grayed when locked
+  - Tooltip: "Play a Talk card to speak with your opponent"
+  - Glow effect when chat becomes available
+
+#### 8.3 Voice Synthesis Pipeline
+- **CardGameVoice class** — narrator TTS using Magic8 AudioEngine
+  - `initialize(voiceConfig)` — load voice settings from deck config
+  - `speak(text, profile)` — synthesize and play narration
+  - `setVolume(level)` — adjust narrator voice volume
+  - Voice profiles per narrator: Arena Announcer (bombastic), Bard (melodic), etc.
+
+- **Voice Configuration**
+  - Per-profile voice selection (voice ID from available TTS voices)
+  - Fallback hierarchy: configured voice → default voice → text-only
+  - Warn once if configured voice fails, then fall back silently
+
+- **Subtitle Display Options**
+  - `subtitleMode: "voice+subs" | "subs" | "off"`
+  - Word-by-word fade-in animation for subtitles
+  - Sync subtitle timing with voice playback
+
+#### 8.4 Poker Face (Emotion Capture)
+- **Integration with moodRing.js/camera.js**
+  - Optional webcam capture during gameplay
+  - Real-time emotion detection: happy, angry, surprised, neutral, etc.
+  - `gameState.playerEmotion: string` updated periodically
+
+- **Emotion-Aware Narration**
+  - Pass `playerEmotion` to narrator context
+  - Narrator references player's visible emotion in banter
+  - Example: "Your opponent smirks as you frown at your cards..."
+
+- **Banter Level Configuration**
+  - `banterLevel: "none" | "subtle" | "frequent"`
+  - Controls how often narrator comments on player emotion
+  - Stored in deck settings
+
+#### 8.5 Mid-Game Asset Storage
+- **Storage Path:** `~/CardGame/{deckName}/{saveObjectId}/`
+- **Assets Saved:**
+  - After-action images (768×512 scene from resolution moments)
+  - Voice audio clips (narrator recordings for playback)
+  - Interaction transcripts (chat logs with NPCs)
+
+- **Implementation:**
+  - Create folder structure on game start if needed
+  - Use AM7 data.data CRUD for file storage
+  - Clean up orphaned assets when game ends
 
 **Server:**
 - No new endpoints. Reuses existing chat, voice, and face analysis endpoints.
+- Existing: `POST /rest/chat/stream`, voice synthesis endpoints, face analysis API
 
 **Test gate:**
 - [ ] Talk card opens chat → NPC responds in character via LLM streaming

@@ -8000,6 +8000,9 @@ Respond with plain text narration only. No JSON, no markdown.`;
                         "Energy:", gameState.player.energy, "(+" + gameState.player.energyRecovery + ")",
                         "| Opponent HP:", gameState.opponent.hp, "(+" + gameState.opponent.hpRecovery + ")",
                         "Energy:", gameState.opponent.energy, "(+" + gameState.opponent.energyRecovery + ")");
+
+                    // Trigger round end narration (non-blocking)
+                    narrateRoundEnd(gameState.roundWinner);
                 }
             },
             view() {
