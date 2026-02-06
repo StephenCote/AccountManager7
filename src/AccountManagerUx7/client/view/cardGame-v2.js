@@ -1762,6 +1762,49 @@
         };
     }
 
+    // ── Card Preview Overlay ──────────────────────────────────────────
+    let previewCard = null;
+    function showCardPreview(card) {
+        if (!card) return;
+        previewCard = card;
+        m.redraw();
+    }
+    function closeCardPreview() {
+        previewCard = null;
+        m.redraw();
+    }
+    function CardPreviewOverlay() {
+        return {
+            view() {
+                if (!previewCard) return null;
+                let cardFrontBg = viewingDeck && viewingDeck.cardFrontImageUrl
+                    ? viewingDeck.cardFrontImageUrl : null;
+                return m("div", {
+                    class: "cg2-card-preview-overlay",
+                    onclick: closeCardPreview
+                }, [
+                    m("div", {
+                        class: "cg2-card-preview-container",
+                        onclick(e) { e.stopPropagation(); }
+                    }, [
+                        m(CardFace, { card: previewCard, bgImage: cardFrontBg }),
+                        // Show card art if available
+                        previewCard.imageUrl ? m("div", { class: "cg2-preview-art" }, [
+                            m("img", {
+                                src: previewCard.imageUrl.replace(/\/\d+x\d+/, "/512x512"),
+                                style: { maxWidth: "200px", maxHeight: "200px", borderRadius: "8px", marginTop: "12px" }
+                            })
+                        ]) : null
+                    ]),
+                    m("span", {
+                        class: "material-symbols-outlined cg2-preview-close",
+                        onclick: closeCardPreview
+                    }, "close")
+                ]);
+            }
+        };
+    }
+
     // ── Gallery Picker (pick portrait from charPerson image gallery) ──
     let galleryPickerCard = null;    // card being picked for
     let galleryImages = [];

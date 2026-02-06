@@ -5936,18 +5936,21 @@ Build-test-build. Each phase produces a testable artifact. No phase starts until
 - No new endpoints. All combat math is client-side with dice simulation.
 
 **Test gate:**
-- [ ] Attack action rolls correctly (1d20 + STR + weapon ATK + skill mods)
-- [ ] Defense rolls passively (1d20 + END + armor DEF + weapon parry)
-- [ ] Outcome table applies correctly (Critical Hit = double damage, etc.)
-- [ ] HP decreases on damage, increases on healing
-- [ ] Energy spent on spell placement
-- [ ] Round winner calculated correctly
-- [ ] Game ends when HP reaches 0
-- [ ] Simple AI opponent makes reasonable decisions without LLM
-- [ ] Talk cards affect morale
-- [ ] Status effects apply and expire correctly
-- [ ] Modifier breakdown displays before rolls
-- [ ] Animated resolution with dice and damage numbers
+- [x] Attack action rolls correctly (1d20 + STR + weapon ATK + skill mods)
+- [x] Defense rolls passively (1d20 + END + armor DEF + weapon parry)
+- [x] Outcome table applies correctly (Critical Hit = double damage, etc.)
+- [x] HP decreases on damage, increases on healing
+- [ ] Energy spent on spell placement (deferred to Phase 6 magic system)
+- [x] Round winner calculated correctly (with HP recovery: +5 winner, +2 loser)
+- [x] Game ends when HP reaches 0
+- [x] Simple AI opponent makes reasonable decisions without LLM
+- [x] Talk cards affect morale (CHA-based contested roll)
+- [ ] Status effects apply and expire correctly (deferred to Phase 6)
+- [x] Modifier breakdown displays before rolls
+- [x] Animated resolution with dice and damage numbers
+- [x] Auto-draw cards at start of rounds 2+
+- [x] Card stacks support core + modifier cards (skill stacking on attack)
+- [x] Auto-advance resolution with 3-second delays between actions
 
 ---
 
@@ -5956,16 +5959,96 @@ Build-test-build. Each phase produces a testable artifact. No phase starts until
 **Goal:** All action types work. Pot, hoarding, threats, and the full round lifecycle.
 
 **Build:**
-- All 7 action types functional: Attack, Flee, Investigate, Trade, Rest, Use Item, Craft
-- Talk card (player-to-player only at this phase, no LLM chat yet — just dice roll + CHA modifier)
-- Round Pot: mandatory ante, mid-round drops (stolen/destroyed items), winner claims pot
-- Hoarding prevention: Lethargy (cleanup) and Exhausted (mid-resolution) rules
-- Per-round threats: beginning threats (Nat 1 initiative), end threats (from scenario card draws)
-- End threat bonus stack (single stack, any type, no AP cost)
-- Dual wield: 1 Attack card + 2 weapons = 2 separate attack rolls
-- Lazy Bones timer (online: countdown timers; IRL: optional sand timer)
-- Critical effects: item drops, action disabling on Critical Counter
-- Magic system: 3 skill types, energy costs, all spells reusable, fizzle on failed requirements
+
+#### 6.1 — All 7 Action Types
+| Action | Roll Formula | Effect |
+|--------|-------------|--------|
+| Attack | 1d20 + STR + ATK + skills vs 1d20 + END + DEF | Damage on hit (already implemented) |
+| Flee | 1d20 + AGI vs encounter difficulty | Escape combat, forfeit pot |
+| Investigate | 1d20 + INT vs hidden DC | Reveal hidden cards/info |
+| Trade | No roll, mutual consent | Exchange items between players |
+| Rest | No roll | Recover energy (+3) and morale (+2) |
+| Use Item | Per item card | Apply consumable effect |
+| Craft | 1d20 + INT vs recipe DC | Create item from components |
+
+#### 6.2 — Round Pot System
+- **Mandatory ante**: Each player adds 1 random card from hand to pot at round start
+- **Mid-round drops**: Stolen/destroyed items go to pot
+- **Winner claims pot**: Round winner (higher roundPoints) claims all pot cards
+- Pot display in UI between player areas
+
+#### 6.3 — Hoarding Prevention
+- **Lethargy (cleanup)**: If player has 3+ copies of same card type in hand, strip extras
+- **Exhausted (mid-resolution)**: If player uses same action card twice consecutively, second use auto-fails
+- Visual indicator for exhausted actions
+
+#### 6.4 — Threat System
+- **Beginning threat**: On Nat 1 initiative roll, draw threat encounter
+- **End threat**: After resolution, draw scenario card that may spawn threat
+- **Bonus stack**: Single stack slot for threat response (any card type, no AP cost)
+- Threat encounters have their own stats (ATK, DEF, HP) and resolve immediately
+
+#### 6.5 — Dual Wield
+- If Attack card placed with 2 one-handed weapons equipped:
+  - Roll 2 separate attack rolls (one per weapon)
+  - Each roll uses that weapon's ATK bonus
+  - -2 penalty to off-hand attack
+- UI shows both rolls in resolution
+
+#### 6.6 — Magic System
+- **3 skill types**: Imperial (fire/force), Primal (nature/healing), Arcane (illusion/utility)
+- **Energy costs**: Magic cards require energy to place (shown on card)
+- **Reusable**: Magic cards return to hand after use (not discarded)
+- **Fizzle**: If requirements not met (stat too low), spell fails with no effect
+- **Spell resistance**: Some enemies have magic resistance (reduce spell damage)
+
+#### 6.7 — Status Effects
+| Status | Effect | Duration |
+|--------|--------|----------|
+| Stunned | Skip next action | 1 turn |
+| Poisoned | -2 HP at turn start | 3 turns |
+| Shielded | +3 DEF | Until hit |
+| Weakened | -2 to all rolls | 2 turns |
+| Enraged | +3 ATK, -2 DEF | 2 turns |
+
+#### 6.8 — Lazy Bones Timer (optional)
+- 30-second placement timer per turn
+- Penalties escalate: 1st timeout = lose initiative next round, 2nd = lose 1 AP, 3rd = forfeit round
+- Toggle on/off in game settings
+
+#### 6.9 — Critical Effects
+- **Critical Counter**: Defender may disable one of attacker's action cards for next round
+- **Item drops**: On Critical Hit, defender may drop equipped item to pot
+
+#### 6.10 — UX Overhaul (Responsive Card Sizing)
+Current issues:
+- Cards render at inconsistent sizes across different UI areas (hand, action bar, initiative, sidebars)
+- Cards too large on desktop, too small on tablet
+- No responsive scaling based on viewport
+
+Fixes required:
+- **Unified card sizing system**: Define base card dimensions with CSS custom properties
+- **Responsive breakpoints**: Scale cards appropriately for desktop (1200px+), tablet (768-1199px), mobile (< 768px)
+- **Hand tray**: Cards should be consistent size, horizontally scrollable on smaller screens
+- **Action bar**: Mini-card previews with consistent aspect ratio, expandable on hover/tap
+- **Initiative cards**: Fixed size relative to phase panel, not viewport
+- **Sidebars**: Character cards should scale with sidebar width
+- **Click-to-enlarge**: Tapping any card shows full-size preview overlay (partially implemented)
+- **Card art integration**: Hand and action bar cards should show generated art thumbnails when available
+
+CSS approach:
+```css
+:root {
+  --card-width-base: 180px;
+  --card-aspect-ratio: 2.5 / 3.5;  /* Standard playing card ratio */
+}
+@media (max-width: 1199px) {
+  :root { --card-width-base: 140px; }
+}
+@media (max-width: 767px) {
+  :root { --card-width-base: 100px; }
+}
+```
 
 **Server:**
 - No new endpoints. Client-side logic.
@@ -5979,8 +6062,14 @@ Build-test-build. Each phase produces a testable artifact. No phase starts until
 - [ ] End threat drawn from scenario card, bonus stack resolves
 - [ ] Dual wield produces 2 separate attack rolls
 - [ ] Magic spells cost energy, return to hand, fizzle correctly
+- [ ] Status effects apply and expire correctly
 - [ ] Lazy Bones timer penalties escalate (lose initiative → lose AP → default round)
 - [ ] Full game playable from start to defeat with all mechanics
+- [ ] Cards render at consistent sizes within each UI area
+- [ ] Cards scale appropriately on tablet (768-1199px viewport)
+- [ ] Cards scale appropriately on mobile (< 768px viewport)
+- [ ] Click/tap on any card shows full-size preview overlay
+- [ ] Hand and action bar cards display art thumbnails when available
 
 ---
 
