@@ -6054,22 +6054,119 @@ CSS approach:
 - No new endpoints. Client-side logic.
 
 **Test gate:**
-- [ ] All 7 action types resolve with correct formulas
-- [ ] Pot ante enforced, pot accumulates during round, winner claims all
-- [ ] Lethargy strips hoarded duplicates at cleanup
-- [ ] Exhausted strips duplicates on failed repeat action
-- [ ] Beginning threat triggers on Nat 1 initiative
-- [ ] End threat drawn from scenario card, bonus stack resolves
-- [ ] Dual wield produces 2 separate attack rolls
-- [ ] Magic spells cost energy, return to hand, fizzle correctly
-- [ ] Status effects apply and expire correctly
-- [ ] Lazy Bones timer penalties escalate (lose initiative → lose AP → default round)
-- [ ] Full game playable from start to defeat with all mechanics
-- [ ] Cards render at consistent sizes within each UI area
+- [x] All 7 action types resolve with correct formulas
+- [x] Pot ante enforced, pot accumulates during round, winner claims all
+- [x] Lethargy strips hoarded duplicates at cleanup
+- [x] Exhausted strips duplicates on failed repeat action
+- [x] Beginning threat triggers on Nat 1 initiative
+- [x] End threat drawn from scenario card (bonus stack deferred to Phase 7)
+- [x] Dual wield produces 2 separate attack rolls
+- [x] Magic spells cost energy, return to hand, fizzle correctly
+- [x] Status effects apply and expire correctly
+- [ ] Lazy Bones timer penalties escalate (deferred — optional feature)
+- [x] Full game playable from start to defeat with all mechanics
+- [x] Cards render at consistent sizes within each UI area
 - [ ] Cards scale appropriately on tablet (768-1199px viewport)
 - [ ] Cards scale appropriately on mobile (< 768px viewport)
-- [ ] Click/tap on any card shows full-size preview overlay
-- [ ] Hand and action bar cards display art thumbnails when available
+- [x] Click/tap on any card shows full-size preview overlay
+- [x] Hand and action bar cards display art thumbnails when available
+
+---
+
+### Phase 7.0 — Code Refactor & Cleanup
+
+**Goal:** Aggressive code review to eliminate duplication, consolidate styles, and modularize before LLM integration.
+
+**Build:**
+- **JS Code Audit:**
+  - Identify and consolidate duplicate functions (card rendering, dice rolling, stat calculations)
+  - Extract reusable utility functions (roll helpers, damage calculations, status effects)
+  - Modularize into logical sections (game state, UI components, AI logic, animation)
+  - Remove unused variables and dead code (IDE hints show ~15 unused declarations)
+  - Standardize naming conventions (camelCase for functions, UPPER_CASE for constants)
+
+- **CSS Consolidation:**
+  - Audit for duplicate/similar selectors (card styles, button styles, panel layouts)
+  - Consolidate color palette into CSS custom properties
+  - Merge similar component styles (cards, buttons, badges, panels)
+  - Remove orphaned/unused CSS rules
+  - Standardize spacing/sizing with CSS variables
+
+- **Component Architecture:**
+  - Extract standalone Mithril components into separate files if >200 lines
+  - Create shared component library (CardFace, DiceDisplay, StatBar, etc.)
+  - Standardize component patterns (oninit, view, event handlers)
+  - Document component interfaces (expected attrs, emitted events)
+
+- **File Organization:**
+  - Consider splitting cardGame-v2.js if >5000 lines
+  - Group related functions together with clear section headers
+  - Add JSDoc comments to exported/public functions
+
+**Test gate:**
+- [ ] No duplicate functions with >10 lines of identical logic
+- [ ] CSS file has <20% duplicate property declarations
+- [ ] All IDE "unused variable" hints resolved
+- [ ] Each major component has inline documentation
+- [ ] Code passes basic linting (no syntax errors, consistent formatting)
+
+---
+
+### Phase 7.1 — Self-Contained Character Generation
+
+**Goal:** Remove dependency on Olio population. Generate balanced characters from templates stored with the deck.
+
+**Build:**
+- **Character Template System:**
+  - Create `~/CardGame/{deckName}/Characters/` group when deck is created
+  - Store `character-templates.json` with 10-20 balanced stat/personality/alignment combinations
+  - Each template defines: statistics (6 stats), personality traits, alignment, and trade (class)
+  - Templates are balanced against each other (similar total stat values, complementary strengths)
+  - **Note:** charPerson objects have hierarchical dependencies (statistics, qualities, apparel, store, etc.) — leave these in their default group paths; only the charPerson itself is referenced from the deck
+
+- **Theme-Appropriate Classes (trade field):**
+  | Theme | Classes |
+  |-------|---------|
+  | High Fantasy | Warrior, Mage, Rogue, Cleric, Ranger, Bard |
+  | Dark Medieval | Knight, Squire, Peasant, Mercenary, Monk, Herbalist |
+  | Sci-Fi | Soldier, Engineer, Pilot, Medic, Hacker, Psionic |
+  | Post-Apocalypse | Survivor, Scavenger, Raider, Medic, Mechanic, Mutant |
+
+- **Random Character Generation:**
+  - Use existing `charPerson` random generator script
+  - Set random age between 18-55
+  - Let script generate: name, gender, base stats
+  - After creation, patch character with template values:
+    - Override alignment from template
+    - Override statistics from template (keeps game balanced)
+    - Override personality from template
+    - Set trade field to theme-appropriate class
+  - Result: Characters appear random (unique names, genders, ages) but are balanced for gameplay
+
+- **Deck Builder Integration:**
+  - "Generate Characters" button creates 8 characters from templates
+  - Each character uses a different template (no duplicates)
+  - Templates are shuffled before assignment for variety
+  - Generated characters stored in deck's Characters group
+  - Characters persist with deck save/load
+
+- **Migration Path:**
+  - Existing decks with Olio population references continue to work
+  - New decks use self-contained character generation by default
+  - Option to import existing Olio characters into deck's character pool
+
+**Server:**
+- Reuse existing `charPerson` random generation endpoint
+- Reuse existing patch endpoint for stat/personality override
+- No new endpoints required
+
+**Test gate:**
+- [ ] Character templates JSON validates with 10+ balanced entries
+- [ ] Generated characters have unique names and genders
+- [ ] All generated characters have identical total stat values (balanced)
+- [ ] Trade field reflects theme-appropriate class
+- [ ] Characters persist through deck save/load cycle
+- [ ] Deck works offline after initial character generation
 
 ---
 
@@ -6198,14 +6295,16 @@ CSS approach:
 | 4 | Round skeleton + action bar | Two sides take turns, marker advances | Phase 2 |
 | 5 | Combat + needs tracking | Attacks deal damage, HP tracks, game ends | Phase 4 |
 | 6 | Full round mechanics | All actions, pot, threats, magic, hoarding | Phase 5 |
-| 7 | LLM (AI opponent, narrator) | AI makes intelligent decisions, narration plays | Phase 6 |
+| 7.0 | Code refactor & cleanup | No duplicate logic, clean CSS, documented | Phase 6 |
+| 7.1 | Self-contained characters | Balanced chars generated from templates | Phase 6 |
+| 7 | LLM (AI opponent, narrator) | AI makes intelligent decisions, narration plays | Phase 7.0 |
 | 8 | Chat, voice, Poker Face | Talk card → NPC chat, voice narration, emotion | Phase 7 |
 | 9 | Save/load + campaign | Auto-save, resume, character persistence | Phase 6 |
 | 10 | Print & export | Print-ready PDF, playable IRL deck | Phase 3 |
 
 **Phases 4-6 can overlap with Phase 3** — gameplay development doesn't block on all images being generated. Placeholder icons work during gameplay testing.
 
-**Phases 9 and 10 are independent** — save/load and print can be built in parallel once their dependencies are met.
+**Phases 7.0, 7.1, 9 and 10 are independent** — they can be built in parallel once Phase 6 is complete.
 
 ---
 

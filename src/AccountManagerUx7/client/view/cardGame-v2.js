@@ -17,11 +17,12 @@
         magic:      { color: "#00695C", bg: "#E0F2F1", icon: "auto_fix_high",  label: "Magic Effect" }
     };
 
-    // Template/utility art types (card front, card back, background)
+    // Template/utility art types (card front, card back, background, tabletop)
     const TEMPLATE_TYPES = {
-        cardFront:  { color: "#795548", icon: "crop_portrait", label: "Card Front" },
-        cardBack:   { color: "#546E7A", icon: "flip_to_back",  label: "Card Back" },
-        background: { color: "#33691E", icon: "landscape",     label: "Background" }
+        cardFront:  { color: "#795548", icon: "crop_portrait",    label: "Card Front" },
+        cardBack:   { color: "#546E7A", icon: "flip_to_back",     label: "Card Back" },
+        background: { color: "#33691E", icon: "landscape",        label: "Background" },
+        tabletop:   { color: "#5D4037", icon: "table_restaurant", label: "Tabletop" }
     };
 
     // Sub-icons for item subtypes
@@ -103,23 +104,27 @@
     function renderCharacterBody(card) {
         let stats = card.stats || {};
         return [
-            m("div", { class: "cg2-card-portrait" }, [
+            m("div", { class: "cg2-card-image-area" },
                 card.portraitUrl
                     ? m("img", {
-                        src: card.portraitUrl, class: "cg2-portrait-img",
+                        src: card.portraitUrl, class: "cg2-card-img",
                         style: { cursor: "pointer" },
                         onclick(e) { e.stopPropagation(); showImagePreview(card.portraitUrl); }
                     })
-                    : m("span", { class: "material-symbols-outlined", style: { fontSize: "80px", color: "#B8860B" } }, "person"),
-                card.race ? m("span", { class: "cg2-race-badge" }, card.race) : null
+                    : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#B8860B" } }, "person")
+            ),
+            m("div", { class: "cg2-card-details" }, [
+                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
+                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "badge"),
+                    m("span", (card.gender ? card.gender.charAt(0).toUpperCase() + " " : "") + (card.race || "")),
+                    card.age ? m("span", { style: { marginLeft: "auto", opacity: 0.7 } }, card.age + " yrs") : null
+                ]),
+                card.alignment ? iconDetail("balance", card.alignment.replace(/_/g, " ")) : null,
+                m(StatBlock, { stats })
             ]),
-            m("div", { class: "cg2-card-subtitle" }, [
-                (card.gender ? card.gender.charAt(0).toUpperCase() + " " : "") + (card.race || "") + (card.age ? ", " + card.age : "") + (card.alignment ? " / " + card.alignment : ""),
-                card.level ? m("span", { class: "cg2-level" }, "Lv " + card.level) : null
-            ]),
-            m("div", { class: "cg2-divider" }),
-            m(StatBlock, { stats }),
-            m("div", { style: { marginTop: "auto", textAlign: "center", fontSize: "10px", color: "#999", fontStyle: "italic" } }, "click to flip")
+            m("div", { class: "cg2-card-footer", style: { borderTop: "none" } }, [
+                m("span", { style: { fontSize: "9px", color: "#999", fontStyle: "italic" } }, "click to flip")
+            ])
         ];
     }
 
@@ -169,19 +174,21 @@
                     ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon" }, "checkroom")
             ),
-            m("div", { class: "cg2-card-meta" }, [
-                m("span", "Slot: " + (card.slot || "Body")),
-                m("span", { class: "cg2-rarity" }, rarityStars(card.rarity))
+            m("div", { class: "cg2-card-details" }, [
+                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
+                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "back_hand"),
+                    m("span", card.slot || "Body"),
+                    m("span", { class: "cg2-rarity", style: { marginLeft: "auto" } }, rarityStars(card.rarity))
+                ]),
+                (card.def || card.hpBonus) ? m("div", { class: "cg2-card-stats-line" }, [
+                    card.def ? m("span", { class: "cg2-mod" }, "DEF +" + card.def) : null,
+                    card.hpBonus ? m("span", { class: "cg2-mod" }, "HP +" + card.hpBonus) : null
+                ]) : null,
+                iconDetail("auto_awesome", card.special),
+                card.flavor ? m("div", { class: "cg2-flavor" }, "\u201C" + card.flavor + "\u201D") : null
             ]),
-            m("div", { class: "cg2-divider" }),
-            m("div", { class: "cg2-card-stats-line" }, [
-                card.def != null ? m("span", { class: "cg2-mod" }, "DEF +" + card.def) : null,
-                card.hpBonus != null ? m("span", { class: "cg2-mod" }, "HP +" + card.hpBonus) : null
-            ]),
-            card.special ? m("div", { class: "cg2-card-special" }, "Special: " + card.special) : null,
-            card.flavor ? m("div", { class: "cg2-flavor" }, "\u201C" + card.flavor + "\u201D") : null,
             m("div", { class: "cg2-card-footer" }, [
-                m("span", { class: "cg2-durability" }, "Durability: " + (card.durability || "\u221E"))
+                iconDetail("build", (card.durability || "\u221E") + " Dur", "cg2-durability")
             ])
         ];
     }
@@ -193,20 +200,22 @@
                     ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon" }, "swords")
             ),
-            m("div", { class: "cg2-card-meta" }, [
-                m("span", "Slot: " + (card.slot || "Hand (1H)")),
-                m("span", { class: "cg2-rarity" }, rarityStars(card.rarity))
+            m("div", { class: "cg2-card-details" }, [
+                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
+                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "back_hand"),
+                    m("span", card.slot || "Hand (1H)"),
+                    m("span", { class: "cg2-rarity", style: { marginLeft: "auto" } }, rarityStars(card.rarity))
+                ]),
+                m("div", { class: "cg2-card-stats-line" }, [
+                    card.atk ? m("span", { class: "cg2-mod cg2-mod-atk" }, "ATK +" + card.atk) : null,
+                    m("span", { class: "cg2-mod" }, card.range || "Melee")
+                ]),
+                iconDetail("flash_on", card.damageType || "Slashing"),
+                card.requires && Object.keys(card.requires).length ? iconDetail("key", Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")) : null,
+                iconDetail("auto_awesome", card.special)
             ]),
-            m("div", { class: "cg2-divider" }),
-            m("div", { class: "cg2-card-stats-line" }, [
-                m("span", { class: "cg2-mod cg2-mod-atk" }, "ATK +" + (card.atk || 0)),
-                m("span", "Range: " + (card.range || "Melee"))
-            ]),
-            m("div", { class: "cg2-card-detail" }, "Type: " + (card.damageType || "Slashing")),
-            card.requires ? m("div", { class: "cg2-card-detail" }, "Requires: " + Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")) : null,
-            card.special ? m("div", { class: "cg2-card-special" }, "Special: " + card.special) : null,
             m("div", { class: "cg2-card-footer" }, [
-                m("span", { class: "cg2-durability" }, "Durability: " + (card.durability || "\u221E"))
+                iconDetail("build", (card.durability || "\u221E") + " Dur", "cg2-durability")
             ])
         ];
     }
@@ -218,15 +227,31 @@
                     ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon" }, "science")
             ),
-            m("div", { class: "cg2-card-meta" }, [
-                m("span", "Consumable"),
-                m("span", { class: "cg2-rarity" }, rarityStars(card.rarity))
-            ]),
-            m("div", { class: "cg2-divider" }),
-            m("div", { class: "cg2-card-effect" }, "Effect: " + (card.effect || "")),
-            m("div", { class: "cg2-use-or-lose" }, "USE IT OR LOSE IT"),
-            m("div", { class: "cg2-use-or-lose-sub" }, "If played in a round, this card is consumed whether the effect was needed or not.")
+            m("div", { class: "cg2-card-details" }, [
+                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
+                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "science"),
+                    m("span", "Consumable"),
+                    m("span", { class: "cg2-rarity", style: { marginLeft: "auto" } }, rarityStars(card.rarity))
+                ]),
+                iconDetail("auto_awesome", card.effect),
+                m("div", { class: "cg2-use-or-lose" }, [
+                    m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", marginRight: "4px" } }, "warning"),
+                    "USE IT OR LOSE IT"
+                ])
+            ])
         ];
+    }
+
+    // Helper: render a detail row with icon instead of text prefix
+    // Icons: stack=layers, roll=casino, hit=gps_fixed, effect=auto_awesome, type=category,
+    //        require=key, tier=military_tech, cost=bolt, uses=all_inclusive, skill=psychology,
+    //        difficulty=signal_cellular_alt, behavior=psychology_alt, loot=inventory_2, modifier=tune
+    function iconDetail(icon, text, extraClass) {
+        if (!text) return null;
+        return m("div", { class: "cg2-card-detail cg2-icon-detail" + (extraClass ? " " + extraClass : "") }, [
+            m("span", { class: "material-symbols-outlined cg2-detail-icon" }, icon),
+            m("span", text)
+        ]);
     }
 
     function renderActionBody(card) {
@@ -236,15 +261,14 @@
                     ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#C62828" } }, "bolt")
             ),
-            m("div", { class: "cg2-card-meta" }, [
-                m("span", "Action Type: " + (card.actionType || "Offensive"))
+            m("div", { class: "cg2-card-details" }, [
+                iconDetail("category", card.actionType || "Offensive"),
+                iconDetail("layers", card.stackWith),
+                iconDetail("casino", card.roll, "cg2-roll"),
+                iconDetail("gps_fixed", card.onHit)
             ]),
-            m("div", { class: "cg2-divider" }),
-            card.stackWith ? m("div", { class: "cg2-card-detail" }, "Stack with: " + card.stackWith) : null,
-            card.roll ? m("div", { class: "cg2-card-detail cg2-roll" }, "Roll: " + card.roll) : null,
-            card.onHit ? m("div", { class: "cg2-card-detail" }, "On hit: " + card.onHit) : null,
             m("div", { class: "cg2-card-footer" }, [
-                card.energyCost ? m("span", { class: "cg2-energy-cost" }, "Cost: " + card.energyCost + " Energy") : m("span", "Cost: 0")
+                iconDetail("bolt", (card.energyCost || 0) + " Energy", "cg2-energy-cost")
             ])
         ];
     }
@@ -256,21 +280,14 @@
                     ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#1565C0" } }, "chat_bubble")
             ),
-            m("div", { class: "cg2-card-meta" }, [
-                m("span", "Action Type: Social")
-            ]),
-            m("div", { class: "cg2-divider" }),
-            m("div", { class: "cg2-card-detail" }, [
-                m("strong", "ONLINE: "), "Opens LLM chat with target. Outcome determined by conversation quality + CHA modifier."
-            ]),
-            m("div", { class: "cg2-card-detail", style: { marginTop: "6px" } }, [
-                m("strong", "RL: "), "Speak to the target player/GM. Roll: 1d20 + CHA vs target\u2019s 1d20 + CHA."
-            ]),
-            m("div", { class: "cg2-card-detail cg2-card-warning", style: { marginTop: "8px" } }, [
-                m("strong", "WITHOUT THIS CARD: "), "No communication allowed."
+            m("div", { class: "cg2-card-details" }, [
+                iconDetail("category", "Social"),
+                iconDetail("computer", "LLM chat + CHA mod"),
+                iconDetail("casino", "1d20 + CHA vs target"),
+                iconDetail("block", "Required for communication", "cg2-card-warning")
             ]),
             m("div", { class: "cg2-card-footer" }, [
-                m("span", { class: "cg2-energy-cost" }, "Cost: " + (card.energyCost || 5) + " Energy")
+                iconDetail("bolt", (card.energyCost || 5) + " Energy", "cg2-energy-cost")
             ])
         ];
     }
@@ -282,22 +299,21 @@
                     ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#6A1B9A" } }, "blur_on")
             ),
-            m("div", { class: "cg2-card-meta" }, [
-                m("span", "Encounter: " + (card.subtype || "Threat")),
-                m("span", { class: "cg2-rarity" }, rarityStars(card.rarity))
-            ]),
-            m("div", { class: "cg2-divider" }),
-            card.difficulty != null ? m("div", { class: "cg2-card-detail" }, "Difficulty: " + card.difficulty) : null,
-            m("div", { class: "cg2-card-stats-line" }, [
-                card.atk != null ? m("span", { class: "cg2-mod cg2-mod-atk" }, "ATK +" + card.atk) : null,
-                card.def != null ? m("span", { class: "cg2-mod" }, "DEF +" + card.def) : null,
-                card.hp != null ? m("span", { class: "cg2-mod" }, "HP " + card.hp) : null
-            ]),
-            card.behavior ? m("div", { class: "cg2-card-detail" }, "Behavior: " + card.behavior) : null,
-            card.loot && card.loot.length ? m("div", { class: "cg2-card-detail" }, [
-                m("strong", "Loot: "),
-                card.loot.join(", ")
-            ]) : null
+            m("div", { class: "cg2-card-details" }, [
+                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
+                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "warning"),
+                    m("span", card.subtype || "Threat"),
+                    m("span", { class: "cg2-rarity", style: { marginLeft: "auto" } }, rarityStars(card.rarity))
+                ]),
+                card.difficulty != null ? iconDetail("signal_cellular_alt", "DC " + card.difficulty) : null,
+                (card.atk || card.def || card.hp) ? m("div", { class: "cg2-card-stats-line" }, [
+                    card.atk ? m("span", { class: "cg2-mod cg2-mod-atk" }, "ATK +" + card.atk) : null,
+                    card.def ? m("span", { class: "cg2-mod" }, "DEF +" + card.def) : null,
+                    card.hp ? m("span", { class: "cg2-mod" }, "HP " + card.hp) : null
+                ]) : null,
+                iconDetail("psychology_alt", card.behavior),
+                card.loot && card.loot.length ? iconDetail("inventory_2", card.loot.join(", ")) : null
+            ])
         ];
     }
 
@@ -308,15 +324,14 @@
                     ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#E65100" } }, "star")
             ),
-            m("div", { class: "cg2-card-meta" }, [
-                m("span", "Skill: " + (card.category || "Combat"))
+            m("div", { class: "cg2-card-details" }, [
+                iconDetail("psychology", card.category || "Combat"),
+                iconDetail("tune", card.modifier),
+                card.requires && Object.keys(card.requires).length ? iconDetail("key", Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")) : null,
+                iconDetail("military_tech", card.tier)
             ]),
-            m("div", { class: "cg2-divider" }),
-            m("div", { class: "cg2-card-effect" }, "Modifier: " + (card.modifier || "")),
-            card.requires ? m("div", { class: "cg2-card-detail" }, "Requires: " + Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")) : null,
-            card.tier ? m("div", { class: "cg2-card-detail" }, "Tier: " + card.tier) : null,
             m("div", { class: "cg2-card-footer" }, [
-                m("span", "Uses: \u221E")
+                iconDetail("all_inclusive", "Unlimited", "cg2-uses")
             ])
         ];
     }
@@ -328,19 +343,79 @@
                     ? m("img", { src: card.imageUrl, class: "cg2-card-img", style: { cursor: "pointer" }, onclick(e) { e.stopPropagation(); showImagePreview(card.imageUrl); } })
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#00695C" } }, "auto_fix_high")
             ),
-            m("div", { class: "cg2-card-meta" }, [
-                m("span", "Magic Effect: " + (card.effectType || "Offensive"))
+            m("div", { class: "cg2-card-details" }, [
+                iconDetail("category", card.effectType || "Offensive"),
+                iconDetail("psychology", card.skillType || "Imperial"),
+                card.requires && Object.keys(card.requires).length ? iconDetail("key", Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")) : null,
+                iconDetail("auto_awesome", card.effect),
+                iconDetail("layers", card.stackWith)
             ]),
-            m("div", { class: "cg2-divider" }),
-            m("div", { class: "cg2-card-detail" }, "Skill Type: " + (card.skillType || "Imperial")),
-            card.requires ? m("div", { class: "cg2-card-detail" }, "Requires: " + Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")) : null,
-            m("div", { class: "cg2-card-effect" }, "Effect: " + (card.effect || "")),
-            card.stackWith ? m("div", { class: "cg2-card-detail" }, "Stack with: " + card.stackWith) : null,
             m("div", { class: "cg2-card-footer" }, [
-                m("span", { class: "cg2-energy-cost" }, "Cost: " + (card.energyCost || 0) + " Energy"),
-                m("span", card.reusable ? "Reusable" : "Consumable")
+                iconDetail("bolt", (card.energyCost || 0) + " Energy", "cg2-energy-cost"),
+                iconDetail(card.reusable ? "sync" : "local_fire_department", card.reusable ? "Reusable" : "Consumable")
             ])
         ];
+    }
+
+    // ── Render compact stats for action bar display ───────────────────
+    function renderCompactStats(card, type) {
+        if (!card) return null;
+        let stats = [];
+
+        switch (type) {
+            case "action":
+                if (card.roll) stats.push(m("span", { class: "cg2-compact-stat", title: "Roll" }, [
+                    m("span", { class: "material-symbols-outlined" }, "casino"), card.roll
+                ]));
+                if (card.onHit) stats.push(m("span", { class: "cg2-compact-stat cg2-compact-effect", title: "On Hit" }, card.onHit));
+                break;
+            case "skill":
+                if (card.modifier) stats.push(m("span", { class: "cg2-compact-stat", title: "Modifier" }, [
+                    m("span", { class: "material-symbols-outlined" }, "tune"), card.modifier
+                ]));
+                if (card.skillType) stats.push(m("span", { class: "cg2-compact-stat" }, card.skillType));
+                break;
+            case "magic":
+                if (card.effect) stats.push(m("span", { class: "cg2-compact-stat cg2-compact-effect" }, card.effect));
+                if (card.manaCost) stats.push(m("span", { class: "cg2-compact-stat", title: "Mana" }, [
+                    m("span", { class: "material-symbols-outlined" }, "water_drop"), card.manaCost
+                ]));
+                break;
+            case "item":
+                if (card.subtype === "weapon" && card.atk) {
+                    stats.push(m("span", { class: "cg2-compact-stat", title: "Attack" }, [
+                        m("span", { class: "material-symbols-outlined" }, "swords"), " " + card.atk
+                    ]));
+                }
+                if (card.subtype === "armor" && card.def) {
+                    stats.push(m("span", { class: "cg2-compact-stat", title: "Defense" }, [
+                        m("span", { class: "material-symbols-outlined" }, "shield"), " " + card.def
+                    ]));
+                }
+                if (card.effect) stats.push(m("span", { class: "cg2-compact-stat cg2-compact-effect" }, card.effect));
+                break;
+            case "talk":
+                stats.push(m("span", { class: "cg2-compact-stat" }, [
+                    m("span", { class: "material-symbols-outlined" }, "chat_bubble"), " CHA"
+                ]));
+                break;
+            case "encounter":
+                if (card.atk) stats.push(m("span", { class: "cg2-compact-stat" }, [
+                    m("span", { class: "material-symbols-outlined" }, "swords"), " " + card.atk
+                ]));
+                if (card.def) stats.push(m("span", { class: "cg2-compact-stat" }, [
+                    m("span", { class: "material-symbols-outlined" }, "shield"), " " + card.def
+                ]));
+                break;
+            case "character":
+                let s = card.stats || {};
+                if (s.STR) stats.push(m("span", { class: "cg2-compact-stat" }, "STR " + s.STR));
+                if (s.AGI) stats.push(m("span", { class: "cg2-compact-stat" }, "AGI " + s.AGI));
+                if (s.END) stats.push(m("span", { class: "cg2-compact-stat" }, "END " + s.END));
+                break;
+        }
+
+        return stats.length > 0 ? stats : null;
     }
 
     // ── Check if card is incomplete (missing clear effect) ────────────
@@ -372,6 +447,7 @@
                 let type = card.type;
                 let cfg = CARD_TYPES[type] || CARD_TYPES.item;
                 let compact = vnode.attrs.compact;
+                let full = vnode.attrs.full;
                 let incomplete = isCardIncomplete(card);
                 let bodyFn;
                 switch (type) {
@@ -393,7 +469,22 @@
                     cardStyle.backgroundSize = "cover, cover";
                     cardStyle.backgroundPosition = "center, center";
                 }
-                let cardClass = "cg2-card cg2-card-front cg2-card-" + type + (compact ? " cg2-card-compact" : "");
+                let sizeClass = compact ? " cg2-card-compact" : (full ? " cg2-card-full" : "");
+                let cardClass = "cg2-card cg2-card-front cg2-card-" + type + sizeClass;
+
+                // For compact cards, render a minimal body with image and key stats
+                let compactBody = null;
+                if (compact) {
+                    compactBody = m("div", { class: "cg2-card-body cg2-card-body-compact" }, [
+                        // Show image if available
+                        card.imageUrl ? m("div", { class: "cg2-card-image-area cg2-compact-image" },
+                            m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                        ) : null,
+                        // Show condensed stats based on type
+                        m("div", { class: "cg2-compact-stats" }, renderCompactStats(card, type))
+                    ]);
+                }
+
                 return m("div", {
                     class: cardClass,
                     style: cardStyle
@@ -406,7 +497,7 @@
                         title: "Card effect incomplete - needs definition"
                     }, "*") : null,
                     m("div", { class: "cg2-card-name", style: { color: cfg.color } }, card.name || "Unnamed"),
-                    compact ? null : m("div", { class: "cg2-card-body" }, bodyFn(card)),
+                    compact ? compactBody : m("div", { class: "cg2-card-body" }, bodyFn(card)),
                     cornerIcon(type, "bottom-right")
                 ]);
             }
@@ -426,6 +517,68 @@
                     m("div", { class: "cg2-back-pattern" }),
                     m("span", { class: "material-symbols-outlined cg2-back-icon" }, cfg.icon),
                     m("div", { class: "cg2-back-label" }, cfg.label)
+                ]);
+            }
+        };
+    }
+
+    // ── D20 Dice Component (inline SVG with embedded number) ─────────
+    function D20Dice() {
+        return {
+            view(vnode) {
+                let { value, rolling, winner } = vnode.attrs;
+                let displayVal = value || "?";
+
+                // SVG paths from d20-1435790057.svg
+                return m("div", {
+                    class: "cg2-d20-wrap" + (rolling ? " cg2-d20-rolling" : " cg2-d20-final") + (winner ? " cg2-d20-winner" : "")
+                }, [
+                    m("svg", {
+                        viewBox: "0 0 360 360",
+                        class: "cg2-d20-svg",
+                        xmlns: "http://www.w3.org/2000/svg"
+                    }, [
+                        // Main blue faces
+                        m("g", { fill: "#3372A0" }, [
+                            m("polygon", { points: "178.3,13.9 38.6,94.5 178.3,105.8" }),
+                            m("polygon", { points: "34.8,104.6 34.8,263.4 93.4,252.3" }),
+                            m("polygon", { points: "177.2,109.1 35.7,97.7 96,249.7" }),
+                            m("polygon", { points: "261.3,251.9 180,111 98.7,251.9" }),
+                            m("polygon", { points: "181.7,13.9 181.7,105.8 321.4,94.5" }),
+                            m("polygon", { points: "264,249.7 324.3,97.7 182.8,109.1" }),
+                            m("polygon", { points: "188,343.7 322.1,266.2 264.9,255.4" }),
+                            m("polygon", { points: "325.2,263.4 325.2,104.6 266.6,252.3" }),
+                            m("polygon", { points: "99.5,255.2 180,347.7 260.5,255.2" }),
+                            m("polygon", { points: "37.9,266.2 172,343.7 95.1,255.4" })
+                        ]),
+                        // White highlights
+                        m("g", { fill: "#FFFFFF", opacity: "0.25" }, [
+                            m("polygon", { points: "178.3,13.9 38.6,94.5 68.1,96.9" }),
+                            m("polygon", { points: "34.8,104.6 34.8,263.4 43.3,261.8" }),
+                            m("polygon", { points: "108.5,228.1 35.7,97.7 96,249.7" }),
+                            m("polygon", { points: "192.9,133.4 180,111 98.7,251.9 116.9,251.9" }),
+                            m("polygon", { points: "181.7,13.9 181.7,105.8 209.3,103.6" }),
+                            m("polygon", { points: "195.5,131.1 324.3,97.7 182.8,109.1" }),
+                            m("polygon", { points: "188,343.7 282.5,258.7 264.9,255.4" }),
+                            m("polygon", { points: "282.3,255.2 325.2,104.6 266.6,252.3" }),
+                            m("polygon", { points: "99.5,255.2 180,347.7 118,255.4" }),
+                            m("polygon", { points: "37.9,266.2 103.7,265.3 95.1,255.4" })
+                        ]),
+                        // Dark outline
+                        m("path", { fill: "#303030", d: "M328.4,99.6c0-3.1-1.7-6-4.4-7.6L183.9,11.3c-2.4-1.4-5.4-1.4-7.9,0L35.6,92.9c-2.5,1.5-4.1,4.2-4.1,7.1l-0.1,161.8c0,2.8,1.5,5.4,3.9,6.8L176.1,350c2.4,1.4,5.3,1.4,7.7,0l140.8-81.3c2.4-1.4,3.9-4,3.9-6.8L328.4,99.6z M267.1,250.9l55.8-140.4c0.5-1.2,2.3-0.9,2.3,0.4v150.9c0,0.8-0.7,1.3-1.4,1.2L268,252.5C267.3,252.4,266.8,251.6,267.1,250.9z M102.2,255.2h155.7c1,0,1.6,1.2,0.9,2l-77.8,89.4c-0.5,0.6-1.4,0.6-1.8,0l-77.8-89.4C100.6,256.5,101.1,255.2,102.2,255.2z M181.1,112.9L260.2,250c0.5,0.8-0.1,1.8-1.1,1.8H100.8c-0.9,0-1.5-1-1.1-1.8l79.2-137.2C179.4,112.1,180.6,112.1,181.1,112.9z M184.7,109l137.7-11.1c0.9-0.1,1.6,0.8,1.2,1.7l-58.7,147.8c-0.4,0.9-1.7,1-2.2,0.2l-78.9-136.7C183.3,110,183.8,109,184.7,109z M95.1,247.3L36.4,99.5c-0.3-0.8,0.3-1.7,1.2-1.7L175.3,109c0.9,0.1,1.4,1,1,1.8L97.3,247.5C96.8,248.4,95.5,248.3,95.1,247.3z M181.7,104.5V16c0-0.9,1-1.5,1.8-1.1L318,92.6c1,0.6,0.7,2.2-0.5,2.3L183,105.7C182.3,105.8,181.7,105.2,181.7,104.5z M178.3,16v88.5c0,0.7-0.6,1.3-1.3,1.2L42.5,94.8c-1.2-0.1-1.5-1.7-0.5-2.3l134.5-77.6C177.3,14.5,178.3,15.1,178.3,16z M92,252.5l-55.8,10.6c-0.7,0.1-1.4-0.4-1.4-1.2V111c0-1.3,1.9-1.7,2.3-0.4l55.8,140.4C93.2,251.6,92.7,252.4,92,252.5z M41.1,265.6l53.3-10.1c0.4-0.1,0.9,0.1,1.1,0.4l71.7,82.3c0.9,1-0.3,2.5-1.5,1.9l-125-72.2C39.7,267.3,40,265.8,41.1,265.6z M265.6,255.5l53.3,10.1c1.1,0.2,1.4,1.7,0.4,2.2l-125,72.2c-1.2,0.7-2.4-0.8-1.5-1.9l71.7-82.3C264.7,255.6,265.1,255.4,265.6,255.5z" }),
+                        // Number text - centered on the front face
+                        m("text", {
+                            x: "180",
+                            y: "200",
+                            "text-anchor": "middle",
+                            "dominant-baseline": "middle",
+                            fill: "#FFFFFF",
+                            "font-size": displayVal.toString().length > 1 ? "70" : "80",
+                            "font-weight": "900",
+                            "font-family": "Arial, sans-serif",
+                            style: "text-shadow: 0 2px 4px rgba(0,0,0,0.5)"
+                        }, displayVal)
+                    ])
                 ]);
             }
         };
@@ -1057,7 +1210,11 @@
                         portraitUrl: data.portraitUrl || null,
                         createdAt: data.createdAt || null,
                         cardCount: data.cardCount || (data.cards ? data.cards.length : 0),
-                        storageName: name
+                        storageName: name,
+                        // Include art URLs for deck list display
+                        cardBackImageUrl: data.cardBackImageUrl || null,
+                        cardFrontImageUrl: data.cardFrontImageUrl || null,
+                        backgroundThumbUrl: data.backgroundThumbUrl || null
                     });
                 }
             }
@@ -1180,39 +1337,46 @@
                     ]),
                     savedDecks.length === 0 && !decksLoading
                         ? m("div", { class: "cg2-empty-state" }, "No decks yet. Create one to get started.")
-                        : m("div", { class: "cg2-deck-grid" },
+                        : m("div", { class: "cg2-deck-grid cg2-deck-grid-cards" },
                             savedDecks.map(d => {
-                                let themeName = d.themeId ? d.themeId.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : null;
-                                return m("div", { class: "cg2-deck-card" }, [
-                                    m("div", { class: "cg2-deck-portrait" },
-                                        d.portraitUrl
-                                            ? m("img", { src: d.portraitUrl })
-                                            : m("span", { class: "material-symbols-outlined", style: { fontSize: "48px", color: "#B8860B" } }, "playing_cards")
-                                    ),
-                                    m("div", { class: "cg2-deck-info" }, [
-                                        m("div", { class: "cg2-deck-name" }, d.deckName),
-                                        themeName ? m("div", { class: "cg2-deck-theme-badge" }, [
-                                            m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", verticalAlign: "middle", marginRight: "3px" } }, "auto_fix_high"),
-                                            themeName
-                                        ]) : null,
-                                        m("div", { class: "cg2-deck-meta" }, (d.characterNames || []).join(", ") + " \u2022 " + d.cardCount + " cards"),
-                                        d.createdAt ? m("div", { class: "cg2-deck-meta" }, new Date(d.createdAt).toLocaleDateString()) : null
+                                // Use card back image if available
+                                let cardBackUrl = d.cardBackImageUrl;
+
+                                return m("div", { class: "cg2-deck-item" }, [
+                                    // Card back display (hand card size)
+                                    m("div", { class: "cg2-deck-card-back" }, [
+                                        cardBackUrl
+                                            ? m("div", {
+                                                class: "cg2-deck-back-image",
+                                                style: {
+                                                    backgroundImage: "url('" + cardBackUrl + "')",
+                                                    backgroundSize: "cover",
+                                                    backgroundPosition: "center"
+                                                }
+                                            })
+                                            : m("div", { class: "cg2-deck-back-default" }, [
+                                                m("div", { class: "cg2-back-pattern" }),
+                                                m("span", { class: "material-symbols-outlined cg2-back-icon" }, "playing_cards"),
+                                                m("div", { class: "cg2-back-label" }, d.themeId || "Deck")
+                                            ])
                                     ]),
+                                    // Deck name
+                                    m("div", { class: "cg2-deck-name" }, d.deckName),
+                                    // Action buttons
                                     m("div", { class: "cg2-deck-actions" }, [
                                         m("button", {
                                             class: "cg2-btn cg2-btn-primary",
                                             onclick: () => playDeck(d.storageName),
                                             title: "Start a game with this deck"
                                         }, [
-                                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "2px" } }, "play_arrow"),
-                                            "Play"
+                                            m("span", { class: "material-symbols-outlined" }, "play_arrow"),
+                                            " Play"
                                         ]),
                                         m("button", { class: "cg2-btn", onclick: () => viewDeck(d.storageName) }, "View"),
                                         m("button", { class: "cg2-btn cg2-btn-danger", onclick: () => deleteDeck(d.storageName) }, "Delete")
                                     ])
                                 ]);
-                            }
-                            )
+                            })
                         )
                 ]);
             }
@@ -1627,7 +1791,7 @@
                         cards.map((card, i) => {
                             let isCharacter = card.type === "character";
                             return m("div", { class: "cg2-card-art-wrapper", key: card.name + "-" + i }, [
-                                m(CardFace, { card }),
+                                m(CardFace, { card, full: true }),
                                 !isCharacter ? m("div", { class: "cg2-card-edit-actions" }, [
                                     m("button", {
                                         class: "cg2-card-action-btn",
@@ -1686,6 +1850,27 @@
         }
     }
 
+    // Descriptive prompt snippets for action cards by name
+    const ACTION_PROMPTS = {
+        "Attack":      "a warrior mid-strike with weapon raised",
+        "Strike":      "a warrior mid-strike with weapon raised",
+        "Flee":        "a person running away from danger, motion blur",
+        "Investigate": "a person with lantern searching for clues in shadows",
+        "Trade":       "two merchants exchanging goods at a market stall",
+        "Rest":        "a weary traveler resting by a warm campfire",
+        "Use Item":    "hands holding a glowing magical item",
+        "Craft":       "hands crafting an item at a workbench with tools",
+        "Guard":       "a warrior in defensive stance with shield raised",
+        "Feint":       "a cunning fighter making a deceptive move"
+    };
+
+    // Descriptive prompt snippets for talk cards by name
+    const TALK_PROMPTS = {
+        "Talk":     "two people in animated conversation",
+        "Taunt":    "a confident figure taunting an opponent with a smirk",
+        "Persuade": "a charming speaker convincing a skeptical listener"
+    };
+
     function buildCardPrompt(card, theme, style, customSuffix) {
         let suffix = customSuffix ||
             (theme && theme.artStyle && theme.artStyle.promptSuffix) ||
@@ -1701,12 +1886,43 @@
             return prompt + ", " + suffix;
         }
 
-        // All other card types: emphasize type+name with double parentheses for SD weighting
-        // Combine material + name for display (material is in fabric/material field, not in name)
         let sLabel = styleLabel(style);
         let baseName = card.name || card.type;
         let typeName = (card.fabric || card.material) ? (card.fabric || card.material) + " " + baseName : baseName;
-        return "Close-up " + sLabel + " of ((" + card.type + " " + typeName + ")) in " + suffix;
+
+        // Action cards - use descriptive scene prompts
+        if (card.type === "action") {
+            let scene = ACTION_PROMPTS[card.name] || "a dramatic action scene depicting " + baseName.toLowerCase();
+            return "Close-up " + sLabel + " of ((" + scene + ")), " + suffix;
+        }
+
+        // Talk cards - use conversation/speech prompts
+        if (card.type === "talk") {
+            let scene = TALK_PROMPTS[card.name] || "two people engaged in " + baseName.toLowerCase();
+            return "Close-up " + sLabel + " of ((" + scene + ")), " + suffix;
+        }
+
+        // Skill cards - mystical glyph/ability representation
+        if (card.type === "skill") {
+            return "Close-up " + sLabel + " of ((mystical glowing glyph representing " + baseName.toLowerCase() + " ability)), ornate magical symbol, " + suffix;
+        }
+
+        // Item cards - show the item itself
+        if (card.type === "item") {
+            if (card.subtype === "weapon") {
+                return "Close-up " + sLabel + " of ((" + typeName + ")), detailed weapon, " + suffix;
+            } else if (card.subtype === "armor") {
+                return "Close-up " + sLabel + " of ((" + typeName + ")), detailed armor piece, " + suffix;
+            } else if (card.subtype === "consumable") {
+                return "Close-up " + sLabel + " of ((" + typeName + ")), magical potion or item on a table, " + suffix;
+            } else if (card.subtype === "material") {
+                return "Close-up " + sLabel + " of ((raw " + typeName + ")), crafting material, " + suffix;
+            }
+            return "Close-up " + sLabel + " of ((" + typeName + ")), detailed item, " + suffix;
+        }
+
+        // Default fallback for any other card type
+        return "Close-up " + sLabel + " of ((" + typeName + ")), " + suffix;
     }
 
     // ── Image Generation Queue ────────────────────────────────────────
@@ -1720,9 +1936,14 @@
     let backgroundThumbUrl = null;  // thumbnail URL of background
     let backgroundPrompt = null;    // prompt used for the background (used as imageSetting for character cards)
     let backgroundGenerating = false;
+    let tabletopImageId = null;     // objectId of tabletop surface image
+    let tabletopThumbUrl = null;    // thumbnail URL of tabletop
+    let tabletopGenerating = false;
     let flippedCards = {};          // { cardIndex: true } for character cards showing back
     let cardFrontImageUrl = null;   // background image for card faces
     let cardBackImageUrl = null;    // background image for card backs
+    let cardFrontGenerating = false; // status for card front template generation
+    let cardBackGenerating = false;  // status for card back template generation
 
     // Show image preview overlay
     let previewImageUrl = null;
@@ -1764,13 +1985,16 @@
 
     // ── Card Preview Overlay ──────────────────────────────────────────
     let previewCard = null;
+    let previewFlipped = false;
     function showCardPreview(card) {
         if (!card) return;
         previewCard = card;
+        previewFlipped = false;  // Always start showing front
         m.redraw();
     }
     function closeCardPreview() {
         previewCard = null;
+        previewFlipped = false;
         m.redraw();
     }
     function CardPreviewOverlay() {
@@ -1779,23 +2003,67 @@
                 if (!previewCard) return null;
                 let cardFrontBg = viewingDeck && viewingDeck.cardFrontImageUrl
                     ? viewingDeck.cardFrontImageUrl : null;
+                let cardBackBg = viewingDeck && viewingDeck.cardBackImageUrl
+                    ? viewingDeck.cardBackImageUrl : null;
+
+                // Build back side content - card art or generic back
+                let backContent;
+                if (previewCard.imageUrl || previewCard.portraitUrl) {
+                    let artUrl = (previewCard.imageUrl || previewCard.portraitUrl).replace(/\/\d+x\d+/, "/512x512");
+                    backContent = m("div", {
+                        class: "cg2-card cg2-card-full cg2-preview-back",
+                        style: {
+                            backgroundImage: cardBackBg ? "url('" + cardBackBg + "')" : "none",
+                            backgroundSize: "cover",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center"
+                        }
+                    }, [
+                        m("img", {
+                            src: artUrl,
+                            class: "cg2-preview-back-art"
+                        })
+                    ]);
+                } else {
+                    // No art - show card back design
+                    backContent = m("div", {
+                        class: "cg2-card cg2-card-full cg2-preview-back",
+                        style: {
+                            backgroundImage: cardBackBg ? "url('" + cardBackBg + "')" : "none",
+                            backgroundSize: "cover",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center"
+                        }
+                    }, [
+                        m("div", { class: "cg2-card-back-design" }, [
+                            m("span", { class: "material-symbols-outlined", style: "font-size:64px;opacity:0.5" }, "style")
+                        ])
+                    ]);
+                }
+
                 return m("div", {
                     class: "cg2-card-preview-overlay",
                     onclick: closeCardPreview
                 }, [
                     m("div", {
-                        class: "cg2-card-preview-container",
-                        onclick(e) { e.stopPropagation(); }
+                        class: "cg2-card-preview-container cg2-preview-flipper" + (previewFlipped ? " cg2-flipped" : ""),
+                        onclick(e) {
+                            e.stopPropagation();
+                            previewFlipped = !previewFlipped;
+                        }
                     }, [
-                        m(CardFace, { card: previewCard, bgImage: cardFrontBg }),
-                        // Show card art if available
-                        previewCard.imageUrl ? m("div", { class: "cg2-preview-art" }, [
-                            m("img", {
-                                src: previewCard.imageUrl.replace(/\/\d+x\d+/, "/512x512"),
-                                style: { maxWidth: "200px", maxHeight: "200px", borderRadius: "8px", marginTop: "12px" }
-                            })
-                        ]) : null
+                        // Front face
+                        m("div", { class: "cg2-preview-face cg2-preview-front" }, [
+                            m(CardFace, { card: previewCard, bgImage: cardFrontBg, full: true })
+                        ]),
+                        // Back face
+                        m("div", { class: "cg2-preview-face cg2-preview-back-face" }, [
+                            backContent
+                        ])
                     ]),
+                    m("div", { class: "cg2-preview-hint" }, "Click card to flip"),
                     m("span", {
                         class: "material-symbols-outlined cg2-preview-close",
                         onclick: closeCardPreview
@@ -2222,6 +2490,74 @@
         m.redraw();
     }
 
+    // Generate a tabletop surface image for the game play area
+    async function generateTabletop(theme) {
+        let t = theme || activeTheme;
+        let ttOv = sdOverrides.tabletop;
+        // Use tabletop override prompt if set, otherwise use theme setting or default
+        let ttPrompt = (ttOv && ttOv.description) ||
+            (t.artStyle && t.artStyle.tabletopPrompt) ||
+            "Wooden table surface with subtle texture, warm lighting, top-down view, game table";
+
+        tabletopGenerating = true;
+        m.redraw();
+
+        try {
+            let dir = await ensureArtDir(t.themeId);
+            if (!dir) throw new Error("Could not create art directory");
+
+            let entity = await am7sd.buildEntity({
+                description: ttPrompt,
+                bodyStyle: "landscape",
+                seed: -1,
+                groupPath: dir.path,
+                imageName: "tabletop-" + t.themeId + "-" + Date.now() + ".png"
+            });
+            am7sd.applyOverrides(entity, sdOverrides._default);
+            am7sd.applyOverrides(entity, getCardTypeDelta("tabletop"));
+            am7sd.fillStyleDefaults(entity);
+
+            let result = await m.request({
+                method: "POST",
+                url: g_application_path + "/rest/olio/generateArt",
+                body: entity,
+                withCredentials: true,
+                extract: function(xhr) {
+                    let body = null;
+                    try { body = JSON.parse(xhr.responseText); } catch(e) {}
+                    if (xhr.status !== 200) {
+                        throw new Error((body && body.error) || "HTTP " + xhr.status);
+                    }
+                    return body;
+                }
+            });
+
+            if (!result || !result.objectId) throw new Error("Tabletop generation returned no result");
+
+            tabletopImageId = result.objectId;
+            tabletopThumbUrl = g_application_path + "/thumbnail/" +
+                am7client.dotPath(am7client.currentOrganization) +
+                "/data.data" + (result.groupPath || dir.path) + "/" + result.name + "/256x256";
+
+            // Save tabletop reference on the deck
+            if (viewingDeck) {
+                viewingDeck.tabletopImageId = tabletopImageId;
+                viewingDeck.tabletopThumbUrl = tabletopThumbUrl;
+                let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+                await deckStorage.save(safeName, viewingDeck);
+            }
+
+            page.toast("success", "Tabletop generated");
+            console.log("[CardGame v2] Tabletop generated:", tabletopImageId);
+        } catch (e) {
+            console.error("[CardGame v2] Tabletop generation failed:", e);
+            page.toast("error", "Tabletop failed: " + (e.message || "Unknown error"));
+        }
+
+        tabletopGenerating = false;
+        m.redraw();
+    }
+
     // Build a SD config entity for a card, merging theme per-type overrides.
     // Uses am7sd to fetch the random template (with full style fields intact)
     // and apply overrides without destroying style-specific prompt composition.
@@ -2363,8 +2699,11 @@
                 : "ornate card back design, intricate repeating pattern, card game template, " + suffix;
         }
 
-        backgroundGenerating = true;
+        // Set generating status for this side
+        if (side === "front") cardFrontGenerating = true;
+        else cardBackGenerating = true;
         m.redraw();
+
         try {
             let dir = await ensureArtDir(theme.themeId);
             if (!dir) throw new Error("Could not create art directory");
@@ -2423,7 +2762,10 @@
             console.error("[CardGame v2] Template art failed:", e);
             page.toast("error", "Card " + side + " art failed: " + (e.message || "Unknown error"));
         }
-        backgroundGenerating = false;
+
+        // Clear generating status
+        if (side === "front") cardFrontGenerating = false;
+        else cardBackGenerating = false;
         m.redraw();
     }
 
@@ -2891,10 +3233,173 @@
     const GAME_PHASES = {
         INITIATIVE: "initiative",
         EQUIP: "equip",
+        THREAT_RESPONSE: "threat_response",  // Phase for responding to beginning/end threats
         DRAW_PLACEMENT: "draw_placement",
         RESOLUTION: "resolution",
-        CLEANUP: "cleanup"
+        CLEANUP: "cleanup",
+        END_THREAT: "end_threat"  // Phase for responding to end-of-round threats
     };
+
+    // ── Status Effects ────────────────────────────────────────────────
+    const STATUS_EFFECTS = {
+        STUNNED: {
+            id: "stunned",
+            name: "Stunned",
+            icon: "star",
+            color: "#FFC107",
+            description: "Skip next action",
+            duration: 1,
+            durationType: "turns"  // "turns", "untilHit", "endOfRound"
+        },
+        POISONED: {
+            id: "poisoned",
+            name: "Poisoned",
+            icon: "skull",
+            color: "#8BC34A",
+            description: "-2 HP at turn start",
+            duration: 3,
+            durationType: "turns",
+            onTurnStart: (actor) => {
+                actor.hp = Math.max(0, actor.hp - 2);
+                return { message: "Poison deals 2 damage", damage: 2 };
+            }
+        },
+        SHIELDED: {
+            id: "shielded",
+            name: "Shielded",
+            icon: "shield",
+            color: "#2196F3",
+            description: "+3 DEF",
+            duration: 1,
+            durationType: "untilHit",
+            defBonus: 3
+        },
+        WEAKENED: {
+            id: "weakened",
+            name: "Weakened",
+            icon: "trending_down",
+            color: "#9C27B0",
+            description: "-2 to all rolls",
+            duration: 2,
+            durationType: "turns",
+            rollPenalty: -2
+        },
+        ENRAGED: {
+            id: "enraged",
+            name: "Enraged",
+            icon: "local_fire_department",
+            color: "#F44336",
+            description: "+3 ATK, -2 DEF",
+            duration: 2,
+            durationType: "turns",
+            atkBonus: 3,
+            defPenalty: -2
+        }
+    };
+
+    // Apply a status effect to an actor
+    function applyStatusEffect(actor, effectId, sourceName) {
+        if (!actor.statusEffects) actor.statusEffects = [];
+        let effectDef = STATUS_EFFECTS[effectId.toUpperCase()];
+        if (!effectDef) {
+            console.warn("[CardGame v2] Unknown status effect:", effectId);
+            return false;
+        }
+        // Check if already has this effect (refresh duration instead of stacking)
+        let existing = actor.statusEffects.find(e => e.id === effectDef.id);
+        if (existing) {
+            existing.turnsRemaining = effectDef.duration;
+            console.log("[CardGame v2] Refreshed", effectDef.name, "on", actor.character?.name || "actor");
+            return true;
+        }
+        // Add new effect
+        actor.statusEffects.push({
+            id: effectDef.id,
+            name: effectDef.name,
+            icon: effectDef.icon,
+            color: effectDef.color,
+            turnsRemaining: effectDef.duration,
+            durationType: effectDef.durationType,
+            source: sourceName || "Unknown"
+        });
+        console.log("[CardGame v2] Applied", effectDef.name, "to", actor.character?.name || "actor");
+        return true;
+    }
+
+    // Remove a status effect from an actor
+    function removeStatusEffect(actor, effectId) {
+        if (!actor.statusEffects) return;
+        let idx = actor.statusEffects.findIndex(e => e.id === effectId);
+        if (idx >= 0) {
+            let removed = actor.statusEffects.splice(idx, 1)[0];
+            console.log("[CardGame v2] Removed", removed.name, "from", actor.character?.name || "actor");
+        }
+    }
+
+    // Check if actor has a specific status effect
+    function hasStatusEffect(actor, effectId) {
+        if (!actor.statusEffects) return false;
+        return actor.statusEffects.some(e => e.id === effectId);
+    }
+
+    // Get total status effect modifiers for an actor
+    function getStatusModifiers(actor) {
+        let mods = { atk: 0, def: 0, roll: 0 };
+        if (!actor.statusEffects) return mods;
+        actor.statusEffects.forEach(effect => {
+            let def = STATUS_EFFECTS[effect.id.toUpperCase()];
+            if (def) {
+                if (def.atkBonus) mods.atk += def.atkBonus;
+                if (def.defBonus) mods.def += def.defBonus;
+                if (def.defPenalty) mods.def += def.defPenalty;
+                if (def.rollPenalty) mods.roll += def.rollPenalty;
+            }
+        });
+        return mods;
+    }
+
+    // Process status effects at turn start (for effects like poison)
+    function processStatusEffectsTurnStart(actor) {
+        if (!actor.statusEffects) return [];
+        let messages = [];
+        actor.statusEffects.forEach(effect => {
+            let def = STATUS_EFFECTS[effect.id.toUpperCase()];
+            if (def && def.onTurnStart) {
+                let result = def.onTurnStart(actor);
+                if (result && result.message) {
+                    messages.push({ effect: effect.name, message: result.message });
+                }
+            }
+        });
+        return messages;
+    }
+
+    // Tick down status effect durations (call at end of turn/round)
+    function tickStatusEffects(actor) {
+        if (!actor.statusEffects) return;
+        actor.statusEffects = actor.statusEffects.filter(effect => {
+            if (effect.durationType === "turns") {
+                effect.turnsRemaining--;
+                if (effect.turnsRemaining <= 0) {
+                    console.log("[CardGame v2]", effect.name, "expired on", actor.character?.name || "actor");
+                    return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    // Remove "until hit" effects when actor is hit
+    function onActorHit(actor) {
+        if (!actor.statusEffects) return;
+        actor.statusEffects = actor.statusEffects.filter(effect => {
+            if (effect.durationType === "untilHit") {
+                console.log("[CardGame v2]", effect.name, "removed (hit) from", actor.character?.name || "actor");
+                return false;
+            }
+            return true;
+        });
+    }
 
     // ── LLM Connectivity ──────────────────────────────────────────────
     let llmStatus = { checked: false, available: false, error: null };
@@ -2925,7 +3430,7 @@
 
     // ── Initiative Animation State ───────────────────────────────────────
     let initAnimState = {
-        countdown: 5,           // Countdown from 5
+        countdown: 3,           // Countdown from 3
         rolling: false,         // Whether dice are animating
         rollComplete: false,    // Whether final roll is shown
         playerDiceFace: 1,      // Current displayed face during animation
@@ -2936,7 +3441,7 @@
     function resetInitAnimState() {
         if (initAnimState.animInterval) clearInterval(initAnimState.animInterval);
         initAnimState = {
-            countdown: 5,
+            countdown: 3,
             rolling: false,
             rollComplete: false,
             playerDiceFace: 1,
@@ -3072,7 +3577,7 @@
         console.log("[CardGame v2] Player hand:", playerHand.map(c => c.name));
         console.log("[CardGame v2] Draw piles - player:", playerDrawPile.length, "opponent:", opponentDrawPile.length);
 
-        return {
+        let state = {
             // Meta
             deckName: deck.deckName,
             themeId: deck.themeId,
@@ -3115,7 +3620,9 @@
                 discardPile: [],
                 // Card stack: modifier cards placed on character (apparel, items, buffs)
                 cardStack: dealInitialStack(playerApparel, playerItems),
-                roundPoints: 0
+                roundPoints: 0,
+                statusEffects: [],  // Active status effects (stunned, poisoned, etc.)
+                typesPlayedThisRound: {}  // Track action types played this round for hoarding prevention
             },
 
             // Opponent state (AI) - use actual character from deck if available
@@ -3147,7 +3654,9 @@
                 discardPile: [],
                 // Card stack: modifier cards placed on character
                 cardStack: dealInitialStack(opponentApparel, opponentItems),
-                roundPoints: 0
+                roundPoints: 0,
+                statusEffects: [],  // Active status effects (stunned, poisoned, etc.)
+                typesPlayedThisRound: {}  // Track action types played this round for hoarding prevention
             },
 
             // Encounter deck (shuffled)
@@ -3162,8 +3671,28 @@
 
             // Turn tracking for draw/placement
             currentTurn: null,  // "player" | "opponent"
-            turnActions: []     // log of actions this placement phase
+            turnActions: [],    // log of actions this placement phase
+
+            // Beginning threats (from Nat 1 on initiative)
+            beginningThreats: [],
+
+            // Threat response state
+            threatResponse: {
+                active: false,
+                type: null,        // "beginning" | "end"
+                threats: [],       // Array of active threats
+                responder: null,   // "player" | "opponent" - who gets to respond
+                bonusAP: 0,        // AP for threat response (limited)
+                defenseStack: null,// Stack placed for defense
+                resolved: false
+            }
         };
+
+        // Ensure each player has at least one Attack card in starting hand
+        ensureOffensiveCard(state.player, "Player");
+        ensureOffensiveCard(state.opponent, "Opponent");
+
+        return state;
     }
 
     // ── Dice Rolling ──────────────────────────────────────────────────
@@ -3185,6 +3714,27 @@
             if (card.atk) total += card.atk;
         });
         return total;
+    }
+
+    // Check if actor is dual-wielding (two one-handed weapons)
+    function isDualWielding(actor) {
+        let oneHandedWeapons = (actor.cardStack || []).filter(card =>
+            card.type === "item" &&
+            card.subtype === "weapon" &&
+            card.slot &&
+            card.slot.includes("1H")
+        );
+        return oneHandedWeapons.length >= 2;
+    }
+
+    // Get ATK values for each weapon (for dual wield separate rolls)
+    function getWeaponATKs(actor) {
+        let weapons = (actor.cardStack || []).filter(card =>
+            card.type === "item" &&
+            card.subtype === "weapon" &&
+            card.atk
+        );
+        return weapons.map(w => ({ name: w.name, atk: w.atk || 0 }));
     }
 
     // Get total DEF bonus from actor's card stack (armor, apparel)
@@ -3221,27 +3771,38 @@
         return total;
     }
 
-    // Roll attack: 1d20 + STR + weapon ATK + skill mods (from stack)
+    // Roll attack: 1d20 + STR + weapon ATK + skill mods (from stack) + status effects
     function rollAttack(attacker, stack) {
         let raw = rollD20();
         let stats = attacker.character.stats || {};
         let strMod = stats.STR || 0;
         let atkBonus = getActorATK(attacker);
         let skillMod = getStackSkillMod(stack, "attack");
-        let total = raw + strMod + atkBonus + skillMod;
+
+        // Add status effect modifiers
+        let statusMods = getStatusModifiers(attacker);
+        let statusAtkMod = statusMods.atk + statusMods.roll;
+
+        let total = raw + strMod + atkBonus + skillMod + statusAtkMod;
+
+        let breakdown = `${raw} + ${strMod} STR + ${atkBonus} ATK`;
+        if (skillMod) breakdown += ` + ${skillMod} Skill`;
+        if (statusAtkMod) breakdown += ` + ${statusAtkMod} Status`;
+        breakdown += ` = ${total}`;
 
         return {
             raw,
             strMod,
             atkBonus,
             skillMod,
+            statusMod: statusAtkMod,
             total,
-            formula: "1d20 + STR + ATK" + (skillMod ? " + Skill" : ""),
-            breakdown: `${raw} + ${strMod} STR + ${atkBonus} ATK` + (skillMod ? ` + ${skillMod} Skill` : "") + ` = ${total}`
+            formula: "1d20 + STR + ATK" + (skillMod ? " + Skill" : "") + (statusAtkMod ? " + Status" : ""),
+            breakdown
         };
     }
 
-    // Roll defense: 1d20 + END + armor DEF + weapon parry (if applicable)
+    // Roll defense: 1d20 + END + armor DEF + weapon parry (if applicable) + status effects
     function rollDefense(defender) {
         let raw = rollD20();
         let stats = defender.character.stats || {};
@@ -3252,40 +3813,63 @@
         (defender.cardStack || []).forEach(card => {
             if (card.parry) parryBonus += card.parry;
         });
-        let total = raw + endMod + defBonus + parryBonus;
+
+        // Add status effect modifiers
+        let statusMods = getStatusModifiers(defender);
+        let statusDefMod = statusMods.def + statusMods.roll;
+
+        let total = raw + endMod + defBonus + parryBonus + statusDefMod;
+
+        let breakdown = `${raw} + ${endMod} END + ${defBonus} DEF`;
+        if (parryBonus) breakdown += ` + ${parryBonus} Parry`;
+        if (statusDefMod) breakdown += ` + ${statusDefMod} Status`;
+        breakdown += ` = ${total}`;
 
         return {
             raw,
             endMod,
             defBonus,
             parryBonus,
+            statusMod: statusDefMod,
             total,
-            formula: "1d20 + END + DEF" + (parryBonus ? " + Parry" : ""),
-            breakdown: `${raw} + ${endMod} END + ${defBonus} DEF` + (parryBonus ? ` + ${parryBonus} Parry` : "") + ` = ${total}`
+            formula: "1d20 + END + DEF" + (parryBonus ? " + Parry" : "") + (statusDefMod ? " + Status" : ""),
+            breakdown
         };
     }
 
-    // Outcome table (7 tiers based on roll difference)
+    // Outcome table (based on roll difference + natural 1/20)
     const COMBAT_OUTCOMES = {
-        CRITICAL_HIT:    { minDiff: 10, label: "Critical Hit!", damageMultiplier: 2, effect: "double damage" },
-        STRONG_HIT:      { minDiff: 5,  label: "Strong Hit", damageMultiplier: 1, effect: "full damage" },
-        GLANCING_HIT:    { minDiff: 1,  label: "Glancing Hit", damageMultiplier: 0.5, effect: "half damage" },
-        CLASH:           { minDiff: 0,  label: "Clash!", damageMultiplier: 0, effect: "both take 1 damage", bothTakeDamage: 1 },
-        DEFLECT:         { maxDiff: -1, label: "Deflected", damageMultiplier: 0, effect: "no damage, lose initiative" },
-        PARRY:           { maxDiff: -5, label: "Parried!", damageMultiplier: 0, effect: "defender may counter", allowCounter: true },
-        CRITICAL_COUNTER:{ maxDiff: -10, label: "Critical Counter!", damageMultiplier: -0.5, effect: "attacker takes half damage" }
+        CRITICAL_HIT:    { label: "Critical Hit!", damageMultiplier: 2, effect: "Nat 20! Double damage + item drop chance", isCriticalHit: true },
+        DEVASTATING:     { label: "Devastating!", damageMultiplier: 1.5, effect: "massive damage" },
+        STRONG_HIT:      { label: "Strong Hit", damageMultiplier: 1, effect: "full damage" },
+        GLANCING_HIT:    { label: "Glancing Hit", damageMultiplier: 0.5, effect: "half damage" },
+        CLASH:           { label: "Clash!", damageMultiplier: 0, effect: "both take 1 damage", bothTakeDamage: 1 },
+        DEFLECT:         { label: "Deflected", damageMultiplier: 0, effect: "no damage" },
+        PARRY:           { label: "Parried!", damageMultiplier: 0, effect: "defender may counter", allowCounter: true },
+        CRITICAL_MISS:   { label: "Critical Miss!", damageMultiplier: -0.5, effect: "Nat 1! Attacker takes damage + stunned", isCriticalCounter: true }
     };
 
     function getCombatOutcome(attackRoll, defenseRoll) {
         let diff = attackRoll.total - defenseRoll.total;
+        let attackNat = attackRoll.raw;
+        let defenseNat = defenseRoll.raw;
 
-        if (diff >= 10) return { ...COMBAT_OUTCOMES.CRITICAL_HIT, diff };
+        // Natural 20 on attack = Critical Hit (always)
+        if (attackNat === 20) return { ...COMBAT_OUTCOMES.CRITICAL_HIT, diff };
+
+        // Natural 1 on attack = Critical Miss (always)
+        if (attackNat === 1) return { ...COMBAT_OUTCOMES.CRITICAL_MISS, diff };
+
+        // Natural 20 on defense with successful block = Parry
+        if (defenseNat === 20 && diff <= 0) return { ...COMBAT_OUTCOMES.PARRY, diff };
+
+        // Diff-based outcomes (no criticals)
+        if (diff >= 10) return { ...COMBAT_OUTCOMES.DEVASTATING, diff };
         if (diff >= 5)  return { ...COMBAT_OUTCOMES.STRONG_HIT, diff };
         if (diff >= 1)  return { ...COMBAT_OUTCOMES.GLANCING_HIT, diff };
         if (diff === 0) return { ...COMBAT_OUTCOMES.CLASH, diff };
         if (diff >= -4) return { ...COMBAT_OUTCOMES.DEFLECT, diff };
-        if (diff >= -9) return { ...COMBAT_OUTCOMES.PARRY, diff };
-        return { ...COMBAT_OUTCOMES.CRITICAL_COUNTER, diff };
+        return { ...COMBAT_OUTCOMES.PARRY, diff };
     }
 
     // Calculate damage: base = weapon ATK + STR, modified by outcome
@@ -3313,6 +3897,10 @@
         let def = getActorDEF(actor);
         let reduced = Math.max(1, damage - def);  // Minimum 1 damage
         actor.hp = Math.max(0, actor.hp - reduced);
+
+        // Remove "until hit" status effects (like shielded)
+        onActorHit(actor);
+
         return {
             rawDamage: damage,
             armorReduction: def,
@@ -3326,6 +3914,10 @@
 
     // Resolve combat between attacker and defender
     function resolveCombat(attackerActor, defenderActor, stack) {
+        // Check for dual wield (two one-handed weapons = two attack rolls)
+        let dualWield = isDualWielding(attackerActor);
+        let weapons = dualWield ? getWeaponATKs(attackerActor) : null;
+
         let attackRoll = rollAttack(attackerActor, stack);
         let defenseRoll = rollDefense(defenderActor);
         let outcome = getCombatOutcome(attackRoll, defenseRoll);
@@ -3333,13 +3925,73 @@
         let damageResult = null;
         let selfDamageResult = null;
 
-        // Apply effects based on outcome
+        // Dual wield: second attack roll
+        let secondAttack = null;
+        if (dualWield && weapons && weapons.length >= 2) {
+            // Second attack uses the second weapon's ATK
+            let secondRoll = rollAttack(attackerActor, stack);
+            let secondOutcome = getCombatOutcome(secondRoll, defenseRoll);
+            let secondDamage = calculateDamage(attackerActor, secondOutcome);
+
+            secondAttack = {
+                weaponName: weapons[1].name,
+                attackRoll: secondRoll,
+                outcome: secondOutcome,
+                damage: secondDamage,
+                damageResult: null
+            };
+
+            // Apply second attack damage
+            if (secondOutcome.damageMultiplier > 0) {
+                secondAttack.damageResult = applyDamage(defenderActor, secondDamage.finalDamage);
+            }
+
+            // Tag first attack with weapon name
+            if (weapons[0]) {
+                attackRoll.weaponName = weapons[0].name;
+            }
+
+            console.log("[CardGame v2] DUAL WIELD: Second attack with", weapons[1].name, "- Roll:", secondRoll.total, "Outcome:", secondOutcome.label);
+        }
+
+        // Apply effects based on outcome (first/main attack)
+        let criticalEffects = { itemDropped: null, attackerStunned: false };
+
         if (outcome.damageMultiplier > 0) {
             // Hit - apply damage to defender
             damageResult = applyDamage(defenderActor, damage.finalDamage);
+
+            // Critical Hit: chance to make defender drop an item
+            if (outcome.isCriticalHit && defenderActor.cardStack && defenderActor.cardStack.length > 0) {
+                // 50% chance to drop an item on critical hit
+                if (Math.random() < 0.5) {
+                    let droppableItems = defenderActor.cardStack.filter(c =>
+                        c.type === "item" || c.type === "apparel"
+                    );
+                    if (droppableItems.length > 0) {
+                        let droppedItem = droppableItems[Math.floor(Math.random() * droppableItems.length)];
+                        // Remove from defender's stack
+                        let idx = defenderActor.cardStack.indexOf(droppedItem);
+                        if (idx >= 0) {
+                            defenderActor.cardStack.splice(idx, 1);
+                            // Add to pot
+                            gameState.pot.push(droppedItem);
+                            criticalEffects.itemDropped = droppedItem;
+                            console.log("[CardGame v2] CRITICAL HIT! Item dropped:", droppedItem.name);
+                        }
+                    }
+                }
+            }
         } else if (outcome.damageMultiplier < 0) {
             // Critical counter - attacker takes damage
             selfDamageResult = applyDamage(attackerActor, damage.finalDamage * -1);
+
+            // Critical Counter: stun the attacker (skip next action)
+            if (outcome.isCriticalCounter) {
+                applyStatusEffect(attackerActor, "stunned", "Critical Counter");
+                criticalEffects.attackerStunned = true;
+                console.log("[CardGame v2] CRITICAL COUNTER! Attacker stunned");
+            }
         } else if (outcome.bothTakeDamage) {
             // Clash - both take fixed damage
             damageResult = applyDamage(defenderActor, outcome.bothTakeDamage);
@@ -3354,7 +4006,12 @@
             damageResult,
             selfDamageResult,
             attackerName: attackerActor.character.name || "Attacker",
-            defenderName: defenderActor.character.name || "Defender"
+            defenderName: defenderActor.character.name || "Defender",
+            // Dual wield info
+            dualWield: dualWield,
+            secondAttack: secondAttack,
+            // Critical effects
+            criticalEffects: criticalEffects
         };
 
         console.log("[CardGame v2] Combat resolved:", result);
@@ -3420,6 +4077,153 @@
         return stack;
     }
 
+    // ── Per-Round Threat System ──────────────────────────────────────
+    const THREAT_CREATURES = [
+        { name: "Wolf", atk: 2, def: 1, hp: 8, imageIcon: "pets" },
+        { name: "Goblin Scout", atk: 3, def: 1, hp: 10, imageIcon: "face" },
+        { name: "Giant Spider", atk: 2, def: 2, hp: 12, imageIcon: "bug_report" },
+        { name: "Bandit", atk: 4, def: 2, hp: 15, imageIcon: "person_alert" },
+        { name: "Dire Wolf", atk: 5, def: 2, hp: 18, imageIcon: "pets" },
+        { name: "Orc Warrior", atk: 6, def: 3, hp: 20, imageIcon: "shield_person" }
+    ];
+
+    /**
+     * Create a threat encounter based on difficulty
+     * @param {number} difficulty - Threat difficulty (affects stats and loot)
+     * @returns {Object} Threat encounter object
+     */
+    function createThreatEncounter(difficulty) {
+        // Pick a creature based on difficulty
+        let creatureIdx = Math.min(Math.floor(difficulty / 2), THREAT_CREATURES.length - 1);
+        let base = THREAT_CREATURES[creatureIdx];
+
+        // Scale stats based on difficulty
+        let scaleFactor = 1 + (difficulty - 4) * 0.1;
+        let threat = {
+            type: "encounter",
+            subtype: "threat",
+            name: base.name,
+            difficulty: difficulty,
+            atk: Math.round(base.atk * scaleFactor),
+            def: Math.round(base.def * scaleFactor),
+            hp: Math.round(base.hp * scaleFactor),
+            maxHp: Math.round(base.hp * scaleFactor),
+            imageIcon: base.imageIcon,
+            isThreat: true
+        };
+
+        // Determine loot rarity based on difficulty
+        if (difficulty <= 4) {
+            threat.lootRarity = "COMMON";
+            threat.lootCount = 1;
+        } else if (difficulty <= 8) {
+            threat.lootRarity = "UNCOMMON";
+            threat.lootCount = 1;
+        } else {
+            threat.lootRarity = "RARE";
+            threat.lootCount = 2;  // 1 rare + 1 common
+        }
+
+        return threat;
+    }
+
+    /**
+     * Check for Nat 1 on initiative and create beginning threats
+     * @returns {Array} Array of threat objects with target info
+     */
+    function checkNat1Threats() {
+        if (!gameState || !gameState.initiative) return [];
+
+        let threats = [];
+        let difficulty = gameState.round + 2;  // Beginning threat difficulty = round + 2
+
+        // Check player for Nat 1
+        if (gameState.initiative.playerRoll && gameState.initiative.playerRoll.raw === 1) {
+            let threat = createThreatEncounter(difficulty);
+            threat.target = "player";  // Threat attacks the fumbler
+            threats.push(threat);
+            console.log("[CardGame v2] BEGINNING THREAT! Player rolled Nat 1 - spawning", threat.name);
+        }
+
+        // Check opponent for Nat 1
+        if (gameState.initiative.opponentRoll && gameState.initiative.opponentRoll.raw === 1) {
+            let threat = createThreatEncounter(difficulty);
+            threat.target = "opponent";  // Threat attacks the fumbler
+            threats.push(threat);
+            console.log("[CardGame v2] BEGINNING THREAT! Opponent rolled Nat 1 - spawning", threat.name);
+        }
+
+        // Max 2 beginning threats (one per player Nat 1)
+        return threats.slice(0, 2);
+    }
+
+    /**
+     * Store beginning threats for THREAT_RESPONSE phase
+     * (No longer inserts into action bar - combat handled in separate phase)
+     */
+    function insertBeginningThreats(threats) {
+        if (!gameState || !threats || threats.length === 0) return;
+
+        // Store threats for THREAT_RESPONSE phase
+        gameState.beginningThreats = threats;
+
+        console.log("[CardGame v2] Beginning threats queued for response phase:", threats.length, "threats");
+    }
+
+    // ── Scenario Cards (End Threats) ──────────────────────────────────
+    const SCENARIO_CARDS = [
+        { name: "Peaceful Respite", effect: "no_threat", description: "The area is calm. No threats emerge.", weight: 40 },
+        { name: "Distant Howling", effect: "no_threat", description: "You hear something in the distance, but nothing approaches.", weight: 25 },
+        { name: "Ambush!", effect: "threat", description: "Enemies emerge from hiding!", threatBonus: 0, weight: 15 },
+        { name: "Elite Patrol", effect: "threat", description: "A stronger foe appears!", threatBonus: 2, weight: 10 },
+        { name: "Wandering Monster", effect: "threat", description: "A creature stumbles upon you.", threatBonus: -1, weight: 8 },
+        { name: "Boss Encounter", effect: "threat", description: "A fearsome opponent blocks your path!", threatBonus: 4, weight: 2 }
+    ];
+
+    /**
+     * Draw a scenario card using weighted random selection
+     * @returns {Object} Selected scenario card
+     */
+    function drawScenarioCard() {
+        let totalWeight = SCENARIO_CARDS.reduce((sum, card) => sum + card.weight, 0);
+        let roll = Math.random() * totalWeight;
+        let cumulative = 0;
+
+        for (let card of SCENARIO_CARDS) {
+            cumulative += card.weight;
+            if (roll <= cumulative) {
+                return { ...card };
+            }
+        }
+        return { ...SCENARIO_CARDS[0] };  // Fallback
+    }
+
+    /**
+     * Check for end-of-round threat from scenario card
+     * @returns {Object|null} End threat info or null if no threat
+     */
+    function checkEndThreat() {
+        let scenario = drawScenarioCard();
+        console.log("[CardGame v2] Scenario card drawn:", scenario.name);
+
+        if (scenario.effect === "threat") {
+            let difficulty = gameState.round + 3 + (scenario.threatBonus || 0);
+            let threat = createThreatEncounter(difficulty);
+            // End threats target the round loser (or random on tie)
+            if (gameState.roundWinner === "tie") {
+                threat.target = Math.random() < 0.5 ? "player" : "opponent";
+            } else {
+                threat.target = gameState.roundWinner === "player" ? "opponent" : "player";
+            }
+            return {
+                scenario: scenario,
+                threat: threat
+            };
+        }
+
+        return { scenario: scenario, threat: null };
+    }
+
     // ── Initiative Phase ──────────────────────────────────────────────
     function runInitiativePhase() {
         if (!gameState) return;
@@ -3477,6 +4281,12 @@
             });
         }
 
+        // Check for Nat 1 (critical initiative failure) - triggers beginning threats
+        let beginningThreats = checkNat1Threats();
+        if (beginningThreats.length > 0) {
+            insertBeginningThreats(beginningThreats);
+        }
+
         console.log("[CardGame v2] Initiative:", gameState.initiative);
         m.redraw();
     }
@@ -3485,53 +4295,338 @@
     function advancePhase() {
         if (!gameState) return;
 
-        let phases = [
-            GAME_PHASES.INITIATIVE,
-            // EQUIP phase skipped - armor/item cards handled as modifiers in hand
-            GAME_PHASES.DRAW_PLACEMENT,
-            GAME_PHASES.RESOLUTION,
-            GAME_PHASES.CLEANUP
-        ];
-
-        let currentIdx = phases.indexOf(gameState.phase);
-        if (currentIdx < phases.length - 1) {
-            gameState.phase = phases[currentIdx + 1];
-            console.log("[CardGame v2] Phase advanced to:", gameState.phase);
-
-            // Phase-specific initialization
-            if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
-                // Initiative winner goes first
-                gameState.currentTurn = gameState.initiative.winner;
-                console.log("[CardGame v2] Placement phase started. Current turn:", gameState.currentTurn);
-
-                // If AI goes first, trigger AI placement
-                if (gameState.currentTurn === "opponent") {
-                    setTimeout(() => {
-                        if (gameState && gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
-                            console.log("[CardGame v2] Triggering AI placement (goes first)");
-                            aiPlaceCards();
-                            m.redraw();
-                        }
-                    }, 500);
-                }
-            } else if (gameState.phase === GAME_PHASES.RESOLUTION) {
-                gameState.actionBar.resolveIndex = 0;
-                // Auto-start resolution
-                setTimeout(() => {
-                    if (gameState && gameState.phase === GAME_PHASES.RESOLUTION) {
-                        advanceResolution();
-                    }
-                }, 500);
+        // Handle phase-specific transitions
+        if (gameState.phase === GAME_PHASES.INITIATIVE) {
+            // Check if there are beginning threats that need response
+            if (gameState.beginningThreats && gameState.beginningThreats.length > 0) {
+                enterThreatResponsePhase("beginning");
+            } else {
+                enterDrawPlacementPhase();
             }
-        } else {
-            // Cleanup complete -> next round
-            startNextRound();
+        } else if (gameState.phase === GAME_PHASES.THREAT_RESPONSE) {
+            // Threat response complete - resolve the threat combat, then continue to placement
+            resolveThreatCombat();
+        } else if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
+            gameState.phase = GAME_PHASES.RESOLUTION;
+            gameState.actionBar.resolveIndex = 0;
+            console.log("[CardGame v2] Phase advanced to:", gameState.phase);
+            // Auto-start resolution
+            setTimeout(() => {
+                if (gameState && gameState.phase === GAME_PHASES.RESOLUTION) {
+                    advanceResolution();
+                }
+            }, 500);
+        } else if (gameState.phase === GAME_PHASES.RESOLUTION) {
+            gameState.phase = GAME_PHASES.CLEANUP;
+            console.log("[CardGame v2] Phase advanced to:", gameState.phase);
+        } else if (gameState.phase === GAME_PHASES.CLEANUP) {
+            // Check for end-of-round threat before starting next round
+            if (gameState.endThreatResult && gameState.endThreatResult.threat && !gameState.endThreatResult.responded) {
+                enterEndThreatPhase();
+            } else {
+                startNextRound();
+            }
+        } else if (gameState.phase === GAME_PHASES.END_THREAT) {
+            // End threat response complete - resolve it, then start next round
+            resolveEndThreatCombat();
         }
         m.redraw();
     }
 
+    function enterDrawPlacementPhase() {
+        gameState.phase = GAME_PHASES.DRAW_PLACEMENT;
+        gameState.currentTurn = gameState.initiative.winner;
+        console.log("[CardGame v2] Phase advanced to:", gameState.phase, "- Current turn:", gameState.currentTurn);
+
+        // If AI goes first, trigger AI placement
+        if (gameState.currentTurn === "opponent") {
+            setTimeout(() => {
+                if (gameState && gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
+                    console.log("[CardGame v2] Triggering AI placement (goes first)");
+                    aiPlaceCards();
+                    m.redraw();
+                }
+            }, 500);
+        }
+    }
+
+    function enterThreatResponsePhase(type) {
+        console.log("[CardGame v2] Entering threat response phase for:", type, "threats");
+        gameState.phase = GAME_PHASES.THREAT_RESPONSE;
+
+        // Determine who responds - the fumbler(s) who triggered the threat
+        let responders = [];
+        gameState.beginningThreats.forEach(threat => {
+            if (!responders.includes(threat.target)) {
+                responders.push(threat.target);
+            }
+        });
+
+        // Set up threat response state
+        gameState.threatResponse = {
+            active: true,
+            type: type,
+            threats: gameState.beginningThreats.slice(),
+            responder: responders[0] || "player",  // First responder
+            responderQueue: responders,
+            bonusAP: 2,  // Limited AP for threat defense
+            defenseStack: [],
+            resolved: false
+        };
+
+        // Give responder bonus AP for defense
+        let responder = gameState.threatResponse.responder === "player" ? gameState.player : gameState.opponent;
+        responder.threatResponseAP = gameState.threatResponse.bonusAP;
+
+        console.log("[CardGame v2] Threat response:", gameState.threatResponse.responder, "gets", gameState.threatResponse.bonusAP, "AP to defend");
+    }
+
+    function enterEndThreatPhase() {
+        console.log("[CardGame v2] Entering end threat phase");
+        gameState.phase = GAME_PHASES.END_THREAT;
+
+        // Winner gets bonus response opportunity
+        let responder = gameState.roundWinner === "tie" ? "player" : gameState.roundWinner;
+
+        gameState.threatResponse = {
+            active: true,
+            type: "end",
+            threats: [gameState.endThreatResult.threat],
+            responder: responder,
+            bonusAP: 2,  // Bonus AP for end threat response
+            defenseStack: [],
+            resolved: false
+        };
+
+        // Give winner bonus AP
+        let actor = responder === "player" ? gameState.player : gameState.opponent;
+        actor.threatResponseAP = gameState.threatResponse.bonusAP;
+
+        console.log("[CardGame v2] End threat response:", responder, "gets bonus opportunity to respond to", gameState.endThreatResult.threat.name);
+    }
+
+    function resolveThreatCombat() {
+        if (!gameState || !gameState.threatResponse) return;
+
+        let threats = gameState.threatResponse.threats;
+        let defenseStack = gameState.threatResponse.defenseStack || [];
+
+        // Resolve each threat as combat
+        threats.forEach(threat => {
+            let targetActor = threat.target === "player" ? gameState.player : gameState.opponent;
+
+            // Build threat attacker object
+            let threatAttacker = {
+                name: threat.name,
+                character: {
+                    name: threat.name,
+                    stats: { STR: threat.atk, END: threat.def }
+                },
+                hp: threat.hp,
+                maxHp: threat.maxHp,
+                cardStack: [{ type: "item", subtype: "weapon", atk: threat.atk }]
+            };
+
+            // Check if defender has a defense stack
+            let defenderStack = defenseStack.filter(card => card.target === threat.target);
+            targetActor.cardStack = defenderStack;
+
+            // Roll combat
+            let attackRoll = rollAttack(threatAttacker, []);
+            let defenseRoll = rollDefense(targetActor);
+            let outcome = getCombatOutcome(attackRoll, defenseRoll);
+
+            console.log("[CardGame v2] Threat combat:", threat.name, "vs", threat.target, "- Outcome:", outcome.label);
+
+            if (outcome.damageMultiplier > 0) {
+                // Threat hit
+                let damage = calculateDamage(threatAttacker, outcome);
+                let damageResult = applyDamage(targetActor, damage.finalDamage);
+                console.log("[CardGame v2] Threat dealt", damage.finalDamage, "damage to", threat.target);
+
+                // Store result for UI
+                if (!gameState.threatResults) gameState.threatResults = [];
+                gameState.threatResults.push({
+                    threatName: threat.name,
+                    target: threat.target,
+                    outcome: "hit",
+                    damage: damage.finalDamage,
+                    attackRoll,
+                    defenseRoll,
+                    combatOutcome: outcome
+                });
+            } else {
+                // Defender blocked/parried
+                console.log("[CardGame v2]", threat.target, "defended against", threat.name);
+
+                // Grant loot on successful defense
+                let lootCard = {
+                    type: "item",
+                    subtype: "consumable",
+                    name: "Threat Loot (" + threat.lootRarity + ")",
+                    rarity: threat.lootRarity,
+                    effect: threat.lootRarity === "RARE" ? "Restore 5 HP" : "Restore 3 HP",
+                    flavor: "Spoils from defeating " + threat.name
+                };
+                targetActor.hand.push(lootCard);
+
+                if (!gameState.threatResults) gameState.threatResults = [];
+                gameState.threatResults.push({
+                    threatName: threat.name,
+                    target: threat.target,
+                    outcome: "defeated",
+                    loot: lootCard,
+                    attackRoll,
+                    defenseRoll,
+                    combatOutcome: outcome
+                });
+            }
+        });
+
+        // Clear threat response and continue to placement
+        gameState.threatResponse.resolved = true;
+        gameState.threatResponse.active = false;
+
+        // Clear threat response AP
+        gameState.player.threatResponseAP = 0;
+        gameState.opponent.threatResponseAP = 0;
+
+        // Continue to draw/placement phase
+        enterDrawPlacementPhase();
+    }
+
+    function resolveEndThreatCombat() {
+        if (!gameState || !gameState.endThreatResult || !gameState.endThreatResult.threat) {
+            startNextRound();
+            return;
+        }
+
+        let threat = gameState.endThreatResult.threat;
+        let responder = gameState.threatResponse?.responder || gameState.roundWinner;
+        let responderActor = responder === "player" ? gameState.player : gameState.opponent;
+        let defenseStack = gameState.threatResponse?.defenseStack || [];
+
+        // Build threat attacker object
+        let threatAttacker = {
+            name: threat.name,
+            character: {
+                name: threat.name,
+                stats: { STR: threat.atk, END: threat.def }
+            },
+            hp: threat.hp,
+            maxHp: threat.maxHp,
+            cardStack: [{ type: "item", subtype: "weapon", atk: threat.atk }]
+        };
+
+        // Assign defense stack
+        responderActor.cardStack = defenseStack;
+
+        // Roll combat
+        let attackRoll = rollAttack(threatAttacker, []);
+        let defenseRoll = rollDefense(responderActor);
+        let outcome = getCombatOutcome(attackRoll, defenseRoll);
+
+        console.log("[CardGame v2] End threat combat:", threat.name, "vs", responder, "- Outcome:", outcome.label);
+
+        if (outcome.damageMultiplier > 0) {
+            // Threat hit
+            let damage = calculateDamage(threatAttacker, outcome);
+            applyDamage(responderActor, damage.finalDamage);
+            gameState.endThreatResult.damageDealt = damage.finalDamage;
+            gameState.endThreatResult.combatResult = { attackRoll, defenseRoll, outcome, damage };
+            console.log("[CardGame v2] End threat dealt", damage.finalDamage, "damage to", responder);
+        } else {
+            // Defender won
+            gameState.endThreatResult.damageDealt = 0;
+            gameState.endThreatResult.combatResult = { attackRoll, defenseRoll, outcome, defended: true };
+
+            // Grant loot
+            let lootCard = {
+                type: "item",
+                subtype: "consumable",
+                name: "End Threat Loot (" + threat.lootRarity + ")",
+                rarity: threat.lootRarity,
+                effect: "Restore 4 HP",
+                flavor: "Spoils from defeating " + threat.name
+            };
+            responderActor.hand.push(lootCard);
+            gameState.endThreatResult.loot = lootCard;
+            console.log("[CardGame v2]", responder, "defeated end threat, earned loot");
+        }
+
+        gameState.endThreatResult.responded = true;
+
+        // Clear threat response state
+        if (gameState.threatResponse) {
+            gameState.threatResponse.active = false;
+            gameState.threatResponse.resolved = true;
+        }
+
+        // Clear threat response AP
+        gameState.player.threatResponseAP = 0;
+        gameState.opponent.threatResponseAP = 0;
+
+        startNextRound();
+    }
+
+    // Place a card in threat response defense stack
+    function placeThreatDefenseCard(card) {
+        if (!gameState || !gameState.threatResponse || !gameState.threatResponse.active) return false;
+
+        let responder = gameState.threatResponse.responder;
+        let actor = responder === "player" ? gameState.player : gameState.opponent;
+
+        // Check AP
+        let apCost = 1;
+        if ((actor.threatResponseAP || 0) < apCost) {
+            console.log("[CardGame v2] Not enough threat response AP");
+            return false;
+        }
+
+        // Deduct AP and add to defense stack
+        actor.threatResponseAP -= apCost;
+        gameState.threatResponse.defenseStack.push({
+            ...card,
+            target: gameState.threatResponse.threats[0]?.target || responder
+        });
+
+        // Remove from hand
+        let handIndex = actor.hand.indexOf(card);
+        if (handIndex >= 0) {
+            actor.hand.splice(handIndex, 1);
+        }
+
+        console.log("[CardGame v2] Placed threat defense card:", card.name);
+        m.redraw();
+        return true;
+    }
+
+    // Skip threat response and let combat resolve
+    function skipThreatResponse() {
+        if (!gameState || !gameState.threatResponse) return;
+
+        console.log("[CardGame v2] Skipping threat response");
+
+        if (gameState.phase === GAME_PHASES.THREAT_RESPONSE) {
+            resolveThreatCombat();
+        } else if (gameState.phase === GAME_PHASES.END_THREAT) {
+            resolveEndThreatCombat();
+        }
+    }
+
     function startNextRound() {
         if (!gameState) return;
+
+        // Tick down status effect durations at end of round
+        tickStatusEffects(gameState.player);
+        tickStatusEffects(gameState.opponent);
+
+        // Process turn-start effects (like poison damage)
+        let playerEffects = processStatusEffectsTurnStart(gameState.player);
+        let opponentEffects = processStatusEffectsTurnStart(gameState.opponent);
+        if (playerEffects.length > 0 || opponentEffects.length > 0) {
+            console.log("[CardGame v2] Status effects triggered:", { player: playerEffects, opponent: opponentEffects });
+        }
 
         gameState.round++;
         gameState.phase = GAME_PHASES.INITIATIVE;
@@ -3544,9 +4639,19 @@
         gameState.player.roundPoints = 0;
         gameState.opponent.roundPoints = 0;
 
+        // Reset hoarding prevention tracking
+        gameState.player.typesPlayedThisRound = {};
+        gameState.opponent.typesPlayedThisRound = {};
+        gameState.exhaustedThisRound = [];
+        gameState.playerLethargy = [];
+        gameState.opponentLethargy = [];
+
         // Clear action bar
         gameState.actionBar.positions = [];
         gameState.actionBar.resolveIndex = -1;
+
+        // Clear beginning threats from previous round
+        gameState.beginningThreats = [];
 
         // Clear pot (winner claimed it)
         gameState.pot = [];
@@ -3566,6 +4671,14 @@
             drawCardsForActor(gameState.opponent, opponentDraw);
         }
 
+        // Ensure each player has at least one Attack card
+        ensureOffensiveCard(gameState.player, "Player");
+        ensureOffensiveCard(gameState.opponent, "Opponent");
+
+        // Mandatory ante: each player puts 1 random card into pot
+        anteCard(gameState.player, "Player");
+        anteCard(gameState.opponent, "Opponent");
+
         // Reset initiative animation state so it replays
         resetInitAnimState();
 
@@ -3574,7 +4687,7 @@
         gameState.initiative.opponentRoll = null;
         gameState.initiative.winner = null;
 
-        console.log("[CardGame v2] Starting round", gameState.round);
+        console.log("[CardGame v2] Starting round", gameState.round, "- Pot has", gameState.pot.length, "cards");
         m.redraw();
 
         // Start initiative animation for round 2+ (oninit won't fire again)
@@ -3583,6 +4696,147 @@
                 startInitiativeAnimation();
             }
         }, 100);
+    }
+
+    // ── Pot System ────────────────────────────────────────────────────
+    // Ante: Each player puts a random card from hand into the pot
+    function anteCard(actor, actorName) {
+        if (!actor.hand || actor.hand.length === 0) {
+            console.log("[CardGame v2]", actorName, "has no cards to ante");
+            return null;
+        }
+        // Pick a random card from hand
+        let idx = Math.floor(Math.random() * actor.hand.length);
+        let card = actor.hand.splice(idx, 1)[0];
+        gameState.pot.push(card);
+        console.log("[CardGame v2]", actorName, "anted", card.name, "to pot");
+        return card;
+    }
+
+    // Round winner claims all cards in the pot
+    function claimPot(winner) {
+        if (!gameState.pot || gameState.pot.length === 0) return;
+        let winnerActor = winner === "player" ? gameState.player : gameState.opponent;
+        gameState.pot.forEach(card => {
+            winnerActor.discardPile.push(card);
+        });
+        console.log("[CardGame v2]", winner, "claimed pot with", gameState.pot.length, "cards");
+        gameState.pot = [];
+    }
+
+    // Add a card to the pot (for mid-round drops)
+    function addToPot(card, reason) {
+        if (!card) return;
+        gameState.pot.push(card);
+        console.log("[CardGame v2] Added", card.name, "to pot (" + reason + ")");
+    }
+
+    // ── Hoarding Prevention ──────────────────────────────────────────────
+
+    /**
+     * Lethargy Check (at cleanup)
+     * If actor holds 2+ copies of the same action type and played 0 this round,
+     * keep 1 copy and return the rest to the encounter deck.
+     * @returns {Array} Array of {actionType, stripped} objects
+     */
+    function checkLethargy(actor, actorName) {
+        if (!actor.hand || actor.hand.length === 0) return [];
+
+        let typesPlayed = actor.typesPlayedThisRound || {};
+        let results = [];
+
+        // Count action cards by name (only action type cards)
+        let actionCounts = {};
+        actor.hand.forEach(card => {
+            if (card.type === "action") {
+                let key = card.name;
+                actionCounts[key] = (actionCounts[key] || 0) + 1;
+            }
+        });
+
+        // Check each action type with 2+ copies
+        Object.keys(actionCounts).forEach(actionType => {
+            let count = actionCounts[actionType];
+            let played = typesPlayed[actionType] || 0;
+
+            // Lethargy: 2+ copies AND 0 played this round
+            if (count >= 2 && played === 0) {
+                let stripped = count - 1;  // Keep 1, strip the rest
+                let removed = 0;
+
+                // Remove extras from hand and add to encounter deck
+                for (let i = actor.hand.length - 1; i >= 0 && removed < stripped; i--) {
+                    let card = actor.hand[i];
+                    if (card.type === "action" && card.name === actionType) {
+                        actor.hand.splice(i, 1);
+                        // Return to encounter deck
+                        if (gameState.encounterDeck) {
+                            gameState.encounterDeck.push(card);
+                        }
+                        removed++;
+                    }
+                }
+
+                if (removed > 0) {
+                    results.push({ actionType, stripped: removed });
+                    console.log("[CardGame v2] LETHARGY:", actorName, "- stripped", removed, actionType, "card(s)");
+                }
+            }
+        });
+
+        // Shuffle encounter deck after adding cards
+        if (results.length > 0 && gameState.encounterDeck) {
+            gameState.encounterDeck = shuffle(gameState.encounterDeck);
+        }
+
+        return results;
+    }
+
+    /**
+     * Exhausted Check (during resolution)
+     * If actor played 2+ of a type this round, last one failed, and holds 2+ extras in hand,
+     * keep 1 extra and return the rest to encounter deck.
+     * @returns {Object|null} { actionType, stripped } or null if no trigger
+     */
+    function checkExhausted(actor, actorName, failedActionType) {
+        if (!actor.hand || !failedActionType) return null;
+
+        let typesPlayed = actor.typesPlayedThisRound || {};
+        let playedCount = typesPlayed[failedActionType] || 0;
+
+        // Must have played 2+ of this type
+        if (playedCount < 2) return null;
+
+        // Count how many of this type remain in hand
+        let handCount = actor.hand.filter(c => c.type === "action" && c.name === failedActionType).length;
+
+        // Exhausted: played 2+, failed, and hold 2+ extras in hand
+        if (handCount >= 2) {
+            let stripped = handCount - 1;  // Keep 1, strip the rest
+            let removed = 0;
+
+            for (let i = actor.hand.length - 1; i >= 0 && removed < stripped; i--) {
+                let card = actor.hand[i];
+                if (card.type === "action" && card.name === failedActionType) {
+                    actor.hand.splice(i, 1);
+                    if (gameState.encounterDeck) {
+                        gameState.encounterDeck.push(card);
+                    }
+                    removed++;
+                }
+            }
+
+            if (removed > 0) {
+                // Shuffle encounter deck
+                if (gameState.encounterDeck) {
+                    gameState.encounterDeck = shuffle(gameState.encounterDeck);
+                }
+                console.log("[CardGame v2] EXHAUSTED:", actorName, "- stripped", removed, failedActionType, "card(s)");
+                return { actionType: failedActionType, stripped: removed };
+            }
+        }
+
+        return null;
     }
 
     // ── Draw Cards Helper ─────────────────────────────────────────────
@@ -3601,6 +4855,44 @@
                 console.log("[CardGame v2] Drew card:", card.name);
             }
         }
+    }
+
+    /**
+     * Ensure actor has at least one offensive card (Attack) in hand.
+     * If not, find one from draw/discard pile or create a basic Attack.
+     */
+    function ensureOffensiveCard(actor, actorName) {
+        // Check if hand already has an Attack card
+        let hasAttack = actor.hand.some(c => c.type === "action" && c.name === "Attack");
+        if (hasAttack) return;
+
+        // Try to find Attack in draw pile
+        let attackIdx = actor.drawPile.findIndex(c => c.type === "action" && c.name === "Attack");
+        if (attackIdx >= 0) {
+            let attackCard = actor.drawPile.splice(attackIdx, 1)[0];
+            actor.hand.push(attackCard);
+            console.log("[CardGame v2]", actorName, "guaranteed Attack card from draw pile");
+            return;
+        }
+
+        // Try discard pile
+        attackIdx = actor.discardPile.findIndex(c => c.type === "action" && c.name === "Attack");
+        if (attackIdx >= 0) {
+            let attackCard = actor.discardPile.splice(attackIdx, 1)[0];
+            actor.hand.push(attackCard);
+            console.log("[CardGame v2]", actorName, "guaranteed Attack card from discard pile");
+            return;
+        }
+
+        // Last resort: create a basic Attack card
+        let basicAttack = {
+            type: "action",
+            name: "Attack",
+            effect: "Roll ATK vs DEF. Deal STR damage on hit.",
+            rarity: "COMMON"
+        };
+        actor.hand.push(basicAttack);
+        console.log("[CardGame v2]", actorName, "granted basic Attack card (none in deck)");
     }
 
     // ── Placement Actions ─────────────────────────────────────────────
@@ -3678,6 +4970,11 @@
                 actor.energy -= card.energyCost;
             }
 
+            // Track action type for hoarding prevention (Lethargy/Exhausted)
+            let actionKey = card.name;  // Use card name as the action type key
+            if (!actor.typesPlayedThisRound) actor.typesPlayedThisRound = {};
+            actor.typesPlayedThisRound[actionKey] = (actor.typesPlayedThisRound[actionKey] || 0) + 1;
+
             console.log("[CardGame v2] Placed core card", card.name, "at position", positionIndex);
         }
 
@@ -3688,11 +4985,7 @@
         }
 
         m.redraw();
-
-        // Check if player is out of AP and auto-end their turn
-        if (currentPlayer === "player") {
-            setTimeout(() => { checkAutoEndTurn(); }, 100);
-        }
+        // Player manually ends turn - no auto-commit
         return true;
     }
 
@@ -3733,10 +5026,32 @@
         if (!gameState) return;
         if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return;
 
-        let current = gameState.currentTurn === "player" ? gameState.player : gameState.opponent;
+        let currentTurn = gameState.currentTurn;
+        let current = currentTurn === "player" ? gameState.player : gameState.opponent;
+        let positions = currentTurn === "player"
+            ? gameState.initiative.playerPositions
+            : gameState.initiative.opponentPositions;
         let apRemaining = current.ap - current.apUsed;
 
-        console.log("[CardGame v2] checkAutoEndTurn:", gameState.currentTurn, "AP remaining:", apRemaining);
+        console.log("[CardGame v2] checkAutoEndTurn:", currentTurn, "AP remaining:", apRemaining);
+
+        // Check if current player can actually place any cards
+        if (apRemaining > 0) {
+            let coreCards = current.hand.filter(c => isCoreCardType(c.type));
+            let playableCores = coreCards.filter(c => !c.energyCost || c.energyCost <= current.energy);
+            let emptyPositions = positions.filter(posIdx => {
+                let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
+                return pos && !pos.stack;
+            });
+
+            // Auto-forfeit AP if can't place anything (no playable cores or no empty positions)
+            if (playableCores.length === 0 || emptyPositions.length === 0) {
+                console.log("[CardGame v2]", currentTurn, "can't place - playable cores:", playableCores.length,
+                    "(total:", coreCards.length, ") empty:", emptyPositions.length, "energy:", current.energy);
+                current.apUsed = current.ap;
+                apRemaining = 0;
+            }
+        }
 
         if (apRemaining <= 0) {
             // No AP left, check if placement is complete or switch turns
@@ -3744,13 +5059,13 @@
             if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return;  // Phase advanced
 
             // If still in placement, it means other player still has AP - switch to them
-            let other = gameState.currentTurn === "player" ? gameState.opponent : gameState.player;
+            let other = currentTurn === "player" ? gameState.opponent : gameState.player;
             if (other.apUsed < other.ap) {
-                gameState.currentTurn = gameState.currentTurn === "player" ? "opponent" : "player";
+                gameState.currentTurn = currentTurn === "player" ? "opponent" : "player";
                 // Recursively check the new current player
                 setTimeout(() => { checkAutoEndTurn(); m.redraw(); }, 300);
             }
-        } else if (gameState.currentTurn === "opponent") {
+        } else if (currentTurn === "opponent") {
             // Opponent has AP, let AI place cards
             setTimeout(() => {
                 aiPlaceCards();
@@ -3826,10 +5141,27 @@
             }
         }
 
-        // If AI still has AP but no core cards to place, forfeit remaining AP
+        // If AI still has AP but can't place anything, try drawing first
         let remainingCores = opp.hand.filter(c => isCoreCardType(c.type));
-        if (opp.apUsed < opp.ap && remainingCores.length === 0) {
-            console.log("[CardGame v2] AI has no core cards left, forfeiting remaining AP");
+        let playableCores = remainingCores.filter(c => !c.energyCost || c.energyCost <= opp.energy);
+        let emptyPositions = positions.filter(posIdx => {
+            let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
+            return pos && !pos.stack;
+        });
+
+        // If can't place but have AP and draw pile has cards, draw one
+        if (opp.apUsed < opp.ap && playableCores.length === 0 && emptyPositions.length > 0 && opp.drawPile.length > 0) {
+            console.log("[CardGame v2] AI drawing a card (no playable cores)");
+            drawCardsForActor(opp, 1);
+            // Check again for playable cores after draw
+            remainingCores = opp.hand.filter(c => isCoreCardType(c.type));
+            playableCores = remainingCores.filter(c => !c.energyCost || c.energyCost <= opp.energy);
+        }
+
+        // Forfeit if still can't place after potential draw
+        if (opp.apUsed < opp.ap && (playableCores.length === 0 || emptyPositions.length === 0)) {
+            console.log("[CardGame v2] AI forfeiting remaining AP - playable cores:", playableCores.length,
+                "(total cores:", remainingCores.length, ") empty positions:", emptyPositions.length, "energy:", opp.energy);
             opp.apUsed = opp.ap;  // Mark as fully used
         }
 
@@ -3846,8 +5178,13 @@
         console.log("[CardGame v2] checkPlacementComplete - Player done:", playerDone, "Opponent done:", opponentDone);
 
         if (playerDone && opponentDone) {
-            console.log("[CardGame v2] Both done, advancing to resolution");
-            advancePhase(); // Move to resolution
+            console.log("[CardGame v2] Both done, advancing to resolution in 800ms");
+            // Brief delay so player can see their last card placed
+            setTimeout(() => {
+                if (gameState && gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
+                    advancePhase(); // Move to resolution
+                }
+            }, 800);
         } else {
             gameState.currentTurn = playerDone ? "opponent" : "player";
             console.log("[CardGame v2] Turn switched to:", gameState.currentTurn);
@@ -3898,9 +5235,12 @@
             return;
         }
 
+        // Check if this is a threat position (beginning threat from Nat 1)
+        let isThreat = pos.isThreat && pos.threat;
+
         // Determine if this is a combat action
         let card = pos.stack?.coreCard;
-        let isAttack = card && card.name === "Attack";
+        let isAttack = (card && card.name === "Attack") || isThreat;
 
         if (isAttack) {
             // Combat resolution with dice animation
@@ -3923,8 +5263,24 @@
                 resolutionDiceInterval = null;
 
                 // Determine attacker and defender
-                let attacker = pos.owner === "player" ? gameState.player : gameState.opponent;
-                let defender = pos.owner === "player" ? gameState.opponent : gameState.player;
+                let attacker, defender;
+                if (isThreat) {
+                    // Threat attacks the player who fumbled (rolled Nat 1)
+                    attacker = {
+                        name: pos.threat.name,
+                        character: {
+                            name: pos.threat.name,
+                            stats: { STR: pos.threat.atk, END: pos.threat.def }
+                        },
+                        hp: pos.threat.hp,
+                        maxHp: pos.threat.maxHp,
+                        cardStack: [{ type: "item", subtype: "weapon", atk: pos.threat.atk }]
+                    };
+                    defender = pos.target === "player" ? gameState.player : gameState.opponent;
+                } else {
+                    attacker = pos.owner === "player" ? gameState.player : gameState.opponent;
+                    defender = pos.owner === "player" ? gameState.opponent : gameState.player;
+                }
 
                 // Resolve combat (pass stack for skill modifiers)
                 resolveCombat(attacker, defender, pos.stack);
@@ -3939,10 +5295,83 @@
                     resolutionPhase = "done";
                     bar.resolveIndex++;
 
-                    // Move played cards to owner's discard pile
-                    if (pos.stack && pos.stack.coreCard) {
+                    // Exhausted check: if attack failed (miss/counter), check for hoarding
+                    if (currentCombatResult && currentCombatResult.outcome.damageMultiplier <= 0) {
+                        let actionType = pos.stack?.coreCard?.name;
+                        let ownerKey = pos.owner;
+                        let ownerActor = ownerKey === "player" ? gameState.player : gameState.opponent;
+                        let ownerName = ownerKey === "player" ? "Player" : "Opponent";
+
+                        let exhaustedResult = checkExhausted(ownerActor, ownerName, actionType);
+                        if (exhaustedResult) {
+                            // Store for UI display
+                            if (!gameState.exhaustedThisRound) gameState.exhaustedThisRound = [];
+                            gameState.exhaustedThisRound.push({
+                                owner: ownerKey,
+                                actionType: exhaustedResult.actionType,
+                                stripped: exhaustedResult.stripped
+                            });
+                            console.log("[CardGame v2] Exhausted triggered for", ownerName, "- stripped", exhaustedResult.stripped, exhaustedResult.actionType);
+                        }
+                    }
+
+                    // Handle threat resolution outcome
+                    if (isThreat && pos.threat) {
+                        let targetActor = pos.target === "player" ? gameState.player : gameState.opponent;
+                        let targetName = pos.target === "player" ? "Player" : "Opponent";
+
+                        // Check if defender won (threat missed or was countered)
+                        if (currentCombatResult && currentCombatResult.outcome.damageMultiplier <= 0) {
+                            // Defender survived/won - grant loot
+                            console.log("[CardGame v2]", targetName, "defeated the threat! Loot earned:", pos.threat.lootRarity);
+
+                            // Create loot card based on threat rarity
+                            let lootCard = {
+                                type: "item",
+                                subtype: "consumable",
+                                name: "Threat Loot (" + pos.threat.lootRarity + ")",
+                                rarity: pos.threat.lootRarity,
+                                effect: pos.threat.lootRarity === "RARE" ? "Restore 5 HP" : "Restore 3 HP",
+                                flavor: "Spoils from defeating " + pos.threat.name
+                            };
+                            targetActor.hand.push(lootCard);
+
+                            // Store threat result for UI
+                            if (!gameState.threatResults) gameState.threatResults = [];
+                            gameState.threatResults.push({
+                                threatName: pos.threat.name,
+                                target: pos.target,
+                                outcome: "defeated",
+                                loot: lootCard.name
+                            });
+                        } else {
+                            // Threat hit the defender
+                            console.log("[CardGame v2]", targetName, "was hit by", pos.threat.name);
+
+                            if (!gameState.threatResults) gameState.threatResults = [];
+                            gameState.threatResults.push({
+                                threatName: pos.threat.name,
+                                target: pos.target,
+                                outcome: "hit",
+                                damage: currentCombatResult?.damageResult?.finalDamage || 0
+                            });
+                        }
+                    }
+
+                    // Move played cards to owner's discard pile (or return magic to hand)
+                    if (pos.stack && pos.stack.coreCard && !isThreat) {
                         let owner = pos.owner === "player" ? gameState.player : gameState.opponent;
-                        owner.discardPile.push(pos.stack.coreCard);
+                        let coreCard = pos.stack.coreCard;
+
+                        // Magic cards return to hand (reusable)
+                        if (coreCard.type === "magic" && coreCard.reusable !== false) {
+                            owner.hand.push(coreCard);
+                            console.log("[CardGame v2] Magic card", coreCard.name, "returned to hand");
+                        } else {
+                            owner.discardPile.push(coreCard);
+                        }
+
+                        // Modifiers always go to discard
                         pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
                     }
 
@@ -3984,7 +5413,162 @@
                     if (card.name === "Rest") {
                         owner.hp = Math.min(owner.maxHp, owner.hp + 2);
                         owner.energy = Math.min(owner.maxEnergy, owner.energy + 3);
-                        console.log("[CardGame v2]", pos.owner, "rested: +2 HP, +3 Energy");
+                        owner.morale = Math.min(owner.maxMorale, owner.morale + 2);
+                        console.log("[CardGame v2]", pos.owner, "rested: +2 HP, +3 Energy, +2 Morale");
+                    }
+
+                    // Guard/Defend action: gain shielded status
+                    if (card.name === "Guard" || card.name === "Defend") {
+                        applyStatusEffect(owner, "shielded", card.name);
+                        console.log("[CardGame v2]", pos.owner, "is now shielded (+3 DEF until hit)");
+                    }
+
+                    // Flee action: AGI roll to escape (forfeit pot, end combat)
+                    if (card.name === "Flee" || card.name === "Escape") {
+                        let ownerAgi = owner.character.stats?.AGI || 10;
+                        let fleeRoll = rollD20() + ownerAgi;
+                        let fleeDC = 12;  // Base difficulty, could be modified by encounter
+
+                        if (fleeRoll >= fleeDC) {
+                            console.log("[CardGame v2]", pos.owner, "fled successfully! Roll:", fleeRoll, "vs DC", fleeDC);
+                            // Forfeit pot to opponent
+                            if (gameState.pot.length > 0) {
+                                let other = pos.owner === "player" ? gameState.opponent : gameState.player;
+                                gameState.pot.forEach(c => other.discardPile.push(c));
+                                gameState.pot = [];
+                                console.log("[CardGame v2] Pot forfeited to", pos.owner === "player" ? "opponent" : "player");
+                            }
+                            // End the round early (skip remaining actions)
+                            bar.resolveIndex = bar.positions.length;
+                        } else {
+                            console.log("[CardGame v2]", pos.owner, "flee failed! Roll:", fleeRoll, "vs DC", fleeDC);
+                            // Failed flee - lose morale
+                            owner.morale = Math.max(0, owner.morale - 2);
+                        }
+                    }
+
+                    // Investigate action: INT roll to reveal information
+                    if (card.name === "Investigate" || card.name === "Search") {
+                        let ownerInt = owner.character.stats?.INT || 10;
+                        let investRoll = rollD20() + ownerInt;
+                        let investDC = 10;
+
+                        if (investRoll >= investDC) {
+                            console.log("[CardGame v2]", pos.owner, "investigated successfully! Roll:", investRoll);
+                            // Draw an extra card as reward
+                            drawCardsForActor(owner, 1);
+                        } else {
+                            console.log("[CardGame v2]", pos.owner, "investigation found nothing. Roll:", investRoll);
+                        }
+                    }
+
+                    // Use Item action: apply consumable effect
+                    if (card.type === "item" && card.subtype === "consumable") {
+                        // Parse effect string for common patterns
+                        let effect = card.effect || "";
+                        let hpMatch = effect.match(/restore\s+(\d+)\s+hp/i);
+                        let energyMatch = effect.match(/restore\s+(\d+)\s+energy/i);
+                        let moraleMatch = effect.match(/restore\s+(\d+)\s+morale/i);
+
+                        if (hpMatch) {
+                            let heal = parseInt(hpMatch[1], 10);
+                            owner.hp = Math.min(owner.maxHp, owner.hp + heal);
+                            console.log("[CardGame v2]", pos.owner, "used", card.name, ": +" + heal + " HP");
+                        }
+                        if (energyMatch) {
+                            let restore = parseInt(energyMatch[1], 10);
+                            owner.energy = Math.min(owner.maxEnergy, owner.energy + restore);
+                            console.log("[CardGame v2]", pos.owner, "used", card.name, ": +" + restore + " Energy");
+                        }
+                        if (moraleMatch) {
+                            let boost = parseInt(moraleMatch[1], 10);
+                            owner.morale = Math.min(owner.maxMorale, owner.morale + boost);
+                            console.log("[CardGame v2]", pos.owner, "used", card.name, ": +" + boost + " Morale");
+                        }
+
+                        // Consumables are NOT returned to hand - they stay in discard
+                    }
+
+                    // Feint action: weaken opponent's next defense
+                    if (card.name === "Feint") {
+                        applyStatusEffect(target, "weakened", card.name);
+                        console.log("[CardGame v2]", pos.owner, "feinted! Target is weakened (-2 all rolls)");
+                    }
+
+                    // Trade action: exchange items (vs AI: auto-decline unless items offered)
+                    if (card.name === "Trade") {
+                        let offeredItems = (pos.stack?.modifiers || []).filter(m => m.type === "item");
+                        if (offeredItems.length > 0) {
+                            // AI evaluates trade: 50% accept if items of equal or greater value offered
+                            let acceptChance = 0.5;
+                            if (Math.random() < acceptChance) {
+                                // Accept: AI gives a random item from hand in exchange
+                                let aiItems = target.hand.filter(c => c.type === "item");
+                                if (aiItems.length > 0) {
+                                    let giveItem = aiItems[Math.floor(Math.random() * aiItems.length)];
+                                    target.hand = target.hand.filter(c => c !== giveItem);
+                                    owner.hand.push(giveItem);
+                                    // Give offered items to AI
+                                    offeredItems.forEach(item => {
+                                        owner.hand = owner.hand.filter(c => c !== item);
+                                        target.hand.push(item);
+                                    });
+                                    console.log("[CardGame v2] Trade accepted!", owner.name, "gave", offeredItems.map(i => i.name).join(", "), "received", giveItem.name);
+                                    pos.tradeResult = { accepted: true, gave: offeredItems, received: [giveItem] };
+                                } else {
+                                    console.log("[CardGame v2] Trade declined - AI has no items to trade");
+                                    pos.tradeResult = { accepted: false, reason: "No items available" };
+                                }
+                            } else {
+                                console.log("[CardGame v2] Trade declined by opponent");
+                                pos.tradeResult = { accepted: false, reason: "Declined" };
+                            }
+                        } else {
+                            console.log("[CardGame v2] Trade failed - no items offered");
+                            pos.tradeResult = { accepted: false, reason: "No items offered" };
+                        }
+                    }
+
+                    // Craft action: INT roll to create item from materials
+                    if (card.name === "Craft") {
+                        let ownerInt = owner.character.stats?.INT || 10;
+                        let materials = (pos.stack?.modifiers || []).filter(m => m.type === "item" && m.subtype === "material");
+
+                        if (materials.length >= 2) {
+                            let craftRoll = rollD20() + ownerInt;
+                            let craftDC = 12 + (materials.length * 2);  // Harder with more materials
+
+                            if (craftRoll >= craftDC) {
+                                // Success: create item based on materials
+                                let craftedItem = {
+                                    type: "item",
+                                    subtype: "consumable",
+                                    name: "Crafted " + materials[0].name + " Potion",
+                                    effect: "Restore " + (5 + materials.length) + " HP",
+                                    rarity: materials.length >= 3 ? "RARE" : "COMMON",
+                                    flavor: "Crafted from " + materials.map(m => m.name).join(" + ")
+                                };
+                                owner.hand.push(craftedItem);
+                                // Remove materials from hand
+                                materials.forEach(mat => {
+                                    owner.hand = owner.hand.filter(c => c !== mat);
+                                });
+                                console.log("[CardGame v2] Crafting success! Roll:", craftRoll, "vs DC", craftDC, "- Created:", craftedItem.name);
+                                pos.craftResult = { success: true, roll: craftRoll, dc: craftDC, created: craftedItem };
+                            } else {
+                                console.log("[CardGame v2] Crafting failed. Roll:", craftRoll, "vs DC", craftDC);
+                                // Lose one material on failure
+                                if (materials.length > 0) {
+                                    let lostMat = materials[0];
+                                    owner.hand = owner.hand.filter(c => c !== lostMat);
+                                    owner.discardPile.push(lostMat);
+                                }
+                                pos.craftResult = { success: false, roll: craftRoll, dc: craftDC };
+                            }
+                        } else {
+                            console.log("[CardGame v2] Crafting failed - need at least 2 materials");
+                            pos.craftResult = { success: false, reason: "Insufficient materials" };
+                        }
                     }
 
                     // Talk action: CHA-based morale effect
@@ -4021,8 +5605,79 @@
                         }
                     }
 
-                    // Move played cards to discard pile
-                    owner.discardPile.push(card);
+                    // Magic card resolution
+                    if (card.type === "magic") {
+                        let ownerStats = owner.character.stats || {};
+                        let fizzled = false;
+
+                        // Check stat requirements (fizzle if not met)
+                        if (card.requires) {
+                            for (let stat in card.requires) {
+                                let required = card.requires[stat];
+                                let actual = ownerStats[stat] || 0;
+                                if (actual < required) {
+                                    fizzled = true;
+                                    console.log("[CardGame v2] Spell fizzled!", card.name, "requires", stat, required, "but actor has", actual);
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!fizzled) {
+                            // Apply spell effect based on skillType
+                            let effect = card.effect || "";
+                            let skillType = card.skillType || "Arcane";
+
+                            // Parse damage from effect string
+                            let damageMatch = effect.match(/deal\s+(\d+)/i);
+                            if (damageMatch) {
+                                let damage = parseInt(damageMatch[1], 10);
+                                let damageResult = applyDamage(target, damage);
+                                console.log("[CardGame v2]", pos.owner, "cast", card.name, "for", damageResult.finalDamage, "damage");
+
+                                // Check for defeat
+                                if (target.hp <= 0) {
+                                    gameState.winner = pos.owner;
+                                    gameState.phase = "GAME_OVER";
+                                    m.redraw();
+                                    return;
+                                }
+                            }
+
+                            // Parse healing from effect string
+                            let healMatch = effect.match(/heal\s+(\d+)|restore\s+(\d+)\s+hp/i);
+                            if (healMatch) {
+                                let heal = parseInt(healMatch[1] || healMatch[2], 10);
+                                owner.hp = Math.min(owner.maxHp, owner.hp + heal);
+                                console.log("[CardGame v2]", pos.owner, "cast", card.name, "healed", heal, "HP");
+                            }
+
+                            // Status effect spells (check effect text for keywords)
+                            if (effect.toLowerCase().includes("stun")) {
+                                applyStatusEffect(target, "stunned", card.name);
+                            }
+                            if (effect.toLowerCase().includes("poison")) {
+                                applyStatusEffect(target, "poisoned", card.name);
+                            }
+                            if (effect.toLowerCase().includes("shield") || effect.toLowerCase().includes("protect")) {
+                                applyStatusEffect(owner, "shielded", card.name);
+                            }
+                            if (effect.toLowerCase().includes("enrage") || effect.toLowerCase().includes("fury")) {
+                                applyStatusEffect(owner, "enraged", card.name);
+                            }
+                        }
+                    }
+
+                    // Move played cards to discard pile OR return magic to hand
+                    if (card.type === "magic" && card.reusable !== false) {
+                        // Magic cards return to hand (reusable)
+                        owner.hand.push(card);
+                        console.log("[CardGame v2] Magic card", card.name, "returned to hand");
+                    } else {
+                        owner.discardPile.push(card);
+                    }
+
+                    // Modifiers always go to discard
                     if (pos.stack.modifiers) {
                         pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
                     }
@@ -4043,13 +5698,48 @@
     }
 
     // ── Character Selection UI ────────────────────────────────────────
+    // Calculate total stat score for a character
+    function calcCharScore(char) {
+        let stats = char.stats || {};
+        return (stats.STR || 0) + (stats.AGI || 0) + (stats.END || 0) +
+               (stats.INT || 0) + (stats.MAG || 0) + (stats.CHA || 0);
+    }
+
     function CharacterSelectUI() {
         return {
             view() {
                 if (!gameCharSelection) return null;
                 let chars = gameCharSelection.characters || [];
 
-                return m("div", { class: "cg2-game-container" }, [
+                // Calculate best and worst characters by total stats
+                let bestChar = null, worstChar = null;
+                let bestScore = -Infinity, worstScore = Infinity;
+                if (chars.length > 1) {
+                    chars.forEach(c => {
+                        let score = calcCharScore(c);
+                        if (score > bestScore) { bestScore = score; bestChar = c; }
+                        if (score < worstScore) { worstScore = score; worstChar = c; }
+                    });
+                    // Don't mark if all same score
+                    if (bestScore === worstScore) { bestChar = null; worstChar = null; }
+                }
+
+                // Get card front background from deck if available
+                let cardFrontBg = viewingDeck && viewingDeck.cardFrontImageUrl
+                    ? viewingDeck.cardFrontImageUrl : null;
+
+                // Get tabletop background from deck if available
+                let tabletopBg = viewingDeck && viewingDeck.tabletopThumbUrl
+                    ? viewingDeck.tabletopThumbUrl.replace(/\/\d+x\d+$/, "/1024x1024")
+                    : null;
+
+                let containerStyle = tabletopBg ? {
+                    backgroundImage: "url('" + tabletopBg + "')",
+                    backgroundSize: "cover",
+                    backgroundPosition: "center"
+                } : {};
+
+                return m("div", { class: "cg2-game-container", style: containerStyle }, [
                     m("div", { class: "cg2-game-header" }, [
                         m("button", {
                             class: "cg2-btn",
@@ -4088,8 +5778,10 @@
                             m("p", { style: { marginBottom: "16px" } }, "Click a character to start"),
 
                             m("div", { class: "cg2-char-select-grid" },
-                                chars.map(char =>
-                                    m("div", {
+                                chars.map(char => {
+                                    let isBest = char === bestChar;
+                                    let isWorst = char === worstChar;
+                                    return m("div", {
                                         class: "cg2-char-select-wrapper",
                                         onclick() {
                                             // Click to select and immediately start game
@@ -4102,10 +5794,18 @@
                                             m.redraw();
                                         }
                                     }, [
-                                        // Use CardFace for consistent card styling
-                                        m(CardFace, { card: char, bgImage: char.portraitUrl })
-                                    ])
-                                )
+                                        // Use CardFace for consistent card styling (card front bg, not portrait)
+                                        m(CardFace, { card: char, bgImage: cardFrontBg }),
+                                        // Best character indicator (gold check)
+                                        isBest ? m("div", { class: "cg2-char-badge cg2-char-best", title: "Highest total stats" }, [
+                                            m("span", { class: "material-symbols-outlined" }, "check_circle")
+                                        ]) : null,
+                                        // Worst character indicator (red X)
+                                        isWorst ? m("div", { class: "cg2-char-badge cg2-char-worst", title: "Lowest total stats" }, [
+                                            m("span", { class: "material-symbols-outlined" }, "cancel")
+                                        ]) : null
+                                    ]);
+                                })
                             )
                         ])
                     ])
@@ -4169,58 +5869,51 @@
                 let isPlayerTurn = gameState.currentTurn === "player";
                 let player = gameState.player;
 
-                return m("div", { class: "cg2-game-container" }, [
+                // Get tabletop background from deck if available
+                let tabletopBg = viewingDeck && viewingDeck.tabletopThumbUrl
+                    ? viewingDeck.tabletopThumbUrl.replace(/\/\d+x\d+$/, "/1024x1024")
+                    : null;
+
+                let containerStyle = tabletopBg ? {
+                    backgroundImage: "url('" + tabletopBg + "')",
+                    backgroundSize: "cover",
+                    backgroundPosition: "center"
+                } : {};
+
+                return m("div", { class: "cg2-game-container", style: containerStyle }, [
                     // Header with inline placement controls
                     m("div", { class: "cg2-game-header" }, [
                         m("button", {
                             class: "cg2-btn cg2-btn-sm",
                             onclick() {
-                                if (confirm("Exit game? Progress will be lost.")) {
-                                    gameState = null;
-                                    screen = "deckView";
-                                    m.redraw();
-                                }
+                                page.components.dialog.confirm("Exit game? Progress will be lost.", function(ok) {
+                                    if (ok) {
+                                        gameState = null;
+                                        // Restore deck view image state from viewingDeck
+                                        if (viewingDeck) {
+                                            backgroundImageId = viewingDeck.backgroundImageId || null;
+                                            backgroundPrompt = viewingDeck.backgroundPrompt || null;
+                                            backgroundThumbUrl = viewingDeck.backgroundThumbUrl || null;
+                                            tabletopImageId = viewingDeck.tabletopImageId || null;
+                                            tabletopThumbUrl = viewingDeck.tabletopThumbUrl || null;
+                                        }
+                                        screen = "deckView";
+                                        m.redraw();
+                                    }
+                                });
                             }
                         }, "\u2190 Exit"),
                         m("span", { class: "cg2-round-badge" }, "R" + gameState.round),
 
-                        // Placement phase inline controls
-                        isPlacement ? m("div", { class: "cg2-header-placement" }, [
-                            m("span", { class: "cg2-header-turn" + (isPlayerTurn ? " cg2-your-turn" : "") },
-                                isPlayerTurn ? "Your turn" : "Opponent..."
-                            ),
-                            m("span", { class: "cg2-header-ap" }, [
+                        // Compact status in header
+                        m("div", { class: "cg2-header-status" }, [
+                            isPlacement ? m("span", { class: "cg2-header-ap" }, [
                                 "AP: ", m("strong", (player.ap - player.apUsed) + "/" + player.ap)
-                            ]),
-                            isPlayerTurn ? [
-                                m("button", {
-                                    class: "cg2-btn cg2-btn-sm",
-                                    disabled: (player.drawPile.length === 0 && player.discardPile.length === 0) ||
-                                              (player.apUsed >= player.ap),
-                                    title: "Draw a card (costs 1 AP)",
-                                    onclick() {
-                                        if (player.apUsed < player.ap) {
-                                            drawCardsForActor(player, 1);
-                                            player.apUsed++;
-                                            m.redraw();
-                                            setTimeout(() => { checkAutoEndTurn(); }, 100);
-                                        }
-                                    }
-                                }, [
-                                    m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "add_card"),
-                                    " Draw"
-                                ]),
-                                m("button", {
-                                    class: "cg2-btn cg2-btn-sm cg2-btn-primary",
-                                    onclick() {
-                                        checkPlacementComplete();
-                                        if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
-                                            endTurn();
-                                        }
-                                    }
-                                }, player.apUsed > 0 ? "End" : "Pass")
-                            ] : null
-                        ]) : null,
+                            ]) : null,
+                            m("span", { class: "cg2-header-turn" + (isPlayerTurn && isPlacement ? " cg2-your-turn" : "") },
+                                isPlacement ? (isPlayerTurn ? "Your turn" : "Opponent...") : ""
+                            )
+                        ]),
 
                         m("span", { class: "cg2-phase-badge" }, formatPhase(gameState.phase))
                     ]),
@@ -4232,17 +5925,86 @@
                             m(CharacterSidebar, { actor: gameState.player, label: "You" })
                         ]),
 
-                        // Center: Action Bar + Phase UI
+                        // Center: Phase UI + Action Bar
                         m("div", { class: "cg2-game-center" }, [
-                            // Phase-specific UI (placement is now in header)
-                            gameState.phase === GAME_PHASES.INITIATIVE ? m(InitiativePhaseUI) : null,
-                            gameState.phase === GAME_PHASES.RESOLUTION ? m(ResolutionPhaseUI) : null,
-                            gameState.phase === GAME_PHASES.CLEANUP ? m(CleanupPhaseUI) : null,
+                            // Phase-specific content
+                            m("div", { class: "cg2-phase-content" }, [
+                                gameState.phase === GAME_PHASES.INITIATIVE ? m(InitiativePhaseUI) : null,
+                                // Threat response phases
+                                (gameState.phase === GAME_PHASES.THREAT_RESPONSE || gameState.phase === GAME_PHASES.END_THREAT)
+                                    ? m(ThreatResponseUI)
+                                    : null,
+                                // Resolution overlay is now inside ActionBar
+                                gameState.phase === GAME_PHASES.CLEANUP ? m(CleanupPhaseUI) : null,
+                                // Action Bar (visible in placement and resolution)
+                                (isPlacement || gameState.phase === GAME_PHASES.RESOLUTION)
+                                    ? m(ActionBar)
+                                    : null
+                            ]),
 
-                            // Action Bar (visible in placement and resolution)
-                            (isPlacement || gameState.phase === GAME_PHASES.RESOLUTION)
-                                ? m(ActionBar)
-                                : null
+                            // Consistent Action Panel (always visible) - status and button inline
+                            m("div", { class: "cg2-action-panel" }, [
+                                // Status message - dynamic based on phase and state
+                                m("div", { class: "cg2-action-status" },
+                                    gameState.phase === GAME_PHASES.INITIATIVE
+                                        ? (initAnimState.rollComplete && gameState.initiative.winner
+                                            ? [
+                                                m("strong", gameState.initiative.winner === "player" ? "You win initiative! " : "Opponent wins initiative! "),
+                                                m("span", gameState.initiative.winner === "player"
+                                                    ? "You go first (odd positions: 1, 3, 5...)"
+                                                    : "Opponent goes first. You get even positions (2, 4, 6...)")
+                                            ]
+                                            : "Rolling for initiative...")
+                                        : (gameState.phase === GAME_PHASES.THREAT_RESPONSE || gameState.phase === GAME_PHASES.END_THREAT)
+                                            ? (gameState.threatResponse?.responder === "player"
+                                                ? "Threat incoming! Click cards to defend."
+                                                : "Opponent is responding to threat...")
+                                            : gameState.phase === GAME_PHASES.DRAW_PLACEMENT
+                                                ? (isPlayerTurn ? "Place cards on the action bar" : "Opponent is placing...")
+                                                : gameState.phase === GAME_PHASES.RESOLUTION
+                                                    ? "Resolving actions..."
+                                                    : gameState.phase === GAME_PHASES.CLEANUP
+                                                        ? "Round complete!"
+                                                        : ""
+                                ),
+                                // Primary action button(s)
+                                m("div", { class: "cg2-action-buttons" }, [
+                                    // Initiative phase: Continue button
+                                    gameState.phase === GAME_PHASES.INITIATIVE && initAnimState.rollComplete
+                                        ? m("button", {
+                                            class: "cg2-btn cg2-btn-primary cg2-action-btn-lg",
+                                            onclick() { advancePhase(); }
+                                        }, "Continue")
+                                        : null,
+                                    // Placement phase: Draw and End Turn buttons
+                                    isPlacement && isPlayerTurn ? [
+                                        m("button", {
+                                            class: "cg2-btn cg2-action-btn-lg",
+                                            disabled: player.drawPile.length === 0 || player.apUsed >= player.ap,
+                                            title: "Draw a card (costs 1 AP)",
+                                            onclick() {
+                                                if (player.apUsed < player.ap) {
+                                                    drawCardsForActor(player, 1);
+                                                    player.apUsed++;
+                                                    m.redraw();
+                                                }
+                                            }
+                                        }, [
+                                            m("span", { class: "material-symbols-outlined" }, "add_card"),
+                                            " Draw"
+                                        ]),
+                                        m("button", {
+                                            class: "cg2-btn cg2-btn-primary cg2-action-btn-lg",
+                                            onclick() {
+                                                checkPlacementComplete();
+                                                if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
+                                                    endTurn();
+                                                }
+                                            }
+                                        }, player.apUsed > 0 ? "End Turn" : "Pass Turn")
+                                    ] : null
+                                ])
+                            ])
                         ]),
 
                         // Right sidebar: Opponent
@@ -4251,8 +6013,11 @@
                         ])
                     ]),
 
-                    // Bottom: Hand Tray (visible in placement phase)
-                    gameState.phase === GAME_PHASES.DRAW_PLACEMENT
+                    // Bottom: Hand Tray (visible in initiative, placement, and threat response phases)
+                    (gameState.phase === GAME_PHASES.INITIATIVE ||
+                     gameState.phase === GAME_PHASES.DRAW_PLACEMENT ||
+                     gameState.phase === GAME_PHASES.THREAT_RESPONSE ||
+                     gameState.phase === GAME_PHASES.END_THREAT)
                         ? m(HandTray)
                         : null
                 ]);
@@ -4264,9 +6029,11 @@
         let labels = {
             [GAME_PHASES.INITIATIVE]: "Initiative",
             [GAME_PHASES.EQUIP]: "Equip",
+            [GAME_PHASES.THREAT_RESPONSE]: "Threat!",
             [GAME_PHASES.DRAW_PLACEMENT]: "Placement",
             [GAME_PHASES.RESOLUTION]: "Resolution",
             [GAME_PHASES.CLEANUP]: "Cleanup",
+            [GAME_PHASES.END_THREAT]: "End Threat!",
             "GAME_OVER": "Game Over"
         };
         return labels[phase] || phase;
@@ -4350,17 +6117,41 @@
                 let char = actor.character || {};
                 let stackId = isOpponent ? "opponent" : "player";
 
-                // Build a character card with live stats
-                let liveChar = Object.assign({}, char, {
-                    needs: { hp: actor.hp, energy: actor.energy, morale: actor.morale }
-                });
+                // HP/Energy/Morale percentages
+                let hpPct = Math.max(0, Math.min(100, (actor.hp / actor.maxHp) * 100));
+                let energyPct = Math.max(0, Math.min(100, (actor.energy / actor.maxEnergy) * 100));
 
                 return m("div", { class: "cg2-char-sidebar" + (isOpponent ? " cg2-opponent" : "") }, [
                     m("div", { class: "cg2-sidebar-label" }, label),
 
-                    // Character card using CardFace
-                    m("div", { class: "cg2-sidebar-card-wrap" }, [
-                        m(CardFace, { card: liveChar, bgImage: char.portraitUrl })
+                    // Prominent game stats bar
+                    m("div", { class: "cg2-sidebar-stats" }, [
+                        m("div", { class: "cg2-sidebar-stat cg2-stat-hp" }, [
+                            m("span", { class: "cg2-stat-icon" }, "\u2665"),
+                            m("div", { class: "cg2-stat-bar" }, [
+                                m("div", { class: "cg2-stat-fill cg2-hp-fill", style: { width: hpPct + "%" } })
+                            ]),
+                            m("span", { class: "cg2-stat-val" }, actor.hp + "/" + actor.maxHp)
+                        ]),
+                        m("div", { class: "cg2-sidebar-stat cg2-stat-energy" }, [
+                            m("span", { class: "cg2-stat-icon" }, "\u26A1"),
+                            m("div", { class: "cg2-stat-bar" }, [
+                                m("div", { class: "cg2-stat-fill cg2-energy-fill", style: { width: energyPct + "%" } })
+                            ]),
+                            m("span", { class: "cg2-stat-val" }, actor.energy + "/" + actor.maxEnergy)
+                        ])
+                    ]),
+
+                    // Character portrait (clickable for popup)
+                    m("div", {
+                        class: "cg2-sidebar-portrait",
+                        onclick() { showCardPreview(char); },
+                        title: "Click to view full card"
+                    }, [
+                        char.portraitUrl
+                            ? m("img", { src: char.portraitUrl, class: "cg2-portrait-img-sidebar" })
+                            : m("span", { class: "material-symbols-outlined", style: "font-size:48px;color:#B8860B" }, "person"),
+                        m("div", { class: "cg2-portrait-name" }, char.name || "Unknown")
                     ]),
 
                     // AP indicator
@@ -4369,20 +6160,67 @@
                         m("span", { class: "cg2-ap-value" }, (actor.ap - actor.apUsed) + "/" + actor.ap)
                     ]),
 
-                    // Hand and deck counts
+                    // Compact counts row
                     m("div", { class: "cg2-hand-count" }, [
-                        m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "playing_cards"),
-                        m("span", " " + (actor.hand ? actor.hand.length : 0) + " hand"),
-                        m("span", { style: "margin-left:8px" }),
-                        m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "layers"),
-                        m("span", " " + (actor.drawPile ? actor.drawPile.length : 0) + " deck")
+                        m("span", { title: "Cards in hand" }, [
+                            m("span", { class: "material-symbols-outlined", style: "font-size:12px;vertical-align:middle" }, "playing_cards"),
+                            " " + (actor.hand ? actor.hand.length : 0)
+                        ]),
+                        m("span", { title: "Cards in deck" }, [
+                            m("span", { class: "material-symbols-outlined", style: "font-size:12px;vertical-align:middle" }, "layers"),
+                            " " + (actor.drawPile ? actor.drawPile.length : 0)
+                        ])
                     ]),
+
+                    // Opponent hand visual (stack of card backs)
+                    isOpponent && actor.hand && actor.hand.length > 0
+                        ? m("div", { class: "cg2-opp-hand-visual" }, [
+                            m("div", { class: "cg2-opp-hand-stack" },
+                                // Show up to 5 card backs in a fanned stack
+                                Array.from({ length: Math.min(actor.hand.length, 5) }).map((_, i) =>
+                                    m("div", {
+                                        key: i,
+                                        class: "cg2-opp-card-back",
+                                        style: {
+                                            left: (i * 6) + "px",
+                                            top: (i * 2) + "px",
+                                            zIndex: i,
+                                            transform: "rotate(" + ((i - 2) * 3) + "deg)"
+                                        }
+                                    })
+                                )
+                            )
+                        ])
+                        : null,
+
+                    // Status effects display
+                    actor.statusEffects && actor.statusEffects.length > 0
+                        ? m("div", { class: "cg2-status-effects" },
+                            actor.statusEffects.map(effect =>
+                                m("div", {
+                                    key: effect.id,
+                                    class: "cg2-status-effect",
+                                    style: { borderColor: effect.color },
+                                    title: effect.name + ": " + (STATUS_EFFECTS[effect.id.toUpperCase()]?.description || "") +
+                                           (effect.durationType === "turns" ? " (" + effect.turnsRemaining + " turns)" : "")
+                                }, [
+                                    m("span", {
+                                        class: "material-symbols-outlined cg2-status-icon",
+                                        style: { color: effect.color }
+                                    }, effect.icon),
+                                    effect.durationType === "turns"
+                                        ? m("span", { class: "cg2-status-turns" }, effect.turnsRemaining)
+                                        : null
+                                ])
+                            )
+                        )
+                        : null,
 
                     // Fanned card stack (modifier cards on character)
                     m(FannedCardStack, {
                         cards: actor.cardStack,
                         stackId: stackId + "-mods",
-                        label: "Modifiers",
+                        label: "Equip",
                         maxShow: 3
                     })
                 ]);
@@ -4398,7 +6236,7 @@
         return {
             oninit() {
                 // Start animation when component mounts (if not already rolling)
-                if (!initAnimState.rolling && !initAnimState.rollComplete && initAnimState.countdown === 5) {
+                if (!initAnimState.rolling && !initAnimState.rollComplete && initAnimState.countdown === 3) {
                     startInitiativeAnimation();
                 }
             },
@@ -4411,11 +6249,27 @@
                 // Cards flip when rolling starts or results are shown
                 let showFlipped = anim.rolling || anim.rollComplete;
 
+                // Get deck card backgrounds
+                let cardFrontBg = viewingDeck && viewingDeck.cardFrontImageUrl ? viewingDeck.cardFrontImageUrl : null;
+                let cardBackBg = viewingDeck && viewingDeck.cardBackImageUrl ? viewingDeck.cardBackImageUrl : null;
+
                 // Helper to render initiative card
                 function renderInitCard(who, character, roll, isWinner, diceFace, flipped) {
                     let isFlipped = showFlipped || flipped;
+                    let isLoser = anim.rollComplete && !isWinner && init.winner;  // Has a winner but this isn't it
+
+                    // Back side style with card back image
+                    let backStyle = {};
+                    if (cardBackBg) {
+                        backStyle.backgroundImage = "url('" + cardBackBg + "')";
+                        backStyle.backgroundSize = "cover";
+                        backStyle.backgroundPosition = "center";
+                    }
+
                     return m("div", {
-                        class: "cg2-init-card-wrap" + (isFlipped ? " cg2-init-flipped" : "") + (isWinner ? " cg2-init-winner-card" : ""),
+                        class: "cg2-init-card-wrap" + (isFlipped ? " cg2-init-flipped" : "") +
+                            (isWinner ? " cg2-init-winner-card" : "") +
+                            (isLoser ? " cg2-init-loser-card" : ""),
                         onclick() {
                             // Allow manual flip after results
                             if (anim.rollComplete) {
@@ -4425,22 +6279,20 @@
                         }
                     }, [
                         m("div", { class: "cg2-init-card-inner" }, [
-                            // Front: Character card
+                            // Front: Character card with card front background
                             m("div", { class: "cg2-init-card-front" }, [
-                                m(CardFace, { card: character, compact: true })
+                                m(CardFace, { card: character, bgImage: cardFrontBg, compact: true })
                             ]),
-                            // Back: Dice roll result
-                            m("div", { class: "cg2-init-card-back" }, [
+                            // Back: Dice roll result with card back background
+                            m("div", { class: "cg2-init-card-back", style: backStyle }, [
                                 m("div", { class: "cg2-init-back-content" }, [
                                     m("div", { class: "cg2-init-back-label" }, who === "player" ? "You" : "Opponent"),
                                     m("div", { class: "cg2-dice-container" }, [
-                                        m("div", {
-                                            class: "cg2-d20" +
-                                                (anim.rolling ? " cg2-d20-rolling" : " cg2-d20-final") +
-                                                (isWinner && anim.rollComplete ? " cg2-d20-winner" : "")
-                                        }, [
-                                            m("span", { class: "cg2-d20-face" }, anim.rolling ? diceFace : (roll ? roll.raw : "?"))
-                                        ])
+                                        m(D20Dice, {
+                                            value: anim.rolling ? diceFace : (roll ? roll.raw : "?"),
+                                            rolling: anim.rolling,
+                                            winner: isWinner && anim.rollComplete
+                                        })
                                     ]),
                                     roll && anim.rollComplete ? m("div", { class: "cg2-roll-breakdown" }, [
                                         m("span", roll.raw),
@@ -4449,28 +6301,34 @@
                                         m("span", " AGI = "),
                                         m("strong", roll.total)
                                     ]) : null,
-                                    isWinner && anim.rollComplete ? m("div", { class: "cg2-init-winner-badge" }, [
-                                        m("span", { class: "material-symbols-outlined" }, "star"),
-                                        " Winner!"
-                                    ]) : null
+                                    // Winner/Loser badge for alignment
+                                    anim.rollComplete && init.winner
+                                        ? (isWinner
+                                            ? m("div", { class: "cg2-init-winner-badge" }, [
+                                                m("span", { class: "material-symbols-outlined" }, "star"),
+                                                " Winner!"
+                                            ])
+                                            : m("div", { class: "cg2-init-loser-badge" }, "\u2014"))  // em dash as placeholder
+                                        : null
                                 ])
                             ])
                         ])
                     ]);
                 }
 
-                // During countdown phase - show cards face up
+                // During countdown phase - show cards face up with countdown overlay
                 if (anim.countdown > 0) {
                     return m("div", { class: "cg2-phase-panel cg2-initiative-panel" }, [
                         m("h2", "Initiative Phase"),
                         m("p", "Preparing to roll for turn order..."),
-                        m("div", { class: "cg2-init-countdown" }, [
-                            m("div", { class: "cg2-countdown-number" }, anim.countdown)
-                        ]),
                         m("div", { class: "cg2-init-cards" }, [
                             renderInitCard("player", player.character, null, false, 1, false),
                             m("div", { class: "cg2-init-vs" }, "VS"),
-                            renderInitCard("opponent", opponent.character, null, false, 1, false)
+                            renderInitCard("opponent", opponent.character, null, false, 1, false),
+                            // Countdown overlay centered on cards
+                            m("div", { class: "cg2-init-countdown" }, [
+                                m("div", { class: "cg2-countdown-number" }, anim.countdown)
+                            ])
                         ])
                     ]);
                 }
@@ -4478,7 +6336,6 @@
                 // During rolling or showing results
                 return m("div", { class: "cg2-phase-panel cg2-initiative-panel" }, [
                     m("h2", "Initiative Phase"),
-                    m("p", anim.rolling ? "Rolling the dice..." : "Turn order determined!"),
 
                     m("div", { class: "cg2-init-cards" }, [
                         renderInitCard("player", player.character, init.playerRoll, init.winner === "player", anim.playerDiceFace, playerFlipped),
@@ -4486,20 +6343,181 @@
                         renderInitCard("opponent", opponent.character, init.opponentRoll, init.winner === "opponent", anim.opponentDiceFace, opponentFlipped)
                     ]),
 
-                    anim.rollComplete && init.winner
-                        ? m("div", { class: "cg2-init-winner" }, [
-                            m("strong", init.winner === "player" ? "You win initiative!" : "Opponent wins initiative!"),
-                            m("p", init.winner === "player"
-                                ? "You go first with odd positions (1, 3, 5...)"
-                                : "Opponent goes first. You get even positions (2, 4, 6...)")
+                    // Nat 1 warning - beginning threat triggered (with roll details)
+                    anim.rollComplete && gameState.beginningThreats && gameState.beginningThreats.length > 0
+                        ? m("div", { class: "cg2-threat-warning" }, [
+                            m("div", { class: "cg2-threat-warning-header" }, [
+                                m("span", { class: "material-symbols-outlined" }, "warning"),
+                                " CRITICAL FAILURE - THREAT TRIGGERED!"
+                            ]),
+                            // Show actual roll values for clarity
+                            m("div", { class: "cg2-threat-rolls", style: { fontSize: "11px", color: "#c62828", marginBottom: "8px" } }, [
+                                "Rolls: You (", init.playerRoll ? init.playerRoll.raw : "?", ") vs Opp (",
+                                init.opponentRoll ? init.opponentRoll.raw : "?", ")"
+                            ]),
+                            gameState.beginningThreats.map((threat, i) =>
+                                m("div", { class: "cg2-threat-warning-item" }, [
+                                    m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle" }, threat.imageIcon || "pets"),
+                                    " ", m("strong", threat.name),
+                                    " (Diff ", threat.difficulty, ") attacks ",
+                                    m("span", { class: threat.target === "player" ? "cg2-threat-target-you" : "cg2-threat-target-opp" },
+                                        threat.target === "player" ? "YOU" : "Opponent"),
+                                    " (rolled Nat 1)"
+                                ])
+                            )
                         ])
-                        : null,
+                        : null
+                ]);
+            }
+        };
+    }
 
-                    anim.rollComplete ? m("button", {
-                        class: "cg2-btn cg2-btn-primary",
-                        style: { marginTop: "16px" },
-                        onclick() { advancePhase(); }
-                    }, "Continue to Placement Phase") : null
+    // ── Threat Response Phase UI ─────────────────────────────────────
+    function ThreatResponseUI() {
+        return {
+            view() {
+                if (!gameState || !gameState.threatResponse || !gameState.threatResponse.active) {
+                    return null;
+                }
+
+                let tr = gameState.threatResponse;
+                let isEndThreat = tr.type === "end" || gameState.phase === GAME_PHASES.END_THREAT;
+                let responder = tr.responder;
+                let isPlayerResponder = responder === "player";
+                let actor = isPlayerResponder ? gameState.player : gameState.opponent;
+                let apRemaining = actor.threatResponseAP || 0;
+                let threats = tr.threats || [];
+                let defenseStack = tr.defenseStack || [];
+
+                // For AI opponent, auto-respond after delay
+                if (!isPlayerResponder && apRemaining > 0) {
+                    setTimeout(() => {
+                        if (gameState && gameState.threatResponse && gameState.threatResponse.active) {
+                            // AI places a defensive card if available
+                            let defenseCards = actor.hand.filter(c =>
+                                c.type === "action" && (c.name === "Block" || c.name === "Dodge") ||
+                                c.type === "item" && c.subtype === "armor"
+                            );
+                            if (defenseCards.length > 0 && actor.threatResponseAP > 0) {
+                                placeThreatDefenseCard(defenseCards[0]);
+                            } else {
+                                skipThreatResponse();
+                            }
+                        }
+                    }, 1000);
+                }
+
+                // Get the threat and defender info
+                let threat = threats[0];
+                let defenderActor = threat?.target === "player" ? gameState.player : gameState.opponent;
+                let defenderName = threat?.target === "player" ? "You" : "Opponent";
+
+                return m("div", { class: "cg2-phase-panel cg2-threat-response-panel" }, [
+                    m("h2", isEndThreat ? "End-of-Round Threat!" : "Threat Incoming!"),
+                    m("p", { class: "cg2-threat-explain" },
+                        isEndThreat
+                            ? (isPlayerResponder
+                                ? "A threat emerges! You won the round - prepare your defense!"
+                                : "A threat emerges! Opponent prepares to defend...")
+                            : (isPlayerResponder
+                                ? "Your fumble attracted danger! Prepare to defend yourself!"
+                                : "Opponent's fumble attracted danger! They must defend...")
+                    ),
+
+                    // Two-card layout like initiative phase
+                    m("div", { class: "cg2-init-cards cg2-threat-encounter" }, [
+                        // Threat card (left)
+                        threat ? m("div", { class: "cg2-init-card-wrap cg2-threat-card-wrap" }, [
+                            m("div", { class: "cg2-threat-encounter-card" }, [
+                                m("div", { class: "cg2-threat-encounter-icon" }, [
+                                    m("span", { class: "material-symbols-outlined" }, threat.imageIcon || "pets")
+                                ]),
+                                m("div", { class: "cg2-threat-encounter-name" }, threat.name),
+                                m("div", { class: "cg2-threat-encounter-stats" }, [
+                                    m("div", { class: "cg2-threat-stat-row" }, [
+                                        m("span", { class: "material-symbols-outlined" }, "swords"),
+                                        m("span", "ATK " + threat.atk)
+                                    ]),
+                                    m("div", { class: "cg2-threat-stat-row" }, [
+                                        m("span", { class: "material-symbols-outlined" }, "shield"),
+                                        m("span", "DEF " + threat.def)
+                                    ]),
+                                    m("div", { class: "cg2-threat-stat-row" }, [
+                                        m("span", { class: "material-symbols-outlined" }, "favorite"),
+                                        m("span", "HP " + threat.hp)
+                                    ])
+                                ]),
+                                m("div", { class: "cg2-threat-encounter-loot" }, [
+                                    m("span", { class: "material-symbols-outlined" }, "inventory_2"),
+                                    " ", threat.lootRarity, " Loot"
+                                ])
+                            ])
+                        ]) : null,
+
+                        // VS indicator
+                        m("div", { class: "cg2-init-vs cg2-threat-vs" }, [
+                            m("span", { class: "material-symbols-outlined" }, "swords"),
+                            m("div", "VS")
+                        ]),
+
+                        // Defender card (right)
+                        m("div", { class: "cg2-init-card-wrap cg2-defender-card-wrap" }, [
+                            m("div", { class: "cg2-defender-card" + (isPlayerResponder ? " cg2-defender-you" : "") }, [
+                                m("div", { class: "cg2-defender-label" }, defenderName),
+                                m("div", { class: "cg2-defender-stats" }, [
+                                    m("div", { class: "cg2-defender-stat" }, [
+                                        m("span", { class: "material-symbols-outlined" }, "favorite"),
+                                        " HP: ", defenderActor?.hp || 0
+                                    ]),
+                                    m("div", { class: "cg2-defender-stat" }, [
+                                        m("span", { class: "material-symbols-outlined" }, "shield"),
+                                        " END: ", defenderActor?.character?.stats?.END || 0
+                                    ])
+                                ]),
+
+                                // Defense stack display
+                                m("div", { class: "cg2-defender-stack-area" }, [
+                                    m("div", { class: "cg2-defender-stack-label" }, "Defense Stack"),
+                                    defenseStack.length > 0
+                                        ? m("div", { class: "cg2-defender-stack-cards" },
+                                            defenseStack.map(card =>
+                                                m("div", { class: "cg2-defender-stack-card" }, card.name)
+                                            )
+                                        )
+                                        : m("div", { class: "cg2-defender-stack-empty" }, "Empty - click cards below")
+                                ]),
+
+                                // AP indicator
+                                isPlayerResponder ? m("div", { class: "cg2-defender-ap" }, [
+                                    m("span", { class: "material-symbols-outlined" }, "bolt"),
+                                    " ", apRemaining, " / ", tr.bonusAP, " AP"
+                                ]) : null
+                            ])
+                        ])
+                    ]),
+
+                    // Action buttons
+                    isPlayerResponder ? m("div", { class: "cg2-threat-actions" }, [
+                        apRemaining > 0
+                            ? m("button", {
+                                class: "cg2-btn cg2-btn-secondary",
+                                onclick: skipThreatResponse
+                            }, "Skip Defense")
+                            : null,
+                        m("button", {
+                            class: "cg2-btn cg2-btn-primary cg2-btn-threat",
+                            onclick: () => {
+                                if (gameState.phase === GAME_PHASES.THREAT_RESPONSE) {
+                                    resolveThreatCombat();
+                                } else if (gameState.phase === GAME_PHASES.END_THREAT) {
+                                    resolveEndThreatCombat();
+                                }
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: "vertical-align: middle; margin-right: 4px" }, "shield"),
+                            apRemaining > 0 ? "Face Threat Now" : "Resolve Combat"
+                        ])
+                    ]) : m("div", { class: "cg2-threat-waiting" }, "Opponent is preparing defense...")
                 ]);
             }
         };
@@ -4557,138 +6575,175 @@
                 let bar = gameState.actionBar;
                 let currentPos = bar.positions[bar.resolveIndex];
                 let card = currentPos?.stack?.coreCard;
-                let isAttack = card && card.name === "Attack";
+                let isAttack = (card && card.name === "Attack") || currentPos?.isThreat;
+                let isThreat = currentPos?.isThreat;
                 let isRolling = resolutionPhase === "rolling";
                 let showResult = resolutionPhase === "result" || resolutionPhase === "done";
                 let combat = currentCombatResult;
 
-                return m("div", { class: "cg2-phase-panel cg2-resolution-panel" }, [
-                    m("h2", "Resolution Phase"),
+                // Generate descriptive action label
+                let actionLabel = "";
+                if (currentPos) {
+                    let ownerName = currentPos.owner === "player" ? "Player" : "Opponent";
+                    if (isThreat) {
+                        actionLabel = (currentPos.threat?.name || "Threat") + " Attacks!";
+                    } else if (card) {
+                        let actionVerb = card.name === "Attack" ? "Attacks" :
+                                        card.name === "Rest" ? "Rests" :
+                                        card.name === "Flee" ? "Flees" :
+                                        card.name === "Guard" ? "Guards" :
+                                        card.name === "Investigate" ? "Investigates" :
+                                        card.name === "Craft" ? "Crafts" :
+                                        card.name === "Trade" ? "Trades" :
+                                        card.type === "talk" ? "Talks" :
+                                        card.type === "magic" ? "Casts " + card.name :
+                                        "Acts";
+                        actionLabel = ownerName + " " + actionVerb + "!";
+                    }
+                }
 
-                    currentPos
-                        ? m("div", { class: "cg2-resolving-info" }, [
-                            m("span", "Position " + currentPos.index + " "),
-                            m("span", { class: "cg2-owner-badge cg2-owner-" + currentPos.owner },
-                                currentPos.owner === "player" ? "(You)" : "(Opponent)"),
-                            card
-                                ? m("span", { class: "cg2-action-name" }, ": " + card.name)
-                                : m("span", { class: "cg2-empty-slot" }, ": Empty")
-                        ])
-                        : m("div", "All positions resolved!"),
+                // Return empty if not in resolution
+                if (!currentPos) {
+                    return m("div", { class: "cg2-resolution-complete" }, "All actions resolved!");
+                }
 
-                    // Combat display (Attack action)
-                    isAttack && (isRolling || showResult) ? m("div", { class: "cg2-combat-display" }, [
-                        // Attacker vs Defender header
-                        m("div", { class: "cg2-combat-header" }, [
-                            m("span", { class: "cg2-combatant cg2-attacker" },
-                                combat ? combat.attackerName : (currentPos.owner === "player" ? "You" : "Opponent")),
-                            m("span", { class: "cg2-combat-vs" }, "attacks"),
-                            m("span", { class: "cg2-combatant cg2-defender" },
-                                combat ? combat.defenderName : (currentPos.owner === "player" ? "Opponent" : "You"))
-                        ]),
+                // Combat overlay (shows over action bar)
+                return isAttack && (isRolling || showResult) ? m("div", { class: "cg2-combat-overlay" }, [
+                    // Step indicator with descriptive label
+                    m("div", { class: "cg2-action-step-label" }, [
+                        m("span", { class: "cg2-step-number" }, "Step " + currentPos.index + "/" + bar.positions.length),
+                        m("span", { class: "cg2-step-action" }, actionLabel)
+                    ]),
 
-                        // Dice display
-                        m("div", { class: "cg2-combat-dice-row" }, [
-                            // Attack dice
-                            m("div", { class: "cg2-combat-roll-card" }, [
-                                m("div", { class: "cg2-roll-label" }, "Attack Roll"),
-                                m("div", { class: "cg2-dice-container" }, [
-                                    m("div", {
-                                        class: "cg2-d20 cg2-d20-attack" +
-                                            (isRolling ? " cg2-d20-rolling" : " cg2-d20-final")
-                                    }, [
-                                        m("span", { class: "cg2-d20-face" },
-                                            isRolling ? resolutionDiceFaces.attack : (combat ? combat.attackRoll.raw : "?"))
-                                    ])
-                                ]),
-                                combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
-                                    m("span", combat.attackRoll.raw),
+                    // Attacker vs Defender header
+                    m("div", { class: "cg2-combat-header" }, [
+                        m("span", { class: "cg2-combatant cg2-attacker" },
+                            combat ? combat.attackerName : (isThreat ? (currentPos.threat?.name || "Threat") : (currentPos.owner === "player" ? "You" : "Opponent"))),
+                        m("span", { class: "cg2-combat-vs" }, "attacks"),
+                        m("span", { class: "cg2-combatant cg2-defender" },
+                            combat ? combat.defenderName : (isThreat ? (currentPos.target === "player" ? "You" : "Opponent") : (currentPos.owner === "player" ? "Opponent" : "You")))
+                    ]),
+
+                    // Dice display with D20 SVG
+                    m("div", { class: "cg2-combat-dice-row" }, [
+                        // Attack dice
+                        m("div", { class: "cg2-combat-roll-card" }, [
+                            m("div", { class: "cg2-roll-label" }, "Attack Roll"),
+                            m(D20Dice, {
+                                value: isRolling ? resolutionDiceFaces.attack : (combat ? combat.attackRoll.raw : "?"),
+                                rolling: isRolling,
+                                winner: combat && showResult && combat.outcome.damageMultiplier > 0
+                            }),
+                            combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
+                                m("span", combat.attackRoll.raw),
+                                m("span", " + "),
+                                m("span", { class: "cg2-mod" }, combat.attackRoll.strMod + " STR"),
+                                m("span", " + "),
+                                m("span", { class: "cg2-mod cg2-mod-atk" }, combat.attackRoll.atkBonus + " ATK"),
+                                combat.attackRoll.skillMod ? [
                                     m("span", " + "),
-                                    m("span", { class: "cg2-mod" }, combat.attackRoll.strMod + " STR"),
+                                    m("span", { class: "cg2-mod cg2-mod-skill" }, combat.attackRoll.skillMod + " Skill")
+                                ] : null,
+                                combat.attackRoll.statusMod ? [
                                     m("span", " + "),
-                                    m("span", { class: "cg2-mod cg2-mod-atk" }, combat.attackRoll.atkBonus + " ATK"),
-                                    m("span", " = "),
-                                    m("strong", combat.attackRoll.total)
-                                ]) : null
-                            ]),
-
-                            // VS
-                            m("div", { class: "cg2-combat-vs-divider" }, "vs"),
-
-                            // Defense dice
-                            m("div", { class: "cg2-combat-roll-card" }, [
-                                m("div", { class: "cg2-roll-label" }, "Defense Roll"),
-                                m("div", { class: "cg2-dice-container" }, [
-                                    m("div", {
-                                        class: "cg2-d20 cg2-d20-defense" +
-                                            (isRolling ? " cg2-d20-rolling" : " cg2-d20-final")
-                                    }, [
-                                        m("span", { class: "cg2-d20-face" },
-                                            isRolling ? resolutionDiceFaces.defense : (combat ? combat.defenseRoll.raw : "?"))
-                                    ])
-                                ]),
-                                combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
-                                    m("span", combat.defenseRoll.raw),
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod" }, combat.defenseRoll.endMod + " END"),
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod" }, combat.defenseRoll.defBonus + " DEF"),
-                                    combat.defenseRoll.parryBonus ? [
-                                        m("span", " + "),
-                                        m("span", { class: "cg2-mod" }, combat.defenseRoll.parryBonus + " Parry")
-                                    ] : null,
-                                    m("span", " = "),
-                                    m("strong", combat.defenseRoll.total)
-                                ]) : null
-                            ])
-                        ]),
-
-                        // Outcome display
-                        combat && showResult ? m("div", { class: "cg2-combat-outcome" }, [
-                            m("div", {
-                                class: "cg2-outcome-label cg2-outcome-" +
-                                    (combat.outcome.damageMultiplier > 0 ? "hit" :
-                                     combat.outcome.damageMultiplier < 0 ? "counter" : "miss")
-                            }, [
-                                m("span", { class: "cg2-outcome-text" }, combat.outcome.label),
-                                m("span", { class: "cg2-outcome-diff" },
-                                    " (" + (combat.outcome.diff >= 0 ? "+" : "") + combat.outcome.diff + ")")
-                            ]),
-                            m("div", { class: "cg2-outcome-effect" }, combat.outcome.effect),
-
-                            // Damage display
-                            combat.damageResult ? m("div", { class: "cg2-damage-display" }, [
-                                m("span", { class: "cg2-damage-number cg2-damage-dealt" },
-                                    "-" + combat.damageResult.finalDamage + " HP"),
-                                m("span", { class: "cg2-damage-target" },
-                                    " to " + combat.defenderName)
-                            ]) : null,
-
-                            combat.selfDamageResult ? m("div", { class: "cg2-damage-display" }, [
-                                m("span", { class: "cg2-damage-number cg2-damage-self" },
-                                    "-" + combat.selfDamageResult.finalDamage + " HP"),
-                                m("span", { class: "cg2-damage-target" },
-                                    " to " + combat.attackerName + " (counter!)")
+                                    m("span", { class: "cg2-mod cg2-mod-status" }, combat.attackRoll.statusMod + " Status")
+                                ] : null,
+                                m("span", " = "),
+                                m("strong", combat.attackRoll.total)
                             ]) : null
-                        ]) : null
+                        ]),
 
+                        // VS divider
+                        m("div", { class: "cg2-combat-vs-divider" }, "vs"),
+
+                        // Defense dice
+                        m("div", { class: "cg2-combat-roll-card" }, [
+                            m("div", { class: "cg2-roll-label" }, "Defense Roll"),
+                            m(D20Dice, {
+                                value: isRolling ? resolutionDiceFaces.defense : (combat ? combat.defenseRoll.raw : "?"),
+                                rolling: isRolling,
+                                winner: combat && showResult && combat.outcome.damageMultiplier <= 0
+                            }),
+                            combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
+                                m("span", combat.defenseRoll.raw),
+                                m("span", " + "),
+                                m("span", { class: "cg2-mod" }, combat.defenseRoll.endMod + " END"),
+                                m("span", " + "),
+                                m("span", { class: "cg2-mod cg2-mod-def" }, combat.defenseRoll.defBonus + " DEF"),
+                                combat.defenseRoll.parryBonus ? [
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod cg2-mod-parry" }, combat.defenseRoll.parryBonus + " Parry")
+                                ] : null,
+                                combat.defenseRoll.statusMod ? [
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod cg2-mod-status" }, combat.defenseRoll.statusMod + " Status")
+                                ] : null,
+                                m("span", " = "),
+                                m("strong", combat.defenseRoll.total)
+                            ]) : null
+                        ])
+                    ]),
+
+                    // Outcome display
+                    combat && showResult ? m("div", { class: "cg2-combat-outcome" }, [
+                        m("div", {
+                            class: "cg2-outcome-label cg2-outcome-" +
+                                (combat.outcome.damageMultiplier > 0 ? "hit" :
+                                 combat.outcome.damageMultiplier < 0 ? "counter" : "miss")
+                        }, [
+                            m("span", { class: "cg2-outcome-text" }, combat.outcome.label),
+                            m("span", { class: "cg2-outcome-diff" },
+                                " (" + (combat.outcome.diff >= 0 ? "+" : "") + combat.outcome.diff + ")")
+                        ]),
+                        m("div", { class: "cg2-outcome-effect" }, combat.outcome.effect),
+
+                        // Damage display
+                        combat.damageResult ? m("div", { class: "cg2-damage-display" }, [
+                            m("span", { class: "cg2-damage-number cg2-damage-dealt" },
+                                "-" + combat.damageResult.finalDamage + " HP"),
+                            m("span", { class: "cg2-damage-target" },
+                                " to " + combat.defenderName)
+                        ]) : null,
+
+                        combat.selfDamageResult ? m("div", { class: "cg2-damage-display" }, [
+                            m("span", { class: "cg2-damage-number cg2-damage-self" },
+                                "-" + combat.selfDamageResult.finalDamage + " HP"),
+                            m("span", { class: "cg2-damage-target" },
+                                " to " + combat.attackerName + " (counter!)")
+                        ]) : null,
+
+                        // Critical Effects
+                        combat.criticalEffects && (combat.criticalEffects.itemDropped || combat.criticalEffects.attackerStunned)
+                            ? m("div", { class: "cg2-critical-effects" }, [
+                                combat.criticalEffects.itemDropped
+                                    ? m("div", { class: "cg2-critical-effect cg2-item-dropped" }, [
+                                        m("span", { class: "material-symbols-outlined" }, "backpack"),
+                                        " Item dropped: ", m("strong", combat.criticalEffects.itemDropped.name)
+                                    ]) : null,
+                                combat.criticalEffects.attackerStunned
+                                    ? m("div", { class: "cg2-critical-effect cg2-attacker-stunned" }, [
+                                        m("span", { class: "material-symbols-outlined" }, "flash_off"),
+                                        " ", m("strong", combat.attackerName), " STUNNED!"
+                                    ]) : null
+                            ]) : null
                     ]) : null,
 
-                    // Non-combat action or waiting
-                    !isAttack && resolutionAnimating ? m("div", { class: "cg2-resolving-action" }, [
-                        m("span", { class: "material-symbols-outlined cg2-spin" }, "sync"),
-                        " Resolving..."
-                    ]) : null,
-
-                    // Progress indicator
+                    // Progress bar
                     m("div", { class: "cg2-resolution-progress" },
-                        "Position " + (bar.resolveIndex + 1) + " of " + bar.positions.length),
+                        resolutionAnimating ? "Resolving..." : "Next action in 3s...")
 
-                    // Auto-advancing indicator (no manual buttons needed)
-                    bar.resolveIndex < bar.positions.length
-                        ? m("div", { class: "cg2-auto-advance-hint" },
-                            resolutionAnimating ? "Resolving..." : "Next action in 3s...")
-                        : m("div", { class: "cg2-auto-advance-hint" }, "Advancing to cleanup...")
+                ]) : m("div", { class: "cg2-non-combat-overlay" }, [
+                    // Non-combat action display
+                    m("div", { class: "cg2-action-step-label" }, [
+                        m("span", { class: "cg2-step-number" }, "Step " + currentPos.index + "/" + bar.positions.length),
+                        m("span", { class: "cg2-step-action" }, actionLabel)
+                    ]),
+                    m("div", { class: "cg2-resolving-action" }, [
+                        m("span", { class: "material-symbols-outlined cg2-spin" }, "sync"),
+                        " Resolving ", card ? card.name : "action", "..."
+                    ]),
+                    m("div", { class: "cg2-resolution-progress" },
+                        resolutionAnimating ? "Resolving..." : "Next action in 3s...")
                 ]);
             }
         };
@@ -4722,6 +6777,29 @@
                     gameState.player.hp = Math.min(gameState.player.maxHp, gameState.player.hp + gameState.player.hpRecovery);
                     gameState.opponent.hp = Math.min(gameState.opponent.maxHp, gameState.opponent.hp + gameState.opponent.hpRecovery);
 
+                    // Winner claims the pot
+                    if (gameState.roundWinner !== "tie") {
+                        gameState.potClaimed = gameState.pot.length;
+                        claimPot(gameState.roundWinner);
+                    } else {
+                        // On tie, pot carries over to next round
+                        gameState.potClaimed = 0;
+                        console.log("[CardGame v2] Tie - pot carries over:", gameState.pot.length, "cards");
+                    }
+
+                    // Lethargy check: strip hoarded action cards not played this round
+                    gameState.playerLethargy = checkLethargy(gameState.player, "Player");
+                    gameState.opponentLethargy = checkLethargy(gameState.opponent, "Opponent");
+
+                    // End threat check: draw scenario card (damage applied in END_THREAT phase)
+                    gameState.endThreatResult = checkEndThreat();
+                    if (gameState.endThreatResult && gameState.endThreatResult.threat) {
+                        // Mark as pending - will be handled in END_THREAT phase
+                        gameState.endThreatResult.responded = false;
+                        console.log("[CardGame v2] End threat pending:", gameState.endThreatResult.threat.name,
+                            "- winner gets response opportunity");
+                    }
+
                     gameState.cleanupApplied = true;
                     console.log("[CardGame v2] Cleanup - Round winner:", gameState.roundWinner,
                         "Player HP:", gameState.player.hp, "(+" + gameState.player.hpRecovery + ")",
@@ -4753,16 +6831,88 @@
                                 m("span", { class: gameState.roundWinner === "opponent" ? "cg2-winner" : "" },
                                     "Opponent: +" + gameState.opponent.hpRecovery + " HP (" + gameState.opponent.hp + "/" + gameState.opponent.maxHp + ")")
                             ])
-                        ])
+                        ]),
+                        // Pot claim info
+                        gameState.potClaimed > 0 ? m("div", { class: "cg2-pot-claimed" }, [
+                            m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "redeem"),
+                            " ", gameState.roundWinner === "player" ? "You" : "Opponent",
+                            " claimed ", gameState.potClaimed, " card", gameState.potClaimed > 1 ? "s" : "", " from the pot!"
+                        ]) : null,
+                        gameState.pot.length > 0 ? m("div", { class: "cg2-pot-carries" },
+                            "Pot carries over: " + gameState.pot.length + " cards"
+                        ) : null,
+
+                        // Lethargy notifications
+                        (gameState.playerLethargy && gameState.playerLethargy.length > 0) ||
+                        (gameState.opponentLethargy && gameState.opponentLethargy.length > 0)
+                            ? m("div", { class: "cg2-lethargy-notice" }, [
+                                m("div", { class: "cg2-lethargy-title" }, [
+                                    m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "hotel"),
+                                    " Lethargy"
+                                ]),
+                                gameState.playerLethargy && gameState.playerLethargy.length > 0
+                                    ? m("div", { class: "cg2-lethargy-item cg2-lethargy-player" },
+                                        "You lost " + gameState.playerLethargy.map(l => l.stripped + " " + l.actionType).join(", ") + " (hoarded, unplayed)")
+                                    : null,
+                                gameState.opponentLethargy && gameState.opponentLethargy.length > 0
+                                    ? m("div", { class: "cg2-lethargy-item cg2-lethargy-opponent" },
+                                        "Opponent lost " + gameState.opponentLethargy.map(l => l.stripped + " " + l.actionType).join(", ") + " (hoarded, unplayed)")
+                                    : null
+                            ])
+                            : null,
+
+                        // End threat (scenario card)
+                        gameState.endThreatResult ? m("div", { class: "cg2-scenario-card" }, [
+                            m("div", { class: "cg2-scenario-title" }, [
+                                m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" },
+                                    gameState.endThreatResult.threat ? "warning" : "eco"),
+                                " Scenario: ", gameState.endThreatResult.scenario.name
+                            ]),
+                            m("div", { class: "cg2-scenario-desc" }, gameState.endThreatResult.scenario.description),
+                            // Show pending threat (not yet resolved)
+                            gameState.endThreatResult.threat && !gameState.endThreatResult.responded
+                                ? m("div", { class: "cg2-end-threat cg2-end-threat-pending" }, [
+                                    m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#c62828" },
+                                        gameState.endThreatResult.threat.imageIcon || "pets"),
+                                    " ", m("strong", gameState.endThreatResult.threat.name),
+                                    " approaches! ",
+                                    m("span", { class: gameState.roundWinner === "player" ? "cg2-threat-target-you" : "cg2-threat-target-opp" },
+                                        gameState.roundWinner === "player" || gameState.roundWinner === "tie" ? "You" : "Opponent"),
+                                    " may prepare a defense."
+                                ])
+                                : null,
+                            // Show resolved threat result (after END_THREAT phase)
+                            gameState.endThreatResult.threat && gameState.endThreatResult.responded
+                                ? m("div", { class: "cg2-end-threat" }, [
+                                    m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#c62828" },
+                                        gameState.endThreatResult.threat.imageIcon || "pets"),
+                                    " ", m("strong", gameState.endThreatResult.threat.name),
+                                    gameState.endThreatResult.damageDealt > 0
+                                        ? [" dealt ", m("span", { style: "color:#c62828;font-weight:bold" }, gameState.endThreatResult.damageDealt), " damage!"]
+                                        : [" was ", m("span", { style: "color:#4CAF50;font-weight:bold" }, "defeated"), "!"]
+                                ]) : null
+                        ]) : null
                     ]),
 
-                    m("button", {
-                        class: "cg2-btn cg2-btn-primary",
-                        onclick() {
-                            gameState.cleanupApplied = false;  // Reset for next round
-                            startNextRound();
-                        }
-                    }, "Start Round " + (gameState.round + 1))
+                    // Button changes based on pending threat
+                    gameState.endThreatResult && gameState.endThreatResult.threat && !gameState.endThreatResult.responded
+                        ? m("button", {
+                            class: "cg2-btn cg2-btn-primary cg2-btn-threat",
+                            onclick() {
+                                gameState.cleanupApplied = false;
+                                advancePhase();  // Goes to END_THREAT phase
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: "vertical-align:middle;margin-right:4px" }, "shield"),
+                            "Face the Threat"
+                        ])
+                        : m("button", {
+                            class: "cg2-btn cg2-btn-primary",
+                            onclick() {
+                                gameState.cleanupApplied = false;  // Reset for next round
+                                advancePhase();  // Will call startNextRound since no pending threat
+                            }
+                        }, "Start Round " + (gameState.round + 1))
                 ]);
             }
         };
@@ -4821,6 +6971,14 @@
                                 class: "cg2-btn",
                                 onclick() {
                                     gameState = null;
+                                    // Restore deck view image state from viewingDeck
+                                    if (viewingDeck) {
+                                        backgroundImageId = viewingDeck.backgroundImageId || null;
+                                        backgroundPrompt = viewingDeck.backgroundPrompt || null;
+                                        backgroundThumbUrl = viewingDeck.backgroundThumbUrl || null;
+                                        tabletopImageId = viewingDeck.tabletopImageId || null;
+                                        tabletopThumbUrl = viewingDeck.tabletopThumbUrl || null;
+                                    }
                                     screen = "deckView";
                                     m.redraw();
                                 }
@@ -4847,12 +7005,13 @@
                             let isActive = isResolution && bar.resolveIndex === i;
                             let isResolved = pos.resolved;
                             let isPlayerPos = pos.owner === "player";
-                            let canDrop = isPlacement && isPlayerPos && gameState.currentTurn === "player";
+                            let isThreatPos = pos.isThreat;
+                            let canDrop = isPlacement && isPlayerPos && gameState.currentTurn === "player" && !isThreatPos;
 
                             return m("div", {
                                 key: pos.index,
                                 class: "cg2-action-position" +
-                                       (isPlayerPos ? " cg2-player-pos" : " cg2-opponent-pos") +
+                                       (isThreatPos ? " cg2-threat-pos" : (isPlayerPos ? " cg2-player-pos" : " cg2-opponent-pos")) +
                                        (isActive ? " cg2-active" : "") +
                                        (isResolved ? " cg2-resolved" : "") +
                                        (canDrop ? " cg2-droppable" : ""),
@@ -4871,22 +7030,75 @@
                                     }
                                 }
                             }, [
-                                m("div", { class: "cg2-pos-number" }, pos.index),
-                                m("div", { class: "cg2-pos-owner" }, isPlayerPos ? "You" : "Opp"),
-                                pos.stack && pos.stack.coreCard
-                                    ? m("div", { class: "cg2-pos-card" }, [
-                                        m("div", { class: "cg2-pos-card-name" }, pos.stack.coreCard.name),
-                                        pos.stack.modifiers.length > 0
-                                            ? m("div", { class: "cg2-pos-mods" }, "+" + pos.stack.modifiers.length + " mod")
-                                            : null
+                                m("div", { class: "cg2-pos-number" }, isThreatPos ? "T" + pos.index : pos.index),
+                                m("div", { class: "cg2-pos-owner" },
+                                    isThreatPos
+                                        ? [m("span", { class: "material-symbols-outlined", style: "font-size:12px;vertical-align:middle" }, pos.threat?.imageIcon || "warning"), " Threat"]
+                                        : (isPlayerPos ? "You" : "Opp")),
+
+                                // Threat display
+                                isThreatPos && pos.threat
+                                    ? m("div", { class: "cg2-pos-threat" }, [
+                                        m("div", { class: "cg2-threat-name" }, pos.threat.name),
+                                        m("div", { class: "cg2-threat-stats" }, [
+                                            m("span", { title: "Attack" }, "ATK " + pos.threat.atk),
+                                            m("span", { title: "Defense" }, "DEF " + pos.threat.def),
+                                            m("span", { title: "Hit Points" }, "HP " + pos.threat.hp)
+                                        ]),
+                                        m("div", { class: "cg2-threat-target" }, [
+                                            "→ ",
+                                            m("span", { class: pos.target === "player" ? "cg2-threat-target-you" : "cg2-threat-target-opp" },
+                                                pos.target === "player" ? "You" : "Opponent")
+                                        ])
                                     ])
-                                    : m("div", { class: "cg2-pos-empty" }, canDrop ? "Drop here" : "\u2013"),
+                                    : pos.stack && pos.stack.coreCard
+                                        ? m("div", { class: "cg2-pos-stack" }, [
+                                            // Core card as mini card (on top)
+                                            m("div", {
+                                                class: "cg2-pos-core-card",
+                                                onclick(e) {
+                                                    e.stopPropagation();
+                                                    showCardPreview(pos.stack.coreCard);
+                                                },
+                                                title: pos.stack.coreCard.name + (pos.stack.modifiers.length > 0 ? " + " + pos.stack.modifiers.length + " modifier(s)" : "") + " (click to enlarge)"
+                                            }, [
+                                                m(CardFace, { card: pos.stack.coreCard, compact: true }),
+                                                // Stack count badge
+                                                pos.stack.modifiers.length > 0
+                                                    ? m("div", { class: "cg2-stack-count" }, "+" + pos.stack.modifiers.length)
+                                                    : null
+                                            ]),
+                                            // Modifier list (shown below for clarity)
+                                            pos.stack.modifiers.length > 0
+                                                ? m("div", { class: "cg2-pos-modifiers-list" },
+                                                    pos.stack.modifiers.map((mod, mi) =>
+                                                        m("div", {
+                                                            key: mi,
+                                                            class: "cg2-pos-mod-item cg2-mod-" + mod.type,
+                                                            onclick(e) {
+                                                                e.stopPropagation();
+                                                                showCardPreview(mod);
+                                                            },
+                                                            title: mod.name + " (click to enlarge)"
+                                                        }, [
+                                                            m("span", { class: "material-symbols-outlined", style: "font-size:10px" },
+                                                                mod.type === "skill" ? "star" : mod.type === "magic" ? "auto_fix_high" : "category"),
+                                                            " " + mod.name
+                                                        ])
+                                                    )
+                                                )
+                                                : null
+                                        ])
+                                        : m("div", { class: "cg2-pos-empty" }, canDrop ? "Drop here" : "\u2013"),
 
                                 // Resolution marker
                                 isActive ? m("div", { class: "cg2-resolve-marker" }, "\u25B6") : null
                             ]);
                         })
-                    )
+                    ),
+
+                    // Combat/Resolution overlay (inside action bar)
+                    isResolution ? m(ResolutionPhaseUI) : null
                 ]);
             }
         };
@@ -4924,22 +7136,52 @@
                         ])
                     ]),
 
-                    // Cards - using proper card styling
+                    // Cards - using compact card styling with click-to-preview
                     m("div", { class: "cg2-hand-cards" },
                         filteredHand.length > 0
-                            ? filteredHand.map((card, i) =>
-                                m("div", {
+                            ? filteredHand.map((card, i) => {
+                                // Check if in threat response mode
+                                let isThreatPhase = gameState.phase === GAME_PHASES.THREAT_RESPONSE ||
+                                                    gameState.phase === GAME_PHASES.END_THREAT;
+                                let isResponder = gameState.threatResponse?.responder === "player";
+                                let hasAP = (gameState.player.threatResponseAP || 0) > 0;
+                                let canPlaceDefense = isThreatPhase && isResponder && hasAP;
+
+                                return m("div", {
                                     key: card.name + "-" + i,
-                                    class: "cg2-hand-card-wrapper",
-                                    draggable: true,
+                                    class: "cg2-hand-card-wrapper" + (canPlaceDefense ? " cg2-defense-eligible" : ""),
+                                    draggable: !isThreatPhase,
                                     ondragstart(e) {
+                                        if (isThreatPhase) {
+                                            e.preventDefault();
+                                            return;
+                                        }
                                         e.dataTransfer.setData("text/plain", JSON.stringify(card));
                                         e.dataTransfer.effectAllowed = "move";
-                                    }
-                                }, m(CardFace, { card, bgImage: cardFrontBg }))
-                            )
+                                    },
+                                    onclick(e) {
+                                        e.stopPropagation();
+                                        // In threat response phase, clicking adds to defense stack
+                                        if (canPlaceDefense) {
+                                            placeThreatDefenseCard(card);
+                                            return;
+                                        }
+                                        showCardPreview(card);
+                                    },
+                                    title: canPlaceDefense ? "Click to add to defense" : "Click to enlarge, drag to place"
+                                }, [
+                                    m(CardFace, { card, bgImage: cardFrontBg, compact: true }),
+                                    // Show art thumbnail if available
+                                    card.imageUrl ? m("img", {
+                                        src: card.imageUrl,
+                                        class: "cg2-card-art-thumb"
+                                    }) : null
+                                ]);
+                            })
                             : m("div", { class: "cg2-hand-empty" }, "No cards of this type")
-                    )
+                    ),
+                    // Card Preview Overlay
+                    m(CardPreviewOverlay)
                 ]);
             }
         };
@@ -4958,6 +7200,14 @@
                     backgroundImageId = null;
                     backgroundPrompt = null;
                     backgroundThumbUrl = null;
+                }
+                // Restore tabletop reference from saved deck
+                if (viewingDeck && viewingDeck.tabletopImageId) {
+                    tabletopImageId = viewingDeck.tabletopImageId;
+                    tabletopThumbUrl = viewingDeck.tabletopThumbUrl || null;
+                } else {
+                    tabletopImageId = null;
+                    tabletopThumbUrl = null;
                 }
                 // Restore SD overrides from saved deck
                 if (viewingDeck && viewingDeck.sdOverrides) {
@@ -4983,9 +7233,22 @@
             },
             view() {
                 if (!viewingDeck) return m("div", "No deck loaded");
-                let cards = viewingDeck.cards || [];
+                let allCards = viewingDeck.cards || [];
+
+                // Get unique cards by signature (name + type + subtype)
+                let uniqueMap = {};
+                allCards.forEach((card, i) => {
+                    let sig = card.name + "|" + card.type + "|" + (card.subtype || "");
+                    if (!uniqueMap[sig]) {
+                        uniqueMap[sig] = { card, index: i, count: 1 };
+                    } else {
+                        uniqueMap[sig].count++;
+                    }
+                });
+                let uniqueCards = Object.values(uniqueMap);
+
                 let queueActive = artQueue.some(j => j.status === "pending" || j.status === "processing");
-                let busy = queueActive || backgroundGenerating;
+                let busy = queueActive || backgroundGenerating || cardFrontGenerating || cardBackGenerating;
                 return m("div", [
                     m("div", { class: "cg2-toolbar" }, [
                         m("button", { class: "cg2-btn", onclick: () => { screen = "deckList"; viewingDeck = null; cancelArtQueue(); artTotal = 0; backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); } }, "\u2190 Back to Decks"),
@@ -4994,7 +7257,7 @@
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", verticalAlign: "middle", marginRight: "3px" } }, "auto_fix_high"),
                             viewingDeck.themeId.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
                         ]) : null,
-                        m("span", { style: { color: "#888", fontSize: "12px", marginLeft: "12px" } }, cards.length + " cards"),
+                        m("span", { style: { color: "#888", fontSize: "12px", marginLeft: "12px" } }, uniqueCards.length + " unique / " + allCards.length + " total"),
                         m("button", {
                             class: "cg2-btn", style: { marginLeft: "auto", fontSize: "11px" },
                             disabled: busy,
@@ -5142,35 +7405,63 @@
                             ])
                         ]) : null
                     ]),
-                    // Background Basis (always visible, outside SD config)
-                    m("div", { class: "cg2-bg-panel", style: { margin: "8px 0" } }, [
-                        m("div", { class: "cg2-bg-panel-left" }, [
-                            m("span", { style: { fontWeight: 700, fontSize: "13px" } }, "Background Basis"),
-                            backgroundImageId
-                                ? m("span", { style: { fontSize: "11px", color: "#2E7D32", marginLeft: "8px" } }, "Active")
-                                : m("span", { style: { fontSize: "11px", color: "#888", marginLeft: "8px" } }, "None"),
-                            backgroundThumbUrl ? m("img", {
-                                src: backgroundThumbUrl, class: "cg2-bg-thumb",
-                                style: { cursor: "pointer" },
-                                onclick() { showImagePreview(backgroundThumbUrl); }
-                            }) : null
-                        ]),
-                        m("div", { class: "cg2-bg-panel-right" }, [
-                            m("button", {
-                                class: "cg2-btn",
-                                disabled: busy,
-                                onclick() { generateBackground(activeTheme); }
-                            }, [
-                                backgroundGenerating
-                                    ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
-                                    : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "landscape"),
-                                backgroundGenerating ? "Generating..." : (backgroundImageId ? "Regenerate BG" : "Generate BG")
+                    // Background Basis & Tabletop (side by side)
+                    m("div", { class: "cg2-bg-row", style: { display: "flex", gap: "12px", margin: "8px 0", flexWrap: "wrap" } }, [
+                        // Background Basis (for card art)
+                        m("div", { class: "cg2-bg-panel", style: { flex: "1 1 200px" } }, [
+                            m("div", { class: "cg2-bg-panel-left" }, [
+                                m("span", { style: { fontWeight: 700, fontSize: "12px" } }, "Card Art Basis"),
+                                backgroundThumbUrl ? m("img", {
+                                    src: backgroundThumbUrl, class: "cg2-bg-thumb",
+                                    style: { cursor: "pointer" },
+                                    onclick() { showImagePreview(backgroundThumbUrl); }
+                                }) : null
                             ]),
-                            backgroundImageId ? m("button", {
-                                class: "cg2-btn",
-                                disabled: busy,
-                                onclick() { backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); }
-                            }, "Clear BG") : null
+                            m("div", { class: "cg2-bg-panel-right" }, [
+                                m("button", {
+                                    class: "cg2-btn",
+                                    disabled: busy,
+                                    onclick() { generateBackground(activeTheme); }
+                                }, [
+                                    backgroundGenerating
+                                        ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
+                                        : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "landscape"),
+                                    backgroundGenerating ? "..." : (backgroundImageId ? "Regen" : "Gen")
+                                ]),
+                                backgroundImageId ? m("button", {
+                                    class: "cg2-btn",
+                                    disabled: busy,
+                                    onclick() { backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); }
+                                }, "\u00d7") : null
+                            ])
+                        ]),
+                        // Tabletop Surface (for game play area)
+                        m("div", { class: "cg2-bg-panel", style: { flex: "1 1 200px" } }, [
+                            m("div", { class: "cg2-bg-panel-left" }, [
+                                m("span", { style: { fontWeight: 700, fontSize: "12px" } }, "Tabletop"),
+                                tabletopThumbUrl ? m("img", {
+                                    src: tabletopThumbUrl, class: "cg2-bg-thumb",
+                                    style: { cursor: "pointer" },
+                                    onclick() { showImagePreview(tabletopThumbUrl); }
+                                }) : null
+                            ]),
+                            m("div", { class: "cg2-bg-panel-right" }, [
+                                m("button", {
+                                    class: "cg2-btn",
+                                    disabled: busy,
+                                    onclick() { generateTabletop(activeTheme); }
+                                }, [
+                                    tabletopGenerating
+                                        ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
+                                        : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "table_restaurant"),
+                                    tabletopGenerating ? "..." : (tabletopImageId ? "Regen" : "Gen")
+                                ]),
+                                tabletopImageId ? m("button", {
+                                    class: "cg2-btn",
+                                    disabled: busy,
+                                    onclick() { tabletopImageId = null; tabletopThumbUrl = null; m.redraw(); }
+                                }, "\u00d7") : null
+                            ])
                         ])
                     ]),
                     // Art toolbar
@@ -5224,8 +7515,12 @@
                                 m("span", { class: "material-symbols-outlined cg2-back-icon" }, "style"),
                                 m("div", { class: "cg2-back-label" }, "CARD FRONT")
                             ]),
-                            m("div", { style: { textAlign: "center", fontSize: "10px", color: "#888", marginTop: "4px" } }, "Card Front"),
-                            !busy ? m("div", { class: "cg2-card-actions" }, [
+                            // Generation status overlay
+                            cardFrontGenerating ? m("div", { class: "cg2-card-art-overlay" }, [
+                                m("span", { class: "material-symbols-outlined cg2-spin" }, "progress_activity"),
+                                m("div", "Generating...")
+                            ]) : null,
+                            !busy && !cardFrontGenerating ? m("div", { class: "cg2-card-actions" }, [
                                 m("button", {
                                     class: "cg2-card-action-btn",
                                     title: "Generate card front background",
@@ -5246,8 +7541,12 @@
                                 m("span", { class: "material-symbols-outlined cg2-back-icon" }, CARD_TYPES.item.icon),
                                 m("div", { class: "cg2-back-label" }, "CARD BACK")
                             ]),
-                            m("div", { style: { textAlign: "center", fontSize: "10px", color: "#888", marginTop: "4px" } }, "Card Back"),
-                            !busy ? m("div", { class: "cg2-card-actions" }, [
+                            // Generation status overlay
+                            cardBackGenerating ? m("div", { class: "cg2-card-art-overlay" }, [
+                                m("span", { class: "material-symbols-outlined cg2-spin" }, "progress_activity"),
+                                m("div", "Generating...")
+                            ]) : null,
+                            !busy && !cardBackGenerating ? m("div", { class: "cg2-card-actions" }, [
                                 m("button", {
                                     class: "cg2-card-action-btn",
                                     title: "Generate card back background",
@@ -5255,8 +7554,8 @@
                                 }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "auto_awesome"))
                             ]) : null
                         ]),
-                        // Card faces
-                        ...cards.map((card, i) => {
+                        // Card faces (unique cards only)
+                        ...uniqueCards.map(({ card, index: i, count }) => {
                             let artJob = artQueue.find(j => j.cardIndex === i);
                             let isGenerating = artJob && artJob.status === "processing";
                             let hasArt = card.imageUrl || (card.type === "character" && card.portraitUrl);
@@ -5281,6 +7580,8 @@
 
                             return m("div", { class: "cg2-card-art-wrapper", key: card.name + "-" + i }, [
                                 cardContent,
+                                // Card count badge (if duplicates exist)
+                                count > 1 ? m("div", { class: "cg2-card-count-badge" }, "x" + count) : null,
                                 hasArt ? m("div", { class: "cg2-card-art-badge" }, [
                                     m("span", { class: "material-symbols-outlined", style: { fontSize: "12px" } }, "image"),
                                     " Art"
@@ -5402,18 +7703,19 @@
         },
         view() {
             if (!page.authenticated()) return m("");
+            let isGameScreen = screen === "game";
             return m("div", { class: "content-outer" }, [
                 fullMode ? "" : m(page.components.navigation),
                 m("div", { class: "content-main" }, [
-                    m("div", { class: "cg2-container" }, [
-                        // Header
-                        m("div", { class: "cg2-toolbar" }, [
+                    m("div", { class: "cg2-container" + (isGameScreen ? " cg2-game-mode" : "") }, [
+                        // Header (hidden in game mode - game has its own header)
+                        !isGameScreen ? m("div", { class: "cg2-toolbar" }, [
                             page.iconButton("button mr-4", fullMode ? "close_fullscreen" : "open_in_new", "", toggleFullMode),
                             m("span", { style: { fontWeight: 700, fontSize: "16px", marginRight: "16px" } }, "Card Game"),
                             m("span", { style: { marginLeft: "auto", fontSize: "11px", color: "#999" } },
                                 "Theme: " + activeTheme.name
                             )
-                        ]),
+                        ]) : null,
 
                         // Screen router
                         screen === "deckList" ? m(DeckList) : null,

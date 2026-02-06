@@ -4,3 +4,6 @@ Negative prompt:  negativeXL_D
 Steps: 50, Sampler: DPM++ 2M, Schedule type: Karras, CFG scale: 7, Seed: 2760260862, Size: 512x512, Model hash: 010be7341c, Model: Juggernaut_X_RunDiffusion_Hyper, Version: v1.10.1
 
 Silhouette and mannequin images were found online with no attribution.
+
+d20 vector - Font Awesome Solid Icons, CC Attribution License, FortAwesome - https://www.svgrepo.com/svg/351948/dice-d20
+20 sided dice -  https://freesvg.org/20-sided-dice
