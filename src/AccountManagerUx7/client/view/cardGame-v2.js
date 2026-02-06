@@ -3783,6 +3783,13 @@
             }
         }
 
+        // If AI still has AP but no core cards to place, forfeit remaining AP
+        let remainingCores = opp.hand.filter(c => isCoreCardType(c.type));
+        if (opp.apUsed < opp.ap && remainingCores.length === 0) {
+            console.log("[CardGame v2] AI has no core cards left, forfeiting remaining AP");
+            opp.apUsed = opp.ap;  // Mark as fully used
+        }
+
         // AI placement done, switch back to player or end placement
         checkPlacementComplete();
     }
@@ -3793,10 +3800,26 @@
         let playerDone = gameState.player.apUsed >= gameState.player.ap;
         let opponentDone = gameState.opponent.apUsed >= gameState.opponent.ap;
 
+        console.log("[CardGame v2] checkPlacementComplete - Player done:", playerDone, "Opponent done:", opponentDone);
+
         if (playerDone && opponentDone) {
+            console.log("[CardGame v2] Both done, advancing to resolution");
             advancePhase(); // Move to resolution
         } else {
             gameState.currentTurn = playerDone ? "opponent" : "player";
+            console.log("[CardGame v2] Turn switched to:", gameState.currentTurn);
+            m.redraw();
+
+            // If it's now the opponent's turn and they have AP, trigger AI
+            if (gameState.currentTurn === "opponent" && !opponentDone) {
+                setTimeout(() => {
+                    if (gameState && gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
+                        console.log("[CardGame v2] Triggering AI placement continuation");
+                        aiPlaceCards();
+                        m.redraw();
+                    }
+                }, 500);
+            }
         }
     }
 
@@ -4631,19 +4654,71 @@
     // ── Cleanup Phase UI ──────────────────────────────────────────────
     function CleanupPhaseUI() {
         return {
+            oninit() {
+                // Determine round winner and apply HP recovery
+                if (!gameState.cleanupApplied) {
+                    let playerPts = gameState.player.roundPoints;
+                    let oppPts = gameState.opponent.roundPoints;
+
+                    if (playerPts > oppPts) {
+                        gameState.roundWinner = "player";
+                        gameState.player.hpRecovery = 5;
+                        gameState.opponent.hpRecovery = 2;
+                    } else if (oppPts > playerPts) {
+                        gameState.roundWinner = "opponent";
+                        gameState.player.hpRecovery = 2;
+                        gameState.opponent.hpRecovery = 5;
+                    } else {
+                        // Tie - both get +2
+                        gameState.roundWinner = "tie";
+                        gameState.player.hpRecovery = 2;
+                        gameState.opponent.hpRecovery = 2;
+                    }
+
+                    // Apply HP recovery (capped at maxHp)
+                    gameState.player.hp = Math.min(gameState.player.maxHp, gameState.player.hp + gameState.player.hpRecovery);
+                    gameState.opponent.hp = Math.min(gameState.opponent.maxHp, gameState.opponent.hp + gameState.opponent.hpRecovery);
+
+                    gameState.cleanupApplied = true;
+                    console.log("[CardGame v2] Cleanup - Round winner:", gameState.roundWinner,
+                        "Player HP:", gameState.player.hp, "(+" + gameState.player.hpRecovery + ")",
+                        "Opponent HP:", gameState.opponent.hp, "(+" + gameState.opponent.hpRecovery + ")");
+                }
+            },
             view() {
+                let winnerText = gameState.roundWinner === "player" ? "You win the round!" :
+                                 gameState.roundWinner === "opponent" ? "Opponent wins the round!" :
+                                 "Round is a tie!";
+
                 return m("div", { class: "cg2-phase-panel cg2-cleanup-panel" }, [
                     m("h2", "Cleanup Phase"),
                     m("p", "Round " + gameState.round + " complete!"),
 
                     m("div", { class: "cg2-round-summary" }, [
-                        m("div", "Your round points: " + gameState.player.roundPoints),
-                        m("div", "Opponent round points: " + gameState.opponent.roundPoints)
+                        m("div", { class: "cg2-round-winner " + (gameState.roundWinner === "player" ? "cg2-win" : gameState.roundWinner === "opponent" ? "cg2-lose" : "") }, winnerText),
+                        m("div", { class: "cg2-round-points" }, [
+                            m("span", "Your points: " + gameState.player.roundPoints),
+                            m("span", " | "),
+                            m("span", "Opponent: " + gameState.opponent.roundPoints)
+                        ]),
+                        m("div", { class: "cg2-hp-recovery" }, [
+                            m("div", "HP Recovery:"),
+                            m("div", { class: "cg2-recovery-detail" }, [
+                                m("span", { class: gameState.roundWinner === "player" ? "cg2-winner" : "" },
+                                    "You: +" + gameState.player.hpRecovery + " HP (" + gameState.player.hp + "/" + gameState.player.maxHp + ")"),
+                                m("span", " | "),
+                                m("span", { class: gameState.roundWinner === "opponent" ? "cg2-winner" : "" },
+                                    "Opponent: +" + gameState.opponent.hpRecovery + " HP (" + gameState.opponent.hp + "/" + gameState.opponent.maxHp + ")")
+                            ])
+                        ])
                     ]),
 
                     m("button", {
                         class: "cg2-btn cg2-btn-primary",
-                        onclick() { startNextRound(); advancePhase(); }
+                        onclick() {
+                            gameState.cleanupApplied = false;  // Reset for next round
+                            startNextRound();
+                        }
                     }, "Start Round " + (gameState.round + 1))
                 ]);
             }

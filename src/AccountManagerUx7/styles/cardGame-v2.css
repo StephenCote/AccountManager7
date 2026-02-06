@@ -2221,3 +2221,64 @@
     gap: 12px;
     margin-top: 24px;
 }
+
+/* ── Cleanup Phase ───────────────────────────────────── */
+.cg2-cleanup-panel {
+    max-width: 400px;
+    margin: 20px auto;
+}
+.cg2-round-summary {
+    background: rgba(0,0,0,0.1);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+.dark .cg2-round-summary {
+    background: rgba(255,255,255,0.05);
+}
+.cg2-round-winner {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.cg2-round-winner.cg2-win {
+    color: #4caf50;
+}
+.cg2-round-winner.cg2-lose {
+    color: #ef5350;
+}
+.cg2-round-points {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 12px;
+}
+.dark .cg2-round-points {
+    color: #aaa;
+}
+.cg2-hp-recovery {
+    border-top: 1px solid rgba(0,0,0,0.1);
+    padding-top: 12px;
+    margin-top: 12px;
+}
+.dark .cg2-hp-recovery {
+    border-color: rgba(255,255,255,0.1);
+}
+.cg2-hp-recovery > div:first-child {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    margin-bottom: 4px;
+}
+.cg2-recovery-detail {
+    font-size: 14px;
+    color: #666;
+}
+.dark .cg2-recovery-detail {
+    color: #aaa;
+}
+.cg2-recovery-detail .cg2-winner {
+    color: #4caf50;
+    font-weight: 600;
+}
