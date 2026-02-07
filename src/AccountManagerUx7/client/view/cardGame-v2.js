@@ -11329,6 +11329,128 @@ Respond naturally in character. No game mechanics, just dialogue.`;
             }
         }
 
+        // ── Game Config Toggle Tests ────────
+        // Test initializeLLMComponents with both enable/disable states
+        if (cats.includes("llm") || cats.includes("voice")) {
+            testState.currentTest = "Config: enable/disable states";
+            testLog("llm", "Testing game config enable/disable states...");
+
+            if (resolvedDeck) {
+                // Save/restore actual game globals
+                let savedNarrator = gameNarrator;
+                let savedDirector = gameDirector;
+                let savedChatMgr = gameChatManager;
+                let savedVoice = gameVoice;
+                let savedAnnVoice = gameAnnouncerVoice;
+                let savedGs = gameState;
+
+                // Create a temporary game state for the tests
+                let testGs = createGameState(resolvedDeck);
+                if (testGs) {
+                    gameState = testGs;
+
+                    // ── Test 1: Everything DISABLED ──
+                    testLog("llm", "Config test: all disabled...");
+                    let disabledDeck = JSON.parse(JSON.stringify(resolvedDeck));
+                    disabledDeck.gameConfig = {
+                        narrationEnabled: false,
+                        opponentVoiceEnabled: false,
+                        announcerEnabled: false,
+                        announcerVoiceEnabled: false
+                    };
+                    await initializeLLMComponents(testGs, disabledDeck);
+
+                    testLog("llm", "narration=off → gameNarrator=" + (gameNarrator === null ? "null" : "active"),
+                        gameNarrator === null ? "pass" : "fail");
+                    testLog("llm", "narration=off → gameChatManager=" + (gameChatManager === null ? "null" : "active"),
+                        gameChatManager === null ? "pass" : "fail");
+                    testLog("voice", "oppVoice=off → subtitlesOnly=" + gameVoice?.subtitlesOnly,
+                        gameVoice?.subtitlesOnly === true ? "pass" : "fail");
+                    testLog("voice", "announcer=off → gameAnnouncerVoice=" + (gameAnnouncerVoice === null ? "null" : "active"),
+                        gameAnnouncerVoice === null ? "pass" : "fail");
+
+                    // ── Test 2: Everything ENABLED ──
+                    testLog("llm", "Config test: all enabled...");
+                    let enabledDeck = JSON.parse(JSON.stringify(resolvedDeck));
+                    enabledDeck.gameConfig = {
+                        narrationEnabled: true,
+                        opponentVoiceEnabled: true,
+                        announcerEnabled: true,
+                        announcerVoiceEnabled: true,
+                        announcerProfile: "dungeon-master"
+                    };
+                    await initializeLLMComponents(testGs, enabledDeck);
+
+                    if (llmStatus.available) {
+                        testLog("llm", "narration=on → gameNarrator=" + (gameNarrator ? "active (" + (gameNarrator.profile || "?") + ")" : "null (LLM init may have failed)"),
+                            gameNarrator ? "pass" : "warn");
+                        testLog("llm", "narration=on → gameChatManager=" + (gameChatManager ? "active" : "null (LLM init may have failed)"),
+                            gameChatManager ? "pass" : "warn");
+                        testLog("llm", "announcer profile: " + (gameNarrator?.profile || "not set"),
+                            gameNarrator?.profile === "dungeon-master" ? "pass" : "warn");
+                    } else {
+                        testLog("llm", "LLM unavailable — narrator/chat would use fallbacks at runtime", "info");
+                    }
+                    testLog("voice", "oppVoice=on → subtitlesOnly=" + gameVoice?.subtitlesOnly,
+                        gameVoice?.subtitlesOnly === false ? "pass" : "warn");
+                    testLog("voice", "announcer voice=on → gameAnnouncerVoice=" + (gameAnnouncerVoice ? "active" : "null"),
+                        gameAnnouncerVoice ? "pass" : "warn");
+                    if (gameAnnouncerVoice) {
+                        testLog("voice", "announcer voice subtitlesOnly=" + gameAnnouncerVoice.subtitlesOnly,
+                            gameAnnouncerVoice.subtitlesOnly === false ? "pass" : "fail");
+                    }
+
+                    // ── Test 3: Mixed — announcer on but voice off ──
+                    testLog("llm", "Config test: announcer on, voice off...");
+                    let mixedDeck = JSON.parse(JSON.stringify(resolvedDeck));
+                    mixedDeck.gameConfig = {
+                        narrationEnabled: true,
+                        opponentVoiceEnabled: false,
+                        announcerEnabled: true,
+                        announcerVoiceEnabled: false,
+                        announcerProfile: "war-correspondent"
+                    };
+                    await initializeLLMComponents(testGs, mixedDeck);
+
+                    testLog("voice", "oppVoice=off, annVoice=off → opp subtitlesOnly=" + gameVoice?.subtitlesOnly,
+                        gameVoice?.subtitlesOnly === true ? "pass" : "fail");
+                    testLog("voice", "annVoice=off → gameAnnouncerVoice=" + (gameAnnouncerVoice === null ? "null" : "active"),
+                        gameAnnouncerVoice === null ? "pass" : "fail");
+                    if (llmStatus.available && gameNarrator) {
+                        testLog("llm", "announcer profile: " + (gameNarrator.profile || "not set"),
+                            gameNarrator.profile === "war-correspondent" ? "pass" : "warn");
+                    }
+
+                    // ── Test 4: Deck's actual saved config ──
+                    let deckGc = resolvedDeck.gameConfig;
+                    if (deckGc && Object.keys(deckGc).length > 0) {
+                        testLog("llm", "Config test: deck's saved config...");
+                        testLog("llm", "Deck gameConfig: " + JSON.stringify(deckGc), "info");
+                        await initializeLLMComponents(testGs, resolvedDeck);
+                        testLog("llm", "Deck config → narrator=" + (gameNarrator ? "active" : "null")
+                            + " chatMgr=" + (gameChatManager ? "active" : "null")
+                            + " oppVoice=" + (gameVoice?.subtitlesOnly ? "subtitles" : "TTS")
+                            + " annVoice=" + (gameAnnouncerVoice ? "TTS" : "off"), "info");
+                    } else {
+                        testLog("llm", "No saved gameConfig on deck — defaults will be used", "info");
+                    }
+
+                    gameState = savedGs;
+                } else {
+                    testLog("llm", "Could not create game state for config tests", "warn");
+                }
+
+                // Restore globals
+                gameNarrator = savedNarrator;
+                gameDirector = savedDirector;
+                gameChatManager = savedChatMgr;
+                gameVoice = savedVoice;
+                gameAnnouncerVoice = savedAnnVoice;
+            } else {
+                testLog("llm", "No deck available for config toggle tests", "warn");
+            }
+        }
+
         // ── Playthrough Tests ────────────────
         if (cats.includes("playthrough")) {
             testState.currentTest = "Playthrough: automated game";
