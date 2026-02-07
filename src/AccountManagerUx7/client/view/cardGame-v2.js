@@ -919,7 +919,7 @@
 
     // ── Character ID Helper ──────────────────────────────────────────
     function getCharId(char) {
-        return char.objectId || char.id || (char.entity && char.entity.objectId);
+        return char.objectId || char._tempId || char.id || (char.entity && char.entity.objectId);
     }
 
     // ── Fetch fresh charPerson by objectId (with profile + statistics) ──
@@ -940,10 +940,15 @@
 
     // ── Refresh a character card from its source object ──────────────
     async function refreshCharacterCard(card) {
-        if (!card.sourceId) return false;
-        am7client.clearCache("olio.charPerson");
-        am7client.clearCache("data.data");
-        let fresh = await fetchCharPerson(card.sourceId);
+        let fresh;
+        if (card._sourceChar) {
+            // Use in-memory source for temp/generated characters
+            fresh = card._sourceChar;
+        } else if (card.sourceId) {
+            am7client.clearCache("olio.charPerson");
+            am7client.clearCache("data.data");
+            fresh = await fetchCharPerson(card.sourceId);
+        }
         if (!fresh) return false;
         let stats = mapStats(fresh.statistics);
         Object.keys(stats).forEach(k => { stats[k] = clampStat(stats[k]); });
@@ -979,7 +984,8 @@
             equipped: { head: null, body: null, handL: null, handR: null, feet: null, ring: null, back: null },
             activeSkills: [null, null, null, null],
             portraitUrl: getPortraitUrl(char, "256x256"),
-            sourceId: getCharId(char)
+            sourceId: char.objectId || null,  // Only real objectId, not _tempId
+            _sourceChar: char._tempId ? char : null  // Keep full object for temp chars
         };
     }
 
@@ -1150,9 +1156,9 @@
     let buildingDeck = false;
     let deckNameInput = "";     // user-editable deck name
 
-    let gridPath = "/Olio/Universes/My Grid Universe/Worlds/My Grid World";
-
     // ── Load Characters ──────────────────────────────────────────────
+    // Characters come from the deck's own Characters folder or are generated
+    // No longer loads from Olio Population
     async function loadAvailableCharacters() {
         if (charsLoading) return;
         charsLoading = true;
@@ -1161,55 +1167,31 @@
             let allChars = [];
             let seenIds = new Set();
 
-            // Load from Olio Population
-            let popDir = await page.findObject("auth.group", "data", gridPath + "/Population");
-            if (popDir) {
-                let q = am7view.viewQuery("olio.charPerson");
-                q.field("groupId", popDir.id);
-                q.range(0, 50);
-                q.entity.request.push("profile", "store", "statistics");
-                let qr = await page.search(q);
-                if (qr && qr.results && qr.results.length) {
-                    am7model.updateListModel(qr.results);
-                    qr.results.forEach(ch => {
-                        let cid = getCharId(ch);
-                        if (cid && !seenIds.has(cid)) {
-                            seenIds.add(cid);
-                            allChars.push(ch);
+            // Load from deck's Characters folder if we have a deck name
+            if (deckNameInput) {
+                try {
+                    let deckCharDir = await page.findObject("auth.group", "data", "~/CardGame/" + deckNameInput + "/Characters");
+                    if (deckCharDir) {
+                        let q = am7view.viewQuery("olio.charPerson");
+                        q.field("groupId", deckCharDir.id);
+                        q.range(0, 8);  // Max 8 characters per deck
+                        q.entity.request.push("profile", "store", "statistics");
+                        let qr = await page.search(q);
+                        if (qr && qr.results && qr.results.length) {
+                            am7model.updateListModel(qr.results);
+                            qr.results.forEach(ch => {
+                                let cid = getCharId(ch);
+                                if (cid && !seenIds.has(cid)) {
+                                    seenIds.add(cid);
+                                    allChars.push(ch);
+                                }
+                            });
+                            console.log("[CardGame v2] Loaded " + qr.results.length + " characters from deck folder");
                         }
-                    });
-                    console.log("[CardGame v2] Loaded " + qr.results.length + " characters from Population");
-                }
-            } else {
-                console.warn("[CardGame v2] Population directory not found");
-            }
-
-            // Load custom characters from ~/Characters
-            try {
-                let customDir = await page.findObject("auth.group", "data", "~/Characters");
-                if (customDir) {
-                    let cq = am7view.viewQuery("olio.charPerson");
-                    cq.field("groupId", customDir.id);
-                    cq.range(0, 50);
-                    cq.entity.request.push("profile", "store", "statistics");
-                    let cqr = await page.search(cq);
-                    if (cqr && cqr.results && cqr.results.length) {
-                        am7model.updateListModel(cqr.results);
-                        let customCount = 0;
-                        cqr.results.forEach(ch => {
-                            let cid = getCharId(ch);
-                            if (cid && !seenIds.has(cid)) {
-                                seenIds.add(cid);
-                                ch._customChar = true;
-                                allChars.push(ch);
-                                customCount++;
-                            }
-                        });
-                        console.log("[CardGame v2] Loaded " + customCount + " custom characters from ~/Characters");
                     }
+                } catch (de) {
+                    console.warn("[CardGame v2] Could not load deck characters:", de);
                 }
-            } catch (ce) {
-                console.warn("[CardGame v2] Could not load ~/Characters:", ce);
             }
 
             // Resolve partially-loaded statistics for all characters
@@ -1219,7 +1201,7 @@
 
             availableCharacters = allChars;
             if (allChars.length === 0) {
-                page.toast("info", "No characters found");
+                console.log("[CardGame v2] No characters found - will need to generate");
             } else {
                 console.log("[CardGame v2] Total available characters: " + allChars.length);
             }
@@ -1278,6 +1260,44 @@
         buildingDeck = true;
         m.redraw();
         let safeName = (deck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+
+        // Persist any generated characters that haven't been saved yet
+        if (selectedChars && selectedChars.length > 0) {
+            const unpersisted = selectedChars.filter(ch => ch._tempId && !ch.objectId);
+            if (unpersisted.length > 0) {
+                page.toast("info", "Saving characters...");
+                const persisted = await persistGeneratedCharacters(unpersisted, safeName);
+                // Update selectedChars with persisted versions
+                for (const p of persisted) {
+                    const idx = selectedChars.findIndex(ch => ch._tempId && ch.name === p.name);
+                    if (idx >= 0) {
+                        selectedChars[idx] = p;
+                    }
+                }
+                // Update deck's character card references with real sourceId
+                if (deck.cards) {
+                    for (const card of deck.cards) {
+                        if (card.type === "character" && card._sourceChar && card._sourceChar._tempId) {
+                            const match = persisted.find(p => p.name === card.name);
+                            if (match && match.objectId) {
+                                card.sourceId = match.objectId;
+                                delete card._sourceChar;  // No longer needed
+                                console.log('[CardGame] Updated card sourceId for:', card.name, match.objectId);
+                            }
+                        }
+                    }
+                }
+                // Update playerCharacter reference
+                if (deck.playerCharacter && deck.playerCharacter._sourceChar) {
+                    const match = persisted.find(p => p.name === deck.playerCharacter.name);
+                    if (match && match.objectId) {
+                        deck.playerCharacter.sourceId = match.objectId;
+                        delete deck.playerCharacter._sourceChar;
+                    }
+                }
+            }
+        }
+
         let result = await deckStorage.save(safeName, deck);
         buildingDeck = false;
         if (result) {
@@ -1323,8 +1343,8 @@
     }
 
     // Generate balanced characters from templates for a deck
-    // Note: Character names come from the server, not hardcoded lists
-    async function generateCharactersFromTemplates(deckName, themeId, count = 8) {
+    // Characters are kept in memory until deck is saved - no server persistence during build
+    async function generateCharactersFromTemplates(themeId, count = 8) {
         const templates = await loadCharacterTemplates();
         if (!templates || !templates.templates) {
             page.toast('error', 'Character templates not available');
@@ -1340,72 +1360,109 @@
 
         const characters = [];
 
-        try {
-            // Find or create deck's Characters group
-            const charGroupPath = "~/CardGame/" + deckName + "/Characters";
-            await page.makePath("auth.group", "DATA", charGroupPath);
+        for (const template of selectedTemplates) {
+            try {
+                // Roll character from server - gets random name, gender, stats, apparel
+                const gender = Math.random() > 0.5 ? 'male' : 'female';
+                const rolled = await am7model.forms.commands.rollCharacter(undefined, undefined, gender);
 
-            for (const template of selectedTemplates) {
-                try {
-                    // Build character object with template statistics
-                    const statMapping = {
-                        STR: 'physicalStrength',
-                        AGI: 'agility',
-                        END: 'physicalEndurance',
-                        INT: 'intelligence',
-                        MAG: 'creativity',
-                        CHA: 'charisma'
-                    };
-
-                    const statistics = {};
-                    for (const [shortName, value] of Object.entries(template.statistics || {})) {
-                        const fullStat = statMapping[shortName];
-                        if (fullStat) {
-                            statistics[fullStat] = value;
-                        }
-                    }
-
-                    // Apply template alignment and trade
-                    const themeClass = template.themeVariants?.[themeId]?.trade || template.class;
-
-                    // Build the character object - server will assign name
-                    const baseChar = {
-                        alignment: template.alignment || "NEUTRAL",
-                        trades: [themeClass],
-                        statistics: statistics,
-                        groupPath: charGroupPath
-                    };
-
-                    // Create the character on server (server assigns name)
-                    console.log('[CardGame] Creating character in group:', charGroupPath);
-                    const created = await am7client.create("olio.charPerson", baseChar);
-
-                    if (!created) {
-                        console.warn('[CardGame] am7client.create returned null for template:', template.name);
-                        continue;
-                    }
-
-                    console.log('[CardGame] Created character:', created.objectId);
-                    // Fetch full character with resolved stats
-                    const fullChar = await am7client.getFull("olio.charPerson", created.objectId);
-                    if (fullChar) {
-                        characters.push(fullChar);
-                        console.log('[CardGame] Added character:', fullChar.name);
-                    }
-                } catch (charErr) {
-                    console.error('[CardGame] Error creating character from template:', template?.name, charErr);
+                if (!rolled) {
+                    console.warn('[CardGame] Failed to roll character for template:', template.id);
+                    continue;
                 }
-            }
 
-            page.toast('success', `Generated ${characters.length} characters`);
-        } catch (err) {
-            console.error('[CardGame] Character generation failed:', err);
-            page.toast('error', 'Character generation failed');
+                // Apply template modifications
+                rolled.alignment = template.alignment;
+                rolled.personality = template.personality || [];
+                rolled.age = Math.floor(Math.random() * 38) + 18;  // Age 18-55
+
+                // Get theme-specific trade
+                const themeClass = template.themeVariants?.[themeId]?.trade || template.class;
+                rolled.trades = [themeClass];
+
+                // Add template reference for later use
+                rolled._templateId = template.id;
+                rolled._templateClass = template.class;
+
+                // Generate a temporary ID for in-memory tracking
+                rolled._tempId = "temp-" + template.id + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 11);
+
+                characters.push(rolled);
+                console.log('[CardGame] Generated character:', rolled.name, 'as', themeClass);
+            } catch (e) {
+                console.error('[CardGame] Error generating character from template:', template.id, e);
+            }
         }
 
+        page.toast('success', `Generated ${characters.length} characters`);
         generatingCharacters = false;
         m.redraw();
         return characters;
+    }
+
+    // Persist generated characters to server when saving deck
+    async function persistGeneratedCharacters(characters, deckName) {
+        if (!characters || !characters.length) return [];
+
+        let charDir;
+        try {
+            charDir = await page.makePath("auth.group", "data", "~/CardGame/" + deckName + "/Characters");
+            console.log('[CardGame] Characters folder:', charDir.path, 'id:', charDir.id);
+        } catch (e) {
+            console.error('[CardGame] Failed to create deck Characters folder:', e);
+            return [];
+        }
+
+        const persisted = [];
+        for (const char of characters) {
+            // Skip if already persisted (has objectId)
+            if (char.objectId) {
+                persisted.push(char);
+                continue;
+            }
+
+            try {
+                // Check if character already exists
+                let existing = await page.searchFirst("olio.charPerson", charDir.id, char.name);
+                if (existing) {
+                    console.log('[CardGame] Character already exists:', char.name);
+                    persisted.push(existing);
+                    continue;
+                }
+
+                // Prepare entity with proper schema
+                let charN = am7model.prepareEntity(char, "olio.charPerson", true);
+
+                // Prepare nested wearables and qualities
+                if (charN.store && charN.store.apparel && charN.store.apparel[0] && charN.store.apparel[0].wearables) {
+                    let w = charN.store.apparel[0].wearables;
+                    for (let i = 0; i < w.length; i++) {
+                        w[i] = am7model.prepareEntity(w[i], "olio.wearable", false);
+                        if (w[i].qualities && w[i].qualities[0]) {
+                            w[i].qualities[0] = am7model.prepareEntity(w[i].qualities[0], "olio.quality", false);
+                        }
+                    }
+                }
+
+                // Set the parent group to deck's Characters folder (both id and path required)
+                charN.groupId = charDir.id;
+                charN.groupPath = charDir.path;
+
+                // Create the character
+                let created = await page.createObject(charN);
+                if (created) {
+                    // Reload to get full object with objectId
+                    let saved = await page.searchFirst("olio.charPerson", charDir.id, char.name);
+                    if (saved) {
+                        persisted.push(saved);
+                        console.log('[CardGame] Persisted character:', saved.name);
+                    }
+                }
+            } catch (e) {
+                console.error('[CardGame] Error persisting character:', char.name, e);
+            }
+        }
+        return persisted;
     }
 
     // Convert charPerson to card format for deck
@@ -1480,7 +1537,7 @@
 
     async function refreshAllCharacters(deck) {
         if (!deck || !deck.cards) return;
-        let charCards = deck.cards.filter(c => c.type === "character" && c.sourceId);
+        let charCards = deck.cards.filter(c => c.type === "character" && (c.sourceId || c._sourceChar));
         let refreshed = 0;
         for (let card of charCards) {
             let ok = await refreshCharacterCard(card);
@@ -1611,8 +1668,7 @@
                             async onclick() {
                                 if (generatingCharacters) return;
                                 const themeId = activeTheme?.themeId || "high-fantasy";
-                                const deckName = deckNameInput || "NewDeck";
-                                const generated = await generateCharactersFromTemplates(deckName, themeId, 8);
+                                const generated = await generateCharactersFromTemplates(themeId, 8);
                                 if (generated.length > 0) {
                                     // Add generated characters to available list and auto-select them
                                     for (const charPerson of generated) {
@@ -1641,8 +1697,7 @@
                                 async onclick() {
                                     if (generatingCharacters) return;
                                     const themeId = activeTheme?.themeId || "high-fantasy";
-                                    const deckName = deckNameInput || "NewDeck";
-                                    const generated = await generateCharactersFromTemplates(deckName, themeId, 1);
+                                    const generated = await generateCharactersFromTemplates(themeId, 1);
                                     if (generated.length > 0) {
                                         availableCharacters.push(generated[0]);
                                         if (selectedChars.length < 8) {
@@ -1686,18 +1741,39 @@
                         m("button", { class: "cg2-btn", onclick: () => { builderStep = 1; m.redraw(); } }, "\u2190 Back"),
                         m("button", {
                             class: "cg2-btn cg2-btn-primary",
-                            disabled: !selectedChars.length || applyingOutfits,
+                            disabled: !selectedChars.length || applyingOutfits || buildingDeck,
                             async onclick() {
-                                if (!selectedChars.length || applyingOutfits) return;
+                                if (!selectedChars.length || applyingOutfits || buildingDeck) return;
+
+                                // Persist any generated characters first (need real IDs for outfits)
+                                const unpersisted = selectedChars.filter(ch => ch._tempId && !ch.objectId);
+                                if (unpersisted.length > 0) {
+                                    // Need a deck name to persist characters
+                                    let tempDeckName = deckNameInput.trim() || "Deck_" + Date.now();
+                                    buildingDeck = true;
+                                    m.redraw();
+                                    page.toast("info", "Saving characters...");
+                                    const persisted = await persistGeneratedCharacters(unpersisted, tempDeckName);
+                                    // Update selectedChars with persisted versions (have objectId now)
+                                    for (const p of persisted) {
+                                        const idx = selectedChars.findIndex(ch => ch._tempId && ch.name === p.name);
+                                        if (idx >= 0) {
+                                            selectedChars[idx] = p;
+                                        }
+                                    }
+                                    deckNameInput = tempDeckName;
+                                    buildingDeck = false;
+                                }
+
                                 builtDeck = assembleStarterDeck(selectedChars, activeTheme);
-                                deckNameInput = builtDeck.deckName || "";
+                                builtDeck.deckName = deckNameInput || builtDeck.deckName;
                                 if (activeTheme && activeTheme.outfits) {
                                     await applyThemeOutfits(builtDeck, activeTheme, true);
                                 }
                                 builderStep = 3;
                                 m.redraw();
                             }
-                        }, applyingOutfits ? "Applying Outfits..." : "Next: Review Deck \u2192")
+                        }, buildingDeck ? "Saving Characters..." : (applyingOutfits ? "Applying Outfits..." : "Next: Review Deck \u2192"))
                     ])
                 ]);
             }
@@ -1732,7 +1808,8 @@
                 str(ch.gender).charAt(0).toUpperCase(),
                 " ",
                 str(ch.race).replace(/_/g, " "),
-                ch.age ? ", " + ch.age : ""
+                ch.age ? ", " + ch.age : "",
+                ch.trades && ch.trades[0] ? " - " + ch.trades[0] : ""
             ]),
             m("div", { class: "cg2-char-stats-mini" }, [
                 ["STR", "AGI", "END"].map(s => m("span", { key: s }, s + ":" + clampStat(stats[s]))),
@@ -1740,7 +1817,8 @@
                 ["INT", "MAG", "CHA"].map(s => m("span", { key: s }, s + ":" + clampStat(stats[s])))
             ]),
             isSelected ? m("div", { class: "cg2-char-badge" }, "\u2713") : null,
-            ch._customChar ? m("div", { class: "cg2-char-source-badge" }, "Custom") : null
+            ch._customChar ? m("div", { class: "cg2-char-source-badge" }, "Custom") : null,
+            ch._tempId ? m("div", { class: "cg2-char-source-badge", style: { background: "#4a7c59" } }, "Generated") : null
         ]);
     }
 
@@ -2296,7 +2374,12 @@
     let galleryLoading = false;
 
     async function openGalleryPicker(card) {
-        if (!card || !card.sourceId) return;
+        if (!card) return;
+        if (!card.sourceId && card._sourceChar) {
+            page.toast("info", "Save deck first to access gallery for generated characters");
+            return;
+        }
+        if (!card.sourceId) return;
         galleryLoading = true;
         galleryPickerCard = card;
         galleryImages = [];
@@ -2339,7 +2422,12 @@
     let sequenceProgress = "";
 
     async function generateImageSequence(card) {
-        if (!card || !card.sourceId || sequenceCardId) return;
+        if (!card || sequenceCardId) return;
+        if (!card.sourceId && card._sourceChar) {
+            page.toast("info", "Save deck first to generate images for generated characters");
+            return;
+        }
+        if (!card.sourceId) return;
         sequenceCardId = card.sourceId;
         sequenceProgress = "Loading character...";
         page.toast("info", "Image Sequence: Loading character...", -1);
@@ -3128,8 +3216,8 @@
     // Build a unique signature for a card to detect duplicates
     function cardSignature(card) {
         if (card.type === "character") {
-            // Characters are unique by sourceId
-            return "char:" + (card.sourceId || card.name);
+            // Characters are unique by sourceId or _sourceChar._tempId
+            return "char:" + (card.sourceId || (card._sourceChar && card._sourceChar._tempId) || card.name);
         }
         // Items/powers: type + name + material/fabric
         return (card.type || "") + ":" + (card.name || "") + ":" + (card.fabric || card.material || "");
@@ -3282,17 +3370,17 @@
         let categories = ["scrappy", "functional", "fancy"];
         let processed = 0;
 
-        // Find the world-level Apparel and Wearables groups (siblings of Population, Items, etc.)
-        let apparelDir = await page.findObject("auth.group", "data", gridPath + "/Apparel");
+        // Find Apparel and Wearables in player-relative paths
+        let apparelDir = await page.findObject("auth.group", "data", "~/Apparel");
         if (!apparelDir) {
-            page.toast("error", "Apparel directory not found at " + gridPath + "/Apparel");
+            page.toast("error", "Apparel directory not found at ~/Apparel");
             applyingOutfits = false;
             m.redraw();
             return;
         }
-        let wearableDir = await page.findObject("auth.group", "data", gridPath + "/Wearables");
+        let wearableDir = await page.findObject("auth.group", "data", "~/Wearables");
         if (!wearableDir) {
-            page.toast("error", "Wearables directory not found at " + gridPath + "/Wearables");
+            page.toast("error", "Wearables directory not found at ~/Wearables");
             applyingOutfits = false;
             m.redraw();
             return;

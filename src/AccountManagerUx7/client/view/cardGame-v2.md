@@ -419,7 +419,7 @@ Health and Energy are tracked visibly using **denomination cards**. This makes d
 | **Threat** | Must fight, flee, or talk. Has ATK/DEF/HP stats. |
 | **Event** | Environmental effect: storm (-5 to all rolls this round), found campsite (free Rest), etc. |
 | **Discovery** | Loot/resource find. Investigate action may reveal bonus items. |
-| **NPC** | Non-hostile character drawn from the Olio population. Can Talk, Trade, or ignore. May offer quests (scenario mode). Has real `olio.charPerson` stats, portrait, personality, and interaction history. |
+| **NPC** | Non-hostile character from deck's character pool. Can Talk, Trade, or ignore. May offer quests (scenario mode). Has real `olio.charPerson` stats, portrait, personality, and interaction history. |
 
 ### Skill Card
 
@@ -513,10 +513,10 @@ A communal deck drawn from **randomly** during the Draw Phase. Contains common-t
 | Subtype | 2P | 3P | 4P | Rarity Range | Notes |
 |---------|----|----|-----|-------------|-------|
 | Threat encounters (animals/creatures) | 8 | 12 | 16 | ★–★★★ | Regular threats only (difficulty 4–10). Bosses are in the Vault. |
-| Hostile NPC encounters | 4 | 6 | 8 | ★–★★★ | Real Olio population characters drawn as hostile. Can be fought OR subdued via Talk. |
+| Hostile NPC encounters | 4 | 6 | 8 | ★–★★★ | Deck characters drawn as hostile. Can be fought OR subdued via Talk. |
 | Event encounters | 10 | 14 | 18 | ★–★★ | Weather, terrain effects, time-of-day |
 | Discovery encounters | 10 | 13 | 16 | ★–★★ | Loot finds, resource caches |
-| Friendly NPC encounters | 8 | 10 | 12 | ★–★★★ | Real Olio population characters — trader, ally, quest-giver, etc. |
+| Friendly NPC encounters | 8 | 10 | 12 | ★–★★★ | Deck characters — trader, ally, quest-giver, etc. |
 | Item cards (loot) | 10 | 14 | 18 | ★–★★★ | Weapons, apparel, consumables — Common to Rare only |
 | Skill cards (learnable) | 5 | 7 | 9 | ★★–★★★ | Found through encounters |
 | Magic Effect cards | 2 | 3 | 4 | ★★★ | Rare, found through Discovery or NPC |
@@ -582,43 +582,51 @@ The vault is sealed — you need a **key action** to draw from it:
 
 **RL equivalent:** The vault is a separate, physically smaller deck placed to the side of the main encounter deck. It should have a distinct card back (gold/foil pattern) or be placed in a container (box lid, cloth pouch) to signal its special status. Players draw face-down. If you flip a boss, it goes on the bar immediately.
 
-### Character Population Sourcing
+### Character Generation
 
-**All characters in the game — player, opponent, and NPCs — are real `olio.charPerson` records** drawn from the Olio Universe/World population. No characters are invented or templated at card-generation time. This means every NPC you encounter has a portrait, stats, personality traits, alignment, and narrative backstory from the AM7 data model.
+**All characters in the game — player, opponent, and NPCs — are real `olio.charPerson` records** generated from balanced templates and stored in the deck's Characters folder. Each character has stats, personality traits, alignment, and a theme-appropriate trade/class.
 
-**How characters are selected during deck build:**
+**How characters are generated during deck build:**
 
-| Role | Selection Method | Source |
+| Role | Generation Method | Storage |
 |------|-----------------|--------|
-| **Player character** | Picked by the player in the Character Picker (Step 2), or randomly generated | Olio population or `CharacterUtil.randomPerson()` |
-| **AI opponent** (Mode 1) | Picked by the player in deck builder, or randomly drawn from population | Olio population (excludes player character) |
-| **Friendly NPC encounters** (8 per deck) | Randomly drawn from population during deck build | Olio population (excludes player + opponent) |
-| **Hostile NPC encounters** (4 per deck) | Randomly drawn from population, dealt into threat portion | Olio population (excludes player + opponent + friendly NPCs) |
+| **Player character** | Generated from template via "Generate Characters" button | `~/CardGame/{deckName}/Characters/` |
+| **AI opponent** (Mode 1) | Generated from template, randomly selected from deck characters | `~/CardGame/{deckName}/Characters/` |
+| **NPC encounters** | Generated from templates during deck build | `~/CardGame/{deckName}/Characters/` |
 
-**NPC role assignment:**
+**Character generation process:**
 
-The theme defines NPC **roles** (trader, ally, crafter, quest-giver, social, rescue, magic) for friendly NPCs and hostile dispositions for hostile NPCs, but not the specific characters. During deck build, the system:
+The deck builder uses balanced templates from `character-templates.json` which define 12 character archetypes (warrior, mage, rogue, cleric, ranger, bard, tank, berserker, assassin, battlemage, scholar, noble). During deck build:
 
-1. Queries the Olio population for available `charPerson` records (excluding player and opponent)
-2. Randomly selects 8 characters for friendly NPC slots + 4 characters for hostile NPC slots (12 total)
-3. Assigns each friendly character a role from the theme's NPC role list (N1–N8)
-4. The NPC's actual stats, portrait, and personality are used — the role just defines the encounter mechanics (what they sell, what quest they offer, difficulty check, etc.)
-5. The NPC encounter card shows the real character portrait and name, overlaid with the role label
+1. The server's `/olio/roll` endpoint generates a base character with random name, gender, and apparel
+2. Template modifications are applied (alignment, personality traits, class/trade)
+3. Theme variants adapt the trade to the theme (e.g., "Warrior" → "Knight" in high-fantasy, "Marine" in sci-fi)
+4. Character is saved to the deck's Characters folder as a real `olio.charPerson` record
+5. Each deck supports up to 8 unique characters
 
-This means the same "Wandering Merchant" role might be filled by an elf, an orc, or a human depending on who gets drawn from the population. The theme's art prompt for the NPC card is adapted to include the character's actual appearance traits alongside the role description.
+**Balance rules from templates:**
+- Target total stats: 60 points distributed across STR, AGI, END, INT, MAG, CHA
+- Minimum stat: 6, Maximum stat: 18
+- Each template defines a unique stat distribution suitable for its role
 
-**Population requirements:**
+**Theme variants:**
 
-The Olio world must have **at least 14 characters** in its population (1 player + 1 opponent + 8 friendly NPCs + 4 hostile NPCs). If the population is smaller, the deck builder shows a warning and offers to auto-generate random characters to fill the gap via `CharacterUtil.randomPerson()`.
+Templates include theme-specific trade names:
 
-**Endpoint:**
-```
-GET /rest/olio/charPerson/list?worldPath={worldPath}&limit=50
-→ Returns: population list (id, name, gender, race, age, stats summary, portrait)
-→ Deck builder draws from this pool
-```
+| Template | High-Fantasy | Dark-Medieval | Sci-Fi | Post-Apocalypse |
+|----------|-------------|---------------|--------|-----------------|
+| warrior-balanced | Knight | Man-at-Arms | Marine | Enforcer |
+| mage-glass-cannon | Wizard | Alchemist | Psionic | Mutant |
+| rogue-agile | Thief | Cutpurse | Hacker | Scavenger |
+| cleric-support | Priest | Monk | Medic | Healer |
 
-**Interaction history carries over:** Because NPCs are real Olio characters, any `olio.interaction` records between the player and an NPC persist across game sessions. If you chatted with a merchant last session and built rapport, the LLM receives that interaction history when you encounter them again. This creates emergent NPC relationships driven by the existing AM7 interaction system.
+**Apparel sourcing:**
+
+Character apparel is loaded from player-relative paths:
+- `~/Apparel` — outfit sets
+- `~/Wearables` — individual wearable items
+
+**Interaction history carries over:** Because characters are real `olio.charPerson` records, any `olio.interaction` records between the player and NPCs persist across game sessions. If you chatted with a merchant last session and built rapport, the LLM receives that interaction history when you encounter them again.
 
 ### Deck Building (Between Sessions / Campaign Mode)
 
@@ -635,10 +643,10 @@ If a theme pool doesn't have enough cards to fill a required category, the deck 
 
 | Shortage | Fallback |
 |----------|----------|
-| **Encounter deck short on threats** | Generate random threats by combining a random Olio `animal` with scaled stats (ATK/DEF/HP derived from difficulty target). Art prompt auto-composed from the animal's description + theme art style. |
+| **Encounter deck short on threats** | Generate random threats with scaled stats (ATK/DEF/HP derived from difficulty target). Art prompt auto-composed from theme art style. |
 | **Not enough items/weapons/apparel** | Use the theme's base item templates with randomized stats within the rarity range. Named generically: "Common Sword," "Sturdy Boots," etc. Flagged as auto-generated in the snapshot for later replacement. |
 | **Skill or Magic Effect cards short** | Reduce count to available pool size. Minimum 1 skill card (always: the character's highest proficiency trait). Magic Effects can be 0 if no theme magic cards exist. |
-| **NPC encounter slots unfilled** (population too small) | Auto-generate random `charPerson` records via `CharacterUtil.randomPerson()` to fill remaining NPC slots. Each gets a portrait generated from `sdConfig.charPerson`. |
+| **NPC encounter slots unfilled** | Generate additional characters from templates via `/olio/roll` endpoint. Each gets a portrait generated from `sdConfig.charPerson`. |
 | **Treasure Vault too small** | Vault can be as small as 5 cards. Below that, the deck builder warns "Vault is thin — consider adding items via Add Item (Step 4)." Game still plays, vault just empties faster. |
 | **Encounter deck exhausted mid-game** | Reshuffle the discard pile into a new encounter deck. Vault is NOT reshuffled — once empty, it stays empty until campaign session refill. |
 
@@ -1749,8 +1757,8 @@ The three need tracks create ongoing pressure independent of encounters:
 The AI controls a full character with its own deck, following the same rules as the player — including initiative, AP, and action bar placement.
 
 **Online implementation:**
-- AI opponent is picked or randomly drawn from the Olio character population (same pool as the player character — real `olio.charPerson` records with stats, portraits, personality, and narrative data)
-- If a specific opponent hasn't been chosen in the deck builder, one is randomly selected from the population, excluding the player's character
+- AI opponent is picked or randomly drawn from the deck's character pool (real `olio.charPerson` records with stats, portraits, personality, and narrative data)
+- If a specific opponent hasn't been chosen in the deck builder, one is randomly selected from the deck's characters, excluding the player's character
 - Opponent deck built from the same starter deck rules, using the opponent's actual stats and equipment
 - Each round, the AI:
   1. Rolls initiative (server-side 1d20 + AGI)
@@ -2486,9 +2494,9 @@ Card images are generated via the existing AM7 SD (Stable Diffusion) image pipel
 
 **All entity images are regenerated fresh for every deck build.** Characters, apparel, items, animals, and wearables all receive new images regardless of whether they had images before. This is required because:
 
-1. **Theme consistency** — a character portrait generated in the Olio world editor uses generic prompts. The card game needs the portrait rendered in the theme's art style (`{theme.artStyle.promptSuffix}`).
+1. **Theme consistency** — a character portrait generated with generic prompts needs to be re-rendered in the theme's art style (`{theme.artStyle.promptSuffix}`).
 2. **Visual anchor reference** — the `gameBackground` establishes the color palette and atmosphere. Entity images generated with the background as an img2img reference at low weight (0.1–0.15) inherit the theme's hue and mood.
-3. **Prompt enrichment** — card game prompts are richer than Olio defaults (they include equipped gear, theme setting context, card composition cues like "RPG card art, centered, no text").
+3. **Prompt enrichment** — card game prompts are richer (they include equipped gear, theme setting context, card composition cues like "RPG card art, centered, no text").
 
 | Entity Type | Always Regenerated Per Deck? | Why |
 |-------------|---------------------------|-----|
@@ -2501,7 +2509,7 @@ Card images are generated via the existing AM7 SD (Stable Diffusion) image pipel
 | `cardBack`, `cardStyle` | Yes | Per-theme by definition |
 | `afterAction` scenes | No — generated on demand during gameplay | Each is unique to the situation |
 
-**Existing Olio images are NOT reused.** Even if a character already has a portrait in the Olio world, the deck build generates a new one in the theme's style. The Olio-world image is preserved on the original object — the card game image goes to `~/CardGame/{deckName}/images/{type}/{name}/`.
+**Existing images are NOT reused.** Even if a character already has a portrait, the deck build generates a new one in the theme's style. The original image is preserved — the card game image goes to `~/CardGame/{deckName}/images/{type}/{name}/`.
 
 **This means a full deck build queues 60–90+ images.** The queue is designed for this volume — see [Image Generation Queue Manager](#image-generation-queue-manager) for the review workflow that lets players spot-check results and re-queue any they don't like.
 
@@ -4239,13 +4247,13 @@ This decoupling means:
 - Card names, descriptions, art prompts
 - Image references (URL/ID at time of snapshot)
 
-**Derived stat normalization at snapshot time:** Some stats on AM7 `charPerson` and `animal` records are derived and may not be initially accurate (e.g., health may be partially depleted from Olio simulation activity). When snapshotting characters and animals for the card game, the snapshot process **normalizes derived stats to their maximum values:**
+**Derived stat normalization at snapshot time:** Some stats on AM7 `charPerson` and `animal` records are derived and may not be initially accurate (e.g., health may be partially depleted from prior activity). When snapshotting characters and animals for the card game, the snapshot process **normalizes derived stats to their maximum values:**
 - `hp` → set to 20 (flat max for all characters)
 - `energy` → set to MAG stat value (Imperial) or INT (Undead/Psionic)
 - `morale` → set to 20 (flat max for all characters)
 - `durability` on equipment → set to `maxDurability`
 
-This ensures every game starts from a clean, predictable state regardless of what the source Olio character was doing before being snapshotted.
+This ensures every game starts from a clean, predictable state regardless of what the source character was doing before being snapshotted.
 
 **What is NOT snapshotted (referenced by name, loaded fresh):**
 - SD configs (`olio.sd.config`) — loaded from `Ux7/media/cardGame/sd/` by name
@@ -4286,13 +4294,13 @@ This split means AI config improvements (better prompts, upgraded models, tuned 
 │  voice synth, chat streaming. See Setup Test & Preview. │
 │                                                         │
 │  Step 2: SELECT / CREATE CHARACTER                      │
-│  ○ Pick from existing Olio characters (charPerson       │
-│    picker — browse/search population, see portrait,     │
-│    stats, current apparel at a glance)                  │
+│  ○ Pick from existing deck characters (charPerson       │
+│    picker — browse characters, see portrait, stats,     │
+│    current apparel at a glance)                         │
 │  ○ Generate new random character (uses existing         │
 │    CharacterUtil.randomPerson() — gender, race, name,   │
 │    stats, alignment all randomized. Stored in           │
-│    Olio Universe/World population, NOT adopted)         │
+│    stored in ~/CardGame/{deckName}/Characters)          │
 │  ○ Import from saved deck                               │
 │                                                         │
 │  Step 3: CONFIGURE CHARACTER                            │
@@ -4305,7 +4313,7 @@ This split means AI config improvements (better prompts, upgraded models, tuned 
 │                                                         │
 │  Step 3b: THEME APPAREL SWAP                            │
 │  All characters in the deck (player + NPCs) have their  │
-│  current Olio apparel deactivated (inuse=false) and a   │
+│  current apparel deactivated (inuse=false) and a        │
 │  new theme-appropriate apparel set created.             │
 │  See "Theme Apparel Swap" section below.                │
 │                                                         │
@@ -4323,8 +4331,8 @@ This split means AI config improvements (better prompts, upgraded models, tuned 
 │  [Add Item] → create weapons, consumables, skills      │
 │  [Add Custom Action] → define new action types beyond  │
 │    the 7 standard actions (e.g., Disarm, Taunt, Sneak) │
-│  [Browse Apparel] → pick existing apparel from Olio    │
-│    population to override theme auto-generation         │
+│  [Browse Apparel] → pick existing apparel from ~/Apparel│
+│    to override theme auto-generation                    │
 │  [Create Apparel] → build a new outfit layer by layer  │
 │  All custom content stored as real AM7 objects and      │
 │  persists for future decks.                             │
@@ -4334,7 +4342,7 @@ This split means AI config improvements (better prompts, upgraded models, tuned 
 │  • Encounter Deck: 12 Threats, 10 Events, 10 Discoveries│
 │    8 NPCs, 10 loot items, 5 skills, 2 magic (★–★★★)    │
 │  • Treasure Vault: ~18 boss + Epic/Legendary (★★★★+)    │
-│  • NPCs randomly drawn from Olio population and         │
+│  • NPCs selected from deck characters and                │
 │    assigned roles (trader, ally, quest-giver, etc.)      │
 │  • Both decks shuffled independently                    │
 │                                                         │
@@ -4351,7 +4359,7 @@ This split means AI config improvements (better prompts, upgraded models, tuned 
 
 ### Character Picker (Step 2)
 
-The character picker provides a visual browser for selecting or generating player characters. Characters do **not** need to be "adopted" into Olio — they just need to exist in the Universe/World population.
+The character picker provides a visual browser for selecting or generating player characters. Characters are stored in the deck's `~/CardGame/{deckName}/Characters/` folder.
 
 **Picker UI:**
 
@@ -4373,20 +4381,20 @@ The character picker provides a visual browser for selecting or generating playe
 ```
 
 **Sources:**
-- **Existing characters** — queried from the Olio Universe/World population (`GET /rest/olio/charPerson/list`)
-- **New random character** — calls `CharacterUtil.randomPerson()` on the server. Gender, race, name, stats, alignment are all randomized. Created and stored in the Olio population directory. Player can re-roll repeatedly until they get a character they like.
+- **Existing deck characters** — queried from the deck's Characters folder (`~/CardGame/{deckName}/Characters/`)
+- **Generate from templates** — calls server's `/olio/roll` endpoint to get base character with random name, gender, apparel, then applies template stats/alignment/personality. Stored in deck's Characters folder.
 - **Import from saved deck** — loads a character snapshot from a previous game save
 
 **Endpoint:**
 ```
-POST /rest/game/v2/character/random
-Body: { "worldPath": "/Olio/Universes/My Grid Universe/Worlds/My Grid World" }
-→ Returns: full charPerson record (stored in population, ready to use)
+GET /rest/olio/roll
+GET /rest/olio/roll/{gender}
+→ Returns: rolled charPerson with random name, gender, stats, apparel
 ```
 
 ### Theme Apparel Swap (Step 3b)
 
-When characters are added to a deck, their **existing Olio apparel is deactivated** and a new **theme-appropriate apparel set** is created. This is critical because:
+When characters are added to a deck, their **existing apparel is deactivated** and a new **theme-appropriate apparel set** is created from `~/Apparel` and `~/Wearables`. This is critical because:
 - Character portraits are regenerated with the theme apparel (a fantasy knight shouldn't wear a sci-fi jumpsuit)
 - Apparel cards in the deck must match the theme
 - The mannequin images for apparel cards need the correct theme styling
@@ -4410,9 +4418,9 @@ FOR EACH character in deck (player + all NPCs/opponents):
    └─ Set inuse=true on new apparel + all wearables
    └─ Store in character's olio.store.apparel list
 
-3. REGISTER items in Olio Universe/World
+3. REGISTER items in apparel/wearables paths
    └─ New apparel/wearable records created as real AM7 objects
-      under the world's apparel/wearables paths
+      under ~/Apparel and ~/Wearables paths
    └─ Persists for future games with the same theme
 
 4. GENERATE images
@@ -4478,12 +4486,12 @@ When a game session ends (or the deck is deleted), the theme apparel can optiona
 POST /rest/game/v2/apparel/restore/{characterId}
 → Sets theme apparel inuse=false
 → Sets original apparel inuse=true
-→ Character reverts to their pre-game outfit in the Olio world
+→ Character reverts to their pre-game outfit
 ```
 
 ### Custom Content Creation (Step 4b)
 
-During deck configuration, players can create custom items, actions, and apparel — or pick existing apparel from the Olio population. All custom objects are stored as **real AM7 objects** in the Olio Universe/World, not snapshot-only cards. They persist across games and can be reused in future decks.
+During deck configuration, players can create custom items, actions, and apparel — or pick existing apparel from `~/Apparel`. All custom objects are stored as **real AM7 objects**, not snapshot-only cards. They persist across games and can be reused in future decks.
 
 #### Custom Items
 
@@ -4492,7 +4500,7 @@ During deck configuration, players can create custom items, actions, and apparel
   ├── Select type: Weapon / Consumable / Skill / Magic Effect
   ├── Fill in card fields (name, stats, effects, requirements)
   │   └── Uses existing formDef.js definitions for olio.item, olio.wearable, etc.
-  ├── Item created as AM7 object under the Olio world's item/store paths
+  ├── Item created as AM7 object under deck's item/store paths
   ├── Card snapshot generated from the new item
   └── Added to current deck's card pool
 ```
@@ -4531,12 +4539,12 @@ Custom actions are stored as `data.data` objects (custom JSON) under `{user}/Gam
 
 #### Custom Apparel (Pick or Create)
 
-Players can either **pick existing apparel** from the Olio population or **create new themed apparel**.
+Players can either **pick existing apparel** from `~/Apparel` or **create new themed apparel**.
 
 **Pick existing apparel:**
 ```
 [Browse Apparel] button
-  ├── Opens Olio apparel browser — shows all apparel sets in the world population
+  ├── Opens apparel browser — shows all apparel sets in ~/Apparel
   ├── Each set shows: name, mannequin preview, wearable layers, stats (DEF, MDEF)
   ├── [Select] picks the apparel set for the active character
   ├── Selected apparel replaces the auto-generated theme apparel (Step 3b)
@@ -5086,7 +5094,7 @@ The v2 client communicates exclusively through the AM7 REST API and WebSocket en
 | `POST /rest/game/v2/item/create` | POST | Create a custom item (weapon, consumable) for the deck |
 | `POST /rest/game/v2/action/create` | POST | Create a custom action type for the deck |
 | `POST /rest/game/v2/apparel/create` | POST | Create custom apparel for the deck |
-| `GET /rest/game/v2/apparel/browse` | GET | Browse existing Olio apparel for deck inclusion |
+| `GET /rest/game/v2/apparel/browse` | GET | Browse existing apparel from ~/Apparel for deck inclusion |
 
 **Existing AM7 Endpoints (reused, no new implementation):**
 
@@ -5754,10 +5762,10 @@ Build-test-build. Each phase produces a testable artifact. No phase starts until
 
 ### Phase 2 — Deck Builder (Character Selection + Starter Deck)
 
-**Goal:** Pick a character from the Olio population, assign a theme, generate a starter deck structure with real AM7 data.
+**Goal:** Generate or select characters from templates, assign a theme, generate a starter deck structure with real AM7 data.
 
 **Build:**
-- Character picker: browse Olio population, select a `charPerson`
+- Character generator: create characters from balanced templates via `/olio/roll`
 - Theme selection UI (pick from available themes)
 - Starter deck assembly: given a character + theme config → produce the starter deck JSON (character card, apparel from equipment, weapons, consumables, action cards, talk card, skills, magic effects)
 - Derived stat normalization (hp → 20, energy → MAG, morale → 20)
@@ -5770,7 +5778,7 @@ Build-test-build. Each phase produces a testable artifact. No phase starts until
 - `GET /rest/game/v2/decks` — list all decks
 
 **Test gate:**
-- [ ] Pick a character from Olio population → see their stats on a character card
+- [ ] Generate a character from templates → see their stats on a character card
 - [ ] Select a theme → starter deck assembles with correct card counts (~15-20 cards)
 - [ ] Character card shows hp: 20, energy: MAG stat, morale: 20 (normalized)
 - [ ] Deck snapshot writes to `~/CardGame/{deckName}/deck.json` and can be reloaded
@@ -6143,17 +6151,23 @@ CSS approach:
   - Min stat: 6, Max stat: 18
   - Each template has distinct stat distribution matching archetype
 
-- **Random Character Generation:** (deferred — current flow uses server charPerson)
-  - Server-side random generation still used for names/gender/age
-  - Template stats applied via patch after creation
+- ✅ **Character Generation via Server API:**
+  - Uses `/olio/roll` endpoint to get base character with random name, gender, apparel
+  - Template modifications applied (alignment, personality, trade/class)
+  - Characters stored in deck's `~/CardGame/{deckName}/Characters/` folder
+  - Uses `am7model.prepareEntity()` for proper schema handling
+  - Nested wearables and qualities properly prepared
 
-- **Deck Builder Integration:** (deferred — using Olio population picker)
-  - Existing population picker works with templates
-  - "Generate Characters" button planned for future
+- ✅ **Deck Builder Integration:**
+  - "Generate 8 Characters" button in Step 2 of deck builder
+  - "Generate 1 Character" button for individual additions
+  - Characters auto-selected after generation
+  - Max 8 characters per deck enforced
 
-- **Migration Path:**
-  - Existing decks with Olio population references continue to work
-  - Templates available for balanced character creation
+- ✅ **Olio Population Dependency Removed:**
+  - No longer queries Olio Universe/World population
+  - Characters exist only in deck's Characters folder
+  - Player-relative paths used for apparel (`~/Apparel`, `~/Wearables`)
 
 **Server:**
 - Reuses existing `charPerson` random generation endpoint
