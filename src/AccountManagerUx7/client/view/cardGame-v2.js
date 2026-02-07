@@ -954,8 +954,12 @@
         card.age = fresh.age || card.age;
         card.stats = stats;
         card.needs = { hp: 20, energy: stats.MAG, morale: 20 };
-        card.portraitUrl = getPortraitUrl(fresh, "256x256");
-        if (card.portraitUrl) card.portraitUrl += "?t=" + Date.now();
+        // Preserve custom/generated portrait URLs (identified by artObjectId)
+        let hasCustomPortrait = !!card.artObjectId;
+        if (!hasCustomPortrait) {
+            card.portraitUrl = getPortraitUrl(fresh, "256x256");
+            if (card.portraitUrl) card.portraitUrl += "?t=" + Date.now();
+        }
         return true;
     }
 
@@ -1319,6 +1323,7 @@
     }
 
     // Generate balanced characters from templates for a deck
+    // Note: Character names come from the server, not hardcoded lists
     async function generateCharactersFromTemplates(deckName, themeId, count = 8) {
         const templates = await loadCharacterTemplates();
         if (!templates || !templates.templates) {
@@ -1342,59 +1347,53 @@
 
             for (const template of selectedTemplates) {
                 try {
-                    // Step 1: Create random base character via server (name, gender, age)
-                    const randomResult = await m.request({
-                        method: 'GET',
-                        url: g_application_path + '/rest/resource/olio.charPerson/new/random',
-                        withCredentials: true
-                    });
+                    // Build character object with template statistics
+                    const statMapping = {
+                        STR: 'physicalStrength',
+                        AGI: 'agility',
+                        END: 'physicalEndurance',
+                        INT: 'intelligence',
+                        MAG: 'creativity',
+                        CHA: 'charisma'
+                    };
 
-                    if (!randomResult) {
-                        console.warn('[CardGame] Failed to create random character, skipping');
+                    const statistics = {};
+                    for (const [shortName, value] of Object.entries(template.statistics || {})) {
+                        const fullStat = statMapping[shortName];
+                        if (fullStat) {
+                            statistics[fullStat] = value;
+                        }
+                    }
+
+                    // Apply template alignment and trade
+                    const themeClass = template.themeVariants?.[themeId]?.trade || template.class;
+
+                    // Build the character object - server will assign name
+                    const baseChar = {
+                        alignment: template.alignment || "NEUTRAL",
+                        trades: [themeClass],
+                        statistics: statistics,
+                        groupPath: charGroupPath
+                    };
+
+                    // Create the character on server (server assigns name)
+                    console.log('[CardGame] Creating character in group:', charGroupPath);
+                    const created = await am7client.create("olio.charPerson", baseChar);
+
+                    if (!created) {
+                        console.warn('[CardGame] am7client.create returned null for template:', template.name);
                         continue;
                     }
 
-                    // The random character has basic info, now we patch with template stats
-                    let baseChar = randomResult;
-
-                    // Step 2: Apply template statistics
-                    if (baseChar.statistics) {
-                        const statMapping = {
-                            STR: 'physicalStrength',
-                            AGI: 'agility',
-                            END: 'physicalEndurance',
-                            INT: 'intelligence',
-                            MAG: 'creativity',  // MAG maps to creativity for magic computation
-                            CHA: 'charisma'
-                        };
-                        for (const [shortName, value] of Object.entries(template.statistics)) {
-                            const fullName = statMapping[shortName];
-                            if (fullName && baseChar.statistics[fullName] !== undefined) {
-                                baseChar.statistics[fullName] = value;
-                            }
-                        }
-                    }
-
-                    // Step 3: Apply template alignment and trade
-                    if (template.alignment) {
-                        baseChar.alignment = template.alignment;
-                    }
-                    const themeClass = template.themeVariants?.[themeId]?.trade || template.class;
-                    baseChar.trades = [themeClass];
-
-                    // Step 4: Create the character on server
-                    baseChar.groupPath = charGroupPath;
-                    const created = await am7client.create("olio.charPerson", baseChar);
-
-                    if (created) {
-                        // Fetch full character with resolved stats
-                        const fullChar = await am7client.getFull("olio.charPerson", created.objectId);
-                        if (fullChar) {
-                            characters.push(fullChar);
-                        }
+                    console.log('[CardGame] Created character:', created.objectId);
+                    // Fetch full character with resolved stats
+                    const fullChar = await am7client.getFull("olio.charPerson", created.objectId);
+                    if (fullChar) {
+                        characters.push(fullChar);
+                        console.log('[CardGame] Added character:', fullChar.name);
                     }
                 } catch (charErr) {
-                    console.error('[CardGame] Error creating character from template:', charErr);
+                    console.error('[CardGame] Error creating character from template:', template?.name, charErr);
                 }
             }
 
@@ -1422,8 +1421,9 @@
             age: charPerson.age,
             alignment: charPerson.alignment,
             trade: charPerson.trades?.[0] || "",
-            portraitUrl: charPerson.profile?.portrait ?
-                g_application_path + "/media/" + charPerson.profile.portrait.objectId + "/thumbnail" : null,
+            portraitUrl: charPerson.profile?.portrait?.groupPath && charPerson.profile?.portrait?.name ?
+                g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) +
+                "/data.data" + charPerson.profile.portrait.groupPath + "/" + charPerson.profile.portrait.name + "/256x256" : null,
             stats: {
                 STR: stats.physicalStrength || 10,
                 AGI: stats.agility || 10,
@@ -2464,10 +2464,10 @@
 
                 // Update card portrait to the LAST generated image (fully dressed)
                 let lastImage = images[images.length - 1];
-                if (lastImage && lastImage.objectId) {
+                if (lastImage && lastImage.groupPath && lastImage.name) {
                     let orgPath = am7client.dotPath(am7client.currentOrganization);
                     card.portraitUrl = g_application_path + "/thumbnail/" + orgPath +
-                        "/data.data/" + lastImage.objectId + "/256x256?t=" + Date.now();
+                        "/data.data" + lastImage.groupPath + "/" + lastImage.name + "/256x256?t=" + Date.now();
                     console.log("[CardGame v2] Updated card portrait to last sequence image:", card.portraitUrl);
 
                     // Save the deck with updated portrait
@@ -2836,15 +2836,26 @@
         if (card.type === "character" && card.sourceId) {
             let sdEntity = await buildSdEntity(card, theme);
             // POST with sdConfig so the server can apply referenceImageId, model, style, etc.
-            await m.request({
+            let result = await m.request({
                 method: "POST",
-                url: g_application_path + "/rest/olio/charPerson/" + card.sourceId + "/reimage",
+                url: g_application_path + "/rest/olio/olio.charPerson/" + card.sourceId + "/reimage",
                 body: sdEntity,
                 withCredentials: true
             });
-            // The portrait is updated on the charPerson server-side;
-            // return a marker so the card can be refreshed
-            return { reimaged: true, sourceId: card.sourceId };
+            // Build URL from result image using groupPath + name (required by thumbnail servlet)
+            let thumbUrl = null;
+            console.log("[CardGame v2] Reimage result:", JSON.stringify({
+                objectId: result?.objectId, groupPath: result?.groupPath, name: result?.name
+            }));
+            if (result && result.groupPath && result.name) {
+                let orgPath = am7client.dotPath(am7client.currentOrganization);
+                thumbUrl = g_application_path + "/thumbnail/" + orgPath +
+                    "/data.data" + result.groupPath + "/" + result.name + "/256x256?t=" + Date.now();
+                console.log("[CardGame v2] Built thumbUrl:", thumbUrl);
+            } else {
+                console.warn("[CardGame v2] Reimage result missing groupPath or name, cannot build URL");
+            }
+            return { reimaged: true, sourceId: card.sourceId, thumbUrl: thumbUrl, objectId: result?.objectId, groupPath: result?.groupPath, name: result?.name };
         }
 
         // All other card types: use the generateArt endpoint (txt2img from prompt)
@@ -3019,24 +3030,38 @@
             if (viewingDeck && viewingDeck.cards && viewingDeck.cards[next.cardIndex]) {
                 let deckCard = viewingDeck.cards[next.cardIndex];
                 if (result.thumbUrl) {
-                    deckCard.imageUrl = result.thumbUrl;
-                    deckCard.artObjectId = result.objectId;
-                }
-                if (result.reimaged && deckCard.sourceId) {
-                    // Re-fetch the charPerson to get the updated portrait
+                    // For character cards, set portraitUrl; for others, set imageUrl
+                    if (result.reimaged) {
+                        deckCard.portraitUrl = result.thumbUrl;
+                        deckCard.artObjectId = result.objectId;
+                    } else {
+                        deckCard.imageUrl = result.thumbUrl;
+                        deckCard.artObjectId = result.objectId;
+                    }
+                } else if (result.reimaged && deckCard.sourceId) {
+                    // Fallback: re-fetch the charPerson to get the updated portrait
                     await refreshCharacterCard(deckCard);
                 }
 
-                // Propagate art to duplicate cards
+                // Propagate art to duplicate cards in deck
                 if (next.duplicateIndices && next.duplicateIndices.length > 0 && result.thumbUrl) {
                     next.duplicateIndices.forEach(dupeIdx => {
                         let dupeCard = viewingDeck.cards[dupeIdx];
                         if (dupeCard) {
-                            dupeCard.imageUrl = result.thumbUrl;
+                            if (result.reimaged) {
+                                dupeCard.portraitUrl = result.thumbUrl;
+                            } else {
+                                dupeCard.imageUrl = result.thumbUrl;
+                            }
                             dupeCard.artObjectId = result.objectId;
                         }
                     });
                     console.log("[CardGame v2] Shared art with " + next.duplicateIndices.length + " duplicate(s) of " + deckCard.name);
+                }
+
+                // Propagate art to cards in active game state (hand, drawPile, discardPile)
+                if (gameState && result.thumbUrl) {
+                    propagateArtToGameState(deckCard.name, deckCard.type, result.thumbUrl, result.reimaged);
                 }
             }
         } catch (e) {
@@ -3050,6 +3075,54 @@
 
         // Process next in queue
         processArtQueue();
+    }
+
+    // Propagate generated art to cards in the active game state
+    function propagateArtToGameState(cardName, cardType, thumbUrl, isPortrait) {
+        if (!gameState) return;
+
+        let updated = 0;
+        const updateCard = (card) => {
+            if (card && card.name === cardName && card.type === cardType) {
+                if (isPortrait) {
+                    card.portraitUrl = thumbUrl;
+                } else {
+                    card.imageUrl = thumbUrl;
+                }
+                updated++;
+            }
+        };
+
+        // Update player cards
+        if (gameState.player) {
+            (gameState.player.hand || []).forEach(updateCard);
+            (gameState.player.drawPile || []).forEach(updateCard);
+            (gameState.player.discardPile || []).forEach(updateCard);
+            (gameState.player.cardStack || []).forEach(updateCard);
+        }
+
+        // Update opponent cards
+        if (gameState.opponent) {
+            (gameState.opponent.hand || []).forEach(updateCard);
+            (gameState.opponent.drawPile || []).forEach(updateCard);
+            (gameState.opponent.discardPile || []).forEach(updateCard);
+            (gameState.opponent.cardStack || []).forEach(updateCard);
+        }
+
+        // Update action bar cards
+        if (gameState.actionBar?.positions) {
+            gameState.actionBar.positions.forEach(pos => {
+                if (pos.stack?.coreCard) updateCard(pos.stack.coreCard);
+                (pos.stack?.modifiers || []).forEach(updateCard);
+            });
+        }
+
+        // Update pot
+        (gameState.pot || []).forEach(updateCard);
+
+        if (updated > 0) {
+            console.log("[CardGame v2] Propagated art to", updated, "card(s) in game state:", cardName);
+        }
     }
 
     // Build a unique signature for a card to detect duplicates
@@ -3908,6 +3981,7 @@
             // Chat state (Phase 8)
             chat: {
                 active: false,
+                unlocked: false,   // True when Talk card is active (Silence Rule)
                 messages: [],      // [{ role: "player"|"npc", text, timestamp }]
                 npcName: null,
                 inputText: "",
@@ -3942,33 +4016,45 @@
             gameDirector = null;
         }
 
-        // Initialize Narrator (optional - silent if unavailable)
+        // Initialize Narrator (optional - uses fallback text if unavailable)
         try {
             gameNarrator = new CardGameNarrator();
             const narratorOk = await gameNarrator.initialize("arena-announcer", themeId);
             if (!narratorOk) {
-                console.log("[CardGame v2] LLM Narrator unavailable");
+                console.log("[CardGame v2] LLM Narrator unavailable, using fallback narration");
                 gameNarrator = null;
-            } else {
-                // Narrator initialized - request game start narration
-                narrateGameStart();
             }
         } catch (err) {
             console.warn("[CardGame v2] Failed to initialize Narrator:", err);
             gameNarrator = null;
         }
 
+        // Always trigger game start narration (uses fallback if LLM unavailable)
+        narrateGameStart();
+
         // Initialize Chat Manager for Talk cards (optional)
         try {
             gameChatManager = new CardGameChatManager();
             const chatOk = await gameChatManager.initialize(opponentChar, themeId);
             if (!chatOk) {
-                console.log("[CardGame v2] LLM Chat Manager unavailable, Talk cards use fallback");
+                console.log("[CardGame v2] LLM Chat Manager unavailable, Talk cards use fallback. Error:", gameChatManager?.lastError);
                 gameChatManager = null;
+            } else {
+                console.log("[CardGame v2] Chat Manager initialized successfully");
             }
         } catch (err) {
             console.warn("[CardGame v2] Failed to initialize Chat Manager:", err);
             gameChatManager = null;
+        }
+
+        // Initialize Voice for narrator TTS (optional)
+        try {
+            gameVoice = new CardGameVoice();
+            const voiceConfig = state?.voiceConfig || { subtitlesOnly: true };
+            await gameVoice.initialize(voiceConfig);
+        } catch (err) {
+            console.warn("[CardGame v2] Failed to initialize Voice:", err);
+            gameVoice = null;
         }
     }
 
@@ -4036,21 +4122,37 @@
                 fallbackText = null;
         }
 
+        // Add Poker Face emotion context if available
+        const emotionCtx = buildEmotionContext();
+        if (emotionCtx) {
+            context.playerEmotion = emotionCtx.emotion;
+            context.playerEmotionDesc = emotionCtx.description;
+        }
+
         // Try LLM narration
+        let narrationText = null;
         if (gameNarrator?.initialized) {
             try {
                 const narration = await gameNarrator.narrate(trigger, context);
                 if (narration?.text) {
-                    showNarrationSubtitle(narration.text);
-                    return;
+                    narrationText = narration.text;
                 }
             } catch (e) {
                 console.warn(`[CardGame v2] ${trigger} narration failed:`, e);
             }
         }
 
-        // Fallback text
-        if (fallbackText) showNarrationSubtitle(fallbackText);
+        // Use fallback if LLM failed
+        const finalText = narrationText || fallbackText;
+        if (!finalText) return;
+
+        // Show subtitle
+        showNarrationSubtitle(finalText);
+
+        // Speak with voice if available and not subtitles-only
+        if (gameVoice?.enabled && !gameVoice.subtitlesOnly) {
+            gameVoice.speak(finalText);
+        }
     }
 
     // Convenience wrappers for backward compatibility
@@ -4062,6 +4164,7 @@
     // Show narrator text as a subtitle overlay
     function showNarrationSubtitle(text) {
         if (!text) return;
+        console.log("[CardGame v2] Narration:", text.substring(0, 60) + (text.length > 60 ? "..." : ""));
         // Store in game state for UI to display
         if (gameState) {
             gameState.narrationText = text;
@@ -4244,13 +4347,14 @@
 
     // Outcome table (based on roll difference + natural 1/20)
     const COMBAT_OUTCOMES = {
-        CRITICAL_HIT:    { label: "Critical Hit!", damageMultiplier: 2, effect: "Nat 20! Double damage + item drop chance", isCriticalHit: true },
+        CRITICAL_HIT:    { label: "Critical Hit!", damageMultiplier: 2, effect: "Nat 20! Double damage + reward card", isCriticalHit: true },
         DEVASTATING:     { label: "Devastating!", damageMultiplier: 1.5, effect: "massive damage" },
         STRONG_HIT:      { label: "Strong Hit", damageMultiplier: 1, effect: "full damage" },
         GLANCING_HIT:    { label: "Glancing Hit", damageMultiplier: 0.5, effect: "half damage" },
         CLASH:           { label: "Clash!", damageMultiplier: 0, effect: "both take 1 damage", bothTakeDamage: 1 },
         DEFLECT:         { label: "Deflected", damageMultiplier: 0, effect: "no damage" },
         PARRY:           { label: "Parried!", damageMultiplier: 0, effect: "defender may counter", allowCounter: true },
+        CRITICAL_PARRY:  { label: "Perfect Parry!", damageMultiplier: -0.25, effect: "Nat 20! Counter attack + reward card", isCriticalParry: true, allowCounter: true },
         CRITICAL_MISS:   { label: "Critical Miss!", damageMultiplier: -0.5, effect: "Nat 1! Attacker takes damage + stunned", isCriticalCounter: true }
     };
 
@@ -4265,8 +4369,8 @@
         // Natural 1 on attack = Critical Miss (always)
         if (attackNat === 1) return { ...COMBAT_OUTCOMES.CRITICAL_MISS, diff };
 
-        // Natural 20 on defense with successful block = Parry
-        if (defenseNat === 20 && diff <= 0) return { ...COMBAT_OUTCOMES.PARRY, diff };
+        // Natural 20 on defense with successful block = Critical Parry (with reward)
+        if (defenseNat === 20 && diff <= 0) return { ...COMBAT_OUTCOMES.CRITICAL_PARRY, diff };
 
         // Diff-based outcomes (no criticals)
         if (diff >= 10) return { ...COMBAT_OUTCOMES.DEVASTATING, diff };
@@ -4360,29 +4464,33 @@
         }
 
         // Apply effects based on outcome (first/main attack)
-        let criticalEffects = { itemDropped: null, attackerStunned: false };
+        let criticalEffects = { itemDropped: null, attackerStunned: false, rewardCard: null };
 
         if (outcome.damageMultiplier > 0) {
             // Hit - apply damage to defender
             damageResult = applyDamage(defenderActor, damage.finalDamage);
 
-            // Critical Hit: chance to make defender drop an item
-            if (outcome.isCriticalHit && defenderActor.cardStack && defenderActor.cardStack.length > 0) {
-                // 50% chance to drop an item on critical hit
-                if (Math.random() < 0.5) {
+            // Critical Hit: ALWAYS reward the attacker with an elevated item card
+            if (outcome.isCriticalHit) {
+                // Generate a special elevated item as reward
+                let rewardCard = generateCriticalReward("attack", attackerActor);
+                attackerActor.hand.push(rewardCard);
+                criticalEffects.rewardCard = rewardCard;
+                console.log("[CardGame v2] CRITICAL HIT! Reward card:", rewardCard.name);
+
+                // ALSO 50% chance to make defender drop an item
+                if (defenderActor.cardStack && defenderActor.cardStack.length > 0 && Math.random() < 0.5) {
                     let droppableItems = defenderActor.cardStack.filter(c =>
                         c.type === "item" || c.type === "apparel"
                     );
                     if (droppableItems.length > 0) {
                         let droppedItem = droppableItems[Math.floor(Math.random() * droppableItems.length)];
-                        // Remove from defender's stack
                         let idx = defenderActor.cardStack.indexOf(droppedItem);
                         if (idx >= 0) {
                             defenderActor.cardStack.splice(idx, 1);
-                            // Add to pot
                             gameState.pot.push(droppedItem);
                             criticalEffects.itemDropped = droppedItem;
-                            console.log("[CardGame v2] CRITICAL HIT! Item dropped:", droppedItem.name);
+                            console.log("[CardGame v2] CRITICAL HIT! Item also dropped:", droppedItem.name);
                         }
                     }
                 }
@@ -4396,6 +4504,14 @@
                 applyStatusEffect(attackerActor, "stunned", "Critical Counter");
                 criticalEffects.attackerStunned = true;
                 console.log("[CardGame v2] CRITICAL COUNTER! Attacker stunned");
+            }
+
+            // Critical Parry: defender gets a reward card
+            if (outcome.isCriticalParry) {
+                let rewardCard = generateCriticalReward("defense", defenderActor);
+                defenderActor.hand.push(rewardCard);
+                criticalEffects.rewardCard = rewardCard;
+                console.log("[CardGame v2] CRITICAL PARRY! Reward card:", rewardCard.name);
             }
         } else if (outcome.bothTakeDamage) {
             // Clash - both take fixed damage
@@ -4491,6 +4607,53 @@
         { name: "Dire Wolf", atk: 5, def: 2, hp: 18, imageIcon: "pets" },
         { name: "Orc Warrior", atk: 6, def: 3, hp: 20, imageIcon: "shield_person" }
     ];
+
+    /**
+     * Generate a reward card for critical success (nat 20)
+     * Tries to pull a rare/epic card from deck, falls back to stat bonus
+     * @param {string} type - "attack" or "defense"
+     * @param {Object} actor - The actor receiving the reward
+     * @returns {Object} Generated reward card
+     */
+    function generateCriticalReward(type, actor) {
+        // Try to find a rare/epic card from the draw pile
+        let rarityOrder = ["LEGENDARY", "EPIC", "RARE", "UNCOMMON"];
+        let drawPile = actor.drawPile || [];
+
+        // Look for items/apparel matching the type
+        let typeMatch = type === "attack"
+            ? c => c.type === "item" && (c.subtype === "weapon" || c.atk > 0)
+            : c => (c.type === "item" || c.type === "apparel") && (c.subtype === "armor" || c.def > 0);
+
+        for (let rarity of rarityOrder) {
+            let candidates = drawPile.filter(c =>
+                c.rarity === rarity && typeMatch(c)
+            );
+            if (candidates.length > 0) {
+                let reward = { ...candidates[Math.floor(Math.random() * candidates.length)] };
+                // Remove from draw pile
+                let idx = drawPile.findIndex(c => c.name === reward.name);
+                if (idx >= 0) drawPile.splice(idx, 1);
+
+                reward.id = "crit-reward-" + Date.now();
+                reward.isCriticalReward = true;
+                console.log("[CardGame v2] Critical reward from deck:", reward.name);
+                return reward;
+            }
+        }
+
+        // Fallback: generate a simple stat bonus consumable
+        let bonus = type === "attack"
+            ? { type: "item", subtype: "consumable", name: "Critical Bonus", atk: 3, rarity: "RARE",
+                effect: "+3 ATK this round" }
+            : { type: "item", subtype: "consumable", name: "Critical Bonus", def: 3, rarity: "RARE",
+                effect: "+3 DEF this round" };
+
+        bonus.id = "crit-reward-" + Date.now();
+        bonus.isCriticalReward = true;
+        console.log("[CardGame v2] Critical reward (fallback):", bonus.name);
+        return bonus;
+    }
 
     /**
      * Create a threat encounter based on difficulty
@@ -4652,17 +4815,32 @@
             gameState.initiative.winner = Math.random() < 0.5 ? "player" : "opponent";
         }
 
-        // Calculate total positions
+        // Calculate total positions - each player gets exactly their AP number of slots
         let playerAp = gameState.player.ap;
         let opponentAp = gameState.opponent.ap;
         let totalPositions = playerAp + opponentAp;
 
-        // Assign positions: winner gets odd (1,3,5...), loser gets even (2,4,6...)
+        // Assign positions: interleave winner and loser, but each gets exactly their AP count
+        // Winner acts at positions 1, 3, 5... up to their AP count
+        // Loser acts at positions 2, 4, 6... up to their AP count
+        let winnerAp = gameState.initiative.winner === "player" ? playerAp : opponentAp;
+        let loserAp = gameState.initiative.winner === "player" ? opponentAp : playerAp;
+
         let winnerPositions = [];
         let loserPositions = [];
-        for (let i = 1; i <= totalPositions; i++) {
-            if (i % 2 === 1) winnerPositions.push(i);
-            else loserPositions.push(i);
+        let pos = 1;
+        let wCount = 0, lCount = 0;
+
+        // Interleave: winner first, then loser, alternating until both filled
+        while (wCount < winnerAp || lCount < loserAp) {
+            if (wCount < winnerAp) {
+                winnerPositions.push(pos++);
+                wCount++;
+            }
+            if (lCount < loserAp) {
+                loserPositions.push(pos++);
+                lCount++;
+            }
         }
 
         if (gameState.initiative.winner === "player") {
@@ -4790,24 +4968,25 @@
         console.log("[CardGame v2] Entering end threat phase");
         gameState.phase = GAME_PHASES.END_THREAT;
 
-        // Winner gets bonus response opportunity
-        let responder = gameState.roundWinner === "tie" ? "player" : gameState.roundWinner;
+        // Responder is the threat's target (the one being attacked)
+        let threat = gameState.endThreatResult.threat;
+        let responder = threat.target;
 
         gameState.threatResponse = {
             active: true,
             type: "end",
-            threats: [gameState.endThreatResult.threat],
+            threats: [threat],
             responder: responder,
             bonusAP: 2,  // Bonus AP for end threat response
             defenseStack: [],
             resolved: false
         };
 
-        // Give winner bonus AP
+        // Give responder (defender) bonus AP
         let actor = responder === "player" ? gameState.player : gameState.opponent;
         actor.threatResponseAP = gameState.threatResponse.bonusAP;
 
-        console.log("[CardGame v2] End threat response:", responder, "gets bonus opportunity to respond to", gameState.endThreatResult.threat.name);
+        console.log("[CardGame v2] End threat response:", responder, "must defend against", threat.name);
     }
 
     function resolveThreatCombat() {
@@ -5009,7 +5188,10 @@
             return;
         }
 
-        startNextRound();
+        // Return to cleanup phase to show the result before next round
+        gameState.phase = GAME_PHASES.CLEANUP;
+        console.log("[CardGame v2] End threat resolved, returning to cleanup to show result");
+        m.redraw();
     }
 
     // Place a card in threat response defense stack
@@ -5370,8 +5552,9 @@
     }
 
     // Determine if a card type can be a modifier (stacks on top of core)
+    // Note: magic is NOT a modifier - it's a core action like attack/talk
     function isModifierCardType(cardType) {
-        return cardType === "skill" || cardType === "magic" || cardType === "item";
+        return cardType === "skill" || cardType === "item";
     }
 
     function placeCard(positionIndex, card, forceModifier = false) {
@@ -5396,14 +5579,14 @@
 
         if (!forceModifier && hasExistingCore) {
             // Position already has a core card
-            if (isModifierCardType(card.type)) {
-                // This is a modifier - add to existing stack
+            // Core action types (action, talk, magic) cannot be stacked - reject them
+            if (card.type === "action" || card.type === "talk" || card.type === "magic") {
+                console.warn("[CardGame v2] Cannot stack multiple action cards - position already has:", pos.stack.coreCard.name);
+                page.toast("warn", "Position already has an action card");
+                return false;
+            } else if (isModifierCardType(card.type)) {
+                // Modifiers (skill, item) can be added to existing stack
                 isModifier = true;
-            } else if (isCoreCardType(card.type)) {
-                // This is another core card - replace the existing one
-                console.log("[CardGame v2] Replacing existing card at position", positionIndex);
-                removeCardFromPosition(positionIndex, true);  // Remove without redraw
-                // Stack is now cleared, fall through to place new core
             } else {
                 console.warn("[CardGame v2] Position already has a core card, and", card.type, "cannot be a modifier");
                 return false;
@@ -5696,23 +5879,45 @@
         // Initialize LLM with standard pattern
         async initializeLLM(chatName, promptName, systemPrompt, temperature) {
             try {
+                // Check if am7chat is available
+                if (typeof am7chat === "undefined" || !am7chat) {
+                    this.lastError = "am7chat not available";
+                    console.warn("[CardGameLLM] am7chat not available - LLM features disabled");
+                    return false;
+                }
+
                 const chatDir = await CardGameLLM.findChatDir();
-                if (!chatDir) return false;
+                if (!chatDir) {
+                    this.lastError = "~/Chat directory not found";
+                    return false;
+                }
 
                 const template = await CardGameLLM.getOpenChatTemplate(chatDir);
-                if (!template) return false;
+                if (!template) {
+                    this.lastError = "Open Chat template not found";
+                    return false;
+                }
 
                 this.promptConfig = await CardGameLLM.ensurePromptConfig(chatDir, promptName, systemPrompt);
-                if (!this.promptConfig) return false;
+                if (!this.promptConfig) {
+                    this.lastError = "Failed to create prompt config";
+                    return false;
+                }
 
                 this.chatConfig = await CardGameLLM.ensureChatConfig(chatDir, template, chatName, temperature);
-                if (!this.chatConfig) return false;
+                if (!this.chatConfig) {
+                    this.lastError = "Failed to create chat config";
+                    return false;
+                }
 
                 this.chatRequest = await am7chat.getChatRequest(chatName, this.chatConfig, this.promptConfig);
                 this.initialized = !!this.chatRequest;
+                if (!this.initialized) {
+                    this.lastError = "Failed to get chat request";
+                }
                 return this.initialized;
             } catch (err) {
-                this.lastError = err.message;
+                this.lastError = err.message || String(err);
                 console.error("[CardGameLLM] initializeLLM failed:", err);
                 return false;
             }
@@ -6052,6 +6257,11 @@ Respond with plain text narration only. No JSON, no markdown.`;
                     break;
             }
 
+            // Add Poker Face emotion hint if available
+            if (context.playerEmotion && context.playerEmotionDesc) {
+                prompt += `\nPOKER FACE: The player ${context.playerEmotionDesc}. Work this into your narration subtly.`;
+            }
+
             prompt += `\nNarrate in ${maxSentences} sentences or less.`;
             if (trigger === "resolution") {
                 prompt += `\nAlso add "IMAGE:" line for scene generation.`;
@@ -6252,6 +6462,140 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                 preview: i.messages[0]?.text?.substring(0, 50) + "..."
             }));
         }
+    }
+
+    // ── CardGameVoice (Phase 8 Voice Synthesis) ───────────────────────
+    // Voice synthesis for narrator using existing audio infrastructure
+    let gameVoice = null;
+
+    class CardGameVoice {
+        constructor() {
+            this.enabled = false;
+            this.voiceProfileId = null;
+            this.volume = 1.0;
+            this.speaking = false;
+            this.queue = [];
+            this.subtitlesOnly = false;
+        }
+
+        async initialize(voiceConfig) {
+            // Check if audio infrastructure exists
+            if (typeof page?.components?.audio?.createAudioSource !== "function") {
+                console.log("[CardGameVoice] Audio infrastructure not available, subtitles only");
+                this.subtitlesOnly = true;
+                this.enabled = true;
+                return true;
+            }
+
+            this.voiceProfileId = voiceConfig?.voiceProfileId || null;
+            this.volume = voiceConfig?.volume ?? 1.0;
+            this.subtitlesOnly = voiceConfig?.subtitlesOnly ?? false;
+            this.enabled = true;
+
+            console.log("[CardGameVoice] Initialized. Profile:", this.voiceProfileId || "default");
+            return true;
+        }
+
+        async speak(text, options = {}) {
+            if (!this.enabled || !text) return;
+            if (this.subtitlesOnly) {
+                // Just show subtitles without audio
+                showNarrationSubtitle(text);
+                return;
+            }
+
+            // Queue if already speaking
+            if (this.speaking) {
+                this.queue.push({ text, options });
+                return;
+            }
+
+            this.speaking = true;
+            const name = "cardgame-voice-" + Date.now();
+
+            try {
+                // Use page.components.audio if available
+                const audioComponent = page?.components?.audio;
+                if (audioComponent?.createAudioSource) {
+                    const source = await audioComponent.createAudioSource(name, this.voiceProfileId, text);
+                    if (source) {
+                        await this._playAudioSource(source);
+                    }
+                }
+            } catch (err) {
+                console.warn("[CardGameVoice] Speech synthesis failed:", err);
+            } finally {
+                this.speaking = false;
+                // Process queue
+                if (this.queue.length > 0) {
+                    const next = this.queue.shift();
+                    this.speak(next.text, next.options);
+                }
+            }
+        }
+
+        async _playAudioSource(source) {
+            return new Promise((resolve) => {
+                if (!source?.source || !source?.context) {
+                    resolve();
+                    return;
+                }
+
+                const sourceNode = source.context.createBufferSource();
+                sourceNode.buffer = source.buffer;
+
+                // Apply volume
+                const gainNode = source.context.createGain();
+                gainNode.gain.value = this.volume;
+
+                sourceNode.connect(gainNode);
+                gainNode.connect(source.context.destination);
+
+                sourceNode.onended = () => resolve();
+                sourceNode.start();
+            });
+        }
+
+        setVolume(level) {
+            this.volume = Math.max(0, Math.min(1, level));
+        }
+
+        stop() {
+            this.queue = [];
+            // Note: Stopping mid-playback would require tracking active source nodes
+        }
+    }
+
+    // ── Poker Face Integration (Phase 8 Emotion Capture) ──────────────
+    // Uses moodRing component for emotion detection
+    function getPlayerEmotion() {
+        if (!page?.components?.moodRing?.enabled()) return null;
+        return page.components.moodRing.emotion();
+    }
+
+    function getPlayerMoodColor() {
+        if (!page?.components?.moodRing?.enabled()) return null;
+        return page.components.moodRing.moodColor();
+    }
+
+    // Build emotion context for narrator
+    function buildEmotionContext() {
+        const emotion = getPlayerEmotion();
+        if (!emotion || emotion === "neutral") return null;
+
+        const emotionDescriptions = {
+            happy: "appears pleased",
+            sad: "looks dejected",
+            angry: "seems frustrated",
+            fear: "appears nervous",
+            surprise: "looks startled",
+            disgust: "seems unimpressed"
+        };
+
+        return {
+            emotion,
+            description: emotionDescriptions[emotion] || null
+        };
     }
 
     // ── Simple AI Card Placement ──────────────────────────────────────
@@ -6798,13 +7142,15 @@ Respond naturally in character. No game mechanics, just dialogue.`;
 
                     // Talk action: Open chat UI for player, dice roll for AI
                     if (card.type === "talk") {
-                        if (pos.owner === "player" && gameChatManager) {
+                        if (pos.owner === "player") {
                             // Player Talk: Open chat UI (Phase 8)
+                            // Chat works with or without LLM - will use fallback responses if needed
+                            console.log("[CardGame v2] Opening Talk chat. LLM available:", !!gameChatManager?.initialized);
                             openTalkChat(card, bar.resolveIndex);
                             // Resolution continues when chat ends
                             return;  // Don't auto-advance - chat will handle it
                         } else {
-                            // Opponent Talk or no chat manager: Use dice roll
+                            // Opponent Talk: Use dice roll
                             let ownerCha = owner.character.stats?.CHA || 10;
                             let targetCha = target.character.stats?.CHA || 10;
                             let skillMod = getStackSkillMod(pos.stack, "talk");
@@ -7018,7 +7364,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                             if (gameState) {
                                                 // Initialize LLM components in background (non-blocking)
                                                 initializeLLMComponents(gameState, viewingDeck);
-                                                runInitiativePhase();
+                                                // Animation will trigger runInitiativePhase() when complete
                                             }
                                             m.redraw();
                                         }
@@ -7067,7 +7413,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                         gameCharSelection = null;
                         if (gameState) {
                             initializeLLMComponents(gameState, viewingDeck);
-                            runInitiativePhase();
+                            // Animation will trigger runInitiativePhase() when complete
                         }
                     } else if (allChars.length === 0) {
                         console.error("[CardGame v2] No characters in deck");
@@ -7091,10 +7437,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                     ]);
                 }
 
-                // Game Over screen
-                if (gameState.phase === "GAME_OVER") {
-                    return m(GameOverUI);
-                }
+                // Game Over is now rendered as an overlay, not a separate screen
 
                 let isPlacement = gameState.phase === GAME_PHASES.DRAW_PLACEMENT;
                 let isPlayerTurn = gameState.currentTurn === "player";
@@ -7183,11 +7526,14 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                     : null,
 
                                 // Talk card chat overlay (Phase 8)
-                                gameState.chat?.active ? m(TalkChatUI) : null
+                                gameState.chat?.active ? m(TalkChatUI) : null,
+
+                                // Game Over overlay
+                                gameState.winner ? m(GameOverUI) : null
                             ]),
 
-                            // Consistent Action Panel (always visible) - status and button inline
-                            m("div", { class: "cg2-action-panel" }, [
+                            // Action Panel (hidden during resolution to avoid duplicate UI)
+                            gameState.phase !== GAME_PHASES.RESOLUTION ? m("div", { class: "cg2-action-panel" }, [
                                 // Status message - dynamic based on phase and state
                                 m("div", { class: "cg2-action-status" },
                                     gameState.phase === GAME_PHASES.INITIATIVE
@@ -7206,15 +7552,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                             : gameState.phase === GAME_PHASES.DRAW_PLACEMENT
                                                 ? (isPlayerTurn ? "Place cards on the action bar" : "Opponent is placing...")
                                                 : gameState.phase === GAME_PHASES.RESOLUTION
-                                                    ? (currentCombatResult && resolutionPhase === "result"
-                                                        ? [
-                                                            m("strong", { class: "cg2-status-outcome cg2-outcome-" + (currentCombatResult.outcome.damageMultiplier > 0 ? "hit" : currentCombatResult.outcome.damageMultiplier < 0 ? "counter" : "miss") },
-                                                                currentCombatResult.outcome.label),
-                                                            currentCombatResult.damageResult
-                                                                ? m("span", " - " + currentCombatResult.damageResult.finalDamage + " HP to " + currentCombatResult.defenderName)
-                                                                : null
-                                                        ]
-                                                        : "Resolving actions...")
+                                                    ? "" // Status shown in resolution overlay above
                                                     : gameState.phase === GAME_PHASES.CLEANUP
                                                         ? "Round complete!"
                                                         : ""
@@ -7256,7 +7594,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                         }, player.apUsed > 0 ? "End Turn" : "Pass Turn")
                                     ] : null
                                 ])
-                            ])
+                            ]) : null
                         ]),
 
                         // Right sidebar: Opponent
@@ -7445,6 +7783,25 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                         ])
                         : null,
 
+                    // Chat button (Silence Rule: locked unless Talk card active)
+                    isOpponent ? m("button", {
+                        class: "cg2-chat-btn" + (gameState?.chat?.unlocked ? " cg2-chat-unlocked" : " cg2-chat-locked"),
+                        disabled: !gameState?.chat?.unlocked,
+                        title: gameState?.chat?.unlocked
+                            ? "Chat with " + (char.name || "opponent")
+                            : "Play a Talk card to speak with your opponent",
+                        onclick() {
+                            if (gameState?.chat?.unlocked && !gameState?.chat?.active) {
+                                // Re-open chat if unlocked but closed
+                                gameState.chat.active = true;
+                                m.redraw();
+                            }
+                        }
+                    }, [
+                        m("span", { class: "material-symbols-outlined" }, "chat"),
+                        gameState?.chat?.unlocked ? " Chat" : " Locked"
+                    ]) : null,
+
                     // Status effects display
                     actor.statusEffects && actor.statusEffects.length > 0
                         ? m("div", { class: "cg2-status-effects" },
@@ -7625,8 +7982,14 @@ Respond naturally in character. No game mechanics, just dialogue.`;
     }
 
     // ── Threat Response Phase UI ─────────────────────────────────────
+    let threatAutoRespondScheduled = false;  // Guard against multiple auto-responds
+
     function ThreatResponseUI() {
         return {
+            oninit() {
+                // Reset auto-respond guard when component initializes
+                threatAutoRespondScheduled = false;
+            },
             view() {
                 if (!gameState || !gameState.threatResponse || !gameState.threatResponse.active) {
                     return null;
@@ -7641,8 +8004,10 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                 let threats = tr.threats || [];
                 let defenseStack = tr.defenseStack || [];
 
-                // For AI opponent, auto-respond after delay
-                if (!isPlayerResponder && apRemaining > 0) {
+                // For AI opponent, auto-respond after delay (only schedule once)
+                if (!isPlayerResponder && !threatAutoRespondScheduled) {
+                    threatAutoRespondScheduled = true;
+                    console.log("[CardGame v2] Scheduling AI threat response");
                     setTimeout(() => {
                         if (gameState && gameState.threatResponse && gameState.threatResponse.active) {
                             // AI places a defensive card if available
@@ -7652,11 +8017,13 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                             );
                             if (defenseCards.length > 0 && actor.threatResponseAP > 0) {
                                 placeThreatDefenseCard(defenseCards[0]);
+                                m.redraw();
                             } else {
                                 skipThreatResponse();
                             }
                         }
-                    }, 1000);
+                        threatAutoRespondScheduled = false;  // Reset for next threat
+                    }, 1500);  // Give player time to see threat
                 }
 
                 // Get the threat and defender info
@@ -7669,8 +8036,8 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                     m("p", { class: "cg2-threat-explain" },
                         isEndThreat
                             ? (isPlayerResponder
-                                ? "A threat emerges! You won the round - prepare your defense!"
-                                : "A threat emerges! Opponent prepares to defend...")
+                                ? "A threat emerges targeting you! Prepare to defend yourself!"
+                                : "A threat emerges targeting the opponent! They must defend...")
                             : (isPlayerResponder
                                 ? "Your fumble attracted danger! Prepare to defend yourself!"
                                 : "Opponent's fumble attracted danger! They must defend...")
@@ -7874,123 +8241,136 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                         m("span", { class: "cg2-step-action" }, actionLabel)
                     ]),
 
-                    // Attacker vs Defender header
-                    m("div", { class: "cg2-combat-header" }, [
-                        m("span", { class: "cg2-combatant cg2-attacker" },
-                            combat ? combat.attackerName : (isThreat ? (currentPos.threat?.name || "Threat") : (currentPos.owner === "player" ? "You" : "Opponent"))),
-                        m("span", { class: "cg2-combat-vs" }, "attacks"),
-                        m("span", { class: "cg2-combatant cg2-defender" },
-                            combat ? combat.defenderName : (isThreat ? (currentPos.target === "player" ? "You" : "Opponent") : (currentPos.owner === "player" ? "Opponent" : "You")))
-                    ]),
-
-                    // Dice display with D20 SVG
-                    m("div", { class: "cg2-combat-dice-row" }, [
-                        // Attack dice
-                        m("div", { class: "cg2-combat-roll-card" }, [
-                            m("div", { class: "cg2-roll-label" }, "Attack Roll"),
-                            m(D20Dice, {
-                                value: isRolling ? resolutionDiceFaces.attack : (combat ? combat.attackRoll.raw : "?"),
-                                rolling: isRolling,
-                                winner: combat && showResult && combat.outcome.damageMultiplier > 0
-                            }),
-                            combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
-                                m("span", combat.attackRoll.raw),
-                                m("span", " + "),
-                                m("span", { class: "cg2-mod" }, combat.attackRoll.strMod + " STR"),
-                                m("span", " + "),
-                                m("span", { class: "cg2-mod cg2-mod-atk" }, combat.attackRoll.atkBonus + " ATK"),
-                                combat.attackRoll.skillMod ? [
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod cg2-mod-skill" }, combat.attackRoll.skillMod + " Skill")
-                                ] : null,
-                                combat.attackRoll.statusMod ? [
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod cg2-mod-status" }, combat.attackRoll.statusMod + " Status")
-                                ] : null,
-                                m("span", " = "),
-                                m("strong", combat.attackRoll.total)
-                            ]) : null
+                    // Content wrapper for stable dimensions
+                    m("div", { class: "cg2-combat-content" }, [
+                        // Attacker vs Defender header
+                        m("div", { class: "cg2-combat-header" }, [
+                            m("span", { class: "cg2-combatant cg2-attacker" },
+                                combat ? combat.attackerName : (isThreat ? (currentPos.threat?.name || "Threat") : (currentPos.owner === "player" ? "You" : "Opponent"))),
+                            m("span", { class: "cg2-combat-vs" }, "attacks"),
+                            m("span", { class: "cg2-combatant cg2-defender" },
+                                combat ? combat.defenderName : (isThreat ? (currentPos.target === "player" ? "You" : "Opponent") : (currentPos.owner === "player" ? "Opponent" : "You")))
                         ]),
 
-                        // VS divider
-                        m("div", { class: "cg2-combat-vs-divider" }, "vs"),
-
-                        // Defense dice
-                        m("div", { class: "cg2-combat-roll-card" }, [
-                            m("div", { class: "cg2-roll-label" }, "Defense Roll"),
-                            m(D20Dice, {
-                                value: isRolling ? resolutionDiceFaces.defense : (combat ? combat.defenseRoll.raw : "?"),
-                                rolling: isRolling,
-                                winner: combat && showResult && combat.outcome.damageMultiplier <= 0
-                            }),
-                            combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
-                                m("span", combat.defenseRoll.raw),
-                                m("span", " + "),
-                                m("span", { class: "cg2-mod" }, combat.defenseRoll.endMod + " END"),
-                                m("span", " + "),
-                                m("span", { class: "cg2-mod cg2-mod-def" }, combat.defenseRoll.defBonus + " DEF"),
-                                combat.defenseRoll.parryBonus ? [
+                        // Dice display with D20 SVG
+                        m("div", { class: "cg2-combat-dice-row" }, [
+                            // Attack dice
+                            m("div", { class: "cg2-combat-roll-card" }, [
+                                m("div", { class: "cg2-roll-label" }, "Attack Roll"),
+                                m(D20Dice, {
+                                    value: isRolling ? resolutionDiceFaces.attack : (combat ? combat.attackRoll.raw : "?"),
+                                    rolling: isRolling,
+                                    winner: combat && showResult && combat.outcome.damageMultiplier > 0
+                                }),
+                                combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
+                                    m("span", combat.attackRoll.raw),
                                     m("span", " + "),
-                                    m("span", { class: "cg2-mod cg2-mod-parry" }, combat.defenseRoll.parryBonus + " Parry")
-                                ] : null,
-                                combat.defenseRoll.statusMod ? [
+                                    m("span", { class: "cg2-mod" }, combat.attackRoll.strMod + " STR"),
                                     m("span", " + "),
-                                    m("span", { class: "cg2-mod cg2-mod-status" }, combat.defenseRoll.statusMod + " Status")
-                                ] : null,
-                                m("span", " = "),
-                                m("strong", combat.defenseRoll.total)
-                            ]) : null
-                        ])
-                    ]),
+                                    m("span", { class: "cg2-mod cg2-mod-atk" }, combat.attackRoll.atkBonus + " ATK"),
+                                    combat.attackRoll.skillMod ? [
+                                        m("span", " + "),
+                                        m("span", { class: "cg2-mod cg2-mod-skill" }, combat.attackRoll.skillMod + " Skill")
+                                    ] : null,
+                                    combat.attackRoll.statusMod ? [
+                                        m("span", " + "),
+                                        m("span", { class: "cg2-mod cg2-mod-status" }, combat.attackRoll.statusMod + " Status")
+                                    ] : null,
+                                    m("span", " = "),
+                                    m("strong", combat.attackRoll.total)
+                                ]) : null
+                            ]),
 
-                    // Outcome display
-                    combat && showResult ? m("div", { class: "cg2-combat-outcome" }, [
-                        m("div", {
-                            class: "cg2-outcome-label cg2-outcome-" +
-                                (combat.outcome.damageMultiplier > 0 ? "hit" :
-                                 combat.outcome.damageMultiplier < 0 ? "counter" : "miss")
-                        }, [
-                            m("span", { class: "cg2-outcome-text" }, combat.outcome.label),
-                            m("span", { class: "cg2-outcome-diff" },
-                                " (" + (combat.outcome.diff >= 0 ? "+" : "") + combat.outcome.diff + ")")
+                            // VS divider
+                            m("div", { class: "cg2-combat-vs-divider" }, "vs"),
+
+                            // Defense dice
+                            m("div", { class: "cg2-combat-roll-card" }, [
+                                m("div", { class: "cg2-roll-label" }, "Defense Roll"),
+                                m(D20Dice, {
+                                    value: isRolling ? resolutionDiceFaces.defense : (combat ? combat.defenseRoll.raw : "?"),
+                                    rolling: isRolling,
+                                    winner: combat && showResult && combat.outcome.damageMultiplier <= 0
+                                }),
+                                combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
+                                    m("span", combat.defenseRoll.raw),
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod" }, combat.defenseRoll.endMod + " END"),
+                                    m("span", " + "),
+                                    m("span", { class: "cg2-mod cg2-mod-def" }, combat.defenseRoll.defBonus + " DEF"),
+                                    combat.defenseRoll.parryBonus ? [
+                                        m("span", " + "),
+                                        m("span", { class: "cg2-mod cg2-mod-parry" }, combat.defenseRoll.parryBonus + " Parry")
+                                    ] : null,
+                                    combat.defenseRoll.statusMod ? [
+                                        m("span", " + "),
+                                        m("span", { class: "cg2-mod cg2-mod-status" }, combat.defenseRoll.statusMod + " Status")
+                                    ] : null,
+                                    m("span", " = "),
+                                    m("strong", combat.defenseRoll.total)
+                                ]) : null
+                            ])
                         ]),
-                        m("div", { class: "cg2-outcome-effect" }, combat.outcome.effect),
 
-                        // Damage display
-                        combat.damageResult ? m("div", { class: "cg2-damage-display" }, [
-                            m("span", { class: "cg2-damage-number cg2-damage-dealt" },
-                                "-" + combat.damageResult.finalDamage + " HP"),
-                            m("span", { class: "cg2-damage-target" },
-                                " to " + combat.defenderName)
-                        ]) : null,
+                        // Outcome area - reserved space to prevent jumping
+                        m("div", { class: "cg2-outcome-area" }, [
+                            combat && showResult ? m("div", { class: "cg2-combat-outcome" }, [
+                                m("div", {
+                                    class: "cg2-outcome-label cg2-outcome-" +
+                                        (combat.outcome.damageMultiplier > 0 ? "hit" :
+                                         combat.outcome.damageMultiplier < 0 ? "counter" : "miss")
+                                }, [
+                                    m("span", { class: "cg2-outcome-text" }, combat.outcome.label),
+                                    m("span", { class: "cg2-outcome-diff" },
+                                        " (" + (combat.outcome.diff >= 0 ? "+" : "") + combat.outcome.diff + ")")
+                                ]),
+                                m("div", { class: "cg2-outcome-effect" }, combat.outcome.effect),
 
-                        combat.selfDamageResult ? m("div", { class: "cg2-damage-display" }, [
-                            m("span", { class: "cg2-damage-number cg2-damage-self" },
-                                "-" + combat.selfDamageResult.finalDamage + " HP"),
-                            m("span", { class: "cg2-damage-target" },
-                                " to " + combat.attackerName + " (counter!)")
-                        ]) : null,
+                                // Damage display
+                                combat.damageResult ? m("div", { class: "cg2-damage-display" }, [
+                                    m("span", { class: "cg2-damage-number cg2-damage-dealt" },
+                                        "-" + combat.damageResult.finalDamage + " HP"),
+                                    m("span", { class: "cg2-damage-target" },
+                                        " to " + combat.defenderName)
+                                ]) : null,
 
-                        // Critical Effects
-                        combat.criticalEffects && (combat.criticalEffects.itemDropped || combat.criticalEffects.attackerStunned)
-                            ? m("div", { class: "cg2-critical-effects" }, [
-                                combat.criticalEffects.itemDropped
-                                    ? m("div", { class: "cg2-critical-effect cg2-item-dropped" }, [
-                                        m("span", { class: "material-symbols-outlined" }, "backpack"),
-                                        " Item dropped: ", m("strong", combat.criticalEffects.itemDropped.name)
-                                    ]) : null,
-                                combat.criticalEffects.attackerStunned
-                                    ? m("div", { class: "cg2-critical-effect cg2-attacker-stunned" }, [
-                                        m("span", { class: "material-symbols-outlined" }, "flash_off"),
-                                        " ", m("strong", combat.attackerName), " STUNNED!"
+                                combat.selfDamageResult ? m("div", { class: "cg2-damage-display" }, [
+                                    m("span", { class: "cg2-damage-number cg2-damage-self" },
+                                        "-" + combat.selfDamageResult.finalDamage + " HP"),
+                                    m("span", { class: "cg2-damage-target" },
+                                        " to " + combat.attackerName + " (counter!)")
+                                ]) : null,
+
+                                // Critical Effects
+                                combat.criticalEffects && (combat.criticalEffects.rewardCard || combat.criticalEffects.itemDropped || combat.criticalEffects.attackerStunned)
+                                    ? m("div", { class: "cg2-critical-effects" }, [
+                                        // Reward card earned
+                                        combat.criticalEffects.rewardCard
+                                            ? m("div", { class: "cg2-critical-effect cg2-reward-earned" }, [
+                                                m("span", { class: "material-symbols-outlined" }, "auto_awesome"),
+                                                " Reward: ", m("strong", combat.criticalEffects.rewardCard.name),
+                                                m("span", { class: "cg2-reward-rarity cg2-rarity-" + (combat.criticalEffects.rewardCard.rarity || "common") },
+                                                    " [" + (combat.criticalEffects.rewardCard.rarity || "common") + "]")
+                                            ]) : null,
+                                        // Item dropped from opponent
+                                        combat.criticalEffects.itemDropped
+                                            ? m("div", { class: "cg2-critical-effect cg2-item-dropped" }, [
+                                                m("span", { class: "material-symbols-outlined" }, "backpack"),
+                                                " Item dropped: ", m("strong", combat.criticalEffects.itemDropped.name)
+                                            ]) : null,
+                                        // Attacker stunned
+                                        combat.criticalEffects.attackerStunned
+                                            ? m("div", { class: "cg2-critical-effect cg2-attacker-stunned" }, [
+                                                m("span", { class: "material-symbols-outlined" }, "flash_off"),
+                                                " ", m("strong", combat.attackerName), " STUNNED!"
+                                            ]) : null
                                     ]) : null
-                            ]) : null
-                    ]) : null,
-
-                    // Progress indicator (only during rolling, outcome shown in status bar)
-                    resolutionPhase === "rolling"
-                        ? m("div", { class: "cg2-resolution-progress" }, "Rolling...")
-                        : null
+                            ]) : m("div", { class: "cg2-outcome-pending" }, [
+                                m("span", { class: "material-symbols-outlined cg2-spin" }, "casino"),
+                                " Rolling dice..."
+                            ])
+                        ])
+                    ])
 
                 ]) : m("div", { class: "cg2-non-combat-overlay" }, [
                     // Non-combat action display
@@ -7998,12 +8378,16 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                         m("span", { class: "cg2-step-number" }, "Step " + currentPos.index + "/" + bar.positions.length),
                         m("span", { class: "cg2-step-action" }, actionLabel)
                     ]),
-                    m("div", { class: "cg2-resolving-action" }, [
-                        m("span", { class: "material-symbols-outlined cg2-spin" }, "sync"),
-                        " Resolving ", card ? card.name : "action", "..."
-                    ]),
-                    m("div", { class: "cg2-resolution-progress" },
-                        resolutionAnimating ? "Resolving..." : "Next action in 3s...")
+
+                    // Non-combat content wrapper
+                    m("div", { class: "cg2-combat-content" }, [
+                        m("div", { class: "cg2-resolving-action" }, [
+                            m("span", { class: "material-symbols-outlined cg2-spin" }, "sync"),
+                            " Resolving ", card ? card.name : "action", "..."
+                        ]),
+                        m("div", { class: "cg2-resolution-progress" },
+                            resolutionAnimating ? "Resolving..." : "Next action in 3s...")
+                    ])
                 ]);
             }
         };
@@ -8067,7 +8451,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                         // Mark as pending - will be handled in END_THREAT phase
                         gameState.endThreatResult.responded = false;
                         console.log("[CardGame v2] End threat pending:", gameState.endThreatResult.threat.name,
-                            "- winner gets response opportunity");
+                            "- targets", gameState.endThreatResult.threat.target);
                     }
 
                     gameState.cleanupApplied = true;
@@ -8231,22 +8615,39 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                             speaker: response.speaker,
                             timestamp: Date.now()
                         });
+                    } else {
+                        // LLM returned error
+                        gameState.chat.messages.push({
+                            role: "npc",
+                            text: "*looks at you thoughtfully but says nothing*",
+                            timestamp: Date.now()
+                        });
                     }
                 } catch (err) {
                     console.warn("[TalkChatUI] Chat failed:", err);
                     gameState.chat.messages.push({
                         role: "npc",
-                        text: "...",
+                        text: "*pauses, distracted*",
                         timestamp: Date.now()
                     });
                 }
             } else {
-                // Fallback: simple response
+                // Fallback: generate contextual responses based on NPC and player input
+                const npcName = gameState.chat.npcName || "Opponent";
+                const fallbackResponses = [
+                    `*${npcName} considers your words carefully*`,
+                    `*${npcName} narrows their eyes at you*`,
+                    `"Hmm..." *${npcName} seems unimpressed*`,
+                    `*${npcName} tilts their head, listening*`,
+                    `"We shall see..." *${npcName} mutters*`
+                ];
+                const randomResponse = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
                 gameState.chat.messages.push({
                     role: "npc",
-                    text: "*nods silently*",
+                    text: randomResponse,
                     timestamp: Date.now()
                 });
+                console.log("[TalkChatUI] Using fallback response - LLM not initialized. Reason:", gameChatManager?.lastError || "gameChatManager is null");
             }
 
             gameState.chat.pending = false;
@@ -8289,13 +8690,20 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                 if (pos) pos.resolved = true;
             }
 
-            // Close chat
+            // Close chat (Silence Rule: lock chat again)
             gameState.chat.active = false;
+            gameState.chat.unlocked = false;  // Silence Rule: chat locked until next Talk card
             gameState.chat.messages = [];
             gameState.chat.talkCard = null;
             gameState.chat.talkPosition = null;
 
+            console.log("[CardGame v2] Chat ended (chat locked)");
             m.redraw();
+
+            // Continue resolution after chat ends
+            if (gameState.phase === GAME_PHASES.RESOLUTION) {
+                setTimeout(() => advanceResolution(), 500);
+            }
         }
 
         return {
@@ -8378,8 +8786,9 @@ Respond naturally in character. No game mechanics, just dialogue.`;
 
         const npcName = gameState.opponent?.character?.name || "Opponent";
 
-        // Initialize chat state
+        // Initialize chat state (Silence Rule: unlock chat)
         gameState.chat.active = true;
+        gameState.chat.unlocked = true;  // Silence Rule: chat now available
         gameState.chat.messages = [];
         gameState.chat.npcName = npcName;
         gameState.chat.inputText = "";
@@ -8392,7 +8801,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
             gameChatManager.startConversation();
         }
 
-        console.log("[CardGame v2] Talk chat opened with:", npcName);
+        console.log("[CardGame v2] Talk chat opened with:", npcName, "(chat unlocked)");
         m.redraw();
     }
 
@@ -8414,8 +8823,9 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                 let opponent = gameState.opponent;
                 let rounds = gameState.round;
 
-                return m("div", { class: "cg2-game-container" }, [
-                    m("div", { class: "cg2-game-over" }, [
+                // Overlay on top of current game view
+                return m("div", { class: "cg2-game-over-overlay" }, [
+                    m("div", { class: "cg2-game-over-panel" }, [
                         m("div", {
                             class: "cg2-game-over-title " + (isVictory ? "cg2-victory" : "cg2-defeat")
                         }, isVictory ? "Victory!" : "Defeat"),
@@ -8450,7 +8860,10 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                     gameState = createGameState(deck, playerChar);
                                     if (gameState) {
                                         initializeLLMComponents(gameState, deck);
-                                        runInitiativePhase();
+                                        // Don't call runInitiativePhase() here - let the animation trigger it
+                                        // to avoid double-roll causing stale threat state
+                                        resetInitAnimState();
+                                        startInitiativeAnimation();
                                     }
                                     m.redraw();
                                 }
@@ -9014,7 +9427,8 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                 class: "cg2-card cg2-card-front cg2-card-front-bg",
                                 style: cardFrontImageUrl ? { backgroundImage: "url('" + cardFrontImageUrl + "')", backgroundSize: "cover", backgroundPosition: "center" } : {},
                                 onclick() { if (cardFrontImageUrl) showImagePreview(cardFrontImageUrl); }
-                            }, [
+                            }, cardFrontImageUrl ? null : [
+                                // Only show placeholder content when no image
                                 m("div", { class: "cg2-back-pattern" }),
                                 m("span", { class: "material-symbols-outlined cg2-back-icon" }, "style"),
                                 m("div", { class: "cg2-back-label" }, "CARD FRONT")
@@ -9040,7 +9454,8 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                     ? { backgroundImage: "url('" + cardBackImageUrl + "')", backgroundSize: "cover", backgroundPosition: "center", borderColor: "#B8860B" }
                                     : { background: CARD_TYPES.item.color, borderColor: CARD_TYPES.item.color },
                                 onclick() { if (cardBackImageUrl) showImagePreview(cardBackImageUrl); }
-                            }, [
+                            }, cardBackImageUrl ? null : [
+                                // Only show placeholder content when no image
                                 m("div", { class: "cg2-back-pattern" }),
                                 m("span", { class: "material-symbols-outlined cg2-back-icon" }, CARD_TYPES.item.icon),
                                 m("div", { class: "cg2-back-label" }, "CARD BACK")

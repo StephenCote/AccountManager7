@@ -354,6 +354,7 @@
     overflow: hidden;
     border-radius: 6px;
     margin-bottom: 4px;
+    background: linear-gradient(135deg, #2a2a3a 0%, #1a1a2e 100%);  /* Solid bg prevents card bg bleeding through */
 }
 .cg2-card-img {
     width: 100%; height: 100%; object-fit: cover; border-radius: 6px;
@@ -1332,6 +1333,46 @@
     margin-top: 4px;
 }
 
+/* ── Chat Button (Silence Rule) ─────────────────────── */
+.cg2-chat-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    padding: 8px 12px;
+    margin: 8px 0;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+.cg2-chat-btn .material-symbols-outlined {
+    font-size: 16px;
+}
+.cg2-chat-locked {
+    background: rgba(100, 100, 100, 0.3);
+    border: 1px solid #555;
+    color: #888;
+    cursor: not-allowed;
+}
+.cg2-chat-unlocked {
+    background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%);
+    border: 2px solid #81c784;
+    color: #fff;
+    cursor: pointer;
+    animation: cg2-chat-glow 1.5s ease-in-out infinite;
+}
+.cg2-chat-unlocked:hover {
+    background: linear-gradient(135deg, #388e3c 0%, #4caf50 100%);
+    transform: scale(1.02);
+}
+@keyframes cg2-chat-glow {
+    0%, 100% { box-shadow: 0 0 8px rgba(129, 199, 132, 0.4); }
+    50% { box-shadow: 0 0 16px rgba(129, 199, 132, 0.8), 0 0 24px rgba(76, 175, 80, 0.4); }
+}
+
 /* ── Sidebar Stats (HP/Energy bars) ─────────────────── */
 .cg2-sidebar-stats {
     width: 100%;
@@ -1442,8 +1483,16 @@
     border-color: #444;
 }
 .cg2-action-status {
+    flex: 1;
     font-size: 14px;
     color: #555;
+    text-align: center;
+    min-width: 200px;
+}
+.cg2-action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
 }
 .cg2-action-status strong {
     color: #B8860B;
@@ -1456,13 +1505,14 @@
 .cg2-status-outcome.cg2-outcome-miss { color: #888; }
 /* Narrator text overlay */
 .cg2-narration-overlay {
-    position: absolute;
-    bottom: 80px;
+    position: fixed;
+    bottom: 120px;
     left: 50%;
     transform: translateX(-50%);
     max-width: 600px;
-    z-index: 100;
+    z-index: 450;  /* Below combat overlay (500) but above most UI */
     animation: cg2-narration-fade-in 0.5s ease-out;
+    pointer-events: none;  /* Don't block clicks */
 }
 @keyframes cg2-narration-fade-in {
     from { opacity: 0; transform: translateX(-50%) translateY(10px); }
@@ -1512,7 +1562,8 @@
     display: flex;
     flex-direction: column;
     min-height: 200px;
-    overflow: auto;
+    overflow: visible;
+    position: relative;  /* For absolute positioned overlays like narration */
 }
 
 /* ── Status Effects Display ─────────────────────────── */
@@ -2481,7 +2532,7 @@
     padding: 16px;
     margin-top: auto;
     position: relative;  /* For combat overlay positioning */
-    min-height: 200px;   /* Ensure space for overlay */
+    min-height: 320px;   /* Ensure space for combat overlay content */
 }
 .dark .cg2-action-bar {
     background: rgba(40,40,40,0.95);
@@ -3044,28 +3095,61 @@
     border: 2px solid #B8860B;
 }
 
-/* ── Combat/Action Overlay (covers action bar) ─────────── */
+/* ── Combat/Action Overlay (modal dialog) ─────────── */
 .cg2-combat-overlay,
 .cg2-non-combat-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, rgba(26,26,46,0.97) 0%, rgba(22,33,62,0.97) 100%);
-    border-radius: 12px;
-    padding: 20px;
-    z-index: 100;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 640px;
+    max-width: 95vw;
+    height: 520px;  /* Fixed height to prevent jumping */
+    background:
+        linear-gradient(135deg, rgba(184,134,11,0.08) 0%, transparent 50%),  /* Corner glow */
+        linear-gradient(225deg, rgba(184,134,11,0.05) 0%, transparent 40%),  /* Opposite corner */
+        linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f1525 100%);      /* Base gradient */
+    border-radius: 16px;
+    padding: 32px 40px 40px;
+    z-index: 500;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    border: 2px solid #B8860B;
+    justify-content: flex-start;
+    border: 3px solid #B8860B;
+    box-shadow:
+        0 12px 48px rgba(0,0,0,0.6),
+        0 0 0 9999px rgba(0,0,0,0.5),
+        inset 0 1px 0 rgba(255,255,255,0.05),     /* Inner highlight */
+        inset 0 -1px 0 rgba(0,0,0,0.2);            /* Inner shadow */
+    overflow: hidden;
 }
-.cg2-non-combat-overlay {
-    background: linear-gradient(135deg, rgba(40,40,40,0.95) 0%, rgba(30,30,30,0.95) 100%);
-    border-color: #666;
+
+/* Decorative corner flourishes */
+.cg2-combat-overlay::before,
+.cg2-non-combat-overlay::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    border: 1px solid rgba(184,134,11,0.2);
+    border-radius: 12px;
+    pointer-events: none;
 }
+
+/* Combat content wrapper - stable dimensions */
+.cg2-combat-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    flex: 1;
+    min-height: 0;  /* Allow flex shrink */
+}
+
+/* Non-combat uses same style as combat for consistency */
 
 /* ── Action Step Label ─────────────────────────────────── */
 .cg2-action-step-label {
@@ -3075,16 +3159,18 @@
     margin-bottom: 16px;
 }
 .cg2-step-number {
-    font-size: 12px;
-    color: #888;
+    font-size: 13px;
+    color: #aaa;
     text-transform: uppercase;
     letter-spacing: 1px;
+    margin-bottom: 4px;
 }
 .cg2-step-action {
-    font-size: 22px;
+    font-size: 26px;
     font-weight: 800;
     color: #B8860B;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    font-style: italic;
 }
 
 /* ── Combat Header (Attacker vs Defender) ─────────────── */
@@ -3098,16 +3184,20 @@
 }
 .cg2-combatant {
     font-weight: 700;
-    padding: 6px 14px;
-    border-radius: 6px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 .cg2-attacker {
-    background: linear-gradient(135deg, #c62828 0%, #e53935 100%);
+    background: linear-gradient(135deg, #c62828 0%, #e53935 50%, #c62828 100%);
     color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
 }
 .cg2-defender {
-    background: linear-gradient(135deg, #1565c0 0%, #1e88e5 100%);
+    background: linear-gradient(135deg, #1565c0 0%, #1e88e5 50%, #1565c0 100%);
     color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
 }
 .cg2-combat-vs {
     color: #B8860B;
@@ -3120,15 +3210,27 @@
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    gap: 24px;
-    margin: 20px 0;
+    gap: 20px;
+    margin: 16px 0;
+    flex-shrink: 0;
 }
 .cg2-combat-roll-card {
     padding: 16px 24px;
-    background: rgba(255,255,255,0.05);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
+    border: 1px solid rgba(184,134,11,0.3);
     border-radius: 12px;
     text-align: center;
     min-width: 180px;
+    min-height: 180px;  /* Fixed height prevents jumping during roll phases */
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow:
+        0 4px 12px rgba(0,0,0,0.3),
+        inset 0 1px 0 rgba(255,255,255,0.1);
+    position: relative;
 }
 .cg2-roll-label {
     font-size: 12px;
@@ -3187,13 +3289,50 @@
     color: #80deea;
 }
 
+/* ── Combat Outcome Area (fixed container) ─────────────── */
+.cg2-outcome-area {
+    width: 100%;
+    min-height: 140px;  /* Reserved space for outcome + damage */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    margin-top: 12px;
+}
+
 /* ── Combat Outcome ───────────────────────────────────── */
 .cg2-combat-outcome {
     text-align: center;
-    padding: 16px;
+    padding: 20px 32px;
+    background:
+        linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.2) 100%);
+    border: 1px solid rgba(184,134,11,0.3);
+    border-radius: 12px;
+    min-width: 320px;
+    animation: cg2-outcome-appear 0.3s ease-out;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+@keyframes cg2-outcome-appear {
+    from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Outcome placeholder during rolling */
+.cg2-outcome-pending {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px 32px;
     background: rgba(0,0,0,0.2);
-    border-radius: 8px;
-    margin-top: 16px;
+    border: 1px dashed rgba(184,134,11,0.3);
+    border-radius: 12px;
+    min-width: 320px;
+    color: #B8860B;
+    font-size: 16px;
+    font-style: italic;
+    font-style: italic;
 }
 .cg2-outcome-label {
     font-size: 22px;
@@ -3282,23 +3421,62 @@
     color: #b39ddb;
 }
 
+/* ── Critical Reward Card ─────────────────────────────── */
+.cg2-reward-earned {
+    color: #4fc3f7;
+    animation: cg2-reward-glow 1s ease-in-out infinite alternate;
+}
+.cg2-reward-earned .material-symbols-outlined {
+    color: #81d4fa;
+}
+@keyframes cg2-reward-glow {
+    from { text-shadow: 0 0 4px rgba(79, 195, 247, 0.3); }
+    to { text-shadow: 0 0 12px rgba(79, 195, 247, 0.7); }
+}
+.cg2-reward-rarity {
+    font-size: 11px;
+    font-weight: 400;
+    margin-left: 4px;
+    opacity: 0.8;
+}
+.cg2-rarity-common { color: #9e9e9e; }
+.cg2-rarity-uncommon { color: #4caf50; }
+.cg2-rarity-rare { color: #2196f3; }
+.cg2-rarity-epic { color: #9c27b0; }
+.cg2-rarity-legendary { color: #ff9800; }
+
 /* ── Resolving Action Indicator ───────────────────────── */
 .cg2-resolving-action {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 16px;
-    color: #888;
-    font-size: 14px;
+    gap: 12px;
+    padding: 40px 48px;
+    margin: 40px 0;
+    color: #ccc;
+    font-size: 20px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    min-width: 320px;
+}
+.cg2-resolving-action .material-symbols-outlined {
+    font-size: 32px;
+    color: #B8860B;
 }
 
 /* ── Resolution Progress ──────────────────────────────── */
 .cg2-resolution-progress {
-    font-size: 12px;
-    color: #888;
+    font-size: 15px;
+    color: #aaa;
     text-align: center;
-    margin: 12px 0;
+    margin-top: 24px;
+    font-style: italic;
+}
+
+/* ── Non-combat content centering ─────────────────────── */
+.cg2-non-combat-overlay .cg2-combat-content {
+    justify-content: center;
+    flex: 1;
 }
 
 /* ── Auto-Advance Hint ───────────────────────────────── */
@@ -3325,7 +3503,32 @@
     color: #ef9a9a !important;
 }
 
-/* ── Game Over Screen ─────────────────────────────────── */
+/* ── Game Over Overlay ─────────────────────────────────── */
+.cg2-game-over-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    animation: cg2-fade-in 0.3s ease-out;
+}
+
+.cg2-game-over-panel {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border: 3px solid #B8860B;
+    border-radius: 16px;
+    padding: 40px 60px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 60px rgba(184, 134, 11, 0.2);
+    max-width: 90vw;
+}
+
+/* Legacy - keep for backwards compat */
 .cg2-game-over {
     display: flex;
     flex-direction: column;

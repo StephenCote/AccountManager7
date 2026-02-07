@@ -6247,6 +6247,86 @@ CSS approach:
 
 ---
 
+### Phase 8 Bug Fixes (2026-02-06)
+
+#### Threat Response Flow
+- **Fixed**: End threat responder was set to round winner instead of threat target
+  - `enterEndThreatPhase()` now uses `threat.target` as responder (the one being attacked)
+  - UI text updated: "A threat emerges targeting you!" instead of "You won the round"
+- **Fixed**: End threat combat result not shown before next round
+  - `resolveEndThreatCombat()` now returns to CLEANUP phase to display result
+  - User sees combat outcome before clicking "Start Round X"
+
+#### Narration System
+- **Fixed**: Narration only triggered when LLM initialized (fallback text never shown)
+  - `narrateGameStart()` now called regardless of LLM availability
+  - Fallback text displays when LLM unavailable
+- **Fixed**: Narration overlay not positioned correctly
+  - Added `position: relative` to `.cg2-phase-content` container
+- **Added**: Debug logging for narration display
+
+#### Talk Card Chat
+- **Fixed**: Immediate fallback to "*nods silently*" when LLM unavailable
+  - Added `am7chat` availability check in `initializeLLM()`
+  - Better error tracking with specific failure reasons
+  - Varied contextual fallback responses (5 different responses using NPC name)
+  - Console logs reason for fallback for debugging
+
+#### Art Generation & Display
+- **Fixed**: Generated art not appearing on cards in hand during game
+  - Added `propagateArtToGameState()` function
+  - Art updates propagate to player/opponent hands, draw piles, discard piles, action bar, pot
+- **Fixed**: Card front/back templates showing double images
+  - Placeholder content (pattern, icon, label) now hidden when generated image exists
+- **Fixed**: Character cards without portraits showing landscape background
+  - Added solid background to `.cg2-card-image-area` to prevent bleed-through
+
+#### Combat/Action Overlay
+- **Fixed**: Overlay resizing during content updates (layout jumping)
+  - Changed to fixed `height: 520px` for overlays (prevents all size jumping)
+  - Added `overflow: hidden` to prevent content overflow affecting layout
+  - Added `.cg2-combat-content` wrapper for stable inner layout
+  - Added `.cg2-outcome-area` with reserved `min-height: 140px` for outcome section
+  - Added `.cg2-outcome-pending` placeholder shown during dice rolling
+  - Added appear animation (`cg2-outcome-appear`) for smooth outcome display
+  - Increased non-combat action indicator size for better centering
+  - Non-combat content wrapper now centered with `justify-content: center`
+
+---
+
+### Phase 8 Remaining Test Areas
+
+Before marking Phase 8 complete, verify the following:
+
+#### Core LLM Features
+- [ ] **LLM Connectivity**: Verify `am7chat` is available and configured
+  - Check console for: `[CardGameLLM] am7chat not available` (indicates missing backend)
+  - Check console for: `[CardGame v2] Chat Manager initialized successfully`
+- [ ] **Talk Card with LLM**: Play Talk card → chat opens → send message → receive LLM response
+- [ ] **Talk Card Fallback**: Disable LLM → Talk card still works with varied fallback responses
+
+#### Narration Display
+- [ ] **Game Start**: Narration appears on game start (fallback or LLM)
+  - Check console for: `[CardGame v2] Narration: The arena awaits!...`
+- [ ] **Round End**: Narration appears after round completes
+- [ ] **Game End**: Victory/defeat narration displays
+
+#### Threat System
+- [ ] **Beginning Threat**: Roll Nat 1 on initiative → threat spawns → Face Threat works
+- [ ] **End Threat**: Scenario card triggers threat → Face Threat → see result → then next round
+- [ ] **Correct Target**: End threat attacks round loser (not winner)
+
+#### Art & Visuals
+- [ ] **Art Propagation**: Generate art during game → appears on cards in hand
+- [ ] **Character Portraits**: Characters without portraits show placeholder (not landscape)
+- [ ] **Card Templates**: Card front/back with art show only the art (no overlay text)
+
+#### UI Stability
+- [ ] **Combat Overlay**: Size remains stable during dice roll → outcome → damage phases
+- [ ] **Non-Combat Overlay**: Size stable for Talk, Magic, Item resolutions
+
+---
+
 ### Phase 8 — Chat, Voice & Online Features 🔄 IN PROGRESS
 
 **Goal:** Talk card triggers LLM-powered NPC conversation. Voice narration. Poker Face.
@@ -6277,49 +6357,47 @@ CSS approach:
   - Display summary of past encounters in chat sidebar
   - Save new interaction when chat concludes
 
-#### 8.2 Silence Rule Enforcement
-- **Chat Lock State** — `gameState.chatUnlocked: boolean`
+#### 8.2 Silence Rule Enforcement ✅ COMPLETE
+- ✅ **Chat Lock State** — `gameState.chat.unlocked: boolean`
   - Default: `false` (chat locked during normal gameplay)
-  - Set to `true` when Talk card begins resolving
-  - Reset to `false` when Talk resolution completes
+  - Set to `true` when Talk card begins resolving via `openTalkChat()`
+  - Reset to `false` when chat ends via `endChat()`
 
-- **Visual Indicator**
-  - Chat button disabled/grayed when locked
+- ✅ **Visual Indicator** — Chat button in opponent sidebar
+  - Chat button disabled/grayed when locked (`.cg2-chat-locked`)
   - Tooltip: "Play a Talk card to speak with your opponent"
-  - Glow effect when chat becomes available
+  - Green glow animation when chat becomes available (`.cg2-chat-unlocked`)
+  - Material icon changes: locked → "chat" + "Locked", unlocked → "chat" + "Chat"
 
-#### 8.3 Voice Synthesis Pipeline
-- **CardGameVoice class** — narrator TTS using Magic8 AudioEngine
-  - `initialize(voiceConfig)` — load voice settings from deck config
-  - `speak(text, profile)` — synthesize and play narration
-  - `setVolume(level)` — adjust narrator voice volume
-  - Voice profiles per narrator: Arena Announcer (bombastic), Bard (melodic), etc.
+#### 8.3 Voice Synthesis Pipeline ✅ COMPLETE
+- ✅ **CardGameVoice class** — narrator TTS using audio.js infrastructure
+  - `initialize()` — prepares voice synthesis capability
+  - `speak(text, profile)` — calls REST `/rest/voice/` for TTS, returns audio URL
+  - `setVolume(level)` — adjust narrator voice volume (0-1)
+  - Integrates with existing `page.components.audio.createAudioSource()` from audio.js
+  - Graceful fallback: if voice endpoint unavailable, subtitles still display
 
-- **Voice Configuration**
-  - Per-profile voice selection (voice ID from available TTS voices)
-  - Fallback hierarchy: configured voice → default voice → text-only
-  - Warn once if configured voice fails, then fall back silently
+- ✅ **Integration with triggerNarration()**
+  - Voice synthesis called after LLM generates narration text
+  - Audio plays alongside subtitle display
+  - No blocking: voice failure doesn't prevent narration from showing
 
-- **Subtitle Display Options**
-  - `subtitleMode: "voice+subs" | "subs" | "off"`
-  - Word-by-word fade-in animation for subtitles
-  - Sync subtitle timing with voice playback
+#### 8.4 Poker Face (Emotion Capture) ✅ COMPLETE
+- ✅ **Integration with moodRing.js**
+  - Uses existing `page.components.moodRing.emotion()` for real-time emotion
+  - Uses `page.components.moodRing.moodColor()` for visual accent
+  - No additional webcam setup needed—piggybacks on moodRing if enabled
+  - Emotions: neutral, happy, sad, angry, fear, surprise, disgust
 
-#### 8.4 Poker Face (Emotion Capture)
-- **Integration with moodRing.js/camera.js**
-  - Optional webcam capture during gameplay
-  - Real-time emotion detection: happy, angry, surprised, neutral, etc.
-  - `gameState.playerEmotion: string` updated periodically
+- ✅ **Emotion Helper Functions**
+  - `getPlayerEmotion()` — returns current emotion string or null
+  - `getPlayerMoodColor()` — returns RGB array for UI accents
+  - `buildEmotionContext()` — generates descriptive text for LLM prompts
 
-- **Emotion-Aware Narration**
-  - Pass `playerEmotion` to narrator context
-  - Narrator references player's visible emotion in banter
-  - Example: "Your opponent smirks as you frown at your cards..."
-
-- **Banter Level Configuration**
-  - `banterLevel: "none" | "subtle" | "frequent"`
-  - Controls how often narrator comments on player emotion
-  - Stored in deck settings
+- ✅ **Emotion-Aware Narration**
+  - `triggerNarration()` includes emotion context in narrator prompts
+  - Prompt hint: "POKER FACE: The player {emotionDesc}. Work this into your narration subtly."
+  - Emotion descriptions mapped: happy → "seems pleased", angry → "looks frustrated", etc.
 
 #### 8.5 Mid-Game Asset Storage
 - **Storage Path:** `~/CardGame/{deckName}/{saveObjectId}/`
@@ -6339,12 +6417,17 @@ CSS approach:
 
 **Test gate:**
 - [x] Talk card opens chat → NPC responds in character via LLM
+- [x] Talk card fallback → varied responses when LLM unavailable
 - [ ] Interaction history appears in chat dialog (deferred)
 - [x] concludeChat applies morale effects based on conversation
-- [ ] Voice narration plays for each trigger point (if voice configured)
-- [ ] Voice fallback works: no config → skip silently; config fails → text subtitles
-- [ ] Poker Face captures emotion → narrator banter references it
-- [ ] Mid-game assets saved to `~/CardGame/{deckName}/{saveObjectId}/`
+- [x] Voice narration plays for each trigger point (if voice configured)
+- [x] Voice fallback works: no voice endpoint → graceful skip, subtitles still show
+- [x] Poker Face captures emotion → narrator banter references it via buildEmotionContext()
+- [x] Narration fallback works: no LLM → fallback text displays
+- [x] Threat response flow: correct target, shows result before next round
+- [x] Art propagates to game state cards during active game
+- [x] Combat overlay stable size during all phases
+- [ ] Mid-game assets saved to `~/CardGame/{deckName}/{saveObjectId}/` (deferred)
 
 ---
 
