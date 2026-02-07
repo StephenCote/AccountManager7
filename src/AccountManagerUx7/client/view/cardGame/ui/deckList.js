@@ -1,0 +1,361 @@
+/**
+ * CardGame UI - Deck List
+ * Deck loading, saving, deleting, viewing, playing, and the DeckList component.
+ * Extracted from the monolithic cardGame-v2.js (lines ~1437-1888).
+ *
+ * Dependencies:
+ *   - CardGame.Storage (deckStorage, gameStorage, campaignStorage)
+ *   - CardGame.Themes (loadThemeConfig)
+ *   - CardGame.Characters (refreshAllCharacters, selectedChars, persistGeneratedCharacters)
+ *   - CardGame.ctx (shared mutable context: screen, viewingDeck, buildingDeck, etc.)
+ *
+ * Exposes: window.CardGame.UI.{deckListState, loadSavedDecks, saveDeck, deleteDeck,
+ *   viewDeck, playDeck, resumeGame, refreshAllCharacters, DeckList}
+ */
+(function() {
+    "use strict";
+
+    window.CardGame = window.CardGame || {};
+    window.CardGame.UI = window.CardGame.UI || {};
+
+    // ── State ──────────────────────────────────────────────────────────
+    let savedDecks = [];
+    let decksLoading = false;
+
+    // ── Helpers: resolve shared context ─────────────────────────────────
+    function ctx() { return window.CardGame.ctx || {}; }
+    function storage() { return window.CardGame.Storage || {}; }
+    function themes() { return window.CardGame.Themes || {}; }
+    function chars() { return window.CardGame.Characters || {}; }
+
+    // ── Load Saved Decks ───────────────────────────────────────────────
+    async function loadSavedDecks() {
+        if (decksLoading) return;
+        decksLoading = true;
+        m.redraw();
+        try {
+            let deckStorage = storage().deckStorage;
+            let gameStorage = storage().gameStorage;
+            let campaignStorage = storage().campaignStorage;
+            let names = await deckStorage.list();
+            let decks = [];
+            for (let name of names) {
+                let data = await deckStorage.load(name);
+                if (data) {
+                    // Check for saved games and campaign data
+                    let savesList = await gameStorage.list(name);
+                    let campaign = await campaignStorage.load(name);
+                    decks.push({
+                        deckName: data.deckName || name,
+                        themeId: data.themeId || null,
+                        characterNames: data.characterNames || (data.characterName ? [data.characterName] : ["Unknown"]),
+                        portraitUrl: data.portraitUrl || null,
+                        createdAt: data.createdAt || null,
+                        cardCount: data.cardCount || (data.cards ? data.cards.length : 0),
+                        storageName: name,
+                        // Include art URLs for deck list display
+                        cardBackImageUrl: data.cardBackImageUrl || null,
+                        cardFrontImageUrl: data.cardFrontImageUrl || null,
+                        backgroundThumbUrl: data.backgroundThumbUrl || null,
+                        // Save/campaign metadata
+                        hasSave: savesList.length > 0,
+                        lastSaveRound: savesList.length > 0 ? null : null, // populated below
+                        campaign: campaign || null
+                    });
+                }
+            }
+            savedDecks = decks;
+            console.log("[CardGame v2] Loaded " + savedDecks.length + " saved decks");
+            let screen = ctx().screen;
+            let buildingDeck = ctx().buildingDeck;
+            if (savedDecks.length === 0 && screen === "deckList" && !buildingDeck) {
+                ctx().screen = "builder";
+                ctx().builderStep = 1;
+                chars().state.selectedChars = [];
+                ctx().builtDeck = null;
+            }
+        } catch (e) {
+            console.error("[CardGame v2] Failed to load decks", e);
+        }
+        decksLoading = false;
+        m.redraw();
+    }
+
+    // ── Save Deck ──────────────────────────────────────────────────────
+    async function saveDeck(deck) {
+        if (!deck) return;
+        ctx().buildingDeck = true;
+        m.redraw();
+        let safeName = (deck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+
+        // Persist any generated characters that haven't been saved yet
+        let selectedChars = chars().state.selectedChars;
+        if (selectedChars && selectedChars.length > 0) {
+            const unpersisted = selectedChars.filter(ch => ch._tempId && !ch.objectId);
+            if (unpersisted.length > 0) {
+                page.toast("info", "Saving characters...");
+                const persisted = await chars().persistGeneratedCharacters(unpersisted, safeName);
+                // Update selectedChars with persisted versions
+                for (const p of persisted) {
+                    const idx = selectedChars.findIndex(ch => ch._tempId && ch.name === p.name);
+                    if (idx >= 0) {
+                        selectedChars[idx] = p;
+                    }
+                }
+                // Update deck's character card references with real sourceId
+                if (deck.cards) {
+                    for (const card of deck.cards) {
+                        if (card.type === "character" && card._sourceChar && card._sourceChar._tempId) {
+                            const match = persisted.find(p => p.name === card.name);
+                            if (match && match.objectId) {
+                                card.sourceId = match.objectId;
+                                delete card._sourceChar;  // No longer needed
+                                console.log('[CardGame] Updated card sourceId for:', card.name, match.objectId);
+                            }
+                        }
+                    }
+                }
+                // Update playerCharacter reference
+                if (deck.playerCharacter && deck.playerCharacter._sourceChar) {
+                    const match = persisted.find(p => p.name === deck.playerCharacter.name);
+                    if (match && match.objectId) {
+                        deck.playerCharacter.sourceId = match.objectId;
+                        delete deck.playerCharacter._sourceChar;
+                    }
+                }
+            }
+        }
+
+        let deckStorage = storage().deckStorage;
+        let result = await deckStorage.save(safeName, deck);
+        ctx().buildingDeck = false;
+        if (result) {
+            page.toast("success", "Deck saved: " + deck.deckName);
+            ctx().builtDeck = null;
+            chars().state.selectedChars = [];
+            m.redraw();
+            await viewDeck(safeName);
+        } else {
+            page.toast("error", "Failed to save deck");
+            m.redraw();
+        }
+    }
+
+    // ── Delete Deck ────────────────────────────────────────────────────
+    async function deleteDeck(storageName) {
+        let deckStorage = storage().deckStorage;
+        let ok = await deckStorage.remove(storageName);
+        if (ok) {
+            page.toast("success", "Deck deleted");
+            await loadSavedDecks();
+        } else {
+            page.toast("error", "Failed to delete deck");
+        }
+        m.redraw();
+    }
+
+    // ── View Deck ──────────────────────────────────────────────────────
+    async function viewDeck(storageName) {
+        let deckStorage = storage().deckStorage;
+        let data = await deckStorage.load(storageName);
+        if (data) {
+            ctx().viewingDeck = data;
+            ctx().cardFrontImageUrl = data.cardFrontImageUrl || null;
+            ctx().cardBackImageUrl = data.cardBackImageUrl || null;
+            ctx().flippedCards = {};
+            ctx().artDir = null;
+            // Load the deck's theme so prompts use the correct suffix
+            if (data.themeId) {
+                await themes().loadThemeConfig(data.themeId);
+            }
+            ctx().screen = "deckView";
+            m.redraw();
+            // Auto-refresh character cards from source objects
+            await refreshAllCharacters(data);
+        } else {
+            page.toast("error", "Failed to load deck");
+        }
+        m.redraw();
+    }
+
+    // ── Play Deck (start game directly) ─────────────────────────────────
+    async function playDeck(storageName) {
+        let deckStorage = storage().deckStorage;
+        let gameStorage = storage().gameStorage;
+        let data = await deckStorage.load(storageName);
+        if (data) {
+            ctx().viewingDeck = data;
+            // Load the deck's theme
+            if (data.themeId) {
+                await themes().loadThemeConfig(data.themeId);
+            }
+            // Clear old saves when starting a new game
+            await gameStorage.deleteAll(storageName);
+            // Reset game state and character selection for fresh start
+            ctx().gameState = null;
+            ctx().gameCharSelection = null;
+            ctx().activeCampaign = null;
+            ctx().screen = "game";
+            m.redraw();
+        } else {
+            page.toast("error", "Failed to load deck");
+        }
+        m.redraw();
+    }
+
+    // ── Resume Game ────────────────────────────────────────────────────
+    async function resumeGame(storageName) {
+        let gameStorage = storage().gameStorage;
+        let deckStorage = storage().deckStorage;
+        let campaignStorage = storage().campaignStorage;
+        let saveData = await gameStorage.load(storageName);
+        if (!saveData) {
+            page.toast("error", "No save found");
+            return;
+        }
+        let data = await deckStorage.load(storageName);
+        if (!data) {
+            page.toast("error", "Failed to load deck for resume");
+            return;
+        }
+        ctx().viewingDeck = data;
+        if (data.themeId) {
+            await themes().loadThemeConfig(data.themeId);
+        }
+        ctx().gameState = storage().deserializeGameState(saveData);
+        ctx().gameCharSelection = null;
+        ctx().activeCampaign = await campaignStorage.load(storageName);
+        ctx().screen = "game";
+        // Re-initialize LLM components for resumed game
+        if (typeof ctx().initializeLLMComponents === "function") {
+            ctx().initializeLLMComponents(ctx().gameState, ctx().viewingDeck);
+        }
+        m.redraw();
+    }
+
+    // ── Refresh All Characters ─────────────────────────────────────────
+    async function refreshAllCharacters(deck) {
+        if (!deck || !deck.cards) return;
+        let charCards = deck.cards.filter(c => c.type === "character" && (c.sourceId || c._sourceChar));
+        let refreshed = 0;
+        for (let card of charCards) {
+            let ok = await chars().refreshCharacterCard(card);
+            if (ok) refreshed++;
+        }
+        if (refreshed > 0) {
+            console.log("[CardGame v2] Refreshed " + refreshed + " character cards from source");
+            m.redraw();
+        }
+    }
+
+    // ── Deck List Component ────────────────────────────────────────────
+    function DeckList() {
+        return {
+            view() {
+                return m("div", [
+                    m("div", { class: "cg2-toolbar" }, [
+                        m("span", { style: { fontWeight: 700, fontSize: "16px" } }, "Your Decks"),
+                        m("button", {
+                            class: "cg2-btn cg2-btn-primary",
+                            onclick() {
+                                ctx().screen = "builder";
+                                ctx().builderStep = 1;
+                                chars().state.selectedChars = [];
+                                ctx().builtDeck = null;
+                                ctx().deckNameInput = "";
+                                m.redraw();
+                            }
+                        }, [m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "4px" } }, "add"), "New Deck"]),
+                        m("span", { style: { flex: 1 } }),
+                        m("button", { class: "cg2-btn cg2-btn-sm", onclick() { themes().loadThemeList(); ctx().screen = "themeEditor"; m.redraw(); } }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "2px" } }, "palette"),
+                            " Themes"
+                        ]),
+                        m("button", { class: "cg2-btn cg2-btn-sm", style: { marginLeft: "4px" }, onclick() { ctx().testDeck = null; ctx().testDeckName = null; ctx().screen = "test"; m.redraw(); } }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "2px" } }, "science"),
+                            " Test"
+                        ]),
+                        decksLoading ? m("span", { class: "cg2-loading", style: { marginLeft: "4px" } }, "Loading...") : null
+                    ]),
+                    savedDecks.length === 0 && !decksLoading
+                        ? m("div", { class: "cg2-empty-state" }, "No decks yet. Create one to get started.")
+                        : m("div", { class: "cg2-deck-grid cg2-deck-grid-cards" },
+                            savedDecks.map(d => {
+                                // Use card back image if available
+                                let cardBackUrl = d.cardBackImageUrl;
+
+                                return m("div", { class: "cg2-deck-item" }, [
+                                    // Card back display (hand card size)
+                                    m("div", { class: "cg2-deck-card-back" }, [
+                                        cardBackUrl
+                                            ? m("div", {
+                                                class: "cg2-deck-back-image",
+                                                style: {
+                                                    backgroundImage: "url('" + cardBackUrl + "')",
+                                                    backgroundSize: "cover",
+                                                    backgroundPosition: "center"
+                                                }
+                                            })
+                                            : m("div", { class: "cg2-deck-back-default" }, [
+                                                m("div", { class: "cg2-back-pattern" }),
+                                                m("span", { class: "material-symbols-outlined cg2-back-icon" }, "playing_cards"),
+                                                m("div", { class: "cg2-back-label" }, d.themeId || "Deck")
+                                            ])
+                                    ]),
+                                    // Deck name + campaign info
+                                    m("div", { class: "cg2-deck-name" }, d.deckName),
+                                    d.campaign ? m("div", { class: "cg2-deck-campaign-info" }, [
+                                        m("span", { class: "cg2-campaign-level" }, "Lv." + d.campaign.level),
+                                        m("span", { class: "cg2-campaign-xp" }, d.campaign.xp + " XP"),
+                                        m("span", { class: "cg2-campaign-record" }, d.campaign.wins + "W/" + d.campaign.losses + "L")
+                                    ]) : null,
+                                    // Action buttons
+                                    m("div", { class: "cg2-deck-actions" }, [
+                                        d.hasSave ? m("button", {
+                                            class: "cg2-btn cg2-btn-accent",
+                                            onclick: () => resumeGame(d.storageName),
+                                            title: "Resume saved game"
+                                        }, [
+                                            m("span", { class: "material-symbols-outlined" }, "restore"),
+                                            " Resume"
+                                        ]) : null,
+                                        m("button", {
+                                            class: "cg2-btn cg2-btn-primary",
+                                            onclick: () => playDeck(d.storageName),
+                                            title: d.hasSave ? "Start a new game (deletes save)" : "Start a game with this deck"
+                                        }, [
+                                            m("span", { class: "material-symbols-outlined" }, "play_arrow"),
+                                            d.hasSave ? " New Game" : " Play"
+                                        ]),
+                                        m("button", { class: "cg2-btn", onclick: () => viewDeck(d.storageName) }, "View"),
+                                        m("button", { class: "cg2-btn cg2-btn-danger", onclick: () => deleteDeck(d.storageName) }, "Delete")
+                                    ])
+                                ]);
+                            })
+                        )
+                ]);
+            }
+        };
+    }
+
+    // ── Expose on CardGame namespace ─────────────────────────────────
+    Object.assign(window.CardGame.UI, {
+        deckListState: {
+            get savedDecks() { return savedDecks; },
+            set savedDecks(v) { savedDecks = v; },
+            get decksLoading() { return decksLoading; },
+            set decksLoading(v) { decksLoading = v; }
+        },
+        loadSavedDecks,
+        saveDeck,
+        deleteDeck,
+        viewDeck,
+        playDeck,
+        resumeGame,
+        refreshAllCharacters,
+        DeckList
+    });
+
+    console.log('[CardGame] UI/deckList module loaded');
+
+})();

@@ -5180,30 +5180,91 @@ No retries beyond the second attempt. No exponential backoff. No queuing for lat
 
 ### Client Architecture
 
+The card game is implemented as a modular IIFE-based system using the `window.CardGame` namespace, following the same pattern as `magic8/`. Each module is a self-contained IIFE that exposes its public API on the shared namespace. Modules communicate through a shared context object (`CardGame.ctx`) — no direct cross-module imports.
+
 ```
-cardGame-v2.js
-├── State management (gameState — hand, bar, pot, phase, needs, pokerFace)
-├── Card rendering (Mithril.js components)
-│   ├── CardFace(card) — renders front of any card type
-│   ├── CardBack(cardType) — renders type-specific back
-│   ├── CharacterStack(player) — sidebar character + equipment stack
-│   ├── ActionBarPosition(position) — single bar slot with core + modifier cards
-│   ├── ActionBar(stacks[]) — horizontal action bar with all positions
-│   ├── PotView(pot) — center pot card pile with value display
-│   ├── HandTray(cards[], filter) — type-filtered scrollable card tray
-│   ├── NeedBars(needs) — HP/Energy/Morale bars + AP display
-│   └── PokerFaceWidget(pokerFace) — emotion emoji + banter level toggle
-├── Phase UI
-│   ├── DrawPhase — encounter reveal + ante collection
-│   ├── InitiativePhase — roll animation, position assignment
-│   ├── PlacementPhase — drag-and-drop stack building on action bar
-│   ├── ResolutionPhase — per-position resolve with narration + disruption handling
-│   └── CleanupPhase — pot claim, discard, durability, round recovery
-├── Drag-and-drop (card arrangement for placement phase)
-├── Chat integration (reuses existing chat system)
-├── Image pipeline (placeholder → SD generation → update)
-├── Print export (trigger server PDF generation)
-└── AI integration (Mode 1: opponent, Mode 2: GM)
+client/view/cardGame/                      # 29 modules, ~12K lines total
+├── index.js                               # Script loader manifest + version
+├── CardGameApp.js                         # Main orchestrator — screen routing, shared ctx, page.views registration
+├── constants/
+│   └── gameConstants.js                   # CARD_TYPES, GAME_PHASES, STATUS_EFFECTS, COMBAT_OUTCOMES, etc.
+├── state/
+│   ├── storage.js                         # deckStorage, gameStorage, campaignStorage, encode/decode helpers
+│   └── gameState.js                       # createGameState(), phase transitions, LLM init, narration
+├── engine/
+│   ├── effects.js                         # parseEffect(), applyParsedEffects(), status effect management
+│   ├── combat.js                          # DiceUtils, rollAttack/Defense, resolveCombat, damage calc
+│   ├── encounters.js                      # THREAT_CREATURES, SCENARIO_CARDS, threat generation
+│   └── actions.js                         # advanceResolution(), pot, card placement, lethargy
+├── ai/
+│   ├── llmBase.js                         # CardGameLLM base class
+│   ├── director.js                        # CardGameDirector (AI opponent) + aiPlaceCards
+│   ├── narrator.js                        # CardGameNarrator + narrator profiles
+│   ├── chatManager.js                     # CardGameChatManager (Talk card chat)
+│   └── voice.js                           # CardGameVoice + emotion detection + TTS
+├── rendering/
+│   ├── cardComponents.js                  # NeedBar, StatBlock, D20Dice, cornerIcon, rarityStars
+│   ├── cardFace.js                        # CardFace, CardBack, renderCardBody, renderCharacterBody
+│   └── overlays.js                        # ImagePreviewOverlay, CardPreviewOverlay, GalleryPicker
+├── ui/
+│   ├── deckList.js                        # DeckList component + deck CRUD
+│   ├── builder.js                         # BuilderThemeStep, BuilderCharacterStep, BuilderReviewStep
+│   ├── deckView.js                        # DeckView + art generation queue + SD config panel
+│   ├── gameView.js                        # GameView, CharacterSidebar, HandTray, ActionBar
+│   ├── phaseUI.js                         # InitiativePhaseUI, EquipPhaseUI, ResolutionPhaseUI, CleanupPhaseUI
+│   ├── threatUI.js                        # ThreatResponseUI
+│   ├── chatUI.js                          # TalkChatUI + openTalkChat
+│   └── gameOverUI.js                      # GameOverUI, LevelUpUI
+├── services/
+│   ├── artPipeline.js                     # Art queue, generateCardArt, buildSdEntity, template art
+│   ├── characters.js                      # Character loading, generation, persistence, stat mapping
+│   └── themes.js                          # Theme loading, outfit application, ThemeEditorUI
+└── test/
+    └── testMode.js                        # Test mode screen + test controls + automated test suite
+```
+
+**Namespace structure:**
+```
+window.CardGame
+├── ctx                    # Shared mutable state (screen, viewingDeck, gameState, activeTheme, etc.)
+├── Constants              # All enums, config objects, balance data
+├── Storage                # deckStorage, gameStorage, campaignStorage
+├── Rendering              # CardFace, CardBack, NeedBar, StatBlock, D20Dice, overlays
+├── Characters             # Character loading, generation, stat mapping
+├── Themes                 # Theme loading, outfit application, editor
+├── ArtPipeline            # SD art generation queue
+├── Engine
+│   ├── Effects            # Status effects, parseEffect()
+│   ├── Combat             # Dice, attack/defense, damage
+│   ├── Encounters         # Threats, scenario cards
+│   └── Actions            # Resolution, pot, placement
+├── GameState              # Game state management, phase transitions, LLM init
+├── AI
+│   ├── CardGameLLM        # Base LLM class
+│   ├── CardGameDirector   # AI opponent
+│   ├── CardGameNarrator   # Game narration
+│   ├── CardGameChatManager # Talk card chat
+│   └── CardGameVoice      # TTS + emotion
+├── UI                     # All Mithril UI components
+├── TestMode               # Test suite
+└── getScriptPaths()       # Script loading order
+```
+
+**External content (JSON under `media/cardGame/`):**
+```
+media/cardGame/
+├── character-templates.json               # 12 balanced character templates
+├── high-fantasy.json                      # Theme: High Fantasy card pool
+├── dark-medieval.json                     # Theme: Dark Medieval card pool
+├── sci-fi.json                            # Theme: Sci-Fi card pool
+├── post-apocalypse.json                   # Theme: Post Apocalypse card pool
+├── game-balance.json                      # DCs, recovery values, XP formula, combat multipliers
+├── test-cards.json                        # Test deck card definitions
+└── prompts/
+    ├── art-prompts.json                   # ACTION_PROMPTS, TALK_PROMPTS for card art
+    ├── director-system.json               # AI director system prompt template
+    ├── narrator-system.json               # Narrator profiles + system prompt
+    └── chat-system.json                   # Chat manager system prompt
 ```
 
 ### UI Layout (Online)
@@ -6655,6 +6716,75 @@ Unified `parseEffect()` / `applyParsedEffects()` system replaces inline regex pa
 
 ---
 
+#### 9.8 Modular Refactoring ✅ COMPLETE (2026-02-07)
+
+**Goal:** Break the 12,098-line monolithic `cardGame-v2.js` into focused modules, reduce duplication, move hard-coded content to external JSON, and migrate inline styles to CSS.
+
+**Modular Architecture:**
+- ✅ **29 module files** extracted from monolith into `client/view/cardGame/` directory
+- ✅ **IIFE + `window.CardGame` namespace** — follows existing `magic8/` module pattern
+- ✅ **Shared context object** (`CardGame.ctx`) for cross-module state — no direct cross-module references
+- ✅ **`CardGameApp.js` orchestrator** — assembles modules, routes screens, manages shared state, registers `page.views.cardGameV2`
+- ✅ **`index.js` script manifest** — `CardGame.getScriptPaths()` returns all 29 scripts in dependency order
+- ✅ **Backward-compatible API** — `page.cardGameV2` object preserved with getter proxies to module namespace
+
+**Module breakdown (29 files):**
+
+| Directory | Files | Purpose |
+|-----------|-------|---------|
+| `constants/` | `gameConstants.js` | All enums, config, balance data |
+| `state/` | `storage.js`, `gameState.js` | Persistence + game state management |
+| `engine/` | `effects.js`, `combat.js`, `encounters.js`, `actions.js` | Core game mechanics |
+| `ai/` | `llmBase.js`, `director.js`, `narrator.js`, `chatManager.js`, `voice.js` | LLM integration |
+| `rendering/` | `cardComponents.js`, `cardFace.js`, `overlays.js` | Card rendering components |
+| `ui/` | `deckList.js`, `builder.js`, `deckView.js`, `gameView.js`, `phaseUI.js`, `threatUI.js`, `chatUI.js`, `gameOverUI.js` | All UI screens |
+| `services/` | `artPipeline.js`, `characters.js`, `themes.js` | Character, theme, art services |
+| `test/` | `testMode.js` | Test mode + automated test suite |
+| root | `CardGameApp.js`, `index.js` | Orchestrator + script manifest |
+
+**External JSON (6 new files under `media/cardGame/`):**
+- ✅ `prompts/art-prompts.json` — ACTION_PROMPTS, TALK_PROMPTS for card art generation
+- ✅ `prompts/director-system.json` — AI director system prompt template
+- ✅ `prompts/narrator-system.json` — Narrator personality profiles + system prompt
+- ✅ `prompts/chat-system.json` — Chat manager system prompt
+- ✅ `game-balance.json` — DCs, recovery values, XP formula, combat multipliers
+- ✅ `test-cards.json` — Test deck card definitions (previously hardcoded)
+
+**CSS cleanup:**
+- ✅ Removed 3 duplicate `@keyframes cg2-spin` definitions (kept 1)
+- ✅ Removed duplicate `.cg2-round-summary` definition
+- ✅ Added ~40 utility CSS classes for common inline style patterns:
+  - `.cg2-icon-sm/md/lg` — Material icon sizing
+  - `.cg2-flex-center/spaced/wrap` — Flex layout utilities
+  - `.cg2-text-muted/hint/sm` — Text color/size utilities
+  - `.cg2-ml-auto`, `.cg2-mt-16`, etc. — Spacing utilities
+  - `.cg2-image-preview`, `.cg2-gallery-thumb` — Image utilities
+
+**HTML update:**
+- ✅ `index.html` updated: replaced single monolithic `<script>` tag with 29 modular script tags in correct dependency order
+
+**Cross-module communication:**
+```javascript
+// CardGameApp.js creates shared context — all modules access via CardGame.ctx
+let ctx = CardGame.ctx = {
+    screen: "deckList",       // Current screen
+    viewingDeck: null,        // Active deck data
+    gameState: null,          // Active game state
+    activeTheme: null,        // Current theme config
+    // ... plus functions: viewDeck(), playDeck(), resumeGame(), loadSavedDecks()
+};
+```
+
+**Test gate:**
+- [ ] Load app in browser — verify all screens render (deckList, builder, deckView, game, test, themeEditor)
+- [ ] Create new deck → verify character generation works
+- [ ] View deck → verify card rendering (all 8 card types)
+- [ ] Start game → verify game loop (initiative → equip → placement → resolution → cleanup)
+- [ ] Test mode → verify automated tests pass
+- [ ] Browser console → no missing module errors
+
+---
+
 ### Phase 10 — Print & Export
 
 **Goal:** Export a playable print-ready deck for offline/IRL play.
@@ -6735,6 +6865,7 @@ Players need these materials to play IRL:
 | 8 | Chat, voice, Poker Face | Talk card → NPC chat, voice narration, emotion | Phase 7 |
 | 9 | Save/load + campaign | Auto-save, resume, character persistence | Phase 6 |
 | 9.5-9.7 | Test mode, theme editor, expanded effects | Unattended tests pass, custom themes work | Phase 9 |
+| 9.8 | Modular refactoring | 29 modules, external JSON, CSS cleanup | Phase 9 |
 | 10 | Print & export | Print-ready PDF, playable IRL deck | Phase 3 |
 
 **Phases 4-6 can overlap with Phase 3** — gameplay development doesn't block on all images being generated. Placeholder icons work during gameplay testing.

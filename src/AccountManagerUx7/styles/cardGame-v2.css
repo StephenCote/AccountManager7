@@ -3083,14 +3083,6 @@
     background: #3a1b1b;
     color: #f88;
 }
-.cg2-spin {
-    animation: cg2-spin 1s linear infinite;
-}
-@keyframes cg2-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
-
 /* ═══════════════════════════════════════════════════════
    Phase 5 — Combat Resolution Styles
    ═══════════════════════════════════════════════════════ */
@@ -3592,15 +3584,6 @@
 .cg2-cleanup-panel {
     max-width: 400px;
     margin: 20px auto;
-}
-.cg2-round-summary {
-    background: rgba(0,0,0,0.1);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 16px;
-}
-.dark .cg2-round-summary {
-    background: rgba(255,255,255,0.05);
 }
 .cg2-round-winner {
     font-size: 18px;
@@ -4270,15 +4253,6 @@
     justify-content: center;
 }
 
-.cg2-spin {
-    animation: cg2-spin 1s linear infinite;
-}
-
-@keyframes cg2-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
-
 /* ═══════════════════════════════════════════════════════
    Phase 9: Save/Load, Campaign, Level Up
    ═══════════════════════════════════════════════════════ */
@@ -4819,3 +4793,97 @@
     color: #999;
     font-size: 14px;
 }
+
+/* ═══════════════════════════════════════════════════════
+   Utility Classes — Extracted from inline styles
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Material Icon Sizing ──────────────────────────── */
+.cg2-icon-xs { font-size: 12px; vertical-align: middle; }
+.cg2-icon-sm { font-size: 14px; vertical-align: middle; margin-right: 2px; }
+.cg2-icon-md { font-size: 16px; vertical-align: middle; margin-right: 6px; }
+.cg2-icon-lg { font-size: 32px; }
+.cg2-icon-inline { font-size: 16px; vertical-align: middle; margin-right: 4px; }
+
+/* ── Flex Layout Utilities ─────────────────────────── */
+.cg2-flex-center { display: flex; align-items: center; }
+.cg2-flex-center-gap { display: flex; align-items: center; gap: 8px; }
+.cg2-flex-spaced { display: flex; justify-content: space-between; align-items: center; }
+.cg2-flex-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+.cg2-flex-col { display: flex; flex-direction: column; }
+.cg2-flex-gap-4 { display: flex; gap: 4px; }
+.cg2-flex-gap-6 { display: flex; gap: 6px; }
+.cg2-flex-gap-12 { display: flex; gap: 12px; }
+
+/* ── Text Utilities ────────────────────────────────── */
+.cg2-text-muted { color: #888; }
+.cg2-text-muted-light { color: #999; }
+.cg2-text-muted-dark { color: #666; }
+.cg2-text-xs { font-size: 10px; }
+.cg2-text-sm { font-size: 11px; }
+.cg2-text-md { font-size: 12px; }
+.cg2-text-sm-muted { font-size: 11px; color: #999; }
+.cg2-text-xs-muted { font-size: 10px; color: #999; }
+.cg2-text-hint { font-size: 12px; color: #666; }
+.dark .cg2-text-muted { color: #888; }
+.dark .cg2-text-muted-light { color: #777; }
+.dark .cg2-text-muted-dark { color: #999; }
+
+/* ── Header/Title Utilities ────────────────────────── */
+.cg2-header-lg { font-weight: 700; font-size: 16px; }
+.cg2-header-md { font-weight: 700; font-size: 14px; }
+.cg2-header-sm { font-weight: 600; font-size: 13px; }
+.cg2-subheader { font-weight: 600; margin-bottom: 8px; }
+
+/* ── Spacing Utilities ─────────────────────────────── */
+.cg2-ml-auto { margin-left: auto; }
+.cg2-ml-4 { margin-left: 4px; }
+.cg2-ml-8 { margin-left: 8px; }
+.cg2-ml-12 { margin-left: 12px; }
+.cg2-mt-8 { margin-top: 8px; }
+.cg2-mt-12 { margin-top: 12px; }
+.cg2-mt-16 { margin-top: 16px; }
+.cg2-mb-8 { margin-bottom: 8px; }
+.cg2-mb-12 { margin-bottom: 12px; }
+.cg2-mr-8 { margin-right: 8px; }
+.cg2-mr-16 { margin-right: 16px; }
+
+/* ── Image/Gallery Utilities ───────────────────────── */
+.cg2-image-preview {
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+}
+.cg2-gallery-thumb {
+    object-fit: cover;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 3px solid transparent;
+    transition: border-color 0.15s;
+}
+.cg2-gallery-thumb.cg2-selected {
+    border-color: #B8860B;
+}
+
+/* ── Close/Action Icons ────────────────────────────── */
+.cg2-close-overlay {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    color: #fff;
+    font-size: 32px;
+    cursor: pointer;
+}
+.cg2-close-sm {
+    cursor: pointer;
+    font-size: 18px;
+    color: #888;
+}
+
+/* ── Misc Utilities ────────────────────────────────── */
+.cg2-fade { opacity: 0.7; }
+.cg2-loading-centered { text-align: center; padding: 24px; }
+.cg2-icon-expandable { transition: transform 0.2s; }
+.cg2-icon-expanded { transform: rotate(90deg); }
