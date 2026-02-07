@@ -26,12 +26,6 @@
         buildingDeck: false,
         deckNameInput: "",
 
-        // Art state
-        flippedCards: {},
-        cardFrontImageUrl: null,
-        cardBackImageUrl: null,
-        artDir: null,
-
         // Game state
         gameState: null,
         gameCharSelection: null,
@@ -45,6 +39,39 @@
         testDeck: null,
         testDeckName: null
     };
+
+    // ── State Proxies ────────────────────────────────────────────────
+    // Wire ctx properties to module state so UI components can read/write
+    // ctx.* and values are stored/retrieved from the correct module.
+    function proxyState(target, moduleFn, props) {
+        let defs = {};
+        for (let p of props) {
+            defs[p] = {
+                get() { let s = moduleFn(); return s ? s[p] : undefined; },
+                set(v) { let s = moduleFn(); if (s) s[p] = v; },
+                enumerable: true,
+                configurable: true
+            };
+        }
+        Object.defineProperties(target, defs);
+    }
+
+    // ArtPipeline state → ctx
+    proxyState(ctx, function() { return NS.ArtPipeline ? NS.ArtPipeline.state : null; }, [
+        "artQueue", "artProcessing", "artCompleted", "artTotal", "artPaused", "artDir",
+        "backgroundImageId", "backgroundThumbUrl", "backgroundPrompt", "backgroundGenerating",
+        "tabletopImageId", "tabletopThumbUrl", "tabletopGenerating",
+        "cardFrontImageUrl", "cardBackImageUrl", "cardFrontGenerating", "cardBackGenerating",
+        "sequenceCardId", "sequenceProgress",
+        "sdOverrides", "sdConfigExpanded", "sdConfigTab", "gameConfigExpanded",
+        "voiceProfiles", "voiceProfilesLoaded",
+        "flippedCards", "sdOverrideInsts", "sdOverrideViews"
+    ]);
+
+    // Themes state → ctx
+    proxyState(ctx, function() { return NS.Themes ? NS.Themes.state : null; }, [
+        "applyingOutfits"
+    ]);
 
     // Initialize theme from constants
     if (NS.Constants && NS.Constants.DEFAULT_THEME) {

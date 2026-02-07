@@ -1227,7 +1227,11 @@
             get voiceProfilesLoaded() { return voiceProfilesLoaded; },
             set voiceProfilesLoaded(v) { voiceProfilesLoaded = v; },
             get flippedCards() { return flippedCards; },
-            set flippedCards(v) { flippedCards = v; }
+            set flippedCards(v) { flippedCards = v; },
+            get sdOverrideInsts() { return sdOverrideInsts; },
+            set sdOverrideInsts(v) { sdOverrideInsts = v; },
+            get sdOverrideViews() { return sdOverrideViews; },
+            set sdOverrideViews(v) { sdOverrideViews = v; }
         },
         // Prompt building
         styleLabel,

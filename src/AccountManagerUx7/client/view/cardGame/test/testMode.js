@@ -178,7 +178,7 @@
                 let gameState = context.gameState;
                 let showNarrationSubtitle = gameState.showNarrationSubtitle;
                 let triggerNarration = gameState.triggerNarration;
-                let gameNarrator = ai.getNarrator ? ai.getNarrator() : null;
+                let gameNarrator = gameState.state.gameNarrator || null;
 
                 // Create temporary gameState for testing
                 let savedGs = gameState;
@@ -214,7 +214,7 @@
                 let triggerNarration = gameState.triggerNarration;
                 let gameState = context.gameState;
                 let savedGs = gameState;
-                let savedNarrator = ai.getNarrator ? ai.getNarrator() : null;
+                let savedNarrator = gameState.state.gameNarrator || null;
 
                 if (ai.setNarrator) ai.setNarrator(null); // Force fallback path
                 let tempGs = { narrationText: null, narrationTime: null, player: { character: { name: "Hero" }, hp: 15, energy: 10 }, opponent: { character: { name: "Villain" }, hp: 12, energy: 8 }, round: 3 };
@@ -876,11 +876,11 @@
 
             if (resolvedDeck && initializeLLMComponents) {
                 // Save/restore actual game globals
-                let savedNarrator = ai.getNarrator ? ai.getNarrator() : null;
-                let savedDirector = ai.getDirector ? ai.getDirector() : null;
-                let savedChatMgr = ai.getChatManager ? ai.getChatManager() : null;
-                let savedVoice = ai.getVoice ? ai.getVoice() : null;
-                let savedAnnVoice = ai.getAnnouncerVoice ? ai.getAnnouncerVoice() : null;
+                let savedNarrator = gameState.state.gameNarrator || null;
+                let savedDirector = gameState.state.gameDirector || null;
+                let savedChatMgr = gameState.state.gameChatManager || null;
+                let savedVoice = gameState.state.gameVoice || null;
+                let savedAnnVoice = gameState.state.gameAnnouncerVoice || null;
                 let savedGs = context.gameState;
 
                 // Create a temporary game state for the tests
@@ -899,10 +899,10 @@
                     };
                     await initializeLLMComponents(testGs, disabledDeck);
 
-                    let gameNarrator = ai.getNarrator ? ai.getNarrator() : null;
-                    let gameChatManager = ai.getChatManager ? ai.getChatManager() : null;
-                    let gameVoice = ai.getVoice ? ai.getVoice() : null;
-                    let gameAnnouncerVoice = ai.getAnnouncerVoice ? ai.getAnnouncerVoice() : null;
+                    let gameNarrator = gameState.state.gameNarrator || null;
+                    let gameChatManager = gameState.state.gameChatManager || null;
+                    let gameVoice = gameState.state.gameVoice || null;
+                    let gameAnnouncerVoice = gameState.state.gameAnnouncerVoice || null;
 
                     testLog("llm", "narration=off -> gameNarrator=" + (gameNarrator === null ? "null" : "active"),
                         gameNarrator === null ? "pass" : "fail");
@@ -925,10 +925,10 @@
                     };
                     await initializeLLMComponents(testGs, enabledDeck);
 
-                    gameNarrator = ai.getNarrator ? ai.getNarrator() : null;
-                    gameChatManager = ai.getChatManager ? ai.getChatManager() : null;
-                    gameVoice = ai.getVoice ? ai.getVoice() : null;
-                    gameAnnouncerVoice = ai.getAnnouncerVoice ? ai.getAnnouncerVoice() : null;
+                    gameNarrator = gameState.state.gameNarrator || null;
+                    gameChatManager = gameState.state.gameChatManager || null;
+                    gameVoice = gameState.state.gameVoice || null;
+                    gameAnnouncerVoice = gameState.state.gameAnnouncerVoice || null;
 
                     if (llmStatus.available) {
                         testLog("llm", "narration=on -> gameNarrator=" + (gameNarrator ? "active (" + (gameNarrator.profile || "?") + ")" : "null (LLM init may have failed)"),
@@ -961,9 +961,9 @@
                     };
                     await initializeLLMComponents(testGs, mixedDeck);
 
-                    gameVoice = ai.getVoice ? ai.getVoice() : null;
-                    gameAnnouncerVoice = ai.getAnnouncerVoice ? ai.getAnnouncerVoice() : null;
-                    gameNarrator = ai.getNarrator ? ai.getNarrator() : null;
+                    gameVoice = gameState.state.gameVoice || null;
+                    gameAnnouncerVoice = gameState.state.gameAnnouncerVoice || null;
+                    gameNarrator = gameState.state.gameNarrator || null;
 
                     testLog("voice", "oppVoice=off, annVoice=off -> opp subtitlesOnly=" + gameVoice?.subtitlesOnly,
                         gameVoice?.subtitlesOnly === true ? "pass" : "fail");
@@ -981,10 +981,10 @@
                         testLog("llm", "Deck gameConfig: " + JSON.stringify(deckGc), "info");
                         await initializeLLMComponents(testGs, resolvedDeck);
 
-                        gameNarrator = ai.getNarrator ? ai.getNarrator() : null;
-                        gameChatManager = ai.getChatManager ? ai.getChatManager() : null;
-                        gameVoice = ai.getVoice ? ai.getVoice() : null;
-                        gameAnnouncerVoice = ai.getAnnouncerVoice ? ai.getAnnouncerVoice() : null;
+                        gameNarrator = gameState.state.gameNarrator || null;
+                        gameChatManager = gameState.state.gameChatManager || null;
+                        gameVoice = gameState.state.gameVoice || null;
+                        gameAnnouncerVoice = gameState.state.gameAnnouncerVoice || null;
 
                         testLog("llm", "Deck config -> narrator=" + (gameNarrator ? "active" : "null")
                             + " chatMgr=" + (gameChatManager ? "active" : "null")
@@ -1000,11 +1000,11 @@
                 }
 
                 // Restore globals
-                if (ai.setNarrator) ai.setNarrator(savedNarrator);
-                if (ai.setDirector) ai.setDirector(savedDirector);
-                if (ai.setChatManager) ai.setChatManager(savedChatMgr);
-                if (ai.setVoice) ai.setVoice(savedVoice);
-                if (ai.setAnnouncerVoice) ai.setAnnouncerVoice(savedAnnVoice);
+                gameState.state.gameNarrator = savedNarrator;
+                gameState.state.gameDirector = savedDirector;
+                gameState.state.gameChatManager = savedChatMgr;
+                gameState.state.gameVoice = savedVoice;
+                gameState.state.gameAnnouncerVoice = savedAnnVoice;
             } else if (!initializeLLMComponents) {
                 testLog("llm", "initializeLLMComponents not available (module not yet extracted)", "warn");
             } else {
