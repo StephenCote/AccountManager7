@@ -35,6 +35,7 @@
     function AI()      { return window.CardGame.AI || {}; }
     function R()       { return window.CardGame.Rendering || {}; }
     function Themes()  { return window.CardGame.Themes || {}; }
+    function GS()      { return window.CardGame.GameState || {}; }
     function ctx()     { return window.CardGame.ctx || {}; }
 
     // ── Test Categories ──────────────────────────────────────────────────
@@ -98,6 +99,7 @@
         // Resolve shorthand accessors
         let storage = S();
         let engine = Eng();
+        let gameState = GS();
         let ai = AI();
         let themes = Themes();
         let context = ctx();
@@ -174,8 +176,8 @@
             try {
                 // Access game state and narration functions from context
                 let gameState = context.gameState;
-                let showNarrationSubtitle = engine.showNarrationSubtitle;
-                let triggerNarration = engine.triggerNarration;
+                let showNarrationSubtitle = gameState.showNarrationSubtitle;
+                let triggerNarration = gameState.triggerNarration;
                 let gameNarrator = ai.getNarrator ? ai.getNarrator() : null;
 
                 // Create temporary gameState for testing
@@ -209,7 +211,7 @@
 
             // Test triggerNarration fallback text
             try {
-                let triggerNarration = engine.triggerNarration;
+                let triggerNarration = gameState.triggerNarration;
                 let gameState = context.gameState;
                 let savedGs = gameState;
                 let savedNarrator = ai.getNarrator ? ai.getNarrator() : null;
@@ -488,9 +490,9 @@
                     }
 
                     // Test createGameState with this deck (stats should not persist/mutate)
-                    if (engine.createGameState) {
+                    if (gameState.createGameState) {
                         let statsBefore = JSON.stringify(ch.stats);
-                        let gs = engine.createGameState(deck, ch);
+                        let gs = gameState.createGameState(deck, ch);
                         let statsAfter = JSON.stringify(ch.stats);
                         if (gs) {
                             if (statsBefore === statsAfter) {
@@ -633,8 +635,8 @@
             {
                 let deck = resolvedDeck;
                 let saveDeckName = resolvedDeckName || "test";
-                if (deck && engine.createGameState) {
-                    let gs = engine.createGameState(deck);
+                if (deck && gameState.createGameState) {
+                    let gs = gameState.createGameState(deck);
                     if (gs) {
                         // Set up recognizable state
                         gs.round = 7;
@@ -680,7 +682,7 @@
                             testLog("storage", "Save/load: save returned null", "fail");
                         }
                     }
-                } else if (!engine.createGameState) {
+                } else if (!gameState.createGameState) {
                     testLog("storage", "createGameState not available (module not yet extracted)", "warn");
                 }
             }
@@ -692,14 +694,14 @@
             testLog("llm", "Testing LLM connectivity...");
 
             try {
-                let checkLlmConnectivity = ai.checkLlmConnectivity || engine.checkLlmConnectivity;
-                let llmStatus = ai.llmStatus || engine.llmStatus || { checked: false, available: false };
+                let checkLlmConnectivity = ai.checkLlmConnectivity || gameState.checkLlmConnectivity;
+                let llmStatus = ai.llmStatus || gameState.state.llmStatus || { checked: false, available: false };
                 let CardGameLLM = ai.CardGameLLM;
                 let CardGameNarrator = ai.CardGameNarrator;
 
                 if (checkLlmConnectivity) {
                     await checkLlmConnectivity();
-                    llmStatus = ai.llmStatus || engine.llmStatus || llmStatus;
+                    llmStatus = ai.llmStatus || gameState.state.llmStatus || llmStatus;
                     testLog("llm", "LLM status: available=" + llmStatus.available + ", checked=" + llmStatus.checked, llmStatus.available ? "pass" : "warn");
 
                     if (llmStatus.available) {
@@ -868,9 +870,9 @@
             testState.currentTest = "Config: enable/disable states";
             testLog("llm", "Testing game config enable/disable states...");
 
-            let initializeLLMComponents = engine.initializeLLMComponents || ai.initializeLLMComponents;
+            let initializeLLMComponents = gameState.initializeLLMComponents || ai.initializeLLMComponents;
             let CardGameVoice = ai.CardGameVoice;
-            let llmStatus = ai.llmStatus || engine.llmStatus || { checked: false, available: false };
+            let llmStatus = ai.llmStatus || gameState.state.llmStatus || { checked: false, available: false };
 
             if (resolvedDeck && initializeLLMComponents) {
                 // Save/restore actual game globals
@@ -882,7 +884,7 @@
                 let savedGs = context.gameState;
 
                 // Create a temporary game state for the tests
-                let testGs = engine.createGameState ? engine.createGameState(resolvedDeck) : null;
+                let testGs = gameState.createGameState ? gameState.createGameState(resolvedDeck) : null;
                 if (testGs) {
                     if (window.CardGame.ctx) window.CardGame.ctx.gameState = testGs;
 
@@ -1017,7 +1019,7 @@
 
             if (!resolvedDeck) {
                 testLog("playthrough", "No deck available for playthrough", "warn");
-            } else if (!engine.createGameState) {
+            } else if (!gameState.createGameState) {
                 testLog("playthrough", "createGameState not available (module not yet extracted)", "warn");
             } else {
                 let deckName = resolvedDeckName;
@@ -1026,7 +1028,7 @@
                     testLog("playthrough", "Using deck: " + (deck.deckName || deckName) + " (" + (deck.cards || []).length + " cards)", "pass");
 
                     // Create game state
-                    let gs = engine.createGameState(deck);
+                    let gs = gameState.createGameState(deck);
                     if (!gs) {
                         testLog("playthrough", "createGameState failed (no characters?)", "fail");
                     } else {

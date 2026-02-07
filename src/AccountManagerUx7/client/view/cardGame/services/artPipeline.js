@@ -1263,6 +1263,7 @@
         // Game config
         loadVoiceProfiles,
         getDeckGameConfig,
+        currentDeckSafeName,
         // UI Component
         ArtQueueProgress
     };

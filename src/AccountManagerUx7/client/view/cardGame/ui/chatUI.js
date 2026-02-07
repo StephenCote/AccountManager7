@@ -150,7 +150,7 @@
 
             // Continue resolution after chat ends
             if (gameState.phase === GAME_PHASES.RESOLUTION) {
-                setTimeout(() => CardGame.Actions.advanceResolution(), 500);
+                setTimeout(() => CardGame.GameState.advanceResolution(), 500);
             }
         }
 

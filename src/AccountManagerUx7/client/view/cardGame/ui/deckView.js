@@ -65,7 +65,7 @@
                 // Restore SD overrides from saved deck
                 if (viewingDeck && viewingDeck.sdOverrides) {
                     let saved = viewingDeck.sdOverrides;
-                    ctx.sdOverrides = { _default: CardGame.Actions.newSdOverride() };
+                    ctx.sdOverrides = { _default: CardGame.ArtPipeline.newSdOverride() };
                     // Merge saved _default with model defaults
                     if (saved._default) Object.assign(ctx.sdOverrides._default, saved._default);
                     // Restore any explicitly-saved non-default tabs
@@ -77,9 +77,9 @@
                         }
                     });
                 } else {
-                    ctx.sdOverrides = CardGame.Actions.defaultSdOverrides();
+                    ctx.sdOverrides = CardGame.ArtPipeline.defaultSdOverrides();
                 }
-                CardGame.Actions.resetSdOverrideInsts();
+                CardGame.ArtPipeline.resetSdOverrideInsts();
                 ctx.sdConfigExpanded = false;
                 ctx.sdConfigTab = "_default";
                 ctx.gameConfigExpanded = false;
@@ -134,7 +134,7 @@
                 let busy = queueActive || backgroundGenerating || tabletopGenerating || cardFrontGenerating || cardBackGenerating || !!sequenceCardId;
                 return m("div", [
                     m("div", { class: "cg2-toolbar" }, [
-                        m("button", { class: "cg2-btn", onclick: () => { ctx.screen = "deckList"; ctx.viewingDeck = null; CardGame.Services.cancelArtQueue(); ctx.artTotal = 0; ctx.backgroundImageId = null; ctx.backgroundThumbUrl = null; m.redraw(); } }, "\u2190 Back to Decks"),
+                        m("button", { class: "cg2-btn", onclick: () => { ctx.screen = "deckList"; ctx.viewingDeck = null; CardGame.ArtPipeline.cancelArtQueue(); ctx.artTotal = 0; ctx.backgroundImageId = null; ctx.backgroundThumbUrl = null; m.redraw(); } }, "\u2190 Back to Decks"),
                         m("span", { style: { fontWeight: 700, fontSize: "16px", marginLeft: "8px" } }, viewingDeck.deckName || "Deck"),
                         viewingDeck.themeId ? m("span", { class: "cg2-deck-theme-badge", style: { marginLeft: "8px" } }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", verticalAlign: "middle", marginRight: "3px" } }, "auto_fix_high"),
@@ -146,7 +146,7 @@
                             disabled: busy,
                             title: "Re-fetch all character data from source objects",
                             async onclick() {
-                                await CardGame.Services.refreshAllCharacters(viewingDeck);
+                                await CardGame.Characters.refreshAllCharacters(viewingDeck);
                                 page.toast("success", "Character data refreshed");
                                 m.redraw();
                             }
@@ -159,7 +159,7 @@
                             disabled: busy || applyingOutfits,
                             title: "Create theme-appropriate outfits and assign to characters",
                             async onclick() {
-                                await CardGame.Services.applyThemeOutfits(viewingDeck, activeTheme);
+                                await CardGame.Themes.applyThemeOutfits(viewingDeck, activeTheme);
                             }
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "checkroom"),
@@ -186,8 +186,10 @@
                             disabled: busy,
                             title: "Run tests using this deck",
                             onclick() {
-                                ctx.testDeck = viewingDeck;
-                                ctx.testDeckName = viewingDeck?.deckName || viewingDeck?.storageName || null;
+                                let deckName = viewingDeck?.deckName || viewingDeck?.storageName || null;
+                                if (CardGame.TestMode && CardGame.TestMode.setTestDeck) {
+                                    CardGame.TestMode.setTestDeck(viewingDeck, deckName);
+                                }
                                 ctx.screen = "test";
                                 m.redraw();
                             }
@@ -245,7 +247,7 @@
                             ]),
                             // Fields rendered via standard form system
                             (() => {
-                                let inst = CardGame.Actions.getSdOverrideInst(ctx.sdConfigTab);
+                                let inst = CardGame.ArtPipeline.getSdOverrideInst(ctx.sdConfigTab);
                                 let sdOvViews = ctx.sdOverrideViews || {};
                                 let ov = sdOvViews[ctx.sdConfigTab];
                                 return m(ov.view, {
@@ -259,8 +261,8 @@
                                 m("button", {
                                     class: "cg2-btn", style: { fontSize: "11px" },
                                     onclick() {
-                                        ctx.sdOverrides = CardGame.Actions.defaultSdOverrides();
-                                        CardGame.Actions.resetSdOverrideInsts();
+                                        ctx.sdOverrides = CardGame.ArtPipeline.defaultSdOverrides();
+                                        CardGame.ArtPipeline.resetSdOverrideInsts();
                                         ctx.sdConfigTab = "_default";
                                         m.redraw();
                                     }
@@ -270,7 +272,7 @@
                                         class: "cg2-btn", style: { fontSize: "11px" },
                                         onclick() {
                                             if (ctx.sdConfigTab === "_default") {
-                                                ctx.sdOverrides[ctx.sdConfigTab] = CardGame.Actions.newSdOverride();
+                                                ctx.sdOverrides[ctx.sdConfigTab] = CardGame.ArtPipeline.newSdOverride();
                                             } else {
                                                 // Reset card type to a copy of _default
                                                 let copy = JSON.parse(JSON.stringify(ctx.sdOverrides._default));
@@ -314,14 +316,14 @@
                             class: "cg2-sd-panel-header",
                             onclick() {
                                 ctx.gameConfigExpanded = !ctx.gameConfigExpanded;
-                                if (ctx.gameConfigExpanded && !ctx.voiceProfilesLoaded) CardGame.Services.loadVoiceProfiles();
+                                if (ctx.gameConfigExpanded && !ctx.voiceProfilesLoaded) CardGame.ArtPipeline.loadVoiceProfiles();
                                 m.redraw();
                             }
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", marginRight: "6px", transition: "transform 0.2s", transform: ctx.gameConfigExpanded ? "rotate(90deg)" : "" } }, "chevron_right"),
                             m("span", { style: { fontWeight: 600, fontSize: "13px" } }, "Game Config"),
                             (() => {
-                                let gc = CardGame.Actions.getDeckGameConfig(viewingDeck);
+                                let gc = CardGame.ArtPipeline.getDeckGameConfig(viewingDeck);
                                 let tags = [];
                                 if (gc.narrationEnabled === false) tags.push("LLM off");
                                 if (gc.opponentVoiceEnabled) tags.push("opponent voice");
@@ -330,7 +332,7 @@
                             })()
                         ]),
                         ctx.gameConfigExpanded ? m("div", { style: { padding: "12px 16px" } }, (() => {
-                            let gc = CardGame.Actions.getDeckGameConfig(viewingDeck);
+                            let gc = CardGame.ArtPipeline.getDeckGameConfig(viewingDeck);
                             let vProfiles = ctx.voiceProfiles || [];
                             let vLoaded = ctx.voiceProfilesLoaded;
                             let voiceProfilePicker = (label, valueKey, icon) => m("div", { class: "cg2-config-row", style: { paddingLeft: "24px" } }, [
@@ -451,7 +453,7 @@
                                         style: { fontSize: "11px" },
                                         async onclick() {
                                             viewingDeck.gameConfig = gc;
-                                            let safeName = CardGame.Actions.currentDeckSafeName();
+                                            let safeName = CardGame.ArtPipeline.currentDeckSafeName();
                                             if (safeName) {
                                                 await CardGame.Storage.deckStorage.save(safeName, viewingDeck);
                                                 page.toast("success", "Game config saved");
@@ -481,7 +483,7 @@
                                 m("button", {
                                     class: "cg2-btn",
                                     disabled: busy,
-                                    onclick() { CardGame.Services.generateBackground(activeTheme); }
+                                    onclick() { CardGame.ArtPipeline.generateBackground(activeTheme); }
                                 }, [
                                     backgroundGenerating
                                         ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
@@ -509,7 +511,7 @@
                                 m("button", {
                                     class: "cg2-btn",
                                     disabled: busy,
-                                    onclick() { CardGame.Services.generateTabletop(activeTheme); }
+                                    onclick() { CardGame.ArtPipeline.generateTabletop(activeTheme); }
                                 }, [
                                     tabletopGenerating
                                         ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
@@ -530,7 +532,7 @@
                             class: "cg2-btn cg2-btn-primary",
                             disabled: busy,
                             title: "Generate art only for cards that don't have images yet",
-                            onclick() { CardGame.Services.queueDeckArt(viewingDeck); }
+                            onclick() { CardGame.ArtPipeline.queueDeckArt(viewingDeck); }
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "4px" } }, "auto_awesome"),
                             queueActive ? "Generating..." : "Generate Missing Art"
@@ -559,7 +561,7 @@
                                     delete viewingDeck.tabletopImageId;
                                     delete viewingDeck.tabletopThumbUrl;
                                 }
-                                CardGame.Services.queueDeckArt(viewingDeck);
+                                CardGame.ArtPipeline.queueDeckArt(viewingDeck);
                             }
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "4px" } }, "refresh"),
@@ -570,7 +572,7 @@
                             : null
                     ]),
                     // Art generation progress
-                    m(CardGame.Actions.ArtQueueProgress),
+                    m(CardGame.ArtPipeline.ArtQueueProgress),
                     // Card grid -- card front, card back, then all card faces
                     m("div", { class: "cg2-card-grid" }, [
                         // Card Front template
@@ -594,7 +596,7 @@
                                 m("button", {
                                     class: "cg2-card-action-btn",
                                     title: "Generate card front background",
-                                    onclick(e) { e.stopPropagation(); CardGame.Services.generateTemplateArt("front"); }
+                                    onclick(e) { e.stopPropagation(); CardGame.ArtPipeline.generateTemplateArt("front"); }
                                 }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "auto_awesome"))
                             ]) : null
                         ]),
@@ -621,7 +623,7 @@
                                 m("button", {
                                     class: "cg2-card-action-btn",
                                     title: "Generate card back background",
-                                    onclick(e) { e.stopPropagation(); CardGame.Services.generateTemplateArt("back"); }
+                                    onclick(e) { e.stopPropagation(); CardGame.ArtPipeline.generateTemplateArt("back"); }
                                 }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "auto_awesome"))
                             ]) : null
                         ]),
@@ -676,7 +678,7 @@
                                     // Reimage button
                                     m("button", {
                                         class: "cg2-card-action-btn",
-                                        title: "Regenerate art\n" + CardGame.Services.buildCardPrompt(card, activeTheme),
+                                        title: "Regenerate art\n" + CardGame.ArtPipeline.buildCardPrompt(card, activeTheme),
                                         onclick(e) {
                                             e.stopPropagation();
                                             delete card.imageUrl;
@@ -687,7 +689,7 @@
                                             ctx.artTotal = 1;
                                             ctx.artPaused = false;
                                             ctx.artDir = null;
-                                            CardGame.Services.processArtQueue();
+                                            CardGame.ArtPipeline.processArtQueue();
                                         }
                                     }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "auto_awesome")),
                                     // Gallery picker (character cards only)
@@ -696,7 +698,7 @@
                                         title: "Pick portrait from gallery",
                                         onclick(e) {
                                             e.stopPropagation();
-                                            CardGame.Services.openGalleryPicker(card);
+                                            CardGame.Rendering.openGalleryPicker(card);
                                         }
                                     }, m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "photo_library")) : null,
                                     // Image sequence (character cards only) -- dress-up progression
@@ -709,7 +711,7 @@
                                             disabled: !!sequenceCardId,
                                             onclick(e) {
                                                 e.stopPropagation();
-                                                CardGame.Services.generateImageSequence(card);
+                                                CardGame.ArtPipeline.generateImageSequence(card);
                                             }
                                         }, isThisCard ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px" } }, "progress_activity")
                                             : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "burst_mode"));
@@ -720,7 +722,7 @@
                                         title: "Refresh card data from source object",
                                         async onclick(e) {
                                             e.stopPropagation();
-                                            let ok = await CardGame.Services.refreshCharacterCard(card);
+                                            let ok = await CardGame.Characters.refreshCharacterCard(card);
                                             if (ok) {
                                                 page.toast("success", "Refreshed: " + card.name);
                                             } else {

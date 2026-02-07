@@ -46,15 +46,15 @@
                 // Trigger end game narration once
                 if (!narratedEnd && gameState && gameState.winner) {
                     narratedEnd = true;
-                    CardGame.Actions.narrateGameEnd(gameState.winner);
+                    CardGame.GameState.narrateGameEnd(gameState.winner);
                 }
                 // Save campaign progress once
                 if (!campaignSaved && gameState && gameState.winner) {
                     campaignSaved = true;
                     let isVictory = gameState.winner === "player";
-                    let xpGain = CardGame.Actions.calculateXP(gameState, isVictory);
+                    let xpGain = CardGame.Storage.calculateXP(gameState, isVictory);
                     gameState.xpGained = xpGain;
-                    ctx.activeCampaign = await CardGame.Actions.saveCampaignProgress(gameState, isVictory, xpGain);
+                    ctx.activeCampaign = await CardGame.Storage.saveCampaignProgress(gameState, isVictory, xpGain);
                     // Delete game saves on game end
                     CardGame.Storage.gameStorage.deleteAll(gameState.deckName);
                     m.redraw();
@@ -142,12 +142,12 @@
                                     let viewingDeck = ctx.viewingDeck;
                                     // Restart with same characters
                                     let playerChar = player.character;
-                                    ctx.gameState = CardGame.Actions.createGameState(viewingDeck, playerChar);
+                                    ctx.gameState = CardGame.GameState.createGameState(viewingDeck, playerChar);
                                     if (ctx.gameState) {
-                                        if (ctx.activeCampaign) CardGame.Actions.applyCampaignBonuses(ctx.gameState, ctx.activeCampaign);
-                                        CardGame.Actions.initializeLLMComponents(ctx.gameState, viewingDeck);
-                                        CardGame.Actions.resetInitAnimState();
-                                        CardGame.Actions.startInitiativeAnimation();
+                                        if (ctx.activeCampaign) CardGame.GameState.applyCampaignBonuses(ctx.gameState, ctx.activeCampaign);
+                                        CardGame.GameState.initializeLLMComponents(ctx.gameState, viewingDeck);
+                                        CardGame.GameState.resetInitAnimState();
+                                        CardGame.GameState.startInitiativeAnimation();
                                     }
                                     m.redraw();
                                 }

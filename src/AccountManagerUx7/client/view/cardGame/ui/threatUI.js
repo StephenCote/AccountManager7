@@ -60,10 +60,10 @@
                                 c.type === "item" && c.subtype === "armor"
                             );
                             if (defenseCards.length > 0 && aiActor.threatResponseAP > 0) {
-                                CardGame.Actions.placeThreatDefenseCard(defenseCards[0]);
+                                CardGame.GameState.placeThreatDefenseCard(defenseCards[0]);
                                 m.redraw();
                             } else {
-                                CardGame.Actions.skipThreatResponse();
+                                CardGame.GameState.skipThreatResponse();
                             }
                         }
                         threatAutoRespondScheduled = false;  // Reset for next threat
@@ -164,7 +164,7 @@
                         apRemaining > 0
                             ? m("button", {
                                 class: "cg2-btn cg2-btn-secondary",
-                                onclick: function() { CardGame.Actions.skipThreatResponse(); }
+                                onclick: function() { CardGame.GameState.skipThreatResponse(); }
                             }, "Skip Defense")
                             : null,
                         m("button", {
@@ -174,14 +174,14 @@
                                 let GP = CardGame.Constants.GAME_PHASES;
                                 console.log("[CardGame v2] Face Threat clicked, phase:", gs ? gs.phase : "null");
                                 if (gs && gs.phase === GP.THREAT_RESPONSE) {
-                                    CardGame.Actions.resolveThreatCombat();
+                                    CardGame.GameState.resolveThreatCombat();
                                 } else if (gs && gs.phase === GP.END_THREAT) {
-                                    CardGame.Actions.resolveEndThreatCombat();
+                                    CardGame.GameState.resolveEndThreatCombat();
                                 } else {
                                     console.warn("[CardGame v2] Face Threat: unexpected phase", gs ? gs.phase : "null");
                                     // Try to resolve anyway
                                     if (gs && gs.threatResponse && gs.threatResponse.active) {
-                                        CardGame.Actions.resolveThreatCombat();
+                                        CardGame.GameState.resolveThreatCombat();
                                     }
                                 }
                             }

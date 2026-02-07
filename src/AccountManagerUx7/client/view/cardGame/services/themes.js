@@ -542,7 +542,7 @@
                                 ]),
                                 m("code", { style: { fontSize: "12px", display: "block", padding: "6px 8px", background: "rgba(0,0,0,0.05)", borderRadius: "4px" } }, themeEditorState.effectPreview.trim()),
                                 m("div", { style: { fontSize: "10px", marginTop: "4px" } }, (() => {
-                                    let parsed = CardGame.Effects.parseEffect(themeEditorState.effectPreview);
+                                    let parsed = CardGame.Engine.parseEffect(themeEditorState.effectPreview);
                                     let parts = [];
                                     if (parsed.damage) parts.push("DMG:" + parsed.damage);
                                     if (parsed.healHp) parts.push("HEAL:" + parsed.healHp + " HP");

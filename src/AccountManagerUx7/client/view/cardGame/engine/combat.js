@@ -350,6 +350,15 @@
         return result;
     }
 
+    // Check if game is over (either actor HP <= 0)
+    function checkGameOver(state) {
+        let gs = state || (window.CardGame.ctx ? window.CardGame.ctx.gameState : null);
+        if (!gs) return null;
+        if (gs.player.hp <= 0) return "opponent";
+        if (gs.opponent.hp <= 0) return "player";
+        return null;
+    }
+
     // ── Export ───────────────────────────────────────────────────────────
     Object.assign(window.CardGame.Engine, {
         DiceUtils,
@@ -364,7 +373,8 @@
         getCombatOutcome,
         calculateDamage,
         applyDamage,
-        resolveCombat
+        resolveCombat,
+        checkGameOver
     });
 
     console.log('[CardGame] Engine/combat loaded');
