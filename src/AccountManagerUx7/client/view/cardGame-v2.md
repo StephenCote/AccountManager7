@@ -6261,7 +6261,7 @@ CSS approach:
 
 ---
 
-### Phase 8 Bug Fixes (2026-02-06)
+### Phase 8 Bug Fixes & Character Generation (2026-02-06)
 
 #### Threat Response Flow
 - **Fixed**: End threat responder was set to round winner instead of threat target
@@ -6339,11 +6339,30 @@ Before marking Phase 8 complete, verify the following:
 - [ ] **Combat Overlay**: Size remains stable during dice roll → outcome → damage phases
 - [ ] **Non-Combat Overlay**: Size stable for Talk, Magic, Item resolutions
 
+#### Character Generation (Late Phase 8)
+- **Fixed**: Characters generated from templates now persist correctly
+  - `generateCharactersFromTemplates(themeId, count)` uses `/olio/roll` endpoint
+  - Characters kept in memory with `_tempId` until "Next: Review Deck" clicked
+  - `persistGeneratedCharacters()` saves to `~/CardGame/{deckName}/Characters/`
+  - Both `groupId` and `groupPath` set for proper folder placement
+- **Fixed**: Cards now get real `sourceId` after character persistence
+  - `buildCharacterCard()` sets `sourceId: char.objectId` (null for temp chars)
+  - `_sourceChar` holds full object for temp characters
+  - After persistence, cards updated with real `sourceId`
+- **Fixed**: Age range enforced (18-55) on generated characters
+- **Added**: "Generated" badge for unpersisted characters in picker
+- **Added**: Trade/class display in character picker metadata
+
 ---
 
-### Phase 8 — Chat, Voice & Online Features 🔄 IN PROGRESS
+### Phase 8 — Chat, Voice & Online Features ✅ COMPLETE (with known issues)
 
 **Goal:** Talk card triggers LLM-powered NPC conversation. Voice narration. Poker Face.
+
+**Known Issues (deferred to Phase 9):**
+- [ ] **LLM Narration not displaying** — `triggerNarration()` calls exist but overlay not appearing
+- [ ] **Voice synthesis not playing** — TTS endpoint may not be configured/available
+- [ ] **Banter text fallback not showing** — fallback narration text not rendering in UI
 
 **Build:**
 
@@ -6445,45 +6464,246 @@ Before marking Phase 8 complete, verify the following:
 
 ---
 
-### Phase 9 — Save/Load & Campaign
+### Phase 9 — LLM/Voice Fix, Save/Load & Campaign 🔄 IN PROGRESS (2026-02-07)
 
-**Goal:** Game state persists across sessions. Campaign mode tracks character progression.
+**Goal:** Fix LLM narration/voice display issues. Game state persists across sessions. Campaign mode tracks character progression.
 
-**Build:**
-- Auto-save: every round cleanup → write session deltas to `data.data` at `~/CardGame/{deckName}/save`
-- Game start screen: if save exists → [Resume Game] / [New Game]; else → [New Game] only
-- Resume: load snapshot + merge deltas → restore game state
-- New game: delete save `data.data`, start fresh
-- End game cleanup: delete save, leave mid-game artifacts in place
-- Campaign mode: character card persists between games (only the charPerson card — items, apparel can be lost/damaged/stolen during gameplay)
+---
 
-**Server:**
-- No new endpoints. Uses existing `data.data` CRUD.
+#### 9.1 LLM Narration & Voice Fixes ✅ COMPLETE (2026-02-07)
+
+**Fixed:**
+- ✅ Diagnostic logging: `triggerNarration()` and `showNarrationSubtitle()` now log trigger type and text
+- ✅ Extended auto-hide timer from 5s → 8s for better readability
+- ✅ Added `"resolution"` case to `triggerNarration()` with fallback text for combat outcomes (CRIT/HIT/MISS)
+- ✅ Replaced direct narrator call in `advanceResolution()` with unified `triggerNarration("resolution")` — eliminates duplication, ensures fallback works when LLM unavailable
+- ✅ NarrationOverlay renders correctly in `.cg2-phase-content` with `position: fixed` CSS
+- ✅ Voice correctly defaults to subtitles-only (requires server endpoint for TTS)
 
 **Test gate:**
-- [ ] Game auto-saves after each round (invisible to player)
-- [ ] Close browser → reopen → [Resume Game] restores exact game state
-- [ ] [New Game] deletes old save and starts fresh
-- [ ] End game leaves after-action images in `{saveObjectId}/` folder
-- [ ] Campaign: character card carries over, items/apparel do not
+- [x] Console shows: `[CardGame v2] triggerNarration called:` on game events
+- [x] Console shows: `[CardGame v2] showNarrationSubtitle:` with text
+- [x] Narration overlay appears with text (LLM or fallback)
+- [x] Voice plays if endpoint available, silent skip if not
+- [x] Subtitle text visible for 8 seconds per narration
+
+---
+
+#### 9.2 Character Generation Fixes ✅ COMPLETE (2026-02-06)
+
+**Fixed:**
+- ✅ Characters generated from templates via `/olio/roll` endpoint
+- ✅ Characters kept in memory with `_tempId` until deck save
+- ✅ Characters persisted to `~/CardGame/{deckName}/Characters/` on "Next: Review Deck"
+- ✅ Both `groupId` and `groupPath` set for proper folder placement
+- ✅ Cards updated with real `sourceId` after persistence
+- ✅ Age range enforced: 18-55
+- ✅ "Generated" badge shown for unpersisted characters
+- ✅ Trade/class displayed in character picker
+
+---
+
+#### 9.3 Save/Load System ✅ COMPLETE (2026-02-07)
+
+**Implemented:**
+- ✅ **Refactored storage layer** — extracted shared `encodeJson()`/`decodeJson()`, `upsertDataRecord()`, `loadDataRecord()`, `listDataRecords()` helpers. `deckStorage`, `gameStorage`, and `campaignStorage` all reuse these, eliminating ~60 lines of duplicate CRUD code.
+- ✅ **`gameStorage` object** — save/load/list/deleteAll/cleanupOldSaves
+  - Save location: `~/CardGame/{deckName}/saves/save-{timestamp}.json`
+  - Rolling backup: keeps last 3 saves, deletes older ones
+  - `serializeGameState()` strips non-serializable fields (timers, narration)
+  - `deserializeGameState()` restores defaults for transient fields
+- ✅ **Auto-save hook** in `CleanupPhaseUI.oninit()` — saves after each round cleanup
+- ✅ **Resume game flow:**
+  - `loadSavedDecks()` checks for saves and campaign data per deck
+  - Deck list shows "Resume" button (green accent) when saves exist
+  - "Play" becomes "New Game" when a save exists (deletes old saves)
+  - `resumeGame()` loads save → deserializes → re-initializes LLM → resumes
+- ✅ **New game clears saves** via `playDeck()` → `gameStorage.deleteAll()`
+
+**Test gate:**
+- [x] Game auto-saves after each round (check console for `[CardGame v2] Auto-saved after round`)
+- [x] Close browser → reopen → [Resume] restores exact game state
+- [x] Hand, equipped items, HP, energy, morale all restored correctly
+- [x] [New Game] deletes old saves and starts fresh
+- [x] Only last 3 saves kept (older ones deleted)
+
+---
+
+#### 9.4 Campaign Mode ✅ COMPLETE (2026-02-07)
+
+**Implemented:**
+- ✅ **`campaignStorage` object** — save/load using shared `upsertDataRecord()`/`loadDataRecord()` helpers
+- ✅ **Campaign data structure** — `createCampaignData(characterCard)` with version, level, xp, wins, losses, statGains, pendingLevelUps
+- ✅ **XP calculation** — `calculateXP(state, isVictory)`: 10 XP per round + 50 victory bonus + 2 per surviving HP
+- ✅ **Campaign save on game end** — `GameOverUI.oninit()` calls `saveCampaignProgress()`, deletes game saves
+- ✅ **Level progression** — Every 100 XP = 1 level (max 10), pending level-ups tracked
+- ✅ **Level-up dialog** (`LevelUpUI` component):
+  - Modal overlay with 2x3 stat grid (STR/AGI/END/INT/MAG/CHA)
+  - Shows current value, campaign gains, stat descriptions
+  - Player picks 2 stats per level (+1 each)
+  - Multi-level support (handles multiple pending level-ups sequentially)
+  - Saves updated `statGains` to campaign immediately
+- ✅ **Campaign stat application at game start:**
+  - `applyCampaignBonuses(state, campaign)` adds statGains to player stats
+  - Recalculates derived values (AP from END, energy from MAG)
+  - Called in CharacterSelectUI click handler and GameView.oninit()
+- ✅ **Campaign display in sidebar** — Level, XP, W/L record shown for player character
+- ✅ **Campaign display in game over** — XP gained, XP progress bar, W/L record
+- ✅ **Campaign display in deck list** — Level, XP, W/L record shown per deck
+
+**Persistence rules (as designed):**
+- Persists: Character level, XP, stat gains
+- Does NOT persist: Items, apparel, consumables, skills, hand, draw pile
+
+**Campaign save location:** `~/CardGame/{deckName}/campaign.json`
+
+**Test gate:**
+- [x] Win game → XP awarded → progress saved to campaign.json
+- [x] Start new game with same character → level and stat gains applied
+- [x] Level up → choose stats → gains persisted
+- [x] Items/apparel from previous game NOT carried over
+- [x] Campaign stats visible in sidebar, deck list, and game over screen
+
+---
+
+**Server:**
+- No new endpoints. Uses existing `data.data` CRUD for save files.
+
+---
+
+---
+
+#### 9.5 Test Mode ✅ COMPLETE (2026-02-07)
+
+Comprehensive unattended test runner with debug console UI.
+
+**Implementation:**
+- `TestModeUI` component — screen accessible from deck list header ("Test" button)
+- 8 test categories: Storage, Narration, Combat, Card Eval, Campaign, LLM, Voice, Playthrough
+- Category toggle chips — select/deselect which categories to run
+- `runTestSuite()` — async function that runs all selected categories sequentially
+- `testLog(category, message, status)` — structured logging with pass/fail/warn/info
+- Debug console: dark terminal-style log with timestamps, categories, status icons
+- Results summary: pass/fail/warn counts with color coding
+- Tests run fully unattended — no user interaction required
+
+**Test categories:**
+- **Storage**: encodeJson/decodeJson roundtrip, deckStorage.list, gameStorage.list, campaignStorage.load
+- **Narration**: showNarrationSubtitle, triggerNarration fallback text for all triggers
+- **Combat**: rollAttack, rollDefense, getCombatOutcome, calculateDamage, applyDamage
+- **Card Eval**: unified parseEffect() for all 20+ effect patterns, isEffectParseable, SKILL_ACTION_KEYWORDS
+- **Campaign**: createCampaignData, calculateXP, level-up detection
+- **LLM**: CardGameLLM availability, model detection
+- **Voice**: Web Speech API availability, voice config
+- **Playthrough**: Full automated game (create state, simulate rounds, verify game over)
+
+#### 9.6 Theme Editor ✅ COMPLETE (2026-02-07)
+
+Custom theme builder/editor with JSON storage.
+
+**Implementation:**
+- `ThemeEditorUI` component — screen accessible from deck list header ("Themes" button)
+- `themeStorage` object — CRUD for custom themes using `data.data` records at `~/CardGame/themes/`
+- List view: shows all built-in themes (blue badge) and custom themes (green badge)
+- Built-in themes: "Customize" creates an editable copy
+- Custom themes: "Edit" opens JSON editor, "Delete" removes from storage
+- "New Theme" button creates template with example card pool
+- **JSON editor**: full theme JSON with syntax validation, error display
+- **Card Effect Builder**: interactive token-based effect string builder
+  - Click tokens to build effect strings: Deal N, Drain N, Heal N, Restore N Energy/Morale
+  - Status effect tokens: Stun, Poison, Burn, Bleed, Weaken (enemy), Shield, Enrage, Fortify, Inspire, Regenerate (self)
+  - Utility tokens: Draw N, Cure
+  - Skill modifier templates: +2 to Attack/Defense/Talk/Flee/etc.
+  - Live preview with parsed effect validation (shows "DMG:15, STUN→enemy" etc.)
+  - Copy button to clipboard
+- **Card Pool Reference**: updated with all parseable effect patterns and status effect details
+- Save/cancel with dirty state tracking
+
+#### 9.7 Expanded Effect Parsing Engine ✅ COMPLETE (2026-02-07)
+
+Unified `parseEffect()` / `applyParsedEffects()` system replaces inline regex parsing.
+
+**New status effects added:**
+| Effect | Duration | Type | Mechanic |
+|--------|----------|------|----------|
+| BURNING | 2 turns | turns | -3 HP/turn |
+| BLEEDING | 4 turns | turns | -1 HP/turn |
+| REGENERATING | 3 turns | turns | +2 HP/turn |
+| FORTIFIED | 2 turns | turns | +2 DEF, +1 ATK |
+| INSPIRED | 2 turns | turns | +2 to all rolls |
+
+**Expanded parseable effect keywords:**
+- `"Drain N"` — damage target + heal self same amount
+- `"Draw N"` — draw extra cards
+- `"Burn"/"Ignite"` — apply BURNING status
+- `"Bleed"` — apply BLEEDING status
+- `"Weaken"` — apply WEAKENED status
+- `"Fortify"/"Bolster"` — apply FORTIFIED status
+- `"Inspire"` — apply INSPIRED status
+- `"Regenerate"/"Regen"` — apply REGENERATING status
+- `"Cure"/"Cleanse"/"Purify"` — remove all negative status effects
+
+**Expanded skill keywords:**
+- attack: attack, combat, melee, strike, offensive
+- defense: defense, defend, parry, block, defensive
+- talk: talk, social, charisma, persuade, diplomacy, speech
+- initiative: initiative, speed, first
+- investigate: investigate, search, discover, perception
+- flee: flee, escape, evasion, retreat
+- craft: craft, create, forge, build
+- magic: magic, spell, cast, arcane, psionic
 
 ---
 
 ### Phase 10 — Print & Export
 
-**Goal:** Export a playable print-ready deck. IRL-complete.
+**Goal:** Export a playable print-ready deck for offline/IRL play.
 
 **Build:**
 - Print layout: 2.5" × 3.5" cards, 3×3 grid per 8.5" × 11" page at 300 DPI
 - Card fronts + card backs (duplex-ready with registration marks)
-- Crop marks and bleed area
+- Crop marks and bleed area (3mm bleed)
 - Reference card sheet: rules quick reference, solo opponent priority table, resolution marker cut-out, character wheel template
 - PDF export via server-side generation
 - ZIP export (browser-side): cards/, sheets/, theme/, backs/, metadata.json
 - Rules documentation: theme-specific markdown rules rendered as printable pages
 
+**Offline Play Documentation (included in export):**
+
+Players need these materials to play IRL:
+1. **Printed card deck** (all cards: character, items, skills, magic, encounters, actions, talk)
+2. **Rules reference card** (1 page, double-sided)
+3. **D20 die** (or use a phone d20 app)
+4. **HP/Energy/Morale tracking** — paper tracker sheet, or use coins/tokens
+5. **Status effect tokens** — small markers for stunned, poisoned, burning, etc.
+
+**Solo Play Rules (no computer):**
+- Player draws 5 cards each round, places up to 3 in action bar
+- Opponent actions determined by priority table on reference card:
+  1. If HP < 30%: Use healing card (if available) or Rest
+  2. If has magic card with damage ≥ 15: Cast it
+  3. If has weapon: Attack (roll d20 + ATK stats)
+  4. Otherwise: Rest or Guard
+- Combat resolution: both sides roll d20 + modifiers, compare results
+- Status effects tracked with tokens, count down each round
+- Game ends when either side reaches 0 HP or 0 Morale
+
+**Two-Player Rules:**
+- Each player brings their own deck (built from same or different themes)
+- Both draw 5 cards, place simultaneously (face-down), then reveal
+- Resolve left-to-right, attacker/defender alternates based on initiative
+- Talk cards: both players roleplay the conversation; use CHA contest to determine morale effect
+- First to reduce opponent to 0 HP or 0 Morale wins
+
+**Card Export Formats:**
+- `PDF` — ready to print, crop marks included
+- `PNG set` — individual card images at 300 DPI (for custom printing services)
+- `Tabletop Simulator` — JSON deck definition + card images for TTS import
+
 **Server:**
 - `GET /rest/game/cards/print/{deckId}?format=pdf` — generate print PDF
+- `GET /rest/game/cards/print/{deckId}?format=png` — generate PNG ZIP
+- `GET /rest/game/cards/print/{deckId}?format=tts` — Tabletop Simulator export
 - `GET /rest/game/rules/{deckId}` — retrieve rules markdown
 - `GET /rest/game/rules/{deckId}/print` — print-optimized HTML
 
@@ -6491,9 +6711,11 @@ Before marking Phase 8 complete, verify the following:
 - [ ] PDF exports a complete deck with all card fronts and backs
 - [ ] Cards print at correct size (2.5" × 3.5") at 300 DPI
 - [ ] Duplex alignment: fronts and backs register correctly
-- [ ] Reference card includes quick reference rules, solo opponent table, wheel template
+- [ ] Reference card includes quick reference rules, solo opponent table
 - [ ] ZIP export contains all assets and metadata
+- [ ] Rules doc includes solo play, two-player rules, status effect reference
 - [ ] Printed deck is playable IRL without any online services
+- [ ] TTS export loads correctly in Tabletop Simulator
 
 ---
 
@@ -6512,11 +6734,149 @@ Before marking Phase 8 complete, verify the following:
 | 7 | LLM (AI opponent, narrator) | AI makes intelligent decisions, narration plays | Phase 7.0 |
 | 8 | Chat, voice, Poker Face | Talk card → NPC chat, voice narration, emotion | Phase 7 |
 | 9 | Save/load + campaign | Auto-save, resume, character persistence | Phase 6 |
+| 9.5-9.7 | Test mode, theme editor, expanded effects | Unattended tests pass, custom themes work | Phase 9 |
 | 10 | Print & export | Print-ready PDF, playable IRL deck | Phase 3 |
 
 **Phases 4-6 can overlap with Phase 3** — gameplay development doesn't block on all images being generated. Placeholder icons work during gameplay testing.
 
 **Phases 7.0, 7.1, 9 and 10 are independent** — they can be built in parallel once Phase 6 is complete.
+
+---
+
+## Appendix A — Game Logic Reference
+
+Complete reference for how the card game engine evaluates cards, resolves actions, and processes effects. Use this when creating custom themes, cards, or skills.
+
+### A.1 Effect String Parsing (`parseEffect()`)
+
+The unified effect parser extracts mechanical effects from text strings. Used by magic cards, consumable items, and the Card Effect Builder.
+
+| Pattern | Regex | Result |
+|---------|-------|--------|
+| `"Deal N damage"` | `/deal\s+(\d+)/i` | `{ damage: N }` |
+| `"Drain N"` | `/drain\s+(\d+)/i` | `{ damage: N, healHp: N }` |
+| `"Heal N"` | `/heal\s+(\d+)/i` | `{ healHp: N }` |
+| `"Restore N HP"` | `/restore\s+(\d+)\s+hp/i` | `{ healHp: N }` |
+| `"Restore N Energy"` | `/restore\s+(\d+)\s+energy/i` | `{ restoreEnergy: N }` |
+| `"Restore N Morale"` | `/restore\s+(\d+)\s+morale/i` | `{ restoreMorale: N }` |
+| `"Draw N"` | `/draw\s+(\d+)/i` | `{ draw: N }` |
+| `"Stun"` | `.includes("stun")` | `{ statusEffects: [{ id:"stunned", target:"enemy" }] }` |
+| `"Poison"` | `.includes("poison")` | `{ statusEffects: [{ id:"poisoned", target:"enemy" }] }` |
+| `"Burn"/"Ignite"` | `.includes("burn"\|"ignite")` | `{ statusEffects: [{ id:"burning", target:"enemy" }] }` |
+| `"Bleed"` | `.includes("bleed")` | `{ statusEffects: [{ id:"bleeding", target:"enemy" }] }` |
+| `"Weaken"` | `.includes("weaken")` | `{ statusEffects: [{ id:"weakened", target:"enemy" }] }` |
+| `"Shield"/"Protect"` | `.includes("shield"\|"protect")` | `{ statusEffects: [{ id:"shielded", target:"self" }] }` |
+| `"Enrage"/"Fury"` | `.includes("enrage"\|"fury")` | `{ statusEffects: [{ id:"enraged", target:"self" }] }` |
+| `"Fortify"/"Bolster"` | `.includes("fortify"\|"bolster")` | `{ statusEffects: [{ id:"fortified", target:"self" }] }` |
+| `"Inspire"` | `.includes("inspire")` | `{ statusEffects: [{ id:"inspired", target:"self" }] }` |
+| `"Regenerate"/"Regen"` | `.includes("regenerat"\|"regen")` | `{ statusEffects: [{ id:"regenerating", target:"self" }] }` |
+| `"Cure"/"Cleanse"/"Purify"` | `.includes(...)` | `{ cure: true }` |
+
+**Combining effects:** Multiple patterns can be combined in one string. Example: `"Deal 20 damage and stun target"` → `{ damage: 20, statusEffects: [{ id:"stunned", target:"enemy" }] }`
+
+**What will NOT parse:**
+- Dice notation: "1d6 damage" (use flat numbers)
+- Percentages: "50% chance to stun" (deterministic only)
+- Conditional effects: "If HP < 50%" (no conditions)
+- Duration in text: "Stun for 2 turns" (keyword matched, but duration is fixed in STATUS_EFFECTS)
+- Stat modifications: "Reduce enemy DEF by 2" (use "weaken" keyword instead)
+
+### A.2 Status Effects
+
+| ID | Name | Duration | Type | Mechanic |
+|----|------|----------|------|----------|
+| stunned | Stunned | 1 turn | turns | Skip next action |
+| poisoned | Poisoned | 3 turns | turns | -2 HP per turn start |
+| burning | Burning | 2 turns | turns | -3 HP per turn start |
+| bleeding | Bleeding | 4 turns | turns | -1 HP per turn start |
+| shielded | Shielded | 1 hit | untilHit | +3 DEF until hit |
+| weakened | Weakened | 2 turns | turns | -2 to all rolls |
+| enraged | Enraged | 2 turns | turns | +3 ATK, -2 DEF |
+| fortified | Fortified | 2 turns | turns | +2 DEF, +1 ATK |
+| inspired | Inspired | 2 turns | turns | +2 to all rolls |
+| regenerating | Regenerating | 3 turns | turns | +2 HP per turn start |
+
+Effects don't stack — re-applying refreshes the duration.
+
+### A.3 Skill Modifier Parsing
+
+Skills use the pattern `"+N to <keyword>"`. The `+N` is extracted by `/\+(\d+)/`, and the keyword is matched against these action types:
+
+| Action Type | Keywords |
+|-------------|----------|
+| attack | attack, combat, melee, strike, offensive |
+| defense | defense, defend, parry, block, defensive |
+| talk | talk, social, charisma, persuade, diplomacy, speech |
+| initiative | initiative, speed, first |
+| investigate | investigate, search, discover, perception |
+| flee | flee, escape, evasion, retreat |
+| craft | craft, create, forge, build |
+| magic | magic, spell, cast, arcane, psionic |
+
+**Example valid modifiers:** `"+2 to Attack rolls"`, `"+3 to defense and parry"`, `"+1 to social interactions"`, `"+2 to Flee and initiative"`, `"+2 to spell casting"`
+
+### A.4 Combat Resolution
+
+```
+Attack Roll  = 1d20 + STR + weapon ATK + skill mods + status mods
+Defense Roll = 1d20 + END + armor DEF + status mods
+
+Outcome table (ATK - DEF):
+  Nat 20 ATK:        CRITICAL_HIT    (2.0x damage)
+  Diff ≥ 10:         DEVASTATING     (1.5x damage)
+  Diff ≥ 5:          STRONG_HIT      (1.0x damage)
+  Diff ≥ 1:          GLANCING_HIT    (0.5x damage)
+  Diff = 0:          CLASH           (1 damage each)
+  Diff ≥ -4:         DEFLECT         (0 damage)
+  Diff < -4:         PARRY           (0 damage, counter possible)
+  Nat 20 DEF:        CRITICAL_PARRY  (counter damage)
+  Nat 1 ATK:         CRITICAL_MISS   (self-damage, stunned)
+
+Base Damage = MAX(1, STR + weapon ATK - target DEF / 2)
+Final Damage = FLOOR(Base Damage × multiplier)
+```
+
+### A.5 Card Type Reference
+
+| Type | Required Fields | Effect Parsing |
+|------|----------------|----------------|
+| **skill** | `type, name, modifier, rarity` | `/\+(\d+)/` + keyword matching |
+| **magic** | `type, name, effect, energyCost, requires, rarity` | Unified `parseEffect()` |
+| **item (weapon)** | `type, subtype:"weapon", name, atk, range, rarity` | Direct `atk` field (numeric) |
+| **item (armor)** | `type, subtype:"armor", name, def, rarity` | Direct `def` field (numeric) |
+| **item (consumable)** | `type, subtype:"consumable", name, effect, rarity` | Unified `parseEffect()` |
+| **apparel** | `type, name, def, hpBonus, slot, rarity` | Direct `def`/`hpBonus` fields |
+| **action** | `type, name, effect, rarity` | Hardcoded by name (Attack/Rest/Guard/Flee) |
+| **talk** | `type, name, speechType, effect, rarity` | CHA contest roll (no effect parsing) |
+| **encounter** | `type, name, atk, def, hp, behavior, loot, rarity` | Numeric stat fields (behavior unused) |
+| **character** | `type, name, race, stats, needs, equipped` | Character creation only |
+
+### A.6 Action Resolution (non-combat)
+
+| Action | Mechanic |
+|--------|----------|
+| **Rest** | +2 HP, +3 Energy (hardcoded) |
+| **Guard/Defend** | Apply SHIELDED status (+3 DEF until hit) |
+| **Flee/Escape** | 1d20 + AGI vs encounter difficulty |
+| **Investigate** | 1d20 + INT vs DC 10; success draws 1 card |
+| **Trade** | Offer items from stack; AI 50% accept chance |
+| **Craft** | 1d20 + INT vs DC (12 + materials×2); needs ≥2 materials |
+| **Feint** | Apply WEAKENED to target (-2 all rolls) |
+| **Use Item** | Apply consumable `parseEffect()` then discard |
+
+### A.7 Talk Resolution
+
+```
+Player Talk: Opens chat UI (LLM conversation or fallback text)
+AI Talk:
+  Owner Roll  = 1d20 + CHA + skill mods
+  Target Roll = 1d20 + CHA
+
+  If owner wins: Target morale -= FLOOR((diff) / 2), min 1. Owner morale += 1.
+  If target wins: Owner morale -= 1.
+
+  Win condition: If morale ≤ 0, that side loses the game.
+```
 
 ---
 

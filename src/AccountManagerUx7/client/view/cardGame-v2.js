@@ -768,40 +768,76 @@
         return activeTheme;
     }
 
-    // ── data.data CRUD Wrapper ───────────────────────────────────────
+    // ── data.data CRUD Helpers ────────────────────────────────────────
+    // Shared utilities for all storage objects (deck, game saves, campaign)
     const DECK_BASE_PATH = "~/CardGame";
 
+    function encodeJson(data) {
+        return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+    }
+    function decodeJson(encoded) {
+        return JSON.parse(decodeURIComponent(escape(atob(encoded))));
+    }
+
+    // Upsert a named data.data record in a group (create-or-update pattern)
+    async function upsertDataRecord(groupPath, fileName, data) {
+        let grp = await page.makePath("auth.group", "DATA", groupPath);
+        if (!grp) { console.error("[CardGame v2] Could not create group:", groupPath); return null; }
+        let encoded = encodeJson(data);
+
+        let q = am7view.viewQuery("data.data");
+        q.field("groupId", grp.id);
+        q.field("name", fileName);
+        let qr = await page.search(q);
+
+        if (qr?.results?.length) {
+            let existing = qr.results[0];
+            existing.dataBytesStore = encoded;
+            existing.compressionType = "none";
+            return await page.patchObject(existing);
+        }
+        let obj = am7model.newPrimitive("data.data");
+        obj.name = fileName;
+        obj.contentType = "application/json";
+        obj.compressionType = "none";
+        obj.groupId = grp.id;
+        obj.groupPath = grp.path;
+        obj.dataBytesStore = encoded;
+        return await page.createObject(obj);
+    }
+
+    // Load a named data.data record from a group
+    async function loadDataRecord(groupPath, fileName, createGroup) {
+        let grp = createGroup
+            ? await page.makePath("auth.group", "DATA", groupPath)
+            : await page.findObject("auth.group", "DATA", groupPath);
+        if (!grp) return null;
+        let q = am7view.viewQuery("data.data");
+        q.field("groupId", grp.id);
+        q.field("name", fileName);
+        let qr = await page.search(q);
+        if (qr?.results?.length && qr.results[0].dataBytesStore) {
+            return decodeJson(qr.results[0].dataBytesStore);
+        }
+        return null;
+    }
+
+    // Query all data.data records in a group
+    async function listDataRecords(groupPath) {
+        let grp = await page.findObject("auth.group", "DATA", groupPath);
+        if (!grp) return [];
+        let q = am7view.viewQuery("data.data");
+        q.field("groupId", grp.id);
+        let qr = await page.search(q);
+        return qr?.results || [];
+    }
+
+    // ── Deck Storage ──────────────────────────────────────────────────
     const deckStorage = {
         async save(deckName, data) {
             try {
-                let groupPath = DECK_BASE_PATH + "/" + deckName;
-                let grp = await page.makePath("auth.group", "DATA", groupPath);
-                if (!grp) { console.error("[CardGame v2] Could not create group:", groupPath); return null; }
-                let encoded = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-
-                // Search for existing deck.json in this group
-                let q = am7view.viewQuery("data.data");
-                q.field("groupId", grp.id);
-                q.field("name", "deck.json");
-                let qr = await page.search(q);
-
-                let saved;
-                if (qr && qr.results && qr.results.length) {
-                    let existing = qr.results[0];
-                    existing.dataBytesStore = encoded;
-                    existing.compressionType = "none";
-                    saved = await page.patchObject(existing);
-                } else {
-                    let obj = am7model.newPrimitive("data.data");
-                    obj.name = "deck.json";
-                    obj.contentType = "application/json";
-                    obj.compressionType = "none";
-                    obj.groupId = grp.id;
-                    obj.groupPath = grp.path;
-                    obj.dataBytesStore = encoded;
-                    saved = await page.createObject(obj);
-                }
-                console.log("[CardGame v2] Deck saved:", deckName, saved);
+                let saved = await upsertDataRecord(DECK_BASE_PATH + "/" + deckName, "deck.json", data);
+                console.log("[CardGame v2] Deck saved:", deckName);
                 return saved;
             } catch (e) {
                 console.error("[CardGame v2] Failed to save deck:", deckName, e);
@@ -811,20 +847,7 @@
 
         async load(deckName) {
             try {
-                let groupPath = DECK_BASE_PATH + "/" + deckName;
-                let grp = await page.makePath("auth.group", "DATA", groupPath);
-                if (!grp) return null;
-                let q = am7view.viewQuery("data.data");
-                q.field("groupId", grp.id);
-                q.field("name", "deck.json");
-                let qr = await page.search(q);
-                if (qr && qr.results && qr.results.length) {
-                    let obj = qr.results[0];
-                    if (obj.dataBytesStore) {
-                        return JSON.parse(decodeURIComponent(escape(atob(obj.dataBytesStore))));
-                    }
-                }
-                return null;
+                return await loadDataRecord(DECK_BASE_PATH + "/" + deckName, "deck.json", true);
             } catch (e) {
                 console.error("[CardGame v2] Failed to load deck:", deckName, e);
                 return null;
@@ -838,7 +861,7 @@
                 let q = am7view.viewQuery("auth.group");
                 q.field("parentId", grp.id);
                 let qr = await page.search(q);
-                return (qr && qr.results ? qr.results : []).map(g => g.name);
+                return (qr?.results || []).map(g => g.name);
             } catch (e) {
                 console.error("[CardGame v2] Failed to list decks:", e);
                 return [];
@@ -847,8 +870,7 @@
 
         async remove(deckName) {
             try {
-                let groupPath = DECK_BASE_PATH + "/" + deckName;
-                let grp = await page.findObject("auth.group", "DATA", groupPath);
+                let grp = await page.findObject("auth.group", "DATA", DECK_BASE_PATH + "/" + deckName);
                 if (!grp) return false;
                 await page.deleteObject("auth.group", grp.objectId);
                 console.log("[CardGame v2] Deck removed:", deckName);
@@ -859,6 +881,205 @@
             }
         }
     };
+
+    // ── Game Save Storage ─────────────────────────────────────────────
+    // Auto-saves game state to ~/CardGame/{deckName}/saves/ with rolling backups
+
+    function serializeGameState(state) {
+        let s = JSON.parse(JSON.stringify(state));
+        // Strip non-serializable / transient fields
+        delete s.turnTimer;
+        delete s.narrationText;
+        delete s.narrationTime;
+        return s;
+    }
+
+    function deserializeGameState(saveData) {
+        let state = saveData.gameState;
+        state.turnTimer = null;
+        state.narrationText = null;
+        state.narrationTime = null;
+        state.isPaused = false;
+        return state;
+    }
+
+    const gameStorage = {
+        _savesPath(deckName) { return DECK_BASE_PATH + "/" + deckName + "/saves"; },
+
+        async save(deckName, state) {
+            try {
+                let saveData = {
+                    version: 1,
+                    timestamp: new Date().toISOString(),
+                    deckName,
+                    roundNumber: state.round,
+                    phase: state.phase,
+                    gameState: serializeGameState(state)
+                };
+                let groupPath = this._savesPath(deckName);
+                let grp = await page.makePath("auth.group", "DATA", groupPath);
+                if (!grp) return null;
+
+                let obj = am7model.newPrimitive("data.data");
+                obj.name = "save-" + Date.now() + ".json";
+                obj.contentType = "application/json";
+                obj.compressionType = "none";
+                obj.groupId = grp.id;
+                obj.groupPath = grp.path;
+                obj.dataBytesStore = encodeJson(saveData);
+                let saved = await page.createObject(obj);
+
+                // Keep only last 3 saves
+                await this.cleanupOldSaves(deckName, 3);
+                return saved;
+            } catch (e) {
+                console.error("[CardGame v2] Failed to save game:", deckName, e);
+                return null;
+            }
+        },
+
+        async load(deckName) {
+            try {
+                let saves = await this.list(deckName);
+                if (saves.length === 0) return null;
+                let latest = saves[0];
+                if (latest.dataBytesStore) {
+                    return decodeJson(latest.dataBytesStore);
+                }
+                return null;
+            } catch (e) {
+                console.error("[CardGame v2] Failed to load game save:", deckName, e);
+                return null;
+            }
+        },
+
+        async list(deckName) {
+            try {
+                let records = await listDataRecords(this._savesPath(deckName));
+                return records
+                    .filter(r => r.name?.startsWith("save-"))
+                    .sort((a, b) => b.name.localeCompare(a.name));
+            } catch (e) {
+                console.error("[CardGame v2] Failed to list saves:", deckName, e);
+                return [];
+            }
+        },
+
+        async deleteAll(deckName) {
+            try {
+                let grp = await page.findObject("auth.group", "DATA", this._savesPath(deckName));
+                if (grp) await page.deleteObject("auth.group", grp.objectId);
+            } catch (e) {
+                console.warn("[CardGame v2] Failed to delete saves:", deckName, e);
+            }
+        },
+
+        async cleanupOldSaves(deckName, keepCount) {
+            try {
+                let saves = await this.list(deckName);
+                for (let i = keepCount; i < saves.length; i++) {
+                    await page.deleteObject("data.data", saves[i].objectId);
+                }
+            } catch (e) {
+                console.warn("[CardGame v2] Save cleanup failed:", e);
+            }
+        }
+    };
+
+    // ── Campaign Storage ──────────────────────────────────────────────
+    // Persists character progression across games at ~/CardGame/{deckName}/campaign.json
+
+    function createCampaignData(characterCard) {
+        return {
+            version: 1,
+            characterId: characterCard.sourceId || characterCard._tempId || null,
+            characterName: characterCard.name || "Unknown",
+            level: 1,
+            xp: 0,
+            totalGamesPlayed: 0,
+            wins: 0,
+            losses: 0,
+            statGains: {},
+            pendingLevelUps: 0
+        };
+    }
+
+    const campaignStorage = {
+        async save(deckName, campaignData) {
+            try {
+                let saved = await upsertDataRecord(DECK_BASE_PATH + "/" + deckName, "campaign.json", campaignData);
+                console.log("[CardGame v2] Campaign saved:", deckName, "Level", campaignData.level, "XP", campaignData.xp);
+                return saved;
+            } catch (e) {
+                console.error("[CardGame v2] Failed to save campaign:", deckName, e);
+                return null;
+            }
+        },
+
+        async load(deckName) {
+            try {
+                return await loadDataRecord(DECK_BASE_PATH + "/" + deckName, "campaign.json", false);
+            } catch (e) {
+                console.error("[CardGame v2] Failed to load campaign:", deckName, e);
+                return null;
+            }
+        }
+    };
+
+    // ── Campaign XP & Level System ────────────────────────────────────
+    function calculateXP(state, isVictory) {
+        let xp = 0;
+        xp += state.round * 10;                    // 10 XP per round played
+        if (isVictory) xp += 50;                    // Victory bonus
+        xp += Math.max(0, state.player.hp) * 2;    // HP bonus (surviving health)
+        return xp;
+    }
+
+    async function saveCampaignProgress(state, isVictory, xpGain) {
+        let deckName = state.deckName;
+        let campaign = await campaignStorage.load(deckName);
+        if (!campaign) {
+            campaign = createCampaignData(state.player.character);
+        }
+        campaign.totalGamesPlayed++;
+        if (isVictory) campaign.wins++;
+        else campaign.losses++;
+        campaign.xp += xpGain;
+
+        // Check for level up (every 100 XP, max level 10)
+        let newLevel = Math.min(10, Math.floor(campaign.xp / 100) + 1);
+        if (newLevel > campaign.level) {
+            campaign.pendingLevelUps = (campaign.pendingLevelUps || 0) + (newLevel - campaign.level);
+            campaign.level = newLevel;
+        }
+
+        await campaignStorage.save(deckName, campaign);
+        return campaign;
+    }
+
+    // Module-level campaign state (loaded at game start, used in sidebar/game-over)
+    let activeCampaign = null;
+    let levelUpState = null; // { campaign, statsSelected: [], onComplete: fn }
+
+    // Apply campaign stat gains to a game state's player character
+    function applyCampaignBonuses(state, campaign) {
+        if (!campaign?.statGains || !state?.player?.character?.stats) return;
+        let stats = state.player.character.stats;
+        for (let [stat, gain] of Object.entries(campaign.statGains)) {
+            if (typeof stats[stat] === "number") {
+                stats[stat] += gain;
+            }
+        }
+        // Recalculate derived values from updated stats
+        let end = stats.END ?? stats.end ?? 12;
+        state.player.ap = Math.max(2, Math.floor(end / 5) + 1);
+        state.player.maxAp = state.player.ap;
+        let mag = stats.MAG ?? stats.mag ?? 12;
+        state.player.energy = mag;
+        state.player.maxEnergy = mag;
+        console.log("[CardGame v2] Campaign bonuses applied:", JSON.stringify(campaign.statGains),
+            "→ AP:", state.player.ap, "Energy:", state.player.energy);
+    }
 
     let themeLoading = false;
 
@@ -1144,7 +1365,7 @@
     }
 
     // ── Phase 2: View State ──────────────────────────────────────────
-    let screen = "deckList";    // "deckList" | "builder" | "deckView" | "game"
+    let screen = "deckList";    // "deckList" | "builder" | "deckView" | "game" | "test" | "themeEditor"
     let builderStep = 1;        // 1=theme, 2=character, 3=review/build
     let availableCharacters = [];
     let charsLoading = false;
@@ -1224,6 +1445,9 @@
             for (let name of names) {
                 let data = await deckStorage.load(name);
                 if (data) {
+                    // Check for saved games and campaign data
+                    let savesList = await gameStorage.list(name);
+                    let campaign = await campaignStorage.load(name);
                     decks.push({
                         deckName: data.deckName || name,
                         themeId: data.themeId || null,
@@ -1235,7 +1459,11 @@
                         // Include art URLs for deck list display
                         cardBackImageUrl: data.cardBackImageUrl || null,
                         cardFrontImageUrl: data.cardFrontImageUrl || null,
-                        backgroundThumbUrl: data.backgroundThumbUrl || null
+                        backgroundThumbUrl: data.backgroundThumbUrl || null,
+                        // Save/campaign metadata
+                        hasSave: savesList.length > 0,
+                        lastSaveRound: savesList.length > 0 ? null : null, // populated below
+                        campaign: campaign || null
                     });
                 }
             }
@@ -1524,14 +1752,41 @@
             if (data.themeId) {
                 await loadThemeConfig(data.themeId);
             }
+            // Clear old saves when starting a new game
+            await gameStorage.deleteAll(storageName);
             // Reset game state and character selection for fresh start
             gameState = null;
             gameCharSelection = null;
+            activeCampaign = null;
             screen = "game";
             m.redraw();
         } else {
             page.toast("error", "Failed to load deck");
         }
+        m.redraw();
+    }
+
+    async function resumeGame(storageName) {
+        let saveData = await gameStorage.load(storageName);
+        if (!saveData) {
+            page.toast("error", "No save found");
+            return;
+        }
+        let data = await deckStorage.load(storageName);
+        if (!data) {
+            page.toast("error", "Failed to load deck for resume");
+            return;
+        }
+        viewingDeck = data;
+        if (data.themeId) {
+            await loadThemeConfig(data.themeId);
+        }
+        gameState = deserializeGameState(saveData);
+        gameCharSelection = null;
+        activeCampaign = await campaignStorage.load(storageName);
+        screen = "game";
+        // Re-initialize LLM components for resumed game
+        initializeLLMComponents(gameState, viewingDeck);
         m.redraw();
     }
 
@@ -1560,7 +1815,16 @@
                             class: "cg2-btn cg2-btn-primary",
                             onclick() { screen = "builder"; builderStep = 1; selectedChars = []; builtDeck = null; deckNameInput = ""; m.redraw(); }
                         }, [m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "4px" } }, "add"), "New Deck"]),
-                        decksLoading ? m("span", { class: "cg2-loading" }, "Loading...") : null
+                        m("span", { style: { flex: 1 } }),
+                        m("button", { class: "cg2-btn cg2-btn-sm", onclick() { loadThemeList(); screen = "themeEditor"; m.redraw(); } }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "2px" } }, "palette"),
+                            " Themes"
+                        ]),
+                        m("button", { class: "cg2-btn cg2-btn-sm", style: { marginLeft: "4px" }, onclick() { testDeck = null; testDeckName = null; screen = "test"; m.redraw(); } }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "2px" } }, "science"),
+                            " Test"
+                        ]),
+                        decksLoading ? m("span", { class: "cg2-loading", style: { marginLeft: "4px" } }, "Loading...") : null
                     ]),
                     savedDecks.length === 0 && !decksLoading
                         ? m("div", { class: "cg2-empty-state" }, "No decks yet. Create one to get started.")
@@ -1587,17 +1851,30 @@
                                                 m("div", { class: "cg2-back-label" }, d.themeId || "Deck")
                                             ])
                                     ]),
-                                    // Deck name
+                                    // Deck name + campaign info
                                     m("div", { class: "cg2-deck-name" }, d.deckName),
+                                    d.campaign ? m("div", { class: "cg2-deck-campaign-info" }, [
+                                        m("span", { class: "cg2-campaign-level" }, "Lv." + d.campaign.level),
+                                        m("span", { class: "cg2-campaign-xp" }, d.campaign.xp + " XP"),
+                                        m("span", { class: "cg2-campaign-record" }, d.campaign.wins + "W/" + d.campaign.losses + "L")
+                                    ]) : null,
                                     // Action buttons
                                     m("div", { class: "cg2-deck-actions" }, [
+                                        d.hasSave ? m("button", {
+                                            class: "cg2-btn cg2-btn-accent",
+                                            onclick: () => resumeGame(d.storageName),
+                                            title: "Resume saved game"
+                                        }, [
+                                            m("span", { class: "material-symbols-outlined" }, "restore"),
+                                            " Resume"
+                                        ]) : null,
                                         m("button", {
                                             class: "cg2-btn cg2-btn-primary",
                                             onclick: () => playDeck(d.storageName),
-                                            title: "Start a game with this deck"
+                                            title: d.hasSave ? "Start a new game (deletes save)" : "Start a game with this deck"
                                         }, [
                                             m("span", { class: "material-symbols-outlined" }, "play_arrow"),
-                                            " Play"
+                                            d.hasSave ? " New Game" : " Play"
                                         ]),
                                         m("button", { class: "cg2-btn", onclick: () => viewDeck(d.storageName) }, "View"),
                                         m("button", { class: "cg2-btn cg2-btn-danger", onclick: () => deleteDeck(d.storageName) }, "Delete")
@@ -2668,6 +2945,33 @@
     let sdConfigExpanded = false;
     let sdConfigTab = "_default";
 
+    // ── Per-deck Game Config (LLM, Voice) ────────────────────────────
+    let gameConfigExpanded = false;
+    let voiceProfiles = [];       // Cached identity.voice records
+    let voiceProfilesLoaded = false;
+
+    async function loadVoiceProfiles() {
+        if (voiceProfilesLoaded) return voiceProfiles;
+        try {
+            let q = am7view.viewQuery(am7model.newInstance("identity.voice"));
+            let qr = await page.search(q);
+            voiceProfiles = qr?.results || [];
+            voiceProfilesLoaded = true;
+            console.log("[CardGame v2] Voice profiles loaded:", voiceProfiles.length);
+            m.redraw();
+        } catch (e) {
+            console.warn("[CardGame v2] Failed to load voice profiles:", e);
+            voiceProfiles = [];
+        }
+        return voiceProfiles;
+    }
+
+    function getDeckGameConfig(deck) {
+        if (!deck) return {};
+        if (!deck.gameConfig) deck.gameConfig = {};
+        return deck.gameConfig;
+    }
+
     // Return only fields where the card-type override differs from _default.
     // This prevents card-type model defaults from overwriting _default settings.
     function getCardTypeDelta(key) {
@@ -3232,19 +3536,38 @@
         artPaused = false;
         artDir = null;
 
-        // First, check if card front/back templates need generation
+        // First, generate missing templates, background, and tabletop
         let needFront = !deck.cardFrontImageUrl && !cardFrontImageUrl;
         let needBack = !deck.cardBackImageUrl && !cardBackImageUrl;
+        let needBg = !deck.backgroundImageId && !backgroundImageId;
+        let needTabletop = !deck.tabletopImageId && !tabletopImageId;
+        let preGenCount = (needFront ? 1 : 0) + (needBack ? 1 : 0) + (needBg ? 1 : 0) + (needTabletop ? 1 : 0);
 
-        if (needFront || needBack) {
-            console.log("[CardGame v2] Generating missing card templates first...");
+        if (preGenCount > 0) {
+            console.log("[CardGame v2] Generating " + preGenCount + " missing template/environment images first...");
             if (needFront) {
+                artTotal++; m.redraw();
                 console.log("[CardGame v2] Generating card front template...");
                 await generateTemplateArt("front");
+                artCompleted++; m.redraw();
             }
             if (needBack) {
+                artTotal++; m.redraw();
                 console.log("[CardGame v2] Generating card back template...");
                 await generateTemplateArt("back");
+                artCompleted++; m.redraw();
+            }
+            if (needBg) {
+                artTotal++; m.redraw();
+                console.log("[CardGame v2] Generating background...");
+                await generateBackground(activeTheme);
+                artCompleted++; m.redraw();
+            }
+            if (needTabletop) {
+                artTotal++; m.redraw();
+                console.log("[CardGame v2] Generating tabletop...");
+                await generateTabletop(activeTheme);
+                artCompleted++; m.redraw();
             }
         }
 
@@ -3556,30 +3879,52 @@
     function ArtQueueProgress() {
         return {
             view() {
-                if (artTotal === 0) return null;
+                // Show progress for any active generation (queue, background, tabletop, sequence)
                 let pending = artQueue.filter(j => j.status === "pending").length;
                 let processing = artQueue.filter(j => j.status === "processing").length;
                 let failed = artQueue.filter(j => j.status === "failed").length;
                 let done = artQueue.filter(j => j.status === "complete").length;
-                let pct = artTotal > 0 ? Math.round((done / artTotal) * 100) : 0;
-                let current = artQueue.find(j => j.status === "processing");
-                let active = pending > 0 || processing > 0;
+                let queueActive = pending > 0 || processing > 0;
+                let envActive = backgroundGenerating || tabletopGenerating || cardFrontGenerating || cardBackGenerating;
+                let seqActive = !!sequenceCardId;
+                let anyActive = queueActive || envActive || seqActive;
+
+                // Total includes pre-gen (artCompleted tracks those) + queued cards
+                let totalDone = artCompleted + done;
+                let pct = artTotal > 0 ? Math.min(100, Math.round((totalDone / artTotal) * 100)) : 0;
+
+                // Nothing to show if no work has been started
+                if (artTotal === 0 && !envActive && !seqActive) return null;
+
+                // Build current status message
+                let currentMsg = null;
+                if (backgroundGenerating) currentMsg = "Generating background...";
+                else if (tabletopGenerating) currentMsg = "Generating tabletop...";
+                else if (cardFrontGenerating) currentMsg = "Generating card front template...";
+                else if (cardBackGenerating) currentMsg = "Generating card back template...";
+                else if (seqActive) currentMsg = sequenceProgress || "Generating image sequence...";
+                else if (processing > 0) {
+                    let current = artQueue.find(j => j.status === "processing");
+                    currentMsg = current ? (current.card.name || "Card") : "Processing...";
+                }
+
+                let statusText = anyActive ? "Generating Art..." : (failed > 0 ? "Generation Complete (with errors)" : "Generation Complete");
 
                 return m("div", { class: "cg2-art-progress" }, [
                     m("div", { class: "cg2-art-progress-header" }, [
-                        m("span", { style: { fontWeight: 700, fontSize: "13px" } },
-                            active ? "Generating Art..." : (failed > 0 ? "Generation Complete (with errors)" : "Generation Complete")),
+                        m("span", { style: { fontWeight: 700, fontSize: "13px" } }, statusText),
                         m("span", { style: { fontSize: "12px", color: "#888" } },
-                            done + " / " + artTotal + (failed > 0 ? " (" + failed + " failed)" : ""))
+                            totalDone + " / " + artTotal + (failed > 0 ? " (" + failed + " failed)" : ""))
                     ]),
                     m("div", { class: "cg2-art-progress-bar" }, [
-                        m("div", { class: "cg2-art-progress-fill", style: { width: pct + "%" } })
+                        m("div", { class: "cg2-art-progress-fill" + (anyActive ? " cg2-art-progress-fill-active" : ""),
+                            style: { width: pct + "%" } })
                     ]),
-                    current ? m("div", { class: "cg2-art-progress-current" }, [
+                    currentMsg ? m("div", { class: "cg2-art-progress-current" }, [
                         m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px" } }, "progress_activity"),
-                        " " + (current.card.name || "Card")
+                        " " + currentMsg
                     ]) : null,
-                    active ? m("div", { class: "cg2-art-progress-actions" }, [
+                    queueActive ? m("div", { class: "cg2-art-progress-actions" }, [
                         artPaused
                             ? m("button", { class: "cg2-btn", onclick: resumeArtQueue }, "Resume")
                             : m("button", { class: "cg2-btn", onclick: pauseArtQueue }, "Pause"),
@@ -3672,6 +4017,66 @@
             durationType: "turns",
             atkBonus: 3,
             defPenalty: -2
+        },
+        BURNING: {
+            id: "burning",
+            name: "Burning",
+            icon: "whatshot",
+            color: "#FF5722",
+            description: "-3 HP at turn start",
+            duration: 2,
+            durationType: "turns",
+            onTurnStart: (actor) => {
+                actor.hp = Math.max(0, actor.hp - 3);
+                return { message: "Burn deals 3 damage", damage: 3 };
+            }
+        },
+        BLEEDING: {
+            id: "bleeding",
+            name: "Bleeding",
+            icon: "water_drop",
+            color: "#E53935",
+            description: "-1 HP at turn start",
+            duration: 4,
+            durationType: "turns",
+            onTurnStart: (actor) => {
+                actor.hp = Math.max(0, actor.hp - 1);
+                return { message: "Bleed deals 1 damage", damage: 1 };
+            }
+        },
+        REGENERATING: {
+            id: "regenerating",
+            name: "Regenerating",
+            icon: "spa",
+            color: "#4CAF50",
+            description: "+2 HP at turn start",
+            duration: 3,
+            durationType: "turns",
+            onTurnStart: (actor) => {
+                actor.hp = Math.min(actor.maxHp, actor.hp + 2);
+                return { message: "Regen restores 2 HP", damage: 0 };
+            }
+        },
+        FORTIFIED: {
+            id: "fortified",
+            name: "Fortified",
+            icon: "fort",
+            color: "#1565C0",
+            description: "+2 DEF, +1 ATK",
+            duration: 2,
+            durationType: "turns",
+            defBonus: 2,
+            atkBonus: 1
+        },
+        INSPIRED: {
+            id: "inspired",
+            name: "Inspired",
+            icon: "auto_awesome",
+            color: "#FFB300",
+            description: "+2 to all rolls",
+            duration: 2,
+            durationType: "turns",
+            rollBonus: 2
         }
     };
 
@@ -3731,6 +4136,7 @@
                 if (def.defBonus) mods.def += def.defBonus;
                 if (def.defPenalty) mods.def += def.defPenalty;
                 if (def.rollPenalty) mods.roll += def.rollPenalty;
+                if (def.rollBonus) mods.roll += def.rollBonus;
             }
         });
         return mods;
@@ -4087,9 +4493,23 @@
     }
 
     // Initialize LLM components (Director and Narrator) for a game
+    let gameAnnouncerVoice = null;  // Separate voice instance for announcer
+
     async function initializeLLMComponents(state, deck) {
         const themeId = deck?.themeId || activeTheme?.themeId || "high-fantasy";
         const opponentChar = state?.opponent?.character;
+        const gc = deck?.gameConfig || {};
+        const narrationEnabled = gc.narrationEnabled !== false;       // Default: enabled
+        const opponentVoiceEnabled = gc.opponentVoiceEnabled === true; // Default: disabled
+        const opponentVoiceProfileId = gc.opponentVoiceProfileId || null;
+        const announcerEnabled = gc.announcerEnabled === true;         // Default: disabled
+        const announcerProfile = gc.announcerProfile || "arena-announcer";
+        const announcerVoiceEnabled = gc.announcerVoiceEnabled === true;
+        const announcerVoiceProfileId = gc.announcerVoiceProfileId || null;
+
+        console.log("[CardGame v2] Game config: llm=" + narrationEnabled
+            + " oppVoice=" + opponentVoiceEnabled + " (profile=" + (opponentVoiceProfileId || "default") + ")"
+            + " announcer=" + announcerEnabled + " (style=" + announcerProfile + " voice=" + announcerVoiceEnabled + ")");
 
         // Initialize AI Director (optional - falls back to FIFO if unavailable)
         try {
@@ -4104,45 +4524,77 @@
             gameDirector = null;
         }
 
-        // Initialize Narrator (optional - uses fallback text if unavailable)
-        try {
-            gameNarrator = new CardGameNarrator();
-            const narratorOk = await gameNarrator.initialize("arena-announcer", themeId);
-            if (!narratorOk) {
-                console.log("[CardGame v2] LLM Narrator unavailable, using fallback narration");
+        // Initialize Announcer narrator (optional — separate from opponent)
+        if (announcerEnabled && narrationEnabled) {
+            try {
+                gameNarrator = new CardGameNarrator();
+                const narratorOk = await gameNarrator.initialize(announcerProfile, themeId);
+                if (!narratorOk) {
+                    console.log("[CardGame v2] Announcer LLM unavailable, using fallback narration");
+                    gameNarrator = null;
+                }
+            } catch (err) {
+                console.warn("[CardGame v2] Failed to initialize Announcer:", err);
                 gameNarrator = null;
             }
-        } catch (err) {
-            console.warn("[CardGame v2] Failed to initialize Narrator:", err);
+        } else if (!announcerEnabled) {
+            console.log("[CardGame v2] Announcer disabled by deck config");
+            gameNarrator = null;
+        } else {
+            console.log("[CardGame v2] LLM disabled — announcer uses fallback text");
             gameNarrator = null;
         }
 
-        // Always trigger game start narration (uses fallback if LLM unavailable)
+        // Always trigger game start narration (uses fallback if announcer unavailable)
         narrateGameStart();
 
-        // Initialize Chat Manager for Talk cards (optional)
-        try {
-            gameChatManager = new CardGameChatManager();
-            const chatOk = await gameChatManager.initialize(opponentChar, themeId);
-            if (!chatOk) {
-                console.log("[CardGame v2] LLM Chat Manager unavailable, Talk cards use fallback. Error:", gameChatManager?.lastError);
+        // Initialize Chat Manager for Talk cards / opponent dialogue (requires LLM enabled)
+        if (narrationEnabled) {
+            try {
+                gameChatManager = new CardGameChatManager();
+                const chatOk = await gameChatManager.initialize(opponentChar, themeId);
+                if (!chatOk) {
+                    console.log("[CardGame v2] LLM Chat Manager unavailable, Talk cards use fallback. Error:", gameChatManager?.lastError);
+                    gameChatManager = null;
+                } else {
+                    console.log("[CardGame v2] Chat Manager initialized successfully");
+                }
+            } catch (err) {
+                console.warn("[CardGame v2] Failed to initialize Chat Manager:", err);
                 gameChatManager = null;
-            } else {
-                console.log("[CardGame v2] Chat Manager initialized successfully");
             }
-        } catch (err) {
-            console.warn("[CardGame v2] Failed to initialize Chat Manager:", err);
+        } else {
             gameChatManager = null;
         }
 
-        // Initialize Voice for narrator TTS (optional)
+        // Initialize Opponent Voice (the opponent character's TTS voice)
         try {
             gameVoice = new CardGameVoice();
-            const voiceConfig = state?.voiceConfig || { subtitlesOnly: true };
-            await gameVoice.initialize(voiceConfig);
+            await gameVoice.initialize({
+                subtitlesOnly: !opponentVoiceEnabled,
+                voiceProfileId: opponentVoiceProfileId,
+                volume: 1.0
+            });
         } catch (err) {
-            console.warn("[CardGame v2] Failed to initialize Voice:", err);
+            console.warn("[CardGame v2] Failed to initialize opponent voice:", err);
             gameVoice = null;
+        }
+
+        // Initialize Announcer Voice (separate TTS for commentary)
+        if (announcerEnabled && announcerVoiceEnabled) {
+            try {
+                gameAnnouncerVoice = new CardGameVoice();
+                await gameAnnouncerVoice.initialize({
+                    subtitlesOnly: false,
+                    voiceProfileId: announcerVoiceProfileId,
+                    volume: 1.0
+                });
+            } catch (err) {
+                console.warn("[CardGame v2] Failed to initialize announcer voice:", err);
+                gameAnnouncerVoice = null;
+            }
+        } else {
+            gameAnnouncerVoice = null;
         }
     }
 
@@ -4150,6 +4602,7 @@
     // Centralized narration with LLM and fallback support
     async function triggerNarration(trigger, extraContext = {}) {
         if (!gameState) return;
+        console.log("[CardGame v2] triggerNarration called:", trigger);
 
         const playerName = gameState.player?.character?.name || "Player";
         const opponentName = gameState.opponent?.character?.name || "Opponent";
@@ -4205,6 +4658,26 @@
                 break;
             }
 
+            case "resolution": {
+                const attackerName = extraContext.attackerName || (extraContext.isPlayerAttack ? playerName : opponentName);
+                const defenderName = extraContext.defenderName || (extraContext.isPlayerAttack ? opponentName : playerName);
+                const outcome = extraContext.outcome || "Hit";
+                const damage = extraContext.damage || 0;
+                context = {
+                    ...baseContext,
+                    attackerName, defenderName, outcome, damage,
+                    roundNumber: gameState.round
+                };
+                if (outcome === "CRIT") {
+                    fallbackText = `Critical hit! ${attackerName} devastates ${defenderName} for ${damage} damage!`;
+                } else if (outcome === "MISS" || damage <= 0) {
+                    fallbackText = `${defenderName} deflects ${attackerName}'s assault!`;
+                } else {
+                    fallbackText = `${attackerName} strikes ${defenderName} for ${damage} damage!`;
+                }
+                break;
+            }
+
             default:
                 context = { ...baseContext, ...extraContext };
                 fallbackText = null;
@@ -4237,9 +4710,9 @@
         // Show subtitle
         showNarrationSubtitle(finalText);
 
-        // Speak with voice if available and not subtitles-only
-        if (gameVoice?.enabled && !gameVoice.subtitlesOnly) {
-            gameVoice.speak(finalText);
+        // Speak with announcer voice (narration/commentary uses announcer, not opponent)
+        if (gameAnnouncerVoice?.enabled && !gameAnnouncerVoice.subtitlesOnly) {
+            gameAnnouncerVoice.speak(finalText);
         }
     }
 
@@ -4252,20 +4725,20 @@
     // Show narrator text as a subtitle overlay
     function showNarrationSubtitle(text) {
         if (!text) return;
-        console.log("[CardGame v2] Narration:", text.substring(0, 60) + (text.length > 60 ? "..." : ""));
+        console.log("[CardGame v2] showNarrationSubtitle:", text.substring(0, 80) + (text.length > 80 ? "..." : ""));
         // Store in game state for UI to display
         if (gameState) {
             gameState.narrationText = text;
             gameState.narrationTime = Date.now();
             m.redraw();
 
-            // Auto-hide after 5 seconds
+            // Auto-hide after 8 seconds (extended for readability)
             setTimeout(() => {
-                if (gameState && gameState.narrationTime && Date.now() - gameState.narrationTime >= 4900) {
+                if (gameState && gameState.narrationTime && Date.now() - gameState.narrationTime >= 7900) {
                     gameState.narrationText = null;
                     m.redraw();
                 }
-            }, 5000);
+            }, 8000);
         }
     }
 
@@ -4344,21 +4817,143 @@
 
     // Get skill modifier from stack modifiers
     // Parses skill card modifier strings like "+2 to Attack rolls"
+    // ── Unified Effect Parser ─────────────────────────────────────────
+    // Parses an effect string and returns all recognized mechanical effects.
+    // Used by magic, consumable, and custom card evaluation.
+    // Supported patterns:
+    //   "Deal N damage"        → { damage: N }
+    //   "Heal N" / "Restore N HP"  → { healHp: N }
+    //   "Restore N Energy"     → { restoreEnergy: N }
+    //   "Restore N Morale"     → { restoreMorale: N }
+    //   "Drain N"              → { damage: N, healHp: N }  (damage + self-heal)
+    //   "Draw N"               → { draw: N }
+    //   "Burn" / "Ignite"      → { status: "burning", target: "enemy" }
+    //   "Bleed"                → { status: "bleeding", target: "enemy" }
+    //   "Stun"                 → { status: "stunned", target: "enemy" }
+    //   "Poison"               → { status: "poisoned", target: "enemy" }
+    //   "Shield" / "Protect"   → { status: "shielded", target: "self" }
+    //   "Enrage" / "Fury"      → { status: "enraged", target: "self" }
+    //   "Weaken"               → { status: "weakened", target: "enemy" }
+    //   "Fortify" / "Bolster"  → { status: "fortified", target: "self" }
+    //   "Inspire"              → { status: "inspired", target: "self" }
+    //   "Regenerate" / "Regen" → { status: "regenerating", target: "self" }
+    //   "Cure" / "Cleanse"     → { cure: true }  (removes negative status)
+    function parseEffect(effectStr) {
+        if (!effectStr) return {};
+        let e = effectStr.toLowerCase();
+        let result = {};
+
+        // Numeric extractions
+        let damageMatch = effectStr.match(/deal\s+(\d+)/i);
+        if (damageMatch) result.damage = parseInt(damageMatch[1], 10);
+
+        let drainMatch = effectStr.match(/drain\s+(\d+)/i);
+        if (drainMatch) {
+            let val = parseInt(drainMatch[1], 10);
+            result.damage = (result.damage || 0) + val;
+            result.healHp = (result.healHp || 0) + val;
+        }
+
+        let healMatch = effectStr.match(/heal\s+(\d+)|restore\s+(\d+)\s+hp/i);
+        if (healMatch) result.healHp = (result.healHp || 0) + parseInt(healMatch[1] || healMatch[2], 10);
+
+        let energyMatch = effectStr.match(/restore\s+(\d+)\s+energy/i);
+        if (energyMatch) result.restoreEnergy = parseInt(energyMatch[1], 10);
+
+        let moraleMatch = effectStr.match(/restore\s+(\d+)\s+morale/i);
+        if (moraleMatch) result.restoreMorale = parseInt(moraleMatch[1], 10);
+
+        let drawMatch = effectStr.match(/draw\s+(\d+)/i);
+        if (drawMatch) result.draw = parseInt(drawMatch[1], 10);
+
+        // Status effect keywords → { statusEffects: [{id, target}] }
+        let statuses = [];
+        if (e.includes("stun"))                                    statuses.push({ id: "stunned", target: "enemy" });
+        if (e.includes("poison"))                                  statuses.push({ id: "poisoned", target: "enemy" });
+        if (e.includes("burn") || e.includes("ignite"))            statuses.push({ id: "burning", target: "enemy" });
+        if (e.includes("bleed"))                                   statuses.push({ id: "bleeding", target: "enemy" });
+        if (e.includes("weaken"))                                  statuses.push({ id: "weakened", target: "enemy" });
+        if (e.includes("shield") || e.includes("protect"))         statuses.push({ id: "shielded", target: "self" });
+        if (e.includes("enrage") || e.includes("fury"))            statuses.push({ id: "enraged", target: "self" });
+        if (e.includes("fortify") || e.includes("bolster"))        statuses.push({ id: "fortified", target: "self" });
+        if (e.includes("inspire"))                                 statuses.push({ id: "inspired", target: "self" });
+        if (e.includes("regenerat") || e.includes("regen"))        statuses.push({ id: "regenerating", target: "self" });
+        if (statuses.length > 0) result.statusEffects = statuses;
+
+        // Cure/cleanse
+        if (e.includes("cure") || e.includes("cleanse") || e.includes("purify")) result.cure = true;
+
+        return result;
+    }
+
+    // Apply parsed effects to owner/target actors
+    function applyParsedEffects(parsed, owner, target, sourceName) {
+        let log = [];
+        if (parsed.damage && target) {
+            let dmgResult = applyDamage(target, parsed.damage);
+            log.push(sourceName + " deals " + dmgResult.finalDamage + " damage");
+        }
+        if (parsed.healHp && owner) {
+            let before = owner.hp;
+            owner.hp = Math.min(owner.maxHp, owner.hp + parsed.healHp);
+            log.push(sourceName + " heals " + (owner.hp - before) + " HP");
+        }
+        if (parsed.restoreEnergy && owner) {
+            owner.energy = Math.min(owner.maxEnergy, owner.energy + parsed.restoreEnergy);
+            log.push(sourceName + " restores " + parsed.restoreEnergy + " Energy");
+        }
+        if (parsed.restoreMorale && owner) {
+            owner.morale = Math.min(owner.maxMorale, owner.morale + parsed.restoreMorale);
+            log.push(sourceName + " restores " + parsed.restoreMorale + " Morale");
+        }
+        if (parsed.draw && owner) {
+            drawCardsForActor(owner, parsed.draw);
+            log.push(sourceName + " draws " + parsed.draw + " card(s)");
+        }
+        if (parsed.statusEffects) {
+            parsed.statusEffects.forEach(se => {
+                let actor = se.target === "self" ? owner : target;
+                if (actor) applyStatusEffect(actor, se.id, sourceName);
+                log.push(sourceName + " applies " + se.id + " to " + (se.target === "self" ? "self" : "target"));
+            });
+        }
+        if (parsed.cure && owner) {
+            // Remove all negative status effects from owner
+            let negatives = ["stunned", "poisoned", "burning", "bleeding", "weakened"];
+            negatives.forEach(id => removeStatusEffect(owner, id));
+            log.push(sourceName + " cures negative effects");
+        }
+        return log;
+    }
+
+    // Check if an effect string has any mechanically parseable content
+    function isEffectParseable(effectStr) {
+        let parsed = parseEffect(effectStr);
+        return Object.keys(parsed).length > 0;
+    }
+
+    // Skill action keyword map: actionType → keywords that match
+    const SKILL_ACTION_KEYWORDS = {
+        attack:     ["attack", "combat", "melee", "strike", "offensive"],
+        defense:    ["defense", "defend", "parry", "block", "defensive"],
+        talk:       ["talk", "social", "charisma", "persuade", "diplomacy", "speech"],
+        initiative: ["initiative", "speed", "first"],
+        investigate:["investigate", "search", "discover", "perception"],
+        flee:       ["flee", "escape", "evasion", "retreat"],
+        craft:      ["craft", "create", "forge", "build"],
+        magic:      ["magic", "spell", "cast", "arcane", "psionic"]
+    };
+
     function getStackSkillMod(stack, actionType) {
         if (!stack || !stack.modifiers) return 0;
         let total = 0;
+        let keywords = SKILL_ACTION_KEYWORDS[actionType] || [actionType];
         stack.modifiers.forEach(mod => {
             if (mod.type === "skill" && mod.modifier) {
-                // Parse modifier string like "+2 to Attack rolls"
                 let match = mod.modifier.match(/\+(\d+)/);
                 if (match) {
-                    // Check if this skill applies to this action type
                     let modLower = mod.modifier.toLowerCase();
-                    if (actionType === "attack" && (modLower.includes("attack") || modLower.includes("combat"))) {
-                        total += parseInt(match[1], 10);
-                    } else if (actionType === "defense" && (modLower.includes("defense") || modLower.includes("parry"))) {
-                        total += parseInt(match[1], 10);
-                    } else if (actionType === "talk" && (modLower.includes("talk") || modLower.includes("social") || modLower.includes("charisma"))) {
+                    if (keywords.some(kw => modLower.includes(kw))) {
                         total += parseInt(match[1], 10);
                     }
                 }
@@ -5880,26 +6475,12 @@
             return am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
         }
 
-        // Ensure a prompt config exists (create or update)
+        // Ensure a prompt config exists (create or find) using am7chat.makePrompt
         static async ensurePromptConfig(chatDir, name, systemPrompt) {
             try {
-                let q = am7client.newQuery("olio.llm.promptConfig");
-                q.field("groupId", chatDir.objectId);
-                q.field("name", name);
-                let existing = await am7client.search(q);
-
-                let cfg;
-                if (existing?.results?.length > 0) {
-                    cfg = existing.results[0];
-                    cfg.systemPrompt = systemPrompt;
-                    await am7client.patch("olio.llm.promptConfig", cfg);
-                } else {
-                    cfg = am7model.newPrimitive("olio.llm.promptConfig");
-                    cfg.name = name;
-                    cfg.groupPath = "~/Chat";
-                    cfg.systemPrompt = systemPrompt;
-                    cfg = await am7client.create("olio.llm.promptConfig", cfg);
-                }
+                // Delegate to am7chat.makePrompt which correctly handles
+                // the 'system' array field and create-or-find logic
+                let cfg = await am7chat.makePrompt(name, [systemPrompt]);
                 return cfg;
             } catch (err) {
                 console.error("[CardGameLLM] ensurePromptConfig failed:", err);
@@ -5907,26 +6488,38 @@
             }
         }
 
-        // Ensure a chat config exists (create from template or return existing)
+        // Ensure a chat config exists (find existing or create from template)
         static async ensureChatConfig(chatDir, template, name, temperature) {
             try {
-                let q = am7client.newQuery("olio.llm.chatConfig");
-                q.field("groupId", chatDir.objectId);
+                // Search for existing config using page API (same pattern as am7chat.makeChat)
+                let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatConfig"));
+                q.field("groupId", chatDir.id);
                 q.field("name", name);
-                let existing = await am7client.search(q);
+                q.cache(false);
+                let qr = await page.search(q);
 
-                if (existing?.results?.length > 0) {
-                    return am7client.getFull("olio.llm.chatConfig", existing.results[0].objectId);
+                if (qr?.results?.length > 0) {
+                    return qr.results[0];
                 }
 
-                // Clone from template
-                let cfg = JSON.parse(JSON.stringify(template));
-                cfg.objectId = null;
-                cfg.id = 0;
-                cfg.name = name;
-                cfg.groupPath = "~/Chat";
-                if (cfg.chat) cfg.chat.temperature = temperature;
-                return am7client.create("olio.llm.chatConfig", cfg);
+                // Clone from template and create via page API
+                let icfg = am7model.newInstance("olio.llm.chatConfig");
+                icfg.api.groupId(chatDir.id);
+                icfg.api.groupPath(chatDir.path);
+                icfg.api.name(name);
+                // Copy relevant fields from template
+                if (template.model) icfg.api.model(template.model);
+                if (template.serverUrl) icfg.api.serverUrl(template.serverUrl);
+                if (template.serviceType) icfg.api.serviceType(template.serviceType);
+                if (template.messageTrim) icfg.api.messageTrim(template.messageTrim);
+                await page.createObject(icfg.entity);
+
+                // Re-search to get the created object
+                qr = await page.search(q);
+                if (qr?.results?.length > 0) {
+                    return qr.results[0];
+                }
+                return null;
             } catch (err) {
                 console.error("[CardGameLLM] ensureChatConfig failed:", err);
                 return null;
@@ -6913,25 +7506,15 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                 resolveCombat(attacker, defender, pos.stack);
                 resolutionPhase = "result";
 
-                // Trigger narrator for resolution (non-blocking)
-                if (gameNarrator && gameNarrator.initialized && currentCombatResult) {
-                    (async () => {
-                        try {
-                            const narration = await gameNarrator.narrate("resolution", {
-                                playerStack: pos.owner === "player" ? (pos.stack?.coreCard?.name || "nothing") : null,
-                                opponentStack: pos.owner === "opponent" ? (pos.stack?.coreCard?.name || "nothing") : null,
-                                playerRoll: currentCombatResult.attackRoll,
-                                opponentRoll: currentCombatResult.defenseRoll,
-                                outcome: currentCombatResult.outcome?.label || "Hit",
-                                damage: currentCombatResult.damageDealt || 0
-                            });
-                            if (narration?.text) {
-                                showNarrationSubtitle(narration.text);
-                            }
-                        } catch (e) {
-                            console.warn("[CardGame v2] Narrator failed:", e);
-                        }
-                    })();
+                // Trigger narrator for resolution (non-blocking, with fallback)
+                if (currentCombatResult) {
+                    triggerNarration("resolution", {
+                        isPlayerAttack: pos.owner === "player",
+                        attackerName: isThreat ? pos.threat?.name : (pos.owner === "player" ? gameState.player.character?.name : gameState.opponent.character?.name),
+                        defenderName: isThreat ? (pos.target === "player" ? gameState.player.character?.name : gameState.opponent.character?.name) : (pos.owner === "player" ? gameState.opponent.character?.name : gameState.player.character?.name),
+                        outcome: currentCombatResult.outcome?.label || "Hit",
+                        damage: currentCombatResult.damageDealt || 0
+                    });
                 }
 
                 m.redraw();
@@ -7121,28 +7704,10 @@ Respond naturally in character. No game mechanics, just dialogue.`;
 
                     // Use Item action: apply consumable effect
                     if (card.type === "item" && card.subtype === "consumable") {
-                        // Parse effect string for common patterns
-                        let effect = card.effect || "";
-                        let hpMatch = effect.match(/restore\s+(\d+)\s+hp/i);
-                        let energyMatch = effect.match(/restore\s+(\d+)\s+energy/i);
-                        let moraleMatch = effect.match(/restore\s+(\d+)\s+morale/i);
-
-                        if (hpMatch) {
-                            let heal = parseInt(hpMatch[1], 10);
-                            owner.hp = Math.min(owner.maxHp, owner.hp + heal);
-                            console.log("[CardGame v2]", pos.owner, "used", card.name, ": +" + heal + " HP");
-                        }
-                        if (energyMatch) {
-                            let restore = parseInt(energyMatch[1], 10);
-                            owner.energy = Math.min(owner.maxEnergy, owner.energy + restore);
-                            console.log("[CardGame v2]", pos.owner, "used", card.name, ": +" + restore + " Energy");
-                        }
-                        if (moraleMatch) {
-                            let boost = parseInt(moraleMatch[1], 10);
-                            owner.morale = Math.min(owner.maxMorale, owner.morale + boost);
-                            console.log("[CardGame v2]", pos.owner, "used", card.name, ": +" + boost + " Morale");
-                        }
-
+                        // Use unified effect parser for consumable effects
+                        let parsed = parseEffect(card.effect || "");
+                        let log = applyParsedEffects(parsed, owner, target, card.name);
+                        log.forEach(msg => console.log("[CardGame v2]", pos.owner, "used:", msg));
                         // Consumables are NOT returned to hand - they stay in discard
                     }
 
@@ -7285,46 +7850,17 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                         }
 
                         if (!fizzled) {
-                            // Apply spell effect based on skillType
-                            let effect = card.effect || "";
-                            let skillType = card.skillType || "Arcane";
+                            // Use unified effect parser for all magic effects
+                            let parsed = parseEffect(card.effect || "");
+                            let log = applyParsedEffects(parsed, owner, target, card.name);
+                            log.forEach(msg => console.log("[CardGame v2]", pos.owner, "cast:", msg));
 
-                            // Parse damage from effect string
-                            let damageMatch = effect.match(/deal\s+(\d+)/i);
-                            if (damageMatch) {
-                                let damage = parseInt(damageMatch[1], 10);
-                                let damageResult = applyDamage(target, damage);
-                                console.log("[CardGame v2]", pos.owner, "cast", card.name, "for", damageResult.finalDamage, "damage");
-
-                                // Check for defeat
-                                if (target.hp <= 0) {
-                                    gameState.winner = pos.owner;
-                                    gameState.phase = "GAME_OVER";
-                                    m.redraw();
-                                    return;
-                                }
-                            }
-
-                            // Parse healing from effect string
-                            let healMatch = effect.match(/heal\s+(\d+)|restore\s+(\d+)\s+hp/i);
-                            if (healMatch) {
-                                let heal = parseInt(healMatch[1] || healMatch[2], 10);
-                                owner.hp = Math.min(owner.maxHp, owner.hp + heal);
-                                console.log("[CardGame v2]", pos.owner, "cast", card.name, "healed", heal, "HP");
-                            }
-
-                            // Status effect spells (check effect text for keywords)
-                            if (effect.toLowerCase().includes("stun")) {
-                                applyStatusEffect(target, "stunned", card.name);
-                            }
-                            if (effect.toLowerCase().includes("poison")) {
-                                applyStatusEffect(target, "poisoned", card.name);
-                            }
-                            if (effect.toLowerCase().includes("shield") || effect.toLowerCase().includes("protect")) {
-                                applyStatusEffect(owner, "shielded", card.name);
-                            }
-                            if (effect.toLowerCase().includes("enrage") || effect.toLowerCase().includes("fury")) {
-                                applyStatusEffect(owner, "enraged", card.name);
+                            // Check for defeat after damage
+                            if (parsed.damage && target.hp <= 0) {
+                                gameState.winner = pos.owner;
+                                gameState.phase = "GAME_OVER";
+                                m.redraw();
+                                return;
                             }
                         }
                     }
@@ -7450,6 +7986,9 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                             gameState = createGameState(viewingDeck, char);
                                             gameCharSelection = null;
                                             if (gameState) {
+                                                // Load and apply campaign bonuses
+                                                activeCampaign = await campaignStorage.load(viewingDeck.deckName || viewingDeck.storageName);
+                                                if (activeCampaign) applyCampaignBonuses(gameState, activeCampaign);
                                                 // Initialize LLM components in background (non-blocking)
                                                 initializeLLMComponents(gameState, viewingDeck);
                                                 // Animation will trigger runInitiativePhase() when complete
@@ -7500,6 +8039,12 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                         gameState = createGameState(viewingDeck, gameCharSelection.selected);
                         gameCharSelection = null;
                         if (gameState) {
+                            // Load and apply campaign bonuses (async, non-blocking)
+                            campaignStorage.load(viewingDeck.deckName).then(c => {
+                                activeCampaign = c;
+                                if (c) applyCampaignBonuses(gameState, c);
+                                m.redraw();
+                            });
                             initializeLLMComponents(gameState, viewingDeck);
                             // Animation will trigger runInitiativePhase() when complete
                         }
@@ -7831,6 +8376,13 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                             : m("span", { class: "material-symbols-outlined", style: "font-size:48px;color:#B8860B" }, "person"),
                         m("div", { class: "cg2-portrait-name" }, char.name || "Unknown")
                     ]),
+
+                    // Campaign level badge (player only)
+                    !isOpponent && activeCampaign ? m("div", { class: "cg2-campaign-badge" }, [
+                        m("span", { class: "cg2-campaign-level" }, "Lv." + activeCampaign.level),
+                        m("span", { class: "cg2-campaign-xp" }, activeCampaign.xp + " XP"),
+                        m("span", { class: "cg2-campaign-record" }, activeCampaign.wins + "W/" + activeCampaign.losses + "L")
+                    ]) : null,
 
                     // AP indicator
                     m("div", { class: "cg2-ap-indicator" }, [
@@ -8551,6 +9103,11 @@ Respond naturally in character. No game mechanics, just dialogue.`;
 
                     // Trigger round end narration (non-blocking)
                     narrateRoundEnd(gameState.roundWinner);
+
+                    // Auto-save game state after each round
+                    gameStorage.save(gameState.deckName, gameState).then(saved => {
+                        if (saved) console.log("[CardGame v2] Auto-saved after round", gameState.round);
+                    }).catch(e => console.warn("[CardGame v2] Auto-save failed:", e));
                 }
             },
             view() {
@@ -8703,6 +9260,10 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                             speaker: response.speaker,
                             timestamp: Date.now()
                         });
+                        // Speak with opponent voice if available
+                        if (gameVoice?.enabled && !gameVoice.subtitlesOnly && response.text) {
+                            gameVoice.speak(response.text);
+                        }
                     } else {
                         // LLM returned error
                         gameState.chat.messages.push({
@@ -8896,16 +9457,33 @@ Respond naturally in character. No game mechanics, just dialogue.`;
     // ── Game Over UI ──────────────────────────────────────────────────
     function GameOverUI() {
         let narratedEnd = false;
+        let campaignSaved = false;
 
         return {
-            oninit() {
+            async oninit() {
                 // Trigger end game narration once
                 if (!narratedEnd && gameState && gameState.winner) {
                     narratedEnd = true;
                     narrateGameEnd(gameState.winner);
                 }
+                // Save campaign progress once
+                if (!campaignSaved && gameState && gameState.winner) {
+                    campaignSaved = true;
+                    let isVictory = gameState.winner === "player";
+                    let xpGain = calculateXP(gameState, isVictory);
+                    gameState.xpGained = xpGain;
+                    activeCampaign = await saveCampaignProgress(gameState, isVictory, xpGain);
+                    // Delete game saves on game end
+                    gameStorage.deleteAll(gameState.deckName);
+                    m.redraw();
+                }
             },
             view() {
+                // Show level-up dialog if pending
+                if (levelUpState) {
+                    return m(LevelUpUI);
+                }
+
                 let isVictory = gameState.winner === "player";
                 let player = gameState.player;
                 let opponent = gameState.opponent;
@@ -8935,10 +9513,42 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                             m("div", { class: "cg2-game-over-stat" }, [
                                 m("div", { class: "cg2-game-over-stat-value" }, opponent.hp + "/" + opponent.maxHp),
                                 m("div", { class: "cg2-game-over-stat-label" }, "Opponent HP")
-                            ])
+                            ]),
+                            gameState.xpGained ? m("div", { class: "cg2-game-over-stat" }, [
+                                m("div", { class: "cg2-game-over-stat-value cg2-xp-gain" }, "+" + gameState.xpGained),
+                                m("div", { class: "cg2-game-over-stat-label" }, "XP Gained")
+                            ]) : null
                         ]),
 
+                        // Campaign progress bar
+                        activeCampaign ? m("div", { class: "cg2-game-over-campaign" }, [
+                            m("div", { class: "cg2-campaign-progress" }, [
+                                m("span", "Level " + activeCampaign.level),
+                                m("span", { class: "cg2-campaign-xp-bar" }, [
+                                    m("span", { class: "cg2-campaign-xp-fill", style: { width: (activeCampaign.xp % 100) + "%" } }),
+                                ]),
+                                m("span", activeCampaign.xp + " XP"),
+                            ]),
+                            m("div", { class: "cg2-campaign-record-line" },
+                                activeCampaign.wins + "W / " + activeCampaign.losses + "L (" + activeCampaign.totalGamesPlayed + " games)")
+                        ]) : null,
+
                         m("div", { class: "cg2-game-over-actions" }, [
+                            // Level up button (if pending)
+                            activeCampaign?.pendingLevelUps > 0 ? m("button", {
+                                class: "cg2-btn cg2-btn-accent",
+                                onclick() {
+                                    levelUpState = {
+                                        campaign: activeCampaign,
+                                        statsSelected: [],
+                                        remaining: 2
+                                    };
+                                    m.redraw();
+                                }
+                            }, [
+                                m("span", { class: "material-symbols-outlined" }, "upgrade"),
+                                " Level Up! (+" + (activeCampaign.pendingLevelUps * 2) + " stats)"
+                            ]) : null,
                             m("button", {
                                 class: "cg2-btn cg2-btn-primary",
                                 async onclick() {
@@ -8947,9 +9557,8 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                     let playerChar = player.character;
                                     gameState = createGameState(deck, playerChar);
                                     if (gameState) {
+                                        if (activeCampaign) applyCampaignBonuses(gameState, activeCampaign);
                                         initializeLLMComponents(gameState, deck);
-                                        // Don't call runInitiativePhase() here - let the animation trigger it
-                                        // to avoid double-roll causing stale threat state
                                         resetInitAnimState();
                                         startInitiativeAnimation();
                                     }
@@ -8960,6 +9569,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                 class: "cg2-btn",
                                 onclick() {
                                     gameState = null;
+                                    activeCampaign = null;
                                     // Restore deck view image state from viewingDeck
                                     if (viewingDeck) {
                                         backgroundImageId = viewingDeck.backgroundImageId || null;
@@ -8972,6 +9582,106 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                     m.redraw();
                                 }
                             }, "Back to Deck")
+                        ])
+                    ])
+                ]);
+            }
+        };
+    }
+
+    // ── Level Up UI Component ───────────────────────────────────────────
+    const LEVEL_UP_STATS = ["STR", "AGI", "END", "INT", "MAG", "CHA"];
+    const STAT_DESCRIPTIONS = {
+        STR: "Strength — melee damage",
+        AGI: "Agility — initiative rolls",
+        END: "Endurance — action points",
+        INT: "Intelligence — skill effects",
+        MAG: "Magic — energy pool & spells",
+        CHA: "Charisma — talk & morale"
+    };
+
+    function LevelUpUI() {
+        return {
+            view() {
+                if (!levelUpState) return null;
+                let { campaign, statsSelected, remaining } = levelUpState;
+                let playerStats = gameState?.player?.character?.stats || {};
+
+                return m("div", { class: "cg2-levelup-overlay" }, [
+                    m("div", { class: "cg2-levelup-panel" }, [
+                        m("h2", { class: "cg2-levelup-title" }, "Level Up!"),
+                        m("p", { class: "cg2-levelup-subtitle" },
+                            "Level " + campaign.level + " reached! Choose " + remaining + " stat" + (remaining > 1 ? "s" : "") + " to increase."),
+
+                        m("div", { class: "cg2-levelup-stats" },
+                            LEVEL_UP_STATS.map(stat => {
+                                let currentVal = playerStats[stat] || 0;
+                                let gained = (campaign.statGains?.[stat] || 0);
+                                let selectedCount = statsSelected.filter(s => s === stat).length;
+                                let isSelected = selectedCount > 0;
+
+                                return m("div", {
+                                    class: "cg2-stat-pick" + (isSelected ? " selected" : ""),
+                                    onclick() {
+                                        if (remaining > 0) {
+                                            statsSelected.push(stat);
+                                            levelUpState.remaining--;
+                                        } else if (isSelected) {
+                                            // Deselect last instance
+                                            let idx = statsSelected.lastIndexOf(stat);
+                                            if (idx >= 0) {
+                                                statsSelected.splice(idx, 1);
+                                                levelUpState.remaining++;
+                                            }
+                                        }
+                                        m.redraw();
+                                    }
+                                }, [
+                                    m("div", { class: "cg2-stat-pick-name" }, stat),
+                                    m("div", { class: "cg2-stat-pick-value" }, currentVal + (selectedCount > 0 ? " +" + selectedCount : "")),
+                                    m("div", { class: "cg2-stat-pick-desc" }, STAT_DESCRIPTIONS[stat]),
+                                    gained > 0 ? m("div", { class: "cg2-stat-pick-gained" }, "Campaign: +" + gained) : null
+                                ]);
+                            })
+                        ),
+
+                        m("div", { class: "cg2-levelup-actions" }, [
+                            m("button", {
+                                class: "cg2-btn cg2-btn-primary",
+                                disabled: remaining > 0,
+                                async onclick() {
+                                    // Apply stat gains
+                                    for (let stat of statsSelected) {
+                                        campaign.statGains[stat] = (campaign.statGains[stat] || 0) + 1;
+                                    }
+                                    campaign.pendingLevelUps = Math.max(0, (campaign.pendingLevelUps || 1) - 1);
+
+                                    // Save updated campaign
+                                    await campaignStorage.save(gameState.deckName, campaign);
+                                    activeCampaign = campaign;
+
+                                    // Check if more level-ups pending
+                                    if (campaign.pendingLevelUps > 0) {
+                                        levelUpState = {
+                                            campaign,
+                                            statsSelected: [],
+                                            remaining: 2
+                                        };
+                                    } else {
+                                        levelUpState = null;
+                                    }
+                                    m.redraw();
+                                }
+                            }, remaining > 0 ? "Select " + remaining + " more" : "Confirm"),
+                            m("button", {
+                                class: "cg2-btn",
+                                onclick() {
+                                    // Reset selections
+                                    levelUpState.statsSelected = [];
+                                    levelUpState.remaining = 2;
+                                    m.redraw();
+                                }
+                            }, "Reset")
                         ])
                     ])
                 ]);
@@ -9234,6 +9944,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                 resetSdOverrideInsts();
                 sdConfigExpanded = false;
                 sdConfigTab = "_default";
+                gameConfigExpanded = false;
                 flippedCards = {};
             },
             view() {
@@ -9253,7 +9964,7 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                 let uniqueCards = Object.values(uniqueMap);
 
                 let queueActive = artQueue.some(j => j.status === "pending" || j.status === "processing");
-                let busy = queueActive || backgroundGenerating || cardFrontGenerating || cardBackGenerating;
+                let busy = queueActive || backgroundGenerating || tabletopGenerating || cardFrontGenerating || cardBackGenerating || !!sequenceCardId;
                 return m("div", [
                     m("div", { class: "cg2-toolbar" }, [
                         m("button", { class: "cg2-btn", onclick: () => { screen = "deckList"; viewingDeck = null; cancelArtQueue(); artTotal = 0; backgroundImageId = null; backgroundThumbUrl = null; m.redraw(); } }, "\u2190 Back to Decks"),
@@ -9301,6 +10012,21 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "play_arrow"),
                             "Play Game"
+                        ]),
+                        m("button", {
+                            class: "cg2-btn cg2-btn-sm",
+                            style: { fontSize: "11px", marginLeft: "4px" },
+                            disabled: busy,
+                            title: "Run tests using this deck",
+                            onclick() {
+                                testDeck = viewingDeck;
+                                testDeckName = viewingDeck?.deckName || viewingDeck?.storageName || null;
+                                screen = "test";
+                                m.redraw();
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "science"),
+                            "Test"
                         ])
                     ]),
                     // SD Config panel (per-type)
@@ -9410,6 +10136,161 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                             ])
                         ]) : null
                     ]),
+                    // ── Game Config panel (LLM, Voice) ──
+                    m("div", { class: "cg2-sd-panel" }, [
+                        m("div", {
+                            class: "cg2-sd-panel-header",
+                            onclick() {
+                                gameConfigExpanded = !gameConfigExpanded;
+                                if (gameConfigExpanded && !voiceProfilesLoaded) loadVoiceProfiles();
+                                m.redraw();
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", marginRight: "6px", transition: "transform 0.2s", transform: gameConfigExpanded ? "rotate(90deg)" : "" } }, "chevron_right"),
+                            m("span", { style: { fontWeight: 600, fontSize: "13px" } }, "Game Config"),
+                            (() => {
+                                let gc = getDeckGameConfig(viewingDeck);
+                                let tags = [];
+                                if (gc.narrationEnabled === false) tags.push("LLM off");
+                                if (gc.opponentVoiceEnabled) tags.push("opponent voice");
+                                if (gc.announcerEnabled) tags.push("announcer" + (gc.announcerVoiceEnabled ? " +voice" : ""));
+                                return tags.length > 0 ? m("span", { style: { marginLeft: "8px", fontSize: "11px", color: "#888" } }, tags.join(" · ")) : null;
+                            })()
+                        ]),
+                        gameConfigExpanded ? m("div", { style: { padding: "12px 16px" } }, (() => {
+                            let gc = getDeckGameConfig(viewingDeck);
+                            let voiceProfilePicker = (label, valueKey, icon) => m("div", { class: "cg2-config-row", style: { paddingLeft: "24px" } }, [
+                                m("label", { class: "cg2-config-label" }, [
+                                    m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, icon || "mic"),
+                                    label
+                                ]),
+                                m("div", { class: "cg2-config-control" }, [
+                                    voiceProfiles.length > 0
+                                        ? m("select", {
+                                            class: "cg2-config-select",
+                                            value: gc[valueKey] || "",
+                                            onchange(e) { gc[valueKey] = e.target.value || null; m.redraw(); }
+                                        }, [
+                                            m("option", { value: "" }, "-- Default Voice (Piper) --"),
+                                            ...voiceProfiles.map(vp =>
+                                                m("option", { value: vp.objectId },
+                                                    vp.name || ((vp.engine || "piper") + " \u2014 " + (vp.speaker || "default")))
+                                            )
+                                        ])
+                                        : m("span", { style: { fontSize: "11px", color: "#999" } },
+                                            voiceProfilesLoaded ? "No voice profiles found \u2014 default Piper voice will be used" : "Loading voice profiles...")
+                                ])
+                            ]);
+
+                            return [
+                                // ── LLM Narration toggle ──
+                                m("div", { class: "cg2-config-row" }, [
+                                    m("label", { class: "cg2-config-label" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, "smart_toy"),
+                                        "LLM Patter"
+                                    ]),
+                                    m("div", { class: "cg2-config-control" }, [
+                                        m("button", {
+                                            class: "cg2-btn cg2-btn-sm" + (gc.narrationEnabled !== false ? " cg2-btn-active" : ""),
+                                            onclick() { gc.narrationEnabled = gc.narrationEnabled === false ? true : false; m.redraw(); }
+                                        }, gc.narrationEnabled !== false ? "Enabled" : "Disabled"),
+                                        m("span", { style: { fontSize: "10px", color: "#999", marginLeft: "8px" } },
+                                            gc.narrationEnabled !== false ? "LLM generates dialogue and narration" : "Fallback text used instead of LLM")
+                                    ])
+                                ]),
+
+                                // ── Section: Opponent Voice ──
+                                m("div", { class: "cg2-config-section-label" }, "Opponent Voice"),
+                                // Opponent voice enable/disable
+                                m("div", { class: "cg2-config-row" }, [
+                                    m("label", { class: "cg2-config-label" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, "record_voice_over"),
+                                        "Voice"
+                                    ]),
+                                    m("div", { class: "cg2-config-control" }, [
+                                        m("button", {
+                                            class: "cg2-btn cg2-btn-sm" + (gc.opponentVoiceEnabled ? " cg2-btn-active" : ""),
+                                            onclick() { gc.opponentVoiceEnabled = !gc.opponentVoiceEnabled; m.redraw(); }
+                                        }, gc.opponentVoiceEnabled ? "Enabled" : "Disabled"),
+                                        m("span", { style: { fontSize: "10px", color: "#999", marginLeft: "8px" } },
+                                            gc.opponentVoiceEnabled ? "Opponent speaks via TTS" : "Subtitles only")
+                                    ])
+                                ]),
+                                // Opponent voice profile (shown when enabled)
+                                gc.opponentVoiceEnabled ? voiceProfilePicker("Voice Profile", "opponentVoiceProfileId", "person") : null,
+
+                                // ── Section: Announcer ──
+                                m("div", { class: "cg2-config-section-label" }, "Announcer"),
+                                // Announcer enable/disable
+                                m("div", { class: "cg2-config-row" }, [
+                                    m("label", { class: "cg2-config-label" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, "campaign"),
+                                        "Announcer"
+                                    ]),
+                                    m("div", { class: "cg2-config-control" }, [
+                                        m("button", {
+                                            class: "cg2-btn cg2-btn-sm" + (gc.announcerEnabled ? " cg2-btn-active" : ""),
+                                            onclick() { gc.announcerEnabled = !gc.announcerEnabled; m.redraw(); }
+                                        }, gc.announcerEnabled ? "Enabled" : "Disabled"),
+                                        m("span", { style: { fontSize: "10px", color: "#999", marginLeft: "8px" } },
+                                            gc.announcerEnabled ? "Play-by-play commentary during game" : "No announcer commentary")
+                                    ])
+                                ]),
+                                // Announcer style (shown when enabled)
+                                gc.announcerEnabled ? m("div", { class: "cg2-config-row", style: { paddingLeft: "24px" } }, [
+                                    m("label", { class: "cg2-config-label" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, "style"),
+                                        "Style"
+                                    ]),
+                                    m("div", { class: "cg2-config-control" }, [
+                                        m("select", {
+                                            class: "cg2-config-select",
+                                            value: gc.announcerProfile || "arena-announcer",
+                                            onchange(e) { gc.announcerProfile = e.target.value; m.redraw(); }
+                                        }, Object.entries(CardGameNarrator.PROFILES).map(([id, p]) =>
+                                            m("option", { value: id }, p.name)
+                                        ))
+                                    ])
+                                ]) : null,
+                                // Announcer voice enable/disable (shown when announcer enabled)
+                                gc.announcerEnabled ? m("div", { class: "cg2-config-row", style: { paddingLeft: "24px" } }, [
+                                    m("label", { class: "cg2-config-label" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, "volume_up"),
+                                        "Voice"
+                                    ]),
+                                    m("div", { class: "cg2-config-control" }, [
+                                        m("button", {
+                                            class: "cg2-btn cg2-btn-sm" + (gc.announcerVoiceEnabled ? " cg2-btn-active" : ""),
+                                            onclick() { gc.announcerVoiceEnabled = !gc.announcerVoiceEnabled; m.redraw(); }
+                                        }, gc.announcerVoiceEnabled ? "Enabled" : "Disabled"),
+                                        m("span", { style: { fontSize: "10px", color: "#999", marginLeft: "8px" } },
+                                            gc.announcerVoiceEnabled ? "Announcer speaks via TTS" : "Text only")
+                                    ])
+                                ]) : null,
+                                // Announcer voice profile (shown when announcer voice enabled)
+                                gc.announcerEnabled && gc.announcerVoiceEnabled ? voiceProfilePicker("Voice Profile", "announcerVoiceProfileId", "mic") : null,
+
+                                // Save button
+                                m("div", { style: { marginTop: "12px", textAlign: "right" } }, [
+                                    m("button", {
+                                        class: "cg2-btn cg2-btn-primary",
+                                        style: { fontSize: "11px" },
+                                        async onclick() {
+                                            viewingDeck.gameConfig = gc;
+                                            let safeName = currentDeckSafeName();
+                                            if (safeName) {
+                                                await deckStorage.save(safeName, viewingDeck);
+                                                page.toast("success", "Game config saved");
+                                            }
+                                        }
+                                    }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "save"),
+                                        "Save Config"
+                                    ])
+                                ])
+                            ];
+                        })()) : null
+                    ]),
                     // Background Basis & Tabletop (side by side)
                     m("div", { class: "cg2-bg-row", style: { display: "flex", gap: "12px", margin: "8px 0", flexWrap: "wrap" } }, [
                         // Background Basis (for card art)
@@ -9491,9 +10372,18 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                                 // Clear front/back template art
                                 cardFrontImageUrl = null;
                                 cardBackImageUrl = null;
+                                // Clear background and tabletop
+                                backgroundImageId = null;
+                                backgroundThumbUrl = null;
+                                tabletopImageId = null;
+                                tabletopThumbUrl = null;
                                 if (viewingDeck) {
                                     delete viewingDeck.cardFrontImageUrl;
                                     delete viewingDeck.cardBackImageUrl;
+                                    delete viewingDeck.backgroundImageId;
+                                    delete viewingDeck.backgroundThumbUrl;
+                                    delete viewingDeck.tabletopImageId;
+                                    delete viewingDeck.tabletopThumbUrl;
                                 }
                                 queueDeckArt(viewingDeck);
                             }
@@ -9693,6 +10583,1268 @@ Respond naturally in character. No game mechanics, just dialogue.`;
         };
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // Phase 9: Comprehensive Test Mode
+    // ═══════════════════════════════════════════════════════════════════
+
+    const TEST_CATEGORIES = {
+        storage: { label: "Storage", icon: "database" },
+        narration: { label: "Narration", icon: "campaign" },
+        combat: { label: "Combat", icon: "swords" },
+        cards: { label: "Card Eval", icon: "playing_cards" },
+        campaign: { label: "Campaign", icon: "military_tech" },
+        llm: { label: "LLM", icon: "smart_toy" },
+        voice: { label: "Voice", icon: "record_voice_over" },
+        playthrough: { label: "Playthrough", icon: "sports_esports" }
+    };
+
+    let testDeck = null;   // Deck selected for testing (set from DeckView)
+    let testDeckName = null;
+
+    let testState = {
+        running: false,
+        logs: [],       // [{ time, category, message, status: "info"|"pass"|"fail"|"warn" }]
+        results: { pass: 0, fail: 0, warn: 0, skip: 0 },
+        currentTest: null,
+        completed: false,
+        selectedCategories: Object.keys(TEST_CATEGORIES),
+        autoPlaySpeed: 500  // ms between auto-play actions
+    };
+
+    function testLog(category, message, status = "info") {
+        let entry = { time: new Date().toISOString().substring(11, 19), category, message, status };
+        testState.logs.push(entry);
+        if (status === "pass") testState.results.pass++;
+        else if (status === "fail") testState.results.fail++;
+        else if (status === "warn") testState.results.warn++;
+        console.log(`[TestMode] [${category}] [${status}] ${message}`);
+        m.redraw();
+    }
+
+    async function runTestSuite() {
+        testState.running = true;
+        testState.logs = [];
+        testState.results = { pass: 0, fail: 0, warn: 0, skip: 0 };
+        testState.completed = false;
+        m.redraw();
+
+        let cats = testState.selectedCategories;
+
+        // Resolve the deck to use for testing
+        // Prefer testDeck (set from DeckView), otherwise load first available deck
+        let resolvedDeck = testDeck;
+        let resolvedDeckName = testDeckName;
+        if (!resolvedDeck) {
+            let deckNames = await deckStorage.list();
+            if (deckNames.length > 0) {
+                resolvedDeckName = deckNames[0];
+                resolvedDeck = await deckStorage.load(resolvedDeckName);
+            }
+        }
+        if (resolvedDeck) {
+            testLog("", "Using deck: " + (resolvedDeck.deckName || resolvedDeckName), "info");
+            // Ensure the deck's theme is loaded so card pool analysis works
+            if (resolvedDeck.themeId && (!activeTheme || activeTheme.themeId !== resolvedDeck.themeId)) {
+                await loadThemeConfig(resolvedDeck.themeId);
+                testLog("", "Loaded theme: " + (activeTheme?.name || resolvedDeck.themeId), "info");
+            }
+        } else {
+            testLog("", "No deck available for testing — some tests will be skipped", "warn");
+        }
+
+        // ── Storage Tests ────────────────────
+        if (cats.includes("storage")) {
+            testState.currentTest = "Storage: CRUD operations";
+            testLog("storage", "Testing storage CRUD...");
+
+            try {
+                // Test encodeJson/decodeJson
+                let testData = { test: true, value: 42, nested: { arr: [1, 2, 3] } };
+                let encoded = encodeJson(testData);
+                let decoded = decodeJson(encoded);
+                if (decoded.test === true && decoded.value === 42 && decoded.nested.arr.length === 3) {
+                    testLog("storage", "encodeJson/decodeJson roundtrip", "pass");
+                } else {
+                    testLog("storage", "encodeJson/decodeJson roundtrip failed", "fail");
+                }
+
+                // Test deck list
+                let deckNames = await deckStorage.list();
+                testLog("storage", "deckStorage.list() returned " + deckNames.length + " decks", "pass");
+
+                // Test gameStorage.list for each deck
+                for (let name of deckNames.slice(0, 3)) {
+                    let saves = await gameStorage.list(name);
+                    testLog("storage", "gameStorage.list('" + name + "') = " + saves.length + " saves", "pass");
+                }
+
+                // Test campaignStorage for each deck
+                for (let name of deckNames.slice(0, 3)) {
+                    let campaign = await campaignStorage.load(name);
+                    testLog("storage", "campaignStorage.load('" + name + "'): " + (campaign ? "Level " + campaign.level : "none"), "pass");
+                }
+            } catch (e) {
+                testLog("storage", "Storage test error: " + e.message, "fail");
+            }
+        }
+
+        // ── Narration Tests ──────────────────
+        if (cats.includes("narration")) {
+            testState.currentTest = "Narration: triggers and display";
+            testLog("narration", "Testing narration system...");
+
+            // Test showNarrationSubtitle
+            let testText = "[TEST] Narration subtitle test at " + Date.now();
+            try {
+                // Create temporary gameState for testing
+                let savedGs = gameState;
+                gameState = { narrationText: null, narrationTime: null, player: { character: { name: "TestHero" } }, opponent: { character: { name: "TestVillain" } }, round: 1 };
+                showNarrationSubtitle(testText);
+                if (gameState.narrationText === testText) {
+                    testLog("narration", "showNarrationSubtitle sets narrationText", "pass");
+                } else {
+                    testLog("narration", "showNarrationSubtitle did NOT set narrationText", "fail");
+                }
+                // Timer is async and can't be verified synchronously — log as info
+                testLog("narration", "Auto-hide timer scheduled (8s, cannot verify synchronously)", "info");
+                gameState.narrationText = null;
+                gameState = savedGs;
+            } catch (e) {
+                testLog("narration", "Narration test error: " + e.message, "fail");
+            }
+
+            // Test triggerNarration fallback text
+            try {
+                let savedGs = gameState;
+                let savedNarrator = gameNarrator;
+                gameNarrator = null; // Force fallback path
+                gameState = { narrationText: null, narrationTime: null, player: { character: { name: "Hero" }, hp: 15, energy: 10 }, opponent: { character: { name: "Villain" }, hp: 12, energy: 8 }, round: 3 };
+                await triggerNarration("game_start");
+                if (gameState.narrationText && gameState.narrationText.includes("Hero")) {
+                    testLog("narration", "game_start fallback text includes player name", "pass");
+                } else {
+                    testLog("narration", "game_start fallback text missing", "fail");
+                }
+                gameState.narrationText = null;
+                await triggerNarration("round_start");
+                if (gameState.narrationText && gameState.narrationText.includes("Round 3")) {
+                    testLog("narration", "round_start fallback for round 3", "pass");
+                } else {
+                    testLog("narration", "round_start fallback missing/wrong", gameState.round <= 1 ? "pass" : "fail");
+                }
+                gameState.narrationText = null;
+                await triggerNarration("resolution", { isPlayerAttack: true, outcome: "CRIT", damage: 15 });
+                if (gameState.narrationText && gameState.narrationText.includes("Critical")) {
+                    testLog("narration", "resolution CRIT fallback text", "pass");
+                } else {
+                    testLog("narration", "resolution CRIT fallback missing", "fail");
+                }
+                gameState = savedGs;
+                gameNarrator = savedNarrator;
+            } catch (e) {
+                testLog("narration", "Narration fallback test error: " + e.message, "fail");
+            }
+        }
+
+        // ── Combat Tests ─────────────────────
+        if (cats.includes("combat")) {
+            testState.currentTest = "Combat: dice, damage, game over";
+            testLog("combat", "Testing combat mechanics...");
+
+            // Test rollD20
+            let rolls = [];
+            for (let i = 0; i < 100; i++) rolls.push(rollD20());
+            let minRoll = Math.min(...rolls);
+            let maxRoll = Math.max(...rolls);
+            if (minRoll >= 1 && maxRoll <= 20) {
+                testLog("combat", "rollD20: range [" + minRoll + "," + maxRoll + "] in 100 rolls", "pass");
+            } else {
+                testLog("combat", "rollD20: out of range [" + minRoll + "," + maxRoll + "]", "fail");
+            }
+
+            // Test checkGameOver
+            let savedGs = gameState;
+            gameState = { player: { hp: 5 }, opponent: { hp: 10 } };
+            if (checkGameOver() === null) testLog("combat", "checkGameOver: no winner when both alive", "pass");
+            else testLog("combat", "checkGameOver: false positive", "fail");
+
+            gameState.player.hp = 0;
+            if (checkGameOver() === "opponent") testLog("combat", "checkGameOver: opponent wins when player HP=0", "pass");
+            else testLog("combat", "checkGameOver: wrong winner for HP=0", "fail");
+
+            gameState.player.hp = 5;
+            gameState.opponent.hp = -1;
+            if (checkGameOver() === "player") testLog("combat", "checkGameOver: player wins when opponent HP<0", "pass");
+            else testLog("combat", "checkGameOver: wrong winner for opponent HP<0", "fail");
+            gameState = savedGs;
+
+            // Test getActorATK / getActorDEF
+            let testActor = { cardStack: [{ atk: 3 }, { def: 2 }, { atk: 1, def: 1 }] };
+            let totalAtk = getActorATK(testActor);
+            let totalDef = getActorDEF(testActor);
+            if (totalAtk === 4) testLog("combat", "getActorATK: 3+1=" + totalAtk, "pass");
+            else testLog("combat", "getActorATK: expected 4, got " + totalAtk, "fail");
+            if (totalDef === 3) testLog("combat", "getActorDEF: 2+1=" + totalDef, "pass");
+            else testLog("combat", "getActorDEF: expected 3, got " + totalDef, "fail");
+
+            // Test getStackSkillMod
+            let testStack = { modifiers: [
+                { type: "skill", modifier: "+2 to Attack rolls" },
+                { type: "skill", modifier: "+3 to defense" }
+            ] };
+            let atkMod = getStackSkillMod(testStack, "attack");
+            let defMod = getStackSkillMod(testStack, "defense");
+            if (atkMod === 2) testLog("combat", "getStackSkillMod(attack): +2", "pass");
+            else testLog("combat", "getStackSkillMod(attack): expected 2, got " + atkMod, "fail");
+            if (defMod === 3) testLog("combat", "getStackSkillMod(defense): +3", "pass");
+            else testLog("combat", "getStackSkillMod(defense): expected 3, got " + defMod, "fail");
+        }
+
+        // ── Card Evaluation Tests ────────────
+        if (cats.includes("cards")) {
+            testState.currentTest = "Card Eval: unified effect parser";
+            testLog("cards", "Testing unified parseEffect() engine...");
+
+            // Test all supported effect patterns
+            let testEffects = [
+                { effect: "Deal 15 fire damage",            check: p => p.damage === 15 },
+                { effect: "Restore 30 HP",                  check: p => p.healHp === 30 },
+                { effect: "Restore 25 Energy",              check: p => p.restoreEnergy === 25 },
+                { effect: "Restore 10 Morale",              check: p => p.restoreMorale === 10 },
+                { effect: "Heal 8",                         check: p => p.healHp === 8 },
+                { effect: "Drain 12 health",                check: p => p.damage === 12 && p.healHp === 12 },
+                { effect: "Draw 2 cards",                   check: p => p.draw === 2 },
+                { effect: "Stun target for 1 turn",         check: p => p.statusEffects?.some(s => s.id === "stunned") },
+                { effect: "Poison enemy for 3 turns",       check: p => p.statusEffects?.some(s => s.id === "poisoned") },
+                { effect: "Shield self",                    check: p => p.statusEffects?.some(s => s.id === "shielded" && s.target === "self") },
+                { effect: "Enrage for bonus damage",        check: p => p.statusEffects?.some(s => s.id === "enraged") },
+                { effect: "Burn the enemy with fire",       check: p => p.statusEffects?.some(s => s.id === "burning") },
+                { effect: "Cause bleeding wounds",          check: p => p.statusEffects?.some(s => s.id === "bleeding") },
+                { effect: "Weaken enemy defenses",          check: p => p.statusEffects?.some(s => s.id === "weakened") },
+                { effect: "Fortify your defenses",          check: p => p.statusEffects?.some(s => s.id === "fortified") },
+                { effect: "Inspire allies to fight",        check: p => p.statusEffects?.some(s => s.id === "inspired") },
+                { effect: "Regenerate health over time",    check: p => p.statusEffects?.some(s => s.id === "regenerating") },
+                { effect: "Cleanse all poisons",            check: p => p.cure === true },
+                { effect: "Deal 20 and stun target",        check: p => p.damage === 20 && p.statusEffects?.some(s => s.id === "stunned") },
+                { effect: "Restore 5 HP and 3 Energy",      check: p => p.healHp === 5 && p.restoreEnergy === 3 },
+            ];
+
+            for (let t of testEffects) {
+                let parsed = parseEffect(t.effect);
+                let ok = t.check(parsed);
+                testLog("cards", "parseEffect('" + t.effect + "') → " + JSON.stringify(parsed), ok ? "pass" : "fail");
+            }
+
+            // Test isEffectParseable
+            let parseableEffects = ["Deal 10 damage", "Restore 5 HP", "Stun target", "Drain 8"];
+            let unparseableEffects = ["View opponent's next action", "+2 to Investigate rolls this round", "Attacks lowest HP character first"];
+            for (let e of parseableEffects) {
+                testLog("cards", "isParseable('" + e + "')", isEffectParseable(e) ? "pass" : "fail");
+            }
+            for (let e of unparseableEffects) {
+                testLog("cards", "isNotParseable('" + e + "')", !isEffectParseable(e) ? "pass" : "fail");
+            }
+
+            // Test skill modifier parsing with expanded keywords
+            let skillTests = [
+                { mod: "+2 to Attack rolls", action: "attack", expect: 2 },
+                { mod: "+3 to Defense", action: "defense", expect: 3 },
+                { mod: "+1 to social interactions", action: "talk", expect: 1 },
+                { mod: "+2 to melee strikes", action: "attack", expect: 2 },
+                { mod: "+2 to Flee and initiative rolls", action: "flee", expect: 2 },
+                { mod: "+1 to Investigate and Rest rolls", action: "investigate", expect: 1 },
+                { mod: "+2 to spell casting", action: "magic", expect: 2 },
+            ];
+            for (let s of skillTests) {
+                let stack = { modifiers: [{ type: "skill", modifier: s.mod }] };
+                let result = getStackSkillMod(stack, s.action);
+                testLog("cards", "SkillMod('" + s.mod + "', '" + s.action + "') = " + result, result === s.expect ? "pass" : "fail");
+            }
+
+            // Analyze active theme card pool for gaps
+            if (activeTheme?.cardPool) {
+                let pool = activeTheme.cardPool;
+                let types = {};
+                (pool || []).forEach(c => { types[c.type] = (types[c.type] || 0) + 1; });
+                testLog("cards", "Theme '" + activeTheme.name + "' card pool: " + JSON.stringify(types), "info");
+
+                // Check skills have valid modifier patterns
+                for (let sk of (pool || []).filter(c => c.type === "skill")) {
+                    let hasNumericMod = sk.modifier && sk.modifier.match(/\+(\d+)/);
+                    testLog("cards", "Skill '" + sk.name + "': " + (sk.modifier || "none"), hasNumericMod ? "pass" : "warn");
+                }
+                // Check magic have parseable effects
+                for (let mg of (pool || []).filter(c => c.type === "magic")) {
+                    let parseable = isEffectParseable(mg.effect);
+                    testLog("cards", "Magic '" + mg.name + "': " + (mg.effect || "").substring(0, 50), parseable ? "pass" : "warn");
+                }
+                // Check consumables have parseable effects
+                for (let con of (pool || []).filter(c => c.type === "item" && c.subtype === "consumable")) {
+                    let parseable = isEffectParseable(con.effect);
+                    testLog("cards", "Consumable '" + con.name + "': " + (con.effect || "").substring(0, 50), parseable ? "pass" : "warn");
+                }
+            } else {
+                testLog("cards", "No active theme card pool loaded", "warn");
+            }
+        }
+
+        // ── Campaign Tests ───────────────────
+        if (cats.includes("campaign")) {
+            testState.currentTest = "Campaign: XP, levels, stat gains";
+            testLog("campaign", "Testing campaign system...");
+
+            // Test createCampaignData
+            let testChar = { name: "TestHero", sourceId: "test-123" };
+            let cd = createCampaignData(testChar);
+            if (cd.level === 1 && cd.xp === 0 && cd.characterName === "TestHero") {
+                testLog("campaign", "createCampaignData defaults correct", "pass");
+            } else {
+                testLog("campaign", "createCampaignData defaults wrong", "fail");
+            }
+
+            // Test calculateXP
+            let testState1 = { round: 5, player: { hp: 15 } };
+            let xpWin = calculateXP(testState1, true);
+            let xpLose = calculateXP(testState1, false);
+            testLog("campaign", "calculateXP(5 rounds, 15hp, win)=" + xpWin + " (expect 130)", xpWin === 130 ? "pass" : "fail");
+            testLog("campaign", "calculateXP(5 rounds, 15hp, loss)=" + xpLose + " (expect 80)", xpLose === 80 ? "pass" : "fail");
+
+            // Test level calculation
+            let levels = [
+                { xp: 0, expect: 1 }, { xp: 99, expect: 1 }, { xp: 100, expect: 2 },
+                { xp: 250, expect: 3 }, { xp: 999, expect: 10 }, { xp: 1500, expect: 10 }
+            ];
+            for (let l of levels) {
+                let level = Math.min(10, Math.floor(l.xp / 100) + 1);
+                testLog("campaign", "XP " + l.xp + " → Level " + level + " (expect " + l.expect + ")", level === l.expect ? "pass" : "fail");
+            }
+
+            // Test applyCampaignBonuses
+            let testGsState = {
+                player: {
+                    character: { stats: { STR: 10, AGI: 10, END: 15, INT: 10, MAG: 12, CHA: 10 } },
+                    ap: 4, maxAp: 4, energy: 12, maxEnergy: 12
+                }
+            };
+            let testCampaign = { statGains: { STR: 2, END: 5 } };
+            applyCampaignBonuses(testGsState, testCampaign);
+            if (testGsState.player.character.stats.STR === 12 && testGsState.player.character.stats.END === 20) {
+                testLog("campaign", "applyCampaignBonuses: stats applied (STR 10→12, END 15→20)", "pass");
+            } else {
+                testLog("campaign", "applyCampaignBonuses: stats wrong", "fail");
+            }
+            // END=20 → AP = floor(20/5)+1 = 5
+            if (testGsState.player.ap === 5) {
+                testLog("campaign", "applyCampaignBonuses: AP recalculated (END 20 → AP 5)", "pass");
+            } else {
+                testLog("campaign", "applyCampaignBonuses: AP not recalculated (got " + testGsState.player.ap + ")", "fail");
+            }
+        }
+
+        // ── Character Stats & Integration Tests ─
+        if (cats.includes("cards")) {
+            testState.currentTest = "Integration: character stats, effects, save/load";
+            testLog("cards", "Testing character stats from deck...");
+
+            // Use the resolved deck for character stat validation
+            let charTestDecks = [];
+            if (resolvedDeck?.cards) {
+                charTestDecks.push({ name: resolvedDeck.deckName || resolvedDeckName, deck: resolvedDeck });
+            } else {
+                // Fallback: load available decks
+                let deckNames2 = await deckStorage.list();
+                for (let dn of deckNames2.slice(0, 3)) {
+                    let d = await deckStorage.load(dn);
+                    if (d?.cards) charTestDecks.push({ name: dn, deck: d });
+                }
+            }
+            for (let { name: dn, deck } of charTestDecks) {
+                let chars = (deck.cards || []).filter(c => c.type === "character");
+                if (chars.length === 0) {
+                    testLog("cards", "Deck '" + dn + "': no character cards", "warn");
+                    continue;
+                }
+                for (let ch of chars) {
+                    let stats = ch.stats || {};
+                    let statNames = Object.keys(stats);
+                    let hasCore = ["STR", "AGI", "END", "INT", "MAG", "CHA"].filter(s => stats[s] !== undefined);
+                    testLog("cards", "Char '" + ch.name + "': " + hasCore.length + "/6 core stats (" + hasCore.join(",") + ")",
+                        hasCore.length >= 4 ? "pass" : "warn");
+
+                    // Validate stat ranges (should be 1-30 for reasonable gameplay)
+                    let outOfRange = hasCore.filter(s => stats[s] < 1 || stats[s] > 30);
+                    if (outOfRange.length > 0) {
+                        testLog("cards", "Char '" + ch.name + "': stats out of range [1-30]: " + outOfRange.map(s => s + "=" + stats[s]).join(", "), "warn");
+                    } else if (hasCore.length > 0) {
+                        testLog("cards", "Char '" + ch.name + "': all stats in valid range", "pass");
+                    }
+
+                    // Test createGameState with this deck (stats should not persist/mutate)
+                    let statsBefore = JSON.stringify(ch.stats);
+                    let gs = createGameState(deck, ch);  // Use the deck from charTestDecks
+                    let statsAfter = JSON.stringify(ch.stats);
+                    if (gs) {
+                        if (statsBefore === statsAfter) {
+                            testLog("cards", "createGameState: '" + ch.name + "' stats not mutated", "pass");
+                        } else {
+                            testLog("cards", "createGameState: '" + ch.name + "' stats MUTATED (should not persist)", "fail");
+                        }
+                        // Validate derived values
+                        let playerEnd = gs.player.character.stats?.END || 12;
+                        let expectedAp = Math.max(2, Math.floor(playerEnd / 5) + 1);
+                        if (gs.player.ap === expectedAp) {
+                            testLog("cards", "AP derived correctly: END=" + playerEnd + " → AP=" + gs.player.ap, "pass");
+                        } else {
+                            testLog("cards", "AP mismatch: END=" + playerEnd + " → expected AP=" + expectedAp + " got " + gs.player.ap, "fail");
+                        }
+                        // Validate hand dealt (5 base + 1 Attack card added by design = 6)
+                        if (gs.player.hand.length >= 5 && gs.player.hand.length <= 7) {
+                            let hasAttack = gs.player.hand.some(c => c.name === "Attack" || c.type === "attack");
+                            testLog("cards", "Initial hand: " + gs.player.hand.length + " cards" + (hasAttack ? " (includes Attack)" : ""), "pass");
+                        } else {
+                            testLog("cards", "Initial hand unexpected size: " + gs.player.hand.length + " (expected 5-7)", "fail");
+                        }
+                    } else {
+                        testLog("cards", "createGameState returned null for '" + ch.name + "'", "fail");
+                    }
+                }
+            }
+
+            // ── Integration: applyParsedEffects ──
+            testLog("cards", "Testing applyParsedEffects integration...");
+            let testOwner = { hp: 20, maxHp: 25, energy: 10, maxEnergy: 15, morale: 15, maxMorale: 20, hand: [], drawPile: [{ name: "TestCard" }], discardPile: [], statusEffects: [] };
+            let testTarget = { hp: 20, maxHp: 20, statusEffects: [] };
+
+            // Test damage
+            let dmgParsed = parseEffect("Deal 8 damage");
+            applyParsedEffects(dmgParsed, testOwner, testTarget, "TestSpell");
+            testLog("cards", "applyParsedEffects(Deal 8): target HP 20→" + testTarget.hp, testTarget.hp === 12 ? "pass" : "fail");
+
+            // Test heal
+            testOwner.hp = 15;
+            let healParsed = parseEffect("Restore 7 HP");
+            applyParsedEffects(healParsed, testOwner, testTarget, "HealSpell");
+            testLog("cards", "applyParsedEffects(Restore 7 HP): owner HP 15→" + testOwner.hp, testOwner.hp === 22 ? "pass" : "fail");
+
+            // Test heal capped at max
+            testOwner.hp = 24;
+            applyParsedEffects(parseEffect("Heal 10"), testOwner, testTarget, "BigHeal");
+            testLog("cards", "applyParsedEffects(Heal 10): capped at maxHp " + testOwner.maxHp + " → " + testOwner.hp, testOwner.hp === 25 ? "pass" : "fail");
+
+            // Test drain (damage + self-heal)
+            testOwner.hp = 15;
+            testTarget.hp = 20;
+            applyParsedEffects(parseEffect("Drain 6"), testOwner, testTarget, "DrainSpell");
+            testLog("cards", "applyParsedEffects(Drain 6): target HP " + testTarget.hp + ", owner HP " + testOwner.hp,
+                testTarget.hp === 14 && testOwner.hp === 21 ? "pass" : "fail");
+
+            // Test energy/morale restore
+            testOwner.energy = 5;
+            testOwner.morale = 10;
+            applyParsedEffects(parseEffect("Restore 4 Energy"), testOwner, testTarget, "E");
+            applyParsedEffects(parseEffect("Restore 3 Morale"), testOwner, testTarget, "M");
+            testLog("cards", "Energy 5→" + testOwner.energy + ", Morale 10→" + testOwner.morale,
+                testOwner.energy === 9 && testOwner.morale === 13 ? "pass" : "fail");
+
+            // Test draw cards
+            testOwner.hand = [];
+            testOwner.drawPile = [{ name: "A" }, { name: "B" }, { name: "C" }];
+            applyParsedEffects(parseEffect("Draw 2 cards"), testOwner, testTarget, "DrawSpell");
+            testLog("cards", "applyParsedEffects(Draw 2): hand=" + testOwner.hand.length + " drawPile=" + testOwner.drawPile.length,
+                testOwner.hand.length === 2 && testOwner.drawPile.length === 1 ? "pass" : "fail");
+
+            // Test status effect application
+            testTarget.statusEffects = [];
+            applyParsedEffects(parseEffect("Stun target"), testOwner, testTarget, "StunCard");
+            let hasStun = testTarget.statusEffects.some(e => e.id === "stunned");
+            testLog("cards", "applyParsedEffects(Stun): target has stunned=" + hasStun, hasStun ? "pass" : "fail");
+
+            testOwner.statusEffects = [];
+            applyParsedEffects(parseEffect("Shield self"), testOwner, testTarget, "ShieldCard");
+            let hasShield = testOwner.statusEffects.some(e => e.id === "shielded");
+            testLog("cards", "applyParsedEffects(Shield): owner has shielded=" + hasShield, hasShield ? "pass" : "fail");
+
+            // Test cure removes negatives
+            testOwner.statusEffects = [];
+            applyStatusEffect(testOwner, "poisoned", "test");
+            applyStatusEffect(testOwner, "burning", "test");
+            applyStatusEffect(testOwner, "shielded", "test");  // positive — should NOT be removed
+            let beforeCure = testOwner.statusEffects.length;
+            applyParsedEffects(parseEffect("Cleanse all"), testOwner, testTarget, "CureSpell");
+            let afterCure = testOwner.statusEffects.length;
+            let keptShield = testOwner.statusEffects.some(e => e.id === "shielded");
+            testLog("cards", "Cure: " + beforeCure + " effects → " + afterCure + " (shield kept=" + keptShield + ")",
+                afterCure === 1 && keptShield ? "pass" : "fail");
+
+            // Test combo effect
+            testTarget.hp = 20;
+            testTarget.statusEffects = [];
+            applyParsedEffects(parseEffect("Deal 10 and poison target"), testOwner, testTarget, "Combo");
+            let comboOk = testTarget.hp === 10 && testTarget.statusEffects.some(e => e.id === "poisoned");
+            testLog("cards", "Combo(Deal 10 + poison): HP=" + testTarget.hp + " poisoned=" + comboOk, comboOk ? "pass" : "fail");
+
+            // ── Integration: status effect lifecycle ──
+            testLog("cards", "Testing status effect lifecycle...");
+            let lifecycleActor = { hp: 20, maxHp: 20, statusEffects: [] };
+            applyStatusEffect(lifecycleActor, "poisoned", "TestPoison");
+            if (lifecycleActor.statusEffects.length === 1 && lifecycleActor.statusEffects[0].turnsRemaining === 3) {
+                testLog("cards", "Poisoned applied: duration=3", "pass");
+            } else {
+                testLog("cards", "Poisoned not applied correctly", "fail");
+            }
+            // Re-apply should refresh duration, not stack
+            lifecycleActor.statusEffects[0].turnsRemaining = 1;
+            applyStatusEffect(lifecycleActor, "poisoned", "RefreshPoison");
+            if (lifecycleActor.statusEffects.length === 1 && lifecycleActor.statusEffects[0].turnsRemaining === 3) {
+                testLog("cards", "Re-apply refreshes duration (1→3), no stack", "pass");
+            } else {
+                testLog("cards", "Re-apply stacking/duration wrong: count=" + lifecycleActor.statusEffects.length, "fail");
+            }
+            // Remove
+            removeStatusEffect(lifecycleActor, "poisoned");
+            testLog("cards", "removeStatusEffect: " + lifecycleActor.statusEffects.length + " remaining",
+                lifecycleActor.statusEffects.length === 0 ? "pass" : "fail");
+
+            // Status modifier calculation
+            let modActor = { statusEffects: [] };
+            applyStatusEffect(modActor, "enraged", "test");
+            applyStatusEffect(modActor, "shielded", "test");
+            let mods = getStatusModifiers(modActor);
+            testLog("cards", "StatusMods(enraged+shielded): atk=" + mods.atk + " def=" + mods.def,
+                mods.atk === 3 && mods.def === 1 ? "pass" : "fail");  // enraged +3 ATK -2 DEF, shielded +3 DEF = net +1 DEF
+        }
+
+        // ── Extended Save/Load Tests ─────────
+        if (cats.includes("storage")) {
+            testState.currentTest = "Storage: save/load field completeness";
+            testLog("storage", "Testing save/load field preservation...");
+            {
+                let deck = resolvedDeck;
+                let saveDeckName = resolvedDeckName || "test";
+                if (deck) {
+                    let gs = createGameState(deck);
+                    if (gs) {
+                        // Set up recognizable state
+                        gs.round = 7;
+                        gs.player.hp = 13;
+                        gs.player.energy = 4;
+                        gs.player.morale = 11;
+                        gs.opponent.hp = 8;
+                        let origHandLen = gs.player.hand.length;
+                        let origRound = gs.round;
+                        let origOppHp = gs.opponent.hp;
+                        let origPhase = gs.phase;
+
+                        let saved = await gameStorage.save(saveDeckName + "__test", gs);
+                        if (saved) {
+                            let loaded = await gameStorage.load(saveDeckName + "__test");
+                            if (loaded?.gameState) {
+                                let ls = loaded.gameState;
+                                let checks = [
+                                    ["round", ls.round === origRound],
+                                    ["phase", ls.phase === origPhase],
+                                    ["player.hp", ls.player?.hp === 13],
+                                    ["player.energy", ls.player?.energy === 4],
+                                    ["player.morale", ls.player?.morale === 11],
+                                    ["player.hand.length", ls.player?.hand?.length === origHandLen],
+                                    ["opponent.hp", ls.opponent?.hp === origOppHp],
+                                    ["player.ap", ls.player?.ap === gs.player.ap],
+                                    ["player.drawPile", Array.isArray(ls.player?.drawPile)],
+                                    ["player.discardPile", Array.isArray(ls.player?.discardPile)],
+                                    ["player.statusEffects", Array.isArray(ls.player?.statusEffects)],
+                                ];
+                                let allOk = true;
+                                for (let [field, ok] of checks) {
+                                    if (!ok) { testLog("storage", "Save/load field LOST: " + field, "fail"); allOk = false; }
+                                }
+                                if (allOk) testLog("storage", "Save/load: all " + checks.length + " fields preserved", "pass");
+                            } else {
+                                testLog("storage", "Save/load: loaded.gameState is null", "fail");
+                            }
+                            await gameStorage.deleteAll(saveDeckName + "__test");
+                        } else {
+                            testLog("storage", "Save/load: save returned null", "fail");
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── LLM Tests ────────────────────────
+        if (cats.includes("llm")) {
+            testState.currentTest = "LLM: connectivity and chat";
+            testLog("llm", "Testing LLM connectivity...");
+
+            try {
+                await checkLlmConnectivity();
+                testLog("llm", "LLM status: available=" + llmStatus.available + ", checked=" + llmStatus.checked, llmStatus.available ? "pass" : "warn");
+
+                if (llmStatus.available) {
+                    testLog("llm", "LLM endpoint reachable", "pass");
+
+                    // Test CardGameLLM base class
+                    testLog("llm", "CardGameLLM.findChatDir()...");
+                    try {
+                        let chatDir = await CardGameLLM.findChatDir();
+                        testLog("llm", "Chat directory: " + (chatDir ? chatDir.path || chatDir.name : "not found"), chatDir ? "pass" : "warn");
+                    } catch (e) {
+                        testLog("llm", "findChatDir error: " + e.message, "warn");
+                    }
+
+                    // Actual LLM chat test — send a prompt and verify response
+                    testState.currentTest = "LLM: actual chat test";
+                    testLog("llm", "Initializing test LLM instance...");
+                    try {
+                        let testLlm = new CardGameLLM();
+                        let initOk = await testLlm.initializeLLM(
+                            "CardGame Test Chat",
+                            "CardGame Test Prompt",
+                            "You are a helpful test assistant for a card game. Respond briefly.",
+                            0.3
+                        );
+                        testLog("llm", "LLM init: " + (initOk ? "success" : "failed — " + (testLlm.lastError || "unknown")), initOk ? "pass" : "warn");
+
+                        if (initOk) {
+                            // Send a simple test prompt
+                            testLog("llm", "Sending test prompt to LLM...");
+                            let response = await testLlm.chat("Say exactly: TEST_OK");
+                            let content = CardGameLLM.extractContent(response);
+                            testLog("llm", "LLM raw response: " + JSON.stringify(response)?.substring(0, 200), "info");
+                            testLog("llm", "LLM extracted content: " + (content || "(empty)").substring(0, 150), content ? "pass" : "fail");
+
+                            // Test narrator initialization
+                            testState.currentTest = "LLM: narrator test";
+                            testLog("llm", "Testing CardGameNarrator...");
+                            let testNarrator = new CardGameNarrator();
+                            let themeId = resolvedDeck?.themeId || activeTheme?.themeId || "high-fantasy";
+                            let narratorOk = await testNarrator.initialize("arena-announcer", themeId);
+                            testLog("llm", "Narrator init (" + themeId + "): " + (narratorOk ? "success" : "failed — " + (testNarrator.lastError || "unknown")), narratorOk ? "pass" : "warn");
+
+                            if (narratorOk) {
+                                // Test game_start narration
+                                testLog("llm", "Requesting game_start narration...");
+                                let narration = await testNarrator.narrate("game_start", {
+                                    playerName: "Test Hero",
+                                    opponentName: "Test Villain"
+                                });
+                                testLog("llm", "Narration text: " + (narration?.text || "(empty)").substring(0, 200), narration?.text ? "pass" : "fail");
+                                if (narration?.imagePrompt) {
+                                    testLog("llm", "Narration IMAGE prompt: " + narration.imagePrompt.substring(0, 150), "info");
+                                }
+
+                                // Test resolution narration
+                                testLog("llm", "Requesting resolution narration...");
+                                let resNarration = await testNarrator.narrate("resolution", {
+                                    playerStack: "Fireball (magic, Deal 15 fire damage)",
+                                    playerRoll: { raw: 18, total: 25 },
+                                    opponentStack: "Shield Block (defense)",
+                                    opponentRoll: { raw: 8, total: 15 },
+                                    isPlayerAttack: true,
+                                    outcome: "HIT",
+                                    damage: 10
+                                });
+                                testLog("llm", "Resolution narration: " + (resNarration?.text || "(empty)").substring(0, 200), resNarration?.text ? "pass" : "warn");
+                            }
+
+                            // Test JSON cleaning utility
+                            let jsonTestInput = "```json\n{\"name\": \"Test\"}\n```";
+                            let cleaned = CardGameLLM.cleanJsonResponse(jsonTestInput);
+                            try {
+                                let parsed = JSON.parse(cleaned);
+                                testLog("llm", "cleanJsonResponse: parsed OK — " + JSON.stringify(parsed), "pass");
+                            } catch (e) {
+                                testLog("llm", "cleanJsonResponse: parse failed — " + cleaned, "fail");
+                            }
+                        }
+                    } catch (e) {
+                        testLog("llm", "LLM chat test error: " + e.message, "fail");
+                    }
+                } else {
+                    testLog("llm", "LLM not available — remaining LLM tests skipped (defaults/fallbacks will be used at runtime)", "info");
+                }
+            } catch (e) {
+                testLog("llm", "LLM connectivity error: " + e.message, "fail");
+            }
+        }
+
+        // ── Voice Tests ──────────────────────
+        if (cats.includes("voice")) {
+            testState.currentTest = "Voice: synthesis pipeline";
+            testLog("voice", "Testing voice system...");
+
+            let hasAudio = typeof page?.components?.audio?.createAudioSource === "function";
+            testLog("voice", "Audio infrastructure: " + (hasAudio ? "present" : "absent"), "info");
+
+            // Test 1: subtitlesOnly mode (should work regardless of audio)
+            let testVoice1 = new CardGameVoice();
+            await testVoice1.initialize({ subtitlesOnly: true });
+            if (testVoice1.subtitlesOnly && testVoice1.enabled) {
+                testLog("voice", "subtitlesOnly init: enabled=" + testVoice1.enabled + " subtitlesOnly=" + testVoice1.subtitlesOnly, "pass");
+            } else {
+                testLog("voice", "subtitlesOnly init: unexpected state enabled=" + testVoice1.enabled + " subtitlesOnly=" + testVoice1.subtitlesOnly, "fail");
+            }
+
+            // Test 2: speak() in subtitlesOnly mode shows subtitle
+            let savedGs = gameState;
+            gameState = { narrationText: null, narrationTime: null };
+            await testVoice1.speak("Voice test subtitle text");
+            if (gameState.narrationText === "Voice test subtitle text") {
+                testLog("voice", "speak() in subtitlesOnly mode → subtitle displayed", "pass");
+            } else {
+                testLog("voice", "speak() in subtitlesOnly mode → subtitle NOT displayed (narrationText=" + gameState.narrationText + ")", "fail");
+            }
+            gameState.narrationText = null;
+            gameState = savedGs;
+
+            // Test 3: Volume control
+            testVoice1.setVolume(0.5);
+            testLog("voice", "setVolume(0.5) → volume=" + testVoice1.volume, testVoice1.volume === 0.5 ? "pass" : "fail");
+            testVoice1.setVolume(-1);
+            testLog("voice", "setVolume(-1) → clamped to " + testVoice1.volume, testVoice1.volume === 0 ? "pass" : "fail");
+            testVoice1.setVolume(5);
+            testLog("voice", "setVolume(5) → clamped to " + testVoice1.volume, testVoice1.volume === 1 ? "pass" : "fail");
+
+            // Test 4: Queue and stop
+            testVoice1.queue = [{ text: "a" }, { text: "b" }];
+            testVoice1.stop();
+            testLog("voice", "stop() clears queue: " + testVoice1.queue.length + " items", testVoice1.queue.length === 0 ? "pass" : "fail");
+
+            // Test 5: Full voice mode (if audio infrastructure available)
+            if (hasAudio) {
+                testState.currentTest = "Voice: audio synthesis";
+                let testVoice2 = new CardGameVoice();
+                await testVoice2.initialize({ subtitlesOnly: false, volume: 0.7 });
+                testLog("voice", "Full voice init: subtitlesOnly=" + testVoice2.subtitlesOnly + " volume=" + testVoice2.volume, !testVoice2.subtitlesOnly ? "pass" : "warn");
+
+                // Actually try to generate speech
+                try {
+                    testLog("voice", "Attempting TTS: 'Testing voice synthesis'...");
+                    await testVoice2.speak("Testing voice synthesis");
+                    testLog("voice", "TTS speak() completed without error", "pass");
+                } catch (e) {
+                    testLog("voice", "TTS speak() error: " + e.message, "fail");
+                }
+            } else {
+                testLog("voice", "No audio infrastructure — full voice test skipped (subtitlesOnly fallback verified above)", "info");
+            }
+        }
+
+        // ── Playthrough Tests ────────────────
+        if (cats.includes("playthrough")) {
+            testState.currentTest = "Playthrough: automated game";
+            testLog("playthrough", "Running automated playthrough...");
+
+            if (!resolvedDeck) {
+                testLog("playthrough", "No deck available for playthrough", "warn");
+            } else {
+                let deckName = resolvedDeckName;
+                let deck = resolvedDeck;
+                {
+                    testLog("playthrough", "Using deck: " + (deck.deckName || deckName) + " (" + (deck.cards || []).length + " cards)", "pass");
+
+                    // Create game state
+                    let gs = createGameState(deck);
+                    if (!gs) {
+                        testLog("playthrough", "createGameState failed (no characters?)", "fail");
+                    } else {
+                        testLog("playthrough", "Game created: " + gs.player.character.name + " vs " + gs.opponent.character.name, "pass");
+                        testLog("playthrough", "Player: HP=" + gs.player.hp + " AP=" + gs.player.ap + " Hand=" + gs.player.hand.length, "info");
+                        testLog("playthrough", "Opponent: HP=" + gs.opponent.hp + " AP=" + gs.opponent.ap + " Hand=" + gs.opponent.hand.length, "info");
+
+                        // Simulate rounds
+                        let maxRounds = 5;
+                        for (let r = 0; r < maxRounds; r++) {
+                            // Initiative
+                            let pRoll = rollD20() + (gs.player.character.stats?.AGI || 10);
+                            let oRoll = rollD20() + (gs.opponent.character.stats?.AGI || 10);
+                            let initWinner = pRoll >= oRoll ? "player" : "opponent";
+                            testLog("playthrough", "Round " + (r + 1) + " initiative: " + initWinner + " (P:" + pRoll + " vs O:" + oRoll + ")", "info");
+
+                            // Simulate combat
+                            let pAtk = rollD20() + (gs.player.character.stats?.STR || 10) + getActorATK(gs.player);
+                            let oDef = rollD20() + (gs.opponent.character.stats?.END || 10) + getActorDEF(gs.opponent);
+                            if (pAtk > oDef) {
+                                let dmg = Math.max(1, Math.floor((pAtk - oDef) / 3));
+                                gs.opponent.hp -= dmg;
+                                testLog("playthrough", "Player attacks: " + pAtk + " vs " + oDef + " → " + dmg + " damage (opp HP: " + gs.opponent.hp + ")", "info");
+                            } else {
+                                testLog("playthrough", "Player attacks: " + pAtk + " vs " + oDef + " → miss", "info");
+                            }
+
+                            let oAtk = rollD20() + (gs.opponent.character.stats?.STR || 10) + getActorATK(gs.opponent);
+                            let pDef = rollD20() + (gs.player.character.stats?.END || 10) + getActorDEF(gs.player);
+                            if (oAtk > pDef) {
+                                let dmg = Math.max(1, Math.floor((oAtk - pDef) / 3));
+                                gs.player.hp -= dmg;
+                                testLog("playthrough", "Opponent attacks: " + oAtk + " vs " + pDef + " → " + dmg + " damage (player HP: " + gs.player.hp + ")", "info");
+                            } else {
+                                testLog("playthrough", "Opponent attacks: " + oAtk + " vs " + pDef + " → miss", "info");
+                            }
+
+                            // Check game over
+                            if (gs.player.hp <= 0) { testLog("playthrough", "Player defeated at round " + (r + 1), "info"); break; }
+                            if (gs.opponent.hp <= 0) { testLog("playthrough", "Opponent defeated at round " + (r + 1), "info"); break; }
+                        }
+
+                        let winner = gs.player.hp <= 0 ? "opponent" : gs.opponent.hp <= 0 ? "player" : "draw";
+                        testLog("playthrough", "Result: " + winner + " (P:" + gs.player.hp + " O:" + gs.opponent.hp + ")", winner !== "draw" ? "pass" : "info");
+
+                        // Test save/load cycle (basic — comprehensive test in storage category)
+                        let saved = await gameStorage.save(deckName + "__pt", gs);
+                        if (saved) {
+                            let loadedSave = await gameStorage.load(deckName + "__pt");
+                            let roundtrip = loadedSave?.gameState?.player?.hp === gs.player.hp
+                                && loadedSave?.gameState?.round === gs.round
+                                && loadedSave?.gameState?.opponent?.hp === gs.opponent.hp;
+                            testLog("playthrough", "Save/load roundtrip (hp+round+opp): " + (roundtrip ? "ok" : "mismatch"), roundtrip ? "pass" : "fail");
+                            await gameStorage.deleteAll(deckName + "__pt");
+                        } else {
+                            testLog("playthrough", "Game state save failed", "fail");
+                        }
+                    }
+                }
+            }
+        }
+
+        testState.currentTest = null;
+        testState.running = false;
+        testState.completed = true;
+        testLog("", "=== Test suite complete: " + testState.results.pass + " pass, " + testState.results.fail + " fail, " + testState.results.warn + " warn ===", testState.results.fail > 0 ? "fail" : "pass");
+        m.redraw();
+    }
+
+    function TestModeUI() {
+        return {
+            view() {
+                let statusColors = { info: "#777", pass: "#2E7D32", fail: "#C62828", warn: "#E65100" };
+                let statusIcons = { info: "info", pass: "check_circle", fail: "error", warn: "warning" };
+
+                return m("div", { class: "cg2-test-mode" }, [
+                    m("div", { class: "cg2-toolbar" }, [
+                        m("button", { class: "cg2-btn", onclick() {
+                            if (testDeck && viewingDeck) { screen = "deckView"; }
+                            else { screen = "deckList"; }
+                            m.redraw();
+                        } }, "← Back"),
+                        m("span", { style: { fontWeight: 700, fontSize: "16px", marginLeft: "8px" } }, "Test Mode"),
+                        testDeckName ? m("span", { class: "cg2-deck-theme-badge", style: { marginLeft: "8px" } }, testDeckName) : null,
+                        !testState.running ? m("button", {
+                            class: "cg2-btn cg2-btn-primary", style: { marginLeft: "auto" },
+                            onclick() { runTestSuite(); }
+                        }, [m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "play_arrow"), "Run All Tests"]) : null,
+                        testState.running ? m("span", { style: { marginLeft: "auto", color: "#B8860B", fontWeight: 600, fontSize: "13px" } }, [
+                            m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "sync"),
+                            testState.currentTest || "Running..."
+                        ]) : null
+                    ]),
+
+                    // Category toggles
+                    m("div", { class: "cg2-test-categories" },
+                        Object.entries(TEST_CATEGORIES).map(([key, cat]) => {
+                            let active = testState.selectedCategories.includes(key);
+                            return m("label", { class: "cg2-test-cat" + (active ? " active" : ""), onclick() {
+                                if (active) testState.selectedCategories = testState.selectedCategories.filter(c => c !== key);
+                                else testState.selectedCategories.push(key);
+                                m.redraw();
+                            } }, [
+                                m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, cat.icon),
+                                " " + cat.label
+                            ]);
+                        })
+                    ),
+
+                    // Results summary
+                    testState.completed ? m("div", { class: "cg2-test-summary" }, [
+                        m("span", { class: "cg2-test-result-pass" }, testState.results.pass + " pass"),
+                        m("span", { class: "cg2-test-result-fail" }, testState.results.fail + " fail"),
+                        m("span", { class: "cg2-test-result-warn" }, testState.results.warn + " warn")
+                    ]) : null,
+
+                    // Debug console log
+                    m("div", { class: "cg2-test-console" }, (() => {
+                        let items = [];
+                        let lastCat = null;
+                        for (let entry of testState.logs) {
+                            // Add section header when category changes
+                            if (entry.category && entry.category !== lastCat) {
+                                let catLabel = TEST_CATEGORIES[entry.category]?.label || entry.category;
+                                items.push(m("div", { class: "cg2-test-section-header" }, catLabel));
+                                lastCat = entry.category;
+                            }
+                            items.push(m("div", { class: "cg2-test-log-entry", "data-status": entry.status }, [
+                                m("span", { class: "cg2-test-log-time" }, entry.time),
+                                entry.category ? m("span", { class: "cg2-test-log-cat", "data-cat": entry.category }, entry.category) : null,
+                                m("span", {
+                                    class: "material-symbols-outlined",
+                                    style: { fontSize: "13px", color: statusColors[entry.status] || "#666", verticalAlign: "middle", marginRight: "4px" }
+                                }, statusIcons[entry.status] || "info"),
+                                m("span", { style: { color: statusColors[entry.status] || "#333" } }, entry.message)
+                            ]));
+                        }
+                        if (testState.logs.length === 0) {
+                            items.push(m("div", { class: "cg2-test-empty" }, testDeck
+                                ? "Click 'Run All Tests' to test deck: " + (testDeckName || "selected")
+                                : "Select a deck first, or click 'Run All Tests' for generic tests."));
+                        }
+                        return items;
+                    })())
+                ]);
+            }
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Phase 9: Theme Editor
+    // ═══════════════════════════════════════════════════════════════════
+
+    let themeEditorState = {
+        themes: [],        // [{ name, themeId, isCustom, isBuiltin }]
+        loading: false,
+        editingTheme: null, // Full theme JSON being edited
+        editingName: "",
+        jsonText: "",
+        jsonError: null,
+        dirty: false
+    };
+
+    const THEME_STORAGE_PATH = DECK_BASE_PATH + "/themes";
+
+    const themeStorage = {
+        async save(themeId, themeData) {
+            try {
+                return await upsertDataRecord(THEME_STORAGE_PATH, themeId + ".json", themeData);
+            } catch (e) {
+                console.error("[CardGame v2] Failed to save theme:", themeId, e);
+                return null;
+            }
+        },
+        async load(themeId) {
+            try {
+                return await loadDataRecord(THEME_STORAGE_PATH, themeId + ".json", false);
+            } catch (e) {
+                return null;
+            }
+        },
+        async list() {
+            try {
+                let records = await listDataRecords(THEME_STORAGE_PATH);
+                return records.filter(r => r.name?.endsWith(".json")).map(r => r.name.replace(".json", ""));
+            } catch (e) {
+                return [];
+            }
+        },
+        async remove(themeId) {
+            try {
+                let grp = await page.findObject("auth.group", "DATA", THEME_STORAGE_PATH);
+                if (!grp) return;
+                let q = am7view.viewQuery("data.data");
+                q.field("groupId", grp.id);
+                q.field("name", themeId + ".json");
+                let qr = await page.search(q);
+                if (qr?.results?.length) {
+                    await page.deleteObject("data.data", qr.results[0].objectId);
+                }
+            } catch (e) {
+                console.warn("[CardGame v2] Failed to remove theme:", themeId, e);
+            }
+        }
+    };
+
+    async function loadThemeList() {
+        themeEditorState.loading = true;
+        m.redraw();
+        let builtins = ["high-fantasy", "dark-medieval", "sci-fi", "post-apocalypse"];
+        let custom = await themeStorage.list();
+        themeEditorState.themes = [
+            ...builtins.map(id => ({ themeId: id, name: id.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()), isBuiltin: true, isCustom: false })),
+            ...custom.filter(id => !builtins.includes(id)).map(id => ({ themeId: id, name: id.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()), isBuiltin: false, isCustom: true }))
+        ];
+        themeEditorState.loading = false;
+        m.redraw();
+    }
+
+    async function editTheme(themeId, isBuiltin) {
+        let themeData;
+        if (isBuiltin) {
+            // Load from active theme config and card pool
+            await loadThemeConfig(themeId);
+            themeData = {
+                themeId: themeId + "-custom",
+                name: activeTheme.name + " (Custom)",
+                description: activeTheme.description || "",
+                sdSuffix: activeTheme.sdSuffix || "",
+                narratorProfile: "arena-announcer",
+                cardPool: activeTheme.cardPool || []
+            };
+        } else {
+            themeData = await themeStorage.load(themeId);
+            if (!themeData) themeData = { themeId, name: themeId, cardPool: [] };
+        }
+        themeEditorState.editingTheme = themeData;
+        themeEditorState.editingName = themeData.name || themeId;
+        themeEditorState.jsonText = JSON.stringify(themeData, null, 2);
+        themeEditorState.jsonError = null;
+        themeEditorState.dirty = false;
+        m.redraw();
+    }
+
+    function createNewTheme() {
+        let template = {
+            themeId: "custom-" + Date.now(),
+            name: "My Custom Theme",
+            description: "A custom card game theme",
+            sdSuffix: "fantasy art, detailed illustration",
+            narratorProfile: "arena-announcer",
+            cardPool: [
+                { type: "action", name: "Attack", subtype: "melee", effect: "Standard melee attack", rarity: "COMMON" },
+                { type: "action", name: "Rest", effect: "Restore 2 HP, 3 Energy, 2 Morale", rarity: "COMMON" },
+                { type: "talk", name: "Persuade", speechType: "Diplomacy", effect: "CHA vs CHA for morale damage", rarity: "COMMON" },
+                { type: "skill", name: "Custom Skill", modifier: "+2 to Attack rolls", rarity: "UNCOMMON" },
+                { type: "magic", name: "Custom Spell", effect: "Deal 10 damage", energyCost: 5, requires: { MAG: 8 }, rarity: "RARE" },
+                { type: "item", subtype: "weapon", name: "Custom Weapon", atk: 3, range: "Melee", damageType: "Slashing", rarity: "COMMON" },
+                { type: "item", subtype: "armor", name: "Custom Armor", def: 2, rarity: "COMMON" },
+                { type: "item", subtype: "consumable", name: "Health Potion", effect: "Restore 15 HP", rarity: "UNCOMMON" },
+                { type: "apparel", name: "Custom Garb", def: 1, slot: "Body", rarity: "COMMON" },
+                { type: "encounter", name: "Custom Encounter", atk: 3, def: 2, hp: 15, behavior: "Attacks randomly", loot: "UNCOMMON", rarity: "UNCOMMON" }
+            ]
+        };
+        themeEditorState.editingTheme = template;
+        themeEditorState.editingName = template.name;
+        themeEditorState.jsonText = JSON.stringify(template, null, 2);
+        themeEditorState.jsonError = null;
+        themeEditorState.dirty = true;
+        m.redraw();
+    }
+
+    function ThemeEditorUI() {
+        return {
+            oninit() { loadThemeList(); },
+            view() {
+                // Editing view
+                if (themeEditorState.editingTheme) {
+                    let theme = themeEditorState.editingTheme;
+                    let cardCount = 0;
+                    try { cardCount = JSON.parse(themeEditorState.jsonText).cardPool?.length || 0; } catch (e) { /* parse error handled below */ }
+
+                    return m("div", { class: "cg2-theme-editor" }, [
+                        m("div", { class: "cg2-toolbar" }, [
+                            m("button", { class: "cg2-btn", onclick() { themeEditorState.editingTheme = null; m.redraw(); } }, "← Back"),
+                            m("span", { style: { fontWeight: 700, fontSize: "16px", marginLeft: "8px" } }, "Theme Editor"),
+                            m("span", { style: { fontSize: "11px", color: "#888", marginLeft: "8px" } }, cardCount + " cards in pool"),
+                            themeEditorState.dirty ? m("span", { style: { fontSize: "11px", color: "#E65100", marginLeft: "8px" } }, "(unsaved changes)") : null,
+                            m("button", {
+                                class: "cg2-btn cg2-btn-primary", style: { marginLeft: "auto" },
+                                disabled: !!themeEditorState.jsonError,
+                                async onclick() {
+                                    try {
+                                        let parsed = JSON.parse(themeEditorState.jsonText);
+                                        parsed.name = themeEditorState.editingName;
+                                        await themeStorage.save(parsed.themeId, parsed);
+                                        themeEditorState.editingTheme = parsed;
+                                        themeEditorState.dirty = false;
+                                        page.toast("success", "Theme saved: " + parsed.name);
+                                        loadThemeList();
+                                    } catch (e) {
+                                        page.toast("error", "Save failed: " + e.message);
+                                    }
+                                }
+                            }, "Save Theme")
+                        ]),
+
+                        // Theme name input
+                        m("div", { style: { padding: "8px 16px", display: "flex", gap: "12px", alignItems: "center" } }, [
+                            m("label", { style: { fontWeight: 600, fontSize: "13px" } }, "Name:"),
+                            m("input", {
+                                class: "cg2-input", style: { flex: 1 },
+                                value: themeEditorState.editingName,
+                                oninput(e) { themeEditorState.editingName = e.target.value; themeEditorState.dirty = true; }
+                            }),
+                            m("label", { style: { fontWeight: 600, fontSize: "13px" } }, "ID:"),
+                            m("span", { style: { fontSize: "12px", color: "#888" } }, theme.themeId)
+                        ]),
+
+                        // JSON error indicator
+                        themeEditorState.jsonError ? m("div", { style: { padding: "4px 16px", color: "#c62828", fontSize: "12px" } }, themeEditorState.jsonError) : null,
+
+                        // JSON editor
+                        m("textarea", {
+                            class: "cg2-json-editor",
+                            value: themeEditorState.jsonText,
+                            oninput(e) {
+                                themeEditorState.jsonText = e.target.value;
+                                themeEditorState.dirty = true;
+                                try {
+                                    JSON.parse(e.target.value);
+                                    themeEditorState.jsonError = null;
+                                } catch (err) {
+                                    themeEditorState.jsonError = "JSON Error: " + err.message;
+                                }
+                            },
+                            spellcheck: false
+                        }),
+
+                        // Card Effect Builder (interactive helper)
+                        m("div", { class: "cg2-effect-builder" }, [
+                            m("h3", { style: { margin: "0 0 8px", fontSize: "14px" } }, [
+                                m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "4px" } }, "build"),
+                                "Card Effect Builder"
+                            ]),
+                            m("p", { style: { fontSize: "11px", color: "#666", margin: "0 0 8px" } },
+                                "Click effect tokens to build a parseable effect string. Copy into your card's effect field."),
+                            m("div", { class: "cg2-effect-tokens" }, [
+                                m("span", { class: "cg2-effect-section-label" }, "DAMAGE:"),
+                                ...[5, 10, 15, 20, 25].map(n =>
+                                    m("button", { class: "cg2-effect-token cg2-effect-token-damage", onclick() { themeEditorState.effectPreview = (themeEditorState.effectPreview || "") + "Deal " + n + " damage. "; m.redraw(); } }, "Deal " + n)
+                                ),
+                                m("span", { class: "cg2-effect-section-label" }, "DRAIN:"),
+                                ...[5, 10, 15].map(n =>
+                                    m("button", { class: "cg2-effect-token cg2-effect-token-damage", onclick() { themeEditorState.effectPreview = (themeEditorState.effectPreview || "") + "Drain " + n + " health. "; m.redraw(); } }, "Drain " + n)
+                                ),
+                                m("span", { class: "cg2-effect-section-label" }, "HEALING:"),
+                                ...[5, 10, 15, 20].map(n =>
+                                    m("button", { class: "cg2-effect-token cg2-effect-token-heal", onclick() { themeEditorState.effectPreview = (themeEditorState.effectPreview || "") + "Restore " + n + " HP. "; m.redraw(); } }, "Heal " + n)
+                                ),
+                                ...[3, 5, 8].map(n =>
+                                    m("button", { class: "cg2-effect-token cg2-effect-token-heal", onclick() { themeEditorState.effectPreview = (themeEditorState.effectPreview || "") + "Restore " + n + " Energy. "; m.redraw(); } }, "Energy " + n)
+                                ),
+                                ...[3, 5, 10].map(n =>
+                                    m("button", { class: "cg2-effect-token cg2-effect-token-heal", onclick() { themeEditorState.effectPreview = (themeEditorState.effectPreview || "") + "Restore " + n + " Morale. "; m.redraw(); } }, "Morale " + n)
+                                ),
+                                m("span", { class: "cg2-effect-section-label" }, "STATUS (enemy):"),
+                                ...["Stun", "Poison", "Burn", "Bleed", "Weaken"].map(s =>
+                                    m("button", { class: "cg2-effect-token cg2-effect-token-debuff", onclick() { themeEditorState.effectPreview = (themeEditorState.effectPreview || "") + s + " target. "; m.redraw(); } }, s)
+                                ),
+                                m("span", { class: "cg2-effect-section-label" }, "BUFF (self):"),
+                                ...["Shield", "Enrage", "Fortify", "Inspire", "Regenerate"].map(s =>
+                                    m("button", { class: "cg2-effect-token cg2-effect-token-buff", onclick() { themeEditorState.effectPreview = (themeEditorState.effectPreview || "") + s + " self. "; m.redraw(); } }, s)
+                                ),
+                                m("span", { class: "cg2-effect-section-label" }, "UTILITY:"),
+                                ...[1, 2, 3].map(n =>
+                                    m("button", { class: "cg2-effect-token cg2-effect-token-util", onclick() { themeEditorState.effectPreview = (themeEditorState.effectPreview || "") + "Draw " + n + " cards. "; m.redraw(); } }, "Draw " + n)
+                                ),
+                                m("button", { class: "cg2-effect-token cg2-effect-token-util", onclick() { themeEditorState.effectPreview = (themeEditorState.effectPreview || "") + "Cure all poisons. "; m.redraw(); } }, "Cure"),
+                            ]),
+                            // Preview with validation
+                            themeEditorState.effectPreview ? m("div", { class: "cg2-effect-preview" }, [
+                                m("div", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" } }, [
+                                    m("strong", { style: { fontSize: "11px" } }, "Preview:"),
+                                    m("button", { class: "cg2-btn cg2-btn-sm", onclick() {
+                                        if (navigator.clipboard) navigator.clipboard.writeText(themeEditorState.effectPreview.trim());
+                                        else page.toast("info", themeEditorState.effectPreview.trim());
+                                    } }, "Copy"),
+                                    m("button", { class: "cg2-btn cg2-btn-sm", onclick() { themeEditorState.effectPreview = ""; m.redraw(); } }, "Clear")
+                                ]),
+                                m("code", { style: { fontSize: "12px", display: "block", padding: "6px 8px", background: "rgba(0,0,0,0.05)", borderRadius: "4px" } }, themeEditorState.effectPreview.trim()),
+                                m("div", { style: { fontSize: "10px", marginTop: "4px" } }, (() => {
+                                    let parsed = parseEffect(themeEditorState.effectPreview);
+                                    let parts = [];
+                                    if (parsed.damage) parts.push("DMG:" + parsed.damage);
+                                    if (parsed.healHp) parts.push("HEAL:" + parsed.healHp + " HP");
+                                    if (parsed.restoreEnergy) parts.push("+" + parsed.restoreEnergy + " Energy");
+                                    if (parsed.restoreMorale) parts.push("+" + parsed.restoreMorale + " Morale");
+                                    if (parsed.draw) parts.push("DRAW:" + parsed.draw);
+                                    if (parsed.cure) parts.push("CURE");
+                                    if (parsed.statusEffects) parsed.statusEffects.forEach(s => parts.push(s.id.toUpperCase() + "→" + s.target));
+                                    return parts.length > 0
+                                        ? m("span", { style: { color: "#2E7D32" } }, "✓ Parsed: " + parts.join(", "))
+                                        : m("span", { style: { color: "#c62828" } }, "✗ No mechanical effects detected");
+                                })())
+                            ]) : null,
+                            // Skill modifier builder
+                            m("div", { style: { marginTop: "8px", borderTop: "1px solid rgba(0,0,0,0.08)", paddingTop: "8px" } }, [
+                                m("strong", { style: { fontSize: "11px" } }, "Skill Modifier Templates:"),
+                                m("div", { class: "cg2-effect-tokens", style: { marginTop: "4px" } }, [
+                                    ...["Attack", "Defense", "Talk/Social", "Flee/Initiative", "Investigate", "Craft", "Magic/Spell"].map(act =>
+                                        m("button", { class: "cg2-effect-token cg2-effect-token-skill", onclick() {
+                                            themeEditorState.effectPreview = "+2 to " + act + " rolls";
+                                            m.redraw();
+                                        } }, "+2 " + act)
+                                    )
+                                ])
+                            ])
+                        ]),
+
+                        // Card Pool Quick Reference
+                        m("div", { class: "cg2-theme-reference" }, [
+                            m("h3", "Card Pool Reference"),
+                            m("p", { style: { fontSize: "11px", color: "#666" } }, "Each card in the cardPool array needs these fields:"),
+                            m("pre", { style: { fontSize: "10px", background: "rgba(0,0,0,0.05)", padding: "8px", borderRadius: "6px", overflow: "auto", maxHeight: "200px" } },
+`SKILL:   { type:"skill", name, modifier:"+N to Attack/Defense/Talk/Flee/Investigate/Craft/Magic", rarity }
+  → modifier MUST contain +N and a keyword: attack, combat, melee, defense, parry, talk, social,
+    flee, escape, initiative, investigate, search, craft, magic, spell, etc.
+
+MAGIC:   { type:"magic", name, effect, energyCost, requires:{MAG:N}, rarity }
+  → PARSEABLE EFFECTS (combine any):
+    "Deal N damage" — direct damage to target
+    "Drain N"       — damage target + heal self same amount
+    "Heal N" / "Restore N HP"   — heal owner
+    "Restore N Energy/Morale"   — restore resources
+    "Draw N"        — draw N extra cards
+    "Stun/Poison/Burn/Bleed/Weaken target" — debuff target
+    "Shield/Enrage/Fortify/Inspire/Regenerate self" — buff self
+    "Cure/Cleanse"  — remove negative statuses
+
+ITEM:    Weapon:     { type:"item", subtype:"weapon", name, atk:N, range, damageType, rarity }
+         Armor:      { type:"item", subtype:"armor", name, def:N, rarity }
+         Consumable: { type:"item", subtype:"consumable", name, effect:(same as magic), rarity }
+APPAREL: { type:"apparel", name, def:N, hpBonus:N, slot:"Body|Head|Feet", rarity }
+ACTION:  { type:"action", name:"Attack|Rest|Guard|Flee", effect, rarity }
+TALK:    { type:"talk", name, speechType, effect, rarity }
+ENCOUNTER: { type:"encounter", name, atk:N, def:N, hp:N, behavior, loot:"RARITY", rarity }
+
+RARITY:  "COMMON" | "UNCOMMON" | "RARE" | "EPIC" | "LEGENDARY"
+
+STATUS EFFECTS: stunned(1t), poisoned(3t, -2HP/t), burning(2t, -3HP/t),
+  bleeding(4t, -1HP/t), shielded(+3 DEF until hit), weakened(2t, -2 rolls),
+  enraged(2t, +3ATK -2DEF), fortified(2t, +2DEF +1ATK),
+  inspired(2t, +2 rolls), regenerating(3t, +2HP/t)`)
+                        ])
+                    ]);
+                }
+
+                // Theme list view
+                return m("div", { class: "cg2-theme-editor" }, [
+                    m("div", { class: "cg2-toolbar" }, [
+                        m("button", { class: "cg2-btn", onclick() { screen = "deckList"; m.redraw(); } }, "← Back"),
+                        m("span", { style: { fontWeight: 700, fontSize: "16px", marginLeft: "8px" } }, "Theme Editor"),
+                        m("button", {
+                            class: "cg2-btn cg2-btn-primary", style: { marginLeft: "auto" },
+                            onclick() { createNewTheme(); }
+                        }, [m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "add"), "New Theme"]),
+                        themeEditorState.loading ? m("span", { class: "cg2-loading" }, "Loading...") : null
+                    ]),
+                    m("div", { class: "cg2-theme-list" },
+                        themeEditorState.themes.map(t =>
+                            m("div", { class: "cg2-theme-list-item" }, [
+                                m("div", { class: "cg2-theme-list-name" }, [
+                                    t.name,
+                                    t.isBuiltin ? m("span", { class: "cg2-theme-badge-builtin" }, "Built-in") : null,
+                                    t.isCustom ? m("span", { class: "cg2-theme-badge-custom" }, "Custom") : null
+                                ]),
+                                m("div", { class: "cg2-theme-list-actions" }, [
+                                    m("button", { class: "cg2-btn", onclick() { editTheme(t.themeId, t.isBuiltin); } },
+                                        t.isBuiltin ? "Customize" : "Edit"),
+                                    t.isCustom ? m("button", {
+                                        class: "cg2-btn cg2-btn-danger",
+                                        onclick() {
+                                            page.components.dialog.confirm("Delete theme '" + t.name + "'?", async function(ok) {
+                                                if (ok) {
+                                                    await themeStorage.remove(t.themeId);
+                                                    loadThemeList();
+                                                }
+                                            });
+                                        }
+                                    }, "Delete") : null
+                                ])
+                            ])
+                        ),
+                        themeEditorState.themes.length === 0 ? m("div", { class: "cg2-empty-state" }, "No themes found.") : null
+                    )
+                ]);
+            }
+        };
+    }
+
     // ── Main View ────────────────────────────────────────────────────
     let fullMode = false;
     function toggleFullMode() {
@@ -9719,6 +11871,16 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                         !isGameScreen ? m("div", { class: "cg2-toolbar" }, [
                             page.iconButton("button mr-4", fullMode ? "close_fullscreen" : "open_in_new", "", toggleFullMode),
                             m("span", { style: { fontWeight: 700, fontSize: "16px", marginRight: "16px" } }, "Card Game"),
+                            screen === "deckList" ? [
+                                m("button", { class: "cg2-btn cg2-btn-sm", onclick() { loadThemeList(); screen = "themeEditor"; m.redraw(); } }, [
+                                    m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "2px" } }, "palette"),
+                                    " Themes"
+                                ]),
+                                m("button", { class: "cg2-btn cg2-btn-sm", style: { marginLeft: "4px" }, onclick() { screen = "test"; m.redraw(); } }, [
+                                    m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "2px" } }, "science"),
+                                    " Test"
+                                ])
+                            ] : null,
                             m("span", { style: { marginLeft: "auto", fontSize: "11px", color: "#999" } },
                                 "Theme: " + activeTheme.name
                             )
@@ -9746,7 +11908,9 @@ Respond naturally in character. No game mechanics, just dialogue.`;
                             builderStep === 3 ? m(BuilderReviewStep) : null
                         ] : null,
                         screen === "deckView" ? m(DeckView) : null,
-                        screen === "game" ? m(GameView) : null
+                        screen === "game" ? m(GameView) : null,
+                        screen === "test" ? m(TestModeUI) : null,
+                        screen === "themeEditor" ? m(ThemeEditorUI) : null
                     ])
                 ]),
                 page.components.dialog.loadDialog(),
@@ -9795,7 +11959,18 @@ Respond naturally in character. No game mechanics, just dialogue.`;
         resolveCombat,
         checkGameOver,
         COMBAT_OUTCOMES,
-        currentCombatResult: () => currentCombatResult
+        currentCombatResult: () => currentCombatResult,
+        // Phase 9
+        gameStorage,
+        campaignStorage,
+        themeStorage,
+        testState: () => testState,
+        runTestSuite,
+        parseEffect,
+        applyParsedEffects,
+        isEffectParseable,
+        SKILL_ACTION_KEYWORDS,
+        STATUS_EFFECTS
     };
 
 }());

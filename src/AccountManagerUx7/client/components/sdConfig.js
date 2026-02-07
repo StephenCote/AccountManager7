@@ -229,6 +229,7 @@
     }
     function applyOverrides(entity, ov) {
         if (!ov) return;
+        // Core generation fields
         _set(entity, ov, "model");
         _set(entity, ov, "refinerModel");
         _set(entity, ov, "cfg");
@@ -244,6 +245,11 @@
         _set(entity, ov, "denoisingStrength");
         _set(entity, ov, "bodyStyle");
         _set(entity, ov, "imageSetting");
+        _set(entity, ov, "description");
+        // Style-specific fields — ensure user-configured values override random template
+        for (let sf of STYLE_FIELDS) {
+            _set(entity, ov, sf);
+        }
     }
 
     // ── buildEntity ───────────────────────────────────────────────────
