@@ -13,8 +13,8 @@
  *   - CardGame.Engine      (effects: applyStatusEffect, tickStatusEffects,
  *                           processStatusEffectsTurnStart, parseEffect, applyParsedEffects)
  *   - CardGame.Engine      (encounters: checkNat1Threats, insertBeginningThreats)
- *   - CardGame.Engine      (actions: drawCardsForActor, ensureOffensiveCard, dealInitialStack,
- *                           checkExhausted, checkGameOver, anteCard)
+ *   - CardGame.Engine      (actions: drawCardsForActor, dealInitialStack, selectAction,
+ *                           getActionsForActor, checkGameOver, anteCard, claimPot)
  *   - CardGame.Characters  (shuffle)
  *   - CardGame.AI          (CardGameDirector, CardGameNarrator, aiPlaceCards)
  *   - CardGame.AI          (ChatManager, Voice — may not be extracted yet)
@@ -119,11 +119,19 @@
     }
 
     // ── Game State Creation ─────────────────────────────────────────────
-    function createGameState(deck, selectedCharacter) {
+    async function createGameState(deck, selectedCharacter) {
         const shuffle = Ch().shuffle;
         const dealInitialStack = E().dealInitialStack;
-        const ensureOffensiveCard = E().ensureOffensiveCard;
+        const getActionsForActor = E().getActionsForActor;
         const GAME_PHASES = C().GAME_PHASES;
+
+        // Load data from JSON (async, uses defaults if unavailable)
+        if (C().loadActionDefinitions) {
+            await C().loadActionDefinitions();
+        }
+        if (E().loadEncounterData) {
+            await E().loadEncounterData();
+        }
 
         // Use selected character or find first one
         let cards = deck.cards || [];
@@ -184,26 +192,20 @@
         let playerApparel = apparelCards.slice(0, apparelMid);
         let opponentApparel = apparelCards.slice(apparelMid);
 
-        // Create playable card pool (actions, skills, magic, talk)
-        let playableCards = [...actionCards, ...talkCards, ...skillCards, ...magicCards];
+        // Create playable card pool (modifiers only: skills, magic, items)
+        // Actions are no longer drawn — they're selected via the icon picker
+        let playableCards = [...skillCards, ...magicCards];
 
-        console.log("[CardGame v2] Card counts - action:", actionCards.length,
-            "talk:", talkCards.length, "skill:", skillCards.length,
-            "magic:", magicCards.length, "playable total:", playableCards.length);
+        console.log("[CardGame v2] Card counts - skill:", skillCards.length,
+            "magic:", magicCards.length, "playable (modifier) total:", playableCards.length);
 
-        // If deck has no playable cards, create basic cards
+        // If deck has no modifier cards, create basic skill cards
         if (playableCards.length === 0) {
-            console.log("[CardGame v2] No playable cards in deck, using default starter cards");
+            console.log("[CardGame v2] No modifier cards in deck, using default starter skills");
             playableCards = [
-                { type: "action", name: "Attack", actionType: "Offensive", energyCost: 0 },
-                { type: "action", name: "Attack", actionType: "Offensive", energyCost: 0 },
-                { type: "action", name: "Guard", actionType: "Defensive", energyCost: 0 },
-                { type: "action", name: "Guard", actionType: "Defensive", energyCost: 0 },
-                { type: "action", name: "Rest", actionType: "Recovery", energyCost: 0 },
-                { type: "action", name: "Rest", actionType: "Recovery", energyCost: 0 },
-                { type: "action", name: "Feint", actionType: "Utility", energyCost: 0 },
-                { type: "talk", name: "Taunt", speechType: "Provoke", energyCost: 0 },
-                { type: "talk", name: "Persuade", speechType: "Charm", energyCost: 0 }
+                { type: "skill", name: "Quick Reflexes", category: "Defense", modifier: "+2 to Flee and initiative", tier: "COMMON" },
+                { type: "skill", name: "Swordsmanship", category: "Combat", modifier: "+2 to Attack rolls with Slashing weapons", tier: "COMMON" },
+                { type: "skill", name: "Survival", category: "Survival", modifier: "+1 to Investigate and Rest", tier: "COMMON" }
             ];
         }
 
@@ -307,8 +309,9 @@
             // Encounter deck (shuffled)
             encounterDeck: shuffle([...encounterCards]),
 
-            // Round pot
+            // Round pot and loot
             pot: [],
+            roundLoot: [],  // Loot collected during this round (claimed by winner at cleanup)
 
             // Timing
             turnTimer: null,
@@ -348,9 +351,12 @@
             }
         };
 
-        // Ensure each player has at least one Attack card in starting hand
-        ensureOffensiveCard(state.player, "Player");
-        ensureOffensiveCard(state.opponent, "Opponent");
+        // Set available actions for each actor (based on character class template)
+        state.player.availableActions = getActionsForActor(state.player);
+        state.opponent.availableActions = getActionsForActor(state.opponent);
+
+        console.log("[CardGame v2] Player actions:", state.player.availableActions);
+        console.log("[CardGame v2] Opponent actions:", state.opponent.availableActions);
 
         return state;
     }
@@ -1227,7 +1233,6 @@
         const tickStatusEffects = E().tickStatusEffects;
         const processStatusEffectsTurnStart = E().processStatusEffectsTurnStart;
         const drawCardsForActor = E().drawCardsForActor;
-        const ensureOffensiveCard = E().ensureOffensiveCard;
         const anteCard = E().anteCard;
 
         // Check for game over BEFORE starting next round
@@ -1286,8 +1291,9 @@
         // Clear beginning threats from previous round
         gameState.beginningThreats = [];
 
-        // Clear pot (winner claimed it)
+        // Clear pot and round loot (winner claimed them)
         gameState.pot = [];
+        gameState.roundLoot = [];
 
         // Auto-draw at start of rounds 2+
         // Draw cards to refill hand (up to 5 cards, draw difference)
@@ -1303,10 +1309,6 @@
             console.log("[CardGame v2] Round", gameState.round, "- Opponent draws", opponentDraw, "cards");
             drawCardsForActor(gameState.opponent, opponentDraw);
         }
-
-        // Ensure each player has at least one Attack card
-        ensureOffensiveCard(gameState.player, "Player");
-        ensureOffensiveCard(gameState.opponent, "Opponent");
 
         // Mandatory ante: each player puts 1 random card into pot
         anteCard(gameState.player, "Player");
@@ -1339,28 +1341,6 @@
     // ── Campaign State ──────────────────────────────────────────────────
     // Module-level campaign state (loaded at game start, used in sidebar/game-over)
     let activeCampaign = null;
-    let levelUpState = null; // { campaign, statsSelected: [], onComplete: fn }
-
-    // Apply campaign stat gains to a game state's player character
-    function applyCampaignBonuses(state, campaign) {
-        if (!campaign?.statGains || !state?.player?.character?.stats) return;
-        let stats = state.player.character.stats;
-        for (let [stat, gain] of Object.entries(campaign.statGains)) {
-            if (typeof stats[stat] === "number") {
-                stats[stat] += gain;
-            }
-        }
-        // Recalculate derived values from updated stats
-        let end = stats.END ?? stats.end ?? 12;
-        state.player.ap = Math.max(2, Math.floor(end / 5) + 1);
-        state.player.maxAp = state.player.ap;
-        let mag = stats.MAG ?? stats.mag ?? 12;
-        state.player.energy = mag;
-        state.player.maxEnergy = mag;
-        console.log("[CardGame v2] Campaign bonuses applied:", JSON.stringify(campaign.statGains),
-            "\u2192 AP:", state.player.ap, "Energy:", state.player.energy);
-    }
-
     // ── Resolution Animation State ──────────────────────────────────────
     let resolutionAnimating = false;
     let resolutionPhase = "idle";  // "idle" | "rolling" | "result" | "done"
@@ -2041,8 +2021,6 @@
             set gameAnnouncerVoice(v) { gameAnnouncerVoice = v; },
             get activeCampaign() { return activeCampaign; },
             set activeCampaign(v) { activeCampaign = v; },
-            get levelUpState() { return levelUpState; },
-            set levelUpState(v) { levelUpState = v; },
             // Resolution animation sub-state (read by UI renderers)
             get resolutionAnimating() { return resolutionAnimating; },
             set resolutionAnimating(v) { resolutionAnimating = v; },
@@ -2100,9 +2078,6 @@
 
         // Audio cleanup
         cleanupAudio,
-
-        // Campaign
-        applyCampaignBonuses,
 
         // Resolution driver
         advanceResolution,

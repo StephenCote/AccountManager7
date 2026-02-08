@@ -3,12 +3,18 @@
  * Pot system (ante/claim), hoarding prevention (lethargy/exhausted),
  * card drawing, action bar placement/removal, and initial stack dealing.
  *
- * Depends on: CardGame.Constants (GAME_PHASES), CardGame.Engine (effects, combat, encounters)
+ * v2.1: Actions are now selected via icon picker (not drawn from hand).
+ *   - selectAction() creates virtual action cards from ACTION_DEFINITIONS
+ *   - placeCard() updated to handle _fromPicker cards (not removed from hand)
+ *   - Hand only contains modifier cards (skill, magic, item)
+ *   - ensureOffensiveCard() removed (Attack is always available via picker)
+ *   - Hoarding prevention simplified (no action cards in hand to hoard)
+ *
+ * Depends on: CardGame.Constants (GAME_PHASES, ACTION_DEFINITIONS, COMMON_ACTIONS)
  * Exposes: window.CardGame.Engine.{anteCard, claimPot, addToPot,
- *   checkLethargy, checkExhausted,
- *   drawCardsForActor, ensureOffensiveCard,
- *   isCoreCardType, isModifierCardType, placeCard, removeCardFromPosition,
- *   dealInitialStack, shuffle}
+ *   drawCardsForActor, getActionsForActor, isActionPlacedThisRound,
+ *   selectAction, isCoreCardType, isModifierCardType,
+ *   placeCard, removeCardFromPosition, dealInitialStack, shuffle}
  */
 (function() {
     "use strict";
@@ -36,7 +42,6 @@
             console.log("[CardGame v2]", actorName, "has no cards to ante");
             return null;
         }
-        // Pick a random card from hand
         let idx = Math.floor(Math.random() * actor.hand.length);
         let card = actor.hand.splice(idx, 1)[0];
         state.pot.push(card);
@@ -44,15 +49,34 @@
         return card;
     }
 
-    // Round winner claims all cards in the pot
+    // Round winner claims all cards in the pot + any round loot
     function claimPot(state, winner) {
-        if (!state.pot || state.pot.length === 0) return;
         let winnerActor = winner === "player" ? state.player : state.opponent;
-        state.pot.forEach(card => {
-            winnerActor.discardPile.push(card);
-        });
-        console.log("[CardGame v2]", winner, "claimed pot with", state.pot.length, "cards");
-        state.pot = [];
+
+        // Claim pot cards
+        if (state.pot && state.pot.length > 0) {
+            state.pot.forEach(card => {
+                winnerActor.discardPile.push(card);
+            });
+            console.log("[CardGame v2]", winner, "claimed pot with", state.pot.length, "cards");
+            state.pot = [];
+        }
+
+        // Claim round loot
+        if (state.roundLoot && state.roundLoot.length > 0) {
+            state.roundLoot.forEach(loot => {
+                // Equipment goes to card stack, consumables to hand
+                if (loot.type === "item" && loot.subtype === "consumable") {
+                    winnerActor.hand.push(loot);
+                } else if (loot.type === "item" || loot.type === "apparel") {
+                    winnerActor.cardStack.push(loot);
+                } else {
+                    winnerActor.discardPile.push(loot);
+                }
+            });
+            console.log("[CardGame v2]", winner, "claimed", state.roundLoot.length, "loot items");
+            state.roundLoot = [];
+        }
     }
 
     // Add a card to the pot (for mid-round drops)
@@ -62,122 +86,16 @@
         console.log("[CardGame v2] Added", card.name, "to pot (" + reason + ")");
     }
 
-    // ── Hoarding Prevention ─────────────────────────────────────────────
-
-    /**
-     * Lethargy Check (at cleanup)
-     * If actor holds 2+ copies of the same action type and played 0 this round,
-     * keep 1 copy and return the rest to the encounter deck.
-     * @param {Object} state - The current game state
-     * @param {Object} actor - The actor to check
-     * @param {string} actorName - Display name for logging
-     * @returns {Array} Array of {actionType, stripped} objects
-     */
-    function checkLethargy(state, actor, actorName) {
-        if (!actor.hand || actor.hand.length === 0) return [];
-
-        let typesPlayed = actor.typesPlayedThisRound || {};
-        let results = [];
-
-        // Count action cards by name (only action type cards)
-        let actionCounts = {};
-        actor.hand.forEach(card => {
-            if (card.type === "action") {
-                let key = card.name;
-                actionCounts[key] = (actionCounts[key] || 0) + 1;
-            }
-        });
-
-        // Check each action type with 2+ copies
-        Object.keys(actionCounts).forEach(actionType => {
-            let count = actionCounts[actionType];
-            let played = typesPlayed[actionType] || 0;
-
-            // Lethargy: 2+ copies AND 0 played this round
-            if (count >= 2 && played === 0) {
-                let stripped = count - 1;  // Keep 1, strip the rest
-                let removed = 0;
-
-                // Remove extras from hand and add to encounter deck
-                for (let i = actor.hand.length - 1; i >= 0 && removed < stripped; i--) {
-                    let card = actor.hand[i];
-                    if (card.type === "action" && card.name === actionType) {
-                        actor.hand.splice(i, 1);
-                        // Return to encounter deck
-                        if (state.encounterDeck) {
-                            state.encounterDeck.push(card);
-                        }
-                        removed++;
-                    }
-                }
-
-                if (removed > 0) {
-                    results.push({ actionType, stripped: removed });
-                    console.log("[CardGame v2] LETHARGY:", actorName, "- stripped", removed, actionType, "card(s)");
-                }
-            }
-        });
-
-        // Shuffle encounter deck after adding cards
-        if (results.length > 0 && state.encounterDeck) {
-            state.encounterDeck = shuffle(state.encounterDeck);
-        }
-
-        return results;
-    }
-
-    /**
-     * Exhausted Check (during resolution)
-     * If actor played 2+ of a type this round, last one failed, and holds 2+ extras in hand,
-     * keep 1 extra and return the rest to encounter deck.
-     * @param {Object} state - The current game state
-     * @param {Object} actor - The actor to check
-     * @param {string} actorName - Display name for logging
-     * @param {string} failedActionType - The action type that failed
-     * @returns {Object|null} { actionType, stripped } or null if no trigger
-     */
-    function checkExhausted(state, actor, actorName, failedActionType) {
-        if (!actor.hand || !failedActionType) return null;
-
-        let typesPlayed = actor.typesPlayedThisRound || {};
-        let playedCount = typesPlayed[failedActionType] || 0;
-
-        // Must have played 2+ of this type
-        if (playedCount < 2) return null;
-
-        // Count how many of this type remain in hand
-        let handCount = actor.hand.filter(c => c.type === "action" && c.name === failedActionType).length;
-
-        // Exhausted: played 2+, failed, and hold 2+ extras in hand
-        if (handCount >= 2) {
-            let stripped = handCount - 1;  // Keep 1, strip the rest
-            let removed = 0;
-
-            for (let i = actor.hand.length - 1; i >= 0 && removed < stripped; i--) {
-                let card = actor.hand[i];
-                if (card.type === "action" && card.name === failedActionType) {
-                    actor.hand.splice(i, 1);
-                    if (state.encounterDeck) {
-                        state.encounterDeck.push(card);
-                    }
-                    removed++;
-                }
-            }
-
-            if (removed > 0) {
-                // Shuffle encounter deck
-                if (state.encounterDeck) {
-                    state.encounterDeck = shuffle(state.encounterDeck);
-                }
-                console.log("[CardGame v2] EXHAUSTED:", actorName, "- stripped", removed, failedActionType, "card(s)");
-                return { actionType: failedActionType, stripped: removed };
-            }
-        }
-
-        return null;
+    // Add a loot item to the round loot pool
+    function addToRoundLoot(state, item, source) {
+        if (!item) return;
+        if (!state.roundLoot) state.roundLoot = [];
+        state.roundLoot.push(item);
+        console.log("[CardGame v2] Loot added:", item.name, "from", source);
     }
 
     // ── Draw Cards Helper ───────────────────────────────────────────────
+    // Hand now only contains modifier cards (skill, magic, item)
     function drawCardsForActor(actor, count) {
         for (let i = 0; i < count; i++) {
             // If draw pile empty, shuffle discard into draw
@@ -195,42 +113,61 @@
         }
     }
 
+    // ── Action Selection (Icon Picker) ────────────────────────────────────
+
     /**
-     * Ensure actor has at least one offensive card (Attack) in hand.
-     * If not, find one from draw/discard pile or create a basic Attack.
+     * Get the list of actions available to an actor based on their character class.
+     * Returns array of action name strings.
      */
-    function ensureOffensiveCard(actor, actorName) {
-        // Check if hand already has an Attack card
-        let hasAttack = actor.hand.some(c => c.type === "action" && c.name === "Attack");
-        if (hasAttack) return;
+    function getActionsForActor(actor) {
+        if (!actor || !actor.character) return C.COMMON_ACTIONS.slice();
+        // Character card stores class actions from template
+        return actor.character._classActions || C.COMMON_ACTIONS.slice();
+    }
 
-        // Try to find Attack in draw pile
-        let attackIdx = actor.drawPile.findIndex(c => c.type === "action" && c.name === "Attack");
-        if (attackIdx >= 0) {
-            let attackCard = actor.drawPile.splice(attackIdx, 1)[0];
-            actor.hand.push(attackCard);
-            console.log("[CardGame v2]", actorName, "guaranteed Attack card from draw pile");
-            return;
+    /**
+     * Check if a specific action has already been placed on the action bar this round.
+     * Actions can only be placed once per round (no duplicates).
+     */
+    function isActionPlacedThisRound(state, actionName, owner) {
+        if (!state || !state.actionBar) return false;
+        return state.actionBar.positions.some(pos =>
+            pos.owner === owner &&
+            pos.stack &&
+            pos.stack.coreCard &&
+            pos.stack.coreCard.name === actionName
+        );
+    }
+
+    /**
+     * Select an action from the icon picker and place it on an action bar position.
+     * Creates a virtual action card object from ACTION_DEFINITIONS.
+     * @param {Object} state - Game state
+     * @param {number} positionIndex - Action bar position index
+     * @param {string} actionName - Name of the action (e.g. "Attack", "Guard")
+     * @returns {boolean} Success
+     */
+    function selectAction(state, positionIndex, actionName) {
+        let def = C.ACTION_DEFINITIONS[actionName];
+        if (!def) {
+            console.warn("[CardGame v2] Unknown action:", actionName);
+            return false;
         }
 
-        // Try discard pile
-        attackIdx = actor.discardPile.findIndex(c => c.type === "action" && c.name === "Attack");
-        if (attackIdx >= 0) {
-            let attackCard = actor.discardPile.splice(attackIdx, 1)[0];
-            actor.hand.push(attackCard);
-            console.log("[CardGame v2]", actorName, "guaranteed Attack card from discard pile");
-            return;
-        }
-
-        // Last resort: create a basic Attack card
-        let basicAttack = {
-            type: "action",
-            name: "Attack",
-            effect: "Roll ATK vs DEF. Deal STR damage on hit.",
-            rarity: "COMMON"
+        // Build a virtual action card from the definition
+        let actionCard = {
+            type: actionName === "Talk" ? "talk" : "action",
+            name: actionName,
+            actionType: def.type,
+            energyCost: def.energyCost || 0,
+            icon: def.icon,
+            roll: def.roll,
+            stackWith: def.stackWith,
+            onHit: def.desc,
+            _fromPicker: true  // Marker: not a hand card, generated from picker
         };
-        actor.hand.push(basicAttack);
-        console.log("[CardGame v2]", actorName, "granted basic Attack card (none in deck)");
+
+        return placeCard(state, positionIndex, actionCard);
     }
 
     // ── Placement Actions ───────────────────────────────────────────────
@@ -241,7 +178,6 @@
     }
 
     // Determine if a card type can be a modifier (stacks on top of core)
-    // Note: magic is NOT a modifier - it's a core action like attack/talk
     function isModifierCardType(cardType) {
         return cardType === "skill" || cardType === "item";
     }
@@ -269,13 +205,11 @@
 
         if (!forceModifier && hasExistingCore) {
             // Position already has a core card
-            // Core action types (action, talk, magic) cannot be stacked - reject them
             if (card.type === "action" || card.type === "talk" || card.type === "magic") {
                 console.warn("[CardGame v2] Cannot stack multiple action cards - position already has:", pos.stack.coreCard.name);
                 if (typeof page !== "undefined" && page.toast) page.toast("warn", "Position already has an action card");
                 return false;
             } else if (isModifierCardType(card.type)) {
-                // Modifiers (skill, item) can be added to existing stack
                 isModifier = true;
             } else {
                 console.warn("[CardGame v2] Position already has a core card, and", card.type, "cannot be a modifier");
@@ -283,29 +217,33 @@
             }
         }
 
-        // Double-check stack state after potential removal
+        // Double-check stack state
         if (!isModifier && pos.stack && pos.stack.coreCard) {
-            console.error("[CardGame v2] Stack still has core card after removal - blocking duplicate");
+            console.error("[CardGame v2] Stack still has core card - blocking duplicate");
             return false;
         }
 
         if (isModifier) {
-            // Add modifier to existing stack (no AP cost for modifiers)
+            // Add modifier to existing stack (no AP cost)
             if (!pos.stack || !pos.stack.coreCard) {
-                console.warn("[CardGame v2] No core card to modify - place an action first");
+                console.warn("[CardGame v2] No core card to modify - pick an action first");
                 return false;
             }
             pos.stack.modifiers.push(card);
             console.log("[CardGame v2] Added modifier", card.name, "to stack at position", positionIndex);
+
+            // Remove modifier card from hand (modifiers come from hand)
+            let handOwner = currentPlayer === "player" ? state.player : state.opponent;
+            let idx = handOwner.hand.findIndex(c => c === card || (c.name === card.name && c.type === card.type));
+            if (idx >= 0) handOwner.hand.splice(idx, 1);
         } else {
             // Place core card (action/talk/magic)
             if (!isCoreCardType(card.type)) {
-                // Skill dropped on empty slot - can't be core
                 console.warn("[CardGame v2]", card.type, "cards need an action card first");
                 return false;
             }
 
-            // Check AP for core cards
+            // Check AP
             if (actor.apUsed >= actor.ap) {
                 console.warn("[CardGame v2] No AP remaining");
                 return false;
@@ -317,30 +255,38 @@
                 return false;
             }
 
+            // Check duplicate action (actions can only be placed once per round)
+            if (card._fromPicker && isActionPlacedThisRound(state, card.name, currentPlayer)) {
+                console.warn("[CardGame v2] Action already placed this round:", card.name);
+                if (typeof page !== "undefined" && page.toast) page.toast("warn", card.name + " already placed this round");
+                return false;
+            }
+
             pos.stack = { coreCard: card, modifiers: [] };
             actor.apUsed++;
 
-            // Deduct energy if needed
+            // Deduct energy
             if (card.energyCost) {
                 actor.energy -= card.energyCost;
             }
 
-            // Track action type for hoarding prevention (Lethargy/Exhausted)
-            let actionKey = card.name;  // Use card name as the action type key
+            // Track action type
+            let actionKey = card.name;
             if (!actor.typesPlayedThisRound) actor.typesPlayedThisRound = {};
             actor.typesPlayedThisRound[actionKey] = (actor.typesPlayedThisRound[actionKey] || 0) + 1;
 
-            console.log("[CardGame v2] Placed core card", card.name, "at position", positionIndex);
-        }
+            console.log("[CardGame v2] Placed core card", card.name, "at position", positionIndex,
+                card._fromPicker ? "(from picker)" : "(from hand)");
 
-        // Remove card from hand
-        if (currentPlayer === "player") {
-            let idx = state.player.hand.findIndex(c => c === card || (c.name === card.name && c.type === card.type));
-            if (idx >= 0) state.player.hand.splice(idx, 1);
+            // Only remove from hand if card came from hand (not from picker)
+            if (!card._fromPicker) {
+                let handOwner = currentPlayer === "player" ? state.player : state.opponent;
+                let idx = handOwner.hand.findIndex(c => c === card || (c.name === card.name && c.type === card.type));
+                if (idx >= 0) handOwner.hand.splice(idx, 1);
+            }
         }
 
         m.redraw();
-        // Player manually ends turn - no auto-commit
         return true;
     }
 
@@ -357,12 +303,14 @@
 
         let actor = currentPlayer === "player" ? state.player : state.opponent;
 
-        // Return cards to hand and refund costs
+        // Return core card to hand only if it came from hand (not from picker)
         if (pos.stack.coreCard) {
-            actor.hand.push(pos.stack.coreCard);
+            if (!pos.stack.coreCard._fromPicker) {
+                actor.hand.push(pos.stack.coreCard);
+            }
+            // Always refund AP and energy
             actor.apUsed = Math.max(0, actor.apUsed - 1);
 
-            // Refund energy cost
             if (pos.stack.coreCard.energyCost) {
                 actor.energy = Math.min(actor.maxEnergy, actor.energy + pos.stack.coreCard.energyCost);
             }
@@ -379,7 +327,7 @@
             console.log("[CardGame v2] Removed", pos.stack.coreCard.name, "from position", positionIndex);
         }
 
-        // Return modifiers to hand
+        // Return modifiers to hand (modifiers always come from hand)
         pos.stack.modifiers.forEach(mod => actor.hand.push(mod));
 
         pos.stack = null;
@@ -388,11 +336,9 @@
     }
 
     // ── Deal Initial Stack ──────────────────────────────────────────────
-    // Deal initial modifier cards to character stack (weapon + armor + apparel)
     function dealInitialStack(apparelCards, itemCards) {
         let stack = [];
 
-        // 1. Always add a weapon - find one from deck or create basic
         let weapons = itemCards.filter(i => i.subtype === "weapon");
         if (weapons.length > 0) {
             stack.push(shuffle([...weapons])[0]);
@@ -404,19 +350,16 @@
             });
         }
 
-        // 2. Always add armor - find one from deck or create basic
         let armors = itemCards.filter(i => i.subtype === "armor");
         if (armors.length > 0) {
             stack.push(shuffle([...armors])[0]);
         } else {
             stack.push({
                 type: "item", subtype: "armor", name: "Basic Armor",
-                slot: "Body", rarity: "COMMON", def: 2,
-                effect: "+2 DEF"
+                slot: "Body", rarity: "COMMON", def: 2, effect: "+2 DEF"
             });
         }
 
-        // 3. Add 1 random apparel card if available, or basic garb
         if (apparelCards.length > 0) {
             let shuffledApparel = shuffle([...apparelCards]);
             stack.push(shuffledApparel[0]);
@@ -433,10 +376,11 @@
         anteCard,
         claimPot,
         addToPot,
-        checkLethargy,
-        checkExhausted,
+        addToRoundLoot,
         drawCardsForActor,
-        ensureOffensiveCard,
+        getActionsForActor,
+        isActionPlacedThisRound,
+        selectAction,
         isCoreCardType,
         isModifierCardType,
         placeCard,

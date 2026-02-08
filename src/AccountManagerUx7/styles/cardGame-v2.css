@@ -1241,16 +1241,7 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 .cg2-sidebar-portrait {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    border: 3px solid #B8860B;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #f5f0e6;
-    margin: 0 auto;
+    display: none; /* Replaced by cg2-sidebar-portrait-lg */
 }
 .cg2-sidebar-portrait img {
     width: 100%;
@@ -1434,30 +1425,112 @@
 }
 .dark .cg2-stat-val { color: #bbb; }
 
-/* ── Sidebar Portrait (clickable) ───────────────────── */
-.cg2-sidebar-portrait {
-    width: 90px;
-    height: 90px;
-    border-radius: 50%;
-    border: 3px solid #B8860B;
+/* ── Sidebar Portrait - Large (fills sidebar width) ───── */
+.cg2-sidebar-portrait-lg {
+    width: 100%;
+    aspect-ratio: 3/4;
+    position: relative;
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    border-radius: 8px;
+    border: 2px solid #B8860B;
     background: #f5f0e6;
     cursor: pointer;
     transition: transform 0.15s, box-shadow 0.15s;
-    position: relative;
 }
-.cg2-sidebar-portrait:hover {
-    transform: scale(1.05);
+.cg2-sidebar-portrait-lg:hover {
+    transform: scale(1.02);
     box-shadow: 0 4px 16px rgba(184,134,11,0.4);
 }
-.cg2-portrait-img-sidebar {
+.cg2-portrait-img-lg {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
+}
+.cg2-portrait-placeholder-lg {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #f5f0e6, #e8dcc8);
+}
+.cg2-portrait-placeholder-lg .material-symbols-outlined {
+    font-size: 64px;
+    color: #B8860B;
+}
+.dark .cg2-sidebar-portrait-lg {
+    background: #2a2520;
+    border-color: #DAA520;
+}
+.dark .cg2-portrait-placeholder-lg {
+    background: linear-gradient(135deg, #2a2520, #3a3025);
+}
+
+/* Name overlay at bottom of portrait */
+.cg2-sidebar-name-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.85));
+    padding: 16px 8px 6px;
+    text-align: center;
+}
+.cg2-sidebar-charname {
+    display: block;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cg2-sidebar-charclass {
+    display: block;
+    color: #DAA520;
+    font-size: 10px;
+    font-weight: 500;
+    margin-top: 1px;
+}
+
+/* Compact stat grid (2x3) below portrait */
+.cg2-sidebar-stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 8px;
+    padding: 6px 4px;
+    font-size: 11px;
+}
+.cg2-stat-cell {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1px 4px;
+}
+.cg2-stat-label {
+    color: #888;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+.cg2-stat-num {
+    font-weight: 700;
+    color: #555;
+    font-size: 12px;
+}
+.dark .cg2-stat-label { color: #999; }
+.dark .cg2-stat-num { color: #ccc; }
+
+/* HP/Energy bars wrapper */
+.cg2-sidebar-bars {
+    padding: 4px 0;
+}
+
+/* Legacy portrait (kept for card previews) */
+.cg2-sidebar-portrait {
+    display: none;
 }
 .cg2-portrait-name {
     position: absolute;
@@ -2095,6 +2168,51 @@
     color: #aaa;
     background: rgba(255,255,255,0.1);
 }
+
+/* Creature type badge */
+.cg2-threat-type-badge {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    background: rgba(0,0,0,0.15);
+    color: #B71C1C;
+}
+.cg2-threat-encounter-card { position: relative; }
+.cg2-threat-type-animal .cg2-threat-type-badge { color: #2E7D32; background: rgba(46,125,50,0.12); }
+.cg2-threat-type-npc .cg2-threat-type-badge { color: #1565C0; background: rgba(21,101,192,0.12); }
+.cg2-threat-type-monster .cg2-threat-type-badge { color: #6A1B9A; background: rgba(106,27,154,0.12); }
+
+/* Behavior text */
+.cg2-threat-behavior {
+    font-size: 10px;
+    color: #777;
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-bottom: 6px;
+}
+.dark .cg2-threat-behavior { color: #bbb; }
+
+/* Action stack on threat card */
+.cg2-threat-action-stack {
+    font-size: 10px;
+    color: #555;
+    padding: 3px 8px;
+    background: rgba(198,40,40,0.08);
+    border-radius: 4px;
+    margin-bottom: 6px;
+}
+.cg2-threat-action-label { font-weight: 600; }
+.cg2-threat-action-name { color: #C62828; font-weight: 700; }
+.cg2-threat-action-mods { color: #888; font-size: 9px; }
+.dark .cg2-threat-action-stack { background: rgba(239,83,80,0.15); color: #ccc; }
+.dark .cg2-threat-action-name { color: #EF5350; }
 
 /* VS indicator for threat */
 .cg2-threat-vs {
@@ -2778,6 +2896,63 @@
     font-style: italic;
     padding: 8px;
 }
+
+/* ── Action Icon Picker (replaces "Drop here" for empty positions) ── */
+.cg2-action-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+    padding: 4px 2px;
+}
+.cg2-action-icon-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1.5px solid #81c784;
+    border-radius: 50%;
+    background: rgba(129, 199, 132, 0.12);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    color: #388E3C;
+}
+.cg2-action-icon-btn:hover:not(:disabled) {
+    background: rgba(129, 199, 132, 0.35);
+    border-color: #4CAF50;
+    transform: scale(1.15);
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+}
+.cg2-action-icon-btn:active:not(:disabled) {
+    transform: scale(0.95);
+}
+.cg2-action-icon-btn .material-symbols-outlined {
+    font-size: 16px;
+}
+.cg2-action-icon-btn.cg2-action-disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    border-color: #aaa;
+    background: rgba(128, 128, 128, 0.08);
+    color: #999;
+}
+.dark .cg2-action-icon-btn {
+    border-color: #66BB6A;
+    background: rgba(102, 187, 106, 0.1);
+    color: #A5D6A7;
+}
+.dark .cg2-action-icon-btn:hover:not(:disabled) {
+    background: rgba(102, 187, 106, 0.25);
+    border-color: #81C784;
+}
+.dark .cg2-action-icon-btn.cg2-action-disabled {
+    opacity: 0.25;
+    border-color: #555;
+    color: #666;
+}
+
 .cg2-resolve-marker {
     position: absolute;
     bottom: -16px;
@@ -3791,11 +3966,61 @@
 }
 
 /* ── Scenario Card (End Threats) ─────────────────────── */
+/* ── Loot Summary ─────────────────────────────────── */
+.cg2-loot-summary {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: rgba(255, 179, 0, 0.1);
+    border: 1px solid rgba(255, 179, 0, 0.3);
+    border-radius: 8px;
+}
+.dark .cg2-loot-summary {
+    background: rgba(255, 179, 0, 0.08);
+    border-color: rgba(255, 179, 0, 0.25);
+}
+.cg2-loot-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #F57F17;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+.dark .cg2-loot-title { color: #FFD54F; }
+.cg2-loot-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.cg2-loot-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(0,0,0,0.05);
+    color: #555;
+}
+.dark .cg2-loot-item { background: rgba(255,255,255,0.08); color: #ccc; }
+.cg2-loot-common { border-left: 3px solid #9E9E9E; }
+.cg2-loot-uncommon { border-left: 3px solid #4CAF50; color: #2E7D32; }
+.cg2-loot-rare { border-left: 3px solid #2196F3; color: #1565C0; }
+.cg2-loot-epic { border-left: 3px solid #9C27B0; color: #6A1B9A; }
+.cg2-loot-legendary { border-left: 3px solid #FF9800; color: #E65100; }
+.dark .cg2-loot-uncommon { color: #81C784; }
+.dark .cg2-loot-rare { color: #64B5F6; }
+.dark .cg2-loot-epic { color: #CE93D8; }
+.dark .cg2-loot-legendary { color: #FFB74D; }
+
+/* ── Scenario Card ────────────────────────────────── */
 .cg2-scenario-card {
     margin-top: 12px;
     padding: 10px 14px;
     background: rgba(33, 150, 243, 0.1);
     border: 1px solid rgba(33, 150, 243, 0.3);
+    border-left: 4px solid rgba(33, 150, 243, 0.6);
     border-radius: 8px;
 }
 .cg2-scenario-card:has(.cg2-end-threat) {

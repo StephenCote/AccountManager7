@@ -26,7 +26,7 @@
         buildingDeck: false,
         deckNameInput: "",
 
-        // Game state (gameState, gameCharSelection, activeCampaign, levelUpState
+        // Game state (gameState, gameCharSelection, activeCampaign
         // are proxied to GameState.state below — do NOT define them here)
 
         // Theme state
@@ -76,7 +76,7 @@
     // gameView sets ctx.gameState, phaseUI/gameOverUI reading GS().state.gameState
     // see the same value.
     proxyState(ctx, function() { return NS.GameState ? NS.GameState.state : null; }, [
-        "gameState", "gameCharSelection", "activeCampaign", "levelUpState",
+        "gameState", "gameCharSelection", "activeCampaign",
         "gameChatManager", "gameVoice", "gameAnnouncerVoice",
         "initAnimState", "llmStatus", "gameDirector", "gameNarrator",
         "resolutionAnimating", "resolutionPhase", "resolutionDiceFaces", "currentCombatResult"

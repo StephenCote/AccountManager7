@@ -4,9 +4,9 @@
  * and beginning/end-of-round threat checks.
  *
  * Depends on: CardGame.Engine (effects, combat)
- * Exposes: window.CardGame.Engine.{loadBalanceData, getThreatCreatures, getScenarioCards,
- *   generateCriticalReward, createThreatEncounter, checkNat1Threats, insertBeginningThreats,
- *   drawScenarioCard, checkEndThreat, THREAT_CREATURES, SCENARIO_CARDS}
+ * Exposes: window.CardGame.Engine.{loadEncounterData, loadBalanceData, getThreatCreatures,
+ *   getScenarioCards, generateCriticalReward, createThreatEncounter, checkNat1Threats,
+ *   insertBeginningThreats, drawScenarioCard, checkEndThreat, THREAT_CREATURES, SCENARIO_CARDS}
  */
 (function() {
     "use strict";
@@ -15,7 +15,6 @@
     window.CardGame.Engine = window.CardGame.Engine || {};
 
     // ── Balance Data Loader ─────────────────────────────────────────────
-    // Load balance data from external JSON (optional override of defaults)
     let balanceData = null;
     async function loadBalanceData() {
         if (balanceData) return balanceData;
@@ -23,34 +22,56 @@
             balanceData = await m.request({ method: "GET", url: "media/cardGame/game-balance.json" });
         } catch(e) {
             console.warn("[CardGame] Could not load game-balance.json, using defaults");
-            balanceData = {};  // Will fall back to hardcoded defaults
+            balanceData = {};
         }
         return balanceData;
     }
 
-    // ── Threat Creatures ────────────────────────────────────────────────
-    const THREAT_CREATURES = [
-        { name: "Wolf", atk: 2, def: 1, hp: 8, imageIcon: "pets" },
-        { name: "Goblin Scout", atk: 3, def: 1, hp: 10, imageIcon: "face" },
-        { name: "Giant Spider", atk: 2, def: 2, hp: 12, imageIcon: "bug_report" },
-        { name: "Bandit", atk: 4, def: 2, hp: 15, imageIcon: "person_alert" },
-        { name: "Dire Wolf", atk: 5, def: 2, hp: 18, imageIcon: "pets" },
-        { name: "Orc Warrior", atk: 6, def: 3, hp: 20, imageIcon: "shield_person" }
+    // ── Encounter Data (loaded from JSON) ─────────────────────────────
+    // Defaults used if JSON fails to load
+    let THREAT_CREATURES = [
+        { name: "Wolf", type: "animal", atk: 2, def: 1, hp: 8, imageIcon: "pets",
+          behavior: "Attacks lowest HP target", loot: ["Wolf Pelt"] },
+        { name: "Goblin Scout", type: "npc", atk: 3, def: 1, hp: 10, imageIcon: "face",
+          behavior: "Flanks weakest defender", loot: ["Goblin Dagger"] },
+        { name: "Giant Spider", type: "animal", atk: 2, def: 2, hp: 12, imageIcon: "bug_report",
+          behavior: "Poison on hit (2 turns)", loot: ["Spider Silk"] },
+        { name: "Bandit", type: "npc", atk: 4, def: 2, hp: 15, imageIcon: "person_alert",
+          behavior: "Steals item on crit", loot: ["Stolen Coin Pouch"] }
     ];
+
+    let SCENARIO_CARDS = [
+        { name: "Peaceful Respite", effect: "no_threat", description: "The area is calm.",
+          icon: "park", cardColor: "#43A047", weight: 40 },
+        { name: "Ambush!", effect: "threat", description: "Enemies emerge from hiding!",
+          icon: "visibility_off", cardColor: "#C62828", threatBonus: 0, weight: 15 }
+    ];
+
+    let encounterDataLoaded = false;
+
+    async function loadEncounterData() {
+        if (encounterDataLoaded) return;
+        try {
+            let data = await m.request({ method: "GET", url: "media/cardGame/encounters.json" });
+            if (data && data.threatCreatures) {
+                THREAT_CREATURES = data.threatCreatures;
+                window.CardGame.Engine.THREAT_CREATURES = THREAT_CREATURES;
+            }
+            if (data && data.scenarioCards) {
+                SCENARIO_CARDS = data.scenarioCards;
+                window.CardGame.Engine.SCENARIO_CARDS = SCENARIO_CARDS;
+            }
+            encounterDataLoaded = true;
+            console.log("[CardGame] Encounter data loaded:", THREAT_CREATURES.length, "creatures,", SCENARIO_CARDS.length, "scenarios");
+        } catch(e) {
+            console.warn("[CardGame] Could not load encounters.json, using defaults");
+            encounterDataLoaded = true;
+        }
+    }
 
     function getThreatCreatures() {
         return balanceData?.threatCreatures || THREAT_CREATURES;
     }
-
-    // ── Scenario Cards ──────────────────────────────────────────────────
-    const SCENARIO_CARDS = [
-        { name: "Peaceful Respite", effect: "no_threat", description: "The area is calm. No threats emerge.", weight: 40 },
-        { name: "Distant Howling", effect: "no_threat", description: "You hear something in the distance, but nothing approaches.", weight: 25 },
-        { name: "Ambush!", effect: "threat", description: "Enemies emerge from hiding!", threatBonus: 0, weight: 15 },
-        { name: "Elite Patrol", effect: "threat", description: "A stronger foe appears!", threatBonus: 2, weight: 10 },
-        { name: "Wandering Monster", effect: "threat", description: "A creature stumbles upon you.", threatBonus: -1, weight: 8 },
-        { name: "Boss Encounter", effect: "threat", description: "A fearsome opponent blocks your path!", threatBonus: 4, weight: 2 }
-    ];
 
     function getScenarioCards() {
         return balanceData?.scenarioCards || SCENARIO_CARDS;
@@ -123,6 +144,7 @@
         let threat = {
             type: "encounter",
             subtype: "threat",
+            creatureType: base.type || "monster",
             name: base.name,
             difficulty: difficulty,
             atk: Math.round(base.atk * scaleFactor),
@@ -130,7 +152,21 @@
             hp: Math.round(base.hp * scaleFactor),
             maxHp: Math.round(base.hp * scaleFactor),
             imageIcon: base.imageIcon,
-            isThreat: true
+            behavior: base.behavior || "Attacks target",
+            artPrompt: base.artPrompt || null,
+            isThreat: true,
+
+            // Loot items the threat drops when defeated
+            lootItems: (base.loot || []).map(name => ({
+                type: "item", subtype: "loot", name: name,
+                rarity: difficulty <= 4 ? "COMMON" : difficulty <= 8 ? "UNCOMMON" : "RARE"
+            })),
+
+            // Action stack representing the threat's attack
+            actionStack: {
+                coreAction: "Attack",
+                modifiers: difficulty >= 6 ? [{ name: "Ferocious", bonus: 1, type: "skill" }] : []
+            }
         };
 
         // Determine loot rarity based on difficulty
@@ -142,7 +178,7 @@
             threat.lootCount = 1;
         } else {
             threat.lootRarity = "RARE";
-            threat.lootCount = 2;  // 1 rare + 1 common
+            threat.lootCount = 2;
         }
 
         return threat;
@@ -248,6 +284,7 @@
 
     // ── Export ───────────────────────────────────────────────────────────
     Object.assign(window.CardGame.Engine, {
+        loadEncounterData,
         loadBalanceData,
         getThreatCreatures,
         getScenarioCards,

@@ -1,14 +1,16 @@
 {
-    "version": 1,
+    "version": 2,
     "balanceRules": {
         "targetTotalStats": 60,
         "minStat": 6,
         "maxStat": 18
     },
+    "commonActions": ["Attack", "Flee", "Rest", "Use Item", "Talk"],
     "templates": [
         {
             "id": "warrior-balanced",
             "class": "Warrior",
+            "actions": ["Attack", "Guard", "Flee", "Rest", "Use Item", "Talk", "Investigate"],
             "statistics": { "STR": 14, "AGI": 10, "END": 13, "INT": 8, "MAG": 6, "CHA": 9 },
             "personality": ["brave", "honorable", "direct"],
             "alignment": "LAWFUL_GOOD",
@@ -22,6 +24,7 @@
         {
             "id": "mage-glass-cannon",
             "class": "Mage",
+            "actions": ["Attack", "Channel", "Flee", "Rest", "Use Item", "Talk", "Investigate"],
             "statistics": { "STR": 6, "AGI": 8, "END": 7, "INT": 14, "MAG": 18, "CHA": 7 },
             "personality": ["scholarly", "curious", "reserved"],
             "alignment": "NEUTRAL",
@@ -35,6 +38,7 @@
         {
             "id": "rogue-agile",
             "class": "Rogue",
+            "actions": ["Attack", "Steal", "Feint", "Flee", "Rest", "Use Item", "Talk", "Investigate", "Trade"],
             "statistics": { "STR": 8, "AGI": 16, "END": 9, "INT": 11, "MAG": 6, "CHA": 10 },
             "personality": ["cunning", "opportunistic", "charming"],
             "alignment": "CHAOTIC_NEUTRAL",
@@ -48,6 +52,7 @@
         {
             "id": "cleric-support",
             "class": "Cleric",
+            "actions": ["Attack", "Guard", "Channel", "Talk", "Flee", "Rest", "Use Item"],
             "statistics": { "STR": 9, "AGI": 8, "END": 11, "INT": 10, "MAG": 14, "CHA": 8 },
             "personality": ["compassionate", "devout", "calm"],
             "alignment": "LAWFUL_GOOD",
@@ -61,6 +66,7 @@
         {
             "id": "ranger-scout",
             "class": "Ranger",
+            "actions": ["Attack", "Investigate", "Craft", "Flee", "Rest", "Use Item", "Talk"],
             "statistics": { "STR": 11, "AGI": 14, "END": 10, "INT": 9, "MAG": 8, "CHA": 8 },
             "personality": ["observant", "patient", "independent"],
             "alignment": "NEUTRAL_GOOD",
@@ -74,6 +80,7 @@
         {
             "id": "bard-charismatic",
             "class": "Bard",
+            "actions": ["Attack", "Talk", "Trade", "Steal", "Flee", "Rest", "Use Item"],
             "statistics": { "STR": 7, "AGI": 10, "END": 8, "INT": 11, "MAG": 10, "CHA": 14 },
             "personality": ["eloquent", "performative", "empathetic"],
             "alignment": "CHAOTIC_GOOD",
@@ -87,6 +94,7 @@
         {
             "id": "tank-defender",
             "class": "Tank",
+            "actions": ["Attack", "Guard", "Flee", "Rest", "Use Item", "Talk"],
             "statistics": { "STR": 12, "AGI": 7, "END": 17, "INT": 8, "MAG": 6, "CHA": 10 },
             "personality": ["protective", "stubborn", "loyal"],
             "alignment": "LAWFUL_NEUTRAL",
@@ -100,6 +108,7 @@
         {
             "id": "berserker-aggressive",
             "class": "Berserker",
+            "actions": ["Attack", "Feint", "Flee", "Rest", "Use Item", "Talk", "Investigate"],
             "statistics": { "STR": 16, "AGI": 11, "END": 12, "INT": 6, "MAG": 6, "CHA": 9 },
             "personality": ["fierce", "impulsive", "fearless"],
             "alignment": "CHAOTIC_NEUTRAL",
@@ -113,6 +122,7 @@
         {
             "id": "assassin-stealth",
             "class": "Assassin",
+            "actions": ["Attack", "Steal", "Feint", "Investigate", "Flee", "Rest", "Use Item", "Talk"],
             "statistics": { "STR": 10, "AGI": 16, "END": 8, "INT": 12, "MAG": 6, "CHA": 8 },
             "personality": ["calculating", "patient", "detached"],
             "alignment": "NEUTRAL_EVIL",
@@ -126,6 +136,7 @@
         {
             "id": "battlemage-hybrid",
             "class": "Battlemage",
+            "actions": ["Attack", "Channel", "Guard", "Craft", "Flee", "Rest", "Use Item", "Talk"],
             "statistics": { "STR": 11, "AGI": 9, "END": 10, "INT": 10, "MAG": 12, "CHA": 8 },
             "personality": ["disciplined", "strategic", "ambitious"],
             "alignment": "LAWFUL_NEUTRAL",
@@ -139,6 +150,7 @@
         {
             "id": "scholar-intellect",
             "class": "Scholar",
+            "actions": ["Attack", "Investigate", "Craft", "Channel", "Flee", "Rest", "Use Item", "Talk"],
             "statistics": { "STR": 6, "AGI": 8, "END": 8, "INT": 17, "MAG": 11, "CHA": 10 },
             "personality": ["analytical", "curious", "methodical"],
             "alignment": "NEUTRAL",
@@ -152,6 +164,7 @@
         {
             "id": "noble-leader",
             "class": "Noble",
+            "actions": ["Attack", "Talk", "Trade", "Flee", "Rest", "Use Item", "Investigate"],
             "statistics": { "STR": 8, "AGI": 9, "END": 9, "INT": 12, "MAG": 8, "CHA": 14 },
             "personality": ["confident", "diplomatic", "commanding"],
             "alignment": "LAWFUL_GOOD",

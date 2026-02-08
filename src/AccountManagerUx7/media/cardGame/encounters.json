@@ -1,0 +1,156 @@
+{
+    "version": 1,
+    "threatCreatures": [
+        {
+            "name": "Wolf",
+            "type": "animal",
+            "atk": 2,
+            "def": 1,
+            "hp": 8,
+            "imageIcon": "pets",
+            "behavior": "Attacks lowest HP target",
+            "loot": ["Wolf Pelt"],
+            "artPrompt": "snarling wolf lunging forward, fangs bared"
+        },
+        {
+            "name": "Goblin Scout",
+            "type": "npc",
+            "atk": 3,
+            "def": 1,
+            "hp": 10,
+            "imageIcon": "face",
+            "behavior": "Flanks weakest defender",
+            "loot": ["Goblin Dagger"],
+            "artPrompt": "small goblin with a crude dagger sneaking through shadows"
+        },
+        {
+            "name": "Giant Spider",
+            "type": "animal",
+            "atk": 2,
+            "def": 2,
+            "hp": 12,
+            "imageIcon": "bug_report",
+            "behavior": "Poison on hit (2 turns)",
+            "loot": ["Spider Silk", "Venom Sac"],
+            "artPrompt": "enormous spider in a web, dripping venom"
+        },
+        {
+            "name": "Bandit",
+            "type": "npc",
+            "atk": 4,
+            "def": 2,
+            "hp": 15,
+            "imageIcon": "person_alert",
+            "behavior": "Steals item on crit",
+            "loot": ["Stolen Coin Pouch"],
+            "artPrompt": "masked bandit with a crossbow in a dark forest"
+        },
+        {
+            "name": "Dire Wolf",
+            "type": "animal",
+            "atk": 5,
+            "def": 2,
+            "hp": 18,
+            "imageIcon": "pets",
+            "behavior": "Attacks twice on crit",
+            "loot": ["Dire Wolf Fang", "Thick Pelt"],
+            "artPrompt": "massive wolf with glowing eyes, towering over its prey"
+        },
+        {
+            "name": "Orc Warrior",
+            "type": "npc",
+            "atk": 6,
+            "def": 3,
+            "hp": 20,
+            "imageIcon": "shield_person",
+            "behavior": "Enrages below half HP (+2 ATK)",
+            "loot": ["Orc Blade", "Iron Shield"],
+            "artPrompt": "armored orc warrior with a jagged sword and shield"
+        },
+        {
+            "name": "Wild Boar",
+            "type": "animal",
+            "atk": 3,
+            "def": 3,
+            "hp": 14,
+            "imageIcon": "pets",
+            "behavior": "Charges (first attack +2 ATK)",
+            "loot": ["Boar Tusk"],
+            "artPrompt": "charging wild boar with sharp tusks"
+        },
+        {
+            "name": "Skeleton Archer",
+            "type": "monster",
+            "atk": 4,
+            "def": 1,
+            "hp": 10,
+            "imageIcon": "skull",
+            "behavior": "Ranged attack, ignores front-line",
+            "loot": ["Old Arrows", "Bone Fragment"],
+            "artPrompt": "skeletal archer with a cracked bow, glowing eye sockets"
+        }
+    ],
+    "scenarioCards": [
+        {
+            "name": "Peaceful Respite",
+            "effect": "no_threat",
+            "description": "The area is calm. No threats emerge.",
+            "icon": "park",
+            "cardColor": "#43A047",
+            "weight": 40
+        },
+        {
+            "name": "Distant Howling",
+            "effect": "no_threat",
+            "description": "You hear something in the distance, but nothing approaches.",
+            "icon": "hearing",
+            "cardColor": "#7986CB",
+            "weight": 25
+        },
+        {
+            "name": "Hidden Cache",
+            "effect": "no_threat",
+            "description": "You discover a hidden stash!",
+            "icon": "inventory_2",
+            "cardColor": "#FFB300",
+            "bonus": "loot",
+            "weight": 5
+        },
+        {
+            "name": "Ambush!",
+            "effect": "threat",
+            "description": "Enemies emerge from hiding!",
+            "icon": "visibility_off",
+            "cardColor": "#C62828",
+            "threatBonus": 0,
+            "weight": 15
+        },
+        {
+            "name": "Elite Patrol",
+            "effect": "threat",
+            "description": "A stronger foe appears!",
+            "icon": "military_tech",
+            "cardColor": "#AD1457",
+            "threatBonus": 2,
+            "weight": 10
+        },
+        {
+            "name": "Wandering Monster",
+            "effect": "threat",
+            "description": "A creature stumbles upon you.",
+            "icon": "explore",
+            "cardColor": "#E65100",
+            "threatBonus": -1,
+            "weight": 8
+        },
+        {
+            "name": "Boss Encounter",
+            "effect": "threat",
+            "description": "A fearsome opponent blocks your path!",
+            "icon": "dangerous",
+            "cardColor": "#6A1B9A",
+            "threatBonus": 4,
+            "weight": 2
+        }
+    ]
+}

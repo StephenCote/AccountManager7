@@ -37,6 +37,9 @@
     function drawCardsForActor(a, n) { return window.CardGame.Engine?.drawCardsForActor?.(a, n); }
     function advancePhase()      { return window.CardGame.GameState?.advancePhase?.(); }
     function checkGameOver()     { return window.CardGame.Engine?.checkGameOver?.(); }
+    function selectAction(state, posIdx, actionName) { return window.CardGame.Engine?.selectAction?.(state, posIdx, actionName); }
+    function getActionsForActor(actor) { return window.CardGame.Engine?.getActionsForActor?.(actor) || []; }
+    function isActionPlacedThisRound(state, name, owner) { return window.CardGame.Engine?.isActionPlacedThisRound?.(state, name, owner); }
 
     // ── Load external prompts (optional) ─────────────────────────────
     let directorPrompts = null;
@@ -114,14 +117,16 @@ You receive game state JSON and respond with placement decision JSON.
 Goal: reduce player HP or morale to 0.
 
 Response format:
-{"stacks":[{"position":2,"coreCard":"Attack"}],"strategy":"brief"}
+{"stacks":[{"position":2,"coreCard":"Attack","modifiers":["Precise Strike"]}],"strategy":"brief"}
 
 Rules:
 - "position" must be from availablePositions array
-- "coreCard" must match a card name in your hand exactly
-- Optional: "modifiers" array of skill card names from hand
-- Place up to your AP cards
-- Consider energy costs
+- "coreCard" must match an action name from your availableActions list exactly
+- Each action can only be placed once per round
+- Optional: "modifiers" array of modifier card names from your modifierCards
+- Place up to your AP actions
+- Consider energy costs (actions with energyCost > 0 consume energy)
+- Your hand only contains modifier cards (skill, magic, item) — not actions
 
 Reply with ONLY the JSON object, no markdown or text.`;
         }
@@ -175,6 +180,20 @@ Reply with ONLY the JSON object, no markdown or text.`;
         _buildPlacementPrompt(gameState) {
             const opp = gameState.opponent;
             const player = gameState.player;
+            const ACTION_DEFS = getConstants()?.ACTION_DEFINITIONS || {};
+
+            // Get available actions for the opponent's class
+            let availableActions = getActionsForActor(opp);
+            let actionDetails = availableActions.map(name => {
+                let def = ACTION_DEFS[name];
+                return {
+                    name: name,
+                    type: def?.type || "Unknown",
+                    energyCost: def?.energyCost || 0,
+                    desc: def?.desc || "",
+                    alreadyPlaced: isActionPlacedThisRound(gameState, name, "opponent")
+                };
+            }).filter(a => !a.alreadyPlaced);
 
             return JSON.stringify({
                 type: "placement",
@@ -182,14 +201,13 @@ Reply with ONLY the JSON object, no markdown or text.`;
                 yourTurn: gameState.currentTurn === "opponent",
                 ai: {
                     ap: opp.ap - opp.apUsed,
-                    energy: opp.needs?.energy || 14,
+                    energy: opp.energy || 14,
                     hp: opp.needs?.hp || 20,
                     morale: opp.needs?.morale || 20,
-                    hand: opp.hand.map(c => ({
+                    availableActions: actionDetails,
+                    modifierCards: opp.hand.map(c => ({
                         name: c.name,
                         type: c.type,
-                        energyCost: c.energyCost || 0,
-                        atk: c.atk,
                         effect: c.effect || c.onHit
                     }))
                 },
@@ -226,32 +244,47 @@ Reply with ONLY the JSON object, no markdown or text.`;
         }
 
         _fifoFallback(gameState) {
-            // Reuse existing simple AI logic
+            // Use available actions from class (not hand cards)
             const opp = gameState.opponent;
             const positions = gameState.initiative.opponentPositions;
-            const coreCards = opp.hand.filter(c => isCoreCardType(c.type));
+            const ACTION_DEFS = getConstants()?.ACTION_DEFINITIONS || {};
 
-            const stacks = [];
-            let cardsUsed = [];
+            // Get available actions, prioritize Attack
+            let availableActions = getActionsForActor(opp).slice();
+            let stacks = [];
 
             for (const posIdx of positions) {
                 if (stacks.length >= opp.ap - opp.apUsed) break;
-                if (coreCards.length === 0) break;
+                if (availableActions.length === 0) break;
 
-                const playable = coreCards.find(c => c.name === "Attack") ||
-                                coreCards.find(c => c.type === "action") ||
-                                coreCards[0];
+                // Pick best action: Attack first, then other offensive, then any
+                let actionName = availableActions.find(a => a === "Attack") ||
+                                 availableActions.find(a => ACTION_DEFS[a]?.type === "Offensive") ||
+                                 availableActions.find(a => ACTION_DEFS[a]?.type === "Magic") ||
+                                 availableActions[0];
 
-                if (playable && (!playable.energyCost || playable.energyCost <= opp.needs?.energy)) {
-                    stacks.push({
-                        position: posIdx,
-                        coreCard: playable.name,
-                        modifiers: [],
-                        target: "player"
-                    });
-                    coreCards.splice(coreCards.indexOf(playable), 1);
-                    cardsUsed.push(playable);
+                if (!actionName) break;
+                let def = ACTION_DEFS[actionName];
+
+                // Check energy cost
+                if (def?.energyCost && def.energyCost > (opp.energy || 0)) {
+                    availableActions = availableActions.filter(a => a !== actionName);
+                    continue;
                 }
+
+                // Check not already placed this round
+                if (isActionPlacedThisRound(gameState, actionName, "opponent")) {
+                    availableActions = availableActions.filter(a => a !== actionName);
+                    continue;
+                }
+
+                stacks.push({
+                    position: posIdx,
+                    coreCard: actionName,
+                    modifiers: [],
+                    target: "player"
+                });
+                availableActions = availableActions.filter(a => a !== actionName);
             }
 
             return { stacks, fallback: true };
@@ -260,41 +293,40 @@ Reply with ONLY the JSON object, no markdown or text.`;
 
     // ── Apply AI Decision ────────────────────────────────────────────
     // Apply AI decision from CardGameDirector to game state
+    // Actions come from the icon picker (selectAction), modifiers from hand
     function applyAIDecision(decision) {
         const gameState = getGameState();
         if (!gameState || !decision || !decision.stacks) return;
 
         const opp = gameState.opponent;
+        const savedTurn = gameState.currentTurn;
+        gameState.currentTurn = "opponent"; // Ensure placement goes to opponent
 
         for (const stack of decision.stacks) {
-            const pos = gameState.actionBar.positions.find(p => p.index === stack.position);
-            if (!pos || pos.stack) continue;
+            // Use selectAction to place the core action (from picker, not hand)
+            let placed = selectAction(gameState, stack.position, stack.coreCard);
+            if (!placed) {
+                console.warn("[CardGame v2] AI could not place action:", stack.coreCard, "at", stack.position);
+                continue;
+            }
 
-            // Find the core card by name
-            const coreCard = opp.hand.find(c => c.name === stack.coreCard);
-            if (!coreCard) continue;
-
-            // Check energy
-            if (coreCard.energyCost && coreCard.energyCost > (opp.needs?.energy || 0)) continue;
-
-            // Find modifier cards
+            // Add modifier cards from hand
             const modifiers = (stack.modifiers || [])
                 .map(name => opp.hand.find(c => c.name === name))
                 .filter(Boolean);
 
-            // Place the stack
-            pos.stack = { coreCard, modifiers };
-            opp.apUsed++;
-
-            if (coreCard.energyCost) {
-                opp.needs.energy = (opp.needs.energy || 14) - coreCard.energyCost;
+            const placeCard = window.CardGame.Engine?.placeCard;
+            for (const mod of modifiers) {
+                if (placeCard) {
+                    placeCard(gameState, stack.position, mod, true);
+                }
             }
 
-            // Remove cards from hand
-            opp.hand = opp.hand.filter(c => c !== coreCard && !modifiers.includes(c));
-
-            console.log("[CardGame v2] AI placed:", coreCard.name, "at position", stack.position);
+            console.log("[CardGame v2] AI placed:", stack.coreCard, "at position", stack.position,
+                modifiers.length > 0 ? "with " + modifiers.length + " modifiers" : "");
         }
+
+        gameState.currentTurn = savedTurn;
     }
 
     // ── Simple AI Card Placement ─────────────────────────────────────
@@ -328,85 +360,76 @@ Reply with ONLY the JSON object, no markdown or text.`;
             }
         }
 
-        // Fallback: Simple FIFO placement
-        let coreCards = opp.hand.filter(c => isCoreCardType(c.type));
-        let modifierCards = opp.hand.filter(c => c.type === "skill");
+        // Fallback: Select actions from available class actions (not from hand)
+        const ACTION_DEFS = getConstants()?.ACTION_DEFINITIONS || {};
+        let availableActions = getActionsForActor(opp).slice();
+        let modifierCards = opp.hand.filter(c => c.type === "skill" || c.type === "item" || c.type === "magic");
 
-        // Phase 1: Place core cards (actions, talk, magic) on available positions
+        // Ensure opponent turn for placement
+        let savedTurn = gameState.currentTurn;
+        gameState.currentTurn = "opponent";
+
+        // Phase 1: Select actions from available actions via icon picker
         for (let posIdx of positions) {
             if (opp.apUsed >= opp.ap) break;
-            if (coreCards.length === 0) break;
+            if (availableActions.length === 0) break;
 
             let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
             if (!pos || pos.stack) continue;
 
-            // Find a playable core card (prefer Attack)
-            let playable = coreCards.find(c => c.name === "Attack") ||
-                          coreCards.find(c => c.type === "action") ||
-                          coreCards[0];
+            // Pick best action: Attack first, then offense/magic, then any
+            let actionName = availableActions.find(a => a === "Attack") ||
+                            availableActions.find(a => ACTION_DEFS[a]?.type === "Offensive") ||
+                            availableActions.find(a => ACTION_DEFS[a]?.type === "Magic") ||
+                            availableActions[0];
 
-            if (playable) {
-                // Check energy cost
-                if (playable.energyCost && playable.energyCost > opp.energy) {
-                    coreCards = coreCards.filter(c => c !== playable);
-                    continue;
-                }
+            if (!actionName) break;
+            let def = ACTION_DEFS[actionName];
 
-                pos.stack = { coreCard: playable, modifiers: [] };
-                opp.apUsed++;
+            // Check energy cost
+            if (def?.energyCost && def.energyCost > opp.energy) {
+                availableActions = availableActions.filter(a => a !== actionName);
+                continue;
+            }
 
-                if (playable.energyCost) {
-                    opp.energy -= playable.energyCost;
-                }
-
-                // Remove from hand and tracking arrays
-                let idx = opp.hand.indexOf(playable);
-                if (idx >= 0) opp.hand.splice(idx, 1);
-                coreCards = coreCards.filter(c => c !== playable);
-
-                console.log("[CardGame v2] AI placed core:", playable.name, "at position", posIdx);
+            // Use selectAction (handles AP, energy, duplicate checks)
+            let placed = selectAction(gameState, posIdx, actionName);
+            if (placed) {
+                availableActions = availableActions.filter(a => a !== actionName);
+                console.log("[CardGame v2] AI selected action:", actionName, "at position", posIdx);
+            } else {
+                availableActions = availableActions.filter(a => a !== actionName);
             }
         }
 
-        // Phase 2: Add skill modifiers to placed stacks (no AP cost)
+        // Phase 2: Add modifier cards from hand to placed stacks (no AP cost)
+        let placeCardFn = window.CardGame.Engine?.placeCard;
         for (let posIdx of positions) {
             if (modifierCards.length === 0) break;
 
             let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
             if (!pos || !pos.stack || !pos.stack.coreCard) continue;
+            if (pos.owner !== "opponent") continue;
 
-            // Add one skill modifier to this stack
-            let skill = modifierCards.shift();
-            if (skill) {
-                pos.stack.modifiers.push(skill);
-                let idx = opp.hand.indexOf(skill);
-                if (idx >= 0) opp.hand.splice(idx, 1);
-                console.log("[CardGame v2] AI added modifier:", skill.name, "to position", posIdx);
+            // Add one modifier to this stack
+            let mod = modifierCards.shift();
+            if (mod && placeCardFn) {
+                placeCardFn(gameState, posIdx, mod, true);
+                console.log("[CardGame v2] AI added modifier:", mod.name, "to position", posIdx);
             }
         }
 
-        // If AI still has AP but can't place anything, try drawing first
-        let remainingCores = opp.hand.filter(c => isCoreCardType(c.type));
-        let playableCores = remainingCores.filter(c => !c.energyCost || c.energyCost <= opp.energy);
+        gameState.currentTurn = savedTurn;
+
+        // Check for empty positions — forfeit remaining AP if can't place more
         let emptyPositions = positions.filter(posIdx => {
             let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
             return pos && !pos.stack;
         });
 
-        // If can't place but have AP and draw pile has cards, draw one
-        if (opp.apUsed < opp.ap && playableCores.length === 0 && emptyPositions.length > 0 && opp.drawPile.length > 0) {
-            console.log("[CardGame v2] AI drawing a card (no playable cores)");
-            drawCardsForActor(opp, 1);
-            // Check again for playable cores after draw
-            remainingCores = opp.hand.filter(c => isCoreCardType(c.type));
-            playableCores = remainingCores.filter(c => !c.energyCost || c.energyCost <= opp.energy);
-        }
-
-        // Forfeit if still can't place after potential draw
-        if (opp.apUsed < opp.ap && (playableCores.length === 0 || emptyPositions.length === 0)) {
-            console.log("[CardGame v2] AI forfeiting remaining AP - playable cores:", playableCores.length,
-                "(total cores:", remainingCores.length, ") empty positions:", emptyPositions.length, "energy:", opp.energy);
-            opp.apUsed = opp.ap;  // Mark as fully used
+        if (opp.apUsed < opp.ap && emptyPositions.length === 0) {
+            console.log("[CardGame v2] AI forfeiting remaining AP - no empty positions");
+            opp.apUsed = opp.ap;
         }
 
         // Clear LLM busy indicator

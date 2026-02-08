@@ -417,18 +417,20 @@
                 gameState.player.energy = Math.min(gameState.player.maxEnergy, gameState.player.energy + gameState.player.energyRecovery);
                 gameState.opponent.energy = Math.min(gameState.opponent.maxEnergy, gameState.opponent.energy + gameState.opponent.energyRecovery);
 
-                // Winner claims pot
+                // Track loot before claiming
+                gameState.lootClaimed = [];
+                if (gameState.roundLoot && gameState.roundLoot.length > 0) {
+                    gameState.lootClaimed = gameState.roundLoot.slice();
+                }
+
+                // Winner claims pot + round loot
                 if (gameState.roundWinner !== "tie") {
-                    gameState.potClaimed = gameState.pot.length;
+                    gameState.potClaimed = gameState.pot.length + (gameState.roundLoot?.length || 0);
                     NS.Engine.claimPot(gameState, gameState.roundWinner);
                 } else {
                     gameState.potClaimed = 0;
                     console.log("[CardGame v2] Tie - pot carries over:", gameState.pot.length, "cards");
                 }
-
-                // Lethargy check
-                gameState.playerLethargy = NS.Engine.checkLethargy(gameState, gameState.player, "Player");
-                gameState.opponentLethargy = NS.Engine.checkLethargy(gameState, gameState.opponent, "Opponent");
 
                 // End threat check
                 gameState.endThreatResult = NS.Engine.checkEndThreat(gameState);
@@ -501,28 +503,40 @@
                         gameState.pot.length > 0 ? m("div", { class: "cg2-pot-carries" },
                             "Pot carries over: " + gameState.pot.length + " cards"
                         ) : null,
-                        (gameState.playerLethargy && gameState.playerLethargy.length > 0) ||
-                        (gameState.opponentLethargy && gameState.opponentLethargy.length > 0)
-                            ? m("div", { class: "cg2-lethargy-notice" }, [
-                                m("div", { class: "cg2-lethargy-title" }, [
-                                    m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "hotel"),
-                                    " Lethargy"
+                        // Loot summary
+                        gameState.lootClaimed && gameState.lootClaimed.length > 0
+                            ? m("div", { class: "cg2-loot-summary" }, [
+                                m("div", { class: "cg2-loot-title" }, [
+                                    m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "inventory_2"),
+                                    " Loot Claimed"
                                 ]),
-                                gameState.playerLethargy && gameState.playerLethargy.length > 0
-                                    ? m("div", { class: "cg2-lethargy-item cg2-lethargy-player" },
-                                        "You lost " + gameState.playerLethargy.map(l => l.stripped + " " + l.actionType).join(", ") + " (hoarded, unplayed)")
-                                    : null,
-                                gameState.opponentLethargy && gameState.opponentLethargy.length > 0
-                                    ? m("div", { class: "cg2-lethargy-item cg2-lethargy-opponent" },
-                                        "Opponent lost " + gameState.opponentLethargy.map(l => l.stripped + " " + l.actionType).join(", ") + " (hoarded, unplayed)")
-                                    : null
-                            ])
-                            : null,
-                        gameState.endThreatResult ? m("div", { class: "cg2-scenario-card" }, [
+                                m("div", { class: "cg2-loot-items" },
+                                    gameState.lootClaimed.map((item, i) =>
+                                        m("span", {
+                                            key: i,
+                                            class: "cg2-loot-item cg2-loot-" + (item.rarity || "COMMON").toLowerCase()
+                                        }, [
+                                            m("span", { class: "material-symbols-outlined", style: "font-size:12px" },
+                                                item.type === "apparel" ? "checkroom" : item.subtype === "weapon" ? "swords" : "category"),
+                                            " ", item.name
+                                        ])
+                                    )
+                                )
+                            ]) : null,
+
+                        // Scenario card (with icon and color)
+                        gameState.endThreatResult ? m("div", {
+                            class: "cg2-scenario-card",
+                            style: gameState.endThreatResult.scenario.cardColor
+                                ? { borderLeftColor: gameState.endThreatResult.scenario.cardColor } : {}
+                        }, [
                             m("div", { class: "cg2-scenario-title" }, [
-                                m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" },
-                                    gameState.endThreatResult.threat ? "warning" : "eco"),
-                                " Scenario: ", gameState.endThreatResult.scenario.name
+                                m("span", {
+                                    class: "material-symbols-outlined",
+                                    style: "font-size:16px;vertical-align:middle" +
+                                        (gameState.endThreatResult.scenario.cardColor ? ";color:" + gameState.endThreatResult.scenario.cardColor : "")
+                                }, gameState.endThreatResult.scenario.icon || (gameState.endThreatResult.threat ? "warning" : "eco")),
+                                " ", gameState.endThreatResult.scenario.name
                             ]),
                             m("div", { class: "cg2-scenario-desc" }, gameState.endThreatResult.scenario.description),
                             gameState.endThreatResult.threat && !gameState.endThreatResult.responded

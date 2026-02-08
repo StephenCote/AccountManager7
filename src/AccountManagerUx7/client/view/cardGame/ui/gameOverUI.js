@@ -1,36 +1,23 @@
 /**
- * CardGame UI - Game Over and Level Up
- * Victory/defeat screen with stats, campaign progress, level-up button.
- * Level-up UI shows 6 stats with descriptions, click to select 2, confirm button.
+ * CardGame UI - Game Over
+ * Victory/defeat screen with stats and campaign W/L record.
  *
  * Extracted from cardGame-v2.js (lines ~9457-9690).
  *
  * Depends on:
  *   - CardGame.Constants (GAME_PHASES)
- *   - CardGame.ctx (gameState, viewingDeck, activeCampaign, levelUpState, screen)
- *   - CardGame.Actions (createGameState, applyCampaignBonuses, initializeLLMComponents,
- *                       resetInitAnimState, startInitiativeAnimation, narrateGameEnd,
- *                       calculateXP, saveCampaignProgress)
- *   - CardGame.Storage (gameStorage, campaignStorage)
+ *   - CardGame.ctx (gameState, viewingDeck, activeCampaign, screen)
+ *   - CardGame.GameState (createGameState, initializeLLMComponents,
+ *                         resetInitAnimState, startInitiativeAnimation, narrateGameEnd)
+ *   - CardGame.Storage (gameStorage, saveCampaignProgress)
  *
- * Exposes: window.CardGame.UI.GameOverUI, window.CardGame.UI.LevelUpUI
+ * Exposes: window.CardGame.UI.GameOverUI
  */
 (function() {
     "use strict";
 
     window.CardGame = window.CardGame || {};
     window.CardGame.UI = window.CardGame.UI || {};
-
-    // ── Level Up Constants ────────────────────────────────────────────
-    const LEVEL_UP_STATS = ["STR", "AGI", "END", "INT", "MAG", "CHA"];
-    const STAT_DESCRIPTIONS = {
-        STR: "Strength \u2014 melee damage",
-        AGI: "Agility \u2014 initiative rolls",
-        END: "Endurance \u2014 action points",
-        INT: "Intelligence \u2014 skill effects",
-        MAG: "Magic \u2014 energy pool & spells",
-        CHA: "Charisma \u2014 talk & morale"
-    };
 
     // ── Game Over UI ──────────────────────────────────────────────────
     function GameOverUI() {
@@ -48,13 +35,11 @@
                     narratedEnd = true;
                     CardGame.GameState.narrateGameEnd(gameState.winner);
                 }
-                // Save campaign progress once
+                // Save campaign W/L record once
                 if (!campaignSaved && gameState && gameState.winner) {
                     campaignSaved = true;
                     let isVictory = gameState.winner === "player";
-                    let xpGain = CardGame.Storage.calculateXP(gameState, isVictory);
-                    gameState.xpGained = xpGain;
-                    ctx.activeCampaign = await CardGame.Storage.saveCampaignProgress(gameState, isVictory, xpGain);
+                    ctx.activeCampaign = await CardGame.Storage.saveCampaignProgress(gameState, isVictory);
                     // Delete game saves on game end
                     CardGame.Storage.gameStorage.deleteAll(gameState.deckName);
                     m.redraw();
@@ -64,12 +49,6 @@
                 let ctx = window.CardGame.ctx || {};
                 let gameState = ctx.gameState;
                 let activeCampaign = ctx.activeCampaign;
-                let levelUpState = ctx.levelUpState;
-
-                // Show level-up dialog if pending
-                if (levelUpState) {
-                    return m(LevelUpUI);
-                }
 
                 let isVictory = gameState.winner === "player";
                 let player = gameState.player;
@@ -101,50 +80,23 @@
                                 m("div", { class: "cg2-game-over-stat-value" }, opponent.hp + "/" + opponent.maxHp),
                                 m("div", { class: "cg2-game-over-stat-label" }, "Opponent HP")
                             ]),
-                            gameState.xpGained ? m("div", { class: "cg2-game-over-stat" }, [
-                                m("div", { class: "cg2-game-over-stat-value cg2-xp-gain" }, "+" + gameState.xpGained),
-                                m("div", { class: "cg2-game-over-stat-label" }, "XP Gained")
-                            ]) : null
                         ]),
 
-                        // Campaign progress bar
+                        // Campaign W/L record
                         activeCampaign ? m("div", { class: "cg2-game-over-campaign" }, [
-                            m("div", { class: "cg2-campaign-progress" }, [
-                                m("span", "Level " + activeCampaign.level),
-                                m("span", { class: "cg2-campaign-xp-bar" }, [
-                                    m("span", { class: "cg2-campaign-xp-fill", style: { width: (activeCampaign.xp % 100) + "%" } }),
-                                ]),
-                                m("span", activeCampaign.xp + " XP"),
-                            ]),
                             m("div", { class: "cg2-campaign-record-line" },
                                 activeCampaign.wins + "W / " + activeCampaign.losses + "L (" + activeCampaign.totalGamesPlayed + " games)")
                         ]) : null,
 
                         m("div", { class: "cg2-game-over-actions" }, [
-                            // Level up button (if pending)
-                            activeCampaign?.pendingLevelUps > 0 ? m("button", {
-                                class: "cg2-btn cg2-btn-accent",
-                                onclick() {
-                                    ctx.levelUpState = {
-                                        campaign: activeCampaign,
-                                        statsSelected: [],
-                                        remaining: 2
-                                    };
-                                    m.redraw();
-                                }
-                            }, [
-                                m("span", { class: "material-symbols-outlined" }, "upgrade"),
-                                " Level Up! (+" + (activeCampaign.pendingLevelUps * 2) + " stats)"
-                            ]) : null,
                             m("button", {
                                 class: "cg2-btn cg2-btn-primary",
                                 async onclick() {
                                     let viewingDeck = ctx.viewingDeck;
                                     // Restart with same characters
                                     let playerChar = player.character;
-                                    ctx.gameState = CardGame.GameState.createGameState(viewingDeck, playerChar);
+                                    ctx.gameState = await CardGame.GameState.createGameState(viewingDeck, playerChar);
                                     if (ctx.gameState) {
-                                        if (ctx.activeCampaign) CardGame.GameState.applyCampaignBonuses(ctx.gameState, ctx.activeCampaign);
                                         CardGame.GameState.initializeLLMComponents(ctx.gameState, viewingDeck);
                                         CardGame.GameState.resetInitAnimState();
                                         CardGame.GameState.startInitiativeAnimation();
@@ -177,7 +129,14 @@
         };
     }
 
-    // ── Level Up UI Component ───────────────────────────────────────────
+    window.CardGame.UI.GameOverUI = GameOverUI;
+
+})();
+
+/* ── Level Up UI (removed — no leveling system) ──────────────────────
+    // Skill/attribute modifiers come from stacked cards during gameplay.
+    // Old LevelUpUI code retained below for reference only.
+(function UNUSED_LevelUpUI() {
     function LevelUpUI() {
         return {
             view() {
@@ -272,7 +231,5 @@
         };
     }
 
-    window.CardGame.UI.GameOverUI = GameOverUI;
-    window.CardGame.UI.LevelUpUI = LevelUpUI;
-
 })();
+*/

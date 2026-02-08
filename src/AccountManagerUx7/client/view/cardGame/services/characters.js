@@ -173,6 +173,14 @@
     function assembleCharacterCard(char) {
         let stats = mapStats(char.statistics);
         Object.keys(stats).forEach(k => { stats[k] = clampStat(stats[k]); });
+
+        // Resolve class actions from template
+        let templateClass = char._templateClass || null;
+        let templateActions = char._templateActions || null;
+        // If template loaded, use its actions; otherwise fall back to common actions
+        let Constants = window.CardGame.Constants;
+        let classActions = templateActions || Constants.COMMON_ACTIONS;
+
         return {
             type: "character", name: char.name || "Unknown",
             gender: str(char.gender) || null,
@@ -186,7 +194,9 @@
             activeSkills: [null, null, null, null],
             portraitUrl: getPortraitUrl(char, "256x256"),
             sourceId: char.objectId || null,  // Only real objectId, not _tempId
-            _sourceChar: char._tempId ? char : null  // Keep full object for temp chars
+            _sourceChar: char._tempId ? char : null,  // Keep full object for temp chars
+            _templateClass: templateClass,
+            _classActions: classActions  // Actions available to this character's class
         };
     }
 
@@ -332,19 +342,23 @@
                 { type: "item", subtype: "consumable", name: "Torch", rarity: "COMMON", effect: "+2 to Investigate rolls this round" }
             ];
         }
-        let actionCards = [
-            { type: "action", name: "Attack", actionType: "Offensive", stackWith: "Character + Weapon (required) + Skill (optional)", roll: "1d20 + STR + ATK vs target DEF", onHit: "Deal weapon ATK + STR as damage", energyCost: 0 },
-            { type: "action", name: "Flee", actionType: "Movement", stackWith: "Character only", roll: "1d20 + AGI vs encounter difficulty", onHit: "Escape the encounter", energyCost: 0 },
-            { type: "action", name: "Investigate", actionType: "Discovery", stackWith: "Character + Skill (optional)", roll: "1d20 + INT vs hidden threshold", onHit: "Reveal hidden items or information", energyCost: 0 },
-            { type: "action", name: "Trade", actionType: "Social", stackWith: "Character + Skill (optional)", roll: "1d20 + AVG(PER,CRE,WIS) vs DC 12", onHit: "Take one card from opponent's hand", energyCost: 2 },
-            { type: "action", name: "Rest", actionType: "Recovery", stackWith: "Character only (no other actions)", roll: null, onHit: "Restore +2 HP, +3 Energy", energyCost: 0 },
-            { type: "action", name: "Use Item", actionType: "Utility", stackWith: "Character + Consumable item", roll: null, onHit: "Apply item effect", energyCost: 0 },
-            { type: "action", name: "Craft", actionType: "Creation", stackWith: "Character + Skill (optional)", roll: "1d20 + AVG(CRE,WIS,DEX) vs DC 12", onHit: "Create random item; crit = unique item", energyCost: 2 },
-            { type: "action", name: "Steal", actionType: "Subterfuge", stackWith: "Character + Skill (optional)", roll: "1d20 + AVG(PER,CRE,WIS) + alignment mod vs DC 14", onHit: "Take card from opponent (hand or equipped)", energyCost: 3 }
-        ];
-        let talkCard = { type: "talk", name: "Talk", energyCost: 5 };
+        // Action card definitions (for display, card art, and print — NOT added to draw deck)
+        // Actions are now selected via the action icon picker during placement phase
+        let Constants = window.CardGame.Constants;
+        let actionCardDefs = Object.entries(Constants.ACTION_DEFINITIONS).map(([name, def]) => ({
+            type: def.type === "Social" && name === "Talk" ? "talk" : "action",
+            name: name,
+            actionType: def.type,
+            stackWith: def.stackWith,
+            roll: def.roll,
+            onHit: def.desc,
+            energyCost: def.energyCost || 0,
+            icon: def.icon,
+            _isActionDef: true  // Marker: not a drawable card
+        }));
 
-        allCards.push(...consumables, ...actionCards, talkCard);
+        // Only consumables go into the drawable card pool now
+        allCards.push(...consumables);
 
         let themeName = (theme || activeTheme).name || (theme || activeTheme).themeId || "high-fantasy";
         let deckName = "";
@@ -356,7 +370,8 @@
             portraitUrl: getPortraitUrl(chars[0], "128x128"),
             createdAt: new Date().toISOString(),
             cardCount: allCards.length,
-            cards: allCards
+            cards: allCards,
+            actionCardDefs: actionCardDefs  // Action card designs (for display/print, not drawn)
         };
     }
 
@@ -477,6 +492,7 @@
                 // Add template reference for later use
                 rolled._templateId = template.id;
                 rolled._templateClass = template.class;
+                rolled._templateActions = template.actions || window.CardGame.Constants.COMMON_ACTIONS;
 
                 // Generate a temporary ID for in-memory tracking
                 rolled._tempId = "temp-" + template.id + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 11);

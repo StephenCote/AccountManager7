@@ -346,9 +346,56 @@
         }
     };
 
-    // ── Level-Up Stats and Descriptions ──────────────────────────────
-    const LEVEL_UP_STATS = ["STR", "AGI", "END", "INT", "MAG", "CHA"];
+    // ── Action Definitions (defaults — overridden by JSON when loaded) ──
+    // Canonical source: media/cardGame/action-definitions.json
+    // Hardcoded fallback ensures the game works even if JSON fails to load.
+    let ACTION_DEFINITIONS = {
+        "Attack":      { icon: "swords",          type: "Offensive",  energyCost: 0, roll: "1d20 + STR + ATK vs DEF",        stackWith: "Weapon + Skill",         desc: "Melee or ranged attack" },
+        "Guard":       { icon: "shield",          type: "Defensive",  energyCost: 0, roll: null,                              stackWith: "Skill",                  desc: "Auto: +3 DEF this round", exclusive: false },
+        "Flee":        { icon: "directions_run",  type: "Movement",   energyCost: 0, roll: "1d20 + AGI vs difficulty",        stackWith: "Skill",                  desc: "Attempt to escape" },
+        "Rest":        { icon: "hotel",           type: "Recovery",   energyCost: 0, roll: null,                              stackWith: "None",                   desc: "Restore +2 HP, +3 Energy", exclusive: true },
+        "Use Item":    { icon: "science",         type: "Utility",    energyCost: 0, roll: null,                              stackWith: "Consumable item",        desc: "Apply consumable effect" },
+        "Investigate": { icon: "search",          type: "Discovery",  energyCost: 0, roll: "1d20 + INT vs hidden threshold",  stackWith: "Skill",                  desc: "Search for hidden items/info" },
+        "Trade":       { icon: "storefront",      type: "Social",     energyCost: 0, roll: null,                              stackWith: "Item(s) to offer",       desc: "CHA determines price" },
+        "Craft":       { icon: "construction",    type: "Creation",   energyCost: 2, roll: "1d20 + INT vs recipe difficulty", stackWith: "Materials + Skill",       desc: "Create a new item" },
+        "Steal":       { icon: "back_hand",       type: "Thievery",   energyCost: 0, roll: "1d20 + AGI vs target DEF",        stackWith: "Skill",                  desc: "Take item from target" },
+        "Talk":        { icon: "chat_bubble",     type: "Social",     energyCost: 5, roll: "1d20 + CHA vs CHA",              stackWith: "Skill",                  desc: "Negotiate or persuade" },
+        "Feint":       { icon: "swap_horiz",      type: "Tactical",   energyCost: 0, roll: "1d20 + AGI vs INT",              stackWith: "Skill",                  desc: "Deceive for advantage next action" },
+        "Channel":     { icon: "auto_fix_high",   type: "Magic",      energyCost: 3, roll: "1d20 + MAG",                     stackWith: "Magic Effect + Skill",   desc: "Cast a spell" }
+    };
 
+    let COMMON_ACTIONS = ["Attack", "Flee", "Rest", "Use Item", "Talk"];
+    let ACTION_ART_PROMPTS = {};
+
+    /**
+     * Load action definitions from external JSON file.
+     * Updates ACTION_DEFINITIONS, COMMON_ACTIONS, and ACTION_ART_PROMPTS
+     * on the exported Constants object. Falls back to hardcoded defaults.
+     */
+    async function loadActionDefinitions() {
+        try {
+            let data = await m.request({ method: "GET", url: "media/cardGame/action-definitions.json" });
+            if (data && data.actions) {
+                ACTION_DEFINITIONS = data.actions;
+                window.CardGame.Constants.ACTION_DEFINITIONS = ACTION_DEFINITIONS;
+                console.log("[CardGame] Loaded", Object.keys(ACTION_DEFINITIONS).length, "action definitions from JSON");
+            }
+            if (data && data.commonActions) {
+                COMMON_ACTIONS = data.commonActions;
+                window.CardGame.Constants.COMMON_ACTIONS = COMMON_ACTIONS;
+            }
+            // Build art prompts from loaded definitions
+            ACTION_ART_PROMPTS = {};
+            for (let [name, def] of Object.entries(ACTION_DEFINITIONS)) {
+                if (def.artPrompt) ACTION_ART_PROMPTS[name] = def.artPrompt;
+            }
+            window.CardGame.Constants.ACTION_ART_PROMPTS = ACTION_ART_PROMPTS;
+        } catch (e) {
+            console.warn("[CardGame] Could not load action-definitions.json, using defaults");
+        }
+    }
+
+    // ── Stat Descriptions ────────────────────────────────────────────
     const STAT_DESCRIPTIONS = {
         STR: "Strength \u2014 melee damage",
         AGI: "Agility \u2014 initiative rolls",
@@ -370,8 +417,11 @@
         CARD_TEMPLATES,
         THEME_DEFAULTS,
         DEFAULT_THEME,
-        LEVEL_UP_STATS,
-        STAT_DESCRIPTIONS
+        ACTION_DEFINITIONS,
+        COMMON_ACTIONS,
+        ACTION_ART_PROMPTS,
+        STAT_DESCRIPTIONS,
+        loadActionDefinitions
     };
 
     console.log('[CardGame] Constants loaded (' + Object.keys(window.CardGame.Constants).length + ' exports)');

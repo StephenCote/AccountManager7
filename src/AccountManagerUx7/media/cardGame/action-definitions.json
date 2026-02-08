@@ -1,0 +1,116 @@
+{
+    "version": 1,
+    "commonActions": ["Attack", "Flee", "Rest", "Use Item", "Talk"],
+    "actions": {
+        "Attack": {
+            "icon": "swords",
+            "type": "Offensive",
+            "energyCost": 0,
+            "roll": "1d20 + STR + ATK vs DEF",
+            "stackWith": "Weapon + Skill",
+            "desc": "Melee or ranged attack",
+            "artPrompt": "a warrior mid-strike with weapon raised"
+        },
+        "Guard": {
+            "icon": "shield",
+            "type": "Defensive",
+            "energyCost": 0,
+            "roll": null,
+            "stackWith": "Skill",
+            "desc": "Auto: +3 DEF this round",
+            "exclusive": false,
+            "artPrompt": "a warrior in defensive stance with shield raised"
+        },
+        "Flee": {
+            "icon": "directions_run",
+            "type": "Movement",
+            "energyCost": 0,
+            "roll": "1d20 + AGI vs difficulty",
+            "stackWith": "Skill",
+            "desc": "Attempt to escape",
+            "artPrompt": "a person running away from danger, motion blur"
+        },
+        "Rest": {
+            "icon": "hotel",
+            "type": "Recovery",
+            "energyCost": 0,
+            "roll": null,
+            "stackWith": "None",
+            "desc": "Restore +2 HP, +3 Energy",
+            "exclusive": true,
+            "artPrompt": "a weary traveler resting by a warm campfire"
+        },
+        "Use Item": {
+            "icon": "science",
+            "type": "Utility",
+            "energyCost": 0,
+            "roll": null,
+            "stackWith": "Consumable item",
+            "desc": "Apply consumable effect",
+            "artPrompt": "hands holding a glowing magical item"
+        },
+        "Investigate": {
+            "icon": "search",
+            "type": "Discovery",
+            "energyCost": 0,
+            "roll": "1d20 + INT vs hidden threshold",
+            "stackWith": "Skill",
+            "desc": "Search for hidden items/info",
+            "artPrompt": "a person with lantern searching for clues in shadows"
+        },
+        "Trade": {
+            "icon": "storefront",
+            "type": "Social",
+            "energyCost": 0,
+            "roll": null,
+            "stackWith": "Item(s) to offer",
+            "desc": "CHA determines price",
+            "artPrompt": "two merchants exchanging goods at a market stall"
+        },
+        "Craft": {
+            "icon": "construction",
+            "type": "Creation",
+            "energyCost": 2,
+            "roll": "1d20 + INT vs recipe difficulty",
+            "stackWith": "Materials + Skill",
+            "desc": "Create a new item",
+            "artPrompt": "hands crafting an item at a workbench with tools"
+        },
+        "Steal": {
+            "icon": "back_hand",
+            "type": "Thievery",
+            "energyCost": 0,
+            "roll": "1d20 + AGI vs target DEF",
+            "stackWith": "Skill",
+            "desc": "Take item from target",
+            "artPrompt": "a shadowy figure reaching into a pocket"
+        },
+        "Talk": {
+            "icon": "chat_bubble",
+            "type": "Social",
+            "energyCost": 5,
+            "roll": "1d20 + CHA vs CHA",
+            "stackWith": "Skill",
+            "desc": "Negotiate or persuade",
+            "artPrompt": "two people in animated conversation"
+        },
+        "Feint": {
+            "icon": "swap_horiz",
+            "type": "Tactical",
+            "energyCost": 0,
+            "roll": "1d20 + AGI vs INT",
+            "stackWith": "Skill",
+            "desc": "Deceive for advantage next action",
+            "artPrompt": "a cunning fighter making a deceptive move"
+        },
+        "Channel": {
+            "icon": "auto_fix_high",
+            "type": "Magic",
+            "energyCost": 3,
+            "roll": "1d20 + MAG",
+            "stackWith": "Magic Effect + Skill",
+            "desc": "Cast a spell",
+            "artPrompt": "a mage channeling arcane energy between hands"
+        }
+    }
+}

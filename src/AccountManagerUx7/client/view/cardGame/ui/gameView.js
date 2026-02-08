@@ -23,9 +23,10 @@
 
     const GAME_PHASES = window.CardGame.Constants.GAME_PHASES;
     const STATUS_EFFECTS = window.CardGame.Constants.STATUS_EFFECTS;
+    const ACTION_DEFINITIONS = window.CardGame.Constants.ACTION_DEFINITIONS;
 
     // ── State ──────────────────────────────────────────────────────────
-    let handTrayFilter = "all";  // "all" | "action" | "skill" | "magic" | "item"
+    let handTrayFilter = "all";  // "all" | "skill" | "magic" | "item"
     let stackFlipped = {};  // { "player-0": true, "opponent-1": false }
 
     // ── Helpers ─────────────────────────────────────────────────────────
@@ -98,7 +99,6 @@
 
                 let CardFace = rendering().CardFace;
                 let createGameState = GS().createGameState;
-                let applyCampaignBonuses = GS().applyCampaignBonuses;
                 let campaignStorage = storage().campaignStorage;
                 let initializeLLMComponents = GS().initializeLLMComponents;
 
@@ -149,12 +149,11 @@
                                         async onclick() {
                                             // Click to select and immediately start game
                                             gameCharSelection.selected = char;
-                                            ctx().gameState = createGameState(viewingDeck, char);
+                                            ctx().gameState = await createGameState(viewingDeck, char);
                                             ctx().gameCharSelection = null;
                                             if (ctx().gameState) {
-                                                // Load and apply campaign bonuses
+                                                // Load campaign record
                                                 ctx().activeCampaign = await campaignStorage.load(viewingDeck.deckName || viewingDeck.storageName);
-                                                if (ctx().activeCampaign) applyCampaignBonuses(ctx().gameState, ctx().activeCampaign);
                                                 // Initialize LLM components in background (non-blocking)
                                                 if (typeof initializeLLMComponents === "function") {
                                                     initializeLLMComponents(ctx().gameState, viewingDeck);
@@ -208,21 +207,21 @@
                         // Show character selection for ALL characters
                         ctx().gameCharSelection = { characters: allChars, selected: null };
                     } else if (gameCharSelection?.selected) {
-                        // Character selected - start game
-                        ctx().gameState = GS().createGameState(viewingDeck, gameCharSelection.selected);
-                        ctx().gameCharSelection = null;
-                        if (ctx().gameState) {
-                            // Load and apply campaign bonuses (async, non-blocking)
-                            storage().campaignStorage.load(viewingDeck.deckName).then(c => {
-                                ctx().activeCampaign = c;
-                                if (c) GS().applyCampaignBonuses(ctx().gameState, c);
-                                m.redraw();
-                            });
-                            if (typeof GS().initializeLLMComponents === "function") {
-                                GS().initializeLLMComponents(ctx().gameState, viewingDeck);
+                        // Character selected - start game (async for JSON loading)
+                        GS().createGameState(viewingDeck, gameCharSelection.selected).then(gs => {
+                            ctx().gameState = gs;
+                            ctx().gameCharSelection = null;
+                            if (gs) {
+                                storage().campaignStorage.load(viewingDeck.deckName).then(c => {
+                                    ctx().activeCampaign = c;
+                                    m.redraw();
+                                });
+                                if (typeof GS().initializeLLMComponents === "function") {
+                                    GS().initializeLLMComponents(gs, viewingDeck);
+                                }
                             }
-                            // Animation will trigger runInitiativePhase() when complete
-                        }
+                            m.redraw();
+                        });
                     } else if (allChars.length === 0) {
                         console.error("[CardGame v2] No characters in deck");
                     }
@@ -540,11 +539,40 @@
                 let hpPct = Math.max(0, Math.min(100, (actor.hp / actor.maxHp) * 100));
                 let energyPct = Math.max(0, Math.min(100, (actor.energy / actor.maxEnergy) * 100));
 
-                return m("div", { class: "cg2-char-sidebar" + (isOpponent ? " cg2-opponent" : "") }, [
-                    m("div", { class: "cg2-sidebar-label" }, label),
+                // Character stats from the character card
+                let stats = char.statistics || {};
 
-                    // Prominent game stats bar
-                    m("div", { class: "cg2-sidebar-stats" }, [
+                return m("div", { class: "cg2-char-sidebar" + (isOpponent ? " cg2-opponent" : "") }, [
+
+                    // Large portrait filling sidebar width, with name overlay
+                    m("div", {
+                        class: "cg2-sidebar-portrait-lg",
+                        onclick() { if (showCardPreview) showCardPreview(char); },
+                        title: "Click to view full card"
+                    }, [
+                        char.portraitUrl
+                            ? m("img", { src: char.portraitUrl, class: "cg2-portrait-img-lg" })
+                            : m("div", { class: "cg2-portrait-placeholder-lg" },
+                                m("span", { class: "material-symbols-outlined" }, "person")),
+                        // Name overlay at bottom of image
+                        m("div", { class: "cg2-sidebar-name-overlay" }, [
+                            m("span", { class: "cg2-sidebar-charname" }, char.name || "Unknown"),
+                            char._templateClass ? m("span", { class: "cg2-sidebar-charclass" }, char._templateClass) : null
+                        ])
+                    ]),
+
+                    // Compact stat grid (2x3)
+                    m("div", { class: "cg2-sidebar-stat-grid" }, [
+                        ["STR", "AGI", "END", "INT", "MAG", "CHA"].map(stat =>
+                            m("div", { key: stat, class: "cg2-stat-cell" }, [
+                                m("span", { class: "cg2-stat-label" }, stat),
+                                m("span", { class: "cg2-stat-num" }, stats[stat] || "?")
+                            ])
+                        )
+                    ]),
+
+                    // HP and Energy bars
+                    m("div", { class: "cg2-sidebar-bars" }, [
                         m("div", { class: "cg2-sidebar-stat cg2-stat-hp" }, [
                             m("span", { class: "cg2-stat-icon" }, "\u2665"),
                             m("div", { class: "cg2-stat-bar" }, [
@@ -561,63 +589,16 @@
                         ])
                     ]),
 
-                    // Character portrait (clickable for popup)
-                    m("div", {
-                        class: "cg2-sidebar-portrait",
-                        onclick() { if (showCardPreview) showCardPreview(char); },
-                        title: "Click to view full card"
-                    }, [
-                        char.portraitUrl
-                            ? m("img", { src: char.portraitUrl, class: "cg2-portrait-img-sidebar" })
-                            : m("span", { class: "material-symbols-outlined", style: "font-size:48px;color:#B8860B" }, "person"),
-                        m("div", { class: "cg2-portrait-name" }, char.name || "Unknown")
-                    ]),
-
-                    // Campaign level badge (player only)
-                    !isOpponent && activeCampaign ? m("div", { class: "cg2-campaign-badge" }, [
-                        m("span", { class: "cg2-campaign-level" }, "Lv." + activeCampaign.level),
-                        m("span", { class: "cg2-campaign-xp" }, activeCampaign.xp + " XP"),
-                        m("span", { class: "cg2-campaign-record" }, activeCampaign.wins + "W/" + activeCampaign.losses + "L")
-                    ]) : null,
-
                     // AP indicator
                     m("div", { class: "cg2-ap-indicator" }, [
                         m("span", "AP: "),
                         m("span", { class: "cg2-ap-value" }, (actor.ap - actor.apUsed) + "/" + actor.ap)
                     ]),
 
-                    // Compact counts row
-                    m("div", { class: "cg2-hand-count" }, [
-                        m("span", { title: "Cards in hand" }, [
-                            m("span", { class: "material-symbols-outlined", style: "font-size:12px;vertical-align:middle" }, "playing_cards"),
-                            " " + (actor.hand ? actor.hand.length : 0)
-                        ]),
-                        m("span", { title: "Cards in deck" }, [
-                            m("span", { class: "material-symbols-outlined", style: "font-size:12px;vertical-align:middle" }, "layers"),
-                            " " + (actor.drawPile ? actor.drawPile.length : 0)
-                        ])
-                    ]),
-
-                    // Opponent hand visual (stack of card backs)
-                    isOpponent && actor.hand && actor.hand.length > 0
-                        ? m("div", { class: "cg2-opp-hand-visual" }, [
-                            m("div", { class: "cg2-opp-hand-stack" },
-                                // Show up to 5 card backs in a fanned stack
-                                Array.from({ length: Math.min(actor.hand.length, 5) }).map((_, i) =>
-                                    m("div", {
-                                        key: i,
-                                        class: "cg2-opp-card-back",
-                                        style: {
-                                            left: (i * 6) + "px",
-                                            top: (i * 2) + "px",
-                                            zIndex: i,
-                                            transform: "rotate(" + ((i - 2) * 3) + "deg)"
-                                        }
-                                    })
-                                )
-                            )
-                        ])
-                        : null,
+                    // Campaign record (player only, no level)
+                    !isOpponent && activeCampaign ? m("div", { class: "cg2-campaign-badge" }, [
+                        m("span", { class: "cg2-campaign-record" }, activeCampaign.wins + "W/" + activeCampaign.losses + "L")
+                    ]) : null,
 
                     // Chat button (Silence Rule: locked unless Talk card active)
                     isOpponent ? m("button", {
@@ -625,10 +606,9 @@
                         disabled: !gameState?.chat?.unlocked,
                         title: gameState?.chat?.unlocked
                             ? "Chat with " + (char.name || "opponent")
-                            : "Play a Talk card to speak with your opponent",
+                            : "Play a Talk action to speak with your opponent",
                         onclick() {
                             if (gameState?.chat?.unlocked && !gameState?.chat?.active) {
-                                // Re-open chat if unlocked but closed
                                 gameState.chat.active = true;
                                 m.redraw();
                             }
@@ -687,7 +667,14 @@
                 let showCardPreview = rendering().showCardPreview;
                 let placeCard = E().placeCard;
                 let removeCardFromPosition = E().removeCardFromPosition;
+                let selectAction = E().selectAction;
+                let isActionPlacedThisRound = E().isActionPlacedThisRound;
+                let getActionsForActor = E().getActionsForActor;
                 let ResolutionPhaseUI = CardGame.UI.ResolutionPhaseUI;
+
+                // Get player's available actions for the icon picker
+                let playerActions = getActionsForActor ? getActionsForActor(gameState.player) : [];
+                let playerActor = gameState.player;
 
                 return m("div", { class: "cg2-action-bar" }, [
                     m("div", { class: "cg2-action-bar-label" }, "Action Bar"),
@@ -711,15 +698,23 @@
                                        (isLocked ? " cg2-locked" : "") +
                                        (canDrop && !isLocked ? " cg2-droppable" : ""),
                                 ondragover(e) {
-                                    if (canDrop && !isLocked) e.preventDefault();
+                                    // Allow drops for modifier cards on positions with a core action
+                                    if (canDrop && !isLocked && pos.stack && pos.stack.coreCard) e.preventDefault();
                                 },
                                 ondrop(e) {
-                                    if (!canDrop || isLocked) return;
+                                    if (!canDrop || isLocked || !pos.stack || !pos.stack.coreCard) return;
                                     e.preventDefault();
                                     let cardData = e.dataTransfer.getData("text/plain");
                                     try {
                                         let card = JSON.parse(cardData);
-                                        placeCard(gameState, pos.index, card);
+                                        // Only allow modifier cards to be dropped (skill, item, magic)
+                                        let isModifier = card.type === "skill" || card.type === "item" || card.type === "magic";
+                                        if (isModifier) {
+                                            placeCard(gameState, pos.index, card, true);
+                                        } else {
+                                            console.warn("[CardGame v2] Only modifier cards can be dropped. Use the icon picker for actions.");
+                                            if (typeof page !== "undefined" && page.toast) page.toast("warn", "Use the icon picker for actions");
+                                        }
                                     } catch (err) {
                                         console.error("[CardGame v2] Drop error:", err);
                                     }
@@ -794,8 +789,32 @@
                                                 : null
                                         ])
                                         : m("div", { class: "cg2-pos-empty" + (isLocked ? " cg2-pos-locked" : "") },
-                                            isLocked ? [m("span", { class: "material-symbols-outlined", style: "font-size:14px" }, "lock"), " No AP"]
-                                                     : (canDrop ? "Drop here" : "\u2013")),
+                                            isLocked
+                                                ? [m("span", { class: "material-symbols-outlined", style: "font-size:14px" }, "lock"), " No AP"]
+                                                : (canDrop && selectAction && playerActions.length > 0)
+                                                    ? m("div", { class: "cg2-action-picker" },
+                                                        playerActions.map(actionName => {
+                                                            let def = ACTION_DEFINITIONS[actionName];
+                                                            if (!def) return null;
+                                                            let alreadyPlaced = isActionPlacedThisRound && isActionPlacedThisRound(gameState, actionName, "player");
+                                                            let cantAfford = def.energyCost > 0 && def.energyCost > playerActor.energy;
+                                                            let disabled = alreadyPlaced || cantAfford;
+                                                            return m("button", {
+                                                                key: actionName,
+                                                                class: "cg2-action-icon-btn" + (disabled ? " cg2-action-disabled" : ""),
+                                                                disabled: disabled,
+                                                                title: actionName +
+                                                                    (alreadyPlaced ? " (already placed)" : "") +
+                                                                    (cantAfford ? " (need " + def.energyCost + " energy)" : "") +
+                                                                    (!disabled ? " (" + (def.desc || def.type) + ")" : ""),
+                                                                onclick(e) {
+                                                                    e.stopPropagation();
+                                                                    if (!disabled) selectAction(gameState, pos.index, actionName);
+                                                                }
+                                                            }, m("span", { class: "material-symbols-outlined" }, def.icon));
+                                                        })
+                                                    )
+                                                    : "\u2013"),
 
                                 // Resolution marker
                                 isActive ? m("div", { class: "cg2-resolve-marker" }, "\u25B6") : null
@@ -838,7 +857,7 @@
                             "Your Hand (" + hand.length + ")"
                         ]),
                         m("div", { class: "cg2-hand-tabs" }, [
-                            ["all", "action", "skill", "magic", "talk"].map(f =>
+                            ["all", "skill", "magic", "item"].map(f =>
                                 m("span", {
                                     class: "cg2-hand-tab" + (handTrayFilter === f ? " cg2-tab-active" : ""),
                                     onclick() { handTrayFilter = f; }
@@ -858,9 +877,10 @@
                                 let hasAP = (gameState.player.threatResponseAP || 0) > 0;
                                 let canPlaceDefense = isThreatPhase && isResponder && hasAP;
 
-                                // Determine card role for badge
-                                let cardRole = (card.type === "action" || card.type === "talk") ? "action"
-                                    : (card.type === "character" || card.type === "apparel") ? "equip" : "support";
+                                // Determine card role for badge (hand only has modifier cards now)
+                                let cardRole = (card.type === "character" || card.type === "apparel") ? "equip"
+                                    : card.type === "magic" ? "magic"
+                                    : card.type === "item" ? "item" : "support";
 
                                 return m("div", {
                                     key: card.name + "-" + i,
@@ -888,7 +908,9 @@
                                     m(CardFace, { card, bgImage: cardFrontBg, compact: true }),
                                     // Role badge overlay
                                     m("div", { class: "cg2-card-role-badge cg2-badge-" + cardRole },
-                                        cardRole === "action" ? "ACTION" : cardRole === "equip" ? "EQUIP" : "STACK"),
+                                        cardRole === "equip" ? "EQUIP"
+                                        : cardRole === "magic" ? "SPELL"
+                                        : cardRole === "item" ? "ITEM" : "SKILL"),
                                     // Show art thumbnail if available
                                     card.imageUrl ? m("img", {
                                         src: card.imageUrl,

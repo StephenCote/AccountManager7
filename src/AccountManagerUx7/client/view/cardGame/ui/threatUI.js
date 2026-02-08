@@ -89,13 +89,18 @@
 
                     // Two-card layout like initiative phase
                     m("div", { class: "cg2-init-cards cg2-threat-encounter" }, [
-                        // Threat card (left)
+                        // Threat card (left) — full card-like display
                         threat ? m("div", { class: "cg2-init-card-wrap cg2-threat-card-wrap" }, [
-                            m("div", { class: "cg2-threat-encounter-card" }, [
+                            m("div", { class: "cg2-threat-encounter-card cg2-threat-type-" + (threat.creatureType || "monster") }, [
+                                // Creature type badge
+                                m("div", { class: "cg2-threat-type-badge" },
+                                    (threat.creatureType || "monster").toUpperCase()),
+                                // Icon/portrait area
                                 m("div", { class: "cg2-threat-encounter-icon" }, [
                                     m("span", { class: "material-symbols-outlined" }, threat.imageIcon || "pets")
                                 ]),
                                 m("div", { class: "cg2-threat-encounter-name" }, threat.name),
+                                // Stats row
                                 m("div", { class: "cg2-threat-encounter-stats" }, [
                                     m("div", { class: "cg2-threat-stat-row" }, [
                                         m("span", { class: "material-symbols-outlined" }, "swords"),
@@ -107,12 +112,29 @@
                                     ]),
                                     m("div", { class: "cg2-threat-stat-row" }, [
                                         m("span", { class: "material-symbols-outlined" }, "favorite"),
-                                        m("span", "HP " + threat.hp)
+                                        m("span", "HP " + threat.hp + "/" + (threat.maxHp || threat.hp))
                                     ])
                                 ]),
+                                // Behavior text
+                                threat.behavior ? m("div", { class: "cg2-threat-behavior" }, [
+                                    m("span", { class: "material-symbols-outlined", style: "font-size:12px" }, "psychology"),
+                                    " ", threat.behavior
+                                ]) : null,
+                                // Action stack display
+                                threat.actionStack ? m("div", { class: "cg2-threat-action-stack" }, [
+                                    m("span", { class: "cg2-threat-action-label" }, "Action: "),
+                                    m("span", { class: "cg2-threat-action-name" }, threat.actionStack.coreAction),
+                                    threat.actionStack.modifiers.length > 0
+                                        ? m("span", { class: "cg2-threat-action-mods" },
+                                            " +" + threat.actionStack.modifiers.map(mod => mod.name).join(", "))
+                                        : null
+                                ]) : null,
+                                // Loot preview
                                 m("div", { class: "cg2-threat-encounter-loot" }, [
                                     m("span", { class: "material-symbols-outlined" }, "inventory_2"),
-                                    " ", threat.lootRarity, " Loot"
+                                    threat.lootItems && threat.lootItems.length > 0
+                                        ? " " + threat.lootItems.map(l => l.name).join(", ")
+                                        : " " + (threat.lootRarity || "COMMON") + " Loot"
                                 ])
                             ])
                         ]) : null,

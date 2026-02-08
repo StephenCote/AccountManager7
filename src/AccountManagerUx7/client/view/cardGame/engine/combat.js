@@ -297,11 +297,15 @@
                         let idx = defenderActor.cardStack.indexOf(droppedItem);
                         if (idx >= 0) {
                             defenderActor.cardStack.splice(idx, 1);
-                            // Add to pot via context (gameState passed externally)
+                            // Add to round loot pool (winner claims at cleanup)
                             let gs = CardGame.ctx?.gameState;
-                            if (gs) gs.pot.push(droppedItem);
+                            if (gs && E.addToRoundLoot) {
+                                E.addToRoundLoot(gs, droppedItem, "critical hit drop");
+                            } else if (gs) {
+                                gs.pot.push(droppedItem);
+                            }
                             criticalEffects.itemDropped = droppedItem;
-                            console.log("[CardGame v2] CRITICAL HIT! Item also dropped:", droppedItem.name);
+                            console.log("[CardGame v2] CRITICAL HIT! Item dropped to loot:", droppedItem.name);
                         }
                     }
                 }

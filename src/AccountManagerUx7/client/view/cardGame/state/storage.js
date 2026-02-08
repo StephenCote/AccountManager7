@@ -224,16 +224,12 @@
 
     function createCampaignData(characterCard) {
         return {
-            version: 1,
+            version: 2,
             characterId: characterCard.sourceId || characterCard._tempId || null,
             characterName: characterCard.name || "Unknown",
-            level: 1,
-            xp: 0,
             totalGamesPlayed: 0,
             wins: 0,
-            losses: 0,
-            statGains: {},
-            pendingLevelUps: 0
+            losses: 0
         };
     }
 
@@ -241,7 +237,7 @@
         async save(deckName, campaignData) {
             try {
                 let saved = await upsertDataRecord(DECK_BASE_PATH + "/" + deckName, "campaign.json", campaignData);
-                console.log("[CardGame v2] Campaign saved:", deckName, "Level", campaignData.level, "XP", campaignData.xp);
+                console.log("[CardGame v2] Campaign saved:", deckName, campaignData.wins + "W/" + campaignData.losses + "L");
                 return saved;
             } catch (e) {
                 console.error("[CardGame v2] Failed to save campaign:", deckName, e);
@@ -259,16 +255,10 @@
         }
     };
 
-    // ── Campaign XP & Level System ────────────────────────────────────
-    function calculateXP(state, isVictory) {
-        let xp = 0;
-        xp += state.round * 10;                    // 10 XP per round played
-        if (isVictory) xp += 50;                    // Victory bonus
-        xp += Math.max(0, state.player.hp) * 2;    // HP bonus (surviving health)
-        return xp;
-    }
-
-    async function saveCampaignProgress(state, isVictory, xpGain) {
+    // ── Campaign Progress ──────────────────────────────────────────────
+    // Track wins/losses only — no leveling system.
+    // Skill/attribute modifiers come from stacked cards during gameplay.
+    async function saveCampaignProgress(state, isVictory) {
         let deckName = state.deckName;
         let campaign = await campaignStorage.load(deckName);
         if (!campaign) {
@@ -277,37 +267,9 @@
         campaign.totalGamesPlayed++;
         if (isVictory) campaign.wins++;
         else campaign.losses++;
-        campaign.xp += xpGain;
-
-        // Check for level up (every 100 XP, max level 10)
-        let newLevel = Math.min(10, Math.floor(campaign.xp / 100) + 1);
-        if (newLevel > campaign.level) {
-            campaign.pendingLevelUps = (campaign.pendingLevelUps || 0) + (newLevel - campaign.level);
-            campaign.level = newLevel;
-        }
 
         await campaignStorage.save(deckName, campaign);
         return campaign;
-    }
-
-    // Apply campaign stat gains to a game state's player character
-    function applyCampaignBonuses(state, campaign) {
-        if (!campaign?.statGains || !state?.player?.character?.stats) return;
-        let stats = state.player.character.stats;
-        for (let [stat, gain] of Object.entries(campaign.statGains)) {
-            if (typeof stats[stat] === "number") {
-                stats[stat] += gain;
-            }
-        }
-        // Recalculate derived values from updated stats
-        let end = stats.END ?? stats.end ?? 12;
-        state.player.ap = Math.max(2, Math.floor(end / 5) + 1);
-        state.player.maxAp = state.player.ap;
-        let mag = stats.MAG ?? stats.mag ?? 12;
-        state.player.energy = mag;
-        state.player.maxEnergy = mag;
-        console.log("[CardGame v2] Campaign bonuses applied:", JSON.stringify(campaign.statGains),
-            "-> AP:", state.player.ap, "Energy:", state.player.energy);
     }
 
     window.CardGame = window.CardGame || {};
@@ -316,7 +278,7 @@
         encodeJson, decodeJson,
         upsertDataRecord, loadDataRecord, listDataRecords,
         deckStorage, gameStorage, campaignStorage,
-        createCampaignData, calculateXP, saveCampaignProgress, applyCampaignBonuses,
+        createCampaignData, saveCampaignProgress,
         serializeGameState, deserializeGameState
     };
 })();
