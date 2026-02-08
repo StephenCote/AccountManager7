@@ -245,6 +245,7 @@
         _set(entity, ov, "denoisingStrength");
         _set(entity, ov, "bodyStyle");
         _set(entity, ov, "imageSetting");
+        _set(entity, ov, "imageAction");
         _set(entity, ov, "description");
         // Style-specific fields — ensure user-configured values override random template
         for (let sf of STYLE_FIELDS) {

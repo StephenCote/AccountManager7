@@ -54,6 +54,23 @@
         }
     }
 
+    // Default imageAction per character class — used as SD config imageAction
+    // when generating character portraits, replacing the server's random action
+    let CLASS_IMAGE_ACTIONS = {
+        "Warrior":    "standing in a heroic battle stance, gripping a weapon",
+        "Mage":       "channeling arcane energy with glowing hands",
+        "Rogue":      "emerging from shadows with a dagger drawn",
+        "Cleric":     "radiating divine light with hands raised in prayer",
+        "Ranger":     "scanning the horizon with a bow at the ready",
+        "Bard":       "performing with a musical instrument, captivating an audience",
+        "Tank":       "bracing behind a massive shield in a defensive stance",
+        "Berserker":  "roaring a battle cry with weapon raised overhead",
+        "Assassin":   "crouching in shadow with a concealed blade",
+        "Battlemage": "wielding a sword wreathed in magical flames",
+        "Scholar":    "studying an ancient tome with an arcane device",
+        "Noble":      "standing with regal bearing and commanding presence"
+    };
+
     // Descriptive prompt snippets for action cards by name (hardcoded fallbacks)
     let ACTION_PROMPTS = {
         "Attack":      "a warrior mid-strike with weapon raised",
@@ -468,11 +485,18 @@
         // For character cards, the server builds its own prompt from person data
         // and uses imageSetting for the scene/location.
         // Default to the theme's background prompt so characters match the setting.
+        // Set class-specific imageAction if no user override was provided.
         if (card.type === "character") {
             let setting = backgroundPrompt ||
                           (t.artStyle && t.artStyle.backgroundPrompt);
             if (setting) {
                 entity.imageSetting = setting;
+            }
+            // Use class-specific imageAction instead of server's random action
+            let charOv = sdOverrides.character;
+            let userAction = (charOv && charOv.imageAction) || (defOv && defOv.imageAction);
+            if (!userAction && card._templateClass) {
+                entity.imageAction = CLASS_IMAGE_ACTIONS[card._templateClass] || null;
             }
         }
 

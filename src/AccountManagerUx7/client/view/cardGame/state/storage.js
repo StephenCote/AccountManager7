@@ -62,6 +62,9 @@
         if (qr?.results?.length) {
             console.warn("[CardGame] loadDataRecord: record found but dataBytesStore empty:", groupPath, fileName);
         }
+        else{
+            // console.warn("uncaught condition: " + qr?.results?.length);
+        }
         return null;
     }
 

@@ -1212,6 +1212,10 @@
                 label: 'Setting',
                 layout: 'third'
             },
+            imageAction: {
+                label: 'Action',
+                layout: 'third'
+            },
             description: {
                 label: 'Prompt',
                 layout: 'full'
