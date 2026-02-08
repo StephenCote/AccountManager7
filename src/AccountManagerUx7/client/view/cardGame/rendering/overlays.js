@@ -154,20 +154,56 @@
         m.redraw();
         try {
             let ctx = window.CardGame.ctx || {};
-            let fetchCharPerson = ctx.fetchCharPerson;
-            let char = fetchCharPerson ? await fetchCharPerson(card.sourceId) : null;
-            if (char && char.profile && char.profile.portrait && char.profile.portrait.groupId) {
+
+            // Helper to search a group for images
+            async function searchGroupImages(groupId) {
+                if (!groupId) return [];
                 let q = am7client.newQuery("data.data");
-                q.field("groupId", char.profile.portrait.groupId);
-                q.entity.request.push("id", "objectId", "name", "groupId", "groupPath", "contentType");
+                q.field("groupId", groupId);
                 q.range(0, 100);
                 q.sort("createdDate");
                 q.order("descending");
                 let qr = await page.search(q);
                 if (qr && qr.results) {
-                    galleryImages = qr.results.filter(r => r.contentType && r.contentType.match(/^image\//i));
+                    return qr.results.filter(r => r.contentType && r.contentType.match(/^image\//i));
+                }
+                return [];
+            }
+
+            // Search deck art directory (all card types, including character portraits)
+            try {
+                let artDirGroup = window.CardGame.ArtPipeline?.getArtDir?.();
+                let searchGroupId = artDirGroup?.id;
+                if (!searchGroupId && ctx.viewingDeck) {
+                    let deckName = (ctx.viewingDeck.deckName || "").replace(/[^a-zA-Z0-9_\-]/g, "_");
+                    if (deckName) {
+                        let artPath = "~/CardGame/Art/" + deckName;
+                        let dir = await page.makePath("auth.group", "DATA", artPath);
+                        if (dir) searchGroupId = dir.id;
+                    }
+                }
+                let allImages = await searchGroupImages(searchGroupId);
+                // For character cards: filter to images matching this character's name
+                if (card.type === "character" && card.name) {
+                    let prefix = card.name.replace(/[^a-zA-Z0-9_\-]/g, "_");
+                    galleryImages = allImages.filter(img => img.name && img.name.startsWith(prefix));
+                    // If no matches, leave empty so portrait group fallback runs
+                } else {
+                    galleryImages = allImages;
+                }
+            } catch (e) {
+                console.warn("[CardGame v2] Deck art dir search failed:", e);
+            }
+
+            // Fallback for characters: check portrait group (legacy portraits before deck art dir storage)
+            if (!galleryImages.length && card.type === "character" && card.sourceId) {
+                let fetchCharPerson = window.CardGame.Characters?.fetchCharPerson;
+                let char = fetchCharPerson ? await fetchCharPerson(card.sourceId) : null;
+                if (char && char.profile && char.profile.portrait && char.profile.portrait.groupId) {
+                    galleryImages = await searchGroupImages(char.profile.portrait.groupId);
                 }
             }
+
             if (!galleryImages.length) {
                 page.toast("warn", "No gallery images found for " + card.name);
                 galleryPickerCard = null;
@@ -220,8 +256,9 @@
                             ])
                             : m("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px" } },
                                 galleryImages.map(function (img) {
-                                    let src = g_application_path + "/thumbnail/" + orgPath + "/data.data" + img.groupPath + "/" + img.name + "/96x96";
-                                    let fullSrc = g_application_path + "/thumbnail/" + orgPath + "/data.data" + img.groupPath + "/" + img.name + "/256x256";
+                                    let encodedName = encodeURIComponent(img.name);
+                                    let src = g_application_path + "/thumbnail/" + orgPath + "/data.data" + img.groupPath + "/" + encodedName + "/96x96";
+                                    let fullSrc = g_application_path + "/thumbnail/" + orgPath + "/data.data" + img.groupPath + "/" + encodedName + "/256x256";
                                     let selected = galleryPickerCard.portraitUrl && galleryPickerCard.portraitUrl.indexOf("/" + img.name + "/") !== -1;
                                     return m("img", {
                                         src: src,

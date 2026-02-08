@@ -247,6 +247,8 @@
         investigate:["investigate", "search", "discover", "perception"],
         flee:       ["flee", "escape", "evasion", "retreat"],
         craft:      ["craft", "create", "forge", "build"],
+        trade:      ["trade", "barter", "negotiate", "commerce"],
+        steal:      ["steal", "pickpocket", "thief", "subterfuge", "larceny"],
         magic:      ["magic", "spell", "cast", "arcane", "psionic"]
     };
 

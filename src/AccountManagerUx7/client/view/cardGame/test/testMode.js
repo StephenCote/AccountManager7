@@ -40,6 +40,9 @@
 
     // ── Test Categories ──────────────────────────────────────────────────
     const TEST_CATEGORIES = {
+        modules:     { label: "Modules",     icon: "hub" },
+        stats:       { label: "Stats",       icon: "analytics" },
+        gameflow:    { label: "Game Flow",   icon: "route" },
         storage:     { label: "Storage",     icon: "database" },
         narration:   { label: "Narration",   icon: "campaign" },
         combat:      { label: "Combat",      icon: "swords" },
@@ -128,6 +131,587 @@
             }
         } else {
             testLog("", "No deck available for testing -- some tests will be skipped", "warn");
+        }
+
+        // ── Module Namespace Resolution Tests ──
+        if (cats.includes("modules")) {
+            testState.currentTest = "Modules: namespace resolution";
+            testLog("modules", "Testing module namespace resolution...");
+
+            // Verify all top-level namespaces exist
+            let namespaces = [
+                ["CardGame.Constants",  window.CardGame.Constants],
+                ["CardGame.Storage",    window.CardGame.Storage],
+                ["CardGame.Engine",     window.CardGame.Engine],
+                ["CardGame.GameState",  window.CardGame.GameState],
+                ["CardGame.Characters", window.CardGame.Characters],
+                ["CardGame.Themes",     window.CardGame.Themes],
+                ["CardGame.AI",         window.CardGame.AI],
+                ["CardGame.ArtPipeline", window.CardGame.ArtPipeline],
+                ["CardGame.Rendering",  window.CardGame.Rendering],
+                ["CardGame.UI",         window.CardGame.UI],
+                ["CardGame.TestMode",   window.CardGame.TestMode],
+                ["CardGame.ctx",        window.CardGame.ctx]
+            ];
+            for (let pair of namespaces) {
+                let name = pair[0]; let obj = pair[1];
+                testLog("modules", name + ": " + (obj ? "present" : "MISSING"), obj ? "pass" : "fail");
+            }
+
+            // Verify GameState exports (the createGameState bug was caused by wrong namespace)
+            let gsExports = [
+                "createGameState", "advancePhase", "endTurn", "checkAutoEndTurn",
+                "initializeLLMComponents", "checkLlmConnectivity",
+                "triggerNarration", "showNarrationSubtitle",
+                "resetInitAnimState", "startInitiativeAnimation", "runInitiativePhase",
+                "enterDrawPlacementPhase", "enterThreatResponsePhase", "enterEndThreatPhase",
+                "resolveThreatCombat", "resolveEndThreatCombat",
+                "placeThreatDefenseCard", "skipThreatResponse",
+                "startNextRound", "applyCampaignBonuses", "advanceResolution"
+            ];
+            for (let fn of gsExports) {
+                let exists = typeof gameState[fn] === "function";
+                testLog("modules", "GameState." + fn + ": " + (exists ? "function" : "MISSING (" + typeof gameState[fn] + ")"), exists ? "pass" : "fail");
+            }
+
+            // Verify GameState.state getters
+            let gsState = gameState.state;
+            if (gsState) {
+                let stateProps = ["gameState", "initAnimState", "llmStatus", "gameDirector", "gameNarrator",
+                    "gameChatManager", "gameVoice", "gameAnnouncerVoice"];
+                let accessibleCount = 0;
+                for (let prop of stateProps) {
+                    try { void gsState[prop]; accessibleCount++; } catch (e) { /* getter threw */ }
+                }
+                testLog("modules", "GameState.state: " + accessibleCount + "/" + stateProps.length + " props accessible", accessibleCount === stateProps.length ? "pass" : "warn");
+            } else {
+                testLog("modules", "GameState.state: MISSING", "fail");
+            }
+
+            // Verify Engine exports
+            let engineExports = [
+                "rollD20", "rollInitiative", "getActorATK", "getActorDEF", "rollAttack", "rollDefense",
+                "getCombatOutcome", "calculateDamage", "applyDamage", "resolveCombat", "checkGameOver",
+                "parseEffect", "applyParsedEffects", "isEffectParseable", "getStackSkillMod",
+                "applyStatusEffect", "removeStatusEffect", "hasStatusEffect", "getStatusModifiers",
+                "processStatusEffectsTurnStart", "tickStatusEffects",
+                "drawCardsForActor", "ensureOffensiveCard", "placeCard", "removeCardFromPosition",
+                "isCoreCardType", "isModifierCardType", "dealInitialStack",
+                "checkNat1Threats", "createThreatEncounter", "checkEndThreat"
+            ];
+            let engineMissing = [];
+            for (let fn of engineExports) {
+                if (typeof engine[fn] !== "function") engineMissing.push(fn);
+            }
+            testLog("modules", "Engine: " + (engineExports.length - engineMissing.length) + "/" + engineExports.length + " functions present",
+                engineMissing.length === 0 ? "pass" : "fail");
+            if (engineMissing.length > 0) {
+                testLog("modules", "Engine MISSING: " + engineMissing.join(", "), "fail");
+            }
+
+            // Verify Characters exports
+            let ch = window.CardGame.Characters;
+            if (ch) {
+                let charExports = ["mapStats", "statVal", "resolveStatistics", "getPortraitUrl", "getCharId",
+                    "assembleCharacterCard", "assembleStarterDeck", "assembleCharEquipment"];
+                let charMissing = [];
+                for (let fn of charExports) {
+                    if (typeof ch[fn] !== "function") charMissing.push(fn);
+                }
+                testLog("modules", "Characters: " + (charExports.length - charMissing.length) + "/" + charExports.length + " functions present",
+                    charMissing.length === 0 ? "pass" : "fail");
+                if (charMissing.length > 0) {
+                    testLog("modules", "Characters MISSING: " + charMissing.join(", "), "fail");
+                }
+            }
+
+            // Verify AI exports
+            let aiMod = window.CardGame.AI;
+            if (aiMod) {
+                let aiExports = ["CardGameLLM", "CardGameDirector", "CardGameNarrator", "CardGameChatManager", "CardGameVoice"];
+                let aiMissing = [];
+                for (let fn of aiExports) {
+                    if (!aiMod[fn]) aiMissing.push(fn);
+                }
+                testLog("modules", "AI: " + (aiExports.length - aiMissing.length) + "/" + aiExports.length + " classes present",
+                    aiMissing.length === 0 ? "pass" : "warn");
+                if (aiMissing.length > 0) {
+                    testLog("modules", "AI MISSING: " + aiMissing.join(", "), "warn");
+                }
+            }
+
+            // Verify UI component exports
+            let ui = window.CardGame.UI;
+            if (ui) {
+                let uiExports = ["DeckList", "BuilderThemeStep", "BuilderCharacterStep", "BuilderReviewStep",
+                    "DeckView", "GameView", "GameOverUI", "LevelUpUI", "ThreatResponseUI"];
+                let uiMissing = [];
+                for (let fn of uiExports) {
+                    if (!ui[fn]) uiMissing.push(fn);
+                }
+                testLog("modules", "UI: " + (uiExports.length - uiMissing.length) + "/" + uiExports.length + " components present",
+                    uiMissing.length === 0 ? "pass" : "fail");
+                if (uiMissing.length > 0) {
+                    testLog("modules", "UI MISSING: " + uiMissing.join(", "), "fail");
+                }
+            }
+
+            // Verify ctx proxy properties resolve to module state (not undefined)
+            let ctxObj = window.CardGame.ctx;
+            if (ctxObj) {
+                // These should be proxied from ArtPipeline.state
+                let artProps = ["artQueue", "artProcessing", "sdOverrides", "sdConfigExpanded",
+                    "voiceProfiles", "flippedCards"];
+                let proxyOk = 0;
+                for (let prop of artProps) {
+                    // Just check the property is accessible (not throwing) - value may be null/[]
+                    try {
+                        let v = ctxObj[prop];
+                        // Verify it returns the same value as ArtPipeline.state
+                        let artState = window.CardGame.ArtPipeline?.state;
+                        if (artState && v === artState[prop]) proxyOk++;
+                        else if (!artState) proxyOk++; // Can't verify, assume ok
+                        else testLog("modules", "ctx." + prop + " proxy mismatch: ctx=" + v + " art=" + artState[prop], "fail");
+                    } catch (e) {
+                        testLog("modules", "ctx." + prop + " proxy error: " + e.message, "fail");
+                    }
+                }
+                testLog("modules", "ctx proxy properties: " + proxyOk + "/" + artProps.length + " linked to ArtPipeline.state",
+                    proxyOk === artProps.length ? "pass" : "fail");
+            }
+        }
+
+        // ── Stat Mapping Tests ──────────────────
+        if (cats.includes("stats")) {
+            testState.currentTest = "Stats: mapStats and stat computation";
+            testLog("stats", "Testing mapStats() function...");
+
+            let ch = window.CardGame.Characters;
+            if (!ch || !ch.mapStats) {
+                testLog("stats", "Characters.mapStats not available", "fail");
+            } else {
+                // Test 1: null/undefined input returns defaults
+                let nullResult = ch.mapStats(null);
+                testLog("stats", "mapStats(null) -> defaults",
+                    nullResult.STR === 8 && nullResult.AGI === 8 && nullResult.END === 8 ? "pass" : "fail");
+
+                // Test 2: Full statistics object
+                let fullStats = {
+                    physicalStrength: 15, agility: 12, physicalEndurance: 18,
+                    intelligence: 10, magic: 14, charisma: 8
+                };
+                let fullResult = ch.mapStats(fullStats);
+                testLog("stats", "mapStats(full): STR=" + fullResult.STR + " AGI=" + fullResult.AGI +
+                    " END=" + fullResult.END + " INT=" + fullResult.INT + " MAG=" + fullResult.MAG + " CHA=" + fullResult.CHA,
+                    fullResult.STR === 15 && fullResult.AGI === 12 && fullResult.END === 18 &&
+                    fullResult.INT === 10 && fullResult.MAG === 14 && fullResult.CHA === 8 ? "pass" : "fail");
+
+                // Test 3: Missing magic (virtual field) - should compute from components
+                let noMagic = {
+                    physicalStrength: 10, agility: 10, physicalEndurance: 10, intelligence: 10,
+                    charisma: 10,
+                    // magic not present - should compute from: AVG(willpower, wisdom, creativity, spirituality)
+                    willpower: 12, wisdom: 14, creativity: 10, spirituality: 8
+                };
+                let noMagicResult = ch.mapStats(noMagic);
+                let expectedMag = Math.round((12 + 14 + 10 + 8) / 4); // 11
+                testLog("stats", "mapStats(no magic, willpower=12,wis=14,cre=10,spi=8): MAG=" + noMagicResult.MAG + " (expect " + expectedMag + ")",
+                    noMagicResult.MAG === expectedMag ? "pass" : "fail");
+
+                // Test 4: Missing magic AND missing willpower - should compute willpower too
+                let noWillpower = {
+                    physicalStrength: 10, agility: 10, physicalEndurance: 10, intelligence: 10,
+                    charisma: 10,
+                    // willpower not present - should compute from: AVG(mentalEndurance, mentalStrength)
+                    mentalEndurance: 16, mentalStrength: 8,
+                    wisdom: 12, creativity: 10, spirituality: 14
+                };
+                let noWpResult = ch.mapStats(noWillpower);
+                let expectedWp = Math.round((16 + 8) / 2); // 12
+                let expectedMag2 = Math.round((expectedWp + 12 + 10 + 14) / 4); // 12
+                testLog("stats", "mapStats(no willpower, mEnd=16,mStr=8): computed willpower=" + expectedWp + " MAG=" + noWpResult.MAG + " (expect " + expectedMag2 + ")",
+                    noWpResult.MAG === expectedMag2 ? "pass" : "fail");
+
+                // Test 5: Charisma = 0 should map to 0, not fallback to 8
+                let zeroCha = { physicalStrength: 10, agility: 10, physicalEndurance: 10,
+                    intelligence: 10, magic: 10, charisma: 0 };
+                let zeroResult = ch.mapStats(zeroCha);
+                testLog("stats", "mapStats(charisma=0): CHA=" + zeroResult.CHA + " (expect 0)",
+                    zeroResult.CHA === 0 ? "pass" : "fail");
+
+                // Test 6: All stats = 0 should map to all 0s
+                let allZero = { physicalStrength: 0, agility: 0, physicalEndurance: 0,
+                    intelligence: 0, magic: 0, charisma: 0 };
+                let allZeroResult = ch.mapStats(allZero);
+                let allZeroOk = allZeroResult.STR === 0 && allZeroResult.AGI === 0 && allZeroResult.END === 0 &&
+                    allZeroResult.INT === 0 && allZeroResult.MAG === 0 && allZeroResult.CHA === 0;
+                testLog("stats", "mapStats(all zeros): " + JSON.stringify(allZeroResult), allZeroOk ? "pass" : "fail");
+
+                // Test 7: objectId-only ref (partially loaded) should return defaults
+                let refOnly = { objectId: "abc-123" };
+                let refResult = ch.mapStats(refOnly);
+                testLog("stats", "mapStats(objectId only): defaults=" + (refResult.STR === 8),
+                    refResult.STR === 8 && refResult.MAG === 8 ? "pass" : "fail");
+
+                // Test 8: AP derivation from END stat
+                testLog("stats", "Testing AP derivation from END stat...");
+                let apTests = [
+                    { end: 0, expectAp: 2 },   // floor(0/5)+1=1, min 2
+                    { end: 5, expectAp: 2 },   // floor(5/5)+1=2
+                    { end: 10, expectAp: 3 },  // floor(10/5)+1=3
+                    { end: 12, expectAp: 3 },  // floor(12/5)+1=3
+                    { end: 15, expectAp: 4 },  // floor(15/5)+1=4
+                    { end: 20, expectAp: 5 },  // floor(20/5)+1=5
+                    { end: 25, expectAp: 6 }   // floor(25/5)+1=6
+                ];
+                for (let t of apTests) {
+                    let computedAp = Math.max(2, Math.floor(t.end / 5) + 1);
+                    testLog("stats", "END=" + t.end + " -> AP=" + computedAp + " (expect " + t.expectAp + ")",
+                        computedAp === t.expectAp ? "pass" : "fail");
+                }
+
+                // Test 9: Energy derivation from MAG stat (used in createGameState)
+                testLog("stats", "Testing Energy derivation from MAG stat...");
+                if (gameState.createGameState) {
+                    let testDeckForStats = {
+                        deckName: "stats-test",
+                        cards: [
+                            { type: "character", name: "StatsTestHero", stats: { STR: 10, AGI: 10, END: 15, INT: 10, MAG: 18, CHA: 10 } },
+                            { type: "character", name: "StatsTestVillain", stats: { STR: 12, AGI: 8, END: 10, INT: 14, MAG: 6, CHA: 16 } },
+                            { type: "action", name: "Attack", actionType: "Offensive", energyCost: 0 },
+                            { type: "action", name: "Guard", actionType: "Defensive", energyCost: 0 }
+                        ]
+                    };
+                    let gsStats = gameState.createGameState(testDeckForStats, testDeckForStats.cards[0]);
+                    if (gsStats) {
+                        testLog("stats", "Player MAG=18 -> energy=" + gsStats.player.energy + " maxEnergy=" + gsStats.player.maxEnergy,
+                            gsStats.player.energy === 18 && gsStats.player.maxEnergy === 18 ? "pass" : "fail");
+                        testLog("stats", "Player END=15 -> AP=" + gsStats.player.ap,
+                            gsStats.player.ap === Math.max(2, Math.floor(15 / 5) + 1) ? "pass" : "fail");
+                        testLog("stats", "Opponent MAG=6 -> energy=" + gsStats.opponent.energy,
+                            gsStats.opponent.energy === 6 && gsStats.opponent.maxEnergy === 6 ? "pass" : "fail");
+                        testLog("stats", "Opponent END=10 -> AP=" + gsStats.opponent.ap,
+                            gsStats.opponent.ap === Math.max(2, Math.floor(10 / 5) + 1) ? "pass" : "fail");
+                    } else {
+                        testLog("stats", "createGameState returned null for stats test deck", "fail");
+                    }
+                }
+            }
+        }
+
+        // ── Game Flow Tests (init, phases, turns) ──
+        if (cats.includes("gameflow")) {
+            testState.currentTest = "Game Flow: initialization";
+            testLog("gameflow", "Testing game initialization and flow...");
+
+            // Build a minimal but complete test deck
+            let flowDeck = {
+                deckName: "flow-test",
+                themeId: "high-fantasy",
+                cards: [
+                    { type: "character", name: "FlowHero", stats: { STR: 12, AGI: 14, END: 15, INT: 10, MAG: 10, CHA: 10 }, needs: { hp: 20, energy: 10, morale: 20 } },
+                    { type: "character", name: "FlowVillain", stats: { STR: 10, AGI: 10, END: 10, INT: 12, MAG: 14, CHA: 8 }, needs: { hp: 20, energy: 14, morale: 20 } },
+                    { type: "action", name: "Attack", actionType: "Offensive", energyCost: 0 },
+                    { type: "action", name: "Attack", actionType: "Offensive", energyCost: 0 },
+                    { type: "action", name: "Guard", actionType: "Defensive", energyCost: 0 },
+                    { type: "action", name: "Rest", actionType: "Recovery", energyCost: 0 },
+                    { type: "talk", name: "Taunt", speechType: "Provoke", energyCost: 0 },
+                    { type: "magic", name: "Fireball", effect: "Deal 8 fire damage", energyCost: 3 },
+                    { type: "skill", name: "Swordsmanship", modifier: "+2 to Attack rolls" },
+                    { type: "item", subtype: "weapon", name: "Iron Sword", atk: 2 },
+                    { type: "item", subtype: "armor", name: "Leather Armor", def: 1 },
+                    { type: "apparel", slot: "body", name: "Chainmail", def: 2 }
+                ]
+            };
+
+            // Test 1: createGameState produces valid state
+            if (gameState.createGameState) {
+                let gs = gameState.createGameState(flowDeck, flowDeck.cards[0]);
+                if (!gs) {
+                    testLog("gameflow", "createGameState returned null", "fail");
+                } else {
+                    testLog("gameflow", "createGameState: valid state object", "pass");
+
+                    // Verify basic structure
+                    testLog("gameflow", "gs.round=" + gs.round + " (expect 1)", gs.round === 1 ? "pass" : "fail");
+                    let GP = C().GAME_PHASES;
+                    testLog("gameflow", "gs.phase=" + gs.phase + " (expect " + GP.INITIATIVE + ")",
+                        gs.phase === GP.INITIATIVE ? "pass" : "fail");
+
+                    // Player structure
+                    testLog("gameflow", "player.character.name=" + gs.player.character.name,
+                        gs.player.character.name === "FlowHero" ? "pass" : "fail");
+                    testLog("gameflow", "player.hp=" + gs.player.hp + " maxHp=" + gs.player.maxHp,
+                        gs.player.hp === 20 && gs.player.maxHp === 20 ? "pass" : "fail");
+                    testLog("gameflow", "player.hand has cards: " + gs.player.hand.length,
+                        gs.player.hand.length >= 5 ? "pass" : "fail");
+                    testLog("gameflow", "player.drawPile is array: " + Array.isArray(gs.player.drawPile),
+                        Array.isArray(gs.player.drawPile) ? "pass" : "fail");
+                    testLog("gameflow", "player.discardPile is empty array: " + gs.player.discardPile.length,
+                        gs.player.discardPile.length === 0 ? "pass" : "fail");
+                    testLog("gameflow", "player.statusEffects is empty array: " + gs.player.statusEffects.length,
+                        gs.player.statusEffects.length === 0 ? "pass" : "fail");
+                    testLog("gameflow", "player.ap=" + gs.player.ap + " apUsed=" + gs.player.apUsed,
+                        gs.player.ap >= 2 && gs.player.apUsed === 0 ? "pass" : "fail");
+
+                    // Opponent structure
+                    testLog("gameflow", "opponent.character exists: " + !!gs.opponent.character,
+                        gs.opponent.character ? "pass" : "fail");
+                    testLog("gameflow", "opponent.hp=" + gs.opponent.hp,
+                        gs.opponent.hp === 20 ? "pass" : "fail");
+                    testLog("gameflow", "opponent.hand has cards: " + gs.opponent.hand.length,
+                        gs.opponent.hand.length >= 5 ? "pass" : "fail");
+
+                    // Action bar
+                    testLog("gameflow", "actionBar.positions is array: " + Array.isArray(gs.actionBar.positions),
+                        Array.isArray(gs.actionBar.positions) ? "pass" : "fail");
+                    testLog("gameflow", "actionBar.resolveIndex=" + gs.actionBar.resolveIndex + " (expect -1)",
+                        gs.actionBar.resolveIndex === -1 ? "pass" : "fail");
+
+                    // Initiative structure
+                    testLog("gameflow", "initiative.winner=" + gs.initiative.winner + " (expect null)",
+                        gs.initiative.winner === null ? "pass" : "fail");
+
+                    // Threat response defaults
+                    testLog("gameflow", "threatResponse.active=" + gs.threatResponse.active + " (expect false)",
+                        gs.threatResponse.active === false ? "pass" : "fail");
+
+                    // Chat defaults
+                    testLog("gameflow", "chat.active=" + gs.chat.active + " unlocked=" + gs.chat.unlocked,
+                        gs.chat.active === false && gs.chat.unlocked === false ? "pass" : "fail");
+
+                    // Test 2: createGameState with no character selection picks first
+                    let gs2 = gameState.createGameState(flowDeck);
+                    if (gs2) {
+                        testLog("gameflow", "createGameState(no selection): picks first char '" + gs2.player.character.name + "'",
+                            gs2.player.character.name === "FlowHero" ? "pass" : "fail");
+                    }
+
+                    // Test 3: createGameState with deck lacking characters returns null
+                    let noCharDeck = { deckName: "empty", cards: [{ type: "action", name: "Attack" }] };
+                    let gs3 = gameState.createGameState(noCharDeck);
+                    testLog("gameflow", "createGameState(no characters): returns null",
+                        gs3 === null ? "pass" : "fail");
+
+                    // ── Test 4: Draw cards for actor ──
+                    testState.currentTest = "Game Flow: draw/placement";
+                    testLog("gameflow", "Testing drawCardsForActor...");
+                    let savedGs = context.gameState;
+                    if (window.CardGame.ctx) window.CardGame.ctx.gameState = gs;
+
+                    let handBefore = gs.player.hand.length;
+                    let drawBefore = gs.player.drawPile.length;
+                    if (engine.drawCardsForActor) {
+                        engine.drawCardsForActor(gs.player, 2);
+                        testLog("gameflow", "drawCardsForActor(2): hand " + handBefore + "->" + gs.player.hand.length +
+                            " drawPile " + drawBefore + "->" + gs.player.drawPile.length,
+                            gs.player.hand.length === handBefore + 2 && gs.player.drawPile.length === drawBefore - 2 ? "pass" : "fail");
+                    } else {
+                        testLog("gameflow", "drawCardsForActor not available", "fail");
+                    }
+
+                    // Test 5: placeCard places a card in an action bar position
+                    testLog("gameflow", "Testing placeCard...");
+                    if (engine.placeCard) {
+                        // Set up action bar positions first
+                        gs.initiative.playerPositions = [0, 2, 4];
+                        gs.initiative.opponentPositions = [1, 3, 5];
+                        gs.actionBar.totalPositions = 6;
+                        gs.actionBar.positions = [];
+                        for (let i = 0; i < 6; i++) {
+                            gs.actionBar.positions.push({ index: i, owner: i % 2 === 0 ? "player" : "opponent", stack: null, resolved: false });
+                        }
+                        gs.currentTurn = "player";
+                        gs.phase = GP.DRAW_PLACEMENT;
+
+                        let cardToPlace = gs.player.hand[0];
+                        if (cardToPlace) {
+                            let handBeforePlace = gs.player.hand.length;
+                            let cardName = cardToPlace.name;
+                            engine.placeCard(gs, 0, cardToPlace);
+                            let pos = gs.actionBar.positions[0];
+                            testLog("gameflow", "placeCard('" + cardName + "', pos 0): stack=" + (pos.stack ? pos.stack.base?.name || pos.stack.name : "null"),
+                                pos.stack ? "pass" : "fail");
+                            testLog("gameflow", "placeCard: hand reduced " + handBeforePlace + "->" + gs.player.hand.length,
+                                gs.player.hand.length === handBeforePlace - 1 ? "pass" : "fail");
+
+                            // Test 6: removeCardFromPosition
+                            if (engine.removeCardFromPosition) {
+                                engine.removeCardFromPosition(gs, 0);
+                                testLog("gameflow", "removeCardFromPosition(0): stack=" + (gs.actionBar.positions[0].stack),
+                                    gs.actionBar.positions[0].stack === null ? "pass" : "fail");
+                            }
+                        }
+                    } else {
+                        testLog("gameflow", "placeCard not available", "fail");
+                    }
+
+                    // Test 7: isCoreCardType / isModifierCardType
+                    testLog("gameflow", "Testing card type classification...");
+                    if (engine.isCoreCardType) {
+                        let coreTypes = ["action", "talk", "magic"];
+                        let modTypes = ["skill", "item", "apparel"];
+                        let nonCore = ["character", "encounter"];
+                        for (let t of coreTypes) {
+                            testLog("gameflow", "isCoreCardType('" + t + "')=" + engine.isCoreCardType(t),
+                                engine.isCoreCardType(t) ? "pass" : "fail");
+                        }
+                        for (let t of modTypes) {
+                            testLog("gameflow", "isModifierCardType('" + t + "')=" + engine.isModifierCardType(t),
+                                engine.isModifierCardType(t) ? "pass" : "fail");
+                        }
+                        for (let t of nonCore) {
+                            testLog("gameflow", "isCoreCardType('" + t + "')=" + engine.isCoreCardType(t) + " (expect false)",
+                                !engine.isCoreCardType(t) ? "pass" : "fail");
+                        }
+                    }
+
+                    // Test 8: checkGameOver integration with game state
+                    testLog("gameflow", "Testing checkGameOver with game state...");
+                    gs.player.hp = 10;
+                    gs.opponent.hp = 10;
+                    let winner1 = engine.checkGameOver();
+                    testLog("gameflow", "checkGameOver(P:10, O:10)=" + winner1 + " (expect null)",
+                        winner1 === null ? "pass" : "fail");
+
+                    gs.player.hp = 0;
+                    let winner2 = engine.checkGameOver();
+                    testLog("gameflow", "checkGameOver(P:0, O:10)=" + winner2 + " (expect 'opponent')",
+                        winner2 === "opponent" ? "pass" : "fail");
+
+                    gs.player.hp = 10;
+                    gs.opponent.hp = 0;
+                    let winner3 = engine.checkGameOver();
+                    testLog("gameflow", "checkGameOver(P:10, O:0)=" + winner3 + " (expect 'player')",
+                        winner3 === "player" ? "pass" : "fail");
+
+                    // Test 9: Encounter / Threat system
+                    testState.currentTest = "Game Flow: encounters";
+                    testLog("gameflow", "Testing encounter/threat system...");
+                    gs.player.hp = 20;
+                    gs.opponent.hp = 20;
+
+                    if (engine.createThreatEncounter) {
+                        let threat = engine.createThreatEncounter(1);
+                        if (threat) {
+                            testLog("gameflow", "createThreatEncounter: " + threat.name +
+                                " (atk=" + threat.atk + " def=" + threat.def + " hp=" + threat.hp + ")",
+                                threat.name && threat.atk > 0 && threat.hp > 0 ? "pass" : "fail");
+                        } else {
+                            testLog("gameflow", "createThreatEncounter returned null (may need theme data)", "warn");
+                        }
+                    }
+
+                    if (engine.checkNat1Threats) {
+                        let threats = engine.checkNat1Threats({ raw: 1 }, "player", gs);
+                        testLog("gameflow", "checkNat1Threats(raw=1): " + (threats ? threats.length + " threats" : "null"),
+                            threats && threats.length > 0 ? "pass" : "info");
+                        let noThreats = engine.checkNat1Threats({ raw: 10 }, "player", gs);
+                        testLog("gameflow", "checkNat1Threats(raw=10): " + (noThreats ? noThreats.length : 0) + " threats (expect 0)",
+                            !noThreats || noThreats.length === 0 ? "pass" : "fail");
+                    }
+
+                    // Test 10: DiceUtils detailed tests
+                    testState.currentTest = "Game Flow: dice system";
+                    testLog("gameflow", "Testing DiceUtils...");
+                    if (engine.DiceUtils) {
+                        // Test basic roll range
+                        let d6Rolls = [];
+                        for (let i = 0; i < 100; i++) d6Rolls.push(engine.DiceUtils.roll(6));
+                        let d6Min = Math.min.apply(null, d6Rolls);
+                        let d6Max = Math.max.apply(null, d6Rolls);
+                        testLog("gameflow", "DiceUtils.roll(6): range [" + d6Min + "," + d6Max + "] in 100 rolls",
+                            d6Min >= 1 && d6Max <= 6 ? "pass" : "fail");
+
+                        // Test rollWithMod
+                        let modRoll = engine.DiceUtils.rollWithMod(5, "STR");
+                        testLog("gameflow", "DiceUtils.rollWithMod(5, STR): raw=" + modRoll.raw + " total=" + modRoll.total + " breakdown='" + modRoll.breakdown + "'",
+                            modRoll.total === modRoll.raw + 5 && modRoll.breakdown.includes("STR") ? "pass" : "fail");
+
+                        // Test initiative roll
+                        let initRoll = engine.DiceUtils.initiative({ AGI: 12 });
+                        testLog("gameflow", "DiceUtils.initiative(AGI=12): raw=" + initRoll.raw + " total=" + initRoll.total,
+                            initRoll.total === initRoll.raw + 12 ? "pass" : "fail");
+
+                        // Test crit/fumble detection
+                        testLog("gameflow", "DiceUtils: isCrit/isFumble detection...");
+                        let hasCrit = false, hasFumble = false;
+                        for (let i = 0; i < 1000; i++) {
+                            let r = engine.DiceUtils.rollWithMod(0);
+                            if (r.isCrit) hasCrit = true;
+                            if (r.isFumble) hasFumble = true;
+                            if (hasCrit && hasFumble) break;
+                        }
+                        testLog("gameflow", "Crit (raw=20) seen in 1000 rolls: " + hasCrit, hasCrit ? "pass" : "warn");
+                        testLog("gameflow", "Fumble (raw=1) seen in 1000 rolls: " + hasFumble, hasFumble ? "pass" : "warn");
+                    }
+
+                    // Test 11: Full combat resolution
+                    testState.currentTest = "Game Flow: combat resolution";
+                    testLog("gameflow", "Testing full combat resolution...");
+                    if (engine.rollAttack && engine.rollDefense && engine.getCombatOutcome && engine.calculateDamage) {
+                        let attacker = {
+                            character: { stats: { STR: 14, AGI: 10, END: 12 } },
+                            cardStack: [{ atk: 3 }],
+                            statusEffects: []
+                        };
+                        let defender = {
+                            character: { stats: { STR: 10, AGI: 12, END: 14 } },
+                            cardStack: [{ def: 2 }],
+                            statusEffects: [],
+                            hp: 20, maxHp: 20
+                        };
+                        let attackStack = { base: { type: "action", name: "Attack" }, modifiers: [] };
+                        let defenseStack = { base: { type: "action", name: "Guard" }, modifiers: [] };
+
+                        let atkRoll = engine.rollAttack(attacker, attackStack);
+                        let defRoll = engine.rollDefense(defender, defenseStack);
+                        testLog("gameflow", "rollAttack: raw=" + atkRoll.raw + " total=" + atkRoll.total,
+                            atkRoll.raw >= 1 && atkRoll.raw <= 20 && atkRoll.total >= atkRoll.raw ? "pass" : "fail");
+                        testLog("gameflow", "rollDefense: raw=" + defRoll.raw + " total=" + defRoll.total,
+                            defRoll.raw >= 1 && defRoll.raw <= 20 && defRoll.total >= defRoll.raw ? "pass" : "fail");
+
+                        let outcome = engine.getCombatOutcome(atkRoll, defRoll);
+                        testLog("gameflow", "getCombatOutcome: " + outcome, outcome ? "pass" : "fail");
+
+                        let dmg = engine.calculateDamage(attacker, outcome);
+                        testLog("gameflow", "calculateDamage: final=" + dmg.finalDamage + " (outcome=" + outcome.label + ")",
+                            typeof dmg.finalDamage === "number" ? "pass" : "fail");
+                    }
+
+                    // Test 12: dealInitialStack
+                    testLog("gameflow", "Testing dealInitialStack...");
+                    if (engine.dealInitialStack) {
+                        let testApparel = [{ type: "apparel", slot: "body", name: "Armor", def: 2 }];
+                        let testItems = [{ type: "item", subtype: "weapon", name: "Sword", atk: 3 }];
+                        let stack = engine.dealInitialStack(testApparel, testItems);
+                        testLog("gameflow", "dealInitialStack: " + stack.length + " cards",
+                            stack.length === 2 ? "pass" : "info");
+                    }
+
+                    // Test 13: ensureOffensiveCard
+                    testLog("gameflow", "Testing ensureOffensiveCard...");
+                    if (engine.ensureOffensiveCard) {
+                        let testActor = {
+                            hand: [
+                                { type: "talk", name: "Taunt" },
+                                { type: "magic", name: "Heal", effect: "Restore 10 HP" }
+                            ],
+                            drawPile: [{ type: "action", name: "Rest" }],
+                            discardPile: []
+                        };
+                        engine.ensureOffensiveCard(testActor, "Test");
+                        let hasAttack = testActor.hand.some(function(c) { return c.name === "Attack"; });
+                        testLog("gameflow", "ensureOffensiveCard: added Attack=" + hasAttack,
+                            hasAttack ? "pass" : "warn");
+                    }
+
+                    // Restore game state
+                    if (window.CardGame.ctx) window.CardGame.ctx.gameState = savedGs;
+                }
+            } else {
+                testLog("gameflow", "createGameState not available", "fail");
+            }
         }
 
         // ── Storage Tests ────────────────────

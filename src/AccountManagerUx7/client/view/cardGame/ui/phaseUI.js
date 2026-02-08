@@ -6,6 +6,9 @@
     const NS = window.CardGame = window.CardGame || {};
     NS.UI = NS.UI || {};
 
+    // ── Shorthand for module functions vs state ──
+    function GS() { return NS.GameState || {}; }
+
     // ── Initiative Phase UI ───────────────────────────────────────────
     function InitiativePhaseUI() {
         let playerFlipped = false;
@@ -13,14 +16,14 @@
 
         return {
             oninit() {
-                let gs = NS.GameState.state;
+                let gs = GS().state;
                 let initAnimState = gs.initAnimState;
                 if (!initAnimState.rolling && !initAnimState.rollComplete && initAnimState.countdown === 3) {
-                    gs.startInitiativeAnimation();
+                    GS().startInitiativeAnimation();
                 }
             },
             view() {
-                let gs = NS.GameState.state;
+                let gs = GS().state;
                 let gameState = gs.gameState;
                 if (!gameState) return null;
 
@@ -154,7 +157,7 @@
     function EquipPhaseUI() {
         return {
             view() {
-                let gs = NS.GameState.state;
+                let gs = GS().state;
                 let gameState = gs.gameState;
                 if (!gameState) return null;
 
@@ -176,7 +179,7 @@
                     m("button", {
                         class: "cg2-btn cg2-btn-primary",
                         style: { marginTop: "16px" },
-                        onclick() { gs.advancePhase(); }
+                        onclick() { GS().advancePhase(); }
                     }, "Continue to Placement Phase")
                 ]);
             }
@@ -201,7 +204,7 @@
     function ResolutionPhaseUI() {
         return {
             view() {
-                let gs = NS.GameState.state;
+                let gs = GS().state;
                 let gameState = gs.gameState;
                 if (!gameState) return null;
 
@@ -380,7 +383,7 @@
     function CleanupPhaseUI() {
         return {
             oninit() {
-                let gs = NS.GameState.state;
+                let gs = GS().state;
                 let gameState = gs.gameState;
                 if (!gameState || gameState.cleanupApplied) return;
 
@@ -417,18 +420,18 @@
                 // Winner claims pot
                 if (gameState.roundWinner !== "tie") {
                     gameState.potClaimed = gameState.pot.length;
-                    gs.claimPot(gameState.roundWinner);
+                    NS.Engine.claimPot(gameState, gameState.roundWinner);
                 } else {
                     gameState.potClaimed = 0;
                     console.log("[CardGame v2] Tie - pot carries over:", gameState.pot.length, "cards");
                 }
 
                 // Lethargy check
-                gameState.playerLethargy = gs.checkLethargy(gameState.player, "Player");
-                gameState.opponentLethargy = gs.checkLethargy(gameState.opponent, "Opponent");
+                gameState.playerLethargy = NS.Engine.checkLethargy(gameState, gameState.player, "Player");
+                gameState.opponentLethargy = NS.Engine.checkLethargy(gameState, gameState.opponent, "Opponent");
 
                 // End threat check
-                gameState.endThreatResult = gs.checkEndThreat();
+                gameState.endThreatResult = NS.Engine.checkEndThreat(gameState);
                 if (gameState.endThreatResult && gameState.endThreatResult.threat) {
                     gameState.endThreatResult.responded = false;
                     console.log("[CardGame v2] End threat pending:", gameState.endThreatResult.threat.name,
@@ -443,7 +446,7 @@
                     "Energy:", gameState.opponent.energy, "(+" + gameState.opponent.energyRecovery + ")");
 
                 // Trigger round end narration
-                gs.narrateRoundEnd(gameState.roundWinner);
+                GS().narrateRoundEnd(gameState.roundWinner);
 
                 // Auto-save
                 let Storage = NS.Storage;
@@ -454,7 +457,7 @@
                 }
             },
             view() {
-                let gs = NS.GameState.state;
+                let gs = GS().state;
                 let gameState = gs.gameState;
                 if (!gameState) return null;
 
@@ -545,25 +548,36 @@
                         ]) : null
                     ]),
 
-                    // Button - face threat or start next round
+                    // Narration text display (scrolls in the panel while voice plays)
+                    gameState.narrationText
+                        ? m("div", { class: "cg2-cleanup-narration" }, [
+                            m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;margin-right:4px;color:#B8860B" }, "campaign"),
+                            m("span", { class: "cg2-cleanup-narration-text" }, gameState.narrationText)
+                        ])
+                        : null,
+
+                    // Button - face threat or start next round (disabled while narration plays)
                     gameState.endThreatResult && gameState.endThreatResult.threat && !gameState.endThreatResult.responded
                         ? m("button", {
                             class: "cg2-btn cg2-btn-primary cg2-btn-threat",
+                            disabled: !!gameState.narrationBusy,
                             onclick() {
                                 gameState.cleanupApplied = false;
-                                gs.advancePhase();
+                                GS().advancePhase();
                             }
-                        }, [
-                            m("span", { class: "material-symbols-outlined", style: "vertical-align:middle;margin-right:4px" }, "shield"),
-                            "Face the Threat"
-                        ])
+                        }, gameState.narrationBusy
+                            ? [m("span", { class: "material-symbols-outlined cg2-spin", style: "vertical-align:middle;margin-right:4px;font-size:14px" }, "sync"), "Narrating..."]
+                            : [m("span", { class: "material-symbols-outlined", style: "vertical-align:middle;margin-right:4px" }, "shield"), "Face the Threat"])
                         : m("button", {
                             class: "cg2-btn cg2-btn-primary",
+                            disabled: !!gameState.narrationBusy,
                             onclick() {
                                 gameState.cleanupApplied = false;
-                                gs.advancePhase();
+                                GS().advancePhase();
                             }
-                        }, "Start Round " + (gameState.round + 1))
+                        }, gameState.narrationBusy
+                            ? [m("span", { class: "material-symbols-outlined cg2-spin", style: "vertical-align:middle;margin-right:4px;font-size:14px" }, "sync"), "Narrating..."]
+                            : "Start Round " + (gameState.round + 1))
                 ]);
             }
         };

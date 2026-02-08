@@ -31,11 +31,11 @@
     // ── Lazy accessors for cross-module dependencies ─────────────────
     // These modules may not be loaded yet when this file is parsed;
     // we resolve them at call-time so load order doesn't matter.
-    function getGameState()      { return window.CardGame.State?.gameState; }
+    function getGameState()      { return window.CardGame.GameState?.state?.gameState; }
     function getConstants()      { return window.CardGame.Constants; }
     function isCoreCardType(t)   { return window.CardGame.Engine?.isCoreCardType?.(t); }
     function drawCardsForActor(a, n) { return window.CardGame.Engine?.drawCardsForActor?.(a, n); }
-    function advancePhase()      { return window.CardGame.Engine?.advancePhase?.(); }
+    function advancePhase()      { return window.CardGame.GameState?.advancePhase?.(); }
     function checkGameOver()     { return window.CardGame.Engine?.checkGameOver?.(); }
 
     // ── Load external prompts (optional) ─────────────────────────────
@@ -308,12 +308,17 @@ Reply with ONLY the JSON object, no markdown or text.`;
 
         console.log("[CardGame v2] AI placing cards. Hand:", opp.hand.length, "AP:", opp.ap - opp.apUsed);
 
+        // Set LLM busy indicator
+        gameState.llmBusy = "AI is thinking...";
+        m.redraw();
+
         // Try LLM-based placement if director is available
         if (gameDirector && gameDirector.initialized) {
             try {
                 const decision = await gameDirector.requestPlacement(gameState);
                 if (decision && decision.stacks && !decision.fallback) {
                     applyAIDecision(decision);
+                    gameState.llmBusy = null;
                     checkPlacementComplete();
                     m.redraw();
                     return;
@@ -403,6 +408,9 @@ Reply with ONLY the JSON object, no markdown or text.`;
                 "(total cores:", remainingCores.length, ") empty positions:", emptyPositions.length, "energy:", opp.energy);
             opp.apUsed = opp.ap;  // Mark as fully used
         }
+
+        // Clear LLM busy indicator
+        gameState.llmBusy = null;
 
         // AI placement done, switch back to player or end placement
         checkPlacementComplete();

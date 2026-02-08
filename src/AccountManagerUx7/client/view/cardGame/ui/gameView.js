@@ -32,6 +32,9 @@
     function ctx() { return window.CardGame.ctx || {}; }
     function storage() { return window.CardGame.Storage || {}; }
     function rendering() { return window.CardGame.Rendering || {}; }
+    function GS() { return window.CardGame.GameState || {}; }
+    function E() { return window.CardGame.Engine || {}; }
+    function AI() { return window.CardGame.AI || {}; }
 
     function formatPhase(phase) {
         let labels = {
@@ -63,7 +66,7 @@
                 let chars = gameCharSelection.characters || [];
                 let viewingDeck = ctx().viewingDeck;
                 let gameState = ctx().gameState;
-                let llmStatus = ctx().llmStatus || { checked: false, available: false };
+                let llmStatus = GS().state?.llmStatus || { checked: false, available: false };
 
                 // Calculate best and worst characters by total stats
                 let bestChar = null, worstChar = null;
@@ -94,10 +97,10 @@
                 } : {};
 
                 let CardFace = rendering().CardFace;
-                let createGameState = ctx().createGameState;
-                let applyCampaignBonuses = storage().applyCampaignBonuses;
+                let createGameState = GS().createGameState;
+                let applyCampaignBonuses = GS().applyCampaignBonuses;
                 let campaignStorage = storage().campaignStorage;
-                let initializeLLMComponents = ctx().initializeLLMComponents;
+                let initializeLLMComponents = GS().initializeLLMComponents;
 
                 return m("div", { class: "cg2-game-container", style: containerStyle }, [
                     m("div", { class: "cg2-game-header" }, [
@@ -189,11 +192,11 @@
                 let gameState = ctx().gameState;
                 let viewingDeck = ctx().viewingDeck;
                 let gameCharSelection = ctx().gameCharSelection;
-                let llmStatus = ctx().llmStatus || {};
+                let llmStatus = GS().state?.llmStatus || {};
 
                 // Check LLM connectivity at game start
-                if (!llmStatus.checked && typeof ctx().checkLlmConnectivity === "function") {
-                    ctx().checkLlmConnectivity();
+                if (!llmStatus.checked && typeof GS().checkLlmConnectivity === "function") {
+                    GS().checkLlmConnectivity();
                 }
 
                 if (!gameState && viewingDeck) {
@@ -206,17 +209,17 @@
                         ctx().gameCharSelection = { characters: allChars, selected: null };
                     } else if (gameCharSelection?.selected) {
                         // Character selected - start game
-                        ctx().gameState = ctx().createGameState(viewingDeck, gameCharSelection.selected);
+                        ctx().gameState = GS().createGameState(viewingDeck, gameCharSelection.selected);
                         ctx().gameCharSelection = null;
                         if (ctx().gameState) {
                             // Load and apply campaign bonuses (async, non-blocking)
                             storage().campaignStorage.load(viewingDeck.deckName).then(c => {
                                 ctx().activeCampaign = c;
-                                if (c) storage().applyCampaignBonuses(ctx().gameState, c);
+                                if (c) GS().applyCampaignBonuses(ctx().gameState, c);
                                 m.redraw();
                             });
-                            if (typeof ctx().initializeLLMComponents === "function") {
-                                ctx().initializeLLMComponents(ctx().gameState, viewingDeck);
+                            if (typeof GS().initializeLLMComponents === "function") {
+                                GS().initializeLLMComponents(ctx().gameState, viewingDeck);
                             }
                             // Animation will trigger runInitiativePhase() when complete
                         }
@@ -229,7 +232,7 @@
                 let gameState = ctx().gameState;
                 let gameCharSelection = ctx().gameCharSelection;
                 let viewingDeck = ctx().viewingDeck;
-                let initAnimState = ctx().initAnimState;
+                let initAnimState = GS().state?.initAnimState;
 
                 // Character selection screen
                 if (gameCharSelection && !gameState) {
@@ -271,11 +274,11 @@
                 let TalkChatUI = CardGame.UI.TalkChatUI;
                 let GameOverUI = CardGame.UI.GameOverUI;
 
-                // Resolve engine functions from ctx
-                let advancePhase = ctx().advancePhase;
-                let drawCardsForActor = ctx().drawCardsForActor;
-                let checkPlacementComplete = ctx().checkPlacementComplete;
-                let endTurn = ctx().endTurn;
+                // Resolve engine functions from modules
+                let advancePhase = GS().advancePhase;
+                let drawCardsForActor = E().drawCardsForActor;
+                let checkPlacementComplete = AI().checkPlacementComplete;
+                let endTurn = GS().endTurn;
 
                 return m("div", { class: "cg2-game-container", style: containerStyle }, [
                     // Header with inline placement controls
@@ -338,8 +341,9 @@
                                     ? m(ActionBar)
                                     : null,
 
-                                // Narrator text overlay
-                                gameState.narrationText
+                                // Narrator text overlay (now shown in status bar ticker below)
+                                // Kept as fallback for when action panel is hidden (e.g. resolution phase)
+                                (gameState.narrationText && gameState.phase === GAME_PHASES.RESOLUTION)
                                     ? m("div", { class: "cg2-narration-overlay" }, [
                                         m("div", { class: "cg2-narration-text" }, [
                                             m("span", { class: "material-symbols-outlined cg2-narration-icon" }, "campaign"),
@@ -357,28 +361,41 @@
 
                             // Action Panel (hidden during resolution to avoid duplicate UI)
                             gameState.phase !== GAME_PHASES.RESOLUTION ? m("div", { class: "cg2-action-panel" }, [
-                                // Status message - dynamic based on phase and state
-                                m("div", { class: "cg2-action-status" },
-                                    gameState.phase === GAME_PHASES.INITIATIVE
-                                        ? (initAnimState && initAnimState.rollComplete && gameState.initiative.winner
-                                            ? [
-                                                m("strong", gameState.initiative.winner === "player" ? "You win initiative! " : "Opponent wins initiative! "),
-                                                m("span", gameState.initiative.winner === "player"
-                                                    ? "You go first (odd positions: 1, 3, 5...)"
-                                                    : "Opponent goes first. You get even positions (2, 4, 6...)")
-                                            ]
-                                            : "Rolling for initiative...")
-                                        : (gameState.phase === GAME_PHASES.THREAT_RESPONSE || gameState.phase === GAME_PHASES.END_THREAT)
-                                            ? (gameState.threatResponse?.responder === "player"
-                                                ? "Threat incoming! Click cards to defend."
-                                                : "Opponent is responding to threat...")
-                                            : gameState.phase === GAME_PHASES.DRAW_PLACEMENT
-                                                ? (isPlayerTurn ? "Place cards on the action bar" : "Opponent is placing...")
-                                                : gameState.phase === GAME_PHASES.RESOLUTION
-                                                    ? "" // Status shown in resolution overlay above
-                                                    : gameState.phase === GAME_PHASES.CLEANUP
-                                                        ? "Round complete!"
-                                                        : ""
+                                // Status message - dynamic based on phase, narration, and LLM state
+                                m("div", { class: "cg2-action-status" + (gameState.narrationText ? " cg2-status-has-narration" : "") },
+                                    // Narration ticker takes priority when present
+                                    gameState.narrationText
+                                        ? m("div", { class: "cg2-status-narration-ticker" }, [
+                                            m("span", { class: "material-symbols-outlined cg2-narration-ticker-icon" }, "campaign"),
+                                            m("span", { class: "cg2-narration-ticker-text" }, gameState.narrationText)
+                                        ])
+                                        : // LLM thinking indicator
+                                          gameState.llmBusy
+                                            ? m("div", { class: "cg2-llm-thinking" }, [
+                                                m("span", { class: "material-symbols-outlined cg2-spin" }, "sync"),
+                                                m("span", { class: "cg2-llm-thinking-text" }, gameState.llmBusy)
+                                            ])
+                                            : // Normal phase-based status
+                                              gameState.phase === GAME_PHASES.INITIATIVE
+                                                ? (initAnimState && initAnimState.rollComplete && gameState.initiative.winner
+                                                    ? [
+                                                        m("strong", gameState.initiative.winner === "player" ? "You win initiative! " : "Opponent wins initiative! "),
+                                                        m("span", gameState.initiative.winner === "player"
+                                                            ? "You go first (odd positions: 1, 3, 5...)"
+                                                            : "Opponent goes first. You get even positions (2, 4, 6...)")
+                                                    ]
+                                                    : "Rolling for initiative...")
+                                                : (gameState.phase === GAME_PHASES.THREAT_RESPONSE || gameState.phase === GAME_PHASES.END_THREAT)
+                                                    ? (gameState.threatResponse?.responder === "player"
+                                                        ? "Threat incoming! Click cards to defend."
+                                                        : "Opponent is responding to threat...")
+                                                    : gameState.phase === GAME_PHASES.DRAW_PLACEMENT
+                                                        ? (isPlayerTurn ? "Place cards on the action bar" : "Opponent is placing...")
+                                                        : gameState.phase === GAME_PHASES.RESOLUTION
+                                                            ? "" // Status shown in resolution overlay above
+                                                            : gameState.phase === GAME_PHASES.CLEANUP
+                                                                ? "Round complete!"
+                                                                : ""
                                 ),
                                 // Primary action button(s)
                                 m("div", { class: "cg2-action-buttons" }, [
@@ -476,7 +493,8 @@
                                 },
                                 onclick(e) {
                                     e.stopPropagation();
-                                    // Double-click to flip
+                                    let showCardPreview = window.CardGame.Rendering?.showCardPreview;
+                                    if (showCardPreview) showCardPreview(card);
                                 },
                                 ondblclick(e) {
                                     e.stopPropagation();
@@ -666,9 +684,9 @@
                 let isResolution = gameState.phase === GAME_PHASES.RESOLUTION;
                 let cardFrontBg = viewingDeck?.cardFrontImageUrl || null;
                 let CardFace = rendering().CardFace;
-                let showCardPreview = rendering().showCardPreview || ctx().showCardPreview;
-                let placeCard = ctx().placeCard;
-                let removeCardFromPosition = ctx().removeCardFromPosition;
+                let showCardPreview = rendering().showCardPreview;
+                let placeCard = E().placeCard;
+                let removeCardFromPosition = E().removeCardFromPosition;
                 let ResolutionPhaseUI = CardGame.UI.ResolutionPhaseUI;
 
                 return m("div", { class: "cg2-action-bar" }, [
@@ -701,7 +719,7 @@
                                     let cardData = e.dataTransfer.getData("text/plain");
                                     try {
                                         let card = JSON.parse(cardData);
-                                        placeCard(pos.index, card);
+                                        placeCard(gameState, pos.index, card);
                                     } catch (err) {
                                         console.error("[CardGame v2] Drop error:", err);
                                     }
@@ -749,7 +767,7 @@
                                                     class: "cg2-pos-remove-btn",
                                                     onclick(e) {
                                                         e.stopPropagation();
-                                                        removeCardFromPosition(pos.index);
+                                                        removeCardFromPosition(gameState, pos.index);
                                                     },
                                                     title: "Remove card (return to hand)"
                                                 }, m("span", { class: "material-symbols-outlined" }, "close")) : null
@@ -809,8 +827,8 @@
 
                 let CardFace = rendering().CardFace;
                 let CardPreviewOverlay = rendering().CardPreviewOverlay;
-                let showCardPreview = rendering().showCardPreview || ctx().showCardPreview;
-                let placeThreatDefenseCard = ctx().placeThreatDefenseCard;
+                let showCardPreview = rendering().showCardPreview;
+                let placeThreatDefenseCard = GS().placeThreatDefenseCard;
 
                 return m("div", { class: "cg2-hand-tray" }, [
                     // Header with label and filter tabs
@@ -840,9 +858,13 @@
                                 let hasAP = (gameState.player.threatResponseAP || 0) > 0;
                                 let canPlaceDefense = isThreatPhase && isResponder && hasAP;
 
+                                // Determine card role for badge
+                                let cardRole = (card.type === "action" || card.type === "talk") ? "action"
+                                    : (card.type === "character" || card.type === "apparel") ? "equip" : "support";
+
                                 return m("div", {
                                     key: card.name + "-" + i,
-                                    class: "cg2-hand-card-wrapper" + (canPlaceDefense ? " cg2-defense-eligible" : ""),
+                                    class: "cg2-hand-card-wrapper cg2-role-" + cardRole + (canPlaceDefense ? " cg2-defense-eligible" : ""),
                                     draggable: !isThreatPhase,
                                     ondragstart(e) {
                                         if (isThreatPhase) {
@@ -864,6 +886,9 @@
                                     title: canPlaceDefense ? "Click to add to defense" : "Click to enlarge, drag to place"
                                 }, [
                                     m(CardFace, { card, bgImage: cardFrontBg, compact: true }),
+                                    // Role badge overlay
+                                    m("div", { class: "cg2-card-role-badge cg2-badge-" + cardRole },
+                                        cardRole === "action" ? "ACTION" : cardRole === "equip" ? "EQUIP" : "STACK"),
                                     // Show art thumbnail if available
                                     card.imageUrl ? m("img", {
                                         src: card.imageUrl,

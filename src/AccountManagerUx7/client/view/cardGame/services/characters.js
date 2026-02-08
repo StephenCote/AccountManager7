@@ -38,18 +38,42 @@
     function statVal(v, fallback) { return (v != null && v !== undefined) ? v : fallback; }
 
     function mapStats(statistics) {
-        if (!statistics) return { STR: 8, AGI: 8, END: 8, INT: 8, MAG: 8, CHA: 8 };
+        let defaults = { STR: 8, AGI: 8, END: 8, INT: 8, MAG: 8, CHA: 8, PER: 8, CRE: 8, WIS: 8, DEX: 8 };
+        if (!statistics) return defaults;
         // If statistics is only partially loaded (objectId ref without values), return defaults
         if (statistics.objectId && statistics.physicalStrength == null && statistics.agility == null) {
-            return { STR: 8, AGI: 8, END: 8, INT: 8, MAG: 8, CHA: 8 };
+            return defaults;
         }
+
+        // Magic is a virtual/computed field: AVG(willpower, wisdom, creativity, spirituality)
+        // Willpower is also virtual: AVG(mentalEndurance, mentalStrength)
+        // These may not be returned by the server, so compute client-side as fallback
+        let magic = statistics.magic;
+        if (magic == null) {
+            let willpower = statistics.willpower;
+            if (willpower == null) {
+                let me = statVal(statistics.mentalEndurance, 0);
+                let ms = statVal(statistics.mentalStrength, 0);
+                willpower = Math.round((me + ms) / 2);
+            }
+            let wis = statVal(statistics.wisdom, 0);
+            let cre = statVal(statistics.creativity, 0);
+            let spi = statVal(statistics.spirituality, 0);
+            magic = Math.round((willpower + wis + cre + spi) / 4);
+        }
+
         return {
-            STR: statVal(statistics.physicalStrength, 8),
-            AGI: statVal(statistics.agility, 8),
-            END: statVal(statistics.physicalEndurance, 8),
-            INT: statVal(statistics.intelligence, 8),
-            MAG: statVal(statistics.magic, 8),
-            CHA: statVal(statistics.charisma, 8)
+            STR: statVal(statistics.physicalStrength, 0),
+            AGI: statVal(statistics.agility, 0),
+            END: statVal(statistics.physicalEndurance, 0),
+            INT: statVal(statistics.intelligence, 0),
+            MAG: statVal(magic, 0),
+            CHA: statVal(statistics.charisma, 0),
+            // Secondary stats for craft, trade, steal actions
+            PER: statVal(statistics.perception, 0),
+            CRE: statVal(statistics.creativity, 0),
+            WIS: statVal(statistics.wisdom, 0),
+            DEX: statVal(statistics.manualDexterity, 0)
         };
     }
 
@@ -87,7 +111,7 @@
         let pp = char.profile.portrait;
         if (!pp.groupPath || !pp.name) return null;
         return g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) +
-            "/data.data" + pp.groupPath + "/" + pp.name + "/" + (size || "256x256");
+            "/data.data" + pp.groupPath + "/" + encodeURIComponent(pp.name) + "/" + (size || "256x256");
     }
 
     // ── Character ID Helper ──────────────────────────────────────────
@@ -312,10 +336,11 @@
             { type: "action", name: "Attack", actionType: "Offensive", stackWith: "Character + Weapon (required) + Skill (optional)", roll: "1d20 + STR + ATK vs target DEF", onHit: "Deal weapon ATK + STR as damage", energyCost: 0 },
             { type: "action", name: "Flee", actionType: "Movement", stackWith: "Character only", roll: "1d20 + AGI vs encounter difficulty", onHit: "Escape the encounter", energyCost: 0 },
             { type: "action", name: "Investigate", actionType: "Discovery", stackWith: "Character + Skill (optional)", roll: "1d20 + INT vs hidden threshold", onHit: "Reveal hidden items or information", energyCost: 0 },
-            { type: "action", name: "Trade", actionType: "Social", stackWith: "Character + Item(s) to offer", roll: null, onHit: "CHA determines price modifier", energyCost: 0 },
+            { type: "action", name: "Trade", actionType: "Social", stackWith: "Character + Skill (optional)", roll: "1d20 + AVG(PER,CRE,WIS) vs DC 12", onHit: "Take one card from opponent's hand", energyCost: 2 },
             { type: "action", name: "Rest", actionType: "Recovery", stackWith: "Character only (no other actions)", roll: null, onHit: "Restore +2 HP, +3 Energy", energyCost: 0 },
             { type: "action", name: "Use Item", actionType: "Utility", stackWith: "Character + Consumable item", roll: null, onHit: "Apply item effect", energyCost: 0 },
-            { type: "action", name: "Craft", actionType: "Creation", stackWith: "Character + Materials + Skill", roll: "1d20 + INT vs recipe difficulty", onHit: "Create new item", energyCost: 2 }
+            { type: "action", name: "Craft", actionType: "Creation", stackWith: "Character + Skill (optional)", roll: "1d20 + AVG(CRE,WIS,DEX) vs DC 12", onHit: "Create random item; crit = unique item", energyCost: 2 },
+            { type: "action", name: "Steal", actionType: "Subterfuge", stackWith: "Character + Skill (optional)", roll: "1d20 + AVG(PER,CRE,WIS) + alignment mod vs DC 14", onHit: "Take card from opponent (hand or equipped)", energyCost: 3 }
         ];
         let talkCard = { type: "talk", name: "Talk", energyCost: 5 };
 
@@ -550,14 +575,18 @@
             trade: charPerson.trades?.[0] || "",
             portraitUrl: charPerson.profile?.portrait?.groupPath && charPerson.profile?.portrait?.name ?
                 g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) +
-                "/data.data" + charPerson.profile.portrait.groupPath + "/" + charPerson.profile.portrait.name + "/256x256" : null,
+                "/data.data" + charPerson.profile.portrait.groupPath + "/" + encodeURIComponent(charPerson.profile.portrait.name) + "/256x256" : null,
             stats: {
                 STR: stats.physicalStrength || 10,
                 AGI: stats.agility || 10,
                 END: stats.physicalEndurance || 10,
                 INT: stats.intelligence || 10,
                 MAG: stats.magic || stats.creativity || 10,
-                CHA: stats.charisma || 10
+                CHA: stats.charisma || 10,
+                PER: stats.perception || 8,
+                CRE: stats.creativity || 8,
+                WIS: stats.wisdom || 8,
+                DEX: stats.manualDexterity || 8
             }
         };
     }

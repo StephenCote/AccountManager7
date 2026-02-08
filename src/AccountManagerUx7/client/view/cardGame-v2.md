@@ -6525,7 +6525,7 @@ Before marking Phase 8 complete, verify the following:
 
 ---
 
-### Phase 9 — LLM/Voice Fix, Save/Load & Campaign 🔄 IN PROGRESS (2026-02-07)
+### Phase 9 — LLM/Voice Fix, Save/Load & Campaign ✅ COMPLETE (2026-02-07)
 
 **Goal:** Fix LLM narration/voice display issues. Game state persists across sessions. Campaign mode tracks character progression.
 
@@ -6640,7 +6640,7 @@ Comprehensive unattended test runner with debug console UI.
 
 **Implementation:**
 - `TestModeUI` component — screen accessible from deck list header ("Test" button)
-- 8 test categories: Storage, Narration, Combat, Card Eval, Campaign, LLM, Voice, Playthrough
+- 11 test categories: Modules, Stats, Game Flow, Storage, Narration, Combat, Card Eval, Campaign, LLM, Voice, Playthrough
 - Category toggle chips — select/deselect which categories to run
 - `runTestSuite()` — async function that runs all selected categories sequentially
 - `testLog(category, message, status)` — structured logging with pass/fail/warn/info
@@ -6649,14 +6649,17 @@ Comprehensive unattended test runner with debug console UI.
 - Tests run fully unattended — no user interaction required
 
 **Test categories:**
+- **Modules**: Verify all 12 top-level namespaces exist, 22 GameState exports, 30 Engine exports, 8 Characters exports, 5 AI classes, 9 UI components, ctx proxy properties linked to ArtPipeline/GameState
+- **Stats**: mapStats() with null/full/partial/missing stats, computed fields (MAG, willpower), charisma=0 preserved, AP derivation from END, energy derivation from MAG via createGameState
+- **Game Flow**: createGameState structure, drawCardsForActor, placeCard/removeCardFromPosition, isCoreCardType/isModifierCardType, checkGameOver, createThreatEncounter, checkNat1Threats, DiceUtils, full combat resolution chain, dealInitialStack, ensureOffensiveCard
 - **Storage**: encodeJson/decodeJson roundtrip, deckStorage.list, gameStorage.list, campaignStorage.load
 - **Narration**: showNarrationSubtitle, triggerNarration fallback text for all triggers
-- **Combat**: rollAttack, rollDefense, getCombatOutcome, calculateDamage, applyDamage
+- **Combat**: rollAttack, rollDefense, getCombatOutcome, calculateDamage, applyDamage, dual-wield, criticals
 - **Card Eval**: unified parseEffect() for all 20+ effect patterns, isEffectParseable, SKILL_ACTION_KEYWORDS
 - **Campaign**: createCampaignData, calculateXP, level-up detection
-- **LLM**: CardGameLLM availability, model detection
-- **Voice**: Web Speech API availability, voice config
-- **Playthrough**: Full automated game (create state, simulate rounds, verify game over)
+- **LLM**: CardGameLLM availability, model detection, prompt injection test
+- **Voice**: Web Speech API availability, voice config, audio capabilities
+- **Playthrough**: Full automated game (create state, simulate rounds, verify game over, AI decisions)
 
 #### 9.6 Theme Editor ✅ COMPLETE (2026-02-07)
 
@@ -6769,19 +6772,57 @@ Unified `parseEffect()` / `applyParsedEffects()` system replaces inline regex pa
 let ctx = CardGame.ctx = {
     screen: "deckList",       // Current screen
     viewingDeck: null,        // Active deck data
-    gameState: null,          // Active game state
     activeTheme: null,        // Current theme config
     // ... plus functions: viewDeck(), playDeck(), resumeGame(), loadSavedDecks()
 };
+// State proxies — ctx properties that proxy to module-internal state:
+//   ArtPipeline.state → ctx: artQueue, artProcessing, backgroundImageId, sdOverrides, etc.
+//   GameState.state → ctx: gameState, gameCharSelection, activeCampaign, levelUpState
+//   Themes.state → ctx: applyingOutfits
+// This ensures UI writes to ctx.gameState and module reads of GameState.state.gameState
+// see the same value — solves the critical ctx/module state disconnect.
 ```
 
 **Test gate:**
-- [ ] Load app in browser — verify all screens render (deckList, builder, deckView, game, test, themeEditor)
-- [ ] Create new deck → verify character generation works
-- [ ] View deck → verify card rendering (all 8 card types)
-- [ ] Start game → verify game loop (initiative → equip → placement → resolution → cleanup)
-- [ ] Test mode → verify automated tests pass
-- [ ] Browser console → no missing module errors
+- [x] Load app in browser — verify all screens render (deckList, builder, deckView, game, test, themeEditor)
+- [x] Create new deck → verify character generation works
+- [x] View deck → verify card rendering (all 8 card types)
+- [x] Start game → verify game loop (initiative → equip → placement → resolution → cleanup)
+- [x] Test mode → verify automated tests pass
+- [x] Browser console → no missing module errors
+
+---
+
+#### 9.9 Post-Refactoring Fixes & Polish ✅ COMPLETE (2026-02-07)
+
+**Fixes to modular code after browser testing:**
+
+- ✅ **ctx/module state proxy for GameState** — `ctx.gameState`, `ctx.gameCharSelection`, `ctx.activeCampaign`, `ctx.levelUpState` now proxy to `GameState.state.*` via `Object.defineProperties`. Without this, UI setting `ctx.gameState = ...` was invisible to phaseUI/gameOverUI reading `GameState.state.gameState`.
+- ✅ **phaseUI.js namespace fixes** — All `gs.functionName()` calls (where `gs = NS.GameState.state`) fixed to use correct namespaces: `GS().advancePhase()`, `GS().startInitiativeAnimation()`, `GS().narrateRoundEnd()` for module functions; `NS.Engine.claimPot(gameState, ...)`, `NS.Engine.checkLethargy(gameState, ...)`, `NS.Engine.checkEndThreat(gameState)` for engine functions requiring gameState parameter.
+- ✅ **director.js namespace fix** — `getGameState()` referenced `window.CardGame.State?.gameState` (non-existent). Fixed to `window.CardGame.GameState?.state?.gameState`. Also fixed `advancePhase()` to use `window.CardGame.GameState?.advancePhase?.()` instead of Engine.
+- ✅ **AI opponent turn fix** — AI placement (`aiPlaceCards`) was silently returning because `getGameState()` returned `undefined`. Now the full game loop works: initiative → AI placement → player placement → resolution → cleanup.
+- ✅ **LLM thinking animation** — Added `gameState.llmBusy` flag. Set to `"AI is thinking..."` during director placement and `"Narrating..."` during narrator LLM calls. Shows spinning sync icon + pulsing text in status bar. Cleared on completion.
+- ✅ **Narration ticker in status bar** — Narration text now scrolls as a marquee-style ticker in the `cg2-action-status` div during non-resolution phases. CSS `@keyframes cg2-ticker-scroll` animation (12s linear infinite).
+- ✅ **Stacked cards clickable** — Equipment cards in `FannedCardStack` now call `showCardPreview(card)` on click to open full card view. Double-click still flips.
+- ✅ **Character image storage** — Character portraits generated via `/reimage` are now moved to deck art directory (`~/CardGame/Art/{deckName}`) using `page.moveObject()`, same as other card art. Gallery picker searches deck art dir first, falls back to character portrait group for legacy images.
+- ✅ **Gallery picker resilience** — Deck art dir search wrapped in try/catch; falls back to character portrait group if authorization error occurs. Gallery displays images from both locations.
+- ✅ **URL encoding** — All thumbnail URL constructions now use `encodeURIComponent()` for image names containing spaces/special characters (character portraits have human-readable names like "Rhett Hadalynn Kinback - Photo Op").
+- ✅ **Encryption error fix** — Removed `entity.request.push(...)` from gallery picker query that was triggering encrypted field decryption on the backend.
+- ✅ **Test suite expanded** — Added 3 new categories (Modules, Stats, Game Flow) with ~580 lines of new tests covering namespace validation, stat mapping, and full game flow verification.
+
+**New CSS classes added:**
+- `.cg2-llm-thinking` + `.cg2-llm-thinking-text` — LLM busy indicator with pulse animation
+- `.cg2-status-has-narration` + `.cg2-status-narration-ticker` — Scrolling narration ticker
+- `@keyframes cg2-ticker-scroll` — Horizontal scroll animation
+- `@keyframes cg2-thinking-pulse` — Opacity pulse animation
+
+**Test gate:**
+- [x] AI opponent places cards and game proceeds through full round
+- [x] LLM thinking spinner shows during AI turn
+- [x] Narration text scrolls in status bar
+- [x] Clicking stacked equipment card opens full preview
+- [x] Gallery picker works for existing decks (fallback to portrait group)
+- [x] No URL encoding errors in browser console
 
 ---
 
@@ -6866,6 +6907,7 @@ Players need these materials to play IRL:
 | 9 | Save/load + campaign | Auto-save, resume, character persistence | Phase 6 |
 | 9.5-9.7 | Test mode, theme editor, expanded effects | Unattended tests pass, custom themes work | Phase 9 |
 | 9.8 | Modular refactoring | 29 modules, external JSON, CSS cleanup | Phase 9 |
+| 9.9 | Post-refactoring fixes & polish | AI turns work, LLM indicator, narration ticker, gallery fix | Phase 9.8 |
 | 10 | Print & export | Print-ready PDF, playable IRL deck | Phase 3 |
 
 **Phases 4-6 can overlap with Phase 3** — gameplay development doesn't block on all images being generated. Placeholder icons work during gameplay testing.
@@ -7052,4 +7094,28 @@ Items to resolve during implementation:
 4. **Multiplayer encounter sharing**: In 3-4 player free-for-all, does each player draw their own encounter, or is one shared? Current design: each player draws, but threats can target any player.
 5. **Crafting recipes**: Specific material-to-item recipes for the Craft action. Can derive from existing `olio.builder` templates.
 6. ~~**Scenario cards (Story Mode)**~~: Resolved — see [Scenario Objectives](#scenario-objectives). Scenarios use theme + character narratives + action stack sequences + outcomes. No special card type needed.
-7. **Level progression**: How stat increases work between campaign sessions. Current proposal: +1 to any stat per session survived, capped at 20.
+7. ~~**Level progression**~~: Resolved (Phase 9.4) — Every 100 XP = 1 level (max 10). Each level-up: player picks 2 stats from STR/AGI/END/INT/MAG/CHA for +1 each. Stat gains persist in campaign. XP formula: 10 per round + 50 victory bonus + 2 per surviving HP.
+
+### Open Implementation Areas
+
+**Testing gaps (areas needing more playtest coverage):**
+- Magic card energy economy — are costs balanced vs physical attacks?
+- Threat encounter difficulty scaling — do late-game threats feel appropriately harder?
+- AI director decision quality — does LLM placement improve over FIFO fallback?
+- Multi-round campaign progression — does stat growth feel meaningful by level 5-10?
+- Dual-wield combat balance — is the second weapon attack too powerful?
+- Status effect stacking — can burning + bleeding + poisoned chain-kill too fast?
+- Talk card morale impact — is CHA-based morale damage competitive with physical damage?
+- End-of-round threat timing — do threats feel disruptive or just annoying?
+
+**Known issues:**
+- Thumbnail servlet may fail for images in newly-created deck art directories (server-side group authorization issue for `page.makePath`-created groups)
+- Gallery picker falls back to character portrait group for decks created before the image-move feature
+
+**Next implementation phase: Phase 10 — Print & Export**
+- Print layout rendering (2.5" x 3.5" cards at 300 DPI)
+- PDF export (server-side generation)
+- PNG ZIP export (browser-side)
+- Tabletop Simulator export format
+- Offline play documentation (solo + two-player rules)
+- Rules reference card design

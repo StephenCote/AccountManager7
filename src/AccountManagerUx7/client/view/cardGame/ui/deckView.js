@@ -524,7 +524,36 @@
                                     onclick() { ctx.tabletopImageId = null; ctx.tabletopThumbUrl = null; m.redraw(); }
                                 }, "\u00d7") : null
                             ])
-                        ])
+                        ]),
+                        // Generate All Character Sequences
+                        (function() {
+                            let charCount = allCards.filter(c => c.type === "character" && c.sourceId).length;
+                            if (!charCount) return null;
+                            let batchActive = CardGame.ArtPipeline.state.batchSequenceActive;
+                            let batchDone = CardGame.ArtPipeline.state.batchSequenceCompleted;
+                            let batchTotal = CardGame.ArtPipeline.state.batchSequenceTotal;
+                            return m("div", { class: "cg2-bg-panel", style: { flex: "1 1 200px" } }, [
+                                m("div", { class: "cg2-bg-panel-left" }, [
+                                    m("span", { style: { fontWeight: 700, fontSize: "12px" } }, "Char Sequences"),
+                                    m("span", { style: { fontSize: "11px", color: "#888" } },
+                                        batchActive
+                                            ? batchDone + " / " + batchTotal + " done"
+                                            : charCount + " character" + (charCount > 1 ? "s" : ""))
+                                ]),
+                                m("div", { class: "cg2-bg-panel-right" }, [
+                                    m("button", {
+                                        class: "cg2-btn",
+                                        disabled: busy || batchActive,
+                                        onclick() { CardGame.ArtPipeline.generateAllSequences(); }
+                                    }, [
+                                        batchActive
+                                            ? m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "progress_activity")
+                                            : m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "photo_library"),
+                                        batchActive ? "..." : "Gen All"
+                                    ])
+                                ])
+                            ]);
+                        })()
                     ]),
                     // Art toolbar
                     m("div", { class: "cg2-toolbar" }, [

@@ -26,10 +26,8 @@
         buildingDeck: false,
         deckNameInput: "",
 
-        // Game state
-        gameState: null,
-        gameCharSelection: null,
-        activeCampaign: null,
+        // Game state (gameState, gameCharSelection, activeCampaign, levelUpState
+        // are proxied to GameState.state below — do NOT define them here)
 
         // Theme state
         activeTheme: null,
@@ -71,6 +69,17 @@
     // Themes state → ctx
     proxyState(ctx, function() { return NS.Themes ? NS.Themes.state : null; }, [
         "applyingOutfits"
+    ]);
+
+    // GameState state → ctx
+    // Critical: ctx.gameState must proxy to GS().state.gameState so that when
+    // gameView sets ctx.gameState, phaseUI/gameOverUI reading GS().state.gameState
+    // see the same value.
+    proxyState(ctx, function() { return NS.GameState ? NS.GameState.state : null; }, [
+        "gameState", "gameCharSelection", "activeCampaign", "levelUpState",
+        "gameChatManager", "gameVoice", "gameAnnouncerVoice",
+        "initAnimState", "llmStatus", "gameDirector", "gameNarrator",
+        "resolutionAnimating", "resolutionPhase", "resolutionDiceFaces", "currentCombatResult"
     ]);
 
     // Initialize theme from constants

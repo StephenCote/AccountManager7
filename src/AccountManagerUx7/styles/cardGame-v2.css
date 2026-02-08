@@ -350,7 +350,7 @@
 }
 .cg2-card-image-area {
     display: flex; align-items: center; justify-content: center;
-    height: 50%; min-height: 100px;
+    flex: 0 0 50%; min-height: 100px;
     overflow: hidden;
     border-radius: 6px;
     margin-bottom: 4px;
@@ -1545,6 +1545,60 @@
     color: #B8860B;
     font-size: 24px;
     flex-shrink: 0;
+}
+
+/* ── Narration Ticker in Status Bar ────────────────────── */
+.cg2-status-has-narration {
+    overflow: hidden;
+}
+.cg2-status-narration-ticker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    animation: cg2-ticker-scroll 14s linear infinite;
+    color: #5a4a2a;
+    font-style: italic;
+    font-size: 13px;
+}
+.cg2-narration-ticker-icon {
+    color: #B8860B;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+.cg2-narration-ticker-text {
+    display: inline-block;
+}
+@keyframes cg2-ticker-scroll {
+    0%   { transform: translateX(50%); opacity: 0; }
+    5%   { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { transform: translateX(-100%); opacity: 0; }
+}
+.dark .cg2-status-narration-ticker {
+    color: #f0e6d3;
+}
+
+/* ── LLM Thinking Indicator ─────────────────────────────── */
+.cg2-llm-thinking {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #B8860B;
+    font-size: 13px;
+    font-weight: 600;
+    animation: cg2-thinking-pulse 1.5s ease-in-out infinite;
+}
+.cg2-llm-thinking-text {
+    font-style: italic;
+}
+@keyframes cg2-thinking-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+.dark .cg2-llm-thinking {
+    color: #DAA520;
 }
 .cg2-action-buttons {
     display: flex;
@@ -3585,6 +3639,32 @@
     max-width: 400px;
     margin: 20px auto;
 }
+/* Narration text in cleanup panel */
+.cg2-cleanup-narration {
+    background: linear-gradient(135deg, rgba(184,134,11,0.08), rgba(184,134,11,0.03));
+    border: 1px solid rgba(184,134,11,0.25);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-size: 13px;
+    font-style: italic;
+    color: #5a4a2a;
+    line-height: 1.5;
+    max-height: 120px;
+    overflow-y: auto;
+}
+.dark .cg2-cleanup-narration {
+    background: linear-gradient(135deg, rgba(184,134,11,0.12), rgba(184,134,11,0.05));
+    border-color: rgba(184,134,11,0.35);
+    color: #f0e6d3;
+}
+.cg2-cleanup-narration-text {
+    animation: cg2-narration-fade-in 0.5s ease-out;
+}
+@keyframes cg2-narration-fade-in {
+    0% { opacity: 0; transform: translateY(8px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
 .cg2-round-winner {
     font-size: 18px;
     font-weight: 700;
@@ -4070,6 +4150,48 @@
 .cg2-card.cg2-card-mini .cg2-card-art-thumb {
     height: 70%;
     width: 90%;
+}
+
+/* ── Card Role Badges (Hand Tray) ─────────────────────── */
+.cg2-card-role-badge {
+    position: absolute;
+    top: -6px;
+    right: -4px;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    padding: 1px 5px;
+    border-radius: 6px;
+    z-index: 5;
+    pointer-events: none;
+    text-transform: uppercase;
+    line-height: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.cg2-badge-action {
+    background: #C62828;
+    color: #fff;
+}
+.cg2-badge-support {
+    background: #E65100;
+    color: #fff;
+}
+.cg2-badge-equip {
+    background: #2E7D32;
+    color: #fff;
+}
+/* Role-based wrapper accents */
+.cg2-hand-card-wrapper.cg2-role-action {
+    border-bottom: 3px solid #C62828;
+    border-radius: 0 0 6px 6px;
+}
+.cg2-hand-card-wrapper.cg2-role-support {
+    border-bottom: 2px solid #E65100;
+    border-radius: 0 0 6px 6px;
+}
+.cg2-hand-card-wrapper.cg2-role-equip {
+    border-bottom: 2px solid #2E7D32;
+    border-radius: 0 0 6px 6px;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -4865,6 +4987,33 @@
 }
 .cg2-gallery-thumb.cg2-selected {
     border-color: #B8860B;
+}
+
+/* ── Image Preview Overlay (fullscreen backdrop) ──── */
+.cg2-image-preview-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+/* ── Gallery Picker Dialog ────────────────────────── */
+.cg2-gallery-dialog {
+    background: #1e1e1e;
+    border-radius: 12px;
+    padding: 16px;
+    max-width: 680px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    cursor: default;
 }
 
 /* ── Close/Action Icons ────────────────────────────── */

@@ -332,6 +332,9 @@
                 resolved: false
             },
 
+            // LLM busy indicator (null when idle, string message when busy)
+            llmBusy: null,
+
             // Chat state (Phase 8)
             chat: {
                 active: false,
@@ -359,8 +362,43 @@
     let gameVoice = null;
     let gameAnnouncerVoice = null;  // Separate voice instance for announcer
 
+    // Stop all audio and clean up voice instances before starting a new game
+    function cleanupAudio() {
+        // Stop existing voice instances
+        if (gameVoice) {
+            gameVoice.stop();
+            gameVoice = null;
+        }
+        if (gameAnnouncerVoice) {
+            gameAnnouncerVoice.stop();
+            gameAnnouncerVoice = null;
+        }
+        // Stop any page-level audio (loops, background music, TTS)
+        if (page?.components?.audio) {
+            if (typeof page.components.audio.stopAll === "function") {
+                page.components.audio.stopAll();
+            }
+            if (typeof page.components.audio.disableLoop === "function") {
+                page.components.audio.disableLoop();
+            }
+        }
+        // Clear LLM components
+        if (gameChatManager) {
+            gameChatManager = null;
+        }
+        if (gameDirector) {
+            gameDirector = null;
+        }
+        if (gameNarrator) {
+            gameNarrator = null;
+        }
+        console.log("[CardGame v2] Audio and LLM components cleaned up");
+    }
+
     // Initialize LLM components (Director and Narrator) for a game
     async function initializeLLMComponents(state, deck) {
+        // Clean up any existing audio/voice/LLM from previous game
+        cleanupAudio();
         const activeTheme = Th()?.getActiveTheme?.() || { themeId: "high-fantasy" };
         const themeId = deck?.themeId || activeTheme?.themeId || "high-fantasy";
         const opponentChar = state?.opponent?.character;
@@ -383,65 +421,7 @@
         const CardGameChatManager = AI()?.CardGameChatManager;
         const CardGameVoice = AI()?.CardGameVoice;
 
-        // Initialize AI Director (optional - falls back to FIFO if unavailable)
-        if (CardGameDirector) {
-            try {
-                gameDirector = new CardGameDirector();
-                const directorOk = await gameDirector.initialize(opponentChar, themeId);
-                if (!directorOk) {
-                    console.log("[CardGame v2] LLM Director unavailable, using fallback AI");
-                    gameDirector = null;
-                }
-            } catch (err) {
-                console.warn("[CardGame v2] Failed to initialize Director:", err);
-                gameDirector = null;
-            }
-        } else {
-            gameDirector = null;
-        }
-
-        // Initialize Announcer narrator (optional -- separate from opponent)
-        if (announcerEnabled && narrationEnabled && CardGameNarrator) {
-            try {
-                gameNarrator = new CardGameNarrator();
-                const narratorOk = await gameNarrator.initialize(announcerProfile, themeId);
-                if (!narratorOk) {
-                    console.log("[CardGame v2] Announcer LLM unavailable, using fallback narration");
-                    gameNarrator = null;
-                }
-            } catch (err) {
-                console.warn("[CardGame v2] Failed to initialize Announcer:", err);
-                gameNarrator = null;
-            }
-        } else if (!announcerEnabled) {
-            console.log("[CardGame v2] Announcer disabled by deck config");
-            gameNarrator = null;
-        } else {
-            console.log("[CardGame v2] LLM disabled — announcer uses fallback text");
-            gameNarrator = null;
-        }
-
-        // Always trigger game start narration (uses fallback if announcer unavailable)
-        narrateGameStart();
-
-        // Initialize Chat Manager for Talk cards / opponent dialogue (requires LLM enabled)
-        if (narrationEnabled && CardGameChatManager) {
-            try {
-                gameChatManager = new CardGameChatManager();
-                const chatOk = await gameChatManager.initialize(opponentChar, themeId);
-                if (!chatOk) {
-                    console.log("[CardGame v2] LLM Chat Manager unavailable, Talk cards use fallback. Error:", gameChatManager?.lastError);
-                    gameChatManager = null;
-                } else {
-                    console.log("[CardGame v2] Chat Manager initialized successfully");
-                }
-            } catch (err) {
-                console.warn("[CardGame v2] Failed to initialize Chat Manager:", err);
-                gameChatManager = null;
-            }
-        } else {
-            gameChatManager = null;
-        }
+        // ── Phase 1: Initialize voices FIRST so intro narration can play immediately ──
 
         // Initialize Opponent Voice (the opponent character's TTS voice)
         if (CardGameVoice) {
@@ -475,6 +455,69 @@
             }
         } else {
             gameAnnouncerVoice = null;
+        }
+
+        // ── Phase 2: Trigger game start narration (plays while LLM components init) ──
+        // Uses fallback text immediately; voice can start speaking during LLM init below
+        narrateGameStart();
+
+        // ── Phase 3: Initialize LLM components (these can take time — voice plays in parallel) ──
+
+        // Initialize Announcer narrator (optional -- separate from opponent)
+        if (announcerEnabled && narrationEnabled && CardGameNarrator) {
+            try {
+                gameNarrator = new CardGameNarrator();
+                const narratorOk = await gameNarrator.initialize(announcerProfile, themeId);
+                if (!narratorOk) {
+                    console.log("[CardGame v2] Announcer LLM unavailable, using fallback narration");
+                    gameNarrator = null;
+                }
+            } catch (err) {
+                console.warn("[CardGame v2] Failed to initialize Announcer:", err);
+                gameNarrator = null;
+            }
+        } else if (!announcerEnabled) {
+            console.log("[CardGame v2] Announcer disabled by deck config");
+            gameNarrator = null;
+        } else {
+            console.log("[CardGame v2] LLM disabled — announcer uses fallback text");
+            gameNarrator = null;
+        }
+
+        // Initialize AI Director (optional - falls back to FIFO if unavailable)
+        if (CardGameDirector) {
+            try {
+                gameDirector = new CardGameDirector();
+                const directorOk = await gameDirector.initialize(opponentChar, themeId);
+                if (!directorOk) {
+                    console.log("[CardGame v2] LLM Director unavailable, using fallback AI");
+                    gameDirector = null;
+                }
+            } catch (err) {
+                console.warn("[CardGame v2] Failed to initialize Director:", err);
+                gameDirector = null;
+            }
+        } else {
+            gameDirector = null;
+        }
+
+        // Initialize Chat Manager for Talk cards / opponent dialogue (requires LLM enabled)
+        if (narrationEnabled && CardGameChatManager) {
+            try {
+                gameChatManager = new CardGameChatManager();
+                const chatOk = await gameChatManager.initialize(opponentChar, themeId);
+                if (!chatOk) {
+                    console.log("[CardGame v2] LLM Chat Manager unavailable, Talk cards use fallback. Error:", gameChatManager?.lastError);
+                    gameChatManager = null;
+                } else {
+                    console.log("[CardGame v2] Chat Manager initialized successfully");
+                }
+            } catch (err) {
+                console.warn("[CardGame v2] Failed to initialize Chat Manager:", err);
+                gameChatManager = null;
+            }
+        } else {
+            gameChatManager = null;
         }
     }
 
@@ -591,7 +634,34 @@
             context.playerEmotionDesc = emotionCtx.description;
         }
 
-        // Try LLM narration
+        // For game_start: show fallback immediately, then upgrade with LLM text if available
+        // This avoids blocking the initiative phase with "Narrating..." spinner
+        if (trigger === "game_start") {
+            if (fallbackText) showNarrationSubtitle(fallbackText);
+            // Fire-and-forget LLM upgrade
+            if (gameNarrator?.initialized) {
+                gameNarrator.narrate(trigger, context).then(narration => {
+                    if (narration?.text && gameState) {
+                        showNarrationSubtitle(narration.text);
+                        if (gameAnnouncerVoice?.enabled && !gameAnnouncerVoice.subtitlesOnly) {
+                            gameAnnouncerVoice.speak(narration.text);
+                        }
+                    }
+                }).catch(e => console.warn("[CardGame v2] game_start LLM narration failed:", e));
+            }
+            return;
+        }
+
+        // Blocking triggers: round_end and game_end should block UI until voice/text finishes
+        let isBlocking = (trigger === "round_end" || trigger === "game_end");
+
+        // Other triggers: set busy indicator and await LLM
+        gameState.llmBusy = "Narrating...";
+        if (isBlocking && gameState) {
+            gameState.narrationBusy = true;
+        }
+        m.redraw();
+
         let narrationText = null;
         if (gameNarrator?.initialized) {
             try {
@@ -606,14 +676,41 @@
 
         // Use fallback if LLM failed
         const finalText = narrationText || fallbackText;
-        if (!finalText) return;
+        if (!finalText) {
+            if (isBlocking && gameState) {
+                gameState.narrationBusy = false;
+                m.redraw();
+            }
+            return;
+        }
+
+        // Clear LLM busy indicator
+        if (gameState) {
+            gameState.llmBusy = null;
+            m.redraw();
+        }
 
         // Show subtitle
         showNarrationSubtitle(finalText);
 
-        // Speak with announcer voice (narration/commentary uses announcer, not opponent)
+        // Speak with announcer voice
         if (gameAnnouncerVoice?.enabled && !gameAnnouncerVoice.subtitlesOnly) {
-            gameAnnouncerVoice.speak(finalText);
+            try {
+                await gameAnnouncerVoice.speak(finalText);
+            } catch (e) {
+                console.warn("[CardGame v2] Voice speak failed:", e);
+            }
+        } else if (isBlocking) {
+            // No voice — wait a minimum time for reading (50ms per word, min 3s)
+            let wordCount = finalText.split(/\s+/).length;
+            let readTime = Math.max(3000, wordCount * 50);
+            await new Promise(resolve => setTimeout(resolve, readTime));
+        }
+
+        // Clear narration busy for blocking triggers
+        if (isBlocking && gameState) {
+            gameState.narrationBusy = false;
+            m.redraw();
         }
     }
 
@@ -633,11 +730,14 @@
             gameState.narrationTime = Date.now();
             m.redraw();
 
-            // Auto-hide after 8 seconds (extended for readability)
+            // Auto-hide after 8 seconds (skip during cleanup — text persists in the panel)
             setTimeout(() => {
                 if (gameState && gameState.narrationTime && Date.now() - gameState.narrationTime >= 7900) {
-                    gameState.narrationText = null;
-                    m.redraw();
+                    let GAME_PHASES = C().GAME_PHASES;
+                    if (gameState.phase !== GAME_PHASES.CLEANUP) {
+                        gameState.narrationText = null;
+                        m.redraw();
+                    }
                 }
             }, 8000);
         }
@@ -1363,7 +1463,7 @@
                 }
 
                 // Resolve combat (pass stack for skill modifiers)
-                resolveCombat(attacker, defender, pos.stack);
+                currentCombatResult = resolveCombat(attacker, defender, pos.stack);
                 resolutionPhase = "result";
 
                 // Trigger narrator for resolution (non-blocking, with fallback)
@@ -1577,116 +1677,210 @@
                         console.log("[CardGame v2]", pos.owner, "feinted! Target is weakened (-2 all rolls)");
                     }
 
-                    // Trade action: exchange items (vs AI: auto-decline unless items offered)
+                    // ── Trade action: AVG(PER, CRE, WIS) roll to take card from opponent's hand ──
                     if (card.name === "Trade") {
-                        let offeredItems = (pos.stack?.modifiers || []).filter(m => m.type === "item");
-                        if (offeredItems.length > 0) {
-                            // AI evaluates trade: 50% accept if items of equal or greater value offered
-                            let acceptChance = 0.5;
-                            if (Math.random() < acceptChance) {
-                                // Accept: AI gives a random item from hand in exchange
-                                let aiItems = target.hand.filter(c => c.type === "item");
-                                if (aiItems.length > 0) {
-                                    let giveItem = aiItems[Math.floor(Math.random() * aiItems.length)];
-                                    target.hand = target.hand.filter(c => c !== giveItem);
-                                    owner.hand.push(giveItem);
-                                    // Give offered items to AI
-                                    offeredItems.forEach(item => {
-                                        owner.hand = owner.hand.filter(c => c !== item);
-                                        target.hand.push(item);
-                                    });
-                                    console.log("[CardGame v2] Trade accepted!", owner.name, "gave", offeredItems.map(i => i.name).join(", "), "received", giveItem.name);
-                                    pos.tradeResult = { accepted: true, gave: offeredItems, received: [giveItem] };
-                                } else {
-                                    console.log("[CardGame v2] Trade declined - AI has no items to trade");
-                                    pos.tradeResult = { accepted: false, reason: "No items available" };
-                                }
-                            } else {
-                                console.log("[CardGame v2] Trade declined by opponent");
-                                pos.tradeResult = { accepted: false, reason: "Declined" };
-                            }
+                        let stats = owner.character.stats || {};
+                        let tradeStat = Math.round(((stats.PER || 8) + (stats.CRE || 8) + (stats.WIS || 8)) / 3);
+                        let skillMod = getStackSkillMod(pos.stack, "craft");
+                        let rawRoll = rollD20();
+                        let tradeRoll = rawRoll + tradeStat + skillMod;
+                        let tradeDC = 12;
+
+                        // Eligible cards: opponent hand cards that aren't character cards or in their char stack
+                        let eligibleCards = target.hand.filter(c => c.type !== "character");
+
+                        if (rawRoll === 20 && eligibleCards.length > 0) {
+                            // Critical success: take the best card (highest rarity)
+                            let rarityOrder = { LEGENDARY: 5, EPIC: 4, RARE: 3, UNCOMMON: 2, COMMON: 1 };
+                            eligibleCards.sort((a, b) => (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0));
+                            let stolen = eligibleCards[0];
+                            target.hand = target.hand.filter(c => c !== stolen);
+                            owner.hand.push(stolen);
+                            console.log("[CardGame v2] Trade critical success! Took:", stolen.name, "Roll:", tradeRoll);
+                            pos.tradeResult = { accepted: true, critical: true, roll: rawRoll, total: tradeRoll, dc: tradeDC, received: [stolen] };
+                        } else if (tradeRoll >= tradeDC && eligibleCards.length > 0) {
+                            // Success: take random card from opponent's hand
+                            let stolen = eligibleCards[Math.floor(Math.random() * eligibleCards.length)];
+                            target.hand = target.hand.filter(c => c !== stolen);
+                            owner.hand.push(stolen);
+                            console.log("[CardGame v2] Trade success! Took:", stolen.name, "Roll:", tradeRoll, "vs DC", tradeDC);
+                            pos.tradeResult = { accepted: true, roll: rawRoll, total: tradeRoll, dc: tradeDC, received: [stolen] };
                         } else {
-                            console.log("[CardGame v2] Trade failed - no items offered");
-                            pos.tradeResult = { accepted: false, reason: "No items offered" };
+                            let reason = eligibleCards.length === 0 ? "No tradeable cards" : "Trade failed";
+                            console.log("[CardGame v2] Trade failed. Roll:", tradeRoll, "vs DC", tradeDC);
+                            pos.tradeResult = { accepted: false, roll: rawRoll, total: tradeRoll, dc: tradeDC, reason };
                         }
                     }
 
-                    // Craft action: INT roll to create item from materials
+                    // ── Steal action: like Trade but includes char stack, alignment modifier ──
+                    if (card.name === "Steal") {
+                        let stats = owner.character.stats || {};
+                        let stealStat = Math.round(((stats.PER || 8) + (stats.CRE || 8) + (stats.WIS || 8)) / 3);
+                        let skillMod = getStackSkillMod(pos.stack, "craft");
+
+                        // Alignment modifier: Chaotic Evil = +4, Lawful Good = -4
+                        let alignMods = {
+                            "CHAOTIC EVIL": 4, "CHAOTIC_EVIL": 4,
+                            "CHAOTIC NEUTRAL": 2, "CHAOTIC_NEUTRAL": 2,
+                            "NEUTRAL EVIL": 2, "NEUTRAL_EVIL": 2,
+                            "CHAOTIC GOOD": 0, "CHAOTIC_GOOD": 0,
+                            "LAWFUL EVIL": 0, "LAWFUL_EVIL": 0,
+                            "NEUTRAL": 0,
+                            "NEUTRAL GOOD": -2, "NEUTRAL_GOOD": -2,
+                            "LAWFUL NEUTRAL": -2, "LAWFUL_NEUTRAL": -2,
+                            "LAWFUL GOOD": -4, "LAWFUL_GOOD": -4
+                        };
+                        let alignment = (owner.character.alignment || "NEUTRAL").toUpperCase();
+                        let alignMod = alignMods[alignment] || 0;
+
+                        let rawRoll = rollD20();
+                        let stealRoll = rawRoll + stealStat + skillMod + alignMod;
+                        let stealDC = 14;
+
+                        // Eligible: opponent hand cards + equipped cards (char stack)
+                        let handCards = target.hand.filter(c => c.type !== "character");
+                        let stackCards = (target.cardStack || []).filter(c => c.type !== "character");
+                        let allEligible = [...handCards, ...stackCards];
+
+                        if (rawRoll === 20 && allEligible.length > 0) {
+                            // Critical: take best card from any source
+                            let rarityOrder = { LEGENDARY: 5, EPIC: 4, RARE: 3, UNCOMMON: 2, COMMON: 1 };
+                            allEligible.sort((a, b) => (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0));
+                            let stolen = allEligible[0];
+                            if (stackCards.includes(stolen)) {
+                                target.cardStack = target.cardStack.filter(c => c !== stolen);
+                            } else {
+                                target.hand = target.hand.filter(c => c !== stolen);
+                            }
+                            owner.hand.push(stolen);
+                            console.log("[CardGame v2] Steal critical! Took:", stolen.name, "Roll:", stealRoll, "(align:" + alignMod + ")");
+                            pos.stealResult = { success: true, critical: true, roll: rawRoll, total: stealRoll, dc: stealDC, alignMod, stolen };
+                        } else if (stealRoll >= stealDC && allEligible.length > 0) {
+                            let stolen = allEligible[Math.floor(Math.random() * allEligible.length)];
+                            if (stackCards.includes(stolen)) {
+                                target.cardStack = target.cardStack.filter(c => c !== stolen);
+                            } else {
+                                target.hand = target.hand.filter(c => c !== stolen);
+                            }
+                            owner.hand.push(stolen);
+                            console.log("[CardGame v2] Steal success! Took:", stolen.name, "Roll:", stealRoll, "(align:" + alignMod + ")");
+                            pos.stealResult = { success: true, roll: rawRoll, total: stealRoll, dc: stealDC, alignMod, stolen };
+                        } else if (rawRoll === 1) {
+                            // Critical fail: caught! Lose morale and opponent gets bonus
+                            owner.morale = Math.max(0, owner.morale - 3);
+                            target.morale = Math.min(target.maxMorale, target.morale + 2);
+                            console.log("[CardGame v2] Steal critical fail! Caught stealing. Roll:", stealRoll);
+                            pos.stealResult = { success: false, critical: true, roll: rawRoll, total: stealRoll, dc: stealDC, alignMod, reason: "Caught!" };
+                        } else {
+                            console.log("[CardGame v2] Steal failed. Roll:", stealRoll, "vs DC", stealDC);
+                            pos.stealResult = { success: false, roll: rawRoll, total: stealRoll, dc: stealDC, alignMod, reason: "Failed" };
+                        }
+                    }
+
+                    // ── Craft action: AVG(CRE, WIS, DEX) roll for random item draw ──
                     if (card.name === "Craft") {
-                        let ownerInt = owner.character.stats?.INT || 10;
-                        let materials = (pos.stack?.modifiers || []).filter(m => m.type === "item" && m.subtype === "material");
+                        let stats = owner.character.stats || {};
+                        let craftStat = Math.round(((stats.CRE || 8) + (stats.WIS || 8) + (stats.DEX || 8)) / 3);
+                        let skillMod = getStackSkillMod(pos.stack, "craft");
+                        let rawRoll = rollD20();
+                        let craftRoll = rawRoll + craftStat + skillMod;
+                        let craftDC = 12;
 
-                        if (materials.length >= 2) {
-                            let craftRoll = rollD20() + ownerInt;
-                            let craftDC = 12 + (materials.length * 2);  // Harder with more materials
+                        // Item pools for random draw
+                        let commonItems = [
+                            { type: "item", subtype: "consumable", name: "Health Potion", effect: "Restore 6 HP", rarity: "COMMON" },
+                            { type: "item", subtype: "consumable", name: "Energy Tonic", effect: "Restore 4 Energy", rarity: "COMMON" },
+                            { type: "item", subtype: "consumable", name: "Bandage", effect: "Restore 4 HP", rarity: "COMMON" },
+                            { type: "item", subtype: "consumable", name: "Sharpening Stone", effect: "+2 to Attack rolls this round", rarity: "COMMON" },
+                            { type: "item", subtype: "consumable", name: "Shield Polish", effect: "+2 to Defense this round", rarity: "COMMON" }
+                        ];
+                        let rareItems = [
+                            { type: "item", subtype: "consumable", name: "Greater Health Potion", effect: "Restore 12 HP", rarity: "RARE" },
+                            { type: "item", subtype: "consumable", name: "Elixir of Vigor", effect: "Restore 6 HP and 4 Energy", rarity: "RARE" },
+                            { type: "item", subtype: "weapon", name: "Crafted Blade", atk: 3, damageType: "Slashing", slot: "Hand (1H)", rarity: "RARE" },
+                            { type: "apparel", subtype: "armor", name: "Reinforced Vest", def: 2, hpBonus: 3, slot: "Body", rarity: "RARE" }
+                        ];
+                        let uniqueItems = [
+                            { type: "item", subtype: "consumable", name: "Phoenix Feather", effect: "Restore to full HP when defeated (auto-use)", rarity: "LEGENDARY", flavor: "A shimmering feather that glows with inner fire" },
+                            { type: "item", subtype: "weapon", name: "Masterwork Blade", atk: 5, damageType: "Slashing", slot: "Hand (1H)", rarity: "EPIC", special: "Keen: +2 crit range", flavor: "Forged with extraordinary skill" },
+                            { type: "apparel", subtype: "armor", name: "Aegis Plate", def: 4, hpBonus: 5, slot: "Body", rarity: "EPIC", special: "Fortified: -1 incoming damage", flavor: "Nearly impervious craftsmanship" }
+                        ];
 
-                            if (craftRoll >= craftDC) {
-                                // Success: create item based on materials
-                                let craftedItem = {
-                                    type: "item",
-                                    subtype: "consumable",
-                                    name: "Crafted " + materials[0].name + " Potion",
-                                    effect: "Restore " + (5 + materials.length) + " HP",
-                                    rarity: materials.length >= 3 ? "RARE" : "COMMON",
-                                    flavor: "Crafted from " + materials.map(m => m.name).join(" + ")
-                                };
-                                owner.hand.push(craftedItem);
-                                // Remove materials from hand
-                                materials.forEach(mat => {
-                                    owner.hand = owner.hand.filter(c => c !== mat);
-                                });
-                                console.log("[CardGame v2] Crafting success! Roll:", craftRoll, "vs DC", craftDC, "- Created:", craftedItem.name);
-                                pos.craftResult = { success: true, roll: craftRoll, dc: craftDC, created: craftedItem };
-                            } else {
-                                console.log("[CardGame v2] Crafting failed. Roll:", craftRoll, "vs DC", craftDC);
-                                // Lose one material on failure
-                                if (materials.length > 0) {
-                                    let lostMat = materials[0];
-                                    owner.hand = owner.hand.filter(c => c !== lostMat);
-                                    owner.discardPile.push(lostMat);
-                                }
-                                pos.craftResult = { success: false, roll: craftRoll, dc: craftDC };
-                            }
+                        if (rawRoll === 20) {
+                            // Critical success: unique item
+                            let item = uniqueItems[Math.floor(Math.random() * uniqueItems.length)];
+                            item.flavor = (item.flavor || "") + " [Crafted by " + owner.name + "]";
+                            owner.hand.push(item);
+                            console.log("[CardGame v2] Craft critical! Created unique:", item.name, "Roll:", craftRoll);
+                            pos.craftResult = { success: true, critical: true, roll: rawRoll, total: craftRoll, dc: craftDC, created: item };
+                        } else if (craftRoll >= craftDC + 5) {
+                            // High success: rare item
+                            let item = rareItems[Math.floor(Math.random() * rareItems.length)];
+                            owner.hand.push(item);
+                            console.log("[CardGame v2] Craft great success! Created:", item.name, "Roll:", craftRoll);
+                            pos.craftResult = { success: true, roll: rawRoll, total: craftRoll, dc: craftDC, created: item };
+                        } else if (craftRoll >= craftDC) {
+                            // Normal success: common item
+                            let item = commonItems[Math.floor(Math.random() * commonItems.length)];
+                            owner.hand.push(item);
+                            console.log("[CardGame v2] Craft success! Created:", item.name, "Roll:", craftRoll, "vs DC", craftDC);
+                            pos.craftResult = { success: true, roll: rawRoll, total: craftRoll, dc: craftDC, created: item };
                         } else {
-                            console.log("[CardGame v2] Crafting failed - need at least 2 materials");
-                            pos.craftResult = { success: false, reason: "Insufficient materials" };
+                            console.log("[CardGame v2] Craft failed. Roll:", craftRoll, "vs DC", craftDC);
+                            pos.craftResult = { success: false, roll: rawRoll, total: craftRoll, dc: craftDC };
                         }
                     }
 
-                    // Talk action: Open chat UI for player, dice roll for AI
+                    // ── Talk action: INT + CHA roll, outcomes: flee/nothing/critical fail ──
                     if (card.type === "talk") {
                         if (pos.owner === "player") {
                             // Player Talk: Open chat UI (Phase 8)
-                            // Chat works with or without LLM - will use fallback responses if needed
                             console.log("[CardGame v2] Opening Talk chat. LLM available:", !!gameChatManager?.initialized);
                             if (openTalkChat) openTalkChat(card, bar.resolveIndex);
-                            // Resolution continues when chat ends
                             return;  // Don't auto-advance - chat will handle it
                         } else {
-                            // Opponent Talk: Use dice roll
-                            let ownerCha = owner.character.stats?.CHA || 10;
-                            let targetCha = target.character.stats?.CHA || 10;
+                            // Opponent Talk: INT + CHA combined roll
+                            let ownerStats = owner.character.stats || {};
+                            let targetStats = target.character.stats || {};
+                            let talkStat = Math.round(((ownerStats.INT || 8) + (ownerStats.CHA || 8)) / 2);
+                            let targetDefense = Math.round(((targetStats.INT || 8) + (targetStats.CHA || 8)) / 2);
                             let skillMod = getStackSkillMod(pos.stack, "talk");
 
-                            let ownerRoll = rollD20() + ownerCha + skillMod;
-                            let targetRoll = rollD20() + targetCha;
+                            let rawRoll = rollD20();
+                            let talkRoll = rawRoll + talkStat + skillMod;
+                            let defenseRoll = rollD20() + targetDefense;
 
-                            if (ownerRoll > targetRoll) {
-                                let moraleDmg = Math.max(1, Math.floor((ownerRoll - targetRoll) / 2));
-                                target.morale = Math.max(0, target.morale - moraleDmg);
-                                owner.morale = Math.min(owner.maxMorale, owner.morale + 1);
-                                console.log("[CardGame v2]", pos.owner, "Talk success! Target morale -" + moraleDmg + ", own +1");
-                            } else {
-                                owner.morale = Math.max(0, owner.morale - 1);
-                                console.log("[CardGame v2]", pos.owner, "Talk failed. Own morale -1");
-                            }
-
-                            if (target.morale <= 0) {
-                                console.log("[CardGame v2] Target surrendered due to morale!");
+                            if (rawRoll === 20 || talkRoll >= defenseRoll + 10) {
+                                // Critical success: opponent flees / gives up
+                                console.log("[CardGame v2]", pos.owner, "Talk critical! Opponent surrenders. Roll:", talkRoll, "vs", defenseRoll);
+                                target.morale = 0;
                                 gameState.winner = pos.owner;
                                 gameState.phase = "GAME_OVER";
                                 m.redraw();
                                 return;
+                            } else if (talkRoll > defenseRoll) {
+                                // Success: morale damage
+                                let moraleDmg = Math.max(1, Math.floor((talkRoll - defenseRoll) / 2));
+                                target.morale = Math.max(0, target.morale - moraleDmg);
+                                owner.morale = Math.min(owner.maxMorale, owner.morale + 1);
+                                console.log("[CardGame v2]", pos.owner, "Talk success! Target morale -" + moraleDmg);
+
+                                if (target.morale <= 0) {
+                                    gameState.winner = pos.owner;
+                                    gameState.phase = "GAME_OVER";
+                                    m.redraw();
+                                    return;
+                                }
+                            } else if (rawRoll === 1 || talkRoll <= defenseRoll - 10) {
+                                // Critical fail: opponent gets upper hand
+                                owner.morale = Math.max(0, owner.morale - 3);
+                                target.morale = Math.min(target.maxMorale, target.morale + 2);
+                                // Opponent draws an extra card
+                                drawCardsForActor(target, 1);
+                                console.log("[CardGame v2]", pos.owner, "Talk critical fail! Opponent gains upper hand. Morale -3, opponent draws card");
+                            } else {
+                                // Failure: nothing happens
+                                console.log("[CardGame v2]", pos.owner, "Talk failed. Roll:", talkRoll, "vs", defenseRoll);
                             }
                         }
                     }
@@ -1751,6 +1945,75 @@
             }, 1000);  // Show action result for 1 second
         }
 
+        m.redraw();
+    }
+
+    // ── End Turn / Auto-End Turn ────────────────────────────────────────
+    function endTurn() {
+        if (!gameState) return;
+        const GAME_PHASES = C().GAME_PHASES;
+        if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return;
+
+        // Switch turn
+        gameState.currentTurn = gameState.currentTurn === "player" ? "opponent" : "player";
+
+        // Check if the current player has 0 AP - auto-skip their turn
+        checkAutoEndTurn();
+    }
+
+    function checkAutoEndTurn() {
+        if (!gameState) return;
+        const GAME_PHASES = C().GAME_PHASES;
+        if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return;
+
+        let currentTurn = gameState.currentTurn;
+        let current = currentTurn === "player" ? gameState.player : gameState.opponent;
+        let positions = currentTurn === "player"
+            ? gameState.initiative.playerPositions
+            : gameState.initiative.opponentPositions;
+        let apRemaining = current.ap - current.apUsed;
+
+        console.log("[CardGame v2] checkAutoEndTurn:", currentTurn, "AP remaining:", apRemaining);
+
+        // Check if current player can actually place any cards
+        if (apRemaining > 0) {
+            let isCoreCardType = E().isCoreCardType;
+            let coreCards = current.hand.filter(c => isCoreCardType(c.type));
+            let playableCores = coreCards.filter(c => !c.energyCost || c.energyCost <= current.energy);
+            let emptyPositions = positions.filter(posIdx => {
+                let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
+                return pos && !pos.stack;
+            });
+
+            // Auto-forfeit AP if can't place anything
+            if (playableCores.length === 0 || emptyPositions.length === 0) {
+                console.log("[CardGame v2]", currentTurn, "can't place - playable cores:", playableCores.length,
+                    "(total:", coreCards.length, ") empty:", emptyPositions.length, "energy:", current.energy);
+                current.apUsed = current.ap;
+                apRemaining = 0;
+            }
+        }
+
+        if (apRemaining <= 0) {
+            // No AP left, check if placement is complete or switch turns
+            let checkPlacementComplete = AI()?.checkPlacementComplete;
+            if (checkPlacementComplete) checkPlacementComplete();
+            if (gameState.phase !== GAME_PHASES.DRAW_PLACEMENT) return;  // Phase advanced
+
+            // If still in placement, other player still has AP - switch to them
+            let other = currentTurn === "player" ? gameState.opponent : gameState.player;
+            if (other.apUsed < other.ap) {
+                gameState.currentTurn = currentTurn === "player" ? "opponent" : "player";
+                setTimeout(() => { checkAutoEndTurn(); m.redraw(); }, 300);
+            }
+        } else if (currentTurn === "opponent") {
+            // Opponent has AP, let AI place cards
+            let aiPlaceCards = AI()?.aiPlaceCards;
+            setTimeout(() => {
+                if (aiPlaceCards) aiPlaceCards();
+                m.redraw();
+            }, 500);
+        }
         m.redraw();
     }
 
@@ -1835,11 +2098,18 @@
         // Round management
         startNextRound,
 
+        // Audio cleanup
+        cleanupAudio,
+
         // Campaign
         applyCampaignBonuses,
 
         // Resolution driver
-        advanceResolution
+        advanceResolution,
+
+        // Turn management
+        endTurn,
+        checkAutoEndTurn
     };
 
     console.log('[CardGame] State/gameState loaded (' +

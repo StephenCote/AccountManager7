@@ -118,7 +118,8 @@
                 sourceNode.connect(gainNode);
                 gainNode.connect(source.context.destination);
 
-                sourceNode.onended = () => resolve();
+                this._activeSource = sourceNode;
+                sourceNode.onended = () => { this._activeSource = null; resolve(); };
                 sourceNode.start();
             });
         }
@@ -129,7 +130,12 @@
 
         stop() {
             this.queue = [];
-            // Note: Stopping mid-playback would require tracking active source nodes
+            this.speaking = false;
+            this.enabled = false;
+            if (this._activeSource) {
+                try { this._activeSource.stop(); } catch (e) { /* already stopped */ }
+                this._activeSource = null;
+            }
         }
     }
 

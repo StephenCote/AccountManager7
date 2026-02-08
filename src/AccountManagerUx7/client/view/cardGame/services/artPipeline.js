@@ -65,7 +65,8 @@
         "Use Item":    "hands holding a glowing magical item",
         "Craft":       "hands crafting an item at a workbench with tools",
         "Guard":       "a warrior in defensive stance with shield raised",
-        "Feint":       "a cunning fighter making a deceptive move"
+        "Feint":       "a cunning fighter making a deceptive move",
+        "Steal":       "a shadowy figure pickpocketing in a dark alley"
     };
 
     // Descriptive prompt snippets for talk cards by name (hardcoded fallbacks)
@@ -175,6 +176,11 @@
     // ── Image Sequence State ────────────────────────────────────────
     let sequenceCardId = null;   // sourceId of card currently sequencing
     let sequenceProgress = "";
+    // Batch sequence state (Generate All Sequences)
+    let batchSequenceActive = false;
+    let batchSequenceTotal = 0;
+    let batchSequenceCompleted = 0;
+    let batchSequenceCurrentName = "";
 
     // ── SD Config Overrides ─────────────────────────────────────────
     // Each override tab is a proper olio.sd.config instance with model defaults,
@@ -494,29 +500,34 @@
         let activeTheme = getActiveTheme();
 
         // Character portraits: use the charPerson/reimage endpoint with SD config
+        // Set groupPath/imageName so the server creates the image in the deck art dir
         if (card.type === "character" && card.sourceId) {
+            let dir = await ensureArtDir((theme || activeTheme).themeId);
+            if (!dir) throw new Error("Could not create art directory");
+
             let sdEntity = await buildSdEntity(card, theme);
-            // POST with sdConfig so the server can apply referenceImageId, model, style, etc.
+            sdEntity.groupPath = dir.path;
+            sdEntity.imageName = (card.name || "character").replace(/[^a-zA-Z0-9_\-]/g, "_") + "-" + Date.now() + ".png";
+
             let result = await m.request({
                 method: "POST",
                 url: g_application_path + "/rest/olio/olio.charPerson/" + card.sourceId + "/reimage",
                 body: sdEntity,
                 withCredentials: true
             });
-            // Build URL from result image using groupPath + name (required by thumbnail servlet)
-            let thumbUrl = null;
             console.log("[CardGame ArtPipeline] Reimage result:", JSON.stringify({
                 objectId: result?.objectId, groupPath: result?.groupPath, name: result?.name
             }));
-            if (result && result.groupPath && result.name) {
+
+            let thumbUrl = null;
+            let gp = result?.groupPath || dir.path;
+            let rname = result?.name || sdEntity.imageName;
+            if (gp && rname) {
                 let orgPath = am7client.dotPath(am7client.currentOrganization);
                 thumbUrl = g_application_path + "/thumbnail/" + orgPath +
-                    "/data.data" + result.groupPath + "/" + result.name + "/256x256?t=" + Date.now();
-                console.log("[CardGame ArtPipeline] Built thumbUrl:", thumbUrl);
-            } else {
-                console.warn("[CardGame ArtPipeline] Reimage result missing groupPath or name, cannot build URL");
+                    "/data.data" + gp + "/" + encodeURIComponent(rname) + "/256x256?t=" + Date.now();
             }
-            return { reimaged: true, sourceId: card.sourceId, thumbUrl: thumbUrl, objectId: result?.objectId, groupPath: result?.groupPath, name: result?.name };
+            return { reimaged: true, sourceId: card.sourceId, thumbUrl: thumbUrl, objectId: result?.objectId, groupPath: gp, name: rname };
         }
 
         // All other card types: use the generateArt endpoint (txt2img from prompt)
@@ -562,7 +573,7 @@
         let rname = result.name || sdEntity.imageName;
         let thumbUrl = g_application_path + "/thumbnail/" +
             am7client.dotPath(am7client.currentOrganization) +
-            "/data.data" + gp + "/" + rname + "/256x256?t=" + Date.now();
+            "/data.data" + gp + "/" + encodeURIComponent(rname) + "/256x256?t=" + Date.now();
 
         console.log("[CardGame ArtPipeline] Card art URL:", thumbUrl);
         return { objectId: result.objectId, name: rname, groupPath: gp, thumbUrl: thumbUrl };
@@ -636,7 +647,7 @@
             let rname = result.name || sdEntity.imageName;
             let thumbUrl = g_application_path + "/thumbnail/" +
                 am7client.dotPath(am7client.currentOrganization) +
-                "/data.data" + gp + "/" + rname + "/512x768?t=" + Date.now();
+                "/data.data" + gp + "/" + encodeURIComponent(rname) + "/512x768?t=" + Date.now();
             let viewingDeck = getViewingDeck();
             let deckStorage = getDeckStorage();
             if (side === "front") {
@@ -699,6 +710,8 @@
             artCompleted++;
 
             // Update the card in the deck with the image URL
+            // Re-fetch viewingDeck in case it was replaced during async generation
+            viewingDeck = getViewingDeck();
             if (viewingDeck && viewingDeck.cards && viewingDeck.cards[next.cardIndex]) {
                 let deckCard = viewingDeck.cards[next.cardIndex];
                 if (result.thumbUrl) {
@@ -706,9 +719,14 @@
                     if (result.reimaged) {
                         deckCard.portraitUrl = result.thumbUrl;
                         deckCard.artObjectId = result.objectId;
+                        // Also update the queue's card ref in case it diverged
+                        next.card.portraitUrl = result.thumbUrl;
+                        next.card.artObjectId = result.objectId;
                     } else {
                         deckCard.imageUrl = result.thumbUrl;
                         deckCard.artObjectId = result.objectId;
+                        next.card.imageUrl = result.thumbUrl;
+                        next.card.artObjectId = result.objectId;
                     }
                 } else if (result.reimaged && deckCard.sourceId) {
                     // Fallback: re-fetch the charPerson to get the updated portrait
@@ -737,6 +755,15 @@
                 if (gameState && result.thumbUrl) {
                     propagateArtToGameState(deckCard.name, deckCard.type, result.thumbUrl, result.reimaged);
                 }
+
+                // Save deck immediately after each card's art completes
+                if (deckStorage) {
+                    let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
+                    deckStorage.save(safeName, viewingDeck).catch(e =>
+                        console.warn("[CardGame ArtPipeline] Incremental save failed:", e)
+                    );
+                }
+                m.redraw();
             }
         } catch (e) {
             console.error("[CardGame ArtPipeline] Art generation failed for:", next.card.name, e);
@@ -1075,7 +1102,7 @@
                 if (lastImage && lastImage.groupPath && lastImage.name) {
                     let orgPath = am7client.dotPath(am7client.currentOrganization);
                     card.portraitUrl = g_application_path + "/thumbnail/" + orgPath +
-                        "/data.data" + lastImage.groupPath + "/" + lastImage.name + "/256x256?t=" + Date.now();
+                        "/data.data" + lastImage.groupPath + "/" + encodeURIComponent(lastImage.name) + "/256x256?t=" + Date.now();
                     console.log("[CardGame ArtPipeline] Updated card portrait to last sequence image:", card.portraitUrl);
 
                     // Save the deck with updated portrait
@@ -1086,6 +1113,12 @@
                 }
 
                 m.redraw();
+
+                // Open gallery picker so user can select from generated images
+                let openGallery = window.CardGame.Rendering?.openGalleryPicker;
+                if (openGallery) {
+                    openGallery(card);
+                }
             } else {
                 page.toast("warn", "No images were generated");
             }
@@ -1100,11 +1133,58 @@
         }
     }
 
+    // ── Generate All Character Sequences ────────────────────────────
+    async function generateAllSequences() {
+        let viewingDeck = getViewingDeck();
+        if (!viewingDeck || !viewingDeck.cards) return;
+        if (batchSequenceActive || sequenceCardId) {
+            page.toast("warn", "A sequence generation is already in progress");
+            return;
+        }
+
+        // Filter to character cards with sourceId
+        let charCards = viewingDeck.cards.filter(c =>
+            c.type === "character" && c.sourceId
+        );
+        if (!charCards.length) {
+            page.toast("warn", "No saved character cards found in deck");
+            return;
+        }
+
+        batchSequenceActive = true;
+        batchSequenceTotal = charCards.length;
+        batchSequenceCompleted = 0;
+        batchSequenceCurrentName = "";
+        m.redraw();
+
+        page.toast("info", "Generating sequences for " + charCards.length + " character(s)...");
+
+        for (let i = 0; i < charCards.length; i++) {
+            let card = charCards[i];
+            batchSequenceCurrentName = card.name || ("Character " + (i + 1));
+            m.redraw();
+
+            try {
+                await generateImageSequence(card);
+            } catch (e) {
+                console.warn("[ArtPipeline] Batch sequence failed for", card.name, e);
+            }
+
+            batchSequenceCompleted = i + 1;
+            m.redraw();
+        }
+
+        batchSequenceActive = false;
+        batchSequenceCurrentName = "";
+        m.redraw();
+        page.toast("success", "All character sequences complete (" + batchSequenceCompleted + "/" + batchSequenceTotal + ")");
+    }
+
     // ── Art Queue Progress Bar Component ────────────────────────────
     function ArtQueueProgress() {
         return {
             view() {
-                // Show progress for any active generation (queue, background, tabletop, sequence)
+                // Show progress for any active generation (queue, background, tabletop, sequence, batch)
                 let pending = artQueue.filter(j => j.status === "pending").length;
                 let processing = artQueue.filter(j => j.status === "processing").length;
                 let failed = artQueue.filter(j => j.status === "failed").length;
@@ -1112,14 +1192,39 @@
                 let queueActive = pending > 0 || processing > 0;
                 let envActive = backgroundGenerating || tabletopGenerating || cardFrontGenerating || cardBackGenerating;
                 let seqActive = !!sequenceCardId;
-                let anyActive = queueActive || envActive || seqActive;
-
-                // Total includes pre-gen (artCompleted tracks those) + queued cards
-                let totalDone = artCompleted + done;
-                let pct = artTotal > 0 ? Math.min(100, Math.round((totalDone / artTotal) * 100)) : 0;
+                let batchActive = batchSequenceActive;
+                let anyActive = queueActive || envActive || seqActive || batchActive;
 
                 // Nothing to show if no work has been started
-                if (artTotal === 0 && !envActive && !seqActive) return null;
+                if (artTotal === 0 && !envActive && !seqActive && !batchActive) return null;
+
+                // Calculate progress percentage based on what's active
+                let pct = 0;
+                let countText = "";
+                if (batchActive) {
+                    // Batch sequence: show batch-level progress
+                    pct = batchSequenceTotal > 0 ? Math.min(100, Math.round((batchSequenceCompleted / batchSequenceTotal) * 100)) : 0;
+                    countText = batchSequenceCompleted + " / " + batchSequenceTotal + " characters";
+                } else if (envActive && artTotal === 0) {
+                    // Environment-only generation (no queue): show indeterminate-style
+                    pct = 50;
+                    countText = "";
+                } else if (seqActive && artTotal === 0) {
+                    // Single sequence (no queue): parse progress from sequenceProgress
+                    let seqMatch = sequenceProgress.match(/(\d+) of (\d+)/);
+                    if (seqMatch) {
+                        pct = Math.round((parseInt(seqMatch[1]) / parseInt(seqMatch[2])) * 100);
+                        countText = seqMatch[1] + " / " + seqMatch[2] + " images";
+                    } else {
+                        pct = 50;
+                        countText = "";
+                    }
+                } else {
+                    // Standard queue progress
+                    let totalDone = artCompleted + done;
+                    pct = artTotal > 0 ? Math.min(100, Math.round((totalDone / artTotal) * 100)) : 0;
+                    countText = totalDone + " / " + artTotal + (failed > 0 ? " (" + failed + " failed)" : "");
+                }
 
                 // Build current status message
                 let currentMsg = null;
@@ -1127,19 +1232,22 @@
                 else if (tabletopGenerating) currentMsg = "Generating tabletop...";
                 else if (cardFrontGenerating) currentMsg = "Generating card front template...";
                 else if (cardBackGenerating) currentMsg = "Generating card back template...";
+                else if (batchActive && seqActive) currentMsg = (batchSequenceCurrentName || "Character") + ": " + (sequenceProgress || "preparing...");
+                else if (batchActive) currentMsg = "Batch sequence: " + (batchSequenceCurrentName || "preparing...");
                 else if (seqActive) currentMsg = sequenceProgress || "Generating image sequence...";
                 else if (processing > 0) {
                     let current = artQueue.find(j => j.status === "processing");
                     currentMsg = current ? (current.card.name || "Card") : "Processing...";
                 }
 
-                let statusText = anyActive ? "Generating Art..." : (failed > 0 ? "Generation Complete (with errors)" : "Generation Complete");
+                let statusText = anyActive
+                    ? (batchActive ? "Generating All Sequences..." : "Generating Art...")
+                    : (failed > 0 ? "Generation Complete (with errors)" : "Generation Complete");
 
                 return m("div", { class: "cg2-art-progress" }, [
                     m("div", { class: "cg2-art-progress-header" }, [
                         m("span", { style: { fontWeight: 700, fontSize: "13px" } }, statusText),
-                        m("span", { style: { fontSize: "12px", color: "#888" } },
-                            totalDone + " / " + artTotal + (failed > 0 ? " (" + failed + " failed)" : ""))
+                        countText ? m("span", { style: { fontSize: "12px", color: "#888" } }, countText) : null
                     ]),
                     m("div", { class: "cg2-art-progress-bar" }, [
                         m("div", { class: "cg2-art-progress-fill" + (anyActive ? " cg2-art-progress-fill-active" : ""),
@@ -1214,6 +1322,10 @@
             set sequenceCardId(v) { sequenceCardId = v; },
             get sequenceProgress() { return sequenceProgress; },
             set sequenceProgress(v) { sequenceProgress = v; },
+            get batchSequenceActive() { return batchSequenceActive; },
+            get batchSequenceTotal() { return batchSequenceTotal; },
+            get batchSequenceCompleted() { return batchSequenceCompleted; },
+            get batchSequenceCurrentName() { return batchSequenceCurrentName; },
             get sdOverrides() { return sdOverrides; },
             set sdOverrides(v) { sdOverrides = v; },
             get sdConfigExpanded() { return sdConfigExpanded; },
@@ -1239,6 +1351,7 @@
         // SD entity builder
         buildSdEntity,
         // Art directory
+        getArtDir: function() { return artDir; },
         ensureArtDir,
         // Environment generation
         generateBackground,
@@ -1258,6 +1371,7 @@
         cardSignature,
         // Image sequence
         generateImageSequence,
+        generateAllSequences,
         // SD config overrides
         newSdOverride,
         defaultSdOverrides,
