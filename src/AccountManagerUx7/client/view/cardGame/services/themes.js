@@ -377,7 +377,7 @@
                 name: activeTheme.name + " (Custom)",
                 description: activeTheme.description || "",
                 sdSuffix: activeTheme.sdSuffix || "",
-                narratorProfile: "arena-announcer",
+                narration: activeTheme.narration || { announcerProfile: "arena-announcer" },
                 cardPool: activeTheme.cardPool || []
             };
         } else {
@@ -398,7 +398,7 @@
             name: "My Custom Theme",
             description: "A custom card game theme",
             sdSuffix: "fantasy art, detailed illustration",
-            narratorProfile: "arena-announcer",
+            narration: { announcerProfile: "arena-announcer" },
             cardPool: [
                 { type: "action", name: "Attack", subtype: "melee", effect: "Standard melee attack", rarity: "COMMON" },
                 { type: "action", name: "Rest", effect: "Restore 2 HP, 3 Energy, 2 Morale", rarity: "COMMON" },

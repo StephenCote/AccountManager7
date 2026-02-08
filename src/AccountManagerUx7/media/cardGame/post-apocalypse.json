@@ -98,6 +98,37 @@
     "hoardingReturnTarget": "encounterDeck"
   },
 
+  "narration": {
+    "announcerProfile": "war-correspondent",
+    "gameStart": "The wasteland arena roars to life under a scorched sky. Two survivors face off among the ruins. In this world, only the strongest endure!",
+    "roundStart": [
+      "Dust swirls as the next round begins.",
+      "Rusted weapons are raised. The fight continues!",
+      "The irradiated wind carries the sound of combat once more.",
+      "Another round in the wasteland. No quarter given.",
+      "The survivors circle each other among the rubble."
+    ],
+    "roundEndTie": [
+      "Neither scavenger gains the upper hand. A standoff.",
+      "Evenly matched in the wastes. The round ends in a draw."
+    ],
+    "criticalHit": [
+      "A crushing blow! That one rattled the bones!",
+      "Direct hit! Scrap metal flies from the impact!",
+      "A devastating strike echoes across the wasteland!"
+    ],
+    "criticalMiss": [
+      "The attack goes wide, kicking up dust and nothing else!",
+      "A wild swing that hits only air and regret!",
+      "Completely off target! The wastes are unforgiving!"
+    ],
+    "lowHpTension": [
+      "Both fighters are running on fumes. This ends soon.",
+      "Blood mixes with the dust. Neither can take much more.",
+      "The wasteland watches. Only one will walk away."
+    ]
+  },
+
   "magicConfig": {
     "enabledSkillTypes": [],
     "magicEffectPool": ["Rad Burst", "Mutant Surge", "Toxin Cloud", "Adrenaline Rush"]
@@ -214,5 +245,55 @@
         ]
       }
     }
+  },
+
+  "cardPool": [
+    { "type": "item", "subtype": "weapon", "name": "Spiked Bat", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Bludgeoning", "durability": 6, "artPrompt": "a baseball bat wrapped in barbed wire" },
+    { "type": "item", "subtype": "weapon", "name": "Salvaged Shotgun", "rarity": "UNCOMMON", "atk": 5, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 8, "artPrompt": "a battered pump-action shotgun held together with tape" },
+    { "type": "item", "subtype": "weapon", "name": "Buzzsaw Gauntlet", "rarity": "RARE", "atk": 6, "slot": "Hand (1H)", "damageType": "Slashing", "durability": 10, "special": "+2 ATK vs armored targets", "artPrompt": "a gauntlet with a spinning circular saw blade attached" },
+    { "type": "item", "subtype": "weapon", "name": "Jury-Rigged Crossbow", "rarity": "COMMON", "atk": 3, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 5, "artPrompt": "a crossbow made from car parts and rubber tubing" },
+    { "type": "item", "subtype": "weapon", "name": "Electrified Chain", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (1H)", "damageType": "Electric", "durability": 8, "special": "Stun on crit", "artPrompt": "a heavy chain connected to a salvaged car battery" },
+    { "type": "item", "subtype": "weapon", "name": "Rusty Cleaver", "rarity": "COMMON", "atk": 2, "slot": "Hand (1H)", "damageType": "Slashing", "durability": 5, "special": "Poison: 1 damage/round (infection)", "artPrompt": "a filthy meat cleaver with a chipped blade" },
+
+    { "type": "apparel", "name": "Tire Shoulder Pads", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "rubber and scrap", "artPrompt": "shoulder pads made from cut tires and bolted metal" },
+    { "type": "apparel", "name": "Scrap Plate Vest", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 1, "durability": 10, "fabric": "scrap metal", "artPrompt": "a vest of hammered scrap metal plates wired together" },
+    { "type": "apparel", "name": "Rad-Suit", "rarity": "UNCOMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "lead-lined rubber", "special": "Resist radiation and poison", "artPrompt": "a yellow hazmat suit patched with duct tape" },
+    { "type": "apparel", "name": "Raider's War Plate", "rarity": "RARE", "slot": "Body", "def": 5, "hpBonus": 2, "durability": 16, "fabric": "welded scrap steel", "artPrompt": "full-body armor made from welded car panels and road signs" },
+    { "type": "apparel", "name": "Gas Mask", "rarity": "COMMON", "slot": "Head", "def": 1, "hpBonus": 0, "durability": 6, "fabric": "rubber and glass", "special": "Resist poison and gas effects", "artPrompt": "a cracked gas mask with fogged lenses" },
+    { "type": "apparel", "name": "Padded Motorcycle Jacket", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "leather and padding", "artPrompt": "a scarred leather motorcycle jacket with sewn-in padding" },
+    { "type": "apparel", "name": "Salvaged Riot Shield", "rarity": "UNCOMMON", "slot": "Hand", "def": 3, "hpBonus": 0, "durability": 12, "fabric": "polycarbonate", "special": "+2 to Guard", "artPrompt": "a cracked police riot shield with graffiti sprayed on it" },
+
+    { "type": "skill", "name": "Jury Rigger", "category": "Creation", "modifier": "Craft rolls succeed on 8+ instead of 12+", "tier": "UNCOMMON", "artPrompt": "hands assembling a device from scrap parts" },
+    { "type": "skill", "name": "Scavenger Instinct", "category": "Survival", "modifier": "+3 to Investigate, always find loot on success", "tier": "COMMON", "artPrompt": "a figure digging through rubble, finding treasure" },
+    { "type": "skill", "name": "Wasteland Hardened", "category": "Defense", "modifier": "Reduce all damage by 1 (min 1)", "tier": "UNCOMMON", "artPrompt": "a scarred survivor shrugging off a hit" },
+    { "type": "skill", "name": "Road Rage", "category": "Combat", "modifier": "+3 ATK when HP below half", "tier": "UNCOMMON", "artPrompt": "a berserker screaming in fury amid wasteland chaos" },
+    { "type": "skill", "name": "Barter", "category": "Social", "modifier": "+3 to Trade and Talk rolls", "tier": "COMMON", "artPrompt": "two wasteland traders haggling over goods" },
+    { "type": "skill", "name": "Trapper", "category": "Tactical", "modifier": "Feint auto-succeeds, +2 damage on follow-up", "tier": "RARE", "artPrompt": "a hidden snare trap springing on a target" },
+    { "type": "skill", "name": "Radiation Resistance", "category": "Survival", "modifier": "Immune to poison effects, Rest restores +2 extra HP", "tier": "UNCOMMON", "artPrompt": "a mutant glowing faintly, unaffected by radiation" },
+    { "type": "skill", "name": "Kill Shot", "category": "Combat", "modifier": "Critical hits deal triple damage with ranged weapons", "tier": "RARE", "artPrompt": "a sniper lining up a perfect shot through ruins" },
+
+    { "type": "magic", "name": "Rad Burst", "effectType": "Offensive", "skillType": "Psionic", "effect": "Deal 5 damage to all enemies, ignore armor", "energyCost": 6, "reusable": true, "artPrompt": "a wave of green radiation exploding outward" },
+    { "type": "magic", "name": "Mutant Surge", "effectType": "Offensive", "skillType": "Psionic", "effect": "+4 STR and +4 ATK this round, take 2 damage", "energyCost": 4, "reusable": true, "artPrompt": "muscles grotesquely expanding with mutant power" },
+    { "type": "magic", "name": "Toxin Cloud", "effectType": "Offensive", "skillType": "Imperial", "effect": "Poison target: 3 damage/round for 2 rounds", "energyCost": 4, "reusable": true, "artPrompt": "a cloud of toxic green gas billowing from cracked canisters" },
+    { "type": "magic", "name": "Adrenaline Rush", "effectType": "Utility", "skillType": "Psionic", "effect": "Gain +2 AP this round, immune to stun", "energyCost": 5, "reusable": true, "artPrompt": "a fighter surrounded by a red aura of pure adrenaline" },
+
+    { "type": "item", "subtype": "consumable", "name": "Pre-War Medkit", "rarity": "UNCOMMON", "effect": "Restore 12 HP", "artPrompt": "a dusty first-aid kit with a faded red cross" },
+    { "type": "item", "subtype": "consumable", "name": "Moonshine", "rarity": "COMMON", "effect": "Restore 5 Energy, -1 DEF this round", "artPrompt": "a jar of cloudy homebrew moonshine" },
+    { "type": "item", "subtype": "consumable", "name": "Rad-Away", "rarity": "UNCOMMON", "effect": "Remove all poison effects, restore 4 HP", "artPrompt": "an IV bag of chelation fluid" },
+    { "type": "item", "subtype": "consumable", "name": "Scrap Armor Kit", "rarity": "COMMON", "effect": "+3 DEF this round", "artPrompt": "a bundle of scrap metal plates and wire for quick patching" },
+    { "type": "item", "subtype": "consumable", "name": "Molotov Cocktail", "rarity": "COMMON", "effect": "Deal 4 damage, ignore DEF", "artPrompt": "a bottle filled with fuel and a burning rag" }
+  ],
+
+  "encounters": {
+    "threatCreatures": [
+      { "name": "Rad-Roach Swarm", "type": "animal", "atk": 2, "def": 1, "hp": 6, "imageIcon": "bug_report", "behavior": "Poison on hit (radiation, 2 turns)", "loot": ["Chitin Shard"], "artPrompt": "a swarm of oversized glowing cockroaches" },
+      { "name": "Feral Dog Pack", "type": "animal", "atk": 2, "def": 1, "hp": 8, "imageIcon": "pets", "behavior": "Attacks lowest HP target", "loot": ["Mangy Hide"], "artPrompt": "a pack of emaciated wild dogs with bared teeth" },
+      { "name": "Wasteland Raider", "type": "npc", "atk": 4, "def": 2, "hp": 14, "imageIcon": "person_alert", "behavior": "Steals item on crit", "loot": ["Raider's Knife", "Scrap Metal"], "artPrompt": "a wild-eyed raider with a mohawk and scavenged armor" },
+      { "name": "Mutant Scorpion", "type": "animal", "atk": 3, "def": 3, "hp": 15, "imageIcon": "bug_report", "behavior": "Poison on hit (venom, 3 turns)", "loot": ["Scorpion Venom", "Chitin Plate"], "artPrompt": "a giant mutant scorpion with a dripping stinger" },
+      { "name": "Scrap Bot", "type": "monster", "atk": 4, "def": 4, "hp": 18, "imageIcon": "precision_manufacturing", "behavior": "High armor, explodes on death (3 damage)", "loot": ["Circuit Board", "Servo Motor"], "artPrompt": "a cobbled-together robot with spinning saw blades" },
+      { "name": "Raider Warlord", "type": "npc", "atk": 6, "def": 3, "hp": 22, "imageIcon": "shield_person", "behavior": "Enrages below half HP (+3 ATK)", "loot": ["Warlord's Trophy", "Reinforced Plate"], "artPrompt": "a massive raider in welded armor with a flaming sword" },
+      { "name": "Irradiated Bear", "type": "animal", "atk": 5, "def": 3, "hp": 24, "imageIcon": "pets", "behavior": "Charges (+3 ATK first attack), regenerates 1 HP/round", "loot": ["Glowing Bear Pelt", "Irradiated Claw"], "artPrompt": "a towering bear with patches of glowing fur and exposed muscle" },
+      { "name": "Ghoul Pack Leader", "type": "monster", "atk": 5, "def": 2, "hp": 16, "imageIcon": "skull", "behavior": "Drains 3 Energy on hit, summons 1 lesser ghoul", "loot": ["Ghoul Brain", "Pre-War Locket"], "artPrompt": "a shambling ghoul in tattered clothes, radiation glowing in its veins" }
+    ]
   }
 }

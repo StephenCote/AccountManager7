@@ -34,6 +34,9 @@
         decksLoading = true;
         m.redraw();
         try {
+            // Clear cache to pick up newly created decks/groups
+            am7client.clearCache("auth.group");
+            am7client.clearCache("data.data");
             let deckStorage = storage().deckStorage;
             let gameStorage = storage().gameStorage;
             let campaignStorage = storage().campaignStorage;
@@ -62,6 +65,9 @@
                         lastSaveRound: savesList.length > 0 ? null : null, // populated below
                         campaign: campaign || null
                     });
+                }
+                else{
+                    console.warn("Null", name);
                 }
             }
             savedDecks = decks;
@@ -124,6 +130,23 @@
                     }
                 }
             }
+        }
+
+        // If characters were persisted under a different group name, rename the group
+        let prevCharGroupName = ctx()._charGroupName;
+        if (prevCharGroupName && prevCharGroupName !== safeName) {
+            try {
+                let oldGroup = await page.findObject("auth.group", "data", "~/CardGame/" + prevCharGroupName);
+                if (oldGroup) {
+                    // Rename the old deck group to match the new deck name
+                    oldGroup.name = safeName;
+                    await page.patchObject(oldGroup);
+                    console.log("[CardGame] Renamed deck group from", prevCharGroupName, "to", safeName);
+                }
+            } catch (e) {
+                console.warn("[CardGame] Could not rename deck group:", e);
+            }
+            delete ctx()._charGroupName;
         }
 
         let deckStorage = storage().deckStorage;
@@ -251,6 +274,10 @@
     // ── Deck List Component ────────────────────────────────────────────
     function DeckList() {
         return {
+            oncreate() {
+                // Always refresh deck list when component mounts
+                loadSavedDecks();
+            },
             view() {
                 return m("div", [
                     m("div", { class: "cg2-toolbar" }, [

@@ -6,7 +6,7 @@
  * Depends on:
  *   - window.CardGame.Constants (STATUS_EFFECTS, COMBAT_OUTCOMES)
  *   - window.CardGame.Storage (deckStorage, gameStorage, campaignStorage, encodeJson, decodeJson,
- *       createCampaignData, calculateXP, applyCampaignBonuses)
+ *       createCampaignData)
  *   - window.CardGame.Engine (rollD20, getActorATK, getActorDEF, getStackSkillMod, checkGameOver,
  *       parseEffect, applyParsedEffects, isEffectParseable, applyStatusEffect, removeStatusEffect,
  *       getStatusModifiers, createGameState, advancePhase, drawCardsForActor)
@@ -64,7 +64,8 @@
         currentTest: null,
         completed: false,
         selectedCategories: Object.keys(TEST_CATEGORIES),
-        autoPlaySpeed: 500  // ms between auto-play actions
+        autoPlaySpeed: 500,  // ms between auto-play actions
+        logFilter: "all"     // "all" | "issues" (warn + fail only)
     };
 
     // ── Public setters for testDeck (called from DeckView / DeckList) ────
@@ -121,11 +122,11 @@
         if (resolvedDeck) {
             testLog("", "Using deck: " + (resolvedDeck.deckName || resolvedDeckName), "info");
             // Ensure the deck's theme is loaded so card pool analysis works
-            let activeTheme = themes.activeTheme ? themes.activeTheme() : null;
+            let activeTheme = themes.getActiveTheme ? themes.getActiveTheme() : null;
             if (resolvedDeck.themeId && (!activeTheme || activeTheme.themeId !== resolvedDeck.themeId)) {
                 if (themes.loadThemeConfig) {
                     await themes.loadThemeConfig(resolvedDeck.themeId);
-                    activeTheme = themes.activeTheme ? themes.activeTheme() : null;
+                    activeTheme = themes.getActiveTheme ? themes.getActiveTheme() : null;
                 }
                 testLog("", "Loaded theme: " + (activeTheme?.name || resolvedDeck.themeId), "info");
             }
@@ -167,7 +168,7 @@
                 "enterDrawPlacementPhase", "enterThreatResponsePhase", "enterEndThreatPhase",
                 "resolveThreatCombat", "resolveEndThreatCombat",
                 "placeThreatDefenseCard", "skipThreatResponse",
-                "startNextRound", "applyCampaignBonuses", "advanceResolution"
+                "startNextRound", "advanceResolution"
             ];
             for (let fn of gsExports) {
                 let exists = typeof gameState[fn] === "function";
@@ -382,7 +383,7 @@
                             { type: "action", name: "Guard", actionType: "Defensive", energyCost: 0 }
                         ]
                     };
-                    let gsStats = gameState.createGameState(testDeckForStats, testDeckForStats.cards[0]);
+                    let gsStats = await gameState.createGameState(testDeckForStats, testDeckForStats.cards[0]);
                     if (gsStats) {
                         testLog("stats", "Player MAG=18 -> energy=" + gsStats.player.energy + " maxEnergy=" + gsStats.player.maxEnergy,
                             gsStats.player.energy === 18 && gsStats.player.maxEnergy === 18 ? "pass" : "fail");
@@ -426,7 +427,7 @@
 
             // Test 1: createGameState produces valid state
             if (gameState.createGameState) {
-                let gs = gameState.createGameState(flowDeck, flowDeck.cards[0]);
+                let gs = await gameState.createGameState(flowDeck, flowDeck.cards[0]);
                 if (!gs) {
                     testLog("gameflow", "createGameState returned null", "fail");
                 } else {
@@ -481,7 +482,7 @@
                         gs.chat.active === false && gs.chat.unlocked === false ? "pass" : "fail");
 
                     // Test 2: createGameState with no character selection picks first
-                    let gs2 = gameState.createGameState(flowDeck);
+                    let gs2 = await gameState.createGameState(flowDeck);
                     if (gs2) {
                         testLog("gameflow", "createGameState(no selection): picks first char '" + gs2.player.character.name + "'",
                             gs2.player.character.name === "FlowHero" ? "pass" : "fail");
@@ -489,7 +490,7 @@
 
                     // Test 3: createGameState with deck lacking characters returns null
                     let noCharDeck = { deckName: "empty", cards: [{ type: "action", name: "Attack" }] };
-                    let gs3 = gameState.createGameState(noCharDeck);
+                    let gs3 = await gameState.createGameState(noCharDeck);
                     testLog("gameflow", "createGameState(no characters): returns null",
                         gs3 === null ? "pass" : "fail");
 
@@ -758,36 +759,33 @@
             // Test showNarrationSubtitle
             let testText = "[TEST] Narration subtitle test at " + Date.now();
             try {
-                // Access game state and narration functions from context
-                let gameState = context.gameState;
-                let showNarrationSubtitle = gameState.showNarrationSubtitle;
-                let triggerNarration = gameState.triggerNarration;
-                let gameNarrator = gameState.state.gameNarrator || null;
+                // Access narration functions from GameState module
+                let gsModule = gameState;
+                let showNarrationSubtitle = gsModule.showNarrationSubtitle;
+                let triggerNarration = gsModule.triggerNarration;
 
                 // Create temporary gameState for testing
-                let savedGs = gameState;
                 let tempGs = { narrationText: null, narrationTime: null, player: { character: { name: "TestHero" } }, opponent: { character: { name: "TestVillain" } }, round: 1 };
+                let savedGs = gsModule.getGameState ? gsModule.getGameState() : null;
 
-                if (context.setGameState) context.setGameState(tempGs);
+                if (gsModule.setGameState) gsModule.setGameState(tempGs);
                 else if (window.CardGame.ctx) window.CardGame.ctx.gameState = tempGs;
 
                 if (showNarrationSubtitle) {
                     showNarrationSubtitle(testText);
-                    let gs = context.gameState || tempGs;
-                    if (gs.narrationText === testText) {
+                    if (tempGs.narrationText === testText) {
                         testLog("narration", "showNarrationSubtitle sets narrationText", "pass");
                     } else {
-                        testLog("narration", "showNarrationSubtitle did NOT set narrationText", "fail");
+                        testLog("narration", "showNarrationSubtitle did NOT set narrationText (narrationText=" + tempGs.narrationText + ")", "fail");
                     }
-                    // Timer is async and can't be verified synchronously
                     testLog("narration", "Auto-hide timer scheduled (8s, cannot verify synchronously)", "info");
-                    gs.narrationText = null;
+                    tempGs.narrationText = null;
                 } else {
-                    testLog("narration", "showNarrationSubtitle not available (module not yet extracted)", "warn");
+                    testLog("narration", "showNarrationSubtitle not available", "warn");
                 }
 
                 // Restore
-                if (context.setGameState) context.setGameState(savedGs);
+                if (gsModule.setGameState) gsModule.setGameState(savedGs);
                 else if (window.CardGame.ctx) window.CardGame.ctx.gameState = savedGs;
             } catch (e) {
                 testLog("narration", "Narration test error: " + e.message, "fail");
@@ -795,42 +793,43 @@
 
             // Test triggerNarration fallback text
             try {
-                let triggerNarration = gameState.triggerNarration;
-                let gameState = context.gameState;
-                let savedGs = gameState;
-                let savedNarrator = gameState.state.gameNarrator || null;
+                let gsModule2 = gameState;
+                let triggerNarration2 = gsModule2.triggerNarration;
+                let savedGs2 = gsModule2.getGameState ? gsModule2.getGameState() : null;
+                let savedNarrator = gsModule2.state?.gameNarrator || null;
 
                 if (ai.setNarrator) ai.setNarrator(null); // Force fallback path
-                let tempGs = { narrationText: null, narrationTime: null, player: { character: { name: "Hero" }, hp: 15, energy: 10 }, opponent: { character: { name: "Villain" }, hp: 12, energy: 8 }, round: 3 };
-                if (window.CardGame.ctx) window.CardGame.ctx.gameState = tempGs;
+                let tempGs2 = { narrationText: null, narrationTime: null, player: { character: { name: "Hero" }, hp: 15, energy: 10 }, opponent: { character: { name: "Villain" }, hp: 12, energy: 8 }, round: 3 };
+                if (gsModule2.setGameState) gsModule2.setGameState(tempGs2);
+                else if (window.CardGame.ctx) window.CardGame.ctx.gameState = tempGs2;
 
-                if (triggerNarration) {
-                    await triggerNarration("game_start");
-                    let gs = window.CardGame.ctx?.gameState || tempGs;
-                    if (gs.narrationText && gs.narrationText.includes("Hero")) {
+                if (triggerNarration2) {
+                    await triggerNarration2("game_start");
+                    if (tempGs2.narrationText && tempGs2.narrationText.includes("Hero")) {
                         testLog("narration", "game_start fallback text includes player name", "pass");
                     } else {
                         testLog("narration", "game_start fallback text missing", "fail");
                     }
-                    gs.narrationText = null;
-                    await triggerNarration("round_start");
-                    if (gs.narrationText && gs.narrationText.includes("Round 3")) {
+                    tempGs2.narrationText = null;
+                    await triggerNarration2("round_start");
+                    if (tempGs2.narrationText && tempGs2.narrationText.includes("Round 3")) {
                         testLog("narration", "round_start fallback for round 3", "pass");
                     } else {
-                        testLog("narration", "round_start fallback missing/wrong", gs.round <= 1 ? "pass" : "fail");
+                        testLog("narration", "round_start fallback missing/wrong", tempGs2.round <= 1 ? "pass" : "fail");
                     }
-                    gs.narrationText = null;
-                    await triggerNarration("resolution", { isPlayerAttack: true, outcome: "CRIT", damage: 15 });
-                    if (gs.narrationText && gs.narrationText.includes("Critical")) {
+                    tempGs2.narrationText = null;
+                    await triggerNarration2("resolution", { isPlayerAttack: true, outcome: "CRIT", damage: 15 });
+                    if (tempGs2.narrationText && tempGs2.narrationText.includes("Critical")) {
                         testLog("narration", "resolution CRIT fallback text", "pass");
                     } else {
                         testLog("narration", "resolution CRIT fallback missing", "fail");
                     }
                 } else {
-                    testLog("narration", "triggerNarration not available (module not yet extracted)", "warn");
+                    testLog("narration", "triggerNarration not available", "warn");
                 }
 
-                if (window.CardGame.ctx) window.CardGame.ctx.gameState = savedGs;
+                if (gsModule2.setGameState) gsModule2.setGameState(savedGs2);
+                else if (window.CardGame.ctx) window.CardGame.ctx.gameState = savedGs2;
                 if (ai.setNarrator) ai.setNarrator(savedNarrator);
             } catch (e) {
                 testLog("narration", "Narration fallback test error: " + e.message, "fail");
@@ -954,7 +953,7 @@
             }
 
             // Analyze active theme card pool for gaps
-            let activeTheme = themes.activeTheme ? themes.activeTheme() : null;
+            let activeTheme = themes.getActiveTheme ? themes.getActiveTheme() : null;
             if (activeTheme?.cardPool) {
                 let pool = activeTheme.cardPool;
                 let types = {};
@@ -983,54 +982,16 @@
 
         // ── Campaign Tests ───────────────────
         if (cats.includes("campaign")) {
-            testState.currentTest = "Campaign: XP, levels, stat gains";
+            testState.currentTest = "Campaign: W/L tracking";
             testLog("campaign", "Testing campaign system...");
 
             // Test createCampaignData
             let testChar = { name: "TestHero", sourceId: "test-123" };
             let cd = storage.createCampaignData(testChar);
-            if (cd.level === 1 && cd.xp === 0 && cd.characterName === "TestHero") {
-                testLog("campaign", "createCampaignData defaults correct", "pass");
+            if (cd.wins === 0 && cd.losses === 0 && cd.characterName === "TestHero" && cd.totalGamesPlayed === 0) {
+                testLog("campaign", "createCampaignData defaults correct (v2: W/L tracking)", "pass");
             } else {
                 testLog("campaign", "createCampaignData defaults wrong", "fail");
-            }
-
-            // Test calculateXP
-            let testState1 = { round: 5, player: { hp: 15 } };
-            let xpWin = storage.calculateXP(testState1, true);
-            let xpLose = storage.calculateXP(testState1, false);
-            testLog("campaign", "calculateXP(5 rounds, 15hp, win)=" + xpWin + " (expect 130)", xpWin === 130 ? "pass" : "fail");
-            testLog("campaign", "calculateXP(5 rounds, 15hp, loss)=" + xpLose + " (expect 80)", xpLose === 80 ? "pass" : "fail");
-
-            // Test level calculation
-            let levels = [
-                { xp: 0, expect: 1 }, { xp: 99, expect: 1 }, { xp: 100, expect: 2 },
-                { xp: 250, expect: 3 }, { xp: 999, expect: 10 }, { xp: 1500, expect: 10 }
-            ];
-            for (let l of levels) {
-                let level = Math.min(10, Math.floor(l.xp / 100) + 1);
-                testLog("campaign", "XP " + l.xp + " -> Level " + level + " (expect " + l.expect + ")", level === l.expect ? "pass" : "fail");
-            }
-
-            // Test applyCampaignBonuses
-            let testGsState = {
-                player: {
-                    character: { stats: { STR: 10, AGI: 10, END: 15, INT: 10, MAG: 12, CHA: 10 } },
-                    ap: 4, maxAp: 4, energy: 12, maxEnergy: 12
-                }
-            };
-            let testCampaign = { statGains: { STR: 2, END: 5 } };
-            storage.applyCampaignBonuses(testGsState, testCampaign);
-            if (testGsState.player.character.stats.STR === 12 && testGsState.player.character.stats.END === 20) {
-                testLog("campaign", "applyCampaignBonuses: stats applied (STR 10->12, END 15->20)", "pass");
-            } else {
-                testLog("campaign", "applyCampaignBonuses: stats wrong", "fail");
-            }
-            // END=20 -> AP = floor(20/5)+1 = 5
-            if (testGsState.player.ap === 5) {
-                testLog("campaign", "applyCampaignBonuses: AP recalculated (END 20 -> AP 5)", "pass");
-            } else {
-                testLog("campaign", "applyCampaignBonuses: AP not recalculated (got " + testGsState.player.ap + ")", "fail");
             }
         }
 
@@ -1076,7 +1037,7 @@
                     // Test createGameState with this deck (stats should not persist/mutate)
                     if (gameState.createGameState) {
                         let statsBefore = JSON.stringify(ch.stats);
-                        let gs = gameState.createGameState(deck, ch);
+                        let gs = await gameState.createGameState(deck, ch);
                         let statsAfter = JSON.stringify(ch.stats);
                         if (gs) {
                             if (statsBefore === statsAfter) {
@@ -1220,7 +1181,7 @@
                 let deck = resolvedDeck;
                 let saveDeckName = resolvedDeckName || "test";
                 if (deck && gameState.createGameState) {
-                    let gs = gameState.createGameState(deck);
+                    let gs = await gameState.createGameState(deck);
                     if (gs) {
                         // Set up recognizable state
                         gs.round = 7;
@@ -1325,7 +1286,7 @@
                                 testState.currentTest = "LLM: narrator test";
                                 testLog("llm", "Testing CardGameNarrator...");
                                 let testNarrator = new CardGameNarrator();
-                                let themeId = resolvedDeck?.themeId || (themes.activeTheme ? themes.activeTheme()?.themeId : null) || "high-fantasy";
+                                let themeId = resolvedDeck?.themeId || (themes.getActiveTheme ? themes.getActiveTheme()?.themeId : null) || "high-fantasy";
                                 let narratorOk = await testNarrator.initialize("arena-announcer", themeId);
                                 testLog("llm", "Narrator init (" + themeId + "): " + (narratorOk ? "success" : "failed -- " + (testNarrator.lastError || "unknown")), narratorOk ? "pass" : "warn");
 
@@ -1401,18 +1362,19 @@
                 }
 
                 // Test 2: speak() in subtitlesOnly mode shows subtitle
-                let savedGs = context.gameState;
-                let tempGs = { narrationText: null, narrationTime: null };
-                if (window.CardGame.ctx) window.CardGame.ctx.gameState = tempGs;
+                let savedVoiceGs = gameState.getGameState ? gameState.getGameState() : null;
+                let tempVoiceGs = { narrationText: null, narrationTime: null };
+                if (gameState.setGameState) gameState.setGameState(tempVoiceGs);
+                else if (window.CardGame.ctx) window.CardGame.ctx.gameState = tempVoiceGs;
                 await testVoice1.speak("Voice test subtitle text");
-                let gs = window.CardGame.ctx?.gameState || tempGs;
-                if (gs.narrationText === "Voice test subtitle text") {
+                if (tempVoiceGs.narrationText === "Voice test subtitle text") {
                     testLog("voice", "speak() in subtitlesOnly mode -> subtitle displayed", "pass");
                 } else {
-                    testLog("voice", "speak() in subtitlesOnly mode -> subtitle NOT displayed (narrationText=" + gs.narrationText + ")", "fail");
+                    testLog("voice", "speak() in subtitlesOnly mode -> subtitle NOT displayed (narrationText=" + tempVoiceGs.narrationText + ")", "fail");
                 }
-                gs.narrationText = null;
-                if (window.CardGame.ctx) window.CardGame.ctx.gameState = savedGs;
+                tempVoiceGs.narrationText = null;
+                if (gameState.setGameState) gameState.setGameState(savedVoiceGs);
+                else if (window.CardGame.ctx) window.CardGame.ctx.gameState = savedVoiceGs;
 
                 // Test 3: Volume control
                 testVoice1.setVolume(0.5);
@@ -1468,7 +1430,7 @@
                 let savedGs = context.gameState;
 
                 // Create a temporary game state for the tests
-                let testGs = gameState.createGameState ? gameState.createGameState(resolvedDeck) : null;
+                let testGs = gameState.createGameState ? await gameState.createGameState(resolvedDeck) : null;
                 if (testGs) {
                     if (window.CardGame.ctx) window.CardGame.ctx.gameState = testGs;
 
@@ -1481,7 +1443,7 @@
                         announcerEnabled: false,
                         announcerVoiceEnabled: false
                     };
-                    await initializeLLMComponents(testGs, disabledDeck);
+                    await initializeLLMComponents(testGs, disabledDeck, { skipNarration: true });
 
                     let gameNarrator = gameState.state.gameNarrator || null;
                     let gameChatManager = gameState.state.gameChatManager || null;
@@ -1504,23 +1466,24 @@
                         narrationEnabled: true,
                         opponentVoiceEnabled: true,
                         announcerEnabled: true,
-                        announcerVoiceEnabled: true,
-                        announcerProfile: "dungeon-master"
+                        announcerVoiceEnabled: true
                     };
-                    await initializeLLMComponents(testGs, enabledDeck);
+                    await initializeLLMComponents(testGs, enabledDeck, { skipNarration: true });
 
                     gameNarrator = gameState.state.gameNarrator || null;
                     gameChatManager = gameState.state.gameChatManager || null;
                     gameVoice = gameState.state.gameVoice || null;
                     gameAnnouncerVoice = gameState.state.gameAnnouncerVoice || null;
 
+                    // Announcer profile comes from theme (not deck config)
+                    let expectedProfile = themes.getActiveTheme?.()?.narration?.announcerProfile || "arena-announcer";
                     if (llmStatus.available) {
                         testLog("llm", "narration=on -> gameNarrator=" + (gameNarrator ? "active (" + (gameNarrator.profile || "?") + ")" : "null (LLM init may have failed)"),
                             gameNarrator ? "pass" : "warn");
                         testLog("llm", "narration=on -> gameChatManager=" + (gameChatManager ? "active" : "null (LLM init may have failed)"),
                             gameChatManager ? "pass" : "warn");
-                        testLog("llm", "announcer profile: " + (gameNarrator?.profile || "not set"),
-                            gameNarrator?.profile === "dungeon-master" ? "pass" : "warn");
+                        testLog("llm", "announcer profile (from theme): " + (gameNarrator?.profile || "not set") + " (expected: " + expectedProfile + ")",
+                            gameNarrator?.profile === expectedProfile ? "pass" : "warn");
                     } else {
                         testLog("llm", "LLM unavailable -- narrator/chat would use fallbacks at runtime", "info");
                     }
@@ -1540,10 +1503,9 @@
                         narrationEnabled: true,
                         opponentVoiceEnabled: false,
                         announcerEnabled: true,
-                        announcerVoiceEnabled: false,
-                        announcerProfile: "war-correspondent"
+                        announcerVoiceEnabled: false
                     };
-                    await initializeLLMComponents(testGs, mixedDeck);
+                    await initializeLLMComponents(testGs, mixedDeck, { skipNarration: true });
 
                     gameVoice = gameState.state.gameVoice || null;
                     gameAnnouncerVoice = gameState.state.gameAnnouncerVoice || null;
@@ -1554,8 +1516,8 @@
                     testLog("voice", "annVoice=off -> gameAnnouncerVoice=" + (gameAnnouncerVoice === null ? "null" : "active"),
                         gameAnnouncerVoice === null ? "pass" : "fail");
                     if (llmStatus.available && gameNarrator) {
-                        testLog("llm", "announcer profile: " + (gameNarrator.profile || "not set"),
-                            gameNarrator.profile === "war-correspondent" ? "pass" : "warn");
+                        testLog("llm", "announcer profile (from theme): " + (gameNarrator.profile || "not set"),
+                            gameNarrator.profile === expectedProfile ? "pass" : "warn");
                     }
 
                     // ── Test 4: Deck's actual saved config ──
@@ -1563,7 +1525,7 @@
                     if (deckGc && Object.keys(deckGc).length > 0) {
                         testLog("llm", "Config test: deck's saved config...");
                         testLog("llm", "Deck gameConfig: " + JSON.stringify(deckGc), "info");
-                        await initializeLLMComponents(testGs, resolvedDeck);
+                        await initializeLLMComponents(testGs, resolvedDeck, { skipNarration: true });
 
                         gameNarrator = gameState.state.gameNarrator || null;
                         gameChatManager = gameState.state.gameChatManager || null;
@@ -1612,7 +1574,7 @@
                     testLog("playthrough", "Using deck: " + (deck.deckName || deckName) + " (" + (deck.cards || []).length + " cards)", "pass");
 
                     // Create game state
-                    let gs = gameState.createGameState(deck);
+                    let gs = await gameState.createGameState(deck);
                     if (!gs) {
                         testLog("playthrough", "createGameState failed (no characters?)", "fail");
                     } else {
@@ -1684,11 +1646,25 @@
 
     // ── Test Mode UI Component ───────────────────────────────────────────
     function TestModeUI() {
+        let consoleEl = null;
+
+        function scrollToBottom() {
+            if (consoleEl) {
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+            }
+        }
+
         return {
+            oncreate: function() { scrollToBottom(); },
+            onupdate: function() { scrollToBottom(); },
             view: function() {
                 let statusColors = { info: "#777", pass: "#2E7D32", fail: "#C62828", warn: "#E65100" };
                 let statusIcons = { info: "info", pass: "check_circle", fail: "error", warn: "warning" };
                 let context = ctx();
+                let filterIssues = testState.logFilter === "issues";
+                let visibleLogs = filterIssues
+                    ? testState.logs.filter(function(e) { return e.status === "fail" || e.status === "warn"; })
+                    : testState.logs;
 
                 return m("div", { class: "cg2-test-mode" }, [
                     m("div", { class: "cg2-toolbar" }, [
@@ -1729,24 +1705,43 @@
                         })
                     ),
 
-                    // Results summary
+                    // Results summary + filter toggles
                     testState.completed ? m("div", { class: "cg2-test-summary" }, [
                         m("span", { class: "cg2-test-result-pass" }, testState.results.pass + " pass"),
                         m("span", { class: "cg2-test-result-fail" }, testState.results.fail + " fail"),
-                        m("span", { class: "cg2-test-result-warn" }, testState.results.warn + " warn")
+                        m("span", { class: "cg2-test-result-warn" }, testState.results.warn + " warn"),
+                        m("span", { style: { marginLeft: "auto", display: "flex", gap: "4px" } }, [
+                            m("button", {
+                                class: "cg2-test-filter-btn" + (!filterIssues ? " active" : ""),
+                                onclick: function() { testState.logFilter = "all"; m.redraw(); }
+                            }, "All"),
+                            m("button", {
+                                class: "cg2-test-filter-btn" + (filterIssues ? " active" : ""),
+                                onclick: function() { testState.logFilter = "issues"; m.redraw(); }
+                            }, [
+                                m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", verticalAlign: "middle", marginRight: "2px" } }, "error"),
+                                "Issues" + ((testState.results.fail + testState.results.warn) > 0
+                                    ? " (" + (testState.results.fail + testState.results.warn) + ")" : "")
+                            ])
+                        ])
                     ]) : null,
 
                     // Debug console log
-                    m("div", { class: "cg2-test-console" }, (function() {
+                    m("div", {
+                        class: "cg2-test-console",
+                        oncreate: function(vnode) { consoleEl = vnode.dom; scrollToBottom(); },
+                        onupdate: function(vnode) { consoleEl = vnode.dom; scrollToBottom(); }
+                    }, (function() {
                         let items = [];
                         let lastCat = null;
-                        for (let entry of testState.logs) {
+                        for (let entry of visibleLogs) {
                             // Add section header when category changes
                             if (entry.category && entry.category !== lastCat) {
                                 let catLabel = TEST_CATEGORIES[entry.category]?.label || entry.category;
                                 items.push(m("div", { class: "cg2-test-section-header" }, catLabel));
                                 lastCat = entry.category;
                             }
+                            let isBold = entry.status === "fail" || entry.status === "warn";
                             items.push(m("div", { class: "cg2-test-log-entry", "data-status": entry.status }, [
                                 m("span", { class: "cg2-test-log-time" }, entry.time),
                                 entry.category ? m("span", { class: "cg2-test-log-cat", "data-cat": entry.category }, entry.category) : null,
@@ -1754,7 +1749,10 @@
                                     class: "material-symbols-outlined",
                                     style: { fontSize: "13px", color: statusColors[entry.status] || "#666", verticalAlign: "middle", marginRight: "4px" }
                                 }, statusIcons[entry.status] || "info"),
-                                m("span", { style: { color: statusColors[entry.status] || "#333" } }, entry.message)
+                                m("span", { style: {
+                                    color: statusColors[entry.status] || "#333",
+                                    fontWeight: isBold ? 700 : 400
+                                } }, entry.message)
                             ]));
                         }
                         if (testState.logs.length === 0) {

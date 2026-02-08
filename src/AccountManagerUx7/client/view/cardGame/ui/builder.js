@@ -250,7 +250,7 @@
                         m("button", {
                             class: "cg2-btn cg2-btn-primary",
                             onclick() { ctx().builderStep = 2; chars().loadAvailableCharacters(); m.redraw(); }
-                        }, "Next: Select Character \u2192")
+                        }, "Next: Generate Characters \u2192")
                     ])
                 ]);
             }
@@ -289,7 +289,7 @@
                 let deckNameInput = ctx().deckNameInput;
 
                 return m("div", [
-                    m("div", { class: "cg2-section-title" }, "Step 2: Select Character for Deck"),
+                    m("div", { class: "cg2-section-title" }, "Step 2: Generate & Select Character"),
                     // Generate Characters panel (Phase 7.1)
                     m("div", { class: "cg2-gen-panel", style: { marginBottom: "16px", padding: "12px", background: "#f9f9f9", borderRadius: "8px", border: "1px solid #e0e0e0" } }, [
                         m("div", { style: { fontWeight: 600, marginBottom: "8px" } }, "Quick Start: Generate Balanced Characters"),
@@ -371,23 +371,35 @@
                             })
                         )
                     ] : null,
+                    // Deck name input — needed before character persistence
+                    m("div", { class: "cg2-deck-name-row", style: { marginTop: "16px" } }, [
+                        m("label", { class: "cg2-deck-name-label" }, "Deck Name"),
+                        m("input", {
+                            class: "cg2-deck-name-input",
+                            type: "text",
+                            value: deckNameInput,
+                            oninput(e) { ctx().deckNameInput = e.target.value; },
+                            placeholder: "Enter a name for this deck"
+                        })
+                    ]),
                     m("div", { class: "cg2-builder-nav" }, [
                         m("button", { class: "cg2-btn", onclick: () => { ctx().builderStep = 1; m.redraw(); } }, "\u2190 Back"),
                         m("button", {
                             class: "cg2-btn cg2-btn-primary",
-                            disabled: !selectedChars.length || applyingOutfits || buildingDeck,
+                            disabled: !selectedChars.length || applyingOutfits || buildingDeck || !deckNameInput.trim(),
                             async onclick() {
-                                if (!selectedChars.length || applyingOutfits || buildingDeck) return;
+                                if (!selectedChars.length || applyingOutfits || buildingDeck || !deckNameInput.trim()) return;
 
                                 // Persist any generated characters first (need real IDs for outfits)
                                 const unpersisted = selectedChars.filter(ch => ch._tempId && !ch.objectId);
+                                let safeDeckName = deckNameInput.trim().replace(/[^a-zA-Z0-9_\-]/g, "_");
                                 if (unpersisted.length > 0) {
-                                    // Need a deck name to persist characters
-                                    let tempDeckName = deckNameInput.trim() || "Deck_" + Date.now();
                                     ctx().buildingDeck = true;
                                     m.redraw();
                                     page.toast("info", "Saving characters...");
-                                    const persisted = await chars().persistGeneratedCharacters(unpersisted, tempDeckName);
+                                    const persisted = await chars().persistGeneratedCharacters(unpersisted, safeDeckName);
+                                    // Track the group name used for persistence (for rename if user changes name in step 3)
+                                    ctx()._charGroupName = safeDeckName;
                                     // Update selectedChars with persisted versions (have objectId now)
                                     for (const p of persisted) {
                                         const idx = selectedChars.findIndex(ch => ch._tempId && ch.name === p.name);
@@ -395,7 +407,6 @@
                                             selectedChars[idx] = p;
                                         }
                                     }
-                                    ctx().deckNameInput = tempDeckName;
                                     ctx().buildingDeck = false;
                                 }
 
@@ -407,7 +418,7 @@
                                 ctx().builderStep = 3;
                                 m.redraw();
                             }
-                        }, buildingDeck ? "Saving Characters..." : (applyingOutfits ? "Applying Outfits..." : "Next: Review Deck \u2192"))
+                        }, buildingDeck ? "Saving Characters..." : (applyingOutfits ? "Applying Outfits..." : "Next: Outfit & Review \u2192"))
                     ])
                 ]);
             }
@@ -471,7 +482,7 @@
                 let cards = builtDeck.cards || [];
                 let charCard = cards.find(c => c.type === "character");
                 return m("div", [
-                    m("div", { class: "cg2-section-title" }, "Step 3: Review & Build Deck"),
+                    m("div", { class: "cg2-section-title" }, "Step 3: Outfit & Review Deck"),
                     m("div", { class: "cg2-deck-name-row" }, [
                         m("label", { class: "cg2-deck-name-label" }, "Deck Name"),
                         m("input", {

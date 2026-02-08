@@ -97,6 +97,37 @@
     "hoardingReturnTarget": "encounterDeck"
   },
 
+  "narration": {
+    "announcerProfile": "arena-announcer",
+    "gameStart": "The holographic arena materializes. Shield generators hum to life as two combatants take their positions. Scanning systems lock on. The match begins!",
+    "roundStart": [
+      "Tactical systems recalibrate. A new round initializes.",
+      "Energy shields flicker as the next engagement begins!",
+      "Sensors detect movement. Combat protocols re-engage.",
+      "The arena's targeting grid refreshes. Ready for the next exchange.",
+      "Cooldown complete. Systems armed for another round."
+    ],
+    "roundEndTie": [
+      "Scanners show no decisive advantage. Stalemate detected.",
+      "Equal force readings. The round ends without a victor."
+    ],
+    "criticalHit": [
+      "Direct hit! Shield integrity compromised!",
+      "Critical systems damage! That was a precision strike!",
+      "Devastating impact! Hull breach detected!"
+    ],
+    "criticalMiss": [
+      "Targeting malfunction! Shot goes wide!",
+      "System error! The attack sequence fails completely!",
+      "Missed by a wide margin. Recalibrating..."
+    ],
+    "lowHpTension": [
+      "Warning: structural integrity failing on both sides.",
+      "Critical damage sustained. Emergency protocols active.",
+      "Systems failing. This engagement nears its conclusion."
+    ]
+  },
+
   "magicConfig": {
     "enabledSkillTypes": ["Psionic", "Imperial"],
     "magicEffectPool": ["Neural Shock", "Kinetic Barrier", "Mind Link", "Phase Shift", "Plasma Surge", "Gravity Well", "Nano Heal", "EMP Pulse"]
@@ -210,5 +241,55 @@
         ]
       }
     }
+  },
+
+  "cardPool": [
+    { "type": "item", "subtype": "weapon", "name": "Plasma Pistol", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Energy", "durability": 8, "artPrompt": "a sleek plasma pistol with a glowing barrel" },
+    { "type": "item", "subtype": "weapon", "name": "Pulse Rifle", "rarity": "UNCOMMON", "atk": 5, "slot": "Hand (2H)", "damageType": "Energy", "range": "Ranged", "durability": 12, "artPrompt": "a military-grade pulse rifle with holographic sights" },
+    { "type": "item", "subtype": "weapon", "name": "Ion Lance", "rarity": "RARE", "atk": 6, "slot": "Hand (2H)", "damageType": "Energy", "durability": 14, "special": "Ignores 2 DEF (armor piercing)", "artPrompt": "a long energy lance crackling with blue ion discharge" },
+    { "type": "item", "subtype": "weapon", "name": "Stun Baton", "rarity": "COMMON", "atk": 2, "slot": "Hand (1H)", "damageType": "Electric", "durability": 10, "special": "Stun: target skips next action on crit", "artPrompt": "an electrified baton sparking with arcs of electricity" },
+    { "type": "item", "subtype": "weapon", "name": "Mono-Filament Blade", "rarity": "RARE", "atk": 5, "slot": "Hand (1H)", "damageType": "Slashing", "durability": 6, "special": "Ignores armor DEF", "artPrompt": "a thin blade shimmering with molecular-edge energy" },
+    { "type": "item", "subtype": "weapon", "name": "Railgun Sidearm", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (1H)", "damageType": "Kinetic", "range": "Ranged", "durability": 10, "artPrompt": "a compact railgun with electromagnetic coils" },
+
+    { "type": "apparel", "name": "Carbon Fiber Vest", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 10, "fabric": "carbon fiber", "artPrompt": "a lightweight black carbon fiber tactical vest" },
+    { "type": "apparel", "name": "Kinetic Barrier Harness", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 0, "durability": 12, "fabric": "synthetic", "special": "Absorb first 2 damage each round", "artPrompt": "a harness projecting a faint shimmering force field" },
+    { "type": "apparel", "name": "Powered Exo-Armor", "rarity": "RARE", "slot": "Body", "def": 5, "hpBonus": 3, "durability": 20, "fabric": "titanium alloy", "artPrompt": "a full-body powered exoskeleton armor suit" },
+    { "type": "apparel", "name": "Neural Interface Helm", "rarity": "UNCOMMON", "slot": "Head", "def": 1, "hpBonus": 0, "durability": 8, "fabric": "composite", "special": "+2 to Channel rolls", "artPrompt": "a sleek helmet with glowing neural interface nodes" },
+    { "type": "apparel", "name": "Mag-Lock Combat Boots", "rarity": "COMMON", "slot": "Feet", "def": 1, "hpBonus": 0, "durability": 10, "fabric": "composite rubber", "special": "+1 to Flee rolls", "artPrompt": "heavy combat boots with magnetic sole systems" },
+    { "type": "apparel", "name": "Stealth Suit", "rarity": "RARE", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "adaptive nano-mesh", "special": "+3 to Steal and Feint rolls", "artPrompt": "a form-fitting suit that shifts colors to match surroundings" },
+    { "type": "apparel", "name": "Tactical Ballistic Jacket", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 1, "durability": 14, "fabric": "kevlar composite", "artPrompt": "a bulky tactical jacket with ceramic plate inserts" },
+
+    { "type": "skill", "name": "Overwatch Protocol", "category": "Combat", "modifier": "+3 ATK on ranged attacks", "tier": "UNCOMMON", "artPrompt": "a soldier targeting through a holographic scope" },
+    { "type": "skill", "name": "Combat Stims", "category": "Combat", "modifier": "+2 ATK and +1 AGI this round", "tier": "UNCOMMON", "artPrompt": "a soldier injecting combat stimulants" },
+    { "type": "skill", "name": "Electronic Warfare", "category": "Tactical", "modifier": "Disable target's equipment bonuses for 1 round", "tier": "RARE", "artPrompt": "holographic screens showing EW countermeasures" },
+    { "type": "skill", "name": "Tactical Scan", "category": "Discovery", "modifier": "+3 to Investigate, reveal enemy stats", "tier": "COMMON", "artPrompt": "a holographic display analyzing a target" },
+    { "type": "skill", "name": "Zero-G Combat", "category": "Combat", "modifier": "+2 to Attack and Flee in zero gravity", "tier": "UNCOMMON", "artPrompt": "a soldier fighting in zero gravity, debris floating" },
+    { "type": "skill", "name": "Med-Tech Training", "category": "Survival", "modifier": "Rest restores +4 extra HP, heals poison", "tier": "UNCOMMON", "artPrompt": "advanced medical equipment and nano-sutures" },
+    { "type": "skill", "name": "Hacking Suite", "category": "Tactical", "modifier": "+3 to Steal and Investigate vs tech targets", "tier": "COMMON", "artPrompt": "holographic code streams and a wrist-mounted interface" },
+    { "type": "skill", "name": "Heavy Weapons Cert", "category": "Combat", "modifier": "+2 ATK with 2H weapons, no AGI penalty", "tier": "RARE", "artPrompt": "a soldier bracing a massive rotary cannon" },
+
+    { "type": "magic", "name": "Neural Shock", "effectType": "Offensive", "skillType": "Psionic", "effect": "Deal 5 damage, stun target 1 round", "energyCost": 5, "reusable": true, "artPrompt": "psionic energy crackling around a target's head" },
+    { "type": "magic", "name": "Kinetic Barrier", "effectType": "Defensive", "skillType": "Psionic", "effect": "+4 DEF this round", "energyCost": 3, "reusable": true, "artPrompt": "a shimmering force field deflecting projectiles" },
+    { "type": "magic", "name": "Gravity Well", "effectType": "Offensive", "skillType": "Psionic", "effect": "Target cannot Flee for 2 rounds, -2 AGI", "energyCost": 4, "reusable": true, "artPrompt": "a dark sphere of compressed gravity pulling everything inward" },
+    { "type": "magic", "name": "Phase Shift", "effectType": "Utility", "skillType": "Psionic", "effect": "Become intangible: immune to damage this round", "energyCost": 6, "reusable": true, "artPrompt": "a figure phasing through solid matter, ghostly and translucent" },
+
+    { "type": "item", "subtype": "consumable", "name": "Advanced Medkit", "rarity": "UNCOMMON", "effect": "Restore 12 HP", "artPrompt": "a high-tech medical kit with auto-injectors" },
+    { "type": "item", "subtype": "consumable", "name": "Combat Stim Injector", "rarity": "UNCOMMON", "effect": "+3 ATK this round", "artPrompt": "a pressurized auto-injector with glowing blue fluid" },
+    { "type": "item", "subtype": "consumable", "name": "Shield Cell", "rarity": "RARE", "effect": "+5 DEF this round", "artPrompt": "a cylindrical energy cell powering a personal shield" },
+    { "type": "item", "subtype": "consumable", "name": "Power Cell", "rarity": "UNCOMMON", "effect": "Restore 8 Energy", "artPrompt": "a glowing energy cell with connection ports" },
+    { "type": "item", "subtype": "consumable", "name": "EMP Grenade", "rarity": "COMMON", "effect": "Disable target's equipment for 1 round", "artPrompt": "a small spherical grenade crackling with electromagnetic energy" }
+  ],
+
+  "encounters": {
+    "threatCreatures": [
+      { "name": "Feral Cyber-Hound", "type": "animal", "atk": 2, "def": 2, "hp": 9, "imageIcon": "pets", "behavior": "Attacks lowest HP target", "loot": ["Salvaged Servos"], "artPrompt": "a cybernetically enhanced feral dog with metal jaws" },
+      { "name": "Pirate Drone", "type": "monster", "atk": 3, "def": 1, "hp": 8, "imageIcon": "smart_toy", "behavior": "Ranged attack, ignores front-line", "loot": ["Drone Core", "Micro Capacitor"], "artPrompt": "a small armed drone with red targeting lasers" },
+      { "name": "Void Spider", "type": "animal", "atk": 3, "def": 2, "hp": 12, "imageIcon": "bug_report", "behavior": "Poison on hit (acid, 2 turns)", "loot": ["Acid Gland", "Chitin Plate"], "artPrompt": "a massive spider-like alien with dripping acid mandibles" },
+      { "name": "Rogue Android", "type": "npc", "atk": 4, "def": 3, "hp": 16, "imageIcon": "smart_toy", "behavior": "Adapts: +1 ATK each round", "loot": ["Android CPU", "Synth-Skin Patch"], "artPrompt": "a damaged humanoid android with exposed circuitry and a plasma arm" },
+      { "name": "Space Raider", "type": "npc", "atk": 4, "def": 2, "hp": 14, "imageIcon": "person_alert", "behavior": "Steals item on crit", "loot": ["Stolen Tech", "Raider's Pistol"], "artPrompt": "a space pirate in patched-together armor with a blaster" },
+      { "name": "Xenomorph Stalker", "type": "monster", "atk": 6, "def": 3, "hp": 20, "imageIcon": "warning", "behavior": "Attacks twice on crit", "loot": ["Xeno Carapace", "Pheromone Gland"], "artPrompt": "a sleek alien predator with razor claws, dripping with slime" },
+      { "name": "Mech Sentry", "type": "monster", "atk": 5, "def": 5, "hp": 22, "imageIcon": "precision_manufacturing", "behavior": "High armor, slow (-2 initiative)", "loot": ["Armor Plating", "Targeting Module"], "artPrompt": "a bipedal military mech with mounted weapons" },
+      { "name": "Psi-Mutant", "type": "npc", "atk": 5, "def": 2, "hp": 16, "imageIcon": "psychology", "behavior": "Drains 3 Energy on hit", "loot": ["Psi Crystal", "Mutant Tissue"], "artPrompt": "a human with grotesque psionic mutations, energy crackling around their head" }
+    ]
   }
 }

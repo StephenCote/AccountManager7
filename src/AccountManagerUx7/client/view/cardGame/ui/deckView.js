@@ -134,7 +134,7 @@
                 let busy = queueActive || backgroundGenerating || tabletopGenerating || cardFrontGenerating || cardBackGenerating || !!sequenceCardId;
                 return m("div", [
                     m("div", { class: "cg2-toolbar" }, [
-                        m("button", { class: "cg2-btn", onclick: () => { ctx.screen = "deckList"; ctx.viewingDeck = null; CardGame.ArtPipeline.cancelArtQueue(); ctx.artTotal = 0; ctx.backgroundImageId = null; ctx.backgroundThumbUrl = null; m.redraw(); } }, "\u2190 Back to Decks"),
+                        m("button", { class: "cg2-btn", onclick: () => { ctx.screen = "deckList"; ctx.viewingDeck = null; CardGame.ArtPipeline.cancelArtQueue(); ctx.artTotal = 0; ctx.backgroundImageId = null; ctx.backgroundThumbUrl = null; CardGame.UI.loadSavedDecks(); m.redraw(); } }, "\u2190 Back to Decks"),
                         m("span", { style: { fontWeight: 700, fontSize: "16px", marginLeft: "8px" } }, viewingDeck.deckName || "Deck"),
                         viewingDeck.themeId ? m("span", { class: "cg2-deck-theme-badge", style: { marginLeft: "8px" } }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", verticalAlign: "middle", marginRight: "3px" } }, "auto_fix_high"),
@@ -412,20 +412,19 @@
                                             gc.announcerEnabled ? "Play-by-play commentary during game" : "No announcer commentary")
                                     ])
                                 ]),
-                                // Announcer style (shown when enabled)
+                                // Announcer style info (from theme)
                                 gc.announcerEnabled ? m("div", { class: "cg2-config-row", style: { paddingLeft: "24px" } }, [
                                     m("label", { class: "cg2-config-label" }, [
                                         m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, "style"),
                                         "Style"
                                     ]),
                                     m("div", { class: "cg2-config-control" }, [
-                                        m("select", {
-                                            class: "cg2-config-select",
-                                            value: gc.announcerProfile || "arena-announcer",
-                                            onchange(e) { gc.announcerProfile = e.target.value; m.redraw(); }
-                                        }, Object.entries(CardGame.AI.CardGameNarrator.PROFILES).map(([id, p]) =>
-                                            m("option", { value: id }, p.name)
-                                        ))
+                                        m("span", { style: { fontSize: "12px", color: "#666" } },
+                                            (function() {
+                                                let prof = activeTheme?.narration?.announcerProfile || "arena-announcer";
+                                                let profiles = CardGame.AI?.CardGameNarrator?.PROFILES;
+                                                return profiles?.[prof]?.name || prof;
+                                            })() + " (from theme)")
                                     ])
                                 ]) : null,
                                 // Announcer voice enable/disable (shown when announcer enabled)

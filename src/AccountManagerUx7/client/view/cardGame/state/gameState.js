@@ -184,20 +184,32 @@
         let magicCards = cards.filter(c => c.type === "magic");
         let encounterCards = cards.filter(c => c.type === "encounter");
 
-        // Split items and apparel for player vs opponent (so they get different equipment)
-        let itemMid = Math.ceil(itemCards.length / 2);
+        // Separate consumables (drawn into hand) from equipment (placed in cardStack)
+        let consumableCards = itemCards.filter(c => c.subtype === "consumable");
+        let equipmentItems = itemCards.filter(c => c.subtype !== "consumable");
+
+        // Split equipment and apparel for player vs opponent (so they get different gear)
+        let itemMid = Math.ceil(equipmentItems.length / 2);
         let apparelMid = Math.ceil(apparelCards.length / 2);
-        let playerItems = itemCards.slice(0, itemMid);
-        let opponentItems = itemCards.slice(itemMid);
+        let playerItems = equipmentItems.slice(0, itemMid);
+        let opponentItems = equipmentItems.slice(itemMid);
         let playerApparel = apparelCards.slice(0, apparelMid);
         let opponentApparel = apparelCards.slice(apparelMid);
 
-        // Create playable card pool (modifiers only: skills, magic, items)
-        // Actions are no longer drawn — they're selected via the icon picker
-        let playableCards = [...skillCards, ...magicCards];
+        // Theme cardPool adds extra modifier cards to the draw pile
+        let activeTheme = Th()?.getActiveTheme?.();
+        let themeModifiers = [];
+        if (activeTheme?.cardPool) {
+            themeModifiers = activeTheme.cardPool.filter(c =>
+                c.type === "skill" || c.type === "magic" || (c.type === "item" && c.subtype === "consumable")
+            );
+        }
+
+        let playableCards = [...skillCards, ...magicCards, ...consumableCards, ...themeModifiers];
 
         console.log("[CardGame v2] Card counts - skill:", skillCards.length,
-            "magic:", magicCards.length, "playable (modifier) total:", playableCards.length);
+            "magic:", magicCards.length, "consumable:", consumableCards.length,
+            "themeModifiers:", themeModifiers.length, "playable total:", playableCards.length);
 
         // If deck has no modifier cards, create basic skill cards
         if (playableCards.length === 0) {
@@ -338,6 +350,12 @@
             // LLM busy indicator (null when idle, string message when busy)
             llmBusy: null,
 
+            // Pre-generated narration lines (used before hardcoded fallbacks).
+            // Generic lines that don't mention character names.
+            // Sourced from deck.narration or theme config narration section.
+            narration: deck.narration || (Th()?.getActiveTheme?.()?.narration) || null,
+            narrationReady: false,
+
             // Chat state (Phase 8)
             chat: {
                 active: false,
@@ -402,7 +420,7 @@
     }
 
     // Initialize LLM components (Director and Narrator) for a game
-    async function initializeLLMComponents(state, deck) {
+    async function initializeLLMComponents(state, deck, options) {
         // Clean up any existing audio/voice/LLM from previous game
         cleanupAudio();
         const activeTheme = Th()?.getActiveTheme?.() || { themeId: "high-fantasy" };
@@ -413,7 +431,7 @@
         const opponentVoiceEnabled = gc.opponentVoiceEnabled === true; // Default: disabled
         const opponentVoiceProfileId = gc.opponentVoiceProfileId || null;
         const announcerEnabled = gc.announcerEnabled === true;         // Default: disabled
-        const announcerProfile = gc.announcerProfile || "arena-announcer";
+        const announcerProfile = activeTheme?.narration?.announcerProfile || "arena-announcer";
         const announcerVoiceEnabled = gc.announcerVoiceEnabled === true;
         const announcerVoiceProfileId = gc.announcerVoiceProfileId || null;
 
@@ -465,7 +483,15 @@
 
         // ── Phase 2: Trigger game start narration (plays while LLM components init) ──
         // Uses fallback text immediately; voice can start speaking during LLM init below
-        narrateGameStart();
+        if (!options?.skipNarration) {
+            narrateGameStart();
+
+            // Signal that narration is displayed — initiative animation waits for this
+            if (gameState) {
+                gameState.narrationReady = true;
+                m.redraw();
+            }
+        }
 
         // ── Phase 3: Initialize LLM components (these can take time — voice plays in parallel) ──
 
@@ -558,12 +584,20 @@
         const opponentName = gameState.opponent?.character?.name || "Opponent";
         const baseContext = { playerName, opponentName };
 
+        // Check for pre-generated deck narration lines first (generic, no character names)
+        let deckNarration = gameState.narration;
+
         // Build trigger-specific context
         let context, fallbackText;
         switch (trigger) {
             case "game_start":
                 context = { ...baseContext, round: 1 };
-                fallbackText = `The arena awaits! ${playerName} faces ${opponentName} in a battle of wits and steel. Let the cards decide your fate!`;
+                // Deck narration can provide a generic intro; character names are added around it
+                if (deckNarration?.gameStart) {
+                    fallbackText = deckNarration.gameStart;
+                } else {
+                    fallbackText = `The arena awaits! ${playerName} faces ${opponentName} in a battle of wits and steel. Let the cards decide your fate!`;
+                }
                 break;
 
             case "game_end": {
@@ -587,9 +621,17 @@
                     opponentEnergy: gameState.opponent.energy
                 };
                 if (gameState.round <= 1) return; // Round 1 uses game_start
-                const tension = (gameState.player.hp < 10 || gameState.opponent.hp < 10)
-                    ? " The tension mounts as both combatants show signs of wear." : "";
-                fallbackText = `Round ${gameState.round} begins!${tension}`;
+                let lowHp = (gameState.player.hp < 10 || gameState.opponent.hp < 10);
+                if (lowHp && deckNarration?.lowHpTension?.length) {
+                    let lines = deckNarration.lowHpTension;
+                    fallbackText = lines[Math.floor(Math.random() * lines.length)];
+                } else if (deckNarration?.roundStart && Array.isArray(deckNarration.roundStart)) {
+                    let lines = deckNarration.roundStart;
+                    fallbackText = lines[Math.floor(Math.random() * lines.length)];
+                } else {
+                    const tension = lowHp ? " The tension mounts as both combatants show signs of wear." : "";
+                    fallbackText = `Round ${gameState.round} begins!${tension}`;
+                }
                 break;
 
             case "round_end": {
@@ -602,9 +644,14 @@
                     playerHp: gameState.player.hp,
                     opponentHp: gameState.opponent.hp
                 };
-                fallbackText = roundWinner === "tie"
-                    ? `Round ${gameState.round} ends in a stalemate!`
-                    : `${winName} takes Round ${gameState.round}!`;
+                if (roundWinner === "tie" && deckNarration?.roundEndTie?.length) {
+                    let lines = deckNarration.roundEndTie;
+                    fallbackText = lines[Math.floor(Math.random() * lines.length)];
+                } else if (roundWinner === "tie") {
+                    fallbackText = `Round ${gameState.round} ends in a stalemate!`;
+                } else {
+                    fallbackText = `${winName} takes Round ${gameState.round}!`;
+                }
                 break;
             }
 
@@ -618,8 +665,14 @@
                     attackerName, defenderName, outcome, damage,
                     roundNumber: gameState.round
                 };
-                if (outcome === "CRIT") {
+                if (outcome === "CRIT" && deckNarration?.criticalHit?.length) {
+                    let lines = deckNarration.criticalHit;
+                    fallbackText = lines[Math.floor(Math.random() * lines.length)];
+                } else if (outcome === "CRIT") {
                     fallbackText = `Critical hit! ${attackerName} devastates ${defenderName} for ${damage} damage!`;
+                } else if ((outcome === "MISS" || damage <= 0) && deckNarration?.criticalMiss?.length) {
+                    let lines = deckNarration.criticalMiss;
+                    fallbackText = lines[Math.floor(Math.random() * lines.length)];
                 } else if (outcome === "MISS" || damage <= 0) {
                     fallbackText = `${defenderName} deflects ${attackerName}'s assault!`;
                 } else {
@@ -640,16 +693,22 @@
             context.playerEmotionDesc = emotionCtx.description;
         }
 
-        // For game_start: show fallback immediately, then upgrade with LLM text if available
-        // This avoids blocking the initiative phase with "Narrating..." spinner
+        // For game_start: show fallback immediately and speak it, then upgrade with LLM text if available
+        // Initiative animation waits for narrationReady flag (set in initializeLLMComponents)
         if (trigger === "game_start") {
-            if (fallbackText) showNarrationSubtitle(fallbackText);
-            // Fire-and-forget LLM upgrade
+            if (fallbackText) {
+                showNarrationSubtitle(fallbackText);
+                // Speak fallback text immediately (voice or subtitles)
+                if (gameAnnouncerVoice?.enabled) {
+                    gameAnnouncerVoice.speak(fallbackText);
+                }
+            }
+            // Fire-and-forget LLM upgrade (replaces fallback text if available)
             if (gameNarrator?.initialized) {
                 gameNarrator.narrate(trigger, context).then(narration => {
                     if (narration?.text && gameState) {
                         showNarrationSubtitle(narration.text);
-                        if (gameAnnouncerVoice?.enabled && !gameAnnouncerVoice.subtitlesOnly) {
+                        if (gameAnnouncerVoice?.enabled) {
                             gameAnnouncerVoice.speak(narration.text);
                         }
                     }

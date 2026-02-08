@@ -70,10 +70,19 @@
     }
 
     function getThreatCreatures() {
+        // Theme encounters override defaults when available
+        let activeTheme = window.CardGame.Themes?.getActiveTheme?.();
+        if (activeTheme?.encounters?.threatCreatures?.length) {
+            return activeTheme.encounters.threatCreatures;
+        }
         return balanceData?.threatCreatures || THREAT_CREATURES;
     }
 
     function getScenarioCards() {
+        let activeTheme = window.CardGame.Themes?.getActiveTheme?.();
+        if (activeTheme?.encounters?.scenarioCards?.length) {
+            return activeTheme.encounters.scenarioCards;
+        }
         return balanceData?.scenarioCards || SCENARIO_CARDS;
     }
 

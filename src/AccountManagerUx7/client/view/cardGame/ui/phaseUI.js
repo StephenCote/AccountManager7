@@ -19,7 +19,24 @@
                 let gs = GS().state;
                 let initAnimState = gs.initAnimState;
                 if (!initAnimState.rolling && !initAnimState.rollComplete && initAnimState.countdown === 3) {
-                    GS().startInitiativeAnimation();
+                    // Wait for narration to be ready before starting initiative animation
+                    let gameState = gs.gameState;
+                    if (gameState && !gameState.narrationReady) {
+                        // Poll until narration is displayed (initializeLLMComponents sets narrationReady)
+                        let pollInterval = setInterval(() => {
+                            let currentGs = GS().state?.gameState;
+                            if (!currentGs || currentGs.narrationReady) {
+                                clearInterval(pollInterval);
+                                // Give narration subtitle time to be read before initiative starts
+                                setTimeout(() => {
+                                    GS().startInitiativeAnimation();
+                                }, 2000);
+                            }
+                        }, 100);
+                    } else {
+                        // Narration already ready (e.g. round 2+) — start immediately
+                        GS().startInitiativeAnimation();
+                    }
                 }
             },
             view() {

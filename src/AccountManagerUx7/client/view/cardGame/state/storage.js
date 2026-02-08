@@ -44,13 +44,23 @@
         let grp = createGroup
             ? await page.makePath("auth.group", "DATA", groupPath)
             : await page.findObject("auth.group", "DATA", groupPath);
-        if (!grp) return null;
+        if (!grp) {
+            console.warn("[CardGame] loadDataRecord: group not found:", groupPath);
+            return null;
+        }
         let q = am7view.viewQuery("data.data");
         q.field("groupId", grp.id);
         q.field("name", fileName);
+        // Ensure blob data is in the request (may not be in default query fields)
+        if (q.entity.request.indexOf("dataBytesStore") === -1) {
+            q.entity.request.push("dataBytesStore");
+        }
         let qr = await page.search(q);
         if (qr?.results?.length && qr.results[0].dataBytesStore) {
             return decodeJson(qr.results[0].dataBytesStore);
+        }
+        if (qr?.results?.length) {
+            console.warn("[CardGame] loadDataRecord: record found but dataBytesStore empty:", groupPath, fileName);
         }
         return null;
     }
@@ -80,7 +90,7 @@
 
         async load(deckName) {
             try {
-                return await loadDataRecord(DECK_BASE_PATH + "/" + deckName, "deck.json", true);
+                return await loadDataRecord(DECK_BASE_PATH + "/" + deckName, "deck.json", false);
             } catch (e) {
                 console.error("[CardGame v2] Failed to load deck:", deckName, e);
                 return null;
@@ -93,6 +103,7 @@
                 if (!grp) return [];
                 let q = am7view.viewQuery("auth.group");
                 q.field("parentId", grp.id);
+                q.range(0, 200);
                 let qr = await page.search(q);
                 return (qr?.results || []).map(g => g.name);
             } catch (e) {

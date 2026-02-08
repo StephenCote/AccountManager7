@@ -29,9 +29,7 @@
         // Game state (gameState, gameCharSelection, activeCampaign
         // are proxied to GameState.state below — do NOT define them here)
 
-        // Theme state
-        activeTheme: null,
-        themeLoading: false,
+        // Theme state (proxied to Themes.state below — do NOT define here)
 
         // Test state
         testDeck: null,
@@ -68,7 +66,7 @@
 
     // Themes state → ctx
     proxyState(ctx, function() { return NS.Themes ? NS.Themes.state : null; }, [
-        "applyingOutfits"
+        "activeTheme", "themeLoading", "applyingOutfits"
     ]);
 
     // GameState state → ctx
@@ -82,10 +80,7 @@
         "resolutionAnimating", "resolutionPhase", "resolutionDiceFaces", "currentCombatResult"
     ]);
 
-    // Initialize theme from constants
-    if (NS.Constants && NS.Constants.DEFAULT_THEME) {
-        ctx.activeTheme = NS.Constants.DEFAULT_THEME;
-    }
+    // activeTheme is now proxied from Themes.state (initialized to DEFAULT_THEME in themes.js)
 
     // ── Helper: Toggle Full Mode ──────────────────────────────────────
     function toggleFullMode() {
@@ -186,7 +181,7 @@
                                             fontWeight: ctx.builderStep === s ? "700" : "400"
                                         },
                                         onclick: () => { if (s < ctx.builderStep) { ctx.builderStep = s; m.redraw(); } }
-                                    }, s + ". " + ["Theme", "Character", "Review"][s - 1])
+                                    }, s + ". " + ["Theme", "Character", "Outfit & Review"][s - 1])
                                 )
                             ]),
                             ctx.builderStep === 1 && BuilderThemeStep ? m(BuilderThemeStep) : null,

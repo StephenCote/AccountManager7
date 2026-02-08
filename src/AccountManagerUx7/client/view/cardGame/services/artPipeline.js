@@ -19,7 +19,7 @@
 
     window.CardGame = window.CardGame || {};
 
-    const ART_BASE_PATH = "~/CardGame/Art";
+    const DECK_BASE_PATH = "~/CardGame";
 
     // ── Convenience accessors for shared context ─────────────────────
     function getActiveTheme() {
@@ -159,7 +159,7 @@
     let artCompleted = 0;
     let artTotal = 0;
     let artPaused = false;
-    let artDir = null;          // cached ~/CardGame/Art/{themeId} group
+    let artDir = null;          // cached ~/CardGame/{deckName}/Art group
     let backgroundImageId = null;   // objectId of generated background (used as img2img basis)
     let backgroundThumbUrl = null;  // thumbnail URL of background
     let backgroundPrompt = null;    // prompt used for the background (used as imageSetting for character cards)
@@ -284,7 +284,7 @@
         if (artDir) return artDir;
         let deckKey = currentDeckSafeName();
         let subdir = deckKey || (themeId || "high-fantasy");
-        let path = ART_BASE_PATH + "/" + subdir;
+        let path = DECK_BASE_PATH + "/" + subdir + "/Art";
         artDir = await page.makePath("auth.group", "DATA", path);
         return artDir;
     }
@@ -964,7 +964,7 @@
     }
 
     // ── Image Sequence Generation (apparel dress-up progression) ───
-    async function generateImageSequence(card) {
+    async function generateImageSequence(card, options) {
         let activeTheme = getActiveTheme();
         let viewingDeck = getViewingDeck();
         let deckStorage = getDeckStorage();
@@ -1115,9 +1115,12 @@
                 m.redraw();
 
                 // Open gallery picker so user can select from generated images
-                let openGallery = window.CardGame.Rendering?.openGalleryPicker;
-                if (openGallery) {
-                    openGallery(card);
+                // Skip during batch generation to avoid blocking on each character
+                if (!options?.skipGallery) {
+                    let openGallery = window.CardGame.Rendering?.openGalleryPicker;
+                    if (openGallery) {
+                        openGallery(card);
+                    }
                 }
             } else {
                 page.toast("warn", "No images were generated");
@@ -1165,7 +1168,7 @@
             m.redraw();
 
             try {
-                await generateImageSequence(card);
+                await generateImageSequence(card, { skipGallery: true });
             } catch (e) {
                 console.warn("[ArtPipeline] Batch sequence failed for", card.name, e);
             }

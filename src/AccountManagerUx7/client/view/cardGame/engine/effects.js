@@ -163,10 +163,10 @@
         let healMatch = effectStr.match(/heal\s+(\d+)|restore\s+(\d+)\s+hp/i);
         if (healMatch) result.healHp = (result.healHp || 0) + parseInt(healMatch[1] || healMatch[2], 10);
 
-        let energyMatch = effectStr.match(/restore\s+(\d+)\s+energy/i);
+        let energyMatch = effectStr.match(/(?:restore\s+)?(\d+)\s+energy/i);
         if (energyMatch) result.restoreEnergy = parseInt(energyMatch[1], 10);
 
-        let moraleMatch = effectStr.match(/restore\s+(\d+)\s+morale/i);
+        let moraleMatch = effectStr.match(/(?:restore\s+)?(\d+)\s+morale/i);
         if (moraleMatch) result.restoreMorale = parseInt(moraleMatch[1], 10);
 
         let drawMatch = effectStr.match(/draw\s+(\d+)/i);

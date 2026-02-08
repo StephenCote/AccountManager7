@@ -177,7 +177,7 @@
                 if (!searchGroupId && ctx.viewingDeck) {
                     let deckName = (ctx.viewingDeck.deckName || "").replace(/[^a-zA-Z0-9_\-]/g, "_");
                     if (deckName) {
-                        let artPath = "~/CardGame/Art/" + deckName;
+                        let artPath = "~/CardGame/" + deckName + "/Art";
                         let dir = await page.makePath("auth.group", "DATA", artPath);
                         if (dir) searchGroupId = dir.id;
                     }

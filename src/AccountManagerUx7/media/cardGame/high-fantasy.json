@@ -97,6 +97,37 @@
     "hoardingReturnTarget": "encounterDeck"
   },
 
+  "narration": {
+    "announcerProfile": "arena-announcer",
+    "gameStart": "The ancient arena stirs to life! Torches blaze along the stone walls as two champions prepare for battle. Let the cards decide their fate!",
+    "roundStart": [
+      "A new round begins! The crowd holds its breath.",
+      "Steel clashes and magic crackles as the next round unfolds!",
+      "The combatants circle each other warily. A new round begins!",
+      "The arena floor trembles with anticipation. Another round commences!",
+      "Dust settles from the last exchange. The fighters ready themselves once more."
+    ],
+    "roundEndTie": [
+      "Neither combatant gains the upper hand. A stalemate!",
+      "Evenly matched! The round ends in a draw."
+    ],
+    "criticalHit": [
+      "A devastating blow! The crowd erupts!",
+      "What a strike! That one will leave a mark!",
+      "Incredible power behind that attack!"
+    ],
+    "criticalMiss": [
+      "A fumble! The attacker stumbles badly.",
+      "Completely off-target! That could have gone better.",
+      "A wild swing meets only air!"
+    ],
+    "lowHpTension": [
+      "The tension mounts as both combatants show signs of wear.",
+      "Blood stains the arena floor. This battle nears its end.",
+      "Exhaustion sets in. Every move could be the last."
+    ]
+  },
+
   "magicConfig": {
     "enabledSkillTypes": ["Imperial", "Undead", "Psionic"],
     "magicEffectPool": ["Fireball", "Ice Wall", "Mind Read", "Raise Thrall", "Healing Light", "Thunder Strike", "Shield of Faith", "Shadow Step"]
@@ -213,5 +244,55 @@
         ]
       }
     }
+  },
+
+  "cardPool": [
+    { "type": "item", "subtype": "weapon", "name": "Iron Longsword", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Slashing", "durability": 8, "artPrompt": "an iron longsword with a leather-wrapped grip" },
+    { "type": "item", "subtype": "weapon", "name": "Battle Axe", "rarity": "UNCOMMON", "atk": 5, "slot": "Hand (2H)", "damageType": "Slashing", "durability": 10, "artPrompt": "a heavy double-headed battle axe" },
+    { "type": "item", "subtype": "weapon", "name": "Elven Longbow", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 12, "artPrompt": "an elegant elven longbow with silver inlay" },
+    { "type": "item", "subtype": "weapon", "name": "Enchanted Warhammer", "rarity": "RARE", "atk": 6, "slot": "Hand (2H)", "damageType": "Bludgeoning", "durability": 15, "special": "+1 to Guard rolls", "artPrompt": "a glowing warhammer with runes etched into the head" },
+    { "type": "item", "subtype": "weapon", "name": "Mage Staff", "rarity": "UNCOMMON", "atk": 2, "slot": "Hand (2H)", "damageType": "Arcane", "durability": 10, "special": "+2 to Channel rolls", "artPrompt": "a wooden staff topped with a glowing crystal" },
+    { "type": "item", "subtype": "weapon", "name": "Silver Dagger", "rarity": "COMMON", "atk": 2, "slot": "Hand (1H)", "damageType": "Piercing", "durability": 6, "special": "+3 ATK vs undead", "artPrompt": "a silver dagger with ornate crossguard" },
+
+    { "type": "apparel", "name": "Chain Mail Hauberk", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 0, "durability": 10, "fabric": "iron", "artPrompt": "a suit of interlocking chain mail armor" },
+    { "type": "apparel", "name": "Studded Leather Vest", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "leather", "artPrompt": "a leather vest with metal studs" },
+    { "type": "apparel", "name": "Plate Gauntlets", "rarity": "UNCOMMON", "slot": "Hand", "def": 2, "hpBonus": 0, "durability": 12, "fabric": "steel", "artPrompt": "shining steel plate gauntlets" },
+    { "type": "apparel", "name": "Dragonscale Breastplate", "rarity": "RARE", "slot": "Body", "def": 5, "hpBonus": 2, "durability": 20, "fabric": "dragonscale", "artPrompt": "a breastplate made from iridescent dragon scales" },
+    { "type": "apparel", "name": "Mithril Greaves", "rarity": "RARE", "slot": "Feet", "def": 3, "hpBonus": 1, "durability": 18, "fabric": "mithril", "artPrompt": "gleaming silvery greaves of mithril" },
+    { "type": "apparel", "name": "Traveler's Cloak", "rarity": "COMMON", "slot": "Back", "def": 1, "hpBonus": 0, "durability": 6, "fabric": "wool", "special": "+1 to Flee rolls", "artPrompt": "a weathered green traveling cloak" },
+    { "type": "apparel", "name": "Enchanted Robes", "rarity": "UNCOMMON", "slot": "Body", "def": 1, "hpBonus": 0, "durability": 8, "fabric": "silk", "special": "+2 to Channel rolls", "artPrompt": "flowing blue robes shimmering with arcane energy" },
+
+    { "type": "skill", "name": "Shield Wall", "category": "Defense", "modifier": "+3 DEF when Guard is active", "tier": "UNCOMMON", "artPrompt": "a warrior bracing behind a massive shield" },
+    { "type": "skill", "name": "Power Strike", "category": "Combat", "modifier": "+3 ATK on next Attack", "tier": "UNCOMMON", "artPrompt": "a warrior delivering an overhead strike with glowing weapon" },
+    { "type": "skill", "name": "Backstab", "category": "Combat", "modifier": "+4 ATK after successful Feint", "tier": "RARE", "artPrompt": "a rogue striking from the shadows" },
+    { "type": "skill", "name": "Eagle Eye", "category": "Ranged", "modifier": "+2 ATK with ranged weapons", "tier": "COMMON", "artPrompt": "an archer taking careful aim" },
+    { "type": "skill", "name": "Arcane Focus", "category": "Magic", "modifier": "+2 to Channel rolls, -1 energy cost", "tier": "UNCOMMON", "artPrompt": "a mage in deep concentration, arcane symbols orbiting" },
+    { "type": "skill", "name": "Battle Tactics", "category": "Combat", "modifier": "+1 ATK and +1 DEF this round", "tier": "COMMON", "artPrompt": "a commander surveying a battlefield" },
+    { "type": "skill", "name": "Herbalism", "category": "Survival", "modifier": "Rest restores +3 extra HP", "tier": "COMMON", "artPrompt": "hands grinding herbs with a mortar and pestle" },
+    { "type": "skill", "name": "Disarm", "category": "Combat", "modifier": "On hit, target loses weapon bonus next round", "tier": "RARE", "artPrompt": "a fighter knocking a sword from an opponent's hand" },
+
+    { "type": "magic", "name": "Fireball", "effectType": "Offensive", "skillType": "Imperial", "effect": "Deal 6 damage, ignores DEF", "energyCost": 5, "reusable": true, "artPrompt": "a massive fireball erupting from outstretched hands" },
+    { "type": "magic", "name": "Shield of Faith", "effectType": "Defensive", "skillType": "Imperial", "effect": "+4 DEF this round", "energyCost": 3, "reusable": true, "artPrompt": "a golden magical shield materializing around a warrior" },
+    { "type": "magic", "name": "Lightning Bolt", "effectType": "Offensive", "skillType": "Imperial", "effect": "Deal 4 damage, stun target (skip next action)", "energyCost": 4, "reusable": true, "artPrompt": "a crackling bolt of lightning arcing toward a target" },
+    { "type": "magic", "name": "Invisibility", "effectType": "Utility", "skillType": "Psionic", "effect": "Auto-succeed next Flee or Steal", "energyCost": 4, "reusable": true, "artPrompt": "a figure fading into translucency" },
+
+    { "type": "item", "subtype": "consumable", "name": "Greater Health Potion", "rarity": "UNCOMMON", "effect": "Restore 12 HP", "artPrompt": "a large glowing red potion bottle" },
+    { "type": "item", "subtype": "consumable", "name": "Elixir of Strength", "rarity": "UNCOMMON", "effect": "+3 ATK this round", "artPrompt": "a bubbling orange potion in a crystal vial" },
+    { "type": "item", "subtype": "consumable", "name": "Scroll of Protection", "rarity": "RARE", "effect": "+5 DEF this round", "artPrompt": "an ancient scroll glowing with protective runes" },
+    { "type": "item", "subtype": "consumable", "name": "Mana Crystal", "rarity": "UNCOMMON", "effect": "Restore 8 Energy", "artPrompt": "a pulsing blue crystal" },
+    { "type": "item", "subtype": "consumable", "name": "Smoke Bomb", "rarity": "COMMON", "effect": "Auto-succeed Flee this round", "artPrompt": "a small black sphere trailing smoke" }
+  ],
+
+  "encounters": {
+    "threatCreatures": [
+      { "name": "Wolf", "type": "animal", "atk": 2, "def": 1, "hp": 8, "imageIcon": "pets", "behavior": "Attacks lowest HP target", "loot": ["Wolf Pelt"], "artPrompt": "snarling wolf lunging forward, fangs bared" },
+      { "name": "Goblin Scout", "type": "npc", "atk": 3, "def": 1, "hp": 10, "imageIcon": "face", "behavior": "Flanks weakest defender", "loot": ["Goblin Dagger"], "artPrompt": "small goblin with a crude dagger sneaking through shadows" },
+      { "name": "Giant Spider", "type": "animal", "atk": 2, "def": 2, "hp": 12, "imageIcon": "bug_report", "behavior": "Poison on hit (2 turns)", "loot": ["Spider Silk", "Venom Sac"], "artPrompt": "enormous spider in a web, dripping venom" },
+      { "name": "Bandit", "type": "npc", "atk": 4, "def": 2, "hp": 15, "imageIcon": "person_alert", "behavior": "Steals item on crit", "loot": ["Stolen Coin Pouch"], "artPrompt": "masked bandit with a crossbow in a dark forest" },
+      { "name": "Dire Wolf", "type": "animal", "atk": 5, "def": 2, "hp": 18, "imageIcon": "pets", "behavior": "Attacks twice on crit", "loot": ["Dire Wolf Fang", "Thick Pelt"], "artPrompt": "massive wolf with glowing eyes, towering over its prey" },
+      { "name": "Orc Warrior", "type": "npc", "atk": 6, "def": 3, "hp": 20, "imageIcon": "shield_person", "behavior": "Enrages below half HP (+2 ATK)", "loot": ["Orc Blade", "Iron Shield"], "artPrompt": "armored orc warrior with a jagged sword and shield" },
+      { "name": "Skeleton Archer", "type": "monster", "atk": 4, "def": 1, "hp": 10, "imageIcon": "skull", "behavior": "Ranged attack, ignores front-line", "loot": ["Old Arrows", "Bone Fragment"], "artPrompt": "skeletal archer with a cracked bow, glowing eye sockets" },
+      { "name": "Troll", "type": "monster", "atk": 7, "def": 4, "hp": 25, "imageIcon": "landscape", "behavior": "Regenerates 2 HP per round", "loot": ["Troll Hide", "Regeneration Shard"], "artPrompt": "a hulking green troll swinging a massive club" }
+    ]
   }
 }

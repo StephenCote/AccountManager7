@@ -11,7 +11,7 @@
  * Depends on (optional, gracefully degrades):
  *   page.components.audio     (audio infrastructure)
  *   page.components.moodRing  (emotion / biometric capture)
- *   CardGame.UI.showNarrationSubtitle  (ui/phaseUI.js -- future)
+ *   CardGame.GameState.showNarrationSubtitle  (state/gameState.js)
  *
  * Exposes: window.CardGame.AI.{ CardGameVoice,
  *            getPlayerEmotion, getPlayerMoodColor, buildEmotionContext }
@@ -22,10 +22,10 @@
     window.CardGame = window.CardGame || {};
     window.CardGame.AI = window.CardGame.AI || {};
 
-    // Lazy accessor for showNarrationSubtitle (lives in a UI module loaded later)
+    // Lazy accessor for showNarrationSubtitle (lives in gameState module)
     function showNarrationSubtitle(text) {
-        if (typeof window.CardGame.UI?.showNarrationSubtitle === "function") {
-            window.CardGame.UI.showNarrationSubtitle(text);
+        if (typeof window.CardGame.GameState?.showNarrationSubtitle === "function") {
+            window.CardGame.GameState.showNarrationSubtitle(text);
         } else {
             console.log("[CardGameVoice] Subtitle:", text);
         }

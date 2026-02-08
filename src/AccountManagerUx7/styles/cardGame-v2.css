@@ -4957,6 +4957,26 @@
 .dark .cg2-test-result-fail { color: #EF5350; }
 .cg2-test-result-warn { color: #E65100; }
 .dark .cg2-test-result-warn { color: #FFA726; }
+.cg2-test-filter-btn {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(0,0,0,0.15);
+    background: transparent;
+    color: #666;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    display: inline-flex;
+    align-items: center;
+}
+.dark .cg2-test-filter-btn { border-color: rgba(255,255,255,0.15); color: #999; }
+.cg2-test-filter-btn:hover { border-color: #B8860B; color: #B8860B; }
+.cg2-test-filter-btn.active {
+    background: #B8860B;
+    color: #fff;
+    border-color: #B8860B;
+}
 .cg2-test-empty {
     padding: 40px;
     text-align: center;

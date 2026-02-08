@@ -97,6 +97,37 @@
     "hoardingReturnTarget": "encounterDeck"
   },
 
+  "narration": {
+    "announcerProfile": "war-correspondent",
+    "gameStart": "The pit opens beneath flickering torchlight. Two souls step into the mud and blood of the fighting ring. Only skill and cunning will see them through.",
+    "roundStart": [
+      "A grim silence falls as the next round begins.",
+      "The stench of iron fills the air. Another round.",
+      "Neither combatant falters. The struggle continues.",
+      "Shadows dance on the walls as blades are readied once more.",
+      "The crowd mutters dark prayers. Steel rings out again."
+    ],
+    "roundEndTie": [
+      "Neither gains ground. A bitter stalemate.",
+      "Matched blow for blow. The round ends in a draw."
+    ],
+    "criticalHit": [
+      "A savage blow! Bone crunches underfoot!",
+      "That strike drew blood and screams from the crowd!",
+      "Brutal precision! A wound that won't heal easily."
+    ],
+    "criticalMiss": [
+      "A clumsy swing into empty air. Pathetic.",
+      "The attacker overextends and stumbles!",
+      "A fumble that could cost dearly!"
+    ],
+    "lowHpTension": [
+      "Blood pools on the ground. This cannot last much longer.",
+      "Both fighters stagger. Death hovers close.",
+      "The end draws near. Every breath is agony."
+    ]
+  },
+
   "magicConfig": {
     "enabledSkillTypes": ["Imperial"],
     "magicEffectPool": ["Cauterize", "Ward of Iron", "Plague Touch", "Bloodletting", "Corpse Light"]
@@ -213,5 +244,55 @@
         ]
       }
     }
+  },
+
+  "cardPool": [
+    { "type": "item", "subtype": "weapon", "name": "Rusty Flail", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Bludgeoning", "durability": 6, "artPrompt": "a rusty chain flail with a spiked head" },
+    { "type": "item", "subtype": "weapon", "name": "Executioner's Blade", "rarity": "UNCOMMON", "atk": 5, "slot": "Hand (2H)", "damageType": "Slashing", "durability": 10, "artPrompt": "a wide-bladed executioner's sword, dark and imposing" },
+    { "type": "item", "subtype": "weapon", "name": "Heavy Crossbow", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 12, "artPrompt": "a heavy crossbow with iron fittings" },
+    { "type": "item", "subtype": "weapon", "name": "Poisoned Stiletto", "rarity": "RARE", "atk": 2, "slot": "Hand (1H)", "damageType": "Piercing", "durability": 5, "special": "Poison: 2 damage/round for 2 rounds", "artPrompt": "a thin dagger with a green-coated blade" },
+    { "type": "item", "subtype": "weapon", "name": "Morning Star", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (1H)", "damageType": "Bludgeoning", "durability": 10, "artPrompt": "a spiked morning star with a heavy chain" },
+    { "type": "item", "subtype": "weapon", "name": "Mercenary's Halberd", "rarity": "RARE", "atk": 6, "slot": "Hand (2H)", "damageType": "Slashing", "durability": 14, "special": "+1 DEF (reach)", "artPrompt": "a long-hafted halberd with a cruel blade" },
+
+    { "type": "apparel", "name": "Brigandine Coat", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 0, "durability": 10, "fabric": "iron-studded leather", "artPrompt": "a coat of overlapping iron plates riveted to leather" },
+    { "type": "apparel", "name": "Boiled Leather Cuirass", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "boiled leather", "artPrompt": "a hardened leather cuirass darkened by fire" },
+    { "type": "apparel", "name": "Iron Helm", "rarity": "COMMON", "slot": "Head", "def": 2, "hpBonus": 0, "durability": 10, "fabric": "iron", "artPrompt": "a dented iron helm with a nose guard" },
+    { "type": "apparel", "name": "Blackened Plate Armor", "rarity": "RARE", "slot": "Body", "def": 5, "hpBonus": 2, "durability": 20, "fabric": "blackened steel", "artPrompt": "a full suit of blackened plate armor, scarred by battle" },
+    { "type": "apparel", "name": "Mail Coif", "rarity": "UNCOMMON", "slot": "Head", "def": 2, "hpBonus": 1, "durability": 12, "fabric": "chain mail", "artPrompt": "a chain mail hood protecting head and neck" },
+    { "type": "apparel", "name": "Worn Gambeson", "rarity": "COMMON", "slot": "Body", "def": 1, "hpBonus": 1, "durability": 6, "fabric": "padded linen", "artPrompt": "a thick padded jacket, stained and patched" },
+    { "type": "apparel", "name": "Plague Doctor's Coat", "rarity": "UNCOMMON", "slot": "Body", "def": 1, "hpBonus": 0, "durability": 8, "fabric": "waxed canvas", "special": "Resist poison effects", "artPrompt": "a long waxed coat with a beaked mask hanging from the collar" },
+
+    { "type": "skill", "name": "Shieldbreaker", "category": "Combat", "modifier": "Ignore +2 of target's DEF", "tier": "UNCOMMON", "artPrompt": "a warrior shattering a shield with a massive blow" },
+    { "type": "skill", "name": "Grit", "category": "Defense", "modifier": "Survive one lethal hit with 1 HP (once per game)", "tier": "RARE", "artPrompt": "a battered fighter refusing to fall" },
+    { "type": "skill", "name": "Dirty Fighting", "category": "Combat", "modifier": "+2 ATK and +2 to Feint rolls", "tier": "UNCOMMON", "artPrompt": "a fighter throwing sand in an opponent's eyes" },
+    { "type": "skill", "name": "Interrogation", "category": "Social", "modifier": "+3 to Talk rolls when intimidating", "tier": "COMMON", "artPrompt": "a stern figure interrogating a prisoner" },
+    { "type": "skill", "name": "Scavenger's Eye", "category": "Survival", "modifier": "+2 to Investigate, find loot on UNCOMMON+ rolls", "tier": "COMMON", "artPrompt": "a figure picking through ruins by torchlight" },
+    { "type": "skill", "name": "Ambush Tactics", "category": "Combat", "modifier": "+3 ATK on first attack of round", "tier": "UNCOMMON", "artPrompt": "shadowy figures leaping from concealment" },
+    { "type": "skill", "name": "Field Surgery", "category": "Survival", "modifier": "Rest restores +4 extra HP", "tier": "UNCOMMON", "artPrompt": "crude surgical tools and bloodied bandages" },
+    { "type": "skill", "name": "Executioner's Precision", "category": "Combat", "modifier": "Critical hits deal triple damage", "tier": "RARE", "artPrompt": "a hooded executioner with an axe raised" },
+
+    { "type": "magic", "name": "Bloodletting", "effectType": "Offensive", "skillType": "Imperial", "effect": "Deal 3 damage, heal self 3 HP", "energyCost": 4, "reusable": true, "artPrompt": "dark tendrils of blood magic draining a victim" },
+    { "type": "magic", "name": "Ward of Iron", "effectType": "Defensive", "skillType": "Imperial", "effect": "+4 DEF this round", "energyCost": 3, "reusable": true, "artPrompt": "iron chains materializing as a protective barrier" },
+    { "type": "magic", "name": "Plague Touch", "effectType": "Offensive", "skillType": "Imperial", "effect": "Poison target: 2 damage/round for 3 rounds", "energyCost": 5, "reusable": true, "artPrompt": "a rotting hand reaching out, green mist rising" },
+    { "type": "magic", "name": "Corpse Light", "effectType": "Utility", "skillType": "Undead", "effect": "Reveal all hidden items and threats this round", "energyCost": 3, "reusable": true, "artPrompt": "eerie blue-green flames hovering in darkness" },
+
+    { "type": "item", "subtype": "consumable", "name": "Surgeon's Kit", "rarity": "UNCOMMON", "effect": "Restore 10 HP", "artPrompt": "a leather case with crude surgical instruments" },
+    { "type": "item", "subtype": "consumable", "name": "Whetstone", "rarity": "COMMON", "effect": "+2 ATK this round", "artPrompt": "a coarse whetstone and sharpened blade" },
+    { "type": "item", "subtype": "consumable", "name": "Flask of Spirits", "rarity": "COMMON", "effect": "Restore 5 Energy, -1 DEF this round", "artPrompt": "a dented hip flask of strong spirits" },
+    { "type": "item", "subtype": "consumable", "name": "Antidote", "rarity": "UNCOMMON", "effect": "Remove all poison effects", "artPrompt": "a small vial of murky brown liquid" },
+    { "type": "item", "subtype": "consumable", "name": "Caltrops", "rarity": "COMMON", "effect": "Target's next Flee fails automatically", "artPrompt": "a handful of scattered metal caltrops" }
+  ],
+
+  "encounters": {
+    "threatCreatures": [
+      { "name": "Starving Hound", "type": "animal", "atk": 2, "def": 1, "hp": 7, "imageIcon": "pets", "behavior": "Attacks lowest HP target", "loot": ["Mangy Pelt"], "artPrompt": "a gaunt, feral dog snarling with bared fangs" },
+      { "name": "Deserter", "type": "npc", "atk": 3, "def": 2, "hp": 12, "imageIcon": "person_alert", "behavior": "Steals item on crit", "loot": ["Deserter's Blade", "Tattered Cloak"], "artPrompt": "a desperate soldier in broken armor" },
+      { "name": "Plague Rat Swarm", "type": "animal", "atk": 2, "def": 1, "hp": 10, "imageIcon": "bug_report", "behavior": "Poison on hit (2 turns)", "loot": ["Rat Tail", "Venom Gland"], "artPrompt": "a writhing mass of diseased rats" },
+      { "name": "Highwayman", "type": "npc", "atk": 4, "def": 2, "hp": 14, "imageIcon": "person_alert", "behavior": "Ambush: +2 ATK first round", "loot": ["Stolen Purse", "Crossbow Bolt"], "artPrompt": "a masked highwayman with a crossbow on a forest road" },
+      { "name": "Boar", "type": "animal", "atk": 3, "def": 3, "hp": 16, "imageIcon": "pets", "behavior": "Charges (+2 ATK first attack)", "loot": ["Boar Tusk"], "artPrompt": "a bristling wild boar charging through undergrowth" },
+      { "name": "Marauder Knight", "type": "npc", "atk": 6, "def": 4, "hp": 22, "imageIcon": "shield_person", "behavior": "Enrages below half HP (+2 ATK)", "loot": ["Blackened Blade", "Dented Shield"], "artPrompt": "a fallen knight in scarred black armor on horseback" },
+      { "name": "Grave Wight", "type": "monster", "atk": 5, "def": 2, "hp": 15, "imageIcon": "skull", "behavior": "Drains 2 Energy on hit", "loot": ["Grave Dust", "Wight's Ring"], "artPrompt": "a skeletal undead warrior crawling from a grave" },
+      { "name": "Torturer", "type": "npc", "atk": 5, "def": 1, "hp": 18, "imageIcon": "warning", "behavior": "Reduces target morale by 2 on hit", "loot": ["Iron Pincers", "Confession Scroll"], "artPrompt": "a hooded torturer with cruel instruments" }
+    ]
   }
 }

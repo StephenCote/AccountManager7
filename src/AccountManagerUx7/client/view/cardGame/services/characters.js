@@ -485,6 +485,29 @@
                 rolled.personality = template.personality || [];
                 rolled.age = Math.floor(Math.random() * 38) + 18;  // Age 18-55
 
+                // Override statistics from template (server returns random stats; template defines class-balanced stats)
+                if (template.statistics && rolled.statistics) {
+                    const statMap = {
+                        STR: "physicalStrength", AGI: "agility", END: "physicalEndurance",
+                        INT: "intelligence", CHA: "charisma"
+                    };
+                    for (const [abbr, serverField] of Object.entries(statMap)) {
+                        if (template.statistics[abbr] != null) {
+                            rolled.statistics[serverField] = template.statistics[abbr];
+                        }
+                    }
+                    // MAG is virtual (avg of willpower, wisdom, creativity, spirituality)
+                    // Set all four sub-stats to the template MAG value to ensure it maps correctly
+                    if (template.statistics.MAG != null) {
+                        let magVal = template.statistics.MAG;
+                        rolled.statistics.mentalEndurance = magVal;
+                        rolled.statistics.mentalStrength = magVal;
+                        rolled.statistics.wisdom = magVal;
+                        rolled.statistics.creativity = magVal;
+                        rolled.statistics.spirituality = magVal;
+                    }
+                }
+
                 // Get theme-specific trade
                 const themeClass = template.themeVariants?.[themeId]?.trade || template.class;
                 rolled.trades = [themeClass];
