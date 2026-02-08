@@ -104,6 +104,14 @@
         return typeof v === "string" ? v : (v && v.name ? v.name : String(v || ""));
     }
 
+    // Extract first and last name, skipping middle name(s)
+    function shortName(fullName) {
+        if (!fullName) return "Unknown";
+        let parts = fullName.trim().split(/\s+/);
+        if (parts.length <= 2) return fullName.trim();
+        return parts[0] + " " + parts[parts.length - 1];
+    }
+
     // ── Portrait URL Helper ──────────────────────────────────────────
 
     function getPortraitUrl(char, size) {
@@ -182,7 +190,7 @@
         let classActions = templateActions || Constants.COMMON_ACTIONS;
 
         return {
-            type: "character", name: char.name || "Unknown",
+            type: "character", name: shortName(char.name),
             gender: str(char.gender) || null,
             race: (str(char.race) || "HUMAN").toUpperCase(),
             alignment: (str(char.alignment) || "NEUTRAL").replace(/_/g, " "),
@@ -320,7 +328,7 @@
             if (equip.skillCards.length > 0) characterCard.activeSkills[0] = { name: equip.skillCards[0].name };
 
             allCards.push(characterCard, ...equip.apparelCards, equip.weaponCard, ...equip.skillCards, ...equip.magicCards);
-            charNames.push(char.name || "Unknown");
+            charNames.push(shortName(char.name));
         });
 
         // Shared deck cards (one set regardless of player count)

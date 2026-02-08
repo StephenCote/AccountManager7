@@ -92,6 +92,8 @@
                             m("button", {
                                 class: "cg2-btn cg2-btn-primary",
                                 async onclick() {
+                                    // Stop all voice/audio immediately
+                                    if (CardGame.GameState?.cleanupAudio) CardGame.GameState.cleanupAudio();
                                     let viewingDeck = ctx.viewingDeck;
                                     // Restart with same characters
                                     let playerChar = player.character;
@@ -107,6 +109,8 @@
                             m("button", {
                                 class: "cg2-btn",
                                 onclick() {
+                                    // Stop all voice/audio before leaving game
+                                    if (CardGame.GameState?.cleanupAudio) CardGame.GameState.cleanupAudio();
                                     ctx.gameState = null;
                                     ctx.activeCampaign = null;
                                     // Restore deck view image state from viewingDeck

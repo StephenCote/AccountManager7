@@ -22,15 +22,18 @@
                     // Wait for narration to be ready before starting initiative animation
                     let gameState = gs.gameState;
                     if (gameState && !gameState.narrationReady) {
-                        // Poll until narration is displayed (initializeLLMComponents sets narrationReady)
+                        // Poll until narration is displayed, with 8s safety timeout
+                        let pollStart = Date.now();
                         let pollInterval = setInterval(() => {
                             let currentGs = GS().state?.gameState;
-                            if (!currentGs || currentGs.narrationReady) {
+                            let timedOut = Date.now() - pollStart > 8000;
+                            if (!currentGs || currentGs.narrationReady || timedOut) {
                                 clearInterval(pollInterval);
+                                if (timedOut) console.warn("[CardGame v2] Narration ready timeout — starting initiative anyway");
                                 // Give narration subtitle time to be read before initiative starts
                                 setTimeout(() => {
                                     GS().startInitiativeAnimation();
-                                }, 2000);
+                                }, timedOut ? 500 : 2000);
                             }
                         }, 100);
                     } else {
@@ -71,6 +74,10 @@
                         backStyle.backgroundPosition = "center";
                     }
 
+                    // Short display name for back label (truncate long names)
+                    let charName = character.name || (who === "player" ? "You" : "Opponent");
+                    if (charName.length > 16) charName = charName.substring(0, 14) + "\u2026";
+
                     return m("div", {
                         class: "cg2-init-card-wrap" + (isFlipped ? " cg2-init-flipped" : "") +
                             (isWinner ? " cg2-init-winner-card" : "") +
@@ -88,7 +95,7 @@
                             ]),
                             m("div", { class: "cg2-init-card-back", style: backStyle }, [
                                 m("div", { class: "cg2-init-back-content" }, [
-                                    m("div", { class: "cg2-init-back-label" }, who === "player" ? "You" : "Opponent"),
+                                    m("div", { class: "cg2-init-back-label" }, charName),
                                     m("div", { class: "cg2-dice-container" }, [
                                         m(D20Dice, {
                                             value: anim.rolling ? diceFace : (roll ? roll.raw : "?"),

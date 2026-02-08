@@ -403,19 +403,29 @@ Reply with ONLY the JSON object, no markdown or text.`;
         }
 
         // Phase 2: Add modifier cards from hand to placed stacks (no AP cost)
+        // Check compatibility before placing — try all positions for each modifier
         let placeCardFn = window.CardGame.Engine?.placeCard;
-        for (let posIdx of positions) {
-            if (modifierCards.length === 0) break;
-
-            let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
-            if (!pos || !pos.stack || !pos.stack.coreCard) continue;
-            if (pos.owner !== "opponent") continue;
-
-            // Add one modifier to this stack
-            let mod = modifierCards.shift();
-            if (mod && placeCardFn) {
-                placeCardFn(gameState, posIdx, mod, true);
-                console.log("[CardGame v2] AI added modifier:", mod.name, "to position", posIdx);
+        let canModify = window.CardGame.Engine?.canModifyAction;
+        let remainingMods = modifierCards.slice();
+        for (let mod of remainingMods) {
+            let placed = false;
+            for (let posIdx of positions) {
+                let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
+                if (!pos || !pos.stack || !pos.stack.coreCard) continue;
+                if (pos.owner !== "opponent") continue;
+                // Check compatibility before attempting placement
+                if (canModify) {
+                    let compat = canModify(pos.stack.coreCard, mod);
+                    if (!compat.allowed) continue;
+                }
+                if (placeCardFn && placeCardFn(gameState, posIdx, mod, true)) {
+                    console.log("[CardGame v2] AI added modifier:", mod.name, "to position", posIdx);
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) {
+                console.log("[CardGame v2] AI could not place modifier:", mod.name, "(no compatible action)");
             }
         }
 

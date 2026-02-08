@@ -540,7 +540,7 @@
                 let energyPct = Math.max(0, Math.min(100, (actor.energy / actor.maxEnergy) * 100));
 
                 // Character stats from the character card
-                let stats = char.statistics || {};
+                let stats = char.stats || {};
 
                 return m("div", { class: "cg2-char-sidebar" + (isOpponent ? " cg2-opponent" : "") }, [
 
@@ -666,6 +666,7 @@
                 let CardFace = rendering().CardFace;
                 let showCardPreview = rendering().showCardPreview;
                 let placeCard = E().placeCard;
+                let canModifyAction = E().canModifyAction;
                 let removeCardFromPosition = E().removeCardFromPosition;
                 let selectAction = E().selectAction;
                 let isActionPlacedThisRound = E().isActionPlacedThisRound;
@@ -707,14 +708,19 @@
                                     let cardData = e.dataTransfer.getData("text/plain");
                                     try {
                                         let card = JSON.parse(cardData);
-                                        // Only allow modifier cards to be dropped (skill, item, magic)
-                                        let isModifier = card.type === "skill" || card.type === "item" || card.type === "magic";
-                                        if (isModifier) {
-                                            placeCard(gameState, pos.index, card, true);
-                                        } else {
-                                            console.warn("[CardGame v2] Only modifier cards can be dropped. Use the icon picker for actions.");
+                                        // Only allow modifier cards to be dropped (skill, item, magic, apparel)
+                                        let isModifier = card.type === "skill" || card.type === "item" || card.type === "magic" || card.type === "apparel";
+                                        if (!isModifier) {
                                             if (typeof page !== "undefined" && page.toast) page.toast("warn", "Use the icon picker for actions");
+                                            return;
                                         }
+                                        // Check compatibility with the core action's stackWith rule
+                                        let compat = canModifyAction(pos.stack.coreCard, card);
+                                        if (!compat.allowed) {
+                                            if (typeof page !== "undefined" && page.toast) page.toast("warn", compat.reason);
+                                            return;
+                                        }
+                                        placeCard(gameState, pos.index, card, true);
                                     } catch (err) {
                                         console.error("[CardGame v2] Drop error:", err);
                                     }

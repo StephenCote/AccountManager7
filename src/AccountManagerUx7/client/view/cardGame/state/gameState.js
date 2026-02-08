@@ -1527,7 +1527,7 @@
                     bar.resolveIndex++;
 
                     // Exhausted check: if attack failed (miss/counter), check for hoarding
-                    if (currentCombatResult && currentCombatResult.outcome.damageMultiplier <= 0) {
+                    if (checkExhausted && currentCombatResult && currentCombatResult.outcome.damageMultiplier <= 0) {
                         let actionType = pos.stack?.coreCard?.name;
                         let ownerKey = pos.owner;
                         let ownerActor = ownerKey === "player" ? gameState.player : gameState.opponent;

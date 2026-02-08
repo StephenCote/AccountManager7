@@ -2494,10 +2494,18 @@
     position: absolute;
     width: 100%;
     height: 100%;
+    -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
     border-radius: 10px;
     overflow: hidden;
     box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+}
+.cg2-init-card-front {
+    transform-style: flat;  /* Prevent CardFace children from breaking backface-visibility */
+}
+/* Hide front face completely when card is flipped (prevents bleed-through) */
+.cg2-init-card-wrap.cg2-init-flipped .cg2-init-card-front {
+    visibility: hidden;
 }
 .cg2-init-card-front .cg2-card {
     width: 100% !important;
@@ -3334,7 +3342,8 @@
     transform: translate(-50%, -50%);
     width: 640px;
     max-width: 95vw;
-    height: 520px;  /* Fixed height to prevent jumping */
+    min-height: 420px;  /* Prevent jumping between rolling/result */
+    max-height: 85vh;   /* Responsive cap - never overflow viewport */
     background:
         linear-gradient(135deg, rgba(184,134,11,0.08) 0%, transparent 50%),  /* Corner glow */
         linear-gradient(225deg, rgba(184,134,11,0.05) 0%, transparent 40%),  /* Opposite corner */
@@ -3352,8 +3361,17 @@
         0 0 0 9999px rgba(0,0,0,0.5),
         inset 0 1px 0 rgba(255,255,255,0.05),     /* Inner highlight */
         inset 0 -1px 0 rgba(0,0,0,0.2);            /* Inner shadow */
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
+
+/* Thin scrollbar for combat overlay when critical effects overflow */
+.cg2-combat-overlay::-webkit-scrollbar,
+.cg2-non-combat-overlay::-webkit-scrollbar { width: 6px; }
+.cg2-combat-overlay::-webkit-scrollbar-track,
+.cg2-non-combat-overlay::-webkit-scrollbar-track { background: transparent; }
+.cg2-combat-overlay::-webkit-scrollbar-thumb,
+.cg2-non-combat-overlay::-webkit-scrollbar-thumb { background: rgba(184,134,11,0.3); border-radius: 3px; }
 
 /* Decorative corner flourishes */
 .cg2-combat-overlay::before,
@@ -3756,6 +3774,8 @@
     text-align: center;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 60px rgba(184, 134, 11, 0.2);
     max-width: 90vw;
+    max-height: 90vh;
+    overflow-y: auto;
 }
 
 /* Legacy - keep for backwards compat */

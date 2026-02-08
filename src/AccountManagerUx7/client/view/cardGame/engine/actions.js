@@ -179,7 +179,71 @@
 
     // Determine if a card type can be a modifier (stacks on top of core)
     function isModifierCardType(cardType) {
-        return cardType === "skill" || cardType === "item";
+        return cardType === "skill" || cardType === "item" || cardType === "magic";
+    }
+
+    /**
+     * Check if a modifier card is compatible with a core action's stackWith rule.
+     * Returns { allowed: boolean, reason: string }
+     */
+    function canModifyAction(coreCard, modifierCard) {
+        if (!coreCard || !modifierCard) return { allowed: false, reason: "Missing card" };
+
+        let actionName = coreCard.name;
+        let def = C.ACTION_DEFINITIONS[actionName];
+        let stackWith = def ? def.stackWith : coreCard.stackWith;
+        if (!stackWith) return { allowed: true, reason: "" };  // No rule = allow
+
+        let sw = stackWith.toLowerCase();
+
+        // "None" means no modifiers allowed (exclusive actions like Rest)
+        if (sw === "none") {
+            return { allowed: false, reason: actionName + " cannot be modified" };
+        }
+
+        let cardType = modifierCard.type;
+        let subtype = (modifierCard.subtype || "").toLowerCase();
+
+        // Parse stackWith tokens
+        let acceptsSkill  = sw.indexOf("skill") >= 0;
+        let acceptsWeapon = sw.indexOf("weapon") >= 0;
+        let acceptsMagic  = sw.indexOf("magic") >= 0;
+        let acceptsConsumable = sw.indexOf("consumable") >= 0;
+        let acceptsMaterials  = sw.indexOf("material") >= 0;
+        let acceptsItem   = sw.indexOf("item") >= 0;  // generic "Item(s) to offer"
+
+        if (cardType === "skill") {
+            if (acceptsSkill) return { allowed: true, reason: "" };
+            return { allowed: false, reason: actionName + " does not accept skills" };
+        }
+
+        if (cardType === "magic") {
+            if (acceptsMagic) return { allowed: true, reason: "" };
+            return { allowed: false, reason: actionName + " does not accept magic" };
+        }
+
+        if (cardType === "item") {
+            // Weapons
+            if (subtype === "weapon" && acceptsWeapon) return { allowed: true, reason: "" };
+            // Consumables
+            if (subtype === "consumable" && acceptsConsumable) return { allowed: true, reason: "" };
+            // Materials
+            if (subtype === "material" && acceptsMaterials) return { allowed: true, reason: "" };
+            // Generic item acceptance (Trade: "Item(s) to offer")
+            if (acceptsItem) return { allowed: true, reason: "" };
+            // Apparel as generic items for trade
+            if (acceptsItem && (subtype === "apparel" || subtype === "loot")) return { allowed: true, reason: "" };
+
+            return { allowed: false, reason: actionName + " does not accept " + (subtype || "this item type") };
+        }
+
+        // Apparel cards
+        if (cardType === "apparel") {
+            if (acceptsItem) return { allowed: true, reason: "" };
+            return { allowed: false, reason: actionName + " does not accept apparel" };
+        }
+
+        return { allowed: false, reason: "Unknown card type: " + cardType };
     }
 
     function placeCard(state, positionIndex, card, forceModifier) {
@@ -229,6 +293,15 @@
                 console.warn("[CardGame v2] No core card to modify - pick an action first");
                 return false;
             }
+
+            // Validate modifier compatibility with the core action
+            let compat = canModifyAction(pos.stack.coreCard, card);
+            if (!compat.allowed) {
+                console.warn("[CardGame v2] Modifier rejected:", compat.reason);
+                if (typeof page !== "undefined" && page.toast) page.toast("warn", compat.reason);
+                return false;
+            }
+
             pos.stack.modifiers.push(card);
             console.log("[CardGame v2] Added modifier", card.name, "to stack at position", positionIndex);
 
@@ -383,6 +456,7 @@
         selectAction,
         isCoreCardType,
         isModifierCardType,
+        canModifyAction,
         placeCard,
         removeCardFromPosition,
         dealInitialStack,
