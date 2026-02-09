@@ -43,10 +43,24 @@
             gameState.chat.pending = true;
             m.redraw();
 
+            // Build game context for richer NPC responses
+            let gameContext = null;
+            if (gameState) {
+                const buildEmotionContext = window.CardGame.AI?.buildEmotionContext;
+                gameContext = {
+                    playerName: gameState.player?.character?.name || "Player",
+                    playerHp: gameState.player?.hp,
+                    opponentHp: gameState.opponent?.hp,
+                    opponentMorale: gameState.opponent?.morale,
+                    round: gameState.round,
+                    playerEmotion: buildEmotionContext ? buildEmotionContext() : null
+                };
+            }
+
             // Get NPC response
             if (gameChatManager?.initialized) {
                 try {
-                    const response = await gameChatManager.sendMessage(text);
+                    const response = await gameChatManager.sendMessage(text, gameContext);
                     if (response && !response.error) {
                         gameState.chat.messages.push({
                             role: "npc",

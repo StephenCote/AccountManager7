@@ -70,13 +70,14 @@
             this.consecutiveErrors = 0;
         }
 
-        async initialize(opponentChar, themeId) {
+        async initialize(opponentChar, themeId, sessionSuffix) {
             console.log("[CardGameDirector] Initializing for theme:", themeId);
             await loadDirectorPrompts();
             this.personality = this._extractPersonality(opponentChar);
             const systemPrompt = this._buildSystemPrompt(opponentChar, themeId);
+            const chatName = sessionSuffix ? "CG Director " + sessionSuffix : "CardGame AI Opponent";
             const ok = await this.initializeLLM(
-                "CardGame AI Opponent",
+                chatName,
                 "CardGame AI Prompt",
                 systemPrompt,
                 0.4  // Low temperature for consistent decisions
@@ -214,7 +215,14 @@ Reply with ONLY the JSON object, no markdown or text.`;
                 player: {
                     hp: player.needs?.hp || 20,
                     energy: player.needs?.energy || 14,
-                    morale: player.needs?.morale || 20
+                    morale: player.needs?.morale || 20,
+                    pokerFace: gameState.pokerFace?.enabled ? {
+                        emotion: gameState.pokerFace.currentEmotion,
+                        trend: gameState.pokerFace.dominantTrend,
+                        transition: gameState.pokerFace.lastTransition
+                            ? `${gameState.pokerFace.lastTransition.from} → ${gameState.pokerFace.lastTransition.to}`
+                            : null
+                    } : undefined
                 },
                 availablePositions: gameState.initiative.opponentPositions
             }, null, 0);
@@ -278,10 +286,17 @@ Reply with ONLY the JSON object, no markdown or text.`;
                     continue;
                 }
 
+                // If Channel or Attack, look for a magic card in hand to stack as modifier
+                let modifiers = [];
+                if (actionName === "Channel" || actionName === "Attack") {
+                    let magicCard = opp.hand.find(c => c.type === "magic");
+                    if (magicCard) modifiers.push(magicCard.name);
+                }
+
                 stacks.push({
                     position: posIdx,
                     coreCard: actionName,
-                    modifiers: [],
+                    modifiers,
                     target: "player"
                 });
                 availableActions = availableActions.filter(a => a !== actionName);
@@ -447,6 +462,7 @@ Reply with ONLY the JSON object, no markdown or text.`;
 
         // AI placement done, switch back to player or end placement
         checkPlacementComplete();
+        m.redraw();
     }
 
     // ── Check Placement Complete ─────────────────────────────────────
@@ -476,11 +492,11 @@ Reply with ONLY the JSON object, no markdown or text.`;
 
             // If it's now the opponent's turn and they have AP, trigger AI
             if (gameState.currentTurn === "opponent" && !opponentDone) {
-                setTimeout(() => {
+                setTimeout(async () => {
                     const gs = getGameState();
                     if (gs && GAME_PHASES && gs.phase === GAME_PHASES.DRAW_PLACEMENT) {
                         console.log("[CardGame v2] Triggering AI placement continuation");
-                        aiPlaceCards();
+                        await aiPlaceCards();
                         m.redraw();
                     }
                 }, 500);

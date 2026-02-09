@@ -445,6 +445,44 @@
                                 // Announcer voice profile (shown when announcer voice enabled)
                                 gc.announcerEnabled && gc.announcerVoiceEnabled ? voiceProfilePicker("Voice Profile", "announcerVoiceProfileId", "mic") : null,
 
+                                // ── Section: Poker Face & Banter ──
+                                m("div", { class: "cg2-config-section-label" }, "Poker Face & Banter"),
+                                m("div", { class: "cg2-config-row" }, [
+                                    m("label", { class: "cg2-config-label" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, "theater_comedy"),
+                                        "Poker Face"
+                                    ]),
+                                    m("div", { class: "cg2-config-control" }, [
+                                        m("button", {
+                                            class: "cg2-btn cg2-btn-sm" + (gc.pokerFaceEnabled ? " cg2-btn-active" : ""),
+                                            onclick() { gc.pokerFaceEnabled = !gc.pokerFaceEnabled; m.redraw(); }
+                                        }, gc.pokerFaceEnabled ? "Enabled" : "Disabled"),
+                                        m("span", { style: { fontSize: "10px", color: "#999", marginLeft: "8px" } },
+                                            gc.pokerFaceEnabled ? "Webcam detects your emotions during play" : "No emotion detection")
+                                    ])
+                                ]),
+                                gc.pokerFaceEnabled ? m("div", { class: "cg2-config-row", style: { paddingLeft: "24px" } }, [
+                                    m("label", { class: "cg2-config-label" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, "chat_bubble"),
+                                        "Banter Level"
+                                    ]),
+                                    m("div", { class: "cg2-config-control" }, [
+                                        m("select", {
+                                            class: "cg2-config-select",
+                                            value: gc.banterLevel || "moderate",
+                                            onchange(e) { gc.banterLevel = e.target.value; m.redraw(); }
+                                        }, [
+                                            m("option", { value: "subtle" }, "Subtle"),
+                                            m("option", { value: "moderate" }, "Moderate"),
+                                            m("option", { value: "aggressive" }, "Aggressive")
+                                        ]),
+                                        m("span", { style: { fontSize: "10px", color: "#999", marginLeft: "8px" } },
+                                            gc.banterLevel === "aggressive" ? "AI taunts based on your expressions"
+                                            : gc.banterLevel === "subtle" ? "Emotion used as atmosphere only"
+                                            : "AI references body language indirectly")
+                                    ])
+                                ]) : null,
+
                                 // Save button
                                 m("div", { style: { marginTop: "12px", textAlign: "right" } }, [
                                     m("button", {

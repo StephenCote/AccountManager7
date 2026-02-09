@@ -33,7 +33,7 @@
 
         // Get the "Open Chat" template config
         static async getOpenChatTemplate(chatDir) {
-            const chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0);
+            const chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 50);
             const templateCfg = chatConfigs.find(c => c.name === "Open Chat");
             if (!templateCfg) {
                 console.warn("[CardGameLLM] 'Open Chat' config not found");

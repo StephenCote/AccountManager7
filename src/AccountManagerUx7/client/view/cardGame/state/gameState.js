@@ -366,6 +366,17 @@
                 pending: false,    // Waiting for LLM response
                 talkCard: null,    // The Talk card that opened this chat
                 talkPosition: null // The action bar position for resolution
+            },
+
+            // Poker Face state (opt-in biometric emotion detection)
+            pokerFace: {
+                enabled: (deck?.gameConfig?.pokerFaceEnabled === true) && !!page?.components?.moodRing?.enabled?.(),
+                banterLevel: deck?.gameConfig?.banterLevel || "moderate",
+                currentEmotion: "neutral",
+                emotionHistory: [],
+                dominantTrend: "neutral",
+                lastTransition: null,
+                commentary: null
             }
         };
 
@@ -448,13 +459,15 @@
         // ── Phase 1: Initialize voices FIRST so intro narration can play immediately ──
 
         // Initialize Opponent Voice (the opponent character's TTS voice)
+        const voiceDeckName = deck?.deckName || "";
         if (CardGameVoice) {
             try {
                 gameVoice = new CardGameVoice();
                 await gameVoice.initialize({
                     subtitlesOnly: !opponentVoiceEnabled,
                     voiceProfileId: opponentVoiceProfileId,
-                    volume: 1.0
+                    volume: 1.0,
+                    deckName: voiceDeckName
                 });
             } catch (err) {
                 console.warn("[CardGame v2] Failed to initialize opponent voice:", err);
@@ -471,7 +484,8 @@
                 await gameAnnouncerVoice.initialize({
                     subtitlesOnly: false,
                     voiceProfileId: announcerVoiceProfileId,
-                    volume: 1.0
+                    volume: 1.0,
+                    deckName: voiceDeckName
                 });
             } catch (err) {
                 console.warn("[CardGame v2] Failed to initialize announcer voice:", err);
@@ -494,12 +508,15 @@
         }
 
         // ── Phase 3: Initialize LLM components (these can take time — voice plays in parallel) ──
+        // Generate unique session suffix to prevent cross-game context contamination
+        const deckName = deck?.deckName || "deck";
+        const sessionSuffix = deckName + "-" + Math.random().toString(36).substring(2, 8);
 
         // Initialize Announcer narrator (optional -- separate from opponent)
         if (announcerEnabled && narrationEnabled && CardGameNarrator) {
             try {
                 gameNarrator = new CardGameNarrator();
-                const narratorOk = await gameNarrator.initialize(announcerProfile, themeId);
+                const narratorOk = await gameNarrator.initialize(announcerProfile, themeId, sessionSuffix);
                 if (!narratorOk) {
                     console.log("[CardGame v2] Announcer LLM unavailable, using fallback narration");
                     gameNarrator = null;
@@ -520,7 +537,7 @@
         if (CardGameDirector) {
             try {
                 gameDirector = new CardGameDirector();
-                const directorOk = await gameDirector.initialize(opponentChar, themeId);
+                const directorOk = await gameDirector.initialize(opponentChar, themeId, sessionSuffix);
                 if (!directorOk) {
                     console.log("[CardGame v2] LLM Director unavailable, using fallback AI");
                     gameDirector = null;
@@ -534,10 +551,11 @@
         }
 
         // Initialize Chat Manager for Talk cards / opponent dialogue (requires LLM enabled)
+        const playerChar = state?.player?.character;
         if (narrationEnabled && CardGameChatManager) {
             try {
                 gameChatManager = new CardGameChatManager();
-                const chatOk = await gameChatManager.initialize(opponentChar, themeId);
+                const chatOk = await gameChatManager.initialize(opponentChar, playerChar, themeId, sessionSuffix);
                 if (!chatOk) {
                     console.log("[CardGame v2] LLM Chat Manager unavailable, Talk cards use fallback. Error:", gameChatManager?.lastError);
                     gameChatManager = null;
@@ -556,23 +574,51 @@
     // ── Unified Narration System ────────────────────────────────────────
     // Centralized narration with LLM and fallback support
 
+    const emotionDescriptions = {
+        happy: "appears pleased",
+        sad: "looks dejected",
+        angry: "seems frustrated",
+        fear: "appears nervous",
+        surprise: "looks startled",
+        disgust: "seems unimpressed"
+    };
+
+    // Update Poker Face state from moodRing (called during narration and resolution)
+    function updatePokerFace() {
+        if (!gameState?.pokerFace?.enabled) return;
+        const moodRing = page?.components?.moodRing;
+        if (!moodRing?.enabled?.()) return;
+
+        const emotion = moodRing.emotion() || "neutral";
+        const pf = gameState.pokerFace;
+        const prev = pf.currentEmotion;
+
+        if (emotion !== prev) {
+            pf.lastTransition = { from: prev, to: emotion, time: Date.now() };
+        }
+        pf.currentEmotion = emotion;
+        pf.emotionHistory.push({ emotion, timestamp: Date.now() });
+        if (pf.emotionHistory.length > 10) pf.emotionHistory.shift();
+
+        // Compute dominant trend (most common in last 10 readings)
+        let counts = {};
+        pf.emotionHistory.forEach(h => { counts[h.emotion] = (counts[h.emotion] || 0) + 1; });
+        pf.dominantTrend = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || "neutral";
+    }
+
     // Build emotion context from Poker Face (mood ring) if available
     function buildEmotionContext() {
-        const emotion = (page?.components?.moodRing?.enabled?.()) ? page.components.moodRing.emotion() : null;
+        updatePokerFace();
+        const pf = gameState?.pokerFace;
+        const emotion = pf?.enabled ? pf.currentEmotion : ((page?.components?.moodRing?.enabled?.()) ? page.components.moodRing.emotion() : null);
         if (!emotion || emotion === "neutral") return null;
-
-        const emotionDescriptions = {
-            happy: "appears pleased",
-            sad: "looks dejected",
-            angry: "seems frustrated",
-            fear: "appears nervous",
-            surprise: "looks startled",
-            disgust: "seems unimpressed"
-        };
 
         return {
             emotion,
-            description: emotionDescriptions[emotion] || null
+            description: emotionDescriptions[emotion] || null,
+            trend: pf?.dominantTrend || null,
+            transition: pf?.lastTransition || null,
+            banterLevel: pf?.banterLevel || null
         };
     }
 
@@ -709,6 +755,7 @@
                     if (narration?.text && gameState) {
                         showNarrationSubtitle(narration.text);
                         if (gameAnnouncerVoice?.enabled) {
+                            gameAnnouncerVoice.stopCurrent();  // Interrupt fallback speech
                             gameAnnouncerVoice.speak(narration.text);
                         }
                     }
@@ -784,6 +831,41 @@
     function narrateGameEnd(winner) { return triggerNarration("game_end", { winner }); }
     function narrateRoundStart() { return triggerNarration("round_start"); }
     function narrateRoundEnd(roundWinner) { return triggerNarration("round_end", { roundWinner }); }
+
+    // ── Opponent Banter ──────────────────────────────────────────────────
+    // Fire-and-forget opponent quip after resolution actions
+    async function triggerOpponentBanter(event, extraContext) {
+        if (!gameState || !gameChatManager?.initialized) return;
+        const pf = gameState.pokerFace;
+        const emotionCtx = buildEmotionContext();
+
+        const banterCtx = {
+            event,
+            round: gameState.round,
+            playerHp: gameState.player.hp,
+            opponentHp: gameState.opponent.hp,
+            playerAction: extraContext?.playerAction || null,
+            opponentAction: extraContext?.opponentAction || null,
+            emotion: emotionCtx?.emotion || null,
+            emotionDesc: emotionCtx?.description || null,
+            banterLevel: pf?.banterLevel || "moderate"
+        };
+
+        try {
+            const banter = await gameChatManager.generateBanter(banterCtx);
+            if (banter?.text && gameState) {
+                gameState.pokerFace.commentary = banter.text;
+                // Show as subtitle and speak with opponent voice
+                showNarrationSubtitle(banter.text);
+                if (gameVoice?.enabled && !gameVoice.subtitlesOnly) {
+                    gameVoice.speak(banter.text);
+                }
+                m.redraw();
+            }
+        } catch (e) {
+            console.warn("[CardGame v2] Banter failed:", e);
+        }
+    }
 
     // Show narrator text as a subtitle overlay
     function showNarrationSubtitle(text) {
@@ -947,10 +1029,10 @@
 
         // If AI goes first, trigger AI placement
         if (gameState.currentTurn === "opponent") {
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (gameState && gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
                     console.log("[CardGame v2] Triggering AI placement (goes first)");
-                    if (aiPlaceCards) aiPlaceCards();
+                    if (aiPlaceCards) await aiPlaceCards();
                     m.redraw();
                 }
             }, 500);
@@ -1514,6 +1596,15 @@
                         outcome: currentCombatResult.outcome?.label || "Hit",
                         damage: currentCombatResult.damageDealt || 0
                     });
+
+                    // Fire-and-forget opponent banter after their attack resolves
+                    if (pos.owner === "opponent") {
+                        triggerOpponentBanter("attack_resolved", {
+                            opponentAction: card?.name || "Attack",
+                            playerAction: null,
+                            damage: currentCombatResult.damageDealt || 0
+                        });
+                    }
                 }
 
                 m.redraw();
@@ -1543,6 +1634,22 @@
                                 stripped: exhaustedResult.stripped
                             });
                             console.log("[CardGame v2] Exhausted triggered for", ownerName, "- stripped", exhaustedResult.stripped, exhaustedResult.actionType);
+                        }
+                    }
+
+                    // Apply magic modifiers on Attack (enchanted strike)
+                    if (card && card.name === "Attack" && pos.stack && pos.stack.modifiers) {
+                        let magicMods = pos.stack.modifiers.filter(m => m.type === "magic");
+                        if (magicMods.length > 0) {
+                            let owner = pos.owner === "player" ? gameState.player : gameState.opponent;
+                            let target = pos.owner === "player" ? gameState.opponent : gameState.player;
+                            magicMods.forEach(magicMod => {
+                                let parsed = parseEffect(magicMod.effect || "");
+                                if (Object.keys(parsed).length > 0) {
+                                    let log = applyParsedEffects(parsed, owner, target, magicMod.name);
+                                    log.forEach(msg => console.log("[CardGame v2]", pos.owner, "enchanted attack:", msg));
+                                }
+                            });
                         }
                     }
 
@@ -1924,7 +2031,67 @@
                         }
                     }
 
-                    // Magic card resolution
+                    // ── Channel action: cast a spell from stacked magic modifier ──
+                    if (card.name === "Channel") {
+                        let magicMod = pos.stack.modifiers.find(m => m.type === "magic");
+                        let ownerStats = owner.character.stats || {};
+                        let magStat = ownerStats.MAG || 8;
+                        let skillMod = getStackSkillMod(pos.stack, "magic");
+
+                        if (magicMod) {
+                            // Cast the stacked spell
+                            let fizzled = false;
+                            if (magicMod.requires) {
+                                for (let stat in magicMod.requires) {
+                                    if ((ownerStats[stat] || 0) < magicMod.requires[stat]) {
+                                        fizzled = true;
+                                        console.log("[CardGame v2] Spell fizzled!", magicMod.name, "requires", stat, magicMod.requires[stat], "but actor has", ownerStats[stat] || 0);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (!fizzled) {
+                                let rawRoll = rollD20();
+                                let channelRoll = rawRoll + magStat + skillMod;
+                                console.log("[CardGame v2]", pos.owner, "channels", magicMod.name, "- Roll:", rawRoll, "+ MAG", magStat, "+ skill", skillMod, "=", channelRoll);
+
+                                let parsed = parseEffect(magicMod.effect || "");
+                                // Boost damage/healing by channel roll excess over 10
+                                let bonus = Math.max(0, Math.floor((channelRoll - 10) / 5));
+                                if (parsed.damage) parsed.damage += bonus;
+                                if (parsed.healHp) parsed.healHp += bonus;
+
+                                let log = applyParsedEffects(parsed, owner, target, magicMod.name);
+                                log.forEach(msg => console.log("[CardGame v2]", pos.owner, "cast:", msg));
+
+                                if (parsed.damage && target.hp <= 0) {
+                                    gameState.winner = pos.owner;
+                                    gameState.phase = "GAME_OVER";
+                                    m.redraw();
+                                    return;
+                                }
+                            }
+                        } else {
+                            // Channel without a spell: basic arcane burst (MAG/3 damage)
+                            let rawRoll = rollD20();
+                            let channelRoll = rawRoll + magStat + skillMod;
+                            let baseDmg = Math.max(1, Math.floor(magStat / 3));
+                            let bonus = Math.max(0, Math.floor((channelRoll - 10) / 5));
+                            let totalDmg = baseDmg + bonus;
+                            target.hp = Math.max(0, target.hp - totalDmg);
+                            console.log("[CardGame v2]", pos.owner, "channels raw arcane energy for", totalDmg, "damage (roll:", channelRoll, ")");
+
+                            if (target.hp <= 0) {
+                                gameState.winner = pos.owner;
+                                gameState.phase = "GAME_OVER";
+                                m.redraw();
+                                return;
+                            }
+                        }
+                    }
+
+                    // Magic card resolution (magic placed directly as core card)
                     if (card.type === "magic") {
                         let ownerStats = owner.character.stats || {};
                         let fizzled = false;
@@ -2108,6 +2275,7 @@
 
         // Narration system
         triggerNarration,
+        triggerOpponentBanter,
         narrateGameStart,
         narrateGameEnd,
         narrateRoundStart,

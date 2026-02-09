@@ -35,6 +35,16 @@
     // Voice synthesis for narrator using existing audio infrastructure
     let gameVoice = null;
 
+    // Simple string hash for generating deterministic reference IDs
+    function hashStr(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = ((hash << 5) - hash) + str.charCodeAt(i);
+            hash |= 0; // Convert to 32-bit int
+        }
+        return Math.abs(hash).toString(36);
+    }
+
     class CardGameVoice {
         constructor() {
             this.enabled = false;
@@ -43,6 +53,7 @@
             this.speaking = false;
             this.queue = [];
             this.subtitlesOnly = false;
+            this.deckName = "";
         }
 
         async initialize(voiceConfig) {
@@ -57,6 +68,7 @@
             this.voiceProfileId = voiceConfig?.voiceProfileId || null;
             this.volume = voiceConfig?.volume ?? 1.0;
             this.subtitlesOnly = voiceConfig?.subtitlesOnly ?? false;
+            this.deckName = voiceConfig?.deckName || "";
             this.enabled = true;
 
             console.log("[CardGameVoice] Initialized. Profile:", this.voiceProfileId || "default");
@@ -71,14 +83,13 @@
                 return;
             }
 
-            // Queue if already speaking
+            // Stop any current speech and clear queue — new narration always takes priority
             if (this.speaking) {
-                this.queue.push({ text, options });
-                return;
+                this.stopCurrent();
             }
 
             this.speaking = true;
-            const name = "cardgame-voice-" + Date.now();
+            const name = "cg-voice-" + hashStr(text + (this.deckName || "") + (this.voiceProfileId || ""));
 
             try {
                 // Use page.components.audio if available
@@ -126,6 +137,16 @@
 
         setVolume(level) {
             this.volume = Math.max(0, Math.min(1, level));
+        }
+
+        // Stop current speech without disabling the voice instance
+        stopCurrent() {
+            this.queue = [];
+            this.speaking = false;
+            if (this._activeSource) {
+                try { this._activeSource.stop(); } catch (e) { /* already stopped */ }
+                this._activeSource = null;
+            }
         }
 
         stop() {

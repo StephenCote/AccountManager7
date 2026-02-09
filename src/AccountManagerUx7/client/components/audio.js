@@ -1113,6 +1113,7 @@
     }
 
     async function createAudioSource(name, profileId, content) {
+        //console.log(name, profileId);
         if (content) {
             /// Strip emojis out - https://stackoverflow.com/questions/10992921/how-to-remove-emoji-code-using-javascript
             content = content.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, "");
@@ -1137,6 +1138,7 @@
             console.log("Synthesize '" + name + "'");
             let d;
             try {
+                console.log(vprops);
                 d = await m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops });
             }
             catch (e) {

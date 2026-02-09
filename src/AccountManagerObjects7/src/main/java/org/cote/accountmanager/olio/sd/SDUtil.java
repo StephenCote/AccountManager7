@@ -148,10 +148,15 @@ public class SDUtil {
 	public List<String> listModels() {
 		List<String> models = new ArrayList<>();
 		try {
+			String sess = SWUtil.getAnonymousSession(autoserver);
+			if (sess == null || sess.isEmpty()) {
+				logger.warn("Could not obtain anonymous session for listing models");
+				return models;
+			}
 			SWModelListResponse resp = ClientUtil.post(
 				SWModelListResponse.class,
 				ClientUtil.getResource(autoserver + "/API/ListModels"),
-				"{\"path\":\"\",\"depth\":2}",
+				"{\"session_id\":\"" + sess + "\",\"path\":\"\",\"depth\":2}",
 				MediaType.APPLICATION_JSON_TYPE
 			);
 			if (resp != null && resp.getFiles() != null) {

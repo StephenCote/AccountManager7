@@ -411,7 +411,7 @@
                                 }
 
                                 ctx().builtDeck = chars().assembleStarterDeck(selectedChars, activeTheme);
-                                ctx().builtDeck.deckName = deckNameInput || ctx().builtDeck.deckName;
+                                ctx().builtDeck.deckName = safeDeckName || ctx().builtDeck.deckName;
                                 if (activeTheme && activeTheme.outfits) {
                                     await themes().applyThemeOutfits(ctx().builtDeck, activeTheme, true);
                                 }
@@ -560,7 +560,7 @@
                             class: "cg2-btn cg2-btn-primary",
                             disabled: buildingDeck || !deckNameInput.trim(),
                             onclick() {
-                                ctx().builtDeck.deckName = deckNameInput.trim();
+                                ctx().builtDeck.deckName = deckNameInput.trim().replace(/[^a-zA-Z0-9_\-]/g, "_");
                                 CardGame.UI.saveDeck(ctx().builtDeck);
                             }
                         }, buildingDeck ? "Saving..." : "Build & Save Deck")

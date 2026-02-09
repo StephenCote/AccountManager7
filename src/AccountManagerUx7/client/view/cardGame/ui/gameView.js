@@ -618,6 +618,23 @@
                         gameState?.chat?.unlocked ? " Chat" : " Locked"
                     ]) : null,
 
+                    // Poker Face widget (player sidebar only)
+                    !isOpponent && gameState?.pokerFace?.enabled ? m("div", { class: "cg2-poker-face" }, [
+                        m("span", { class: "cg2-poker-face-label" }, "\uD83C\uDFAD"),
+                        m("span", { class: "cg2-poker-face-emotion" }, gameState.pokerFace.currentEmotion || "neutral"),
+                        gameState.pokerFace.dominantTrend && gameState.pokerFace.dominantTrend !== "neutral"
+                            ? m("span", { class: "cg2-poker-face-trend", title: "Trend: " + gameState.pokerFace.dominantTrend }, "\u2192 " + gameState.pokerFace.dominantTrend)
+                            : null
+                    ]) : null,
+
+                    // Opponent banter commentary (opponent sidebar)
+                    isOpponent && gameState?.pokerFace?.commentary ? m("div", {
+                        class: "cg2-banter-bubble",
+                        title: "Opponent says..."
+                    }, [
+                        m("span", { class: "cg2-banter-text" }, "\u201C" + gameState.pokerFace.commentary + "\u201D")
+                    ]) : null,
+
                     // Status effects display
                     actor.statusEffects && actor.statusEffects.length > 0
                         ? m("div", { class: "cg2-status-effects" },
@@ -667,6 +684,7 @@
                 let showCardPreview = rendering().showCardPreview;
                 let placeCard = E().placeCard;
                 let canModifyAction = E().canModifyAction;
+                let isCoreCardType = E().isCoreCardType;
                 let removeCardFromPosition = E().removeCardFromPosition;
                 let selectAction = E().selectAction;
                 let isActionPlacedThisRound = E().isActionPlacedThisRound;
@@ -699,28 +717,37 @@
                                        (isLocked ? " cg2-locked" : "") +
                                        (canDrop && !isLocked ? " cg2-droppable" : ""),
                                 ondragover(e) {
-                                    // Allow drops for modifier cards on positions with a core action
-                                    if (canDrop && !isLocked && pos.stack && pos.stack.coreCard) e.preventDefault();
+                                    // Allow drops on positions with a core card (modifiers) or empty positions (core cards)
+                                    if (canDrop && !isLocked) e.preventDefault();
                                 },
                                 ondrop(e) {
-                                    if (!canDrop || isLocked || !pos.stack || !pos.stack.coreCard) return;
+                                    if (!canDrop || isLocked) return;
                                     e.preventDefault();
                                     let cardData = e.dataTransfer.getData("text/plain");
                                     try {
                                         let card = JSON.parse(cardData);
-                                        // Only allow modifier cards to be dropped (skill, item, magic, apparel)
-                                        let isModifier = card.type === "skill" || card.type === "item" || card.type === "magic" || card.type === "apparel";
-                                        if (!isModifier) {
-                                            if (typeof page !== "undefined" && page.toast) page.toast("warn", "Use the icon picker for actions");
-                                            return;
+                                        if (pos.stack && pos.stack.coreCard) {
+                                            // Position has a core card — drop as modifier
+                                            let isModifier = card.type === "skill" || card.type === "item" || card.type === "magic" || card.type === "apparel";
+                                            if (!isModifier) {
+                                                if (typeof page !== "undefined" && page.toast) page.toast("warn", "Use the icon picker for actions");
+                                                return;
+                                            }
+                                            let compat = canModifyAction(pos.stack.coreCard, card);
+                                            if (!compat.allowed) {
+                                                if (typeof page !== "undefined" && page.toast) page.toast("warn", compat.reason);
+                                                return;
+                                            }
+                                            placeCard(gameState, pos.index, card, true);
+                                        } else {
+                                            // Empty position — only allow core card types (magic, talk)
+                                            let isCore = isCoreCardType(card.type);
+                                            if (!isCore) {
+                                                if (typeof page !== "undefined" && page.toast) page.toast("warn", "Only spells and actions can be placed directly");
+                                                return;
+                                            }
+                                            placeCard(gameState, pos.index, card, false);
                                         }
-                                        // Check compatibility with the core action's stackWith rule
-                                        let compat = canModifyAction(pos.stack.coreCard, card);
-                                        if (!compat.allowed) {
-                                            if (typeof page !== "undefined" && page.toast) page.toast("warn", compat.reason);
-                                            return;
-                                        }
-                                        placeCard(gameState, pos.index, card, true);
                                     } catch (err) {
                                         console.error("[CardGame v2] Drop error:", err);
                                     }
@@ -907,9 +934,23 @@
                                             if (placeThreatDefenseCard) placeThreatDefenseCard(card);
                                             return;
                                         }
+                                        // During placement, clicking a magic card places it on first empty position
+                                        let isPlacement = gameState.phase === GAME_PHASES.DRAW_PLACEMENT;
+                                        let isPlayerTurn = gameState.initiative?.currentTurn === "player";
+                                        if (isPlacement && isPlayerTurn && card.type === "magic") {
+                                            let bar = gameState.actionBar;
+                                            if (bar && bar.positions) {
+                                                let emptyPos = bar.positions.find(p => p.owner === "player" && !p.stack && !p.threat);
+                                                if (emptyPos) {
+                                                    let placeCard = E().placeCard;
+                                                    if (placeCard) placeCard(gameState, emptyPos.index, card, false);
+                                                    return;
+                                                }
+                                            }
+                                        }
                                         if (showCardPreview) showCardPreview(card);
                                     },
-                                    title: canPlaceDefense ? "Click to add to defense" : "Click to enlarge, drag to place"
+                                    title: canPlaceDefense ? "Click to add to defense" : (card.type === "magic" ? "Click to place, drag to position" : "Click to enlarge, drag to place")
                                 }, [
                                     m(CardFace, { card, bgImage: cardFrontBg, compact: true }),
                                     // Role badge overlay

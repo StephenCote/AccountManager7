@@ -80,7 +80,7 @@
             this.enabled = true;
         }
 
-        async initialize(profileId, themeId) {
+        async initialize(profileId, themeId, sessionSuffix) {
             this.profile = profileId || "arena-announcer";
             await loadNarratorPrompts();
 
@@ -91,8 +91,9 @@
 
             const profileConfig = CardGameNarrator.PROFILES[this.profile];
             const systemPrompt = this._buildNarratorPrompt(profileConfig, themeId);
+            const chatName = sessionSuffix ? "CG Narrator " + sessionSuffix : "CardGame Narrator";
             const ok = await this.initializeLLM(
-                "CardGame Narrator",
+                chatName,
                 "CardGame Narrator Prompt",
                 systemPrompt,
                 0.7  // Higher temperature for creative narration

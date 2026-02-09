@@ -350,7 +350,7 @@
     // Canonical source: media/cardGame/action-definitions.json
     // Hardcoded fallback ensures the game works even if JSON fails to load.
     let ACTION_DEFINITIONS = {
-        "Attack":      { icon: "swords",          type: "Offensive",  energyCost: 0, roll: "1d20 + STR + ATK vs DEF",        stackWith: "Weapon + Skill",         desc: "Melee or ranged attack" },
+        "Attack":      { icon: "swords",          type: "Offensive",  energyCost: 0, roll: "1d20 + STR + ATK vs DEF",        stackWith: "Weapon + Skill + Magic", desc: "Melee or ranged attack" },
         "Guard":       { icon: "shield",          type: "Defensive",  energyCost: 0, roll: null,                              stackWith: "Skill",                  desc: "Auto: +3 DEF this round", exclusive: false },
         "Flee":        { icon: "directions_run",  type: "Movement",   energyCost: 0, roll: "1d20 + AGI vs difficulty",        stackWith: "Skill",                  desc: "Attempt to escape" },
         "Rest":        { icon: "hotel",           type: "Recovery",   energyCost: 0, roll: null,                              stackWith: "None",                   desc: "Restore +2 HP, +3 Energy", exclusive: true },
@@ -364,7 +364,7 @@
         "Channel":     { icon: "auto_fix_high",   type: "Magic",      energyCost: 3, roll: "1d20 + MAG",                     stackWith: "Magic Effect + Skill",   desc: "Cast a spell" }
     };
 
-    let COMMON_ACTIONS = ["Attack", "Flee", "Rest", "Use Item", "Talk"];
+    let COMMON_ACTIONS = ["Attack", "Channel", "Flee", "Rest", "Use Item", "Talk"];
     let ACTION_ART_PROMPTS = {};
 
     /**

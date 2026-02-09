@@ -1,13 +1,13 @@
 {
     "version": 1,
-    "commonActions": ["Attack", "Flee", "Rest", "Use Item", "Talk"],
+    "commonActions": ["Attack", "Channel", "Flee", "Rest", "Use Item", "Talk"],
     "actions": {
         "Attack": {
             "icon": "swords",
             "type": "Offensive",
             "energyCost": 0,
             "roll": "1d20 + STR + ATK vs DEF",
-            "stackWith": "Weapon + Skill",
+            "stackWith": "Weapon + Skill + Magic",
             "desc": "Melee or ranged attack",
             "artPrompt": "a warrior mid-strike with weapon raised"
         },

@@ -239,8 +239,6 @@
                 remindEvery: t.remindEvery,
                 keyframeEvery: t.keyframeEvery
             };
-            // Only include apiKey if non-null to avoid encryption provider errors
-            if (t.apiKey) newChatCfg.apiKey = t.apiKey;
             if (t.chatOptions) {
                 const co = { schema: "olio.llm.chatOptions" };
                 const optKeys = ["max_tokens", "min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
@@ -307,8 +305,6 @@
                 remindEvery: t.remindEvery,
                 keyframeEvery: t.keyframeEvery
             };
-            // Only include apiKey if non-null to avoid encryption provider errors
-            if (t.apiKey) newChatCfg.apiKey = t.apiKey;
             // Copy chatOptions from template but set higher temperature for test diversity
             const co = { schema: "olio.llm.chatOptions" };
             if (t.chatOptions) {

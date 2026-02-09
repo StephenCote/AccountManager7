@@ -515,7 +515,7 @@
 
     function getHistory() {
       if (!inst) {
-        return;
+        return Promise.resolve(null);
       }
 
       let chatReq = {
