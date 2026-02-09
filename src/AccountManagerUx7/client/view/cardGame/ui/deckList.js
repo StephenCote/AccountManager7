@@ -149,6 +149,8 @@
             delete ctx()._charGroupName;
         }
 
+        // Store sanitized name so auto-save paths match the folder structure
+        deck.storageName = safeName;
         let deckStorage = storage().deckStorage;
         let result = await deckStorage.save(safeName, deck);
         ctx().buildingDeck = false;
@@ -182,6 +184,7 @@
         let deckStorage = storage().deckStorage;
         let data = await deckStorage.load(storageName);
         if (data) {
+            data.storageName = storageName;  // Ensure save path matches folder
             ctx().viewingDeck = data;
             ctx().cardFrontImageUrl = data.cardFrontImageUrl || null;
             ctx().cardBackImageUrl = data.cardBackImageUrl || null;
@@ -289,6 +292,7 @@
         let gameStorage = storage().gameStorage;
         let data = await deckStorage.load(storageName);
         if (data) {
+            data.storageName = storageName;  // Ensure save path matches folder
             ctx().viewingDeck = data;
             // Load the deck's theme
             if (data.themeId) {
@@ -323,6 +327,7 @@
             page.toast("error", "Failed to load deck for resume");
             return;
         }
+        data.storageName = storageName;  // Ensure save path matches folder
         ctx().viewingDeck = data;
         if (data.themeId) {
             await themes().loadThemeConfig(data.themeId);

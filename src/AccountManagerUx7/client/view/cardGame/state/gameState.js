@@ -230,8 +230,8 @@
         console.log("[CardGame v2] Draw piles - player:", playerDrawPile.length, "opponent:", opponentDrawPile.length);
 
         let state = {
-            // Meta
-            deckName: deck.deckName,
+            // Meta — use storageName (sanitized folder name) for save/load paths
+            deckName: deck.storageName || deck.deckName,
             themeId: deck.themeId,
             startedAt: Date.now(),
 

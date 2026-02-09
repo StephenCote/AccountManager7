@@ -189,11 +189,9 @@
             try {
                 let saves = await this.list(deckName);
                 if (saves.length === 0) return null;
-                let latest = saves[0];
-                if (latest.dataBytesStore) {
-                    return decodeJson(latest.dataBytesStore);
-                }
-                return null;
+                let latest = saves[0]; // sorted newest-first
+                // Use loadDataRecord to fetch with dataBytesStore included in query
+                return await loadDataRecord(this._savesPath(deckName), latest.name, false);
             } catch (e) {
                 console.error("[CardGame v2] Failed to load game save:", deckName, e);
                 return null;
