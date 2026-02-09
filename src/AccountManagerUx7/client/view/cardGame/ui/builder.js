@@ -243,7 +243,8 @@
                         themeOption("high-fantasy", "High Fantasy", "Classic high fantasy with vibrant magic and epic adventures", "auto_fix_high"),
                         themeOption("dark-medieval", "Dark Medieval", "Gritty medieval setting with low magic and high mortality", "skull"),
                         themeOption("sci-fi", "Sci-Fi", "Far-future space setting with psionic powers and tech items", "rocket_launch"),
-                        themeOption("post-apocalypse", "Post Apocalypse", "Harsh wasteland survival with scavenged gear and mutant threats", "destruction")
+                        themeOption("post-apocalypse", "Post Apocalypse", "Harsh wasteland survival with scavenged gear and mutant threats", "destruction"),
+                        themeOption("steampunk", "Steampunk", "Victorian industrial setting with brass gadgets, clockwork and psionic powers", "settings")
                     ]),
                     m("div", { class: "cg2-builder-nav" }, [
                         m("button", { class: "cg2-btn", onclick: () => { ctx().screen = "deckList"; m.redraw(); } }, "Cancel"),

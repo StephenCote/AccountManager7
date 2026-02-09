@@ -302,6 +302,20 @@
                 return false;
             }
 
+            // Prevent duplicate modifier types: only one card of each type per stack
+            // e.g. one weapon + one skill + one magic is OK, but two weapons is not
+            let modType = card.type === "item" ? (card.subtype || "item") : card.type;
+            let existingSameType = pos.stack.modifiers.some(m => {
+                let mType = m.type === "item" ? (m.subtype || "item") : m.type;
+                return mType === modType;
+            });
+            if (existingSameType) {
+                let typeLabel = modType.charAt(0).toUpperCase() + modType.slice(1);
+                console.warn("[CardGame v2] Already has a", modType, "modifier in this stack");
+                if (typeof page !== "undefined" && page.toast) page.toast("warn", "Already has a " + typeLabel + " card in this action");
+                return false;
+            }
+
             pos.stack.modifiers.push(card);
             console.log("[CardGame v2] Added modifier", card.name, "to stack at position", positionIndex);
 

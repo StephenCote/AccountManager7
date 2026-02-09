@@ -64,6 +64,7 @@
                                 m.redraw();
                             } else {
                                 CardGame.GameState.skipThreatResponse();
+                                m.redraw();
                             }
                         }
                         threatAutoRespondScheduled = false;  // Reset for next threat

@@ -28,6 +28,7 @@
     // ── State ──────────────────────────────────────────────────────────
     let handTrayFilter = "all";  // "all" | "skill" | "magic" | "item"
     let stackFlipped = {};  // { "player-0": true, "opponent-1": false }
+    let selectedHandCard = null;  // Card selected for tap-to-place (touch/tablet support)
 
     // ── Helpers ─────────────────────────────────────────────────────────
     function ctx() { return window.CardGame.ctx || {}; }
@@ -433,22 +434,22 @@
                                         }, player.apUsed > 0 ? "End Turn" : "Pass Turn")
                                     ] : null
                                 ])
-                            ]) : null
+                            ]) : null,
+
+                            // Hand Tray (inside center column for compact layout)
+                            (gameState.phase === GAME_PHASES.INITIATIVE ||
+                             gameState.phase === GAME_PHASES.DRAW_PLACEMENT ||
+                             gameState.phase === GAME_PHASES.THREAT_RESPONSE ||
+                             gameState.phase === GAME_PHASES.END_THREAT)
+                                ? m(HandTray)
+                                : null
                         ]),
 
                         // Right sidebar: Opponent
                         m("div", { class: "cg2-game-sidebar cg2-opponent-side" }, [
                             m(CharacterSidebar, { actor: gameState.opponent, label: "Opponent", isOpponent: true })
                         ])
-                    ]),
-
-                    // Bottom: Hand Tray (visible in initiative, placement, and threat response phases)
-                    (gameState.phase === GAME_PHASES.INITIATIVE ||
-                     gameState.phase === GAME_PHASES.DRAW_PLACEMENT ||
-                     gameState.phase === GAME_PHASES.THREAT_RESPONSE ||
-                     gameState.phase === GAME_PHASES.END_THREAT)
-                        ? m(HandTray)
-                        : null
+                    ])
                 ]);
             }
         };
@@ -708,6 +709,7 @@
                             // Mark empty player positions as locked if out of AP
                             let isLocked = isPlacement && isPlayerPos && !pos.stack && playerOutOfAP && !isThreatPos;
 
+                            let hasSelected = selectedHandCard && canDrop && !isLocked;
                             return m("div", {
                                 key: pos.index,
                                 class: "cg2-action-position" +
@@ -715,7 +717,8 @@
                                        (isActive ? " cg2-active" : "") +
                                        (isResolved ? " cg2-resolved" : "") +
                                        (isLocked ? " cg2-locked" : "") +
-                                       (canDrop && !isLocked ? " cg2-droppable" : ""),
+                                       (canDrop && !isLocked ? " cg2-droppable" : "") +
+                                       (hasSelected ? " cg2-tap-target" : ""),
                                 ondragover(e) {
                                     // Allow drops on positions with a core card (modifiers) or empty positions (core cards)
                                     if (canDrop && !isLocked) e.preventDefault();
@@ -723,6 +726,7 @@
                                 ondrop(e) {
                                     if (!canDrop || isLocked) return;
                                     e.preventDefault();
+                                    selectedHandCard = null;  // Clear selection on drag-drop
                                     let cardData = e.dataTransfer.getData("text/plain");
                                     try {
                                         let card = JSON.parse(cardData);
@@ -751,6 +755,37 @@
                                     } catch (err) {
                                         console.error("[CardGame v2] Drop error:", err);
                                     }
+                                },
+                                // Tap-to-place: if a hand card is selected, tapping a position places it
+                                onclick(e) {
+                                    if (!selectedHandCard || !canDrop || isLocked) return;
+                                    e.stopPropagation();
+                                    let card = selectedHandCard;
+                                    if (pos.stack && pos.stack.coreCard) {
+                                        // Position has core card — place as modifier
+                                        let isModifier = card.type === "skill" || card.type === "item" || card.type === "magic" || card.type === "apparel";
+                                        if (!isModifier) {
+                                            if (typeof page !== "undefined" && page.toast) page.toast("warn", "Use the icon picker for actions");
+                                            return;
+                                        }
+                                        let compat = canModifyAction(pos.stack.coreCard, card);
+                                        if (!compat.allowed) {
+                                            if (typeof page !== "undefined" && page.toast) page.toast("warn", compat.reason);
+                                            return;
+                                        }
+                                        placeCard(gameState, pos.index, card, true);
+                                        selectedHandCard = null;
+                                    } else {
+                                        // Empty position — only allow core card types (magic, talk)
+                                        let isCore = isCoreCardType(card.type);
+                                        if (isCore) {
+                                            placeCard(gameState, pos.index, card, false);
+                                            selectedHandCard = null;
+                                        } else {
+                                            if (typeof page !== "undefined" && page.toast) page.toast("info", "Choose an action first, then tap to add this card as a modifier");
+                                        }
+                                    }
+                                    m.redraw();
                                 }
                             }, [
                                 m("div", { class: "cg2-pos-number" }, isThreatPos ? "T" + pos.index : pos.index),
@@ -915,9 +950,12 @@
                                     : card.type === "magic" ? "magic"
                                     : card.type === "item" ? "item" : "support";
 
+                                let isSelected = selectedHandCard === card;
                                 return m("div", {
                                     key: card.name + "-" + i,
-                                    class: "cg2-hand-card-wrapper cg2-role-" + cardRole + (canPlaceDefense ? " cg2-defense-eligible" : ""),
+                                    class: "cg2-hand-card-wrapper cg2-role-" + cardRole
+                                        + (canPlaceDefense ? " cg2-defense-eligible" : "")
+                                        + (isSelected ? " cg2-hand-selected" : ""),
                                     draggable: !isThreatPhase,
                                     ondragstart(e) {
                                         if (isThreatPhase) {
@@ -934,23 +972,39 @@
                                             if (placeThreatDefenseCard) placeThreatDefenseCard(card);
                                             return;
                                         }
-                                        // During placement, clicking a magic card places it on first empty position
-                                        let isPlacement = gameState.phase === GAME_PHASES.DRAW_PLACEMENT;
-                                        let isPlayerTurn = gameState.initiative?.currentTurn === "player";
-                                        if (isPlacement && isPlayerTurn && card.type === "magic") {
-                                            let bar = gameState.actionBar;
-                                            if (bar && bar.positions) {
-                                                let emptyPos = bar.positions.find(p => p.owner === "player" && !p.stack && !p.threat);
-                                                if (emptyPos) {
-                                                    let placeCard = E().placeCard;
-                                                    if (placeCard) placeCard(gameState, emptyPos.index, card, false);
-                                                    return;
+                                        // During placement, tap-to-select for touch/tablet support
+                                        let isPlacementPhase = gameState.phase === GAME_PHASES.DRAW_PLACEMENT;
+                                        let isPlayerTurn = gameState.currentTurn === "player";
+                                        if (isPlacementPhase && isPlayerTurn) {
+                                            // Magic cards: auto-place on first empty position (quick action)
+                                            if (card.type === "magic" && !isSelected) {
+                                                let bar = gameState.actionBar;
+                                                if (bar && bar.positions) {
+                                                    let emptyPos = bar.positions.find(p => p.owner === "player" && !p.stack && !p.isThreat);
+                                                    if (emptyPos) {
+                                                        let placeCard = E().placeCard;
+                                                        if (placeCard) placeCard(gameState, emptyPos.index, card, false);
+                                                        selectedHandCard = null;
+                                                        return;
+                                                    }
                                                 }
                                             }
+                                            // Toggle selection for tap-to-place
+                                            if (isSelected) {
+                                                selectedHandCard = null;  // Deselect
+                                            } else {
+                                                selectedHandCard = card;  // Select for placement
+                                            }
+                                            m.redraw();
+                                            return;
                                         }
                                         if (showCardPreview) showCardPreview(card);
                                     },
-                                    title: canPlaceDefense ? "Click to add to defense" : (card.type === "magic" ? "Click to place, drag to position" : "Click to enlarge, drag to place")
+                                    title: canPlaceDefense
+                                        ? "Click to add to defense"
+                                        : isSelected
+                                            ? "Selected - tap an action bar position to place, or tap again to deselect"
+                                            : "Tap to select, then tap action bar position to place"
                                 }, [
                                     m(CardFace, { card, bgImage: cardFrontBg, compact: true }),
                                     // Role badge overlay
@@ -980,7 +1034,10 @@
             get handTrayFilter() { return handTrayFilter; },
             set handTrayFilter(v) { handTrayFilter = v; },
             get stackFlipped() { return stackFlipped; },
-            set stackFlipped(v) { stackFlipped = v; }
+            set stackFlipped(v) { stackFlipped = v; },
+            get selectedHandCard() { return selectedHandCard; },
+            set selectedHandCard(v) { selectedHandCard = v; },
+            clearSelection() { selectedHandCard = null; }
         },
         calcCharScore,
         formatPhase,

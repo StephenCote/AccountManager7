@@ -1102,8 +1102,8 @@
 .cg2-game-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
+    gap: 10px;
+    padding: 6px 12px;
     background: rgba(255,255,255,0.9);
     border-bottom: 1px solid #e0d8c0;
 }
@@ -1554,11 +1554,11 @@
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    gap: 16px;
-    padding: 12px 24px;
+    gap: 12px;
+    padding: 8px 16px;
     background: linear-gradient(to top, rgba(245,240,230,0.95), rgba(245,240,230,0.8));
     border-top: 1px solid #e0d8c0;
-    min-height: 60px;
+    min-height: 44px;
 }
 .dark .cg2-action-panel {
     background: linear-gradient(to top, rgba(30,30,30,0.95), rgba(30,30,30,0.8));
@@ -1903,7 +1903,7 @@
     min-height: 0; /* Allow shrinking in flexbox */
     display: flex;
     flex-direction: column;
-    padding: 16px;
+    padding: 10px;
     overflow-y: auto;
 }
 
@@ -2077,72 +2077,75 @@
     color: #aaa;
 }
 
-/* Threat encounter card layout (like initiative) */
+/* Threat encounter layout — two-column with flexible height */
 .cg2-threat-encounter {
-    margin: 20px 0;
+    margin: 12px 0;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 16px;
 }
 .cg2-threat-card-wrap,
 .cg2-defender-card-wrap {
-    width: var(--card-init-width, 160px);
-    height: var(--card-init-height, 220px);
+    width: 200px;
+    min-height: 0;
 }
 .cg2-threat-encounter-card {
     width: 100%;
-    height: 100%;
     background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-    border: 3px solid #EF5350;
+    border: 2px solid #EF5350;
     border-radius: 12px;
-    padding: 16px 12px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 16px rgba(244,67,54,0.3);
-    animation: cg2-threat-pulse 1.5s ease-in-out infinite;
+    gap: 6px;
+    box-shadow: 0 4px 16px rgba(244,67,54,0.25);
+    position: relative;
 }
 .dark .cg2-threat-encounter-card {
     background: linear-gradient(135deg, rgba(80,30,30,0.95) 0%, rgba(100,20,20,0.95) 100%);
 }
 .cg2-threat-encounter-icon {
-    width: 60px;
-    height: 60px;
+    width: 40px;
+    height: 40px;
     background: #C62828;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 12px;
+    flex-shrink: 0;
 }
 .cg2-threat-encounter-icon .material-symbols-outlined {
-    font-size: 36px;
+    font-size: 24px;
     color: #fff;
 }
 .cg2-threat-encounter-name {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 700;
     color: #B71C1C;
     text-align: center;
-    margin-bottom: 12px;
+    line-height: 1.2;
 }
 .dark .cg2-threat-encounter-name {
     color: #FFCDD2;
 }
 .cg2-threat-encounter-stats {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 8px;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
 }
 .cg2-threat-stat-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 13px;
+    gap: 3px;
+    font-size: 12px;
     font-weight: 600;
     color: #333;
 }
 .cg2-threat-stat-row .material-symbols-outlined {
-    font-size: 16px;
+    font-size: 14px;
     color: #C62828;
 }
 .dark .cg2-threat-stat-row {
@@ -2152,17 +2155,22 @@
     color: #EF5350;
 }
 .cg2-threat-encounter-loot {
-    font-size: 11px;
+    font-size: 10px;
     color: #666;
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 4px 8px;
+    padding: 3px 8px;
     background: rgba(0,0,0,0.05);
-    border-radius: 12px;
+    border-radius: 10px;
+    text-align: center;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .cg2-threat-encounter-loot .material-symbols-outlined {
-    font-size: 14px;
+    font-size: 12px;
+    flex-shrink: 0;
 }
 .dark .cg2-threat-encounter-loot {
     color: #aaa;
@@ -2173,7 +2181,7 @@
 .cg2-threat-type-badge {
     position: absolute;
     top: 6px;
-    right: 8px;
+    right: 6px;
     font-size: 8px;
     font-weight: 700;
     letter-spacing: 0.5px;
@@ -2182,7 +2190,6 @@
     background: rgba(0,0,0,0.15);
     color: #B71C1C;
 }
-.cg2-threat-encounter-card { position: relative; }
 .cg2-threat-type-animal .cg2-threat-type-badge { color: #2E7D32; background: rgba(46,125,50,0.12); }
 .cg2-threat-type-npc .cg2-threat-type-badge { color: #1565C0; background: rgba(21,101,192,0.12); }
 .cg2-threat-type-monster .cg2-threat-type-badge { color: #6A1B9A; background: rgba(106,27,154,0.12); }
@@ -2195,7 +2202,7 @@
     display: flex;
     align-items: center;
     gap: 3px;
-    margin-bottom: 6px;
+    text-align: center;
 }
 .dark .cg2-threat-behavior { color: #bbb; }
 
@@ -2206,7 +2213,6 @@
     padding: 3px 8px;
     background: rgba(198,40,40,0.08);
     border-radius: 4px;
-    margin-bottom: 6px;
 }
 .cg2-threat-action-label { font-weight: 600; }
 .cg2-threat-action-name { color: #C62828; font-weight: 700; }
@@ -2219,11 +2225,14 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    justify-content: center;
+    gap: 2px;
     color: #C62828;
+    flex-shrink: 0;
+    padding: 0 4px;
 }
 .cg2-threat-vs .material-symbols-outlined {
-    font-size: 28px;
+    font-size: 24px;
     animation: cg2-threat-pulse 1s ease-in-out infinite;
 }
 .dark .cg2-threat-vs {
@@ -2233,15 +2242,15 @@
 /* Defender card */
 .cg2-defender-card {
     width: 100%;
-    height: 100%;
     background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
-    border: 3px solid #9E9E9E;
+    border: 2px solid #9E9E9E;
     border-radius: 12px;
     padding: 12px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    gap: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
 .cg2-defender-card.cg2-defender-you {
     border-color: #4CAF50;
@@ -2255,23 +2264,23 @@
     border-color: #66BB6A;
 }
 .cg2-defender-label {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 700;
     color: #333;
-    margin-bottom: 8px;
 }
 .dark .cg2-defender-label {
     color: #eee;
 }
 .cg2-defender-stats {
     display: flex;
-    gap: 12px;
-    margin-bottom: 12px;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
 }
 .cg2-defender-stat {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     font-size: 12px;
     font-weight: 600;
     color: #555;
@@ -2332,7 +2341,6 @@
     font-size: 12px;
     font-weight: 600;
     color: #FF9800;
-    margin-top: 8px;
     padding: 4px 10px;
     background: rgba(255,152,0,0.1);
     border-radius: 12px;
@@ -2346,13 +2354,13 @@
     display: flex;
     gap: 12px;
     justify-content: center;
-    margin-top: 16px;
+    margin-top: 12px;
 }
 .cg2-threat-waiting {
-    font-size: 14px;
+    font-size: 13px;
     color: #888;
     font-style: italic;
-    padding: 12px;
+    padding: 8px;
     text-align: center;
 }
 
@@ -2718,10 +2726,10 @@
     background: rgba(255,255,255,0.95);
     border: 1px solid #e0d8c0;
     border-radius: 12px;
-    padding: 16px;
+    padding: 12px;
     margin-top: auto;
     position: relative;  /* For combat overlay positioning */
-    min-height: 320px;   /* Ensure space for combat overlay content */
+    min-height: 280px;   /* Ensure space for combat overlay content */
 }
 .dark .cg2-action-bar {
     background: rgba(40,40,40,0.95);
@@ -2977,36 +2985,38 @@
 }
 
 /* ── Hand Tray ─────────────────────────────────────── */
+/* Hand tray — now inside center column, compact inline strip */
 .cg2-hand-tray {
-    background: rgba(255,255,255,0.95);
+    background: rgba(255,255,255,0.6);
     border-top: 1px solid #e0d8c0;
-    padding: 12px 16px;
+    padding: 6px 8px;
     position: relative;
-    z-index: 5; /* Above game area cards */
+    z-index: 5;
+    flex-shrink: 0;
 }
 .dark .cg2-hand-tray {
-    background: rgba(30,30,30,0.95);
+    background: rgba(30,30,30,0.6);
     border-top-color: #444;
 }
 .cg2-hand-header {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 16px;
-    margin-bottom: 10px;
+    gap: 8px;
+    margin-bottom: 4px;
 }
 .cg2-hand-label {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 700;
     color: #B8860B;
 }
 .cg2-hand-tabs {
     display: flex;
-    gap: 4px;
+    gap: 2px;
 }
 .cg2-hand-tab {
-    padding: 4px 12px;
-    font-size: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
     font-weight: 600;
     color: #888;
     cursor: pointer;
@@ -3023,27 +3033,46 @@
 }
 .cg2-hand-cards {
     display: flex;
-    gap: 16px;
+    gap: 8px;
     overflow-x: auto;
-    padding: 8px 4px 12px;
+    padding: 4px 2px 6px;
     align-items: flex-end;
 }
 .cg2-hand-card-wrapper {
-    position: relative; /* Anchor for absolute positioned art thumbnails */
-    cursor: grab;
+    position: relative;
+    cursor: pointer;
     transition: all 0.2s;
     user-select: none;
     flex-shrink: 0;
+    -webkit-touch-callout: none; /* iOS: prevent long-press menu */
 }
 .cg2-hand-card-wrapper:hover {
-    transform: translateY(-12px) scale(1.05);
+    transform: translateY(-6px) scale(1.03);
     z-index: 10;
 }
 .cg2-hand-card-wrapper:hover .cg2-card {
-    box-shadow: 0 12px 24px rgba(0,0,0,0.3);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.25);
 }
 .cg2-hand-card-wrapper:active {
     cursor: grabbing;
+}
+/* Selected hand card — tap-to-place highlight */
+.cg2-hand-card-wrapper.cg2-hand-selected {
+    transform: translateY(-8px) scale(1.05);
+    z-index: 20;
+}
+.cg2-hand-card-wrapper.cg2-hand-selected .cg2-card {
+    box-shadow: 0 0 0 3px #B8860B, 0 8px 20px rgba(184,134,11,0.4);
+}
+/* Tap target highlight on action positions when a card is selected */
+.cg2-action-position.cg2-tap-target {
+    border-color: #B8860B;
+    border-style: dashed;
+    animation: cg2-tap-pulse 1.2s ease-in-out infinite;
+}
+@keyframes cg2-tap-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(184,134,11,0.3); }
+    50% { box-shadow: 0 0 0 4px rgba(184,134,11,0.2); }
 }
 
 /* Legacy simple card styles (can be removed if unused) */
@@ -5302,3 +5331,79 @@
 .cg2-loading-centered { text-align: center; padding: 24px; }
 .cg2-icon-expandable { transition: transform 0.2s; }
 .cg2-icon-expanded { transform: rotate(90deg); }
+
+/* ── Responsive: Tablet Game Layout (768-1199px) ───── */
+@media (max-width: 1199px) {
+    .cg2-game-header { padding: 6px 10px; gap: 8px; }
+    .cg2-game-sidebar { width: 140px; min-width: 120px; padding: 8px; }
+    .cg2-game-center { padding: 8px; }
+    .cg2-action-bar { padding: 10px; min-height: 260px; }
+    .cg2-action-bar-track { gap: 6px; }
+    .cg2-action-position { min-width: calc(var(--card-compact-width) + 16px); padding: 6px; }
+    .cg2-phase-panel { padding: 12px; margin-bottom: 8px; }
+    .cg2-phase-panel h2 { font-size: 16px; }
+    .cg2-hand-cards { gap: 6px; }
+    .cg2-sidebar-portrait-lg { max-height: 120px; }
+    .cg2-portrait-img-lg { max-height: 120px; }
+    .cg2-action-panel { padding: 6px 10px; }
+    .cg2-action-status { font-size: 12px; }
+}
+
+/* ── Responsive: Small Tablet / Phone Game Layout (<768px) ── */
+@media (max-width: 767px) {
+    .cg2-game-main { flex-direction: column; }
+    .cg2-game-sidebar {
+        width: 100%;
+        min-width: auto;
+        flex-direction: row;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 8px;
+        border-right: none;
+        border-bottom: 1px solid #e0d8c0;
+        overflow-y: visible;
+        overflow-x: auto;
+    }
+    .cg2-opponent-side {
+        border-left: none;
+        border-top: 1px solid #e0d8c0;
+        border-bottom: none;
+    }
+    .cg2-sidebar-portrait-lg { width: 48px; height: 48px; min-height: 48px; flex-shrink: 0; }
+    .cg2-portrait-img-lg { width: 48px; height: 48px; object-fit: cover; }
+    .cg2-sidebar-name-overlay { font-size: 10px; padding: 1px 4px; }
+    .cg2-sidebar-stat-grid { display: flex; gap: 4px; font-size: 10px; }
+    .cg2-stat-cell { padding: 2px 4px; }
+    .cg2-sidebar-bars { flex: 1; min-width: 80px; }
+    .cg2-char-sidebar { gap: 6px; }
+    /* Stack the fanned cards horizontally */
+    .cg2-sidebar-stacks { display: none; }
+    .cg2-game-center { padding: 6px; }
+    .cg2-action-bar { min-height: 200px; padding: 8px; }
+    .cg2-action-bar-track { gap: 4px; }
+    .cg2-hand-tray { padding: 4px 6px; }
+    .cg2-hand-cards { gap: 4px; padding: 2px 2px 4px; }
+    .cg2-hand-header { gap: 4px; margin-bottom: 2px; }
+    .cg2-hand-label { font-size: 11px; }
+    .cg2-hand-tab { padding: 2px 6px; font-size: 10px; }
+}
+
+/* ── Touch Device Tweaks ──────────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+    /* Disable hover-lift on touch (causes stuck transforms) */
+    .cg2-hand-card-wrapper:hover {
+        transform: none;
+    }
+    .cg2-hand-card-wrapper:hover .cg2-card {
+        box-shadow: none;
+    }
+    /* But keep selected style */
+    .cg2-hand-card-wrapper.cg2-hand-selected {
+        transform: translateY(-4px) scale(1.03);
+    }
+    /* Larger touch targets */
+    .cg2-hand-tab { padding: 4px 10px; font-size: 12px; min-height: 32px; }
+    .cg2-action-icon-btn { min-width: 36px; min-height: 36px; }
+    .cg2-btn { min-height: 40px; }
+}

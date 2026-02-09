@@ -1266,6 +1266,7 @@
 
         // Continue to draw/placement phase
         enterDrawPlacementPhase();
+        m.redraw();
     }
 
     function resolveEndThreatCombat() {
@@ -1432,6 +1433,10 @@
         // Tick down status effect durations at end of round
         tickStatusEffects(gameState.player);
         tickStatusEffects(gameState.opponent);
+
+        // Remove temporary buff/debuff cards from card stacks ("+N ATK this round" etc.)
+        gameState.player.cardStack = (gameState.player.cardStack || []).filter(c => !c._temporary);
+        gameState.opponent.cardStack = (gameState.opponent.cardStack || []).filter(c => !c._temporary);
 
         // Process turn-start effects (like poison damage)
         let playerEffects = processStatusEffectsTurnStart(gameState.player);
@@ -1808,18 +1813,23 @@
 
                     // Guard/Defend action: gain shielded status
                     if (card.name === "Guard" || card.name === "Defend") {
+                        let skillMod = getStackSkillMod(pos.stack, "defense");
                         applyStatusEffect(owner, "shielded", card.name);
-                        console.log("[CardGame v2]", pos.owner, "is now shielded (+3 DEF until hit)");
+                        if (skillMod > 0) {
+                            applyStatusEffect(owner, "fortified", card.name + " (skill)");
+                        }
+                        console.log("[CardGame v2]", pos.owner, "is now shielded (+3 DEF until hit)" + (skillMod > 0 ? " + fortified (skill bonus)" : ""));
                     }
 
                     // Flee action: AGI roll to escape (forfeit pot, end combat)
                     if (card.name === "Flee" || card.name === "Escape") {
                         let ownerAgi = owner.character.stats?.AGI || 10;
-                        let fleeRoll = rollD20() + ownerAgi;
-                        let fleeDC = 12;  // Base difficulty, could be modified by encounter
+                        let skillMod = getStackSkillMod(pos.stack, "flee");
+                        let fleeRoll = rollD20() + ownerAgi + skillMod;
+                        let fleeDC = 12;
 
                         if (fleeRoll >= fleeDC) {
-                            console.log("[CardGame v2]", pos.owner, "fled successfully! Roll:", fleeRoll, "vs DC", fleeDC);
+                            console.log("[CardGame v2]", pos.owner, "fled successfully! Roll:", fleeRoll, "(skill+" + skillMod + ") vs DC", fleeDC);
                             // Forfeit pot to opponent
                             if (gameState.pot.length > 0) {
                                 let other = pos.owner === "player" ? gameState.opponent : gameState.player;
@@ -1830,7 +1840,7 @@
                             // End the round early (skip remaining actions)
                             bar.resolveIndex = bar.positions.length;
                         } else {
-                            console.log("[CardGame v2]", pos.owner, "flee failed! Roll:", fleeRoll, "vs DC", fleeDC);
+                            console.log("[CardGame v2]", pos.owner, "flee failed! Roll:", fleeRoll, "(skill+" + skillMod + ") vs DC", fleeDC);
                             // Failed flee - lose morale
                             owner.morale = Math.max(0, owner.morale - 2);
                         }
@@ -1839,25 +1849,35 @@
                     // Investigate action: INT roll to reveal information
                     if (card.name === "Investigate" || card.name === "Search") {
                         let ownerInt = owner.character.stats?.INT || 10;
-                        let investRoll = rollD20() + ownerInt;
+                        let skillMod = getStackSkillMod(pos.stack, "investigate");
+                        let investRoll = rollD20() + ownerInt + skillMod;
                         let investDC = 10;
 
                         if (investRoll >= investDC) {
-                            console.log("[CardGame v2]", pos.owner, "investigated successfully! Roll:", investRoll);
+                            console.log("[CardGame v2]", pos.owner, "investigated successfully! Roll:", investRoll, "(skill+" + skillMod + ")");
                             // Draw an extra card as reward
                             drawCardsForActor(owner, 1);
                         } else {
-                            console.log("[CardGame v2]", pos.owner, "investigation found nothing. Roll:", investRoll);
+                            console.log("[CardGame v2]", pos.owner, "investigation found nothing. Roll:", investRoll, "(skill+" + skillMod + ")");
                         }
                     }
 
-                    // Use Item action: apply consumable effect
+                    // Use Item action: apply consumable from modifier stack
+                    if (card.name === "Use Item") {
+                        let consumable = pos.stack.modifiers.find(m => m.type === "item" && m.subtype === "consumable");
+                        if (consumable) {
+                            let parsed = parseEffect(consumable.effect || "");
+                            let log = applyParsedEffects(parsed, owner, target, consumable.name);
+                            log.forEach(msg => console.log("[CardGame v2]", pos.owner, "used item:", msg));
+                        } else {
+                            console.log("[CardGame v2]", pos.owner, "Use Item: no consumable in stack");
+                        }
+                    }
+                    // Legacy: consumable placed directly as core card
                     if (card.type === "item" && card.subtype === "consumable") {
-                        // Use unified effect parser for consumable effects
                         let parsed = parseEffect(card.effect || "");
                         let log = applyParsedEffects(parsed, owner, target, card.name);
                         log.forEach(msg => console.log("[CardGame v2]", pos.owner, "used:", msg));
-                        // Consumables are NOT returned to hand - they stay in discard
                     }
 
                     // Feint action: weaken opponent's next defense

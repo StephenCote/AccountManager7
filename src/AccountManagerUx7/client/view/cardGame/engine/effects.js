@@ -172,6 +172,28 @@
         let drawMatch = effectStr.match(/draw\s+(\d+)/i);
         if (drawMatch) result.draw = parseInt(drawMatch[1], 10);
 
+        // Temporary stat bonuses: "+N ATK/DEF this round" (consumables, buffs)
+        let atkBonusMatch = effectStr.match(/\+(\d+)\s+(?:ATK|attack)/i);
+        if (atkBonusMatch) result.atkBonus = parseInt(atkBonusMatch[1], 10);
+
+        let defBonusMatch = effectStr.match(/\+(\d+)\s+(?:DEF|defense|armou?r)/i);
+        if (defBonusMatch) result.defBonus = parseInt(defBonusMatch[1], 10);
+
+        // Negative stat effects: "-N ATK/DEF/morale"
+        let defPenaltyMatch = effectStr.match(/-(\d+)\s+DEF/i);
+        if (defPenaltyMatch) result.defPenalty = parseInt(defPenaltyMatch[1], 10);
+
+        let atkPenaltyMatch = effectStr.match(/-(\d+)\s+ATK/i);
+        if (atkPenaltyMatch) result.atkPenalty = parseInt(atkPenaltyMatch[1], 10);
+
+        // Morale damage: "reduce morale by N" or "-N morale" or "N morale damage"
+        let moraleDmgMatch = effectStr.match(/(?:reduce\s+morale\s+by\s+|[-\u2013](\d+)\s+morale|(\d+)\s+morale\s+damage)/i);
+        if (moraleDmgMatch) result.moraleDamage = parseInt(moraleDmgMatch[1] || moraleDmgMatch[2], 10);
+
+        // Self-damage: "costs N HP" or "take N damage"
+        let selfDmgMatch = effectStr.match(/(?:costs?\s+(\d+)\s+HP|take\s+(\d+)\s+damage)/i);
+        if (selfDmgMatch) result.selfDamage = parseInt(selfDmgMatch[1] || selfDmgMatch[2], 10);
+
         // Status effect keywords -> { statusEffects: [{id, target}] }
         let statuses = [];
         if (e.includes("stun"))                                    statuses.push({ id: "stunned", target: "enemy" });
@@ -215,6 +237,34 @@
         if (parsed.draw && owner) {
             window.CardGame.Engine.drawCardsForActor(owner, parsed.draw);
             log.push(sourceName + " draws " + parsed.draw + " card(s)");
+        }
+        // Temporary ATK/DEF bonuses — applied as a virtual card in the actor's stack
+        if (parsed.atkBonus && owner) {
+            owner.cardStack.push({ type: "item", subtype: "_buff", name: sourceName + " (ATK)", atk: parsed.atkBonus, _temporary: true });
+            log.push(sourceName + " grants +" + parsed.atkBonus + " ATK this round");
+        }
+        if (parsed.defBonus && owner) {
+            owner.cardStack.push({ type: "item", subtype: "_buff", name: sourceName + " (DEF)", def: parsed.defBonus, _temporary: true });
+            log.push(sourceName + " grants +" + parsed.defBonus + " DEF this round");
+        }
+        // Stat penalties applied to target
+        if (parsed.atkPenalty && target) {
+            target.cardStack.push({ type: "item", subtype: "_debuff", name: sourceName + " (ATK-)", atk: -parsed.atkPenalty, _temporary: true });
+            log.push(sourceName + " applies -" + parsed.atkPenalty + " ATK to target");
+        }
+        if (parsed.defPenalty && target) {
+            target.cardStack.push({ type: "item", subtype: "_debuff", name: sourceName + " (DEF-)", def: -parsed.defPenalty, _temporary: true });
+            log.push(sourceName + " applies -" + parsed.defPenalty + " DEF to target");
+        }
+        // Morale damage to target
+        if (parsed.moraleDamage && target) {
+            target.morale = Math.max(0, target.morale - parsed.moraleDamage);
+            log.push(sourceName + " reduces target morale by " + parsed.moraleDamage);
+        }
+        // Self-damage (cost)
+        if (parsed.selfDamage && owner) {
+            owner.hp = Math.max(1, owner.hp - parsed.selfDamage);
+            log.push(sourceName + " costs " + parsed.selfDamage + " HP");
         }
         if (parsed.statusEffects) {
             parsed.statusEffects.forEach(se => {
