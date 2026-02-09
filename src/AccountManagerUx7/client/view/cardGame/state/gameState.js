@@ -2089,7 +2089,7 @@
                     } else {
                         setTimeout(() => advancePhase(), 1000);
                     }
-                }, 1500);  // Show result for 1.5 seconds (total ~3s per action)
+                }, 2500);  // Show result for 2.5 seconds
             }, 1500);  // Roll dice for 1.5 seconds
         } else if (isMagicAction) {
             // ── Magic / Channel resolution with casting animation ──
@@ -2602,108 +2602,10 @@
                         }
                     }
 
-                    // ── Channel action: cast a spell from stacked magic modifier ──
-                    if (card.name === "Channel") {
-                        let magicMod = pos.stack.modifiers.find(m => m.type === "magic");
-                        let ownerStats = owner.character.stats || {};
-                        let magStat = ownerStats.MAG || 8;
-                        let skillMod = getStackSkillMod(pos.stack, "magic");
+                    // NOTE: Channel and Magic actions are handled in the isMagicAction branch above
 
-                        if (magicMod) {
-                            // Cast the stacked spell
-                            let fizzled = false;
-                            if (magicMod.requires) {
-                                for (let stat in magicMod.requires) {
-                                    if ((ownerStats[stat] || 0) < magicMod.requires[stat]) {
-                                        fizzled = true;
-                                        console.log("[CardGame v2] Spell fizzled!", magicMod.name, "requires", stat, magicMod.requires[stat], "but actor has", ownerStats[stat] || 0);
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if (!fizzled) {
-                                let rawRoll = rollD20();
-                                let channelRoll = rawRoll + magStat + skillMod;
-                                console.log("[CardGame v2]", pos.owner, "channels", magicMod.name, "- Roll:", rawRoll, "+ MAG", magStat, "+ skill", skillMod, "=", channelRoll);
-
-                                let parsed = parseEffect(magicMod.effect || "");
-                                // Boost damage/healing by channel roll excess over 10
-                                let bonus = Math.max(0, Math.floor((channelRoll - 10) / 5));
-                                if (parsed.damage) parsed.damage += bonus;
-                                if (parsed.healHp) parsed.healHp += bonus;
-
-                                let log = applyParsedEffects(parsed, owner, target, magicMod.name);
-                                log.forEach(msg => console.log("[CardGame v2]", pos.owner, "cast:", msg));
-
-                                if (parsed.damage && target.hp <= 0) {
-                                    gameState.winner = pos.owner;
-                                    gameState.phase = "GAME_OVER";
-                                    m.redraw();
-                                    return;
-                                }
-                            }
-                        } else {
-                            // Channel without a spell: basic arcane burst (MAG/3 damage)
-                            let rawRoll = rollD20();
-                            let channelRoll = rawRoll + magStat + skillMod;
-                            let baseDmg = Math.max(1, Math.floor(magStat / 3));
-                            let bonus = Math.max(0, Math.floor((channelRoll - 10) / 5));
-                            let totalDmg = baseDmg + bonus;
-                            target.hp = Math.max(0, target.hp - totalDmg);
-                            console.log("[CardGame v2]", pos.owner, "channels raw arcane energy for", totalDmg, "damage (roll:", channelRoll, ")");
-
-                            if (target.hp <= 0) {
-                                gameState.winner = pos.owner;
-                                gameState.phase = "GAME_OVER";
-                                m.redraw();
-                                return;
-                            }
-                        }
-                    }
-
-                    // Magic card resolution (magic placed directly as core card)
-                    if (card.type === "magic") {
-                        let ownerStats = owner.character.stats || {};
-                        let fizzled = false;
-
-                        // Check stat requirements (fizzle if not met)
-                        if (card.requires) {
-                            for (let stat in card.requires) {
-                                let required = card.requires[stat];
-                                let actual = ownerStats[stat] || 0;
-                                if (actual < required) {
-                                    fizzled = true;
-                                    console.log("[CardGame v2] Spell fizzled!", card.name, "requires", stat, required, "but actor has", actual);
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!fizzled) {
-                            // Use unified effect parser for all magic effects
-                            let parsed = parseEffect(card.effect || "");
-                            let log = applyParsedEffects(parsed, owner, target, card.name);
-                            log.forEach(msg => console.log("[CardGame v2]", pos.owner, "cast:", msg));
-
-                            // Check for defeat after damage
-                            if (parsed.damage && target.hp <= 0) {
-                                gameState.winner = pos.owner;
-                                gameState.phase = "GAME_OVER";
-                                m.redraw();
-                                return;
-                            }
-                        }
-                    }
-
-                    // Move played cards to discard pile OR return magic to hand
-                    if (card.type === "magic" && card.reusable !== false) {
-                        // Magic cards return to hand (reusable)
-                        owner.hand.push(card);
-                        console.log("[CardGame v2] Magic card", card.name, "returned to hand");
-                    } else {
-                        owner.discardPile.push(card);
-                    }
+                    // Move played cards to discard pile
+                    owner.discardPile.push(card);
 
                     // Modifiers always go to discard
                     if (pos.stack.modifiers) {

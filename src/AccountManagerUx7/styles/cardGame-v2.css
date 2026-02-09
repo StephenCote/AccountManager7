@@ -2512,7 +2512,6 @@
     width: var(--card-init-width);
     height: var(--card-init-height);
     flex-shrink: 0;
-    overflow: hidden;
     cursor: pointer;
     perspective: 1000px;  /* Each card gets its own perspective context */
 }
@@ -2546,10 +2545,10 @@
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
     border-radius: 10px;
-    overflow: hidden;
     box-shadow: 0 4px 16px rgba(0,0,0,0.2);
 }
 .cg2-init-card-front {
+    overflow: hidden;
     transform-style: flat;  /* Prevent CardFace children from breaking backface-visibility */
 }
 /* Hide front face completely when card is flipped (prevents bleed-through) */
@@ -2575,11 +2574,15 @@
     align-items: center;
     width: 100%;
     height: 100%;
-    padding: 12px;
+    padding: 8px 10px 6px;
     box-sizing: border-box;
 }
+/* Tighter dice spacing inside initiative cards */
+.cg2-init-back-content .cg2-dice-container {
+    margin: 4px 0;
+}
 .cg2-init-back-label {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
     color: #f0e6d3;
     text-transform: uppercase;
@@ -2590,10 +2593,6 @@
         1px 1px 3px rgba(0,0,0,1), -1px -1px 3px rgba(0,0,0,1),
         2px 2px 5px rgba(0,0,0,0.8), -2px -2px 5px rgba(0,0,0,0.8);
     flex-shrink: 0;
-    background: rgba(0,0,0,0.6);
-    padding: 4px 12px;
-    border-radius: 6px;
-    width: auto;
 }
 /* Center region — keeps dice vertically stable */
 .cg2-init-back-center {
@@ -2604,19 +2603,19 @@
 }
 /* Footer region — stable height so dice doesn't shift when labels appear */
 .cg2-init-back-footer {
-    min-height: 72px;
+    min-height: 56px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-end;
     flex-shrink: 0;
 }
 /* Initiative roll breakdown - visible on dark background */
 .cg2-init-back-content .cg2-roll-breakdown {
-    padding: 6px 12px;
+    padding: 3px 10px;
     background: rgba(0,0,0,0.7);
-    border-radius: 8px;
-    font-size: 13px;
+    border-radius: 6px;
+    font-size: 12px;
     color: #fff;
     display: flex;
     align-items: baseline;
@@ -2643,17 +2642,17 @@
         1px 1px 2px rgba(0,0,0,0.6);
 }
 .cg2-init-winner-badge {
-    margin-top: 4px;
-    padding: 5px 16px;
+    margin-top: 3px;
+    padding: 3px 12px;
     background: linear-gradient(135deg, #B8860B 0%, #DAA520 100%);
     border: 1px solid rgba(255,255,255,0.3);
-    border-radius: 16px;
+    border-radius: 12px;
     color: #fff;
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 700;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     animation: cg2-winner-glow 1s ease-in-out infinite alternate;
     text-shadow:
         0 0 6px rgba(255,255,255,0.8), 0 0 12px rgba(255,255,255,0.4),
@@ -2670,17 +2669,17 @@
     opacity: 0.6;
 }
 .cg2-init-loser-badge {
-    margin-top: 4px;
-    padding: 5px 16px;
+    margin-top: 3px;
+    padding: 3px 12px;
     background: rgba(0,0,0,0.65);
     border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 16px;
+    border-radius: 12px;
     color: #ccc;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     text-shadow:
         0 0 4px rgba(255,255,255,0.5),
         0 1px 3px rgba(0,0,0,0.8);
@@ -4210,6 +4209,68 @@
 .cg2-result-counter {
     font-size: 9px;
     color: #64b5f6;
+}
+
+/* Magic result */
+.cg2-result-magic {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+.cg2-result-magic-roll {
+    flex-direction: column;
+    gap: 4px;
+}
+.cg2-result-casting {
+    font-size: 10px;
+    color: #ce93d8;
+    font-weight: 600;
+    letter-spacing: 1px;
+    animation: cg2-casting-pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes cg2-casting-pulse {
+    from { opacity: 0.6; }
+    to { opacity: 1; text-shadow: 0 0 8px rgba(206,147,216,0.6); }
+}
+.cg2-result-spell-name {
+    font-size: 10px;
+    font-weight: 700;
+    color: #ce93d8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.cg2-result-fizzle {
+    font-size: 11px;
+    font-weight: 700;
+    color: #ef5350;
+    animation: cg2-fizzle-flash 0.5s ease-out;
+}
+@keyframes cg2-fizzle-flash {
+    0% { opacity: 0; transform: scale(1.5); }
+    100% { opacity: 1; transform: scale(1); }
+}
+.cg2-result-heal {
+    font-size: 13px;
+    font-weight: 800;
+    color: #81c784;
+}
+.cg2-result-effect {
+    font-size: 9px;
+    color: #aaa;
+    max-width: 100px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cg2-detail-label.cg2-detail-mag { background: #7b1fa2; color: #fff; }
+.cg2-detail-effects {
+    font-size: 10px;
+    color: #ce93d8;
+    padding-top: 2px;
+    border-top: 1px solid rgba(184,134,11,0.2);
+    margin-top: 2px;
 }
 
 /* Non-combat result */

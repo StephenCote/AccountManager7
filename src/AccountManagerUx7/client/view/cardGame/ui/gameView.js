@@ -919,13 +919,17 @@
                         bar.positions.map(function(pos, i) {
                             let isActiveSlot = i === bar.resolveIndex;
                             let combat = pos.combatResult;
-                            // During "result" phase, combatResult isn't on pos yet — use live state
+                            let magic = pos.magicResult;
+                            // During "result" phase, results aren't on pos yet — use live state
                             let activeCombat = (isActiveSlot && gs.resolutionPhase === "result") ? gs.currentCombatResult : null;
+                            let activeMagic = (isActiveSlot && gs.resolutionPhase === "result") ? gs.currentMagicResult : null;
                             let isRolling = isActiveSlot && gs.resolutionPhase === "rolling";
                             let isShowingResult = isActiveSlot && gs.resolutionPhase === "result";
                             let showResult = pos.resolved && combat;
-                            let isNonCombat = pos.resolved && !combat;
+                            let showMagicResult = pos.resolved && magic;
+                            let isNonCombat = pos.resolved && !combat && !magic;
                             let isExpanded = expandedResultIndex === i;
+                            let isMagicSlot = pos.stack?.coreCard && (pos.stack.coreCard.name === "Channel" || pos.stack.coreCard.type === "magic");
 
                             // Determine outcome class for coloring (use activeCombat or resolved combat)
                             let displayCombat = activeCombat || combat;
@@ -939,16 +943,16 @@
                                 key: i,
                                 class: "cg2-result-slot"
                                     + (isActiveSlot ? " cg2-result-active" : "")
-                                    + (showResult ? " cg2-result-resolved" : "")
+                                    + (showResult || showMagicResult ? " cg2-result-resolved" : "")
                                     + (!pos.resolved && !isActiveSlot ? " cg2-result-pending" : ""),
                                 style: { position: "relative" },
-                                onclick: showResult ? function() {
+                                onclick: (showResult || showMagicResult) ? function() {
                                     expandedResultIndex = expandedResultIndex === i ? -1 : i;
                                     m.redraw();
                                 } : null
                             }, [
-                                // Currently rolling: animated dice
-                                isRolling && D20Dice ? m("div", { class: "cg2-result-rolling" }, [
+                                // Combat rolling: ATK vs DEF animated dice
+                                isRolling && D20Dice && !isMagicSlot ? m("div", { class: "cg2-result-rolling" }, [
                                     m("div", { class: "cg2-result-die" },
                                         m(D20Dice, { value: gs.resolutionDiceFaces.attack, rolling: true })),
                                     m("span", { class: "cg2-result-vs" }, "vs"),
@@ -956,7 +960,14 @@
                                         m(D20Dice, { value: gs.resolutionDiceFaces.defense, rolling: true }))
                                 ]) : null,
 
-                                // Active result showing (brief display before marking resolved)
+                                // Magic rolling: single die with casting label
+                                isRolling && D20Dice && isMagicSlot ? m("div", { class: "cg2-result-rolling cg2-result-magic-roll" }, [
+                                    m("div", { class: "cg2-result-die" },
+                                        m(D20Dice, { value: gs.resolutionDiceFaces.attack, rolling: true })),
+                                    m("div", { class: "cg2-result-casting" }, "Casting...")
+                                ]) : null,
+
+                                // Active combat result showing (brief display before marking resolved)
                                 isShowingResult && activeCombat ? m("div", { class: "cg2-result-combat" }, [
                                     m("div", { class: "cg2-result-outcome cg2-outcome-" + outcomeClass },
                                         activeCombat.outcome.label),
@@ -964,6 +975,21 @@
                                         ? m("div", { class: "cg2-result-dmg" },
                                             "-" + activeCombat.damageResult.finalDamage + " HP")
                                         : null
+                                ]) : null,
+
+                                // Active magic result showing
+                                isShowingResult && activeMagic ? m("div", { class: "cg2-result-magic" }, [
+                                    m("div", { class: "cg2-result-spell-name" }, activeMagic.spellName),
+                                    activeMagic.fizzled
+                                        ? m("div", { class: "cg2-result-fizzle" }, "Fizzled!")
+                                        : [
+                                            activeMagic.damage > 0
+                                                ? m("div", { class: "cg2-result-dmg" }, "-" + activeMagic.damage + " HP") : null,
+                                            activeMagic.healing > 0
+                                                ? m("div", { class: "cg2-result-heal" }, "+" + activeMagic.healing + " HP") : null,
+                                            !activeMagic.damage && !activeMagic.healing && activeMagic.effects.length > 0
+                                                ? m("div", { class: "cg2-result-effect" }, activeMagic.effects[0]) : null
+                                        ]
                                 ]) : null,
 
                                 // Resolved combat: outcome + damage (permanent)
@@ -980,6 +1006,21 @@
                                         : null
                                 ]) : null,
 
+                                // Resolved magic: spell name + effect (permanent)
+                                showMagicResult ? m("div", { class: "cg2-result-magic" }, [
+                                    m("div", { class: "cg2-result-spell-name" }, magic.spellName),
+                                    magic.fizzled
+                                        ? m("div", { class: "cg2-result-fizzle" }, "Fizzled!")
+                                        : [
+                                            magic.damage > 0
+                                                ? m("div", { class: "cg2-result-dmg" }, "-" + magic.damage + " HP") : null,
+                                            magic.healing > 0
+                                                ? m("div", { class: "cg2-result-heal" }, "+" + magic.healing + " HP") : null,
+                                            !magic.damage && !magic.healing && magic.effects.length > 0
+                                                ? m("div", { class: "cg2-result-effect" }, magic.effects[0]) : null
+                                        ]
+                                ]) : null,
+
                                 // Resolved non-combat: checkmark + action name (or skipped)
                                 isNonCombat ? m("div", { class: "cg2-result-noncombat" }, [
                                     pos.skipped
@@ -993,7 +1034,7 @@
                                 !pos.resolved && !isActiveSlot
                                     ? m("div", { class: "cg2-result-empty" }, "\u00B7") : null,
 
-                                // Click-to-expand detail popover
+                                // Click-to-expand detail popover (combat)
                                 isExpanded && combat ? m("div", { class: "cg2-result-detail", onclick: function(e) { e.stopPropagation(); } }, [
                                     m("div", { class: "cg2-detail-row" }, [
                                         m("span", { class: "cg2-detail-label cg2-detail-atk" }, "ATK"),
@@ -1007,6 +1048,20 @@
                                     ]),
                                     m("div", { class: "cg2-detail-outcome cg2-outcome-" + outcomeClass },
                                         combat.outcome.label + " (" + (combat.outcome.diff >= 0 ? "+" : "") + combat.outcome.diff + ")")
+                                ]) : null,
+
+                                // Click-to-expand detail popover (magic)
+                                isExpanded && magic ? m("div", { class: "cg2-result-detail", onclick: function(e) { e.stopPropagation(); } }, [
+                                    m("div", { class: "cg2-detail-row" }, [
+                                        m("span", { class: "cg2-detail-label cg2-detail-mag" }, "MAG"),
+                                        m("span", magic.roll.raw + " + " + magic.roll.magStat + "M" + (magic.roll.skillMod ? " + " + magic.roll.skillMod + "S" : "")),
+                                        m("strong", " = " + magic.roll.total)
+                                    ]),
+                                    magic.effects.length > 0
+                                        ? m("div", { class: "cg2-detail-effects" }, magic.effects.map(function(eff) {
+                                            return m("div", eff);
+                                        }))
+                                        : null
                                 ]) : null
                             ]);
                         })
