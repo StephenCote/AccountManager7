@@ -664,13 +664,15 @@
                         ]) : null
                     ]),
 
-                    // Narration text display (scrolls in the panel while voice plays)
-                    gameState.narrationText
-                        ? m("div", { class: "cg2-cleanup-narration" }, [
-                            m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;margin-right:4px;color:#B8860B" }, "campaign"),
-                            m("span", { class: "cg2-cleanup-narration-text" }, gameState.narrationText)
-                        ])
-                        : null,
+                    // Narration text display (fixed-height slot to prevent layout shift)
+                    m("div", { class: "cg2-cleanup-narration" },
+                        gameState.narrationText
+                            ? [
+                                m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;margin-right:4px;color:#B8860B" }, "campaign"),
+                                m("span", { class: "cg2-cleanup-narration-text" }, gameState.narrationText)
+                            ]
+                            : m("span", { style: "opacity:0.3;font-size:12px" }, "Awaiting narration...")
+                    ),
 
                     // Button - face threat or start next round (disabled while narration plays)
                     gameState.endThreatResult && gameState.endThreatResult.threat && !gameState.endThreatResult.responded

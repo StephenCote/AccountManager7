@@ -45,6 +45,10 @@
     --card-skill-bg: #FFF3E0;
     --card-magic-color: #00695C;
     --card-magic-bg: #E0F2F1;
+    --card-scenario-color: #1B5E20;
+    --card-scenario-bg: #E8F5E9;
+    --card-loot-color: #F57F17;
+    --card-loot-bg: #FFFDE7;
 
     /* Semantic colors */
     --color-success: #43A047;
@@ -2496,6 +2500,16 @@
 }
 .cg2-init-card-wrap.cg2-init-winner-card {
     filter: drop-shadow(0 0 12px rgba(184,134,11,0.6));
+    transform: scale(1.03);
+}
+.cg2-init-card-wrap.cg2-init-winner-card .cg2-init-card-back {
+    border-color: #DAA520;
+    border-width: 3px;
+    box-shadow: 0 0 20px rgba(218,165,32,0.5), 0 4px 16px rgba(0,0,0,0.3);
+}
+.cg2-init-card-wrap.cg2-init-loser-card .cg2-init-card-back {
+    border-color: #555;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 .cg2-init-card-front,
 .cg2-init-card-back {
@@ -2529,22 +2543,50 @@
     justify-content: center;
 }
 .cg2-init-back-content {
-    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    height: 100%;
     padding: 12px;
+    box-sizing: border-box;
 }
 .cg2-init-back-label {
     font-size: 14px;
     font-weight: 700;
     color: #B8860B;
-    margin-bottom: 12px;
     text-transform: uppercase;
     letter-spacing: 1px;
+    text-shadow:
+        0 0 6px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,0.9),
+        1px 1px 3px rgba(0,0,0,0.9), -1px -1px 3px rgba(0,0,0,0.9),
+        2px 2px 4px rgba(0,0,0,0.7), -2px -2px 4px rgba(0,0,0,0.7);
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.45);
+    padding: 4px 12px;
+    border-radius: 6px;
+    width: auto;
+}
+/* Center region — keeps dice vertically stable */
+.cg2-init-back-center {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+/* Footer region — fixed height so dice doesn't shift when labels appear */
+.cg2-init-back-footer {
+    min-height: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    flex-shrink: 0;
 }
 /* Initiative roll breakdown - visible on dark background */
 .cg2-init-back-content .cg2-roll-breakdown {
-    margin-top: 12px;
-    padding: 8px 12px;
-    background: rgba(0,0,0,0.5);
+    padding: 6px 12px;
+    background: rgba(0,0,0,0.55);
     border-radius: 8px;
     font-size: 13px;
     color: #fff;
@@ -2554,27 +2596,37 @@
     gap: 2px;
     flex-wrap: nowrap;
     white-space: nowrap;
+    text-shadow:
+        0 0 3px #fff, 0 0 6px #fff,
+        1px 1px 2px rgba(0,0,0,0.6), -1px -1px 2px rgba(0,0,0,0.6);
 }
 .cg2-init-back-content .cg2-roll-breakdown .cg2-mod {
     color: #81c784;
     font-weight: 600;
+    text-shadow:
+        0 0 4px rgba(129,199,132,0.6), 0 0 8px rgba(129,199,132,0.3),
+        1px 1px 2px rgba(0,0,0,0.6);
 }
 .cg2-init-back-content .cg2-roll-breakdown strong {
     color: #B8860B;
     font-size: 16px;
+    text-shadow:
+        0 0 4px rgba(184,134,11,0.6), 0 0 8px rgba(184,134,11,0.3),
+        1px 1px 2px rgba(0,0,0,0.6);
 }
 .cg2-init-winner-badge {
-    margin-top: 12px;
-    padding: 6px 12px;
+    margin-top: 4px;
+    padding: 4px 14px;
     background: linear-gradient(135deg, #B8860B 0%, #DAA520 100%);
     border-radius: 16px;
     color: #fff;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     display: inline-flex;
     align-items: center;
     gap: 4px;
     animation: cg2-winner-glow 1s ease-in-out infinite alternate;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
 }
 .cg2-init-winner-badge .material-symbols-outlined {
     font-size: 14px;
@@ -2584,18 +2636,20 @@
     to { box-shadow: 0 0 20px rgba(218,165,32,0.9); }
 }
 .cg2-init-card-wrap.cg2-init-loser-card {
-    opacity: 0.8;
+    opacity: 0.7;
+    transform: scale(0.97);
 }
 .cg2-init-loser-badge {
-    margin-top: 12px;
-    padding: 6px 12px;
-    color: #888;
+    margin-top: 4px;
+    padding: 4px 14px;
+    background: rgba(0,0,0,0.4);
+    border-radius: 16px;
+    color: #999;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    visibility: hidden; /* Same height as winner but invisible */
 }
 
 /* ── Equip Phase ───────────────────────────────────── */
@@ -2716,6 +2770,8 @@
     border-radius: 8px;
     margin: 12px 0;
     font-size: 14px;
+    max-height: 260px;  /* Cap height to prevent unbounded growth from loot/threats */
+    overflow-y: auto;
 }
 .dark .cg2-round-summary {
     background: #2a2a2a;
@@ -2918,13 +2974,14 @@
 .cg2-action-picker {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
     justify-content: center;
-    padding: 6px 4px;
+    padding: 8px 4px;
+    max-width: calc(var(--card-compact-width) + 8px);
 }
 .cg2-action-icon-btn {
-    width: 38px;
-    height: 38px;
+    width: 48px;
+    height: 48px;
     padding: 0;
     border: 1.5px solid #81c784;
     border-radius: 50%;
@@ -2946,7 +3003,7 @@
     transform: scale(0.95);
 }
 .cg2-action-icon-btn .material-symbols-outlined {
-    font-size: 20px;
+    font-size: 26px;
 }
 .cg2-action-icon-btn.cg2-action-disabled {
     opacity: 0.3;
@@ -3394,32 +3451,27 @@
     border: 2px solid #B8860B;
 }
 
-/* ── Combat/Action Overlay (modal dialog) ─────────── */
+/* ── Combat/Action Overlay (inline panel) ─────────── */
 .cg2-combat-overlay,
 .cg2-non-combat-overlay {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 640px;
-    max-width: 95vw;
-    min-height: 420px;  /* Prevent jumping between rolling/result */
-    max-height: 85vh;   /* Responsive cap - never overflow viewport */
+    position: relative;  /* For ::before flourish */
+    width: 100%;
+    max-width: 640px;
+    height: 520px;       /* Fixed height — no expand/contract */
+    margin: 0 auto;
     background:
         linear-gradient(135deg, rgba(184,134,11,0.08) 0%, transparent 50%),  /* Corner glow */
         linear-gradient(225deg, rgba(184,134,11,0.05) 0%, transparent 40%),  /* Opposite corner */
         linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f1525 100%);      /* Base gradient */
     border-radius: 16px;
-    padding: 32px 40px 40px;
-    z-index: 500;
+    padding: 24px 32px 28px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
     border: 3px solid #B8860B;
     box-shadow:
-        0 12px 48px rgba(0,0,0,0.6),
-        0 0 0 9999px rgba(0,0,0,0.5),
+        0 8px 32px rgba(0,0,0,0.4),
         inset 0 1px 0 rgba(255,255,255,0.05),     /* Inner highlight */
         inset 0 -1px 0 rgba(0,0,0,0.2);            /* Inner shadow */
     overflow-x: hidden;
@@ -3446,6 +3498,11 @@
     border: 1px solid rgba(184,134,11,0.2);
     border-radius: 12px;
     pointer-events: none;
+}
+
+/* Non-combat overlay can be shorter since it has less content */
+.cg2-non-combat-overlay {
+    height: 320px;
 }
 
 /* Combat content wrapper - stable dimensions */
@@ -3524,14 +3581,14 @@
     flex-shrink: 0;
 }
 .cg2-combat-roll-card {
-    padding: 16px 24px;
+    padding: 12px 20px;
     background:
         linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
     border: 1px solid rgba(184,134,11,0.3);
     border-radius: 12px;
     text-align: center;
-    min-width: 180px;
-    min-height: 180px;  /* Fixed height prevents jumping during roll phases */
+    min-width: 160px;
+    min-height: 160px;  /* Fixed height prevents jumping during roll phases */
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -3601,18 +3658,18 @@
 /* ── Combat Outcome Area (fixed container) ─────────────── */
 .cg2-outcome-area {
     width: 100%;
-    min-height: 140px;  /* Reserved space for outcome + damage */
+    min-height: 100px;  /* Reserved space for outcome + damage */
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    margin-top: 12px;
+    margin-top: 8px;
 }
 
 /* ── Combat Outcome ───────────────────────────────────── */
 .cg2-combat-outcome {
     text-align: center;
-    padding: 20px 32px;
+    padding: 14px 24px;
     background:
         linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.2) 100%);
     border: 1px solid rgba(184,134,11,0.3);
@@ -3760,13 +3817,13 @@
     align-items: center;
     justify-content: center;
     gap: 12px;
-    padding: 40px 48px;
-    margin: 40px 0;
+    padding: 28px 36px;
+    margin: 24px 0;
     color: #ccc;
-    font-size: 20px;
+    font-size: 18px;
     background: rgba(255,255,255,0.05);
     border-radius: 12px;
-    min-width: 320px;
+    min-width: 280px;
 }
 .cg2-resolving-action .material-symbols-outlined {
     font-size: 32px;
@@ -3892,7 +3949,8 @@
 
 /* ── Cleanup Phase ───────────────────────────────────── */
 .cg2-cleanup-panel {
-    max-width: 400px;
+    max-width: 440px;
+    min-height: 420px;  /* Stable height — prevents snapping when content appears/disappears */
     margin: 20px auto;
 }
 /* Narration text in cleanup panel */
@@ -3906,7 +3964,7 @@
     font-style: italic;
     color: #5a4a2a;
     line-height: 1.5;
-    max-height: 120px;
+    height: 80px;       /* Fixed height — prevents layout shift when narration appears */
     overflow-y: auto;
 }
 .dark .cg2-cleanup-narration {
@@ -4170,6 +4228,121 @@
     background: rgba(244, 67, 54, 0.15);
     color: #EF9A9A;
 }
+
+/* ── Scenario Card Area (Cleanup Phase) ───────────────── */
+.cg2-scenario-card-area {
+    display: flex;
+    gap: 16px;
+    margin-top: 14px;
+    align-items: flex-start;
+}
+.cg2-scenario-card-wrap {
+    flex-shrink: 0;
+}
+.cg2-scenario-card-wrap .cg2-card {
+    width: var(--card-width);
+    height: var(--card-height);
+    font-size: 10px;
+}
+.cg2-scenario-result-panel {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 13px;
+}
+.cg2-scenario-bonus {
+    padding: 8px 12px;
+    background: rgba(76, 175, 80, 0.1);
+    border: 1px solid rgba(76, 175, 80, 0.3);
+    border-radius: 8px;
+    font-size: 13px;
+}
+.dark .cg2-scenario-bonus {
+    background: rgba(76, 175, 80, 0.15);
+}
+.cg2-scenario-threat {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #c62828;
+    border: 1px solid rgba(198, 40, 40, 0.3);
+    border-radius: 8px;
+    background: rgba(244, 67, 54, 0.05);
+}
+.dark .cg2-scenario-threat {
+    background: rgba(244, 67, 54, 0.15);
+    color: #EF9A9A;
+}
+.cg2-threat-stats-mini {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #c62828;
+    opacity: 0.8;
+}
+.dark .cg2-threat-stats-mini { color: #EF9A9A; }
+.cg2-threat-target-you { color: #c62828; font-weight: 700; }
+.cg2-threat-target-opp { color: #1565C0; font-weight: 700; }
+
+/* ── Threat Combat Result ─────────────────────────────── */
+.cg2-threat-combat-result {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.cg2-threat-outcome-header {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 4px 0;
+}
+.cg2-threat-outcome-hit { color: #c62828; }
+.cg2-threat-outcome-clash { color: #FF8F00; }
+.cg2-threat-outcome-defended { color: #43A047; }
+.dark .cg2-threat-outcome-hit { color: #EF9A9A; }
+.dark .cg2-threat-outcome-clash { color: #FFB74D; }
+.dark .cg2-threat-outcome-defended { color: #81C784; }
+.cg2-threat-rolls {
+    font-size: 11px;
+    color: #777;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.dark .cg2-threat-rolls { color: #999; }
+.cg2-threat-roll-row {
+    display: flex;
+    gap: 6px;
+}
+.cg2-roll-label { font-weight: 600; min-width: 80px; }
+.cg2-roll-value { font-family: monospace; }
+.cg2-threat-damage-line {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 0;
+}
+.cg2-threat-dmg-hit { color: #c62828; }
+.cg2-threat-dmg-clash { color: #FF8F00; }
+.cg2-threat-dmg-def { color: #43A047; }
+.dark .cg2-threat-dmg-hit { color: #EF9A9A; }
+.dark .cg2-threat-dmg-clash { color: #FFB74D; }
+.dark .cg2-threat-dmg-def { color: #81C784; }
+.cg2-threat-loot-earned {
+    font-size: 12px;
+    padding: 6px 10px;
+    background: rgba(255, 183, 77, 0.15);
+    border: 1px solid rgba(255, 183, 77, 0.3);
+    border-radius: 6px;
+}
+.dark .cg2-threat-loot-earned {
+    background: rgba(255, 183, 77, 0.1);
+}
+
+/* ── Scenario / Loot card type styling ────────────────── */
+.cg2-card-scenario { border-color: var(--card-scenario-color); }
+.cg2-card-loot { border-color: var(--card-loot-color); }
 
 /* ── Card Preview Overlay (with flip) ─────────────────── */
 .cg2-card-preview-overlay {
@@ -5378,6 +5551,8 @@
     .cg2-portrait-img-lg { max-height: 120px; }
     .cg2-action-panel { padding: 6px 10px; }
     .cg2-action-status { font-size: 12px; }
+    .cg2-combat-overlay, .cg2-non-combat-overlay { height: 480px; padding: 20px 24px 24px; }
+    .cg2-non-combat-overlay { height: 280px; }
 }
 
 /* ── Responsive: Small Tablet / Phone Game Layout (<768px) ── */
@@ -5418,6 +5593,11 @@
     .cg2-hand-header { gap: 4px; margin-bottom: 2px; }
     .cg2-hand-label { font-size: 11px; }
     .cg2-hand-tab { padding: 2px 6px; font-size: 10px; }
+    .cg2-combat-overlay, .cg2-non-combat-overlay { height: 440px; padding: 16px 16px 20px; }
+    .cg2-non-combat-overlay { height: 260px; }
+    .cg2-combat-roll-card { min-width: 130px; min-height: 130px; padding: 10px 14px; }
+    .cg2-step-action { font-size: 20px; }
+    .cg2-combat-dice-row { gap: 12px; margin: 10px 0; }
 }
 
 /* ── Touch Device Tweaks ──────────────────────────────── */
@@ -5435,6 +5615,6 @@
     }
     /* Larger touch targets */
     .cg2-hand-tab { padding: 4px 10px; font-size: 12px; min-height: 32px; }
-    .cg2-action-icon-btn { min-width: 36px; min-height: 36px; }
+    .cg2-action-icon-btn { min-width: 44px; min-height: 44px; }
     .cg2-btn { min-height: 40px; }
 }
