@@ -314,15 +314,18 @@
 
     // ── Resume Game ────────────────────────────────────────────────────
     async function resumeGame(storageName) {
+        console.log("[CardGame v2] resumeGame called with storageName:", storageName);
         let gameStorage = storage().gameStorage;
         let deckStorage = storage().deckStorage;
         let campaignStorage = storage().campaignStorage;
         let saveData = await gameStorage.load(storageName);
+        console.log("[CardGame v2] resumeGame: saveData loaded:", saveData ? "yes (round " + (saveData.roundNumber || "?") + ", phase " + (saveData.phase || "?") + ")" : "NULL");
         if (!saveData) {
             page.toast("error", "No save found");
             return;
         }
         let data = await deckStorage.load(storageName);
+        console.log("[CardGame v2] resumeGame: deck loaded:", data ? "yes (" + (data.deckName || storageName) + ")" : "NULL");
         if (!data) {
             page.toast("error", "Failed to load deck for resume");
             return;

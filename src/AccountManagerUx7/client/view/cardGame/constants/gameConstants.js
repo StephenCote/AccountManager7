@@ -321,6 +321,22 @@
             type: "magic", name: "", effectType: "Offensive",
             skillType: "Imperial", requires: {},
             effect: "", stackWith: "", energyCost: 4, reusable: true
+        },
+        talk: {
+            type: "talk", name: "Talk", energyCost: 5
+        },
+        encounter: {
+            type: "encounter", name: "", subtype: "Threat",
+            difficulty: 10, atk: 3, def: 3, hp: 10,
+            behavior: "", loot: [], rarity: "COMMON"
+        },
+        scenario: {
+            type: "scenario", name: "", effect: "neutral",
+            description: "", bonus: null, threatBonus: 0, icon: "explore"
+        },
+        loot: {
+            type: "loot", name: "", rarity: "COMMON",
+            source: "Spoils", effect: "", flavor: ""
         }
     };
 

@@ -132,7 +132,12 @@
             "cardColor": "#FFB300",
             "bonus": "loot",
             "weight": 5,
-            "artPrompt": "an opened treasure chest hidden behind rocks"
+            "artPrompt": "an opened treasure chest hidden behind rocks",
+            "lootPool": [
+                { "name": "Found Supplies", "rarity": "COMMON", "effect": "Restore 5 HP", "artPrompt": "a bundle of salvaged supplies wrapped in cloth" },
+                { "name": "Salvaged Parts", "rarity": "UNCOMMON", "effect": "+2 ATK this round", "artPrompt": "useful mechanical components and sharp metal pieces" },
+                { "name": "Hidden Stash", "rarity": "RARE", "effect": "Restore 8 HP and 4 Energy", "artPrompt": "a secret stash of glowing potions and precious gems" }
+            ]
         },
         {
             "id": "ambush",

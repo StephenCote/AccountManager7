@@ -26,13 +26,13 @@
         if (qr?.results?.length) {
             let existing = qr.results[0];
             existing.dataBytesStore = encoded;
-            existing.compressionType = "none";
+            existing.compressionType = "NONE";
             return await page.patchObject(existing);
         }
         let obj = am7model.newPrimitive("data.data");
         obj.name = fileName;
         obj.contentType = "application/json";
-        obj.compressionType = "none";
+        obj.compressionType = "NONE";
         obj.groupId = grp.id;
         obj.groupPath = grp.path;
         obj.dataBytesStore = encoded;
@@ -164,8 +164,13 @@
                     gameState: serializeGameState(state)
                 };
                 let groupPath = this._savesPath(deckName);
-                let grp = await page.makePath("auth.group", "DATA", groupPath);
-                if (!grp) return null;
+                console.log("[CardGame v2] gameStorage.save: path=" + groupPath, "round=" + state.round, "phase=" + state.phase);
+                let grp = await page.makePath("auth.group", "data", groupPath);
+                if (!grp) {
+                    console.error("[CardGame v2] gameStorage.save: could not create group:", groupPath);
+                    return null;
+                }
+                console.log("[CardGame v2] gameStorage.save: group resolved, id=" + grp.id);
 
                 let obj = am7model.newPrimitive("data.data");
                 obj.name = "save-" + Date.now() + ".json";
@@ -173,8 +178,15 @@
                 obj.compressionType = "none";
                 obj.groupId = grp.id;
                 obj.groupPath = grp.path;
+
                 obj.dataBytesStore = encodeJson(saveData);
+                console.log("[CardGame v2] gameStorage.save: creating object", {
+                    schema: obj.schema, name: obj.name, groupId: obj.groupId,
+                    groupPath: obj.groupPath, compressionType: obj.compressionType,
+                    contentType: obj.contentType, blobSize: obj.dataBytesStore?.length || 0
+                });
                 let saved = await page.createObject(obj);
+                console.log("[CardGame v2] gameStorage.save: record created:", saved ? (saved.objectId || saved.id || "ok") : "FAILED");
 
                 // Keep only last 3 saves
                 await this.cleanupOldSaves(deckName, 3);
@@ -200,10 +212,16 @@
 
         async list(deckName) {
             try {
-                let records = await listDataRecords(this._savesPath(deckName));
-                return records
+                let savesPath = this._savesPath(deckName);
+                console.log("[CardGame v2] gameStorage.list: searching", savesPath);
+                let records = await listDataRecords(savesPath);
+                console.log("[CardGame v2] gameStorage.list: raw records found:", records.length,
+                    records.length > 0 ? records.map(r => r.name) : "(empty)");
+                let filtered = records
                     .filter(r => r.name?.startsWith("save-"))
                     .sort((a, b) => b.name.localeCompare(a.name));
+                console.log("[CardGame v2] gameStorage.list: after filter:", filtered.length, "saves");
+                return filtered;
             } catch (e) {
                 console.error("[CardGame v2] Failed to list saves:", deckName, e);
                 return [];

@@ -334,11 +334,11 @@
         if (scenario.effect === "threat") {
             let difficulty = state.round + 3 + (scenario.threatBonus || 0);
             let threat = createThreatEncounter(difficulty);
-            // End threats target the round loser (or random on tie)
+            // End threats target the round WINNER (or random on tie)
             if (state.roundWinner === "tie") {
                 threat.target = Math.random() < 0.5 ? "player" : "opponent";
             } else {
-                threat.target = state.roundWinner === "player" ? "opponent" : "player";
+                threat.target = state.roundWinner;
             }
             result.threat = threat;
         } else if (scenario.bonus) {
@@ -349,7 +349,7 @@
 
             if (scenario.bonus === "loot") {
                 // Generate a loot item and look up art from deck
-                let lootCard = generateScenarioLoot(state);
+                let lootCard = generateScenarioLoot(state, scenario);
                 if (lootCard) {
                     // Try to find matching loot art
                     let lootArt = deckCards.find(function(c) {
@@ -394,10 +394,29 @@
     }
 
     /**
-     * Generate a loot item from the theme's cardPool consumables or a generic fallback
+     * Generate a loot item from scenario lootPool, theme overrides, theme cardPool, or a generic fallback
      */
-    function generateScenarioLoot(state) {
+    function generateScenarioLoot(state, scenario) {
+        // Priority 1: Scenario-specific lootPool
+        let scenarioPool = scenario?.lootPool;
+        if (scenarioPool && scenarioPool.length > 0) {
+            let pick = scenarioPool[Math.floor(Math.random() * scenarioPool.length)];
+            return Object.assign({ type: "item", subtype: "consumable" }, pick);
+        }
+
+        // Priority 2: Theme scenario override lootPool
         let activeTheme = window.CardGame.Themes?.getActiveTheme?.();
+        if (activeTheme?.encounters?.scenarioOverrides) {
+            let override = activeTheme.encounters.scenarioOverrides.find(function(o) {
+                return o.id === scenario?.id && o.lootPool && o.lootPool.length > 0;
+            });
+            if (override) {
+                let pick = override.lootPool[Math.floor(Math.random() * override.lootPool.length)];
+                return Object.assign({ type: "item", subtype: "consumable" }, pick);
+            }
+        }
+
+        // Priority 3: Theme cardPool consumables
         let pool = activeTheme?.cardPool || [];
         let consumables = pool.filter(function(c) {
             return c.type === "item" && c.subtype === "consumable";
@@ -406,6 +425,7 @@
             let pick = consumables[Math.floor(Math.random() * consumables.length)];
             return Object.assign({}, pick);
         }
+
         // Fallback generic loot
         return {
             type: "item", subtype: "consumable", name: "Found Supplies",

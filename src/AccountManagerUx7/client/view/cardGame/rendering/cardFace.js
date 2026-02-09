@@ -203,8 +203,11 @@
                     if (statElements.length) {
                         details.push(m("div", { class: "cg2-card-stats-line" }, statElements));
                     }
-                } else if (d.type === "requires" && card.requires && Object.keys(card.requires).length) {
-                    details.push(R.iconDetail(d.icon, Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")));
+                } else if (d.type === "requires") {
+                    // Render requires map if non-empty; skip empty {}
+                    if (card.requires && Object.keys(card.requires).length) {
+                        details.push(R.iconDetail(d.icon, Object.entries(card.requires).map(([k, v]) => k + " " + v).join(", ")));
+                    }
                 } else if (d.type === "array" && card[d.field]?.length) {
                     details.push(R.iconDetail(d.icon, card[d.field].join(", ")));
                 } else if (d.type === "flavor" && card[d.field]) {
@@ -218,10 +221,10 @@
                     // Static label
                     details.push(R.iconDetail(d.icon, d.label, d.class));
                 } else if (d.field) {
-                    // Dynamic field
+                    // Dynamic field — skip objects/arrays to avoid [object Object]
                     let value = card[d.field];
                     if (value == null && d.default != null) value = d.default;
-                    if (value != null) {
+                    if (value != null && typeof value !== "object") {
                         let text = (d.prefix || "") + value + (d.suffix || "");
                         details.push(R.iconDetail(d.icon, text, d.class));
                     }
@@ -331,6 +334,44 @@
         }
 
         return stats.length > 0 ? stats : null;
+    }
+
+    // ── Get short stat label for card (used as badge in hand tray) ────
+    function getCardStatLabel(card) {
+        if (!card) return null;
+        switch (card.type) {
+            case "item":
+                if (card.subtype === "weapon" && card.atk) return "+" + card.atk + " ATK";
+                if (card.subtype === "armor" && card.def) return "+" + card.def + " DEF";
+                if (card.subtype === "consumable" && card.hp) return "+" + card.hp + " HP";
+                if (card.effect) return card.effect.length > 12 ? card.effect.slice(0, 10) + ".." : card.effect;
+                break;
+            case "skill":
+                if (card.modifier) return card.modifier.length > 12 ? card.modifier.slice(0, 10) + ".." : card.modifier;
+                break;
+            case "magic":
+                if (card.energyCost) return card.energyCost + " NRG";
+                break;
+            case "action":
+                if (card.energyCost) return card.energyCost + " NRG";
+                break;
+            case "apparel":
+                if (card.def) return "+" + card.def + " DEF";
+                if (card.hpBonus) return "+" + card.hpBonus + " HP";
+                break;
+            case "encounter":
+                if (card.atk && card.def) return card.atk + "/" + card.def;
+                if (card.atk) return "ATK " + card.atk;
+                if (card.def) return "DEF " + card.def;
+                break;
+            case "loot":
+                if (card.rarity) {
+                    let r = card.rarity;
+                    return r.charAt(0) + r.slice(1).toLowerCase();
+                }
+                break;
+        }
+        return null;
     }
 
     // ── Check if card is incomplete (missing clear effect) ────────────
@@ -455,6 +496,6 @@
     Object.assign(window.CardGame.Rendering, {
         renderCharacterBody, renderCharacterBackBody, renderCardBody,
         renderScenarioBody, renderLootBody,
-        renderCompactStats, isCardIncomplete, CardFace, CardBack
+        renderCompactStats, getCardStatLabel, isCardIncomplete, CardFace, CardBack
     });
 })();

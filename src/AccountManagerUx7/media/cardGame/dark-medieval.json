@@ -1216,6 +1216,104 @@
       "rarity": "COMMON",
       "effect": "Target's next Flee fails automatically",
       "artPrompt": "a handful of scattered metal caltrops"
+    },
+    {
+      "type": "loot",
+      "name": "Mangy Pelt",
+      "rarity": "COMMON",
+      "effect": "Restore 2 HP",
+      "artPrompt": "a tattered mangy animal pelt, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Deserter's Blade",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a rusty deserter's short blade, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Tattered Cloak",
+      "rarity": "COMMON",
+      "effect": "+1 DEF this round",
+      "artPrompt": "a tattered dark cloak with a torn hood, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Rat Tail",
+      "rarity": "COMMON",
+      "effect": "Restore 1 HP",
+      "artPrompt": "a severed rat tail, grimy and unpleasant, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Venom Gland",
+      "rarity": "UNCOMMON",
+      "effect": "Apply poison (2 dmg for 2 turns)",
+      "artPrompt": "a small gland dripping with dark venom, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Stolen Purse",
+      "rarity": "COMMON",
+      "effect": "Draw 1 extra card",
+      "artPrompt": "a small leather coin purse, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Crossbow Bolt",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a heavy iron crossbow bolt, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Boar Tusk",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a sharp curved boar tusk, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Blackened Blade",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a blackened blade etched with dark runes, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Dented Shield",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a battered dented shield with faded heraldry, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Grave Dust",
+      "rarity": "UNCOMMON",
+      "effect": "Apply weakness (enemy -1 ATK for 2 turns)",
+      "artPrompt": "a pouch of grey grave dust, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Wight's Ring",
+      "rarity": "RARE",
+      "effect": "Restore 5 HP",
+      "artPrompt": "a tarnished silver ring glowing with pale light, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Iron Pincers",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "heavy iron pincers stained with old blood, dark medieval"
+    },
+    {
+      "type": "loot",
+      "name": "Confession Scroll",
+      "rarity": "RARE",
+      "effect": "Draw 2 extra cards",
+      "artPrompt": "a sealed confession scroll on aged parchment, dark medieval"
     }
   ],
   "encounters": {
@@ -1307,6 +1405,16 @@
         "id": "wandering_threat",
         "name": "Prowling Beast",
         "description": "Something prowls in the darkness nearby."
+      },
+      {
+        "id": "hidden_cache",
+        "name": "Burial Trove",
+        "description": "You uncover a hidden burial trove beneath crumbling stones!",
+        "lootPool": [
+          { "name": "Grave Dust", "rarity": "UNCOMMON", "effect": "Apply weakness (enemy -1 ATK for 2 turns)", "artPrompt": "a pouch of grey grave dust" },
+          { "name": "Wight's Ring", "rarity": "RARE", "effect": "Restore 5 HP", "artPrompt": "a tarnished silver ring glowing with pale light" },
+          { "name": "Tattered Cloak", "rarity": "COMMON", "effect": "+1 DEF this round", "artPrompt": "a tattered dark cloak with a torn hood" }
+        ]
       }
     ]
   }

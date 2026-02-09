@@ -1225,6 +1225,97 @@
       "rarity": "COMMON",
       "effect": "Auto-succeed Flee this round",
       "artPrompt": "a small black sphere trailing smoke"
+    },
+    {
+      "type": "loot",
+      "name": "Wolf Pelt",
+      "rarity": "COMMON",
+      "effect": "Restore 3 HP",
+      "artPrompt": "a rough grey wolf pelt draped over a stone, high fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Goblin Dagger",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a crude goblin dagger with a bone handle, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Spider Silk",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a spool of shimmering spider silk thread, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Venom Sac",
+      "rarity": "UNCOMMON",
+      "effect": "Apply poison (2 dmg for 2 turns)",
+      "artPrompt": "a pulsing venomous sac from a giant spider, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Stolen Coin Pouch",
+      "rarity": "COMMON",
+      "effect": "Draw 1 extra card",
+      "artPrompt": "a leather pouch spilling gold coins, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Dire Wolf Fang",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a massive curved fang from a dire wolf, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Thick Pelt",
+      "rarity": "COMMON",
+      "effect": "+1 DEF this round",
+      "artPrompt": "a thick animal hide suitable for crafting, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Orc Blade",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a brutal orcish blade with jagged edges, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Iron Shield",
+      "rarity": "UNCOMMON",
+      "effect": "+3 DEF this round",
+      "artPrompt": "a battered iron shield with dents from battle, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Old Arrows",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a quiver of old but usable arrows, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Bone Fragment",
+      "rarity": "COMMON",
+      "effect": "Restore 2 HP",
+      "artPrompt": "a fragment of enchanted bone glowing faintly, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Troll Hide",
+      "rarity": "RARE",
+      "effect": "+3 DEF this round",
+      "artPrompt": "a piece of tough regenerating troll hide, fantasy"
+    },
+    {
+      "type": "loot",
+      "name": "Regeneration Shard",
+      "rarity": "RARE",
+      "effect": "Restore 6 HP",
+      "artPrompt": "a crystal shard pulsing with healing energy, fantasy"
     }
   ],
   "encounters": {
@@ -1309,6 +1400,16 @@
         "id": "wandering_threat",
         "name": "Wandering Monster",
         "description": "A creature stumbles upon your camp."
+      },
+      {
+        "id": "hidden_cache",
+        "name": "Ancient Cache",
+        "description": "You discover an ancient cache hidden behind enchanted vines!",
+        "lootPool": [
+          { "name": "Elven Healing Salve", "rarity": "UNCOMMON", "effect": "Restore 8 HP", "artPrompt": "a shimmering elven salve in a crystal jar" },
+          { "name": "Enchanted Scroll", "rarity": "RARE", "effect": "+3 DEF this round", "artPrompt": "a scroll glowing with protective runes" },
+          { "name": "Faerie Dust", "rarity": "UNCOMMON", "effect": "Restore 6 Energy", "artPrompt": "sparkling golden faerie dust in a small pouch" }
+        ]
       }
     ]
   }

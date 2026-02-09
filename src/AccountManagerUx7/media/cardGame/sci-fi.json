@@ -1184,6 +1184,111 @@
       "rarity": "COMMON",
       "effect": "Disable target's equipment for 1 round",
       "artPrompt": "a small spherical grenade crackling with electromagnetic energy"
+    },
+    {
+      "type": "loot",
+      "name": "Salvaged Servos",
+      "rarity": "COMMON",
+      "effect": "Restore 3 HP",
+      "artPrompt": "salvaged robotic servo motors with exposed wiring, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Drone Core",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a glowing drone power core, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Micro Capacitor",
+      "rarity": "COMMON",
+      "effect": "Restore 3 Energy",
+      "artPrompt": "a tiny high-capacity energy capacitor, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Acid Gland",
+      "rarity": "UNCOMMON",
+      "effect": "Apply acid burn (2 dmg for 2 turns)",
+      "artPrompt": "a xeno acid gland dripping green fluid, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Chitin Plate",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a piece of hardened alien chitin armor plating, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Stolen Tech",
+      "rarity": "COMMON",
+      "effect": "Draw 1 extra card",
+      "artPrompt": "stolen technology components in a case, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Raider's Pistol",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a battered raider's laser pistol, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Xeno Carapace",
+      "rarity": "RARE",
+      "effect": "+3 DEF this round",
+      "artPrompt": "a large piece of iridescent alien carapace, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Pheromone Gland",
+      "rarity": "UNCOMMON",
+      "effect": "Apply confusion (enemy -2 ATK for 1 turn)",
+      "artPrompt": "an alien pheromone gland pulsing with bio-luminescence, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Armor Plating",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "reinforced composite armor plating, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Targeting Module",
+      "rarity": "RARE",
+      "effect": "+3 ATK this round",
+      "artPrompt": "an advanced targeting computer module with holographic display, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Android CPU",
+      "rarity": "RARE",
+      "effect": "Draw 2 extra cards",
+      "artPrompt": "a glowing android central processing unit, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Synth-Skin Patch",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 5 HP",
+      "artPrompt": "a medical synth-skin regeneration patch, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Psi Crystal",
+      "rarity": "RARE",
+      "effect": "Restore 8 Energy",
+      "artPrompt": "a vibrating psionic crystal emitting purple light, sci-fi"
+    },
+    {
+      "type": "loot",
+      "name": "Mutant Tissue",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 4 HP",
+      "artPrompt": "a sample of regenerative mutant tissue in a vial, sci-fi"
     }
   ],
   "encounters": {
@@ -1284,7 +1389,12 @@
       {
         "id": "hidden_cache",
         "name": "Supply Cache",
-        "description": "You discover an abandoned supply cache!"
+        "description": "You discover an abandoned supply cache!",
+        "lootPool": [
+          { "name": "Micro Capacitor", "rarity": "COMMON", "effect": "Restore 3 Energy", "artPrompt": "a tiny high-capacity energy capacitor" },
+          { "name": "Synth-Skin Patch", "rarity": "UNCOMMON", "effect": "Restore 5 HP", "artPrompt": "a medical synth-skin regeneration patch" },
+          { "name": "Targeting Module", "rarity": "RARE", "effect": "+3 ATK this round", "artPrompt": "an advanced targeting computer module" }
+        ]
       },
       {
         "id": "wandering_threat",

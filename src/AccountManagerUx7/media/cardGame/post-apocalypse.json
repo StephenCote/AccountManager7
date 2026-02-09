@@ -1210,6 +1210,104 @@
       "rarity": "COMMON",
       "effect": "Deal 4 damage, ignore DEF",
       "artPrompt": "a bottle filled with fuel and a burning rag"
+    },
+    {
+      "type": "loot",
+      "name": "Mangy Hide",
+      "rarity": "COMMON",
+      "effect": "Restore 2 HP",
+      "artPrompt": "a scraggly mutant animal hide, post-apocalyptic wasteland"
+    },
+    {
+      "type": "loot",
+      "name": "Chitin Shard",
+      "rarity": "COMMON",
+      "effect": "+1 DEF this round",
+      "artPrompt": "a sharp shard of insect chitin, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Scorpion Venom",
+      "rarity": "UNCOMMON",
+      "effect": "Apply poison (2 dmg for 2 turns)",
+      "artPrompt": "a vial of scorpion venom glowing faintly, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Chitin Plate",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a piece of hardened mutant insect chitin plating, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Raider's Knife",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a crude raider knife made from scrap metal, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Scrap Metal",
+      "rarity": "COMMON",
+      "effect": "Restore 2 HP",
+      "artPrompt": "useful pieces of salvaged scrap metal, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Glowing Bear Pelt",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a thick pelt from a irradiated bear, faintly glowing, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Irradiated Claw",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a large claw from a mutated creature, glowing green, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Warlord's Trophy",
+      "rarity": "RARE",
+      "effect": "+3 ATK this round",
+      "artPrompt": "a warlord's trophy necklace of teeth and bullet casings, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Reinforced Plate",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a piece of reinforced metal plating from a vehicle, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Circuit Board",
+      "rarity": "UNCOMMON",
+      "effect": "Draw 1 extra card",
+      "artPrompt": "a salvaged pre-war circuit board still functional, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Servo Motor",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 4 Energy",
+      "artPrompt": "a working servo motor from a pre-war robot, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Ghoul Brain",
+      "rarity": "RARE",
+      "effect": "Restore 6 HP",
+      "artPrompt": "a preserved ghoul brain in a jar of fluid, post-apocalyptic"
+    },
+    {
+      "type": "loot",
+      "name": "Pre-War Locket",
+      "rarity": "RARE",
+      "effect": "Restore 5 HP and 3 Energy",
+      "artPrompt": "a golden pre-war locket with a faded photograph inside, post-apocalyptic"
     }
   ],
   "encounters": {
@@ -1303,7 +1401,12 @@
       {
         "id": "hidden_cache",
         "name": "Pre-War Bunker",
-        "description": "You discover a sealed pre-war supply cache!"
+        "description": "You discover a sealed pre-war supply cache!",
+        "lootPool": [
+          { "name": "Scrap Metal", "rarity": "COMMON", "effect": "Restore 2 HP", "artPrompt": "useful pieces of salvaged scrap metal" },
+          { "name": "Circuit Board", "rarity": "UNCOMMON", "effect": "Draw 1 extra card", "artPrompt": "a salvaged pre-war circuit board" },
+          { "name": "Pre-War Locket", "rarity": "RARE", "effect": "Restore 5 HP and 3 Energy", "artPrompt": "a golden pre-war locket with a faded photograph" }
+        ]
       },
       {
         "id": "wandering_threat",

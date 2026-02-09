@@ -38,11 +38,51 @@
 
     const C = window.CardGame.Constants;
 
+    let deckHasSave = false;
+    let saveCheckPending = false;
+    let saveCheckDeck = null;
+
+    function checkForSaves(viewingDeck) {
+        let deckId = viewingDeck?.storageName;
+        if (!deckId) {
+            console.log("[CardGame v2] Save check: no storageName on deck", viewingDeck?.deckName || "(no deck)");
+            return;
+        }
+        if (saveCheckPending) return;
+        // Only check once per deck per mount (oninit resets saveCheckDeck)
+        if (saveCheckDeck === deckId) return;
+        saveCheckPending = true;
+        saveCheckDeck = deckId;
+        console.log("[CardGame v2] Save check: looking for saves in", deckId);
+        if (CardGame.Storage && CardGame.Storage.gameStorage) {
+            CardGame.Storage.gameStorage.list(deckId).then(function(saves) {
+                deckHasSave = saves && saves.length > 0;
+                saveCheckPending = false;
+                console.log("[CardGame v2] Save check result:", deckId, "→", saves.length, "saves found, deckHasSave=" + deckHasSave);
+                if (saves.length > 0) console.log("[CardGame v2] Save files:", saves.map(function(s) { return s.name; }));
+                m.redraw();
+            }).catch(function(e) {
+                console.warn("[CardGame v2] Save check failed for", deckId, ":", e);
+                deckHasSave = false;
+                saveCheckPending = false;
+            });
+        } else {
+            console.warn("[CardGame v2] Save check: CardGame.Storage.gameStorage not available");
+            saveCheckPending = false;
+        }
+    }
+
     function DeckView() {
         return {
             oninit() {
                 let ctx = window.CardGame.ctx || {};
                 let viewingDeck = ctx.viewingDeck;
+
+                // Reset save check on mount so it re-runs
+                deckHasSave = false;
+                saveCheckDeck = null;
+                saveCheckPending = false;
+                checkForSaves(viewingDeck);
 
                 // Restore background reference from saved deck
                 if (viewingDeck && viewingDeck.backgroundImageId) {
@@ -89,6 +129,9 @@
                 let ctx = window.CardGame.ctx || {};
                 let viewingDeck = ctx.viewingDeck;
                 let activeTheme = ctx.activeTheme;
+
+                // Re-check saves on each render (debounced — only runs if needed)
+                checkForSaves(viewingDeck);
                 let CARD_TYPES = C.CARD_TYPES;
                 let TEMPLATE_TYPES = C.TEMPLATE_TYPES;
                 let R = window.CardGame.Rendering;
@@ -165,11 +208,23 @@
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "checkroom"),
                             applyingOutfits ? "Outfitting..." : "Apply Theme Outfits"
                         ]),
-                        m("button", {
-                            class: "cg2-btn cg2-btn-primary",
+                        deckHasSave ? m("button", {
+                            class: "cg2-btn cg2-btn-accent",
                             style: { fontSize: "11px", marginLeft: "8px" },
                             disabled: busy,
-                            title: "Start a new game with this deck",
+                            title: "Resume saved game",
+                            onclick() {
+                                if (ctx.resumeGame) ctx.resumeGame(viewingDeck.storageName);
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "restore"),
+                            "Resume"
+                        ]) : null,
+                        m("button", {
+                            class: "cg2-btn cg2-btn-primary",
+                            style: { fontSize: "11px", marginLeft: deckHasSave ? "4px" : "8px" },
+                            disabled: busy,
+                            title: deckHasSave ? "Start a new game (overwrites save)" : "Start a new game with this deck",
                             onclick() {
                                 ctx.gameState = null; // Reset any existing game
                                 ctx.gameCharSelection = null; // Reset character selection
@@ -178,7 +233,7 @@
                             }
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "play_arrow"),
-                            "Play Game"
+                            deckHasSave ? "New Game" : "Play Game"
                         ]),
                         m("button", {
                             class: "cg2-btn cg2-btn-sm",

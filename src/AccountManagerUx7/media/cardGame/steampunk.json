@@ -1202,6 +1202,111 @@
       "rarity": "COMMON",
       "effect": "Auto-succeed Flee this round",
       "artPrompt": "a brass cylinder spewing thick white steam and smoke"
+    },
+    {
+      "type": "loot",
+      "name": "Rat Teeth",
+      "rarity": "COMMON",
+      "effect": "Restore 1 HP",
+      "artPrompt": "a handful of sharp rat teeth, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Automaton Core",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 4 Energy",
+      "artPrompt": "a glowing automaton power core with brass housing, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Brass Gears",
+      "rarity": "COMMON",
+      "effect": "Restore 2 HP",
+      "artPrompt": "a collection of brass gears and cogs, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Aether Gland",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 5 Energy",
+      "artPrompt": "an aether-infused gland pulsing with blue energy, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Chitin Plate",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a piece of hardened insect chitin plating, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Stolen Coin Purse",
+      "rarity": "COMMON",
+      "effect": "Draw 1 extra card",
+      "artPrompt": "a small coin purse with brass buttons, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Crude Knife",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a crude knife with a wooden handle, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Precision Gears",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "precision-machined brass gears from a clockwork mechanism, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Copper Plating",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "sheets of hammered copper plating, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Enforcer's Badge",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a brass enforcer's badge with a steam-powered emblem, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Pneumatic Baton",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a pneumatic baton with a pressure gauge, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Bomb Casing",
+      "rarity": "UNCOMMON",
+      "effect": "Apply stun (enemy skips 1 action)",
+      "artPrompt": "an empty brass bomb casing that could be repurposed, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Airship Token",
+      "rarity": "RARE",
+      "effect": "Draw 2 extra cards",
+      "artPrompt": "a golden airship boarding token with ornate engravings, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Aether Core",
+      "rarity": "RARE",
+      "effect": "Restore 8 Energy",
+      "artPrompt": "a large aether core radiating intense blue energy, steampunk"
+    },
+    {
+      "type": "loot",
+      "name": "Golem Plating",
+      "rarity": "RARE",
+      "effect": "+3 DEF this round",
+      "artPrompt": "a heavy piece of enchanted golem armor plating, steampunk"
     }
   ],
   "encounters": {
@@ -1297,7 +1402,12 @@
       {
         "id": "hidden_cache",
         "name": "Forgotten Workshop",
-        "description": "You discover a hidden workshop with salvageable parts!"
+        "description": "You discover a hidden workshop with salvageable parts!",
+        "lootPool": [
+          { "name": "Brass Gears", "rarity": "COMMON", "effect": "Restore 2 HP", "artPrompt": "a collection of brass gears and cogs" },
+          { "name": "Precision Gears", "rarity": "UNCOMMON", "effect": "+2 ATK this round", "artPrompt": "precision-machined brass gears" },
+          { "name": "Aether Core", "rarity": "RARE", "effect": "Restore 8 Energy", "artPrompt": "a large aether core radiating intense blue energy" }
+        ]
       },
       {
         "id": "wandering_threat",

@@ -191,6 +191,14 @@
                             }, "Skip Defense")
                             : null,
                         m("button", {
+                            class: "cg2-btn cg2-btn-warning",
+                            onclick: function() { CardGame.GameState.fleeFromThreat(); },
+                            title: "Flee: 1d20 + AGI vs DC " + (threat ? (threat.difficulty || ((threat.atk || 0) + (threat.def || 0))) : "?") + ". Pot is forfeited. Threat carries to next round."
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: "vertical-align: middle; margin-right: 4px" }, "directions_run"),
+                            "Flee (DC " + (threat ? (threat.difficulty || ((threat.atk || 0) + (threat.def || 0))) : "?") + ")"
+                        ]),
+                        m("button", {
                             class: "cg2-btn cg2-btn-primary cg2-btn-threat",
                             onclick: function() {
                                 let gs = (window.CardGame.ctx || {}).gameState;

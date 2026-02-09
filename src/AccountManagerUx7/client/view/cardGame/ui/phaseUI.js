@@ -230,7 +230,7 @@
         };
     }
 
-    // ── Resolution Phase UI ───────────────────────────────────────────
+    // ── Resolution Phase UI (DEPRECATED — now rendered inline in ActionBar) ──
     function ResolutionPhaseUI() {
         return {
             view() {
@@ -239,6 +239,7 @@
                 if (!gameState) return null;
 
                 let D20Dice = NS.Rendering.D20Dice;
+                let totals = gs.resolutionTotals || {};
 
                 let bar = gameState.actionBar;
                 let currentPos = bar.positions[bar.resolveIndex];
@@ -274,136 +275,165 @@
                     return m("div", { class: "cg2-resolution-complete" }, "All actions resolved!");
                 }
 
-                // Combat overlay
-                return isAttack && (isRolling || showResult) ? m("div", { class: "cg2-combat-overlay" }, [
-                    m("div", { class: "cg2-action-step-label" }, [
-                        m("span", { class: "cg2-step-number" }, "Step " + currentPos.index + "/" + bar.positions.length),
-                        m("span", { class: "cg2-step-action" }, actionLabel)
+                // Step progress dots
+                let progressDots = m("div", { class: "cg2-step-progress" },
+                    bar.positions.map(function(pos, i) {
+                        let state = pos.resolved ? "done" : (i === bar.resolveIndex ? "active" : "pending");
+                        let isPlayerPos = pos.owner === "player";
+                        return m("span", {
+                            key: i,
+                            class: "cg2-step-dot cg2-step-" + state + (isPlayerPos ? " cg2-dot-player" : " cg2-dot-opponent"),
+                            title: "Step " + (i + 1) + " - " + (pos.stack?.coreCard?.name || (pos.isThreat ? "Threat" : "?"))
+                        });
+                    })
+                );
+
+                // Running totals bar
+                let totalsBar = m("div", { class: "cg2-resolution-totals" }, [
+                    m("span", { class: "cg2-totals-player" }, [
+                        m("strong", "You: "),
+                        m("span", { class: "cg2-totals-dealt" }, totals.playerDamageDealt || 0),
+                        " dealt, ",
+                        m("span", { class: "cg2-totals-taken" }, totals.playerDamageTaken || 0),
+                        " taken"
                     ]),
-                    m("div", { class: "cg2-combat-content" }, [
-                        m("div", { class: "cg2-combat-header" }, [
-                            m("span", { class: "cg2-combatant cg2-attacker" },
-                                combat ? combat.attackerName : (isThreat ? (currentPos.threat?.name || "Threat") : (currentPos.owner === "player" ? "You" : "Opponent"))),
-                            m("span", { class: "cg2-combat-vs" }, "attacks"),
-                            m("span", { class: "cg2-combatant cg2-defender" },
-                                combat ? combat.defenderName : (isThreat ? (currentPos.target === "player" ? "You" : "Opponent") : (currentPos.owner === "player" ? "Opponent" : "You")))
+                    m("span", { class: "cg2-totals-divider" }, "|"),
+                    m("span", { class: "cg2-totals-opponent" }, [
+                        m("strong", "Opp: "),
+                        m("span", { class: "cg2-totals-dealt" }, totals.opponentDamageDealt || 0),
+                        " dealt, ",
+                        m("span", { class: "cg2-totals-taken" }, totals.opponentDamageTaken || 0),
+                        " taken"
+                    ])
+                ]);
+
+                // Unified resolution panel
+                return m("div", { class: "cg2-resolution-panel" }, [
+                    // Header: step counter + action label + progress dots
+                    m("div", { class: "cg2-resolution-header" }, [
+                        m("div", { class: "cg2-resolution-header-top" }, [
+                            m("span", { class: "cg2-step-number" }, "Step " + (bar.resolveIndex + 1) + "/" + bar.positions.length),
+                            m("span", { class: "cg2-step-action" }, actionLabel)
                         ]),
-                        m("div", { class: "cg2-combat-dice-row" }, [
-                            m("div", { class: "cg2-combat-roll-card" }, [
-                                m("div", { class: "cg2-roll-label" }, "Attack Roll"),
-                                m(D20Dice, {
-                                    value: isRolling ? gs.resolutionDiceFaces.attack : (combat ? combat.attackRoll.raw : "?"),
-                                    rolling: isRolling,
-                                    winner: combat && showResult && combat.outcome.damageMultiplier > 0
-                                }),
-                                combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
-                                    m("span", combat.attackRoll.raw),
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod" }, combat.attackRoll.strMod + " STR"),
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod cg2-mod-atk" }, combat.attackRoll.atkBonus + " ATK"),
-                                    combat.attackRoll.skillMod ? [
-                                        m("span", " + "),
-                                        m("span", { class: "cg2-mod cg2-mod-skill" }, combat.attackRoll.skillMod + " Skill")
-                                    ] : null,
-                                    combat.attackRoll.statusMod ? [
-                                        m("span", " + "),
-                                        m("span", { class: "cg2-mod cg2-mod-status" }, combat.attackRoll.statusMod + " Status")
-                                    ] : null,
-                                    m("span", " = "),
-                                    m("strong", combat.attackRoll.total)
-                                ]) : null
-                            ]),
-                            m("div", { class: "cg2-combat-vs-divider" }, "vs"),
-                            m("div", { class: "cg2-combat-roll-card" }, [
-                                m("div", { class: "cg2-roll-label" }, "Defense Roll"),
-                                m(D20Dice, {
-                                    value: isRolling ? gs.resolutionDiceFaces.defense : (combat ? combat.defenseRoll.raw : "?"),
-                                    rolling: isRolling,
-                                    winner: combat && showResult && combat.outcome.damageMultiplier <= 0
-                                }),
-                                combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
-                                    m("span", combat.defenseRoll.raw),
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod" }, combat.defenseRoll.endMod + " END"),
-                                    m("span", " + "),
-                                    m("span", { class: "cg2-mod cg2-mod-def" }, combat.defenseRoll.defBonus + " DEF"),
-                                    combat.defenseRoll.parryBonus ? [
-                                        m("span", " + "),
-                                        m("span", { class: "cg2-mod cg2-mod-parry" }, combat.defenseRoll.parryBonus + " Parry")
-                                    ] : null,
-                                    combat.defenseRoll.statusMod ? [
-                                        m("span", " + "),
-                                        m("span", { class: "cg2-mod cg2-mod-status" }, combat.defenseRoll.statusMod + " Status")
-                                    ] : null,
-                                    m("span", " = "),
-                                    m("strong", combat.defenseRoll.total)
-                                ]) : null
-                            ])
-                        ]),
-                        m("div", { class: "cg2-outcome-area" }, [
-                            combat && showResult ? m("div", { class: "cg2-combat-outcome" }, [
-                                m("div", {
-                                    class: "cg2-outcome-label cg2-outcome-" +
-                                        (combat.outcome.damageMultiplier > 0 ? "hit" :
-                                         combat.outcome.damageMultiplier < 0 ? "counter" : "miss")
-                                }, [
-                                    m("span", { class: "cg2-outcome-text" }, combat.outcome.label),
-                                    m("span", { class: "cg2-outcome-diff" },
-                                        " (" + (combat.outcome.diff >= 0 ? "+" : "") + combat.outcome.diff + ")")
-                                ]),
-                                m("div", { class: "cg2-outcome-effect" }, combat.outcome.effect),
-                                combat.damageResult ? m("div", { class: "cg2-damage-display" }, [
-                                    m("span", { class: "cg2-damage-number cg2-damage-dealt" },
-                                        "-" + combat.damageResult.finalDamage + " HP"),
-                                    m("span", { class: "cg2-damage-target" },
-                                        " to " + combat.defenderName)
-                                ]) : null,
-                                combat.selfDamageResult ? m("div", { class: "cg2-damage-display" }, [
-                                    m("span", { class: "cg2-damage-number cg2-damage-self" },
-                                        "-" + combat.selfDamageResult.finalDamage + " HP"),
-                                    m("span", { class: "cg2-damage-target" },
-                                        " to " + combat.attackerName + " (counter!)")
-                                ]) : null,
-                                combat.criticalEffects && (combat.criticalEffects.rewardCard || combat.criticalEffects.itemDropped || combat.criticalEffects.attackerStunned)
-                                    ? m("div", { class: "cg2-critical-effects" }, [
-                                        combat.criticalEffects.rewardCard
-                                            ? m("div", { class: "cg2-critical-effect cg2-reward-earned" }, [
-                                                m("span", { class: "material-symbols-outlined" }, "auto_awesome"),
-                                                " Reward: ", m("strong", combat.criticalEffects.rewardCard.name),
-                                                m("span", { class: "cg2-reward-rarity cg2-rarity-" + (combat.criticalEffects.rewardCard.rarity || "common") },
-                                                    " [" + (combat.criticalEffects.rewardCard.rarity || "common") + "]")
-                                            ]) : null,
-                                        combat.criticalEffects.itemDropped
-                                            ? m("div", { class: "cg2-critical-effect cg2-item-dropped" }, [
-                                                m("span", { class: "material-symbols-outlined" }, "backpack"),
-                                                " Item dropped: ", m("strong", combat.criticalEffects.itemDropped.name)
-                                            ]) : null,
-                                        combat.criticalEffects.attackerStunned
-                                            ? m("div", { class: "cg2-critical-effect cg2-attacker-stunned" }, [
-                                                m("span", { class: "material-symbols-outlined" }, "flash_off"),
-                                                " ", m("strong", combat.attackerName), " STUNNED!"
+                        progressDots
+                    ]),
+
+                    // Body: combat or non-combat content
+                    isAttack && (isRolling || showResult)
+                        ? m("div", { class: "cg2-resolution-body" }, [
+                            // Horizontal layout: dice left, outcome right
+                            m("div", { class: "cg2-resolution-combat-row" }, [
+                                // Dice section
+                                m("div", { class: "cg2-resolution-dice" }, [
+                                    m("div", { class: "cg2-combat-header" }, [
+                                        m("span", { class: "cg2-combatant cg2-attacker" },
+                                            combat ? combat.attackerName : (isThreat ? (currentPos.threat?.name || "Threat") : (currentPos.owner === "player" ? "You" : "Opponent"))),
+                                        m("span", { class: "cg2-combat-vs" }, "vs"),
+                                        m("span", { class: "cg2-combatant cg2-defender" },
+                                            combat ? combat.defenderName : (isThreat ? (currentPos.target === "player" ? "You" : "Opponent") : (currentPos.owner === "player" ? "Opponent" : "You")))
+                                    ]),
+                                    m("div", { class: "cg2-combat-dice-row" }, [
+                                        m("div", { class: "cg2-combat-roll-card" }, [
+                                            m("div", { class: "cg2-roll-label" }, "ATK"),
+                                            m(D20Dice, {
+                                                value: isRolling ? gs.resolutionDiceFaces.attack : (combat ? combat.attackRoll.raw : "?"),
+                                                rolling: isRolling,
+                                                winner: combat && showResult && combat.outcome.damageMultiplier > 0
+                                            }),
+                                            combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
+                                                m("span", combat.attackRoll.raw),
+                                                m("span", "+"),
+                                                m("span", { class: "cg2-mod" }, combat.attackRoll.strMod + "S"),
+                                                m("span", "+"),
+                                                m("span", { class: "cg2-mod cg2-mod-atk" }, combat.attackRoll.atkBonus + "A"),
+                                                combat.attackRoll.skillMod ? [m("span", "+"), m("span", { class: "cg2-mod cg2-mod-skill" }, combat.attackRoll.skillMod + "Sk")] : null,
+                                                combat.attackRoll.statusMod ? [m("span", "+"), m("span", { class: "cg2-mod cg2-mod-status" }, combat.attackRoll.statusMod + "St")] : null,
+                                                m("span", "="),
+                                                m("strong", combat.attackRoll.total)
                                             ]) : null
-                                    ]) : null
-                            ]) : m("div", { class: "cg2-outcome-pending" }, [
-                                m("span", { class: "material-symbols-outlined cg2-spin" }, "casino"),
-                                " Rolling dice..."
+                                        ]),
+                                        m("div", { class: "cg2-combat-roll-card" }, [
+                                            m("div", { class: "cg2-roll-label" }, "DEF"),
+                                            m(D20Dice, {
+                                                value: isRolling ? gs.resolutionDiceFaces.defense : (combat ? combat.defenseRoll.raw : "?"),
+                                                rolling: isRolling,
+                                                winner: combat && showResult && combat.outcome.damageMultiplier <= 0
+                                            }),
+                                            combat && showResult ? m("div", { class: "cg2-roll-breakdown" }, [
+                                                m("span", combat.defenseRoll.raw),
+                                                m("span", "+"),
+                                                m("span", { class: "cg2-mod" }, combat.defenseRoll.endMod + "E"),
+                                                m("span", "+"),
+                                                m("span", { class: "cg2-mod cg2-mod-def" }, combat.defenseRoll.defBonus + "D"),
+                                                combat.defenseRoll.parryBonus ? [m("span", "+"), m("span", { class: "cg2-mod cg2-mod-parry" }, combat.defenseRoll.parryBonus + "P")] : null,
+                                                combat.defenseRoll.statusMod ? [m("span", "+"), m("span", { class: "cg2-mod cg2-mod-status" }, combat.defenseRoll.statusMod + "St")] : null,
+                                                m("span", "="),
+                                                m("strong", combat.defenseRoll.total)
+                                            ]) : null
+                                        ])
+                                    ])
+                                ]),
+                                // Outcome section
+                                m("div", { class: "cg2-resolution-outcome" }, [
+                                    combat && showResult ? m("div", { class: "cg2-combat-outcome" }, [
+                                        m("div", {
+                                            class: "cg2-outcome-label cg2-outcome-" +
+                                                (combat.outcome.damageMultiplier > 0 ? "hit" :
+                                                 combat.outcome.damageMultiplier < 0 ? "counter" : "miss")
+                                        }, [
+                                            m("span", { class: "cg2-outcome-text" }, combat.outcome.label),
+                                            m("span", { class: "cg2-outcome-diff" },
+                                                " (" + (combat.outcome.diff >= 0 ? "+" : "") + combat.outcome.diff + ")")
+                                        ]),
+                                        m("div", { class: "cg2-outcome-effect" }, combat.outcome.effect),
+                                        combat.damageResult ? m("div", { class: "cg2-damage-display" }, [
+                                            m("span", { class: "cg2-damage-number cg2-damage-dealt" },
+                                                "-" + combat.damageResult.finalDamage + " HP"),
+                                            m("span", { class: "cg2-damage-target" },
+                                                " to " + combat.defenderName)
+                                        ]) : null,
+                                        combat.selfDamageResult ? m("div", { class: "cg2-damage-display" }, [
+                                            m("span", { class: "cg2-damage-number cg2-damage-self" },
+                                                "-" + combat.selfDamageResult.finalDamage + " HP"),
+                                            m("span", { class: "cg2-damage-target" },
+                                                " to " + combat.attackerName + " (counter!)")
+                                        ]) : null,
+                                        combat.criticalEffects && (combat.criticalEffects.rewardCard || combat.criticalEffects.itemDropped || combat.criticalEffects.attackerStunned)
+                                            ? m("div", { class: "cg2-critical-effects" }, [
+                                                combat.criticalEffects.rewardCard
+                                                    ? m("div", { class: "cg2-critical-effect cg2-reward-earned" }, [
+                                                        m("span", { class: "material-symbols-outlined" }, "auto_awesome"),
+                                                        " ", m("strong", combat.criticalEffects.rewardCard.name),
+                                                        m("span", { class: "cg2-reward-rarity cg2-rarity-" + (combat.criticalEffects.rewardCard.rarity || "common") },
+                                                            " [" + (combat.criticalEffects.rewardCard.rarity || "common") + "]")
+                                                    ]) : null,
+                                                combat.criticalEffects.itemDropped
+                                                    ? m("div", { class: "cg2-critical-effect cg2-item-dropped" }, [
+                                                        m("span", { class: "material-symbols-outlined" }, "backpack"),
+                                                        " ", m("strong", combat.criticalEffects.itemDropped.name)
+                                                    ]) : null,
+                                                combat.criticalEffects.attackerStunned
+                                                    ? m("div", { class: "cg2-critical-effect cg2-attacker-stunned" }, [
+                                                        m("span", { class: "material-symbols-outlined" }, "flash_off"),
+                                                        " ", m("strong", combat.attackerName), " STUNNED!"
+                                                    ]) : null
+                                            ]) : null
+                                    ]) : m("div", { class: "cg2-outcome-pending" }, [
+                                        m("span", { class: "material-symbols-outlined cg2-spin" }, "casino"),
+                                        " Rolling..."
+                                    ])
+                                ])
                             ])
                         ])
-                    ])
-                ]) : m("div", { class: "cg2-non-combat-overlay" }, [
-                    m("div", { class: "cg2-action-step-label" }, [
-                        m("span", { class: "cg2-step-number" }, "Step " + currentPos.index + "/" + bar.positions.length),
-                        m("span", { class: "cg2-step-action" }, actionLabel)
-                    ]),
-                    m("div", { class: "cg2-combat-content" }, [
-                        m("div", { class: "cg2-resolving-action" }, [
-                            m("span", { class: "material-symbols-outlined cg2-spin" }, "sync"),
-                            " Resolving ", card ? card.name : "action", "..."
+                        : m("div", { class: "cg2-resolution-body cg2-resolution-noncombat" }, [
+                            m("div", { class: "cg2-resolving-action" }, [
+                                m("span", { class: "material-symbols-outlined cg2-spin" }, "sync"),
+                                " Resolving ", card ? card.name : "action", "..."
+                            ])
                         ]),
-                        m("div", { class: "cg2-resolution-progress" },
-                            gs.resolutionAnimating ? "Resolving..." : "Next action in 3s...")
-                    ])
+
+                    // Running totals footer
+                    totalsBar
                 ]);
             }
         };
@@ -466,6 +496,36 @@
             etr.loot ? m("div", { class: "cg2-threat-loot-earned" }, [
                 m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle;color:#FFB300" }, "inventory_2"),
                 " Earned: ", m("strong", etr.loot.name)
+            ]) : null,
+            // Pot forfeiture display
+            etr.potForfeited ? m("div", { class: "cg2-threat-pot-forfeited" }, [
+                m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle;color:#c62828" }, "money_off"),
+                " Pot (", m("strong", etr.potForfeited), " cards) forfeited to ",
+                m("strong", etr.potForfeitedTo === "player" ? "You" : "Opponent"), "!"
+            ]) : null,
+            // Flee result display
+            etr.fleeResult ? m("div", { class: "cg2-threat-flee-result" }, [
+                m("div", { class: "cg2-threat-flee-roll" }, [
+                    m("span", { class: "cg2-roll-label" }, "Flee Roll: "),
+                    m("span", { class: "cg2-roll-value" },
+                        etr.fleeResult.raw + " + " + etr.fleeResult.agiMod + " AGI = " + etr.fleeResult.total + " vs DC " + etr.fleeResult.difficulty)
+                ]),
+                m("div", {
+                    class: etr.fleeResult.success ? "cg2-threat-flee-success" : "cg2-threat-flee-fail"
+                }, [
+                    m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" },
+                        etr.fleeResult.success ? "directions_run" : "block"),
+                    " ", etr.fleeResult.message
+                ]),
+                etr.fleeResult.potForfeited ? m("div", { class: "cg2-threat-pot-forfeited" }, [
+                    m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle;color:#c62828" }, "money_off"),
+                    " Pot (", etr.fleeResult.potForfeited, " cards) forfeited to opponent"
+                ]) : null
+            ]) : null,
+            // Carry-over warning
+            etr.carriedOver ? m("div", { class: "cg2-threat-carryover-warn" }, [
+                m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle;color:#E65100" }, "warning"),
+                " ", m("strong", etr.threat.name), " survives! Carries to next round with +2 ATK"
             ]) : null
         ]);
     }
@@ -531,6 +591,18 @@
                         "- targets", gameState.endThreatResult.threat.target);
                 }
 
+                // If scenario granted loot, trigger reveal animation
+                if (gameState.endThreatResult && gameState.endThreatResult.bonusApplied
+                    && gameState.endThreatResult.bonusApplied.type === "loot") {
+                    gameState.endThreatResult._lootRevealActive = true;
+                    setTimeout(function() {
+                        if (gameState && gameState.endThreatResult) {
+                            gameState.endThreatResult._lootRevealActive = false;
+                            m.redraw();
+                        }
+                    }, 3000);
+                }
+
                 gameState.cleanupApplied = true;
                 console.log("[CardGame v2] Cleanup - Round winner:", gameState.roundWinner,
                     "| Player HP:", gameState.player.hp, "(+" + gameState.player.hpRecovery + ")",
@@ -543,10 +615,14 @@
 
                 // Auto-save
                 let Storage = NS.Storage;
+                console.log("[CardGame v2] Auto-save: deckName=" + gameState.deckName, "round=" + gameState.round,
+                    "Storage available:", !!Storage, "gameStorage:", !!(Storage && Storage.gameStorage));
                 if (Storage && Storage.gameStorage) {
                     Storage.gameStorage.save(gameState.deckName, gameState).then(saved => {
-                        if (saved) console.log("[CardGame v2] Auto-saved after round", gameState.round);
-                    }).catch(e => console.warn("[CardGame v2] Auto-save failed:", e));
+                        console.log("[CardGame v2] Auto-save result:", saved ? "SUCCESS (objectId=" + (saved.objectId || saved.id || "?") + ")" : "FAILED (null returned)");
+                    }).catch(e => console.warn("[CardGame v2] Auto-save exception:", e));
+                } else {
+                    console.warn("[CardGame v2] Auto-save SKIPPED: Storage not available");
                 }
             },
             view() {
@@ -559,6 +635,21 @@
                                  "Round is a tie!";
 
                 return m("div", { class: "cg2-phase-panel cg2-cleanup-panel" }, [
+                    // Loot reveal overlay
+                    gameState.endThreatResult && gameState.endThreatResult._lootRevealActive
+                        && gameState.endThreatResult.bonusApplied && gameState.endThreatResult.bonusApplied.type === "loot"
+                        ? m("div", { class: "cg2-loot-reveal-overlay", onclick: function() {
+                            gameState.endThreatResult._lootRevealActive = false;
+                            m.redraw();
+                        }}, [
+                            m("div", { class: "cg2-loot-reveal-card" }, [
+                                m(NS.Rendering.CardFace, { card: gameState.endThreatResult.bonusApplied.card }),
+                                m("div", { class: "cg2-loot-reveal-label" }, [
+                                    m("span", { class: "material-symbols-outlined" }, "auto_awesome"),
+                                    " Loot Discovered!"
+                                ])
+                            ])
+                        ]) : null,
                     m("h2", "Cleanup Phase"),
                     m("p", "Round " + gameState.round + " complete!"),
                     m("div", { class: "cg2-round-summary" }, [
@@ -617,49 +708,65 @@
 
                         // Scenario card display (rendered as actual card via CardFace)
                         gameState.endThreatResult ? m("div", { class: "cg2-scenario-card-area" }, [
-                            // Render scenario as a CardFace card
-                            m("div", { class: "cg2-scenario-card-wrap" },
-                                m(NS.Rendering.CardFace, { card: gameState.endThreatResult.scenario, noPreview: false })
-                            ),
-                            // Bonus effect summary (adjacent to the card)
-                            m("div", { class: "cg2-scenario-result-panel" }, [
-                                gameState.endThreatResult.bonusApplied
-                                    ? m("div", { class: "cg2-scenario-bonus" }, [
-                                        gameState.endThreatResult.bonusApplied.type === "loot"
-                                            ? [m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#FFB300" }, "inventory_2"),
-                                               " Found: ", m("strong", gameState.endThreatResult.bonusApplied.card.name),
-                                               " \u2192 ", m("em", gameState.endThreatResult.bonusApplied.target === "player" ? "You" : "Opponent")]
-                                            : gameState.endThreatResult.bonusApplied.type === "heal"
-                                                ? [m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#4CAF50" }, "favorite"),
-                                                   " Both recover ", m("strong", "+" + gameState.endThreatResult.bonusApplied.amount + " HP")]
-                                                : gameState.endThreatResult.bonusApplied.type === "energy"
-                                                    ? [m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#42A5F5" }, "bolt"),
-                                                       " Both recover ", m("strong", "+" + gameState.endThreatResult.bonusApplied.amount + " Energy")]
-                                                    : null
-                                    ]) : null,
+                            // Header: explain what this card is
+                            m("div", { class: "cg2-scenario-card-header" }, [
+                                m("span", { class: "material-symbols-outlined", style: "font-size:18px;vertical-align:middle;margin-right:6px;color:#B8860B" },
+                                    gameState.endThreatResult.scenario.icon || "explore"),
+                                "Round Event: ",
+                                m("strong", gameState.endThreatResult.scenario.name)
+                            ]),
+                            m("div", { class: "cg2-scenario-card-body" }, [
+                                // Render scenario as a CardFace card
+                                m("div", { class: "cg2-scenario-card-wrap" },
+                                    m(NS.Rendering.CardFace, { card: gameState.endThreatResult.scenario, compact: true })
+                                ),
+                                // Bonus effect summary (adjacent to the card)
+                                m("div", { class: "cg2-scenario-result-panel" }, [
+                                    gameState.endThreatResult.bonusApplied
+                                        ? m("div", { class: "cg2-scenario-bonus" }, [
+                                            gameState.endThreatResult.bonusApplied.type === "loot"
+                                                ? [m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#FFB300" }, "inventory_2"),
+                                                   " Found: ", m("strong", gameState.endThreatResult.bonusApplied.card.name),
+                                                   " \u2192 ", m("em", gameState.endThreatResult.bonusApplied.target === "player" ? "You" : "Opponent")]
+                                                : gameState.endThreatResult.bonusApplied.type === "heal"
+                                                    ? [m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#4CAF50" }, "favorite"),
+                                                       " Both recover ", m("strong", "+" + gameState.endThreatResult.bonusApplied.amount + " HP")]
+                                                    : gameState.endThreatResult.bonusApplied.type === "energy"
+                                                        ? [m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#42A5F5" }, "bolt"),
+                                                           " Both recover ", m("strong", "+" + gameState.endThreatResult.bonusApplied.amount + " Energy")]
+                                                        : null
+                                        ]) : null,
 
-                                // Threat info (pending)
-                                gameState.endThreatResult.threat && !gameState.endThreatResult.responded
-                                    ? m("div", { class: "cg2-scenario-threat cg2-end-threat-pending" }, [
-                                        m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#c62828" },
-                                            gameState.endThreatResult.threat.imageIcon || "pets"),
-                                        " ", m("strong", gameState.endThreatResult.threat.name),
-                                        " approaches! ",
-                                        m("span", { class: gameState.endThreatResult.threat.target === "player" ? "cg2-threat-target-you" : "cg2-threat-target-opp" },
-                                            gameState.endThreatResult.threat.target === "player" ? "You" : "Opponent"),
-                                        " must defend.",
-                                        m("div", { class: "cg2-threat-stats-mini" }, [
-                                            m("span", "ATK " + gameState.endThreatResult.threat.atk),
-                                            m("span", "DEF " + gameState.endThreatResult.threat.def),
-                                            m("span", "HP " + gameState.endThreatResult.threat.hp)
+                                    // Threat info (pending)
+                                    gameState.endThreatResult.threat && !gameState.endThreatResult.responded
+                                        ? m("div", { class: "cg2-scenario-threat cg2-end-threat-pending" }, [
+                                            m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#c62828" },
+                                                gameState.endThreatResult.threat.imageIcon || "pets"),
+                                            " ", m("strong", gameState.endThreatResult.threat.name),
+                                            " approaches! ",
+                                            m("span", { class: gameState.endThreatResult.threat.target === "player" ? "cg2-threat-target-you" : "cg2-threat-target-opp" },
+                                                gameState.endThreatResult.threat.target === "player" ? "You" : "Opponent"),
+                                            " must defend.",
+                                            m("div", { class: "cg2-threat-stats-mini" }, [
+                                                m("span", "ATK " + gameState.endThreatResult.threat.atk),
+                                                m("span", "DEF " + gameState.endThreatResult.threat.def),
+                                                m("span", "HP " + gameState.endThreatResult.threat.hp)
+                                            ])
                                         ])
-                                    ])
-                                    : null,
+                                        : null,
 
-                                // Threat combat result (resolved)
-                                gameState.endThreatResult.threat && gameState.endThreatResult.responded
-                                    ? renderEndThreatResult(gameState.endThreatResult)
-                                    : null
+                                    // Threat combat result (resolved)
+                                    gameState.endThreatResult.threat && gameState.endThreatResult.responded
+                                        ? renderEndThreatResult(gameState.endThreatResult)
+                                        : null,
+
+                                    // Fallback: no bonus and no threat
+                                    !gameState.endThreatResult.bonusApplied && !gameState.endThreatResult.threat
+                                        ? m("div", { class: "cg2-scenario-no-effect" }, [
+                                            m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle;color:#81c784" }, "check_circle"),
+                                            " No threats this round."
+                                        ]) : null
+                                ])
                             ])
                         ]) : null
                     ]),

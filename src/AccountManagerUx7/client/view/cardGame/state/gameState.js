@@ -231,7 +231,11 @@
 
         let state = {
             // Meta — use storageName (sanitized folder name) for save/load paths
-            deckName: deck.storageName || deck.deckName,
+            deckName: (function() {
+                let name = deck.storageName || deck.deckName;
+                console.log("[CardGame v2] Game init: deckName for saves=" + name, "(storageName=" + deck.storageName + ", deckName=" + deck.deckName + ")");
+                return name;
+            })(),
             themeId: deck.themeId,
             startedAt: Date.now(),
 
@@ -328,6 +332,8 @@
 
             // Beginning threats (from Nat 1 on initiative)
             beginningThreats: [],
+            // Carried threats from previous round (end threats that survived)
+            carriedThreats: [],
 
             // Threat response state
             threatResponse: {
@@ -1051,6 +1057,8 @@
         } else if (gameState.phase === GAME_PHASES.DRAW_PLACEMENT) {
             gameState.phase = GAME_PHASES.RESOLUTION;
             gameState.actionBar.resolveIndex = 0;
+            // Reset resolution totals for this round
+            resolutionTotals = { playerDamageDealt: 0, playerDamageTaken: 0, opponentDamageDealt: 0, opponentDamageTaken: 0 };
             console.log("[CardGame v2] Phase advanced to:", gameState.phase);
             // Auto-start resolution
             setTimeout(() => {
@@ -1078,10 +1086,23 @@
     function enterDrawPlacementPhase() {
         const GAME_PHASES = C().GAME_PHASES;
         const aiPlaceCards = AI()?.aiPlaceCards;
+        const hasStatusEffect = E().hasStatusEffect;
 
         gameState.phase = GAME_PHASES.DRAW_PLACEMENT;
         gameState.currentTurn = gameState.initiative.winner;
         console.log("[CardGame v2] Phase advanced to:", gameState.phase, "- Current turn:", gameState.currentTurn);
+
+        // Enforce stun: stunned actors lose their AP for this round
+        if (hasStatusEffect) {
+            if (hasStatusEffect(gameState.player, "stunned")) {
+                gameState.player.apUsed = gameState.player.ap;
+                console.log("[CardGame v2] Player is STUNNED — AP consumed, cannot place cards");
+            }
+            if (hasStatusEffect(gameState.opponent, "stunned")) {
+                gameState.opponent.apUsed = gameState.opponent.ap;
+                console.log("[CardGame v2] Opponent is STUNNED — AP consumed, cannot place cards");
+            }
+        }
 
         // If AI goes first, trigger AI placement
         if (gameState.currentTurn === "opponent") {
@@ -1359,6 +1380,17 @@
             gameState.endThreatResult.threatDamage = 0;
             gameState.endThreatResult.combatResult = { attackRoll, defenseRoll, outcome, damage, resultType: "hit" };
             console.log("[CardGame v2] End threat dealt", damage.finalDamage, "damage to", responder);
+
+            // Pot forfeiture: defender failed to repel, loses pot to opponent
+            let otherSide = responder === "player" ? "opponent" : "player";
+            let otherActor = otherSide === "player" ? gameState.player : gameState.opponent;
+            if (gameState.pot && gameState.pot.length > 0) {
+                gameState.pot.forEach(function(c) { otherActor.discardPile.push(c); });
+                gameState.endThreatResult.potForfeited = gameState.pot.length;
+                gameState.endThreatResult.potForfeitedTo = otherSide;
+                console.log("[CardGame v2] Pot forfeited to", otherSide, ":", gameState.pot.length, "cards");
+                gameState.pot = [];
+            }
         } else if (outcome.bothTakeDamage) {
             // CLASH — both take 1 damage
             let clashDmg = outcome.bothTakeDamage;
@@ -1368,6 +1400,17 @@
             gameState.endThreatResult.threatDamage = clashDmg;
             gameState.endThreatResult.combatResult = { attackRoll, defenseRoll, outcome, resultType: "clash" };
             console.log("[CardGame v2] Clash! Both take", clashDmg, "damage");
+
+            // Pot forfeiture on clash (clash is not a clean repel)
+            let otherSideClash = responder === "player" ? "opponent" : "player";
+            let otherActorClash = otherSideClash === "player" ? gameState.player : gameState.opponent;
+            if (gameState.pot && gameState.pot.length > 0) {
+                gameState.pot.forEach(function(c) { otherActorClash.discardPile.push(c); });
+                gameState.endThreatResult.potForfeited = gameState.pot.length;
+                gameState.endThreatResult.potForfeitedTo = otherSideClash;
+                console.log("[CardGame v2] Pot forfeited to", otherSideClash, ":", gameState.pot.length, "cards (clash)");
+                gameState.pot = [];
+            }
         } else {
             // Defender blocked/parried — defender wins
             gameState.endThreatResult.damageDealt = 0;
@@ -1408,6 +1451,19 @@
                 gameState.endThreatResult.loot = lootCard;
             }
             console.log("[CardGame v2]", responder, "defeated end threat, earned loot");
+        }
+
+        // Threat carry-over: if threat survived (HP > 0), carry to next round with +2 ATK
+        let threatSurvived = (threat.hp || 0) > 0;
+        if (threatSurvived) {
+            if (!gameState.carriedThreats) gameState.carriedThreats = [];
+            let carriedThreat = Object.assign({}, threat);
+            carriedThreat.atk = (carriedThreat.atk || 0) + 2;
+            carriedThreat._carriedOver = true;
+            carriedThreat._previousRound = gameState.round;
+            gameState.carriedThreats.push(carriedThreat);
+            gameState.endThreatResult.carriedOver = true;
+            console.log("[CardGame v2] End threat", threat.name, "carries to next round with ATK", carriedThreat.atk);
         }
 
         gameState.endThreatResult.responded = true;
@@ -1487,6 +1543,112 @@
         }
     }
 
+    // Flee from threat: 1d20 + AGI vs threat difficulty
+    function fleeFromThreat() {
+        if (!gameState || !gameState.threatResponse || !gameState.threatResponse.active) return;
+        const rollD20 = E().rollD20;
+        const applyDamage = E().applyDamage;
+        const checkGameOver = E().checkGameOver;
+        const GAME_PHASES = C().GAME_PHASES;
+
+        let isEndThreat = gameState.phase === GAME_PHASES.END_THREAT;
+        let threats = gameState.threatResponse.threats || [];
+        let threat = threats[0];
+        if (!threat) return;
+
+        let responder = gameState.threatResponse.responder;
+        let actor = responder === "player" ? gameState.player : gameState.opponent;
+        let stats = actor.character?.stats || {};
+        let agiMod = stats.AGI ?? stats.agi ?? 0;
+
+        // Roll flee: 1d20 + AGI vs threat difficulty
+        let difficulty = threat.difficulty || ((threat.atk || 0) + (threat.def || 0));
+        let raw = rollD20();
+        let total = raw + agiMod;
+
+        console.log("[CardGame v2] Flee attempt:", raw, "+", agiMod, "AGI =", total, "vs DC", difficulty);
+
+        let fleeResult = {
+            success: total >= difficulty,
+            raw: raw,
+            agiMod: agiMod,
+            total: total,
+            difficulty: difficulty
+        };
+
+        if (fleeResult.success) {
+            console.log("[CardGame v2] Flee successful! Pot forfeited.");
+            fleeResult.message = "Escaped! But the pot is forfeited.";
+        } else {
+            // Flee failure: threat gets advantage attack (roll twice, take higher)
+            let atkRoll1 = rollD20();
+            let atkRoll2 = rollD20();
+            let bestRoll = Math.max(atkRoll1, atkRoll2);
+            let threatAtk = bestRoll + (threat.atk || 0);
+            let defRoll = rollD20();
+            let actorDef = stats.END ?? stats.end ?? 0;
+            let defTotal = defRoll + actorDef;
+
+            let damage = Math.max(1, threatAtk - defTotal);
+            applyDamage(actor, damage);
+            fleeResult.message = "Failed to flee! " + threat.name + " strikes for " + damage + " damage.";
+            fleeResult.damageTaken = damage;
+            fleeResult.advantageRolls = [atkRoll1, atkRoll2];
+            console.log("[CardGame v2] Flee failed! Advantage rolls:", atkRoll1, atkRoll2, "→ damage:", damage);
+        }
+
+        // Pot forfeiture (regardless of flee success/failure)
+        let otherSide = responder === "player" ? "opponent" : "player";
+        let otherActor = otherSide === "player" ? gameState.player : gameState.opponent;
+        if (gameState.pot && gameState.pot.length > 0) {
+            gameState.pot.forEach(function(card) { otherActor.discardPile.push(card); });
+            fleeResult.potForfeited = gameState.pot.length;
+            gameState.pot = [];
+        }
+
+        // Threat carries to next round with +2 ATK
+        if (!gameState.carriedThreats) gameState.carriedThreats = [];
+        let carriedThreat = Object.assign({}, threat);
+        carriedThreat.atk = (carriedThreat.atk || 0) + 2;
+        carriedThreat._carriedOver = true;
+        carriedThreat._previousRound = gameState.round;
+        gameState.carriedThreats.push(carriedThreat);
+        fleeResult.threatCarried = true;
+
+        // Store result for UI display
+        if (isEndThreat && gameState.endThreatResult) {
+            gameState.endThreatResult.fleeResult = fleeResult;
+            gameState.endThreatResult.responded = true;
+            gameState.endThreatResult.damageDealt = fleeResult.damageTaken || 0;
+            gameState.endThreatResult.carriedOver = true;
+        }
+        gameState.threatResponse.fleeResult = fleeResult;
+
+        // Clear threat response
+        gameState.threatResponse.active = false;
+        gameState.threatResponse.resolved = true;
+        gameState.player.threatResponseAP = 0;
+        gameState.opponent.threatResponseAP = 0;
+
+        // Check game over
+        let winner = checkGameOver(gameState);
+        if (winner) {
+            gameState.winner = winner;
+            gameState.phase = "GAME_OVER";
+            m.redraw();
+            return;
+        }
+
+        // Return to cleanup (end threats) or advance to placement (beginning threats)
+        if (isEndThreat) {
+            gameState.cleanupApplied = true;
+            gameState.phase = GAME_PHASES.CLEANUP;
+        } else {
+            gameState.phase = GAME_PHASES.DRAW_PLACEMENT;
+        }
+        m.redraw();
+    }
+
     // ── Round Management ────────────────────────────────────────────────
     function startNextRound() {
         if (!gameState) return;
@@ -1557,6 +1719,15 @@
         // Clear beginning threats from previous round
         gameState.beginningThreats = [];
 
+        // Inject carried-over threats from previous round as beginning threats
+        if (gameState.carriedThreats && gameState.carriedThreats.length > 0) {
+            gameState.carriedThreats.forEach(function(ct) {
+                gameState.beginningThreats.push(ct);
+            });
+            console.log("[CardGame v2] Carried", gameState.carriedThreats.length, "threats to round", gameState.round);
+            gameState.carriedThreats = [];
+        }
+
         // Clear pot and round loot (winner claimed them)
         gameState.pot = [];
         gameState.roundLoot = [];
@@ -1613,6 +1784,13 @@
     let resolutionDiceFaces = { attack: 1, defense: 1 };
     let resolutionDiceInterval = null;
     let currentCombatResult = null;
+    let currentMagicResult = null;
+    let resolutionTotals = {
+        playerDamageDealt: 0,
+        playerDamageTaken: 0,
+        opponentDamageDealt: 0,
+        opponentDamageTaken: 0
+    };
 
     // ── Resolution Driver ───────────────────────────────────────────────
     // The main resolution phase driver — handles combat, rest, guard, flee,
@@ -1664,9 +1842,41 @@
         // Check if this is a threat position (beginning threat from Nat 1)
         let isThreat = pos.isThreat && pos.threat;
 
+        // ── Stun check: skip stunned actors' non-threat positions ──
+        const hasStatusEffect = E().hasStatusEffect;
+        if (!isThreat && pos.owner && pos.stack) {
+            let actor = pos.owner === "player" ? gameState.player : gameState.opponent;
+            if (hasStatusEffect && hasStatusEffect(actor, "stunned")) {
+                // Stunned — skip this action
+                console.log("[CardGame v2]", pos.owner, "is STUNNED — action", pos.stack.coreCard?.name || "unknown", "at position", pos.index, "skipped");
+                pos.resolved = true;
+                pos.skipped = true;
+                pos.skipReason = "Stunned";
+
+                // Return cards to hand/discard without executing
+                if (pos.stack.coreCard) {
+                    let owner = pos.owner === "player" ? gameState.player : gameState.opponent;
+                    if (pos.stack.coreCard.type === "magic" && pos.stack.coreCard.reusable !== false) {
+                        owner.hand.push(pos.stack.coreCard);
+                    } else {
+                        owner.discardPile.push(pos.stack.coreCard);
+                    }
+                    if (pos.stack.modifiers) {
+                        pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
+                    }
+                }
+
+                bar.resolveIndex++;
+                m.redraw();
+                setTimeout(() => advanceResolution(), 800);
+                return;
+            }
+        }
+
         // Determine if this is a combat action
         let card = pos.stack?.coreCard;
         let isAttack = (card && card.name === "Attack") || isThreat;
+        let isMagicAction = card && (card.name === "Channel" || card.type === "magic");
 
         if (isAttack) {
             // Combat resolution with dice animation
@@ -1711,6 +1921,30 @@
                 // Resolve combat (pass stack for skill modifiers)
                 currentCombatResult = resolveCombat(attacker, defender, pos.stack);
                 resolutionPhase = "result";
+
+                // Update resolution totals
+                if (currentCombatResult) {
+                    let dmgDealt = currentCombatResult.damageResult?.finalDamage || 0;
+                    let selfDmg = currentCombatResult.selfDamageResult?.finalDamage || 0;
+                    if (isThreat) {
+                        // Threat attacks a target
+                        if (pos.target === "player") {
+                            resolutionTotals.playerDamageTaken += dmgDealt;
+                        } else {
+                            resolutionTotals.opponentDamageTaken += dmgDealt;
+                        }
+                    } else if (pos.owner === "player") {
+                        resolutionTotals.playerDamageDealt += dmgDealt;
+                        resolutionTotals.playerDamageTaken += selfDmg;
+                        resolutionTotals.opponentDamageTaken += dmgDealt;
+                        resolutionTotals.opponentDamageDealt += selfDmg;
+                    } else {
+                        resolutionTotals.opponentDamageDealt += dmgDealt;
+                        resolutionTotals.opponentDamageTaken += selfDmg;
+                        resolutionTotals.playerDamageTaken += dmgDealt;
+                        resolutionTotals.playerDamageDealt += selfDmg;
+                    }
+                }
 
                 // Trigger narrator for resolution (non-blocking, with fallback)
                 if (currentCombatResult) {
@@ -1857,6 +2091,203 @@
                     }
                 }, 1500);  // Show result for 1.5 seconds (total ~3s per action)
             }, 1500);  // Roll dice for 1.5 seconds
+        } else if (isMagicAction) {
+            // ── Magic / Channel resolution with casting animation ──
+            resolutionAnimating = true;
+            currentCombatResult = null;
+            currentMagicResult = null;
+            resolutionPhase = "rolling";
+
+            // Single die animation for magic potency roll
+            resolutionDiceInterval = setInterval(() => {
+                resolutionDiceFaces.attack = rollD20();
+                m.redraw();
+            }, 80);
+
+            m.redraw();
+
+            // After 1.2s, resolve the magic
+            setTimeout(() => {
+                clearInterval(resolutionDiceInterval);
+                resolutionDiceInterval = null;
+
+                let owner = pos.owner === "player" ? gameState.player : gameState.opponent;
+                let target = pos.owner === "player" ? gameState.opponent : gameState.player;
+                let ownerStats = owner.character.stats || {};
+                let magStat = ownerStats.MAG || 8;
+
+                let result = {
+                    spellName: "",
+                    roll: { raw: 0, magStat: magStat, skillMod: 0, total: 0 },
+                    fizzled: false,
+                    effects: [],
+                    damage: 0,
+                    healing: 0
+                };
+
+                // Channel action: cast a spell from stacked magic modifier
+                if (card.name === "Channel") {
+                    let magicMod = pos.stack.modifiers?.find(mm => mm.type === "magic");
+                    let skillMod = getStackSkillMod(pos.stack, "magic");
+                    result.roll.skillMod = skillMod;
+
+                    if (magicMod) {
+                        result.spellName = magicMod.name;
+
+                        // Check stat requirements (fizzle)
+                        let fizzled = false;
+                        if (magicMod.requires) {
+                            for (let stat in magicMod.requires) {
+                                if ((ownerStats[stat] || 0) < magicMod.requires[stat]) {
+                                    fizzled = true;
+                                    result.fizzled = true;
+                                    result.effects.push("Fizzled! Requires " + stat + " " + magicMod.requires[stat]);
+                                    console.log("[CardGame v2] Spell fizzled!", magicMod.name, "requires", stat, magicMod.requires[stat], "but actor has", ownerStats[stat] || 0);
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!fizzled) {
+                            let rawRoll = rollD20();
+                            let channelRoll = rawRoll + magStat + skillMod;
+                            result.roll.raw = rawRoll;
+                            result.roll.total = channelRoll;
+                            console.log("[CardGame v2]", pos.owner, "channels", magicMod.name, "- Roll:", rawRoll, "+ MAG", magStat, "+ skill", skillMod, "=", channelRoll);
+
+                            let parsed = parseEffect(magicMod.effect || "");
+                            let bonus = Math.max(0, Math.floor((channelRoll - 10) / 5));
+                            if (parsed.damage) parsed.damage += bonus;
+                            if (parsed.healHp) parsed.healHp += bonus;
+                            result.damage = parsed.damage || 0;
+                            result.healing = parsed.healHp || 0;
+
+                            let log = applyParsedEffects(parsed, owner, target, magicMod.name);
+                            result.effects = log;
+                            log.forEach(msg => console.log("[CardGame v2]", pos.owner, "cast:", msg));
+
+                            if (parsed.damage && target.hp <= 0) {
+                                gameState.winner = pos.owner;
+                                gameState.phase = "GAME_OVER";
+                            }
+                        }
+                    } else {
+                        // Channel without a spell: basic arcane burst
+                        result.spellName = "Arcane Burst";
+                        let rawRoll = rollD20();
+                        let channelRoll = rawRoll + magStat + skillMod;
+                        result.roll.raw = rawRoll;
+                        result.roll.total = channelRoll;
+
+                        let baseDmg = Math.max(1, Math.floor(magStat / 3));
+                        let bonus = Math.max(0, Math.floor((channelRoll - 10) / 5));
+                        let totalDmg = baseDmg + bonus;
+                        target.hp = Math.max(0, target.hp - totalDmg);
+                        result.damage = totalDmg;
+                        result.effects.push(totalDmg + " arcane damage");
+                        console.log("[CardGame v2]", pos.owner, "channels raw arcane energy for", totalDmg, "damage (roll:", channelRoll, ")");
+
+                        if (target.hp <= 0) {
+                            gameState.winner = pos.owner;
+                            gameState.phase = "GAME_OVER";
+                        }
+                    }
+                }
+
+                // Magic card placed directly as core card
+                if (card.type === "magic") {
+                    result.spellName = card.name;
+                    let fizzled = false;
+
+                    if (card.requires) {
+                        for (let stat in card.requires) {
+                            if ((ownerStats[stat] || 0) < card.requires[stat]) {
+                                fizzled = true;
+                                result.fizzled = true;
+                                result.effects.push("Fizzled! Requires " + stat + " " + card.requires[stat]);
+                                console.log("[CardGame v2] Spell fizzled!", card.name, "requires", stat, card.requires[stat], "but actor has", ownerStats[stat] || 0);
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!fizzled) {
+                        let rawRoll = rollD20();
+                        let potencyRoll = rawRoll + magStat;
+                        result.roll.raw = rawRoll;
+                        result.roll.total = potencyRoll;
+                        console.log("[CardGame v2]", pos.owner, "casts", card.name, "- Potency roll:", rawRoll, "+ MAG", magStat, "=", potencyRoll);
+
+                        let parsed = parseEffect(card.effect || "");
+                        let bonus = Math.max(0, Math.floor((potencyRoll - 10) / 5));
+                        if (parsed.damage) parsed.damage += bonus;
+                        if (parsed.healHp) parsed.healHp += bonus;
+                        result.damage = parsed.damage || 0;
+                        result.healing = parsed.healHp || 0;
+
+                        let log = applyParsedEffects(parsed, owner, target, card.name);
+                        result.effects = log;
+                        log.forEach(msg => console.log("[CardGame v2]", pos.owner, "cast:", msg));
+
+                        if (parsed.damage && target.hp <= 0) {
+                            gameState.winner = pos.owner;
+                            gameState.phase = "GAME_OVER";
+                        }
+                    }
+                }
+
+                // Set final dice face to actual roll value
+                resolutionDiceFaces.attack = result.roll.raw || 1;
+                currentMagicResult = result;
+                resolutionPhase = "result";
+
+                m.redraw();
+
+                // Check for immediate game over
+                if (gameState.phase === "GAME_OVER") {
+                    resolutionAnimating = false;
+                    resolutionPhase = "done";
+                    return;
+                }
+
+                // Hold result for 2s, then mark done
+                setTimeout(() => {
+                    pos.resolved = true;
+                    pos.magicResult = currentMagicResult;
+                    resolutionAnimating = false;
+                    resolutionPhase = "done";
+                    bar.resolveIndex++;
+
+                    // Move cards to discard pile or return magic to hand
+                    if (card.type === "magic" && card.reusable !== false) {
+                        owner.hand.push(card);
+                        console.log("[CardGame v2] Magic card", card.name, "returned to hand");
+                    } else {
+                        owner.discardPile.push(card);
+                    }
+                    if (pos.stack?.modifiers) {
+                        pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
+                    }
+
+                    // Check for game over
+                    let winner = checkGameOver(gameState);
+                    if (winner) {
+                        gameState.winner = winner;
+                        gameState.phase = "GAME_OVER";
+                        m.redraw();
+                        return;
+                    }
+
+                    m.redraw();
+
+                    // Auto-advance
+                    if (bar.resolveIndex < bar.positions.length) {
+                        setTimeout(() => advanceResolution(), 1500);
+                    } else {
+                        setTimeout(() => advancePhase(), 1000);
+                    }
+                }, 2000);  // Hold magic result for 2 seconds
+            }, 1200);  // Cast animation for 1.2 seconds
         } else {
             // Non-combat action (Rest, Flee, etc.) - simple resolution
             resolutionAnimating = true;
@@ -2395,7 +2826,10 @@
             get resolutionDiceFaces() { return resolutionDiceFaces; },
             set resolutionDiceFaces(v) { resolutionDiceFaces = v; },
             get currentCombatResult() { return currentCombatResult; },
-            set currentCombatResult(v) { currentCombatResult = v; }
+            set currentCombatResult(v) { currentCombatResult = v; },
+            get currentMagicResult() { return currentMagicResult; },
+            set currentMagicResult(v) { currentMagicResult = v; },
+            get resolutionTotals() { return resolutionTotals; }
         },
 
         // Convenience getters/setters
@@ -2440,6 +2874,7 @@
         resolveEndThreatCombat,
         placeThreatDefenseCard,
         skipThreatResponse,
+        fleeFromThreat,
 
         // Round management
         startNextRound,

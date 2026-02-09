@@ -166,6 +166,36 @@
             return "Close-up " + sLabel + " of ((" + typeName + ")), detailed item, " + suffix;
         }
 
+        // Apparel cards - clothing and armor pieces
+        if (card.type === "apparel") {
+            let slot = (card.slot || "body").toLowerCase();
+            return "Close-up " + sLabel + " of ((" + typeName + ")), ornate " + slot + " armor or garment displayed on a stand, " + suffix;
+        }
+
+        // Magic cards - spell effect visualization
+        if (card.type === "magic") {
+            let school = (card.skillType || card.effectType || "arcane").toLowerCase();
+            return "Close-up " + sLabel + " of ((swirling " + school + " magical energy representing " + baseName.toLowerCase() + ")), glowing runes and spell particles, " + suffix;
+        }
+
+        // Encounter cards - creature or threat portrait
+        if (card.type === "encounter") {
+            let behavior = card.behavior ? ", " + card.behavior.toLowerCase() + " demeanor" : "";
+            return "Close-up " + sLabel + " of ((menacing " + baseName.toLowerCase() + behavior + ")), dangerous creature or adversary, dramatic lighting, " + suffix;
+        }
+
+        // Scenario cards - environmental event scene
+        if (card.type === "scenario") {
+            let desc = card.description || baseName;
+            return "Wide " + sLabel + " of ((a dramatic scene depicting " + desc.toLowerCase() + ")), atmospheric event, environmental storytelling, " + suffix;
+        }
+
+        // Loot cards - treasure and found items
+        if (card.type === "loot") {
+            let rarity = (card.rarity || "common").toLowerCase();
+            return "Close-up " + sLabel + " of ((" + baseName.toLowerCase() + " treasure)), " + rarity + " quality loot item with dramatic lighting, " + suffix;
+        }
+
         // Default fallback for any other card type
         return "Close-up " + sLabel + " of ((" + typeName + ")), " + suffix;
     }

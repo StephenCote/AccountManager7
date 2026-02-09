@@ -41,6 +41,7 @@
                     let isVictory = gameState.winner === "player";
                     ctx.activeCampaign = await CardGame.Storage.saveCampaignProgress(gameState, isVictory);
                     // Delete game saves on game end
+                    console.log("[CardGame v2] Game over: deleting saves for", gameState.deckName);
                     CardGame.Storage.gameStorage.deleteAll(gameState.deckName);
                     m.redraw();
                 }

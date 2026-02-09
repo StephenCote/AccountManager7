@@ -316,6 +316,16 @@
                 return false;
             }
 
+            // Prevent stacking a modifier that matches the core card's type
+            // (e.g., no magic modifier on a magic core = no double spells)
+            let coreType = pos.stack.coreCard.type === "item" ? (pos.stack.coreCard.subtype || "item") : pos.stack.coreCard.type;
+            if (modType === coreType) {
+                let typeLabel = modType.charAt(0).toUpperCase() + modType.slice(1);
+                console.warn("[CardGame v2] Cannot add", modType, "modifier — core card is already", coreType);
+                if (typeof page !== "undefined" && page.toast) page.toast("warn", "Cannot stack two " + typeLabel + " cards");
+                return false;
+            }
+
             pos.stack.modifiers.push(card);
             console.log("[CardGame v2] Added modifier", card.name, "to stack at position", positionIndex);
 
@@ -326,6 +336,29 @@
         } else {
             // Place core card (action/talk/magic)
             if (!isCoreCardType(card.type)) {
+                // Auto-select an action for item cards dropped on empty position
+                if (card.type === "item") {
+                    let actionName = (card.subtype === "weapon") ? "Attack" : "Use Item";
+                    let def = C.ACTION_DEFINITIONS[actionName];
+                    if (!def) {
+                        console.warn("[CardGame v2] No action definition for auto-select:", actionName);
+                        return false;
+                    }
+                    let actionCard = {
+                        type: "action",
+                        name: actionName,
+                        actionType: def.type,
+                        energyCost: def.energyCost || 0,
+                        icon: def.icon,
+                        roll: def.roll,
+                        stackWith: def.stackWith,
+                        onHit: def.desc,
+                        _fromPicker: true
+                    };
+                    console.log("[CardGame v2] Auto-selecting", actionName, "for", card.name, "(item on empty position)");
+                    if (!placeCard(state, positionIndex, actionCard)) return false;
+                    return placeCard(state, positionIndex, card, true);
+                }
                 console.warn("[CardGame v2]", card.type, "cards need an action card first");
                 return false;
             }

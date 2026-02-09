@@ -336,25 +336,23 @@
                                     : null,
                                 // Resolution overlay is now inside ActionBar
                                 gameState.phase === GAME_PHASES.CLEANUP && CleanupPhaseUI ? m(CleanupPhaseUI) : null,
+
+                                // Resolution narration bar (above action bar so it's not floating in whitespace)
+                                (gameState.narrationText && gameState.phase === GAME_PHASES.RESOLUTION)
+                                    ? m("div", { class: "cg2-resolution-narration" }, [
+                                        m("span", { class: "material-symbols-outlined cg2-narration-icon" }, "campaign"),
+                                        m("span", { class: "cg2-resolution-narration-text" }, gameState.narrationText),
+                                        m("button", {
+                                            class: "cg2-narration-skip-btn",
+                                            title: "Skip",
+                                            onclick(e) { e.stopPropagation(); CardGame.GameState.skipNarration(); }
+                                        }, m("span", { class: "material-symbols-outlined" }, "skip_next"))
+                                    ])
+                                    : null,
+
                                 // Action Bar (visible in placement and resolution)
                                 (isPlacement || gameState.phase === GAME_PHASES.RESOLUTION)
                                     ? m(ActionBar)
-                                    : null,
-
-                                // Narrator text overlay (now shown in status bar ticker below)
-                                // Kept as fallback for when action panel is hidden (e.g. resolution phase)
-                                (gameState.narrationText && gameState.phase === GAME_PHASES.RESOLUTION)
-                                    ? m("div", { class: "cg2-narration-overlay" }, [
-                                        m("div", { class: "cg2-narration-text" }, [
-                                            m("span", { class: "material-symbols-outlined cg2-narration-icon" }, "campaign"),
-                                            gameState.narrationText,
-                                            m("button", {
-                                                class: "cg2-narration-skip-btn",
-                                                title: "Skip",
-                                                onclick(e) { e.stopPropagation(); CardGame.GameState.skipNarration(); }
-                                            }, m("span", { class: "material-symbols-outlined" }, "skip_next"))
-                                        ])
-                                    ])
                                     : null,
 
                                 // Talk card chat overlay (Phase 8)
@@ -680,6 +678,8 @@
     }
 
     // ── Action Bar Component ────────────────────────────────────────────
+    let expandedResultIndex = -1;  // Which result slot has its detail popover open
+
     function ActionBar() {
         return {
             view() {
@@ -698,7 +698,11 @@
                 let selectAction = E().selectAction;
                 let isActionPlacedThisRound = E().isActionPlacedThisRound;
                 let getActionsForActor = E().getActionsForActor;
-                let ResolutionPhaseUI = CardGame.UI.ResolutionPhaseUI;
+
+                // Resolution state for inline result row
+                let gs = GS().state;
+                let D20Dice = rendering().D20Dice;
+                let totals = gs.resolutionTotals || {};
 
                 // Get player's available actions for the icon picker
                 let playerActions = getActionsForActor ? getActionsForActor(gameState.player) : [];
@@ -752,10 +756,10 @@
                                             }
                                             placeCard(gameState, pos.index, card, true);
                                         } else {
-                                            // Empty position — only allow core card types (magic, talk)
-                                            let isCore = isCoreCardType(card.type);
-                                            if (!isCore) {
-                                                if (typeof page !== "undefined" && page.toast) page.toast("warn", "Only spells and actions can be placed directly");
+                                            // Empty position — allow core cards and items (auto-selects action)
+                                            let canPlace = isCoreCardType(card.type) || card.type === "item";
+                                            if (!canPlace) {
+                                                if (typeof page !== "undefined" && page.toast) page.toast("warn", "Choose an action first for this card type");
                                                 return;
                                             }
                                             placeCard(gameState, pos.index, card, false);
@@ -784,9 +788,9 @@
                                         placeCard(gameState, pos.index, card, true);
                                         selectedHandCard = null;
                                     } else {
-                                        // Empty position — only allow core card types (magic, talk)
-                                        let isCore = isCoreCardType(card.type);
-                                        if (isCore) {
+                                        // Empty position — allow core cards and items (auto-selects action)
+                                        let canPlace = isCoreCardType(card.type) || card.type === "item";
+                                        if (canPlace) {
                                             placeCard(gameState, pos.index, card, false);
                                             selectedHandCard = null;
                                         } else {
@@ -897,13 +901,135 @@
                                                     : "\u2013"),
 
                                 // Resolution marker
-                                isActive ? m("div", { class: "cg2-resolve-marker" }, "\u25B6") : null
+                                isActive ? m("div", { class: "cg2-resolve-marker" }, "\u25B6") : null,
+
+                                // Resolved result badge (shows damage or checkmark after resolution)
+                                pos.resolved ? m("div", {
+                                    class: "cg2-pos-result-badge" + (pos.combatResult && pos.combatResult.damageResult ? " cg2-result-damage" : " cg2-result-ok")
+                                }, pos.combatResult && pos.combatResult.damageResult
+                                    ? "-" + pos.combatResult.damageResult.finalDamage
+                                    : "\u2713"
+                                ) : null
                             ]);
                         })
                     ),
 
-                    // Combat/Resolution overlay (inside action bar)
-                    isResolution && ResolutionPhaseUI ? m(ResolutionPhaseUI) : null
+                    // Inline result row — one slot per position, aligned with track above
+                    isResolution ? m("div", { class: "cg2-result-row" },
+                        bar.positions.map(function(pos, i) {
+                            let isActiveSlot = i === bar.resolveIndex;
+                            let combat = pos.combatResult;
+                            // During "result" phase, combatResult isn't on pos yet — use live state
+                            let activeCombat = (isActiveSlot && gs.resolutionPhase === "result") ? gs.currentCombatResult : null;
+                            let isRolling = isActiveSlot && gs.resolutionPhase === "rolling";
+                            let isShowingResult = isActiveSlot && gs.resolutionPhase === "result";
+                            let showResult = pos.resolved && combat;
+                            let isNonCombat = pos.resolved && !combat;
+                            let isExpanded = expandedResultIndex === i;
+
+                            // Determine outcome class for coloring (use activeCombat or resolved combat)
+                            let displayCombat = activeCombat || combat;
+                            let outcomeClass = "";
+                            if (displayCombat && displayCombat.outcome) {
+                                outcomeClass = displayCombat.outcome.damageMultiplier > 0 ? "hit"
+                                    : displayCombat.outcome.damageMultiplier < 0 ? "counter" : "miss";
+                            }
+
+                            return m("div", {
+                                key: i,
+                                class: "cg2-result-slot"
+                                    + (isActiveSlot ? " cg2-result-active" : "")
+                                    + (showResult ? " cg2-result-resolved" : "")
+                                    + (!pos.resolved && !isActiveSlot ? " cg2-result-pending" : ""),
+                                style: { position: "relative" },
+                                onclick: showResult ? function() {
+                                    expandedResultIndex = expandedResultIndex === i ? -1 : i;
+                                    m.redraw();
+                                } : null
+                            }, [
+                                // Currently rolling: animated dice
+                                isRolling && D20Dice ? m("div", { class: "cg2-result-rolling" }, [
+                                    m("div", { class: "cg2-result-die" },
+                                        m(D20Dice, { value: gs.resolutionDiceFaces.attack, rolling: true })),
+                                    m("span", { class: "cg2-result-vs" }, "vs"),
+                                    m("div", { class: "cg2-result-die" },
+                                        m(D20Dice, { value: gs.resolutionDiceFaces.defense, rolling: true }))
+                                ]) : null,
+
+                                // Active result showing (brief display before marking resolved)
+                                isShowingResult && activeCombat ? m("div", { class: "cg2-result-combat" }, [
+                                    m("div", { class: "cg2-result-outcome cg2-outcome-" + outcomeClass },
+                                        activeCombat.outcome.label),
+                                    activeCombat.damageResult
+                                        ? m("div", { class: "cg2-result-dmg" },
+                                            "-" + activeCombat.damageResult.finalDamage + " HP")
+                                        : null
+                                ]) : null,
+
+                                // Resolved combat: outcome + damage (permanent)
+                                showResult ? m("div", { class: "cg2-result-combat" }, [
+                                    m("div", { class: "cg2-result-outcome cg2-outcome-" + outcomeClass },
+                                        combat.outcome.label),
+                                    combat.damageResult
+                                        ? m("div", { class: "cg2-result-dmg" },
+                                            "-" + combat.damageResult.finalDamage + " HP")
+                                        : m("div", { class: "cg2-result-dmg cg2-result-zero" }, "0"),
+                                    combat.selfDamageResult
+                                        ? m("div", { class: "cg2-result-counter" },
+                                            "+" + combat.selfDamageResult.finalDamage + " counter")
+                                        : null
+                                ]) : null,
+
+                                // Resolved non-combat: checkmark + action name (or skipped)
+                                isNonCombat ? m("div", { class: "cg2-result-noncombat" }, [
+                                    pos.skipped
+                                        ? m("span", { class: "material-symbols-outlined", style: "font-size:16px;color:#ef5350" }, "block")
+                                        : m("span", { class: "material-symbols-outlined", style: "font-size:16px;color:#81c784" }, "check_circle"),
+                                    m("div", { style: "font-size:10px;color:" + (pos.skipped ? "#ef5350" : "#aaa") },
+                                        pos.skipped ? (pos.skipReason || "Skipped") : (pos.stack?.coreCard?.name || "Done"))
+                                ]) : null,
+
+                                // Pending: dot placeholder
+                                !pos.resolved && !isActiveSlot
+                                    ? m("div", { class: "cg2-result-empty" }, "\u00B7") : null,
+
+                                // Click-to-expand detail popover
+                                isExpanded && combat ? m("div", { class: "cg2-result-detail", onclick: function(e) { e.stopPropagation(); } }, [
+                                    m("div", { class: "cg2-detail-row" }, [
+                                        m("span", { class: "cg2-detail-label cg2-detail-atk" }, "ATK"),
+                                        m("span", combat.attackRoll.raw + " + " + combat.attackRoll.strMod + "S + " + combat.attackRoll.atkBonus + "A"),
+                                        m("strong", " = " + combat.attackRoll.total)
+                                    ]),
+                                    m("div", { class: "cg2-detail-row" }, [
+                                        m("span", { class: "cg2-detail-label cg2-detail-def" }, "DEF"),
+                                        m("span", combat.defenseRoll.raw + " + " + combat.defenseRoll.endMod + "E + " + combat.defenseRoll.defBonus + "D"),
+                                        m("strong", " = " + combat.defenseRoll.total)
+                                    ]),
+                                    m("div", { class: "cg2-detail-outcome cg2-outcome-" + outcomeClass },
+                                        combat.outcome.label + " (" + (combat.outcome.diff >= 0 ? "+" : "") + combat.outcome.diff + ")")
+                                ]) : null
+                            ]);
+                        })
+                    ) : null,
+
+                    // Running totals strip (shown during resolution)
+                    isResolution ? m("div", { class: "cg2-result-totals" }, [
+                        m("span", { class: "cg2-totals-player" }, [
+                            "You: ",
+                            m("span", { class: "cg2-totals-dealt" }, totals.playerDamageDealt || 0),
+                            " dealt, ",
+                            m("span", { class: "cg2-totals-taken" }, totals.playerDamageTaken || 0),
+                            " taken"
+                        ]),
+                        m("span", { class: "cg2-totals-divider" }, "|"),
+                        m("span", { class: "cg2-totals-opponent" }, [
+                            "Opp: ",
+                            m("span", { class: "cg2-totals-dealt" }, totals.opponentDamageDealt || 0),
+                            " dealt, ",
+                            m("span", { class: "cg2-totals-taken" }, totals.opponentDamageTaken || 0),
+                            " taken"
+                        ])
+                    ]) : null
                 ]);
             }
         };
@@ -957,10 +1083,15 @@
                                 let hasAP = (gameState.player.threatResponseAP || 0) > 0;
                                 let canPlaceDefense = isThreatPhase && isResponder && hasAP;
 
-                                // Determine card role for badge (hand only has modifier cards now)
+                                // Determine card role for badge
                                 let cardRole = (card.type === "character" || card.type === "apparel") ? "equip"
                                     : card.type === "magic" ? "magic"
-                                    : card.type === "item" ? "item" : "support";
+                                    : card.type === "action" ? "action"
+                                    : card.type === "talk" ? "talk"
+                                    : card.type === "loot" ? "loot"
+                                    : card.type === "item" ? "item"
+                                    : card.type === "skill" ? "skill"
+                                    : "support";
 
                                 let isSelected = selectedHandCard === card;
                                 return m("div", {
@@ -1025,7 +1156,18 @@
                                     m("div", { class: "cg2-card-role-badge cg2-badge-" + cardRole },
                                         cardRole === "equip" ? "EQUIP"
                                         : cardRole === "magic" ? "SPELL"
-                                        : cardRole === "item" ? "ITEM" : "SKILL"),
+                                        : cardRole === "action" ? "ACTION"
+                                        : cardRole === "talk" ? "TALK"
+                                        : cardRole === "loot" ? "LOOT"
+                                        : cardRole === "item" ? "ITEM"
+                                        : cardRole === "skill" ? "SKILL"
+                                        : "CARD"),
+                                    // Stat badge overlay (bottom-left, shows primary adjustment)
+                                    (function() {
+                                        let getLabel = rendering().getCardStatLabel;
+                                        let label = getLabel ? getLabel(card) : null;
+                                        return label ? m("div", { class: "cg2-card-stat-badge" }, label) : null;
+                                    })(),
                                     // Preview button (always available, doesn't affect selection)
                                     m("button", {
                                         class: "cg2-hand-preview-btn",
