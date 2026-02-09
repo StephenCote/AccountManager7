@@ -2816,7 +2816,6 @@
     border: 1px solid #e0d8c0;
     border-radius: 12px;
     padding: 12px;
-    margin-top: auto;
     position: relative;  /* For combat overlay positioning */
     min-height: 280px;   /* Ensure space for combat overlay content */
 }
