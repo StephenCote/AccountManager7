@@ -7111,6 +7111,7 @@ Items to resolve during implementation:
 **Known issues:**
 - Thumbnail servlet may fail for images in newly-created deck art directories (server-side group authorization issue for `page.makePath`-created groups)
 - Gallery picker falls back to character portrait group for decks created before the image-move feature
+- End-of-round threat encounters, scenario card integration, and loot cards need work — see [Phase 9.5 — Encounters, Scenarios & Loot](#phase-95--encounters-scenarios--loot) below
 
 **Next implementation phase: Phase 10 — Print & Export**
 - Print layout rendering (2.5" x 3.5" cards at 300 DPI)
@@ -7119,3 +7120,311 @@ Items to resolve during implementation:
 - Tabletop Simulator export format
 - Offline play documentation (solo + two-player rules)
 - Rules reference card design
+
+---
+
+## Phase 9.5 — Encounters, Scenarios & Loot
+
+Analysis of unresolved implementations in the encounter/scenario/loot pipeline. These are functional gaps between the design doc and current code.
+
+### Problem 1: End-of-Round Threat Combat Doesn't Produce Meaningful Results
+
+**Symptom:** Threat creatures spawned by end-of-round scenario cards resolve instantly with no visible impact. The player clicks "Face the Threat" and the result is a single line ("dealt X damage" or "was defeated") buried in the cleanup panel.
+
+**Root causes:**
+
+#### 1a. Target inversion from design
+
+The design doc (line 1038) says end threats target the **round winner** — a "final boss surprise" where the winner must survive one more fight. The current implementation (encounters.js:339-344) targets the **round loser** instead:
+
+```javascript
+// Current (encounters.js:339-344) — targets LOSER
+if (state.roundWinner === "tie") {
+    threat.target = Math.random() < 0.5 ? "player" : "opponent";
+} else {
+    threat.target = state.roundWinner === "player" ? "opponent" : "player";
+}
+```
+
+Per design (line 1038): "The end threat **applies to the round winner**." This inversion means the loser (often the AI opponent) gets targeted, and the AI auto-resolves in 1.5 seconds (threatUI.js:50-72), making the whole encounter invisible to the player.
+
+**Fix:** Invert the target assignment so the round winner faces the threat. On tie, random target is fine.
+
+#### 1b. No bonus action stack — just a dice roll
+
+The design doc (line 1040) specifies the round winner gets **1 bonus stack** built from hand cards to fight the threat. The current implementation gives 2 bonus AP for placing defense cards (gameState.js:1145) but the combat is a single auto-roll — `rollAttack(threat)` vs `rollDefense(responder)` — with no player agency in choosing how to fight.
+
+**Missing mechanics from design:**
+- Player should build a **1-stack response** (core action + modifiers from hand)
+- Repel requires at least a Glancing Hit (any non-negative damage outcome)
+- If repelled but not killed, threat carries to next round as beginning threat with +2 ATK
+- If NOT repelled, round winner **loses the pot** to opponent
+- Flee option: `1d20 + AGI` vs threat difficulty
+
+**Current implementation:** Simple `damageMultiplier > 0` = threat hit, else "defender won." No repel/carry/flee logic. No pot forfeiture. No threat persistence.
+
+#### 1c. CLASH outcome not handled
+
+`COMBAT_OUTCOMES.CLASH` has `damageMultiplier: 0, bothTakeDamage: 1` (gameConstants.js:272). In `resolveEndThreatCombat()` (gameState.js:1326), the check is `outcome.damageMultiplier > 0`. CLASH falls into the "defender won" branch — granting free loot without applying the mutual 1-damage. The `bothTakeDamage` property is never checked in threat combat.
+
+**Fix:** Add explicit CLASH handling:
+```javascript
+if (outcome.bothTakeDamage) {
+    // Both take 1 damage
+    applyDamage(responderActor, outcome.bothTakeDamage);
+    applyDamage(threatAttacker, outcome.bothTakeDamage); // reduce threat HP
+}
+```
+
+#### 1d. Combat result display is minimal
+
+After `resolveEndThreatCombat()` completes, the phase returns to CLEANUP (gameState.js:1378) and shows a one-line result (phaseUI.js:602-610). There is no combat log, no dice roll breakdown, no damage animation. Compare this to the Resolution Phase combat overlay which shows full roll breakdowns, outcome labels, and damage calculations.
+
+**Fix:** Show a threat combat result overlay similar to the resolution phase combat overlay, with:
+- Attack roll breakdown (threat's roll)
+- Defense roll breakdown (defender's roll)
+- Outcome label (Strong Hit, Deflected, etc.)
+- Damage dealt or loot earned
+- Brief pause before returning to cleanup
+
+---
+
+### Problem 2: Scenario Bonuses Don't Resolve Visibly
+
+**Symptom:** Player draws a scenario card like "Forgotten Workshop" (steampunk hidden_cache override) that says "You discover a hidden workshop with salvageable parts!" — but nothing perceptible happens. The loot card is silently pushed into the hand.
+
+**Root causes:**
+
+#### 2a. No card reveal moment
+
+When a scenario with `bonus: "loot"` triggers, `generateScenarioLoot()` (encounters.js:385-401) picks a random consumable from the theme's cardPool and pushes it into `recipient.hand`. The cleanup UI shows a small "Found: [card name]" line (phaseUI.js:578-580), but there's no card reveal animation, no highlight in the hand tray, and no pause to let the player notice.
+
+**Fix:** Add a loot card reveal overlay:
+- Show the loot card face (using `CardFace` component) centered on screen for 2-3 seconds
+- Highlight the card in the hand tray after it's added
+- Play a loot sound effect if audio is available
+
+#### 2b. Heal and energy bonuses are invisible
+
+For `bonus: "heal"` and `bonus: "energy"` scenarios, HP/energy recovery happens silently during `checkEndThreat()` (encounters.js:362-376). The cleanup panel shows "+3 HP" text, but it blends into the existing recovery display. The player can't tell if their HP went up from round recovery or from the scenario bonus.
+
+**Fix:** Separate scenario bonus recovery from round recovery in the cleanup display. Show scenario bonuses as a distinct section with the scenario card art/icon.
+
+#### 2c. Generic loot doesn't match scenario description
+
+The scenario says "discover a hidden workshop with salvageable parts" but the loot is a random consumable like "Surgeon's Kit" or "Hardtack." The disconnect between narrative and reward breaks immersion.
+
+**Fix:** Add `lootPool` arrays to scenario cards (in encounters.json and theme overrides) so each scenario draws from thematically appropriate items:
+```json
+{
+    "id": "hidden_cache",
+    "bonus": "loot",
+    "lootPool": ["Found Supplies", "Salvaged Parts", "Hidden Stash"]
+}
+```
+Theme overrides can replace the `lootPool` with theme-specific items. `generateScenarioLoot()` should check `scenario.lootPool` first before falling back to the generic cardPool.
+
+---
+
+### Problem 3: Scenario Cards Need Card Art and Deck Integration
+
+**Symptom:** Scenario cards display as plain colored divs with material icons during cleanup. They never have generated art because they don't exist in any deck's `cards` array.
+
+**Root causes:**
+
+#### 3a. No scenario cards in deck assembly
+
+`assembleStarterDeck()` (characters.js:310-417) adds character cards, equipment, consumables, skills, magic, and threat encounter cards — but **never adds scenario cards**. The `getScenarioCards()` data from encounters.json is not included.
+
+**Fix:** Add scenario cards to the deck during assembly:
+```javascript
+// In assembleStarterDeck(), after threat creature cards:
+let getScenarioCards = window.CardGame.Engine?.getScenarioCards;
+if (getScenarioCards) {
+    let scenarios = getScenarioCards();
+    let scenarioCards = scenarios.map(function(s) {
+        return {
+            type: "scenario",
+            subtype: s.effect,          // "threat" or "no_threat"
+            name: s.name,
+            id: s.id,
+            description: s.description,
+            icon: s.icon,
+            cardColor: s.cardColor,
+            bonus: s.bonus || null,
+            bonusAmount: s.bonusAmount || null,
+            artPrompt: s.artPrompt,
+            _isScenarioDef: true
+        };
+    });
+    allCards.push(...scenarioCards);
+}
+```
+
+#### 3b. Art lookup will never match
+
+In `checkEndThreat()` (encounters.js:326-328), the art lookup searches for `c.type === "scenario"`:
+```javascript
+let matchCard = deckCards.find(function(c) {
+    return c.type === "scenario" && c.id === scenario.id && c.imageUrl;
+});
+```
+Since no `type: "scenario"` cards exist in any deck, this always returns `undefined`. Once scenario cards are added to the deck (fix 3a), this lookup will work — decks that have had art generated will propagate scenario art into gameplay.
+
+#### 3c. No CARD_TYPES or CARD_RENDER_CONFIG for scenario
+
+The `CARD_TYPES` object (gameConstants.js:12-21) and `CARD_RENDER_CONFIG` (gameConstants.js:39-130) have no entry for `"scenario"`. This means:
+- Scenario cards won't render properly in the deck view
+- The `isCardIncomplete` check won't work for scenarios
+- Card face rendering will fall through to a generic/empty display
+
+**Fix — Add to CARD_TYPES:**
+```javascript
+scenario: { color: "#43A047", bg: "#E8F5E9", icon: "auto_stories", label: "Scenario" }
+```
+
+**Fix — Add to CARD_RENDER_CONFIG:**
+```javascript
+scenario: {
+    placeholderIcon: "auto_stories",
+    placeholderColor: "#43A047",
+    headerField: { field: "subtype", default: "Event", icon: "auto_stories", showRarity: false },
+    details: [
+        { field: "description", icon: "notes" },
+        { field: "bonus", icon: "redeem", prefix: "Bonus: " },
+        { field: "bonusAmount", icon: "add_circle", prefix: "+" }
+    ],
+    footer: []
+}
+```
+
+#### 3d. Scenario cards should display as full cards during cleanup
+
+The current cleanup UI renders scenarios as custom HTML (phaseUI.js:555-612) rather than using the `CardFace` component. Once scenario cards are in the deck with art, they should render using `CardFace` for visual consistency with the rest of the game.
+
+**Fix:** Replace the `cg2-scenario-display-card` div with:
+```javascript
+m(CardFace, { card: gameState.endThreatResult.scenario, size: "lg" })
+```
+Keep the bonus/threat info as an overlay or adjacent panel.
+
+---
+
+### Problem 4: Loot Cards Need Card Art and Deck Integration
+
+**Symptom:** When a threat is defeated, the loot card ("End Threat Loot (UNCOMMON)") has no art, a generic name, and no visual identity. Loot earned from discoveries is similarly bare.
+
+**Root causes:**
+
+#### 4a. Threat loot is generated with generic names
+
+In `resolveEndThreatCombat()` (gameState.js:1339-1346), defeated threat loot is hardcoded:
+```javascript
+let lootCard = {
+    type: "item", subtype: "consumable",
+    name: "End Threat Loot (" + threat.lootRarity + ")",
+    rarity: threat.lootRarity,
+    effect: "Restore 4 HP",
+    flavor: "Spoils from defeating " + threat.name
+};
+```
+This ignores the creature's actual `lootItems` array (which was populated from `encounters.json` loot names like "Beast Hide", "Scout's Blade", etc.).
+
+**Fix:** Use the creature's `lootItems` array to generate themed loot. The threat object already has `lootItems` populated by `createThreatEncounter()` (encounters.js:216-220):
+```javascript
+lootItems: (base.loot || []).map(name => ({
+    type: "item", subtype: "loot", name: name,
+    rarity: difficulty <= 4 ? "COMMON" : difficulty <= 8 ? "UNCOMMON" : "RARE"
+}))
+```
+The resolution should award these named items instead of a generic "End Threat Loot" card.
+
+#### 4b. No loot card definitions in deck cardPool
+
+Loot items from threat creatures (e.g., "Beast Hide", "Scout's Blade", "Venom Sac") have no corresponding card entries in any theme's `cardPool`. They exist only as string names in `encounters.json` creature `loot` arrays. Without cardPool entries, they can't have:
+- artPrompts for image generation
+- Proper card stats (what does "Beast Hide" actually do?)
+- Render config for display
+
+**Fix:** Add loot card entries to each theme's cardPool. Each theme override already renames loot (e.g., dark-medieval: "Mangy Pelt", steampunk: "Brass Gears"), so the cardPool entries should match:
+
+```json
+// In each theme's cardPool array:
+{ "type": "item", "subtype": "loot", "name": "Beast Hide", "rarity": "COMMON",
+  "effect": "Crafting material. Can be traded.", "artPrompt": "a rough animal hide" },
+{ "type": "item", "subtype": "loot", "name": "Scout's Blade", "rarity": "COMMON",
+  "slot": "Hand (1H)", "atk": 2, "artPrompt": "a small sharp scout's knife" }
+```
+
+#### 4c. No CARD_RENDER_CONFIG for loot subtype
+
+Items with `subtype: "loot"` fall through to the generic item renderer in `cardFace.js`. The `renderCardBody()` function routes items by subtype — `"weapon"` and `"consumable"` have configs, but `"loot"` does not.
+
+**Fix — Add to CARD_RENDER_CONFIG:**
+```javascript
+loot: {
+    placeholderIcon: "inventory_2",
+    placeholderColor: "#FFB300",
+    headerField: { label: "Loot", icon: "inventory_2", showRarity: true },
+    details: [
+        { field: "effect", icon: "auto_awesome" },
+        { field: "flavor", type: "flavor" }
+    ],
+    footer: []
+}
+```
+
+And update `cardFace.js` to route `subtype === "loot"` to the `loot` render config (similar to how `"weapon"` and `"consumable"` subtypes are routed).
+
+#### 4d. Loot card art lookup during threat resolution
+
+When a threat is defeated and loot is awarded, look up matching art from the deck (same pattern as threat art lookup in encounters.js:185-193):
+```javascript
+let matchCard = deckCards.find(c =>
+    c.type === "item" && c.subtype === "loot" &&
+    c.name === lootItem.name && c.imageUrl
+);
+if (matchCard) {
+    lootItem.imageUrl = matchCard.imageUrl;
+    lootItem.artPrompt = matchCard.artPrompt;
+}
+```
+
+---
+
+### Implementation Checklist
+
+#### Encounter Cards
+- [ ] Fix end-threat target: round winner (not loser) per design doc
+- [ ] Add bonus action stack mechanic for end-threat response (1 stack from hand)
+- [ ] Handle CLASH outcome in threat combat (`bothTakeDamage`)
+- [ ] Add threat carry-over mechanic (undefeated end threat becomes beginning threat next round with +2 ATK)
+- [ ] Add flee option (1d20 + AGI vs difficulty)
+- [ ] Show combat result overlay with roll breakdowns (not just a text line in cleanup)
+- [ ] Add pot forfeiture on failed repel
+
+#### Scenario Cards
+- [ ] Add `scenario` entry to `CARD_TYPES` (gameConstants.js)
+- [ ] Add `scenario` entry to `CARD_RENDER_CONFIG` (gameConstants.js)
+- [ ] Add scenario cards to `assembleStarterDeck()` (characters.js)
+- [ ] Add `_isScenarioDef` marker so they don't enter the draw pile
+- [ ] Add scenario card art to `deckList.js` backfill (for older saved decks)
+- [ ] Render scenario cards using `CardFace` in cleanup phase (phaseUI.js)
+- [ ] Add loot reveal overlay for discovery scenarios
+- [ ] Add `lootPool` to scenario definitions for thematic loot
+- [ ] Add theme-specific scenario `lootPool` overrides
+
+#### Loot Cards
+- [ ] Add `loot` subtype routing in `cardFace.js` `renderCardBody()`
+- [ ] Add `loot` entry to `CARD_RENDER_CONFIG` (gameConstants.js)
+- [ ] Add loot card definitions to each theme's `cardPool` with artPrompts
+- [ ] Use creature's named `lootItems` instead of generic "End Threat Loot" in resolution
+- [ ] Add loot art lookup during threat resolution (match from deck cards)
+- [ ] Add loot cards to `assembleStarterDeck()` from threat creature loot arrays
+- [ ] Add `_isLootDef` marker so they don't enter the draw pile
+
+#### Deck View Integration
+- [ ] Ensure scenario cards appear in deck card grid with proper rendering
+- [ ] Ensure loot cards appear in deck card grid with proper rendering
+- [ ] Add scenario and loot cards to art generation pipeline (SD prompts from artPrompt field)
+- [ ] Backfill scenario and loot cards for older saved decks in `deckList.js`

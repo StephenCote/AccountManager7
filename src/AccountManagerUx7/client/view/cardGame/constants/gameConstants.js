@@ -16,6 +16,8 @@
         action:     { color: "#C62828", bg: "#FFF3F0", icon: "bolt",           label: "Action" },
         talk:       { color: "#1565C0", bg: "#E3F2FD", icon: "chat_bubble",    label: "Talk" },
         encounter:  { color: "#6A1B9A", bg: "#F3E5F5", icon: "blur_on",       label: "Encounter" },
+        scenario:   { color: "#1B5E20", bg: "#E8F5E9", icon: "explore",       label: "Scenario" },
+        loot:       { color: "#F57F17", bg: "#FFFDE7", icon: "inventory_2",    label: "Loot" },
         skill:      { color: "#E65100", bg: "#FFF3E0", icon: "star",           label: "Skill" },
         magic:      { color: "#00695C", bg: "#E0F2F1", icon: "auto_fix_high",  label: "Magic Effect" }
     };
@@ -98,6 +100,27 @@
                 { type: "stats", fields: ["atk", "def", "hp"], labels: { atk: "ATK +", def: "DEF +", hp: "HP " }, atkClass: "cg2-mod-atk" },
                 { field: "behavior", icon: "psychology_alt" },
                 { field: "loot", icon: "inventory_2", type: "array" }
+            ],
+            footer: []
+        },
+        scenario: {
+            placeholderIcon: "explore",
+            placeholderColor: "#1B5E20",
+            headerField: { field: "effect", default: "Event", icon: "explore", formatValue: function(v) { return v === "threat" ? "Threat" : "Boon"; } },
+            details: [
+                { field: "description", icon: "info" },
+                { field: "bonus", icon: "auto_awesome", type: "scenarioBonus" },
+                { field: "threatBonus", icon: "warning", prefix: "Threat DC +", type: "threatOnly" }
+            ],
+            footer: []
+        },
+        loot: {
+            placeholderIcon: "inventory_2",
+            placeholderColor: "#F57F17",
+            headerField: { field: "source", default: "Spoils", icon: "inventory_2", showRarity: true },
+            details: [
+                { field: "effect", icon: "auto_awesome" },
+                { field: "flavor", type: "flavor" }
             ],
             footer: []
         },
@@ -341,6 +364,7 @@
             colorPalette: {
                 character: "#B8860B", apparel: "#808080", item: "#2E7D32",
                 action: "#C62828", talk: "#1565C0", encounter: "#6A1B9A",
+                scenario: "#1B5E20", loot: "#F57F17",
                 skill: "#E65100", magic: "#00695C"
             }
         },

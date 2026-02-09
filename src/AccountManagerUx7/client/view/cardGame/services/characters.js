@@ -368,6 +368,86 @@
         // Only consumables go into the drawable card pool now
         allCards.push(...consumables);
 
+        // Include theme cardPool skill/magic cards so they appear in the deck view
+        // and can have art generated (these are also injected into the draw pile at game start)
+        if (curTheme && curTheme.cardPool) {
+            let themePlayables = curTheme.cardPool.filter(c =>
+                c.type === "skill" || c.type === "magic" || (c.type === "item" && c.subtype === "consumable")
+            );
+            allCards.push(...themePlayables);
+        }
+
+        // Include threat creatures as encounter cards so they can get art generated
+        // and stylized cards are used when threats spawn in-game
+        let getThreatCreatures = window.CardGame.Engine?.getThreatCreatures;
+        if (getThreatCreatures) {
+            let threats = getThreatCreatures();
+            let threatCards = threats.map(function(t) {
+                return {
+                    type: "encounter",
+                    subtype: "threat",
+                    name: t.name,
+                    id: t.id,
+                    atk: t.atk,
+                    def: t.def,
+                    hp: t.hp,
+                    imageIcon: t.imageIcon,
+                    behavior: t.behavior,
+                    artPrompt: t.artPrompt,
+                    loot: t.loot,
+                    _isThreatDef: true  // Marker: threat creature definition card
+                };
+            });
+            allCards.push(...threatCards);
+        }
+
+        // Include scenario cards so they can get art generated and display as cards
+        let getScenarioCards = window.CardGame.Engine?.getScenarioCards;
+        if (getScenarioCards) {
+            let scenarios = getScenarioCards();
+            let scenarioCards = scenarios.map(function(s) {
+                return {
+                    type: "scenario",
+                    name: s.name,
+                    id: s.id,
+                    effect: s.effect,
+                    description: s.description,
+                    icon: s.icon,
+                    cardColor: s.cardColor,
+                    bonus: s.bonus || null,
+                    bonusAmount: s.bonusAmount || null,
+                    threatBonus: s.threatBonus != null ? s.threatBonus : null,
+                    artPrompt: s.artPrompt,
+                    _isScenarioDef: true  // Marker: scenario definition card
+                };
+            });
+            allCards.push(...scenarioCards);
+        }
+
+        // Include loot cards from threat creatures so they can get art generated
+        if (getThreatCreatures) {
+            let threats = getThreatCreatures();
+            let seenLoot = new Set();
+            let lootCards = [];
+            threats.forEach(function(t) {
+                (t.loot || []).forEach(function(lootName) {
+                    if (!seenLoot.has(lootName)) {
+                        seenLoot.add(lootName);
+                        lootCards.push({
+                            type: "loot",
+                            name: lootName,
+                            source: t.name,
+                            rarity: t.hp >= 18 ? "RARE" : t.hp >= 12 ? "UNCOMMON" : "COMMON",
+                            effect: "Spoils from " + t.name,
+                            artPrompt: "a " + lootName.toLowerCase() + ", item loot drop, fantasy treasure",
+                            _isLootDef: true  // Marker: loot definition card
+                        });
+                    }
+                });
+            });
+            allCards.push(...lootCards);
+        }
+
         let themeName = (theme || activeTheme).name || (theme || activeTheme).themeId || "high-fantasy";
         let deckName = "";
         return {

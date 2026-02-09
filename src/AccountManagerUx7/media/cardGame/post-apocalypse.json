@@ -3,7 +3,6 @@
   "name": "Post Apocalypse",
   "version": "1.0",
   "description": "Harsh wasteland survival with scavenged gear and mutant threats",
-
   "artStyle": {
     "promptSuffix": "post apocalyptic, wasteland, rusted metal, dust and debris, harsh sunlight, gritty survival, muted earth tones, concept art illustration",
     "cardBorderStyle": "rusted-plate",
@@ -17,77 +16,234 @@
       "talk": "#795548",
       "encounter": "#6D4C41",
       "skill": "#E65100",
-      "magic": "#558B2F"
+      "magic": "#558B2F",
+      "scenario": "#1B5E20",
+      "loot": "#F57F17"
     },
     "backgroundPrompt": "Post apocalyptic wasteland, ruined city skyline, cracked desert ground, rusted vehicles, dust clouds, harsh orange sunset, radioactive haze on horizon, gritty survival atmosphere, muted earth tones",
     "backgroundConfig": {
-      "width": 1024, "height": 1024, "steps": 40, "cfg": 7, "hires": true
+      "width": 1024,
+      "height": 1024,
+      "steps": 40,
+      "cfg": 7,
+      "hires": true
     },
     "sdConfig": {
-      "default":   { "style": "art", "steps": 30, "cfg": 7, "width": 512, "height": 512, "denoisingStrength": 0.7 },
-      "character":  { "width": 768, "height": 1024 },
-      "apparel":    { "width": 512, "height": 768 },
-      "item":       { "width": 512, "height": 512 },
-      "action":     { "width": 768, "height": 512, "denoisingStrength": 0.8 },
-      "talk":       { "width": 768, "height": 512, "denoisingStrength": 0.8 },
-      "encounter":  { "width": 768, "height": 768 },
-      "skill":      { "width": 512, "height": 512 },
-      "magic":      { "width": 512, "height": 512, "denoisingStrength": 0.75 }
+      "default": {
+        "style": "art",
+        "steps": 30,
+        "cfg": 7,
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.7
+      },
+      "character": {
+        "width": 768,
+        "height": 1024
+      },
+      "apparel": {
+        "width": 512,
+        "height": 768
+      },
+      "item": {
+        "width": 512,
+        "height": 512
+      },
+      "action": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "talk": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "encounter": {
+        "width": 768,
+        "height": 768
+      },
+      "skill": {
+        "width": 512,
+        "height": 512
+      },
+      "magic": {
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.75
+      },
+      "scenario": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "loot": {
+        "width": 512,
+        "height": 512
+      }
     }
   },
-
   "characterBuild": {
-    "statRange": [3, 18],
+    "statRange": [
+      3,
+      18
+    ],
     "statPointBuy": 70,
     "skillSlots": 3,
-    "equipSlots": ["head", "body", "handL", "handR", "feet", "ring", "back"],
-    "availableRaces": ["HUMAN"],
+    "equipSlots": [
+      "head",
+      "body",
+      "handL",
+      "handR",
+      "feet",
+      "ring",
+      "back"
+    ],
+    "availableRaces": [
+      "HUMAN"
+    ],
     "availableAlignments": "all"
   },
-
   "starterDeck": {
-    "apparel": { "min": 1, "max": 3, "rarity": "COMMON" },
-    "weapons": { "min": 1, "max": 2, "rarity": "COMMON" },
+    "apparel": {
+      "min": 1,
+      "max": 3,
+      "rarity": "COMMON"
+    },
+    "weapons": {
+      "min": 1,
+      "max": 2,
+      "rarity": "COMMON"
+    },
     "consumables": [
-      { "name": "Canned Food", "count": 2, "effect": "Restore 3 Energy" },
-      { "name": "Dirty Bandage", "count": 1, "effect": "Restore 4 HP" },
-      { "name": "Purified Water", "count": 1, "effect": "Restore 2 Energy" },
-      { "name": "Scrap Metal", "count": 2, "effect": "Repair 2 durability on one item" },
-      { "name": "Flare", "count": 1, "effect": "+2 to Investigate rolls this round" }
+      {
+        "name": "Canned Food",
+        "count": 2,
+        "effect": "Restore 3 Energy"
+      },
+      {
+        "name": "Dirty Bandage",
+        "count": 1,
+        "effect": "Restore 4 HP"
+      },
+      {
+        "name": "Purified Water",
+        "count": 1,
+        "effect": "Restore 2 Energy"
+      },
+      {
+        "name": "Scrap Metal",
+        "count": 2,
+        "effect": "Repair 2 durability on one item"
+      },
+      {
+        "name": "Flare",
+        "count": 1,
+        "effect": "+2 to Investigate rolls this round"
+      }
     ],
-    "skills": { "min": 1, "max": 2 },
-    "magicEffects": { "min": 0, "max": 0 }
+    "skills": {
+      "min": 1,
+      "max": 2
+    },
+    "magicEffects": {
+      "min": 0,
+      "max": 0
+    }
   },
-
   "encounterDeck": {
-    "threats": { "count": 14, "difficultyRange": [4, 12], "maxRarity": "RARE" },
-    "events": { "count": 10, "maxRarity": "UNCOMMON" },
-    "discoveries": { "count": 10, "maxRarity": "RARE" },
-    "npcs": { "count": 6, "maxRarity": "RARE", "source": "olio.charPerson.population", "roleAssignment": "random" },
-    "lootItems": { "count": 12, "rarityWeights": { "COMMON": 55, "UNCOMMON": 30, "RARE": 15 } },
-    "skillCards": { "count": 4, "minRarity": "UNCOMMON", "maxRarity": "RARE" },
-    "magicEffects": { "count": 1, "rarity": "RARE" }
+    "threats": {
+      "count": 14,
+      "difficultyRange": [
+        4,
+        12
+      ],
+      "maxRarity": "RARE"
+    },
+    "events": {
+      "count": 10,
+      "maxRarity": "UNCOMMON"
+    },
+    "discoveries": {
+      "count": 10,
+      "maxRarity": "RARE"
+    },
+    "npcs": {
+      "count": 6,
+      "maxRarity": "RARE",
+      "source": "olio.charPerson.population",
+      "roleAssignment": "random"
+    },
+    "lootItems": {
+      "count": 12,
+      "rarityWeights": {
+        "COMMON": 55,
+        "UNCOMMON": 30,
+        "RARE": 15
+      }
+    },
+    "skillCards": {
+      "count": 4,
+      "minRarity": "UNCOMMON",
+      "maxRarity": "RARE"
+    },
+    "magicEffects": {
+      "count": 1,
+      "rarity": "RARE"
+    }
   },
-
   "treasureVault": {
-    "bossThreats": { "count": 4, "difficultyRange": [14, 18], "minRarity": "EPIC" },
-    "legendaryWeapons": { "count": 2, "rarity": "LEGENDARY" },
-    "epicWeapons": { "count": 3, "rarity": "EPIC" },
-    "epicApparel": { "count": 2, "rarity": "EPIC" },
-    "epicConsumables": { "count": 3, "rarity": "EPIC" },
-    "epicSkills": { "count": 2, "minRarity": "RARE", "maxRarity": "EPIC" },
-    "legendaryMagic": { "count": 1, "rarity": "LEGENDARY" },
-    "drawTriggers": ["discovery_rare", "investigate_crit", "npc_quest_reward", "pot_jackpot_5plus"],
+    "bossThreats": {
+      "count": 4,
+      "difficultyRange": [
+        14,
+        18
+      ],
+      "minRarity": "EPIC"
+    },
+    "legendaryWeapons": {
+      "count": 2,
+      "rarity": "LEGENDARY"
+    },
+    "epicWeapons": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicApparel": {
+      "count": 2,
+      "rarity": "EPIC"
+    },
+    "epicConsumables": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicSkills": {
+      "count": 2,
+      "minRarity": "RARE",
+      "maxRarity": "EPIC"
+    },
+    "legendaryMagic": {
+      "count": 1,
+      "rarity": "LEGENDARY"
+    },
+    "drawTriggers": [
+      "discovery_rare",
+      "investigate_crit",
+      "npc_quest_reward",
+      "pot_jackpot_5plus"
+    ],
     "bossDefeatGrantsExtraDraw": true,
     "refillsOnCampaignSession": true
   },
-
   "balance": {
     "hpMax": 20,
     "moraleMax": 20,
     "energyFormula": "MAG or INT (by skill type)",
     "apFormula": "floor(END / 5) + 1",
-    "apRange": [1, 5],
+    "apRange": [
+      1,
+      5
+    ],
     "initiativeFormula": "1d20 + AGI",
     "potAnteRequired": true,
     "roundTimerSeconds": 60,
@@ -97,7 +253,6 @@
     "exhaustedEnabled": true,
     "hoardingReturnTarget": "encounterDeck"
   },
-
   "narration": {
     "announcerProfile": "war-correspondent",
     "gameStart": "The wasteland arena roars to life under a scorched sky. Two survivors face off among the ruins. In this world, only the strongest endure!",
@@ -128,24 +283,58 @@
       "The wasteland watches. Only one will walk away."
     ]
   },
-
   "magicConfig": {
-    "enabledSkillTypes": ["Psionic"],
-    "magicEffectPool": ["Rad Burst", "Mutant Surge", "Toxin Cloud", "Adrenaline Rush", "Wasteland Precognition", "Feral Howl"]
+    "enabledSkillTypes": [
+      "Psionic"
+    ],
+    "magicEffectPool": [
+      "Rad Burst",
+      "Mutant Surge",
+      "Toxin Cloud",
+      "Adrenaline Rush",
+      "Wasteland Precognition",
+      "Feral Howl"
+    ]
   },
-
   "cardNames": {
-    "meleeWeapon": { "name": "Machete", "damageType": "Slashing" },
-    "rangedWeapon": { "name": "Pipe Rifle", "damageType": "Piercing" },
+    "meleeWeapon": {
+      "name": "Machete",
+      "damageType": "Slashing"
+    },
+    "rangedWeapon": {
+      "name": "Pipe Rifle",
+      "damageType": "Piercing"
+    },
     "bodyArmor": "Scrap Plate Vest",
     "boots": "Taped-up Boots",
-    "strSkill": { "name": "Brawler's Instinct", "category": "Combat", "modifier": "+2 to Attack rolls with melee weapons" },
-    "agiSkill": { "name": "Wasteland Reflexes", "category": "Defense", "modifier": "+2 to Flee and initiative rolls" },
-    "defaultSkill": { "name": "Scavenging", "category": "Survival", "modifier": "+1 to Investigate and Rest rolls" },
-    "healMagic": { "name": "Adrenaline Surge", "effectType": "Restorative", "skillType": "Imperial", "effect": "Restore 6 HP to self or ally" },
-    "intMagic": { "name": "Mutant Sense", "effectType": "Discovery", "skillType": "Psionic", "effect": "View opponent's next planned action stack" }
+    "strSkill": {
+      "name": "Brawler's Instinct",
+      "category": "Combat",
+      "modifier": "+2 to Attack rolls with melee weapons"
+    },
+    "agiSkill": {
+      "name": "Wasteland Reflexes",
+      "category": "Defense",
+      "modifier": "+2 to Flee and initiative rolls"
+    },
+    "defaultSkill": {
+      "name": "Scavenging",
+      "category": "Survival",
+      "modifier": "+1 to Investigate and Rest rolls"
+    },
+    "healMagic": {
+      "name": "Adrenaline Surge",
+      "effectType": "Restorative",
+      "skillType": "Imperial",
+      "effect": "Restore 6 HP to self or ally"
+    },
+    "intMagic": {
+      "name": "Mutant Sense",
+      "effectType": "Discovery",
+      "skillType": "Psionic",
+      "effect": "View opponent's next planned action stack"
+    }
   },
-
   "outfits": {
     "male": {
       "scrappy": {
@@ -154,13 +343,83 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
-          { "schema": "olio.wearable", "name": "stained undershirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "worn briefs", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "torn undershirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "shredded jeans", "location": ["leg"], "fabric": "denim", "color": "Blue", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "scrap-wire belt", "location": ["waist"], "fabric": "wire", "color": "Gray", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "taped-up boots", "location": ["foot"], "fabric": "rubber", "color": "Black", "level": "SUIT", "gender": "male" }
+          {
+            "schema": "olio.wearable",
+            "name": "stained undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn briefs",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "threadbare socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "torn undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "shredded jeans",
+            "location": [
+              "leg"
+            ],
+            "fabric": "denim",
+            "color": "Blue",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "scrap-wire belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "wire",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "taped-up boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "rubber",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
         ]
       },
       "functional": {
@@ -169,14 +428,94 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
-          { "schema": "olio.wearable", "name": "stained undershirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "worn briefs", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "reinforced vest", "location": ["torso"], "fabric": "canvas", "color": "Olive", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "cargo pants", "location": ["leg"], "fabric": "canvas", "color": "Tan", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "ammo belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "dust cloak", "location": ["back"], "fabric": "canvas", "color": "Brown", "level": "OVER", "gender": "male" },
-          { "schema": "olio.wearable", "name": "steel-toed boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+          {
+            "schema": "olio.wearable",
+            "name": "stained undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn briefs",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "threadbare socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "reinforced vest",
+            "location": [
+              "torso"
+            ],
+            "fabric": "canvas",
+            "color": "Olive",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "cargo pants",
+            "location": [
+              "leg"
+            ],
+            "fabric": "canvas",
+            "color": "Tan",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "ammo belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "dust cloak",
+            "location": [
+              "back"
+            ],
+            "fabric": "canvas",
+            "color": "Brown",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "steel-toed boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
         ]
       },
       "fancy": {
@@ -185,14 +524,94 @@
         "type": "formal",
         "gender": "male",
         "wearables": [
-          { "schema": "olio.wearable", "name": "stained undershirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "worn briefs", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "studded jacket", "location": ["torso"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "reinforced trousers", "location": ["leg"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "trophy belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "salvaged greatcoat", "location": ["back"], "fabric": "canvas", "color": "Olive", "level": "OVER", "gender": "male" },
-          { "schema": "olio.wearable", "name": "combat boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+          {
+            "schema": "olio.wearable",
+            "name": "stained undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn briefs",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "threadbare socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "studded jacket",
+            "location": [
+              "torso"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "reinforced trousers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "trophy belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "salvaged greatcoat",
+            "location": [
+              "back"
+            ],
+            "fabric": "canvas",
+            "color": "Olive",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "combat boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
         ]
       }
     },
@@ -203,13 +622,83 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
-          { "schema": "olio.wearable", "name": "faded bralette", "location": ["chest"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "worn shorts", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "knotted crop top", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "cut-off shorts", "location": ["leg"], "fabric": "denim", "color": "Blue", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "braided cord belt", "location": ["waist"], "fabric": "rope", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "mismatched shoes", "location": ["foot"], "fabric": "rubber", "color": "Black", "level": "SUIT", "gender": "female" }
+          {
+            "schema": "olio.wearable",
+            "name": "faded bralette",
+            "location": [
+              "chest"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "threadbare socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "knotted crop top",
+            "location": [
+              "torso"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "cut-off shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "denim",
+            "color": "Blue",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "braided cord belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "rope",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "mismatched shoes",
+            "location": [
+              "foot"
+            ],
+            "fabric": "rubber",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          }
         ]
       },
       "functional": {
@@ -218,14 +707,94 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
-          { "schema": "olio.wearable", "name": "faded bralette", "location": ["chest"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "worn shorts", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "fitted tank with shoulder guard", "location": ["torso"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "patched cargo pants", "location": ["leg"], "fabric": "canvas", "color": "Olive", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "tool belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "hooded poncho", "location": ["back"], "fabric": "canvas", "color": "Tan", "level": "OVER", "gender": "female" },
-          { "schema": "olio.wearable", "name": "laced combat boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" }
+          {
+            "schema": "olio.wearable",
+            "name": "faded bralette",
+            "location": [
+              "chest"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "threadbare socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fitted tank with shoulder guard",
+            "location": [
+              "torso"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "patched cargo pants",
+            "location": [
+              "leg"
+            ],
+            "fabric": "canvas",
+            "color": "Olive",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tool belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "hooded poncho",
+            "location": [
+              "back"
+            ],
+            "fabric": "canvas",
+            "color": "Tan",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "laced combat boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          }
         ]
       },
       "fancy": {
@@ -234,68 +803,513 @@
         "type": "formal",
         "gender": "female",
         "wearables": [
-          { "schema": "olio.wearable", "name": "faded bralette", "location": ["chest"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "worn shorts", "location": ["leg"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "threadbare socks", "location": ["foot"], "fabric": "cotton", "color": "Gray", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "fitted corset top", "location": ["torso"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "long split skirt", "location": ["leg"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "chain belt with charms", "location": ["waist"], "fabric": "steel", "color": "Silver", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "fur-collared cloak", "location": ["back"], "fabric": "fur", "color": "Brown", "level": "OVER", "gender": "female" },
-          { "schema": "olio.wearable", "name": "tall boots with buckles", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" }
+          {
+            "schema": "olio.wearable",
+            "name": "faded bralette",
+            "location": [
+              "chest"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "threadbare socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fitted corset top",
+            "location": [
+              "torso"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "long split skirt",
+            "location": [
+              "leg"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "chain belt with charms",
+            "location": [
+              "waist"
+            ],
+            "fabric": "steel",
+            "color": "Silver",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fur-collared cloak",
+            "location": [
+              "back"
+            ],
+            "fabric": "fur",
+            "color": "Brown",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tall boots with buckles",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          }
         ]
       }
     }
   },
-
   "cardPool": [
-    { "type": "item", "subtype": "weapon", "name": "Spiked Bat", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Bludgeoning", "durability": 6, "artPrompt": "a baseball bat wrapped in barbed wire" },
-    { "type": "item", "subtype": "weapon", "name": "Salvaged Shotgun", "rarity": "UNCOMMON", "atk": 5, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 8, "artPrompt": "a battered pump-action shotgun held together with tape" },
-    { "type": "item", "subtype": "weapon", "name": "Buzzsaw Gauntlet", "rarity": "RARE", "atk": 6, "slot": "Hand (1H)", "damageType": "Slashing", "durability": 10, "special": "+2 ATK vs armored targets", "artPrompt": "a gauntlet with a spinning circular saw blade attached" },
-    { "type": "item", "subtype": "weapon", "name": "Jury-Rigged Crossbow", "rarity": "COMMON", "atk": 3, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 5, "artPrompt": "a crossbow made from car parts and rubber tubing" },
-    { "type": "item", "subtype": "weapon", "name": "Electrified Chain", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (1H)", "damageType": "Electric", "durability": 8, "special": "Stun on crit", "artPrompt": "a heavy chain connected to a salvaged car battery" },
-    { "type": "item", "subtype": "weapon", "name": "Rusty Cleaver", "rarity": "COMMON", "atk": 2, "slot": "Hand (1H)", "damageType": "Slashing", "durability": 5, "special": "Poison: 1 damage/round (infection)", "artPrompt": "a filthy meat cleaver with a chipped blade" },
-
-    { "type": "apparel", "name": "Tire Shoulder Pads", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "rubber and scrap", "artPrompt": "shoulder pads made from cut tires and bolted metal" },
-    { "type": "apparel", "name": "Scrap Plate Vest", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 1, "durability": 10, "fabric": "scrap metal", "artPrompt": "a vest of hammered scrap metal plates wired together" },
-    { "type": "apparel", "name": "Rad-Suit", "rarity": "UNCOMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "lead-lined rubber", "special": "Resist radiation and poison", "artPrompt": "a yellow hazmat suit patched with duct tape" },
-    { "type": "apparel", "name": "Raider's War Plate", "rarity": "RARE", "slot": "Body", "def": 5, "hpBonus": 2, "durability": 16, "fabric": "welded scrap steel", "artPrompt": "full-body armor made from welded car panels and road signs" },
-    { "type": "apparel", "name": "Gas Mask", "rarity": "COMMON", "slot": "Head", "def": 1, "hpBonus": 0, "durability": 6, "fabric": "rubber and glass", "special": "Resist poison and gas effects", "artPrompt": "a cracked gas mask with fogged lenses" },
-    { "type": "apparel", "name": "Padded Motorcycle Jacket", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "leather and padding", "artPrompt": "a scarred leather motorcycle jacket with sewn-in padding" },
-    { "type": "apparel", "name": "Salvaged Riot Shield", "rarity": "UNCOMMON", "slot": "Hand", "def": 3, "hpBonus": 0, "durability": 12, "fabric": "polycarbonate", "special": "+2 to Guard", "artPrompt": "a cracked police riot shield with graffiti sprayed on it" },
-
-    { "type": "skill", "name": "Jury Rigger", "category": "Creation", "modifier": "Craft rolls succeed on 8+ instead of 12+", "tier": "UNCOMMON", "artPrompt": "hands assembling a device from scrap parts" },
-    { "type": "skill", "name": "Scavenger Instinct", "category": "Survival", "modifier": "+3 to Investigate, always find loot on success", "tier": "COMMON", "artPrompt": "a figure digging through rubble, finding treasure" },
-    { "type": "skill", "name": "Wasteland Hardened", "category": "Defense", "modifier": "Reduce all damage by 1 (min 1)", "tier": "UNCOMMON", "artPrompt": "a scarred survivor shrugging off a hit" },
-    { "type": "skill", "name": "Road Rage", "category": "Combat", "modifier": "+3 ATK when HP below half", "tier": "UNCOMMON", "artPrompt": "a berserker screaming in fury amid wasteland chaos" },
-    { "type": "skill", "name": "Barter", "category": "Social", "modifier": "+3 to Trade and Talk rolls", "tier": "COMMON", "artPrompt": "two wasteland traders haggling over goods" },
-    { "type": "skill", "name": "Trapper", "category": "Tactical", "modifier": "Feint auto-succeeds, +2 damage on follow-up", "tier": "RARE", "artPrompt": "a hidden snare trap springing on a target" },
-    { "type": "skill", "name": "Radiation Resistance", "category": "Survival", "modifier": "Immune to poison effects, Rest restores +2 extra HP", "tier": "UNCOMMON", "artPrompt": "a mutant glowing faintly, unaffected by radiation" },
-    { "type": "skill", "name": "Kill Shot", "category": "Combat", "modifier": "Critical hits deal triple damage with ranged weapons", "tier": "RARE", "artPrompt": "a sniper lining up a perfect shot through ruins" },
-
-    { "type": "magic", "name": "Rad Burst", "effectType": "Offensive", "skillType": "Psionic", "effect": "Deal 5 damage to all enemies, ignore armor", "energyCost": 6, "reusable": true, "artPrompt": "a wave of green radiation exploding outward" },
-    { "type": "magic", "name": "Mutant Surge", "effectType": "Offensive", "skillType": "Psionic", "effect": "+4 STR and +4 ATK this round, take 2 damage", "energyCost": 4, "reusable": true, "artPrompt": "muscles grotesquely expanding with mutant power" },
-    { "type": "magic", "name": "Toxin Cloud", "effectType": "Offensive", "skillType": "Imperial", "effect": "Poison target: 3 damage/round for 2 rounds", "energyCost": 4, "reusable": true, "artPrompt": "a cloud of toxic green gas billowing from cracked canisters" },
-    { "type": "magic", "name": "Adrenaline Rush", "effectType": "Utility", "skillType": "Psionic", "effect": "Gain +2 AP this round, immune to stun", "energyCost": 5, "reusable": true, "artPrompt": "a fighter surrounded by a red aura of pure adrenaline" },
-    { "type": "magic", "name": "Wasteland Precognition", "effectType": "Discovery", "skillType": "Psionic", "effect": "View opponent's hand and dodge next attack (auto-miss)", "energyCost": 5, "reusable": true, "artPrompt": "a mutant with glowing eyes seeing ghostly afterimages of future attacks" },
-    { "type": "magic", "name": "Feral Howl", "effectType": "Offensive", "skillType": "Psionic", "effect": "Deal 3 damage to all enemies, reduce morale by 2", "energyCost": 4, "reusable": true, "artPrompt": "a feral mutant unleashing a psychic scream, shockwave rippling outward through ruins" },
-
-    { "type": "item", "subtype": "consumable", "name": "Pre-War Medkit", "rarity": "UNCOMMON", "effect": "Restore 12 HP", "artPrompt": "a dusty first-aid kit with a faded red cross" },
-    { "type": "item", "subtype": "consumable", "name": "Moonshine", "rarity": "COMMON", "effect": "Restore 5 Energy, -1 DEF this round", "artPrompt": "a jar of cloudy homebrew moonshine" },
-    { "type": "item", "subtype": "consumable", "name": "Rad-Away", "rarity": "UNCOMMON", "effect": "Remove all poison effects, restore 4 HP", "artPrompt": "an IV bag of chelation fluid" },
-    { "type": "item", "subtype": "consumable", "name": "Scrap Armor Kit", "rarity": "COMMON", "effect": "+3 DEF this round", "artPrompt": "a bundle of scrap metal plates and wire for quick patching" },
-    { "type": "item", "subtype": "consumable", "name": "Molotov Cocktail", "rarity": "COMMON", "effect": "Deal 4 damage, ignore DEF", "artPrompt": "a bottle filled with fuel and a burning rag" }
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Spiked Bat",
+      "rarity": "COMMON",
+      "atk": 3,
+      "slot": "Hand (1H)",
+      "damageType": "Bludgeoning",
+      "durability": 6,
+      "artPrompt": "a baseball bat wrapped in barbed wire"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Salvaged Shotgun",
+      "rarity": "UNCOMMON",
+      "atk": 5,
+      "slot": "Hand (2H)",
+      "damageType": "Piercing",
+      "range": "Ranged",
+      "durability": 8,
+      "artPrompt": "a battered pump-action shotgun held together with tape"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Buzzsaw Gauntlet",
+      "rarity": "RARE",
+      "atk": 6,
+      "slot": "Hand (1H)",
+      "damageType": "Slashing",
+      "durability": 10,
+      "special": "+2 ATK vs armored targets",
+      "artPrompt": "a gauntlet with a spinning circular saw blade attached"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Jury-Rigged Crossbow",
+      "rarity": "COMMON",
+      "atk": 3,
+      "slot": "Hand (2H)",
+      "damageType": "Piercing",
+      "range": "Ranged",
+      "durability": 5,
+      "artPrompt": "a crossbow made from car parts and rubber tubing"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Electrified Chain",
+      "rarity": "UNCOMMON",
+      "atk": 4,
+      "slot": "Hand (1H)",
+      "damageType": "Electric",
+      "durability": 8,
+      "special": "Stun on crit",
+      "artPrompt": "a heavy chain connected to a salvaged car battery"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Rusty Cleaver",
+      "rarity": "COMMON",
+      "atk": 2,
+      "slot": "Hand (1H)",
+      "damageType": "Slashing",
+      "durability": 5,
+      "special": "Poison: 1 damage/round (infection)",
+      "artPrompt": "a filthy meat cleaver with a chipped blade"
+    },
+    {
+      "type": "apparel",
+      "name": "Tire Shoulder Pads",
+      "rarity": "COMMON",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "rubber and scrap",
+      "artPrompt": "shoulder pads made from cut tires and bolted metal"
+    },
+    {
+      "type": "apparel",
+      "name": "Scrap Plate Vest",
+      "rarity": "UNCOMMON",
+      "slot": "Body",
+      "def": 3,
+      "hpBonus": 1,
+      "durability": 10,
+      "fabric": "scrap metal",
+      "artPrompt": "a vest of hammered scrap metal plates wired together"
+    },
+    {
+      "type": "apparel",
+      "name": "Rad-Suit",
+      "rarity": "UNCOMMON",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "lead-lined rubber",
+      "special": "Resist radiation and poison",
+      "artPrompt": "a yellow hazmat suit patched with duct tape"
+    },
+    {
+      "type": "apparel",
+      "name": "Raider's War Plate",
+      "rarity": "RARE",
+      "slot": "Body",
+      "def": 5,
+      "hpBonus": 2,
+      "durability": 16,
+      "fabric": "welded scrap steel",
+      "artPrompt": "full-body armor made from welded car panels and road signs"
+    },
+    {
+      "type": "apparel",
+      "name": "Gas Mask",
+      "rarity": "COMMON",
+      "slot": "Head",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 6,
+      "fabric": "rubber and glass",
+      "special": "Resist poison and gas effects",
+      "artPrompt": "a cracked gas mask with fogged lenses"
+    },
+    {
+      "type": "apparel",
+      "name": "Padded Motorcycle Jacket",
+      "rarity": "COMMON",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "leather and padding",
+      "artPrompt": "a scarred leather motorcycle jacket with sewn-in padding"
+    },
+    {
+      "type": "apparel",
+      "name": "Salvaged Riot Shield",
+      "rarity": "UNCOMMON",
+      "slot": "Hand",
+      "def": 3,
+      "hpBonus": 0,
+      "durability": 12,
+      "fabric": "polycarbonate",
+      "special": "+2 to Guard",
+      "artPrompt": "a cracked police riot shield with graffiti sprayed on it"
+    },
+    {
+      "type": "skill",
+      "name": "Jury Rigger",
+      "category": "Creation",
+      "modifier": "Craft rolls succeed on 8+ instead of 12+",
+      "tier": "UNCOMMON",
+      "artPrompt": "hands assembling a device from scrap parts"
+    },
+    {
+      "type": "skill",
+      "name": "Scavenger Instinct",
+      "category": "Survival",
+      "modifier": "+3 to Investigate, always find loot on success",
+      "tier": "COMMON",
+      "artPrompt": "a figure digging through rubble, finding treasure"
+    },
+    {
+      "type": "skill",
+      "name": "Wasteland Hardened",
+      "category": "Defense",
+      "modifier": "Reduce all damage by 1 (min 1)",
+      "tier": "UNCOMMON",
+      "artPrompt": "a scarred survivor shrugging off a hit"
+    },
+    {
+      "type": "skill",
+      "name": "Road Rage",
+      "category": "Combat",
+      "modifier": "+3 ATK when HP below half",
+      "tier": "UNCOMMON",
+      "artPrompt": "a berserker screaming in fury amid wasteland chaos"
+    },
+    {
+      "type": "skill",
+      "name": "Barter",
+      "category": "Social",
+      "modifier": "+3 to Trade and Talk rolls",
+      "tier": "COMMON",
+      "artPrompt": "two wasteland traders haggling over goods"
+    },
+    {
+      "type": "skill",
+      "name": "Trapper",
+      "category": "Tactical",
+      "modifier": "Feint auto-succeeds, +2 damage on follow-up",
+      "tier": "RARE",
+      "artPrompt": "a hidden snare trap springing on a target"
+    },
+    {
+      "type": "skill",
+      "name": "Radiation Resistance",
+      "category": "Survival",
+      "modifier": "Immune to poison effects, Rest restores +2 extra HP",
+      "tier": "UNCOMMON",
+      "artPrompt": "a mutant glowing faintly, unaffected by radiation"
+    },
+    {
+      "type": "skill",
+      "name": "Kill Shot",
+      "category": "Combat",
+      "modifier": "Critical hits deal triple damage with ranged weapons",
+      "tier": "RARE",
+      "artPrompt": "a sniper lining up a perfect shot through ruins"
+    },
+    {
+      "type": "magic",
+      "name": "Rad Burst",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "Deal 5 damage to all enemies, ignore armor",
+      "energyCost": 6,
+      "reusable": true,
+      "artPrompt": "a wave of green radiation exploding outward"
+    },
+    {
+      "type": "magic",
+      "name": "Mutant Surge",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "+4 STR and +4 ATK this round, take 2 damage",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "muscles grotesquely expanding with mutant power"
+    },
+    {
+      "type": "magic",
+      "name": "Toxin Cloud",
+      "effectType": "Offensive",
+      "skillType": "Imperial",
+      "effect": "Poison target: 3 damage/round for 2 rounds",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a cloud of toxic green gas billowing from cracked canisters"
+    },
+    {
+      "type": "magic",
+      "name": "Adrenaline Rush",
+      "effectType": "Utility",
+      "skillType": "Psionic",
+      "effect": "Gain +2 AP this round, immune to stun",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a fighter surrounded by a red aura of pure adrenaline"
+    },
+    {
+      "type": "magic",
+      "name": "Wasteland Precognition",
+      "effectType": "Discovery",
+      "skillType": "Psionic",
+      "effect": "View opponent's hand and dodge next attack (auto-miss)",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a mutant with glowing eyes seeing ghostly afterimages of future attacks"
+    },
+    {
+      "type": "magic",
+      "name": "Feral Howl",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "Deal 3 damage to all enemies, reduce morale by 2",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a feral mutant unleashing a psychic scream, shockwave rippling outward through ruins"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Pre-War Medkit",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 12 HP",
+      "artPrompt": "a dusty first-aid kit with a faded red cross"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Moonshine",
+      "rarity": "COMMON",
+      "effect": "Restore 5 Energy, -1 DEF this round",
+      "artPrompt": "a jar of cloudy homebrew moonshine"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Rad-Away",
+      "rarity": "UNCOMMON",
+      "effect": "Remove all poison effects, restore 4 HP",
+      "artPrompt": "an IV bag of chelation fluid"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Scrap Armor Kit",
+      "rarity": "COMMON",
+      "effect": "+3 DEF this round",
+      "artPrompt": "a bundle of scrap metal plates and wire for quick patching"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Molotov Cocktail",
+      "rarity": "COMMON",
+      "effect": "Deal 4 damage, ignore DEF",
+      "artPrompt": "a bottle filled with fuel and a burning rag"
+    }
   ],
-
   "encounters": {
-    "threatCreatures": [
-      { "name": "Rad-Roach Swarm", "type": "animal", "atk": 2, "def": 1, "hp": 6, "imageIcon": "bug_report", "behavior": "Poison on hit (radiation, 2 turns)", "loot": ["Chitin Shard"], "artPrompt": "a swarm of oversized glowing cockroaches" },
-      { "name": "Feral Dog Pack", "type": "animal", "atk": 2, "def": 1, "hp": 8, "imageIcon": "pets", "behavior": "Attacks lowest HP target", "loot": ["Mangy Hide"], "artPrompt": "a pack of emaciated wild dogs with bared teeth" },
-      { "name": "Wasteland Raider", "type": "npc", "atk": 4, "def": 2, "hp": 14, "imageIcon": "person_alert", "behavior": "Steals item on crit", "loot": ["Raider's Knife", "Scrap Metal"], "artPrompt": "a wild-eyed raider with a mohawk and scavenged armor" },
-      { "name": "Mutant Scorpion", "type": "animal", "atk": 3, "def": 3, "hp": 15, "imageIcon": "bug_report", "behavior": "Poison on hit (venom, 3 turns)", "loot": ["Scorpion Venom", "Chitin Plate"], "artPrompt": "a giant mutant scorpion with a dripping stinger" },
-      { "name": "Scrap Bot", "type": "monster", "atk": 4, "def": 4, "hp": 18, "imageIcon": "precision_manufacturing", "behavior": "High armor, explodes on death (3 damage)", "loot": ["Circuit Board", "Servo Motor"], "artPrompt": "a cobbled-together robot with spinning saw blades" },
-      { "name": "Raider Warlord", "type": "npc", "atk": 6, "def": 3, "hp": 22, "imageIcon": "shield_person", "behavior": "Enrages below half HP (+3 ATK)", "loot": ["Warlord's Trophy", "Reinforced Plate"], "artPrompt": "a massive raider in welded armor with a flaming sword" },
-      { "name": "Irradiated Bear", "type": "animal", "atk": 5, "def": 3, "hp": 24, "imageIcon": "pets", "behavior": "Charges (+3 ATK first attack), regenerates 1 HP/round", "loot": ["Glowing Bear Pelt", "Irradiated Claw"], "artPrompt": "a towering bear with patches of glowing fur and exposed muscle" },
-      { "name": "Ghoul Pack Leader", "type": "monster", "atk": 5, "def": 2, "hp": 16, "imageIcon": "skull", "behavior": "Drains 3 Energy on hit, summons 1 lesser ghoul", "loot": ["Ghoul Brain", "Pre-War Locket"], "artPrompt": "a shambling ghoul in tattered clothes, radiation glowing in its veins" }
+    "threatOverrides": [
+      {
+        "id": "weak_beast",
+        "name": "Feral Dog Pack",
+        "loot": [
+          "Mangy Hide"
+        ],
+        "artPrompt": "a pack of emaciated wild dogs with bared teeth"
+      },
+      {
+        "id": "scout",
+        "name": "Rad-Roach Swarm",
+        "type": "animal",
+        "loot": [
+          "Chitin Shard"
+        ],
+        "behavior": "Poison on hit (radiation, 2 turns)",
+        "artPrompt": "a swarm of oversized glowing cockroaches"
+      },
+      {
+        "id": "venomous",
+        "name": "Mutant Scorpion",
+        "loot": [
+          "Scorpion Venom",
+          "Chitin Plate"
+        ],
+        "behavior": "Poison on hit (venom, 3 turns)",
+        "artPrompt": "a giant mutant scorpion with a dripping stinger"
+      },
+      {
+        "id": "thief",
+        "name": "Wasteland Raider",
+        "loot": [
+          "Raider's Knife",
+          "Scrap Metal"
+        ],
+        "artPrompt": "a wild-eyed raider with a mohawk and scavenged armor"
+      },
+      {
+        "id": "alpha",
+        "name": "Irradiated Bear",
+        "loot": [
+          "Glowing Bear Pelt",
+          "Irradiated Claw"
+        ],
+        "behavior": "Charges (+3 ATK first attack), regenerates 1 HP/round",
+        "artPrompt": "a towering bear with patches of glowing fur and exposed muscle"
+      },
+      {
+        "id": "heavy",
+        "name": "Raider Warlord",
+        "loot": [
+          "Warlord's Trophy",
+          "Reinforced Plate"
+        ],
+        "behavior": "Enrages below half HP (+3 ATK)",
+        "artPrompt": "a massive raider in welded armor with a flaming sword"
+      },
+      {
+        "id": "specialist",
+        "name": "Scrap Bot",
+        "type": "monster",
+        "imageIcon": "precision_manufacturing",
+        "loot": [
+          "Circuit Board",
+          "Servo Motor"
+        ],
+        "behavior": "High armor, explodes on death (3 damage)",
+        "artPrompt": "a cobbled-together robot with spinning saw blades"
+      },
+      {
+        "id": "boss",
+        "name": "Ghoul Pack Leader",
+        "loot": [
+          "Ghoul Brain",
+          "Pre-War Locket"
+        ],
+        "behavior": "Drains 3 Energy on hit, summons 1 lesser ghoul",
+        "artPrompt": "a shambling ghoul in tattered clothes, radiation glowing in its veins"
+      }
+    ],
+    "scenarioOverrides": [
+      {
+        "id": "distant_warning",
+        "name": "Geiger Crackle",
+        "description": "Your Geiger counter crackles in the distance, but the source fades."
+      },
+      {
+        "id": "hidden_cache",
+        "name": "Pre-War Bunker",
+        "description": "You discover a sealed pre-war supply cache!"
+      },
+      {
+        "id": "wandering_threat",
+        "name": "Wasteland Drifter",
+        "description": "Something shambles toward you through the dust."
+      }
     ]
   }
 }

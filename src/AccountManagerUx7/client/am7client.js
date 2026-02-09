@@ -609,6 +609,12 @@
 				fH(x);
 			}
 			return x;
+		}).catch((e) => {
+			console.error("Failed to delete " + url, e);
+			if(fH){
+				fH(null);
+			}
+			return null;
 		});
 	}
 

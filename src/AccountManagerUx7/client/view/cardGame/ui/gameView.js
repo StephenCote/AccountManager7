@@ -454,7 +454,10 @@
                         m("div", { class: "cg2-game-sidebar cg2-opponent-side" }, [
                             m(CharacterSidebar, { actor: gameState.opponent, label: "Opponent", isOpponent: true })
                         ])
-                    ])
+                    ]),
+
+                    // Card Preview Overlay (top-level so it works from sidebar clicks in all phases)
+                    rendering().CardPreviewOverlay ? m(rendering().CardPreviewOverlay) : null
                 ]);
             }
         };
@@ -820,6 +823,8 @@
                                             m("div", {
                                                 class: "cg2-pos-core-card",
                                                 onclick(e) {
+                                                    // If a hand card is selected for tap-to-place, let click bubble to position handler
+                                                    if (selectedHandCard && canDrop && !isLocked) return;
                                                     e.stopPropagation();
                                                     if (showCardPreview) showCardPreview(pos.stack.coreCard);
                                                 },
@@ -848,6 +853,8 @@
                                                             key: mi,
                                                             class: "cg2-pos-mod-item cg2-mod-" + mod.type,
                                                             onclick(e) {
+                                                                // If a hand card is selected for tap-to-place, let click bubble to position handler
+                                                                if (selectedHandCard && canDrop && !isLocked) return;
                                                                 e.stopPropagation();
                                                                 if (showCardPreview) showCardPreview(mod);
                                                             },

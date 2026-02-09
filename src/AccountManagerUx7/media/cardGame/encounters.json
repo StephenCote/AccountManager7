@@ -1,156 +1,182 @@
 {
-    "version": 1,
+    "version": 2,
     "threatCreatures": [
         {
-            "name": "Wolf",
+            "id": "weak_beast",
+            "name": "Feral Beast",
             "type": "animal",
             "atk": 2,
             "def": 1,
             "hp": 8,
             "imageIcon": "pets",
             "behavior": "Attacks lowest HP target",
-            "loot": ["Wolf Pelt"],
-            "artPrompt": "snarling wolf lunging forward, fangs bared"
+            "loot": ["Beast Hide"],
+            "artPrompt": "a feral beast lunging forward to attack"
         },
         {
-            "name": "Goblin Scout",
+            "id": "scout",
+            "name": "Scout",
             "type": "npc",
             "atk": 3,
             "def": 1,
             "hp": 10,
             "imageIcon": "face",
             "behavior": "Flanks weakest defender",
-            "loot": ["Goblin Dagger"],
-            "artPrompt": "small goblin with a crude dagger sneaking through shadows"
+            "loot": ["Scout's Blade"],
+            "artPrompt": "a stealthy scout sneaking through shadows"
         },
         {
-            "name": "Giant Spider",
+            "id": "venomous",
+            "name": "Venomous Creature",
             "type": "animal",
             "atk": 2,
             "def": 2,
             "hp": 12,
             "imageIcon": "bug_report",
             "behavior": "Poison on hit (2 turns)",
-            "loot": ["Spider Silk", "Venom Sac"],
-            "artPrompt": "enormous spider in a web, dripping venom"
+            "loot": ["Venom Sac", "Chitin"],
+            "artPrompt": "a venomous creature dripping with poison"
         },
         {
-            "name": "Bandit",
+            "id": "thief",
+            "name": "Thief",
             "type": "npc",
             "atk": 4,
             "def": 2,
             "hp": 15,
             "imageIcon": "person_alert",
             "behavior": "Steals item on crit",
-            "loot": ["Stolen Coin Pouch"],
-            "artPrompt": "masked bandit with a crossbow in a dark forest"
+            "loot": ["Stolen Goods"],
+            "artPrompt": "a masked thief lurking in wait for an ambush"
         },
         {
-            "name": "Dire Wolf",
+            "id": "alpha",
+            "name": "Alpha Predator",
             "type": "animal",
             "atk": 5,
             "def": 2,
             "hp": 18,
             "imageIcon": "pets",
             "behavior": "Attacks twice on crit",
-            "loot": ["Dire Wolf Fang", "Thick Pelt"],
-            "artPrompt": "massive wolf with glowing eyes, towering over its prey"
+            "loot": ["Alpha Fang", "Thick Hide"],
+            "artPrompt": "a powerful predator towering over its prey"
         },
         {
-            "name": "Orc Warrior",
+            "id": "heavy",
+            "name": "Heavy Fighter",
             "type": "npc",
             "atk": 6,
             "def": 3,
             "hp": 20,
             "imageIcon": "shield_person",
             "behavior": "Enrages below half HP (+2 ATK)",
-            "loot": ["Orc Blade", "Iron Shield"],
-            "artPrompt": "armored orc warrior with a jagged sword and shield"
+            "loot": ["Heavy Blade", "Iron Shield"],
+            "artPrompt": "a heavily armored fighter with a menacing weapon"
         },
         {
-            "name": "Wild Boar",
-            "type": "animal",
-            "atk": 3,
-            "def": 3,
-            "hp": 14,
-            "imageIcon": "pets",
-            "behavior": "Charges (first attack +2 ATK)",
-            "loot": ["Boar Tusk"],
-            "artPrompt": "charging wild boar with sharp tusks"
-        },
-        {
-            "name": "Skeleton Archer",
+            "id": "specialist",
+            "name": "Specialist",
             "type": "monster",
             "atk": 4,
             "def": 1,
-            "hp": 10,
+            "hp": 12,
             "imageIcon": "skull",
             "behavior": "Ranged attack, ignores front-line",
-            "loot": ["Old Arrows", "Bone Fragment"],
-            "artPrompt": "skeletal archer with a cracked bow, glowing eye sockets"
+            "loot": ["Rare Component"],
+            "artPrompt": "a specialist combatant with unusual abilities"
+        },
+        {
+            "id": "boss",
+            "name": "Elite Brute",
+            "type": "monster",
+            "atk": 7,
+            "def": 4,
+            "hp": 25,
+            "imageIcon": "dangerous",
+            "behavior": "Regenerates 2 HP per round",
+            "loot": ["Elite Trophy", "Rare Material"],
+            "artPrompt": "a fearsome elite brute blocking the path"
         }
     ],
     "scenarioCards": [
         {
+            "id": "peaceful_respite",
             "name": "Peaceful Respite",
             "effect": "no_threat",
             "description": "The area is calm. No threats emerge.",
             "icon": "park",
             "cardColor": "#43A047",
-            "weight": 40
+            "bonus": "heal",
+            "bonusAmount": 3,
+            "weight": 40,
+            "artPrompt": "a peaceful campfire scene under a starlit sky"
         },
         {
-            "name": "Distant Howling",
+            "id": "distant_warning",
+            "name": "Distant Warning",
             "effect": "no_threat",
-            "description": "You hear something in the distance, but nothing approaches.",
+            "description": "You sense something in the distance, but nothing approaches.",
             "icon": "hearing",
             "cardColor": "#7986CB",
-            "weight": 25
+            "bonus": "energy",
+            "bonusAmount": 2,
+            "weight": 25,
+            "artPrompt": "a distant shadow on the horizon with ominous clouds"
         },
         {
+            "id": "hidden_cache",
             "name": "Hidden Cache",
             "effect": "no_threat",
             "description": "You discover a hidden stash!",
             "icon": "inventory_2",
             "cardColor": "#FFB300",
             "bonus": "loot",
-            "weight": 5
+            "weight": 5,
+            "artPrompt": "an opened treasure chest hidden behind rocks"
         },
         {
+            "id": "ambush",
             "name": "Ambush!",
             "effect": "threat",
             "description": "Enemies emerge from hiding!",
             "icon": "visibility_off",
             "cardColor": "#C62828",
             "threatBonus": 0,
-            "weight": 15
+            "weight": 15,
+            "artPrompt": "shadowy figures leaping from concealment with weapons drawn"
         },
         {
+            "id": "elite_patrol",
             "name": "Elite Patrol",
             "effect": "threat",
             "description": "A stronger foe appears!",
             "icon": "military_tech",
             "cardColor": "#AD1457",
             "threatBonus": 2,
-            "weight": 10
+            "weight": 10,
+            "artPrompt": "an elite warrior marching forward in gleaming armor"
         },
         {
-            "name": "Wandering Monster",
+            "id": "wandering_threat",
+            "name": "Wandering Threat",
             "effect": "threat",
             "description": "A creature stumbles upon you.",
             "icon": "explore",
             "cardColor": "#E65100",
             "threatBonus": -1,
-            "weight": 8
+            "weight": 8,
+            "artPrompt": "a lone creature emerging from fog on a winding path"
         },
         {
+            "id": "boss_encounter",
             "name": "Boss Encounter",
             "effect": "threat",
             "description": "A fearsome opponent blocks your path!",
             "icon": "dangerous",
             "cardColor": "#6A1B9A",
             "threatBonus": 4,
-            "weight": 2
+            "weight": 2,
+            "artPrompt": "a towering boss creature silhouetted against a burning sky"
         }
     ]
 }

@@ -3,7 +3,6 @@
   "name": "Dark Medieval",
   "version": "1.0",
   "description": "Gritty medieval setting with low magic and high mortality",
-
   "artStyle": {
     "promptSuffix": "dark medieval, gritty realism, muted tones, grimdark, oil painting style, chiaroscuro lighting",
     "cardBorderStyle": "iron-riveted",
@@ -17,76 +16,229 @@
       "talk": "#4A5568",
       "encounter": "#4A0E4E",
       "skill": "#8B6914",
-      "magic": "#2F4F4F"
+      "magic": "#2F4F4F",
+      "scenario": "#1B5E20",
+      "loot": "#F57F17"
     },
     "backgroundPrompt": "Dark medieval landscape, crumbling stone fortress, overcast stormy sky, muddy roads, crows circling, grim atmosphere, muted desaturated colors, oil painting style",
     "backgroundConfig": {
-      "width": 1024, "height": 1024, "steps": 40, "cfg": 7, "hires": true
+      "width": 1024,
+      "height": 1024,
+      "steps": 40,
+      "cfg": 7,
+      "hires": true
     },
     "sdConfig": {
-      "default":   { "style": "art", "steps": 30, "cfg": 7, "width": 512, "height": 512, "denoisingStrength": 0.7 },
-      "character":  { "width": 768, "height": 1024 },
-      "apparel":    { "width": 512, "height": 768 },
-      "item":       { "width": 512, "height": 512 },
-      "action":     { "width": 768, "height": 512, "denoisingStrength": 0.8 },
-      "talk":       { "width": 768, "height": 512, "denoisingStrength": 0.8 },
-      "encounter":  { "width": 768, "height": 768 },
-      "skill":      { "width": 512, "height": 512 },
-      "magic":      { "width": 512, "height": 512, "denoisingStrength": 0.75 }
+      "default": {
+        "style": "art",
+        "steps": 30,
+        "cfg": 7,
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.7
+      },
+      "character": {
+        "width": 768,
+        "height": 1024
+      },
+      "apparel": {
+        "width": 512,
+        "height": 768
+      },
+      "item": {
+        "width": 512,
+        "height": 512
+      },
+      "action": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "talk": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "encounter": {
+        "width": 768,
+        "height": 768
+      },
+      "skill": {
+        "width": 512,
+        "height": 512
+      },
+      "magic": {
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.75
+      },
+      "scenario": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "loot": {
+        "width": 512,
+        "height": 512
+      }
     }
   },
-
   "characterBuild": {
-    "statRange": [3, 18],
+    "statRange": [
+      3,
+      18
+    ],
     "statPointBuy": 68,
     "skillSlots": 3,
-    "equipSlots": ["head", "body", "handL", "handR", "feet", "ring", "back"],
-    "availableRaces": ["HUMAN"],
+    "equipSlots": [
+      "head",
+      "body",
+      "handL",
+      "handR",
+      "feet",
+      "ring",
+      "back"
+    ],
+    "availableRaces": [
+      "HUMAN"
+    ],
     "availableAlignments": "all"
   },
-
   "starterDeck": {
-    "apparel": { "min": 2, "max": 3, "rarity": "COMMON" },
-    "weapons": { "min": 1, "max": 2, "rarity": "COMMON" },
+    "apparel": {
+      "min": 2,
+      "max": 3,
+      "rarity": "COMMON"
+    },
+    "weapons": {
+      "min": 1,
+      "max": 2,
+      "rarity": "COMMON"
+    },
     "consumables": [
-      { "name": "Hardtack", "count": 2, "effect": "Restore 3 Energy" },
-      { "name": "Bandage", "count": 2, "effect": "Restore 4 HP" },
-      { "name": "Torch", "count": 1, "effect": "+2 to Investigate rolls this round" },
-      { "name": "Waterskin", "count": 1, "effect": "Restore 2 Energy" }
+      {
+        "name": "Hardtack",
+        "count": 2,
+        "effect": "Restore 3 Energy"
+      },
+      {
+        "name": "Bandage",
+        "count": 2,
+        "effect": "Restore 4 HP"
+      },
+      {
+        "name": "Torch",
+        "count": 1,
+        "effect": "+2 to Investigate rolls this round"
+      },
+      {
+        "name": "Waterskin",
+        "count": 1,
+        "effect": "Restore 2 Energy"
+      }
     ],
-    "skills": { "min": 1, "max": 2 },
-    "magicEffects": { "min": 0, "max": 0 }
+    "skills": {
+      "min": 1,
+      "max": 2
+    },
+    "magicEffects": {
+      "min": 0,
+      "max": 0
+    }
   },
-
   "encounterDeck": {
-    "threats": { "count": 14, "difficultyRange": [5, 12], "maxRarity": "RARE" },
-    "events": { "count": 12, "maxRarity": "UNCOMMON" },
-    "discoveries": { "count": 8, "maxRarity": "RARE" },
-    "npcs": { "count": 8, "maxRarity": "RARE", "source": "olio.charPerson.population", "roleAssignment": "random" },
-    "lootItems": { "count": 10, "rarityWeights": { "COMMON": 60, "UNCOMMON": 30, "RARE": 10 } },
-    "skillCards": { "count": 4, "minRarity": "UNCOMMON", "maxRarity": "RARE" },
-    "magicEffects": { "count": 1, "rarity": "RARE" }
+    "threats": {
+      "count": 14,
+      "difficultyRange": [
+        5,
+        12
+      ],
+      "maxRarity": "RARE"
+    },
+    "events": {
+      "count": 12,
+      "maxRarity": "UNCOMMON"
+    },
+    "discoveries": {
+      "count": 8,
+      "maxRarity": "RARE"
+    },
+    "npcs": {
+      "count": 8,
+      "maxRarity": "RARE",
+      "source": "olio.charPerson.population",
+      "roleAssignment": "random"
+    },
+    "lootItems": {
+      "count": 10,
+      "rarityWeights": {
+        "COMMON": 60,
+        "UNCOMMON": 30,
+        "RARE": 10
+      }
+    },
+    "skillCards": {
+      "count": 4,
+      "minRarity": "UNCOMMON",
+      "maxRarity": "RARE"
+    },
+    "magicEffects": {
+      "count": 1,
+      "rarity": "RARE"
+    }
   },
-
   "treasureVault": {
-    "bossThreats": { "count": 4, "difficultyRange": [14, 18], "minRarity": "EPIC" },
-    "legendaryWeapons": { "count": 1, "rarity": "LEGENDARY" },
-    "epicWeapons": { "count": 3, "rarity": "EPIC" },
-    "epicApparel": { "count": 3, "rarity": "EPIC" },
-    "epicConsumables": { "count": 2, "rarity": "EPIC" },
-    "epicSkills": { "count": 2, "minRarity": "RARE", "maxRarity": "EPIC" },
-    "legendaryMagic": { "count": 1, "rarity": "LEGENDARY" },
-    "drawTriggers": ["discovery_rare", "investigate_crit", "npc_quest_reward", "pot_jackpot_5plus"],
+    "bossThreats": {
+      "count": 4,
+      "difficultyRange": [
+        14,
+        18
+      ],
+      "minRarity": "EPIC"
+    },
+    "legendaryWeapons": {
+      "count": 1,
+      "rarity": "LEGENDARY"
+    },
+    "epicWeapons": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicApparel": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicConsumables": {
+      "count": 2,
+      "rarity": "EPIC"
+    },
+    "epicSkills": {
+      "count": 2,
+      "minRarity": "RARE",
+      "maxRarity": "EPIC"
+    },
+    "legendaryMagic": {
+      "count": 1,
+      "rarity": "LEGENDARY"
+    },
+    "drawTriggers": [
+      "discovery_rare",
+      "investigate_crit",
+      "npc_quest_reward",
+      "pot_jackpot_5plus"
+    ],
     "bossDefeatGrantsExtraDraw": true,
     "refillsOnCampaignSession": true
   },
-
   "balance": {
     "hpMax": 20,
     "moraleMax": 20,
     "energyFormula": "MAG or INT (by skill type)",
     "apFormula": "floor(END / 5) + 1",
-    "apRange": [1, 5],
+    "apRange": [
+      1,
+      5
+    ],
     "initiativeFormula": "1d20 + AGI",
     "potAnteRequired": true,
     "roundTimerSeconds": 60,
@@ -96,7 +248,6 @@
     "exhaustedEnabled": true,
     "hoardingReturnTarget": "encounterDeck"
   },
-
   "narration": {
     "announcerProfile": "war-correspondent",
     "gameStart": "The pit opens beneath flickering torchlight. Two souls step into the mud and blood of the fighting ring. Only skill and cunning will see them through.",
@@ -127,24 +278,60 @@
       "The end draws near. Every breath is agony."
     ]
   },
-
   "magicConfig": {
-    "enabledSkillTypes": ["Imperial", "Undead"],
-    "magicEffectPool": ["Cauterize", "Ward of Iron", "Plague Touch", "Bloodletting", "Corpse Light", "Death's Grasp", "Hex of Weakness"]
+    "enabledSkillTypes": [
+      "Imperial",
+      "Undead"
+    ],
+    "magicEffectPool": [
+      "Cauterize",
+      "Ward of Iron",
+      "Plague Touch",
+      "Bloodletting",
+      "Corpse Light",
+      "Death's Grasp",
+      "Hex of Weakness"
+    ]
   },
-
   "cardNames": {
-    "meleeWeapon": { "name": "Broad Dagger", "damageType": "Slashing" },
-    "rangedWeapon": { "name": "Crossbow", "damageType": "Piercing" },
+    "meleeWeapon": {
+      "name": "Broad Dagger",
+      "damageType": "Slashing"
+    },
+    "rangedWeapon": {
+      "name": "Crossbow",
+      "damageType": "Piercing"
+    },
     "bodyArmor": "Boiled Leather Cuirass",
     "boots": "Iron-shod Boots",
-    "strSkill": { "name": "Blade Mastery", "category": "Combat", "modifier": "+2 to Attack rolls with Slashing weapons" },
-    "agiSkill": { "name": "Dark Instincts", "category": "Defense", "modifier": "+2 to Flee and initiative rolls" },
-    "defaultSkill": { "name": "Grim Endurance", "category": "Survival", "modifier": "+1 to Investigate and Rest rolls" },
-    "healMagic": { "name": "Cauterize", "effectType": "Restorative", "skillType": "Imperial", "effect": "Restore 6 HP to self or ally" },
-    "intMagic": { "name": "Witch Sight", "effectType": "Discovery", "skillType": "Imperial", "effect": "View opponent's next planned action stack" }
+    "strSkill": {
+      "name": "Blade Mastery",
+      "category": "Combat",
+      "modifier": "+2 to Attack rolls with Slashing weapons"
+    },
+    "agiSkill": {
+      "name": "Dark Instincts",
+      "category": "Defense",
+      "modifier": "+2 to Flee and initiative rolls"
+    },
+    "defaultSkill": {
+      "name": "Grim Endurance",
+      "category": "Survival",
+      "modifier": "+1 to Investigate and Rest rolls"
+    },
+    "healMagic": {
+      "name": "Cauterize",
+      "effectType": "Restorative",
+      "skillType": "Imperial",
+      "effect": "Restore 6 HP to self or ally"
+    },
+    "intMagic": {
+      "name": "Witch Sight",
+      "effectType": "Discovery",
+      "skillType": "Imperial",
+      "effect": "View opponent's next planned action stack"
+    }
   },
-
   "outfits": {
     "male": {
       "scrappy": {
@@ -153,13 +340,83 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
-          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "tattered tunic", "location": ["torso"], "fabric": "linen", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "worn breeches", "location": ["leg"], "fabric": "wool", "color": "Gray", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "frayed belt", "location": ["waist"], "fabric": "hemp", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "cracked sandals", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" }
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "drawers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tattered tunic",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn breeches",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "frayed belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "hemp",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "cracked sandals",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          }
         ]
       },
       "functional": {
@@ -168,14 +425,94 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
-          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "padded gambeson", "location": ["torso"], "fabric": "wool", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "sturdy trousers", "location": ["leg"], "fabric": "wool", "color": "Black", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "belt with pouch", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "hooded cloak", "location": ["back"], "fabric": "wool", "color": "Gray", "level": "OVER", "gender": "male" },
-          { "schema": "olio.wearable", "name": "boots", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" }
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "drawers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "padded gambeson",
+            "location": [
+              "torso"
+            ],
+            "fabric": "wool",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "sturdy trousers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "belt with pouch",
+            "location": [
+              "waist"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "hooded cloak",
+            "location": [
+              "back"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          }
         ]
       },
       "fancy": {
@@ -184,14 +521,94 @@
         "type": "formal",
         "gender": "male",
         "wearables": [
-          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "embroidered doublet", "location": ["torso"], "fabric": "silk", "color": "Black", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "fine hose", "location": ["leg"], "fabric": "silk", "color": "Black", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "cloak with clasp", "location": ["back"], "fabric": "velvet", "color": "Red", "level": "OVER", "gender": "male" },
-          { "schema": "olio.wearable", "name": "chain", "location": ["neck"], "fabric": "silver", "color": "Silver", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "polished boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "drawers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "embroidered doublet",
+            "location": [
+              "torso"
+            ],
+            "fabric": "silk",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fine hose",
+            "location": [
+              "leg"
+            ],
+            "fabric": "silk",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "cloak with clasp",
+            "location": [
+              "back"
+            ],
+            "fabric": "velvet",
+            "color": "Red",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "chain",
+            "location": [
+              "neck"
+            ],
+            "fabric": "silver",
+            "color": "Silver",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "polished boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
         ]
       }
     },
@@ -202,13 +619,83 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
-          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "patched bodice", "location": ["torso"], "fabric": "linen", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "threadbare skirt", "location": ["leg"], "fabric": "wool", "color": "Gray", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "knotted sash", "location": ["waist"], "fabric": "linen", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "worn shoes", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" }
+          {
+            "schema": "olio.wearable",
+            "name": "chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bloomers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "patched bodice",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "threadbare skirt",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "knotted sash",
+            "location": [
+              "waist"
+            ],
+            "fabric": "linen",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn shoes",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          }
         ]
       },
       "functional": {
@@ -217,14 +704,94 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
-          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "fitted vest", "location": ["torso"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "durable skirt with leggings", "location": ["leg"], "fabric": "wool", "color": "Green", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "wide belt with tools", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "hooded traveling cloak", "location": ["back"], "fabric": "wool", "color": "Green", "level": "OVER", "gender": "female" },
-          { "schema": "olio.wearable", "name": "laced boots", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" }
+          {
+            "schema": "olio.wearable",
+            "name": "chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bloomers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fitted vest",
+            "location": [
+              "torso"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "durable skirt with leggings",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Green",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "wide belt with tools",
+            "location": [
+              "waist"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "hooded traveling cloak",
+            "location": [
+              "back"
+            ],
+            "fabric": "wool",
+            "color": "Green",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "laced boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          }
         ]
       },
       "fancy": {
@@ -233,69 +800,514 @@
         "type": "formal",
         "gender": "female",
         "wearables": [
-          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "brocade gown", "location": ["torso", "leg"], "fabric": "silk", "color": "Black", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "lace-trimmed chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "lined mantle", "location": ["back"], "fabric": "fur", "color": "Black", "level": "OVER", "gender": "female" },
-          { "schema": "olio.wearable", "name": "choker", "location": ["neck"], "fabric": "pearl", "color": "White", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "embroidered slippers", "location": ["foot"], "fabric": "silk", "color": "Red", "level": "SUIT", "gender": "female" }
+          {
+            "schema": "olio.wearable",
+            "name": "chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bloomers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "brocade gown",
+            "location": [
+              "torso",
+              "leg"
+            ],
+            "fabric": "silk",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "lace-trimmed chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "lined mantle",
+            "location": [
+              "back"
+            ],
+            "fabric": "fur",
+            "color": "Black",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "choker",
+            "location": [
+              "neck"
+            ],
+            "fabric": "pearl",
+            "color": "White",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "embroidered slippers",
+            "location": [
+              "foot"
+            ],
+            "fabric": "silk",
+            "color": "Red",
+            "level": "SUIT",
+            "gender": "female"
+          }
         ]
       }
     }
   },
-
   "cardPool": [
-    { "type": "item", "subtype": "weapon", "name": "Rusty Flail", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Bludgeoning", "durability": 6, "artPrompt": "a rusty chain flail with a spiked head" },
-    { "type": "item", "subtype": "weapon", "name": "Executioner's Blade", "rarity": "UNCOMMON", "atk": 5, "slot": "Hand (2H)", "damageType": "Slashing", "durability": 10, "artPrompt": "a wide-bladed executioner's sword, dark and imposing" },
-    { "type": "item", "subtype": "weapon", "name": "Heavy Crossbow", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 12, "artPrompt": "a heavy crossbow with iron fittings" },
-    { "type": "item", "subtype": "weapon", "name": "Poisoned Stiletto", "rarity": "RARE", "atk": 2, "slot": "Hand (1H)", "damageType": "Piercing", "durability": 5, "special": "Poison: 2 damage/round for 2 rounds", "artPrompt": "a thin dagger with a green-coated blade" },
-    { "type": "item", "subtype": "weapon", "name": "Morning Star", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (1H)", "damageType": "Bludgeoning", "durability": 10, "artPrompt": "a spiked morning star with a heavy chain" },
-    { "type": "item", "subtype": "weapon", "name": "Mercenary's Halberd", "rarity": "RARE", "atk": 6, "slot": "Hand (2H)", "damageType": "Slashing", "durability": 14, "special": "+1 DEF (reach)", "artPrompt": "a long-hafted halberd with a cruel blade" },
-    { "type": "item", "subtype": "weapon", "name": "Hunting Longbow", "rarity": "COMMON", "atk": 3, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 8, "artPrompt": "a crude but sturdy longbow made of dark yew wood" },
-
-    { "type": "apparel", "name": "Brigandine Coat", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 0, "durability": 10, "fabric": "iron-studded leather", "artPrompt": "a coat of overlapping iron plates riveted to leather" },
-    { "type": "apparel", "name": "Boiled Leather Cuirass", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "boiled leather", "artPrompt": "a hardened leather cuirass darkened by fire" },
-    { "type": "apparel", "name": "Iron Helm", "rarity": "COMMON", "slot": "Head", "def": 2, "hpBonus": 0, "durability": 10, "fabric": "iron", "artPrompt": "a dented iron helm with a nose guard" },
-    { "type": "apparel", "name": "Blackened Plate Armor", "rarity": "RARE", "slot": "Body", "def": 5, "hpBonus": 2, "durability": 20, "fabric": "blackened steel", "artPrompt": "a full suit of blackened plate armor, scarred by battle" },
-    { "type": "apparel", "name": "Mail Coif", "rarity": "UNCOMMON", "slot": "Head", "def": 2, "hpBonus": 1, "durability": 12, "fabric": "chain mail", "artPrompt": "a chain mail hood protecting head and neck" },
-    { "type": "apparel", "name": "Worn Gambeson", "rarity": "COMMON", "slot": "Body", "def": 1, "hpBonus": 1, "durability": 6, "fabric": "padded linen", "artPrompt": "a thick padded jacket, stained and patched" },
-    { "type": "apparel", "name": "Plague Doctor's Coat", "rarity": "UNCOMMON", "slot": "Body", "def": 1, "hpBonus": 0, "durability": 8, "fabric": "waxed canvas", "special": "Resist poison effects", "artPrompt": "a long waxed coat with a beaked mask hanging from the collar" },
-
-    { "type": "skill", "name": "Shieldbreaker", "category": "Combat", "modifier": "Ignore +2 of target's DEF", "tier": "UNCOMMON", "artPrompt": "a warrior shattering a shield with a massive blow" },
-    { "type": "skill", "name": "Grit", "category": "Defense", "modifier": "Survive one lethal hit with 1 HP (once per game)", "tier": "RARE", "artPrompt": "a battered fighter refusing to fall" },
-    { "type": "skill", "name": "Dirty Fighting", "category": "Combat", "modifier": "+2 ATK and +2 to Feint rolls", "tier": "UNCOMMON", "artPrompt": "a fighter throwing sand in an opponent's eyes" },
-    { "type": "skill", "name": "Interrogation", "category": "Social", "modifier": "+3 to Talk rolls when intimidating", "tier": "COMMON", "artPrompt": "a stern figure interrogating a prisoner" },
-    { "type": "skill", "name": "Scavenger's Eye", "category": "Survival", "modifier": "+2 to Investigate, find loot on UNCOMMON+ rolls", "tier": "COMMON", "artPrompt": "a figure picking through ruins by torchlight" },
-    { "type": "skill", "name": "Ambush Tactics", "category": "Combat", "modifier": "+3 ATK on first attack of round", "tier": "UNCOMMON", "artPrompt": "shadowy figures leaping from concealment" },
-    { "type": "skill", "name": "Field Surgery", "category": "Survival", "modifier": "Rest restores +4 extra HP", "tier": "UNCOMMON", "artPrompt": "crude surgical tools and bloodied bandages" },
-    { "type": "skill", "name": "Executioner's Precision", "category": "Combat", "modifier": "Critical hits deal triple damage", "tier": "RARE", "artPrompt": "a hooded executioner with an axe raised" },
-
-    { "type": "magic", "name": "Bloodletting", "effectType": "Offensive", "skillType": "Imperial", "effect": "Deal 3 damage, heal self 3 HP", "energyCost": 4, "reusable": true, "artPrompt": "dark tendrils of blood magic draining a victim" },
-    { "type": "magic", "name": "Ward of Iron", "effectType": "Defensive", "skillType": "Imperial", "effect": "+4 DEF this round", "energyCost": 3, "reusable": true, "artPrompt": "iron chains materializing as a protective barrier" },
-    { "type": "magic", "name": "Plague Touch", "effectType": "Offensive", "skillType": "Imperial", "effect": "Poison target: 2 damage/round for 3 rounds", "energyCost": 5, "reusable": true, "artPrompt": "a rotting hand reaching out, green mist rising" },
-    { "type": "magic", "name": "Corpse Light", "effectType": "Utility", "skillType": "Undead", "effect": "Reveal all hidden items and threats this round", "energyCost": 3, "reusable": true, "artPrompt": "eerie blue-green flames hovering in darkness" },
-    { "type": "magic", "name": "Death's Grasp", "effectType": "Offensive", "skillType": "Undead", "effect": "Deal 5 damage, target cannot Rest next round", "energyCost": 5, "reusable": true, "artPrompt": "a spectral skeletal hand reaching up from the ground to seize a victim" },
-    { "type": "magic", "name": "Hex of Weakness", "effectType": "Offensive", "skillType": "Imperial", "effect": "Target loses 3 ATK and 2 DEF this round", "energyCost": 4, "reusable": true, "artPrompt": "a hunched figure inscribing a dark sigil in blood on the ground" },
-
-    { "type": "item", "subtype": "consumable", "name": "Surgeon's Kit", "rarity": "UNCOMMON", "effect": "Restore 10 HP", "artPrompt": "a leather case with crude surgical instruments" },
-    { "type": "item", "subtype": "consumable", "name": "Whetstone", "rarity": "COMMON", "effect": "+2 ATK this round", "artPrompt": "a coarse whetstone and sharpened blade" },
-    { "type": "item", "subtype": "consumable", "name": "Flask of Spirits", "rarity": "COMMON", "effect": "Restore 5 Energy, -1 DEF this round", "artPrompt": "a dented hip flask of strong spirits" },
-    { "type": "item", "subtype": "consumable", "name": "Antidote", "rarity": "UNCOMMON", "effect": "Remove all poison effects", "artPrompt": "a small vial of murky brown liquid" },
-    { "type": "item", "subtype": "consumable", "name": "Caltrops", "rarity": "COMMON", "effect": "Target's next Flee fails automatically", "artPrompt": "a handful of scattered metal caltrops" }
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Rusty Flail",
+      "rarity": "COMMON",
+      "atk": 3,
+      "slot": "Hand (1H)",
+      "damageType": "Bludgeoning",
+      "durability": 6,
+      "artPrompt": "a rusty chain flail with a spiked head"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Executioner's Blade",
+      "rarity": "UNCOMMON",
+      "atk": 5,
+      "slot": "Hand (2H)",
+      "damageType": "Slashing",
+      "durability": 10,
+      "artPrompt": "a wide-bladed executioner's sword, dark and imposing"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Heavy Crossbow",
+      "rarity": "UNCOMMON",
+      "atk": 4,
+      "slot": "Hand (2H)",
+      "damageType": "Piercing",
+      "range": "Ranged",
+      "durability": 12,
+      "artPrompt": "a heavy crossbow with iron fittings"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Poisoned Stiletto",
+      "rarity": "RARE",
+      "atk": 2,
+      "slot": "Hand (1H)",
+      "damageType": "Piercing",
+      "durability": 5,
+      "special": "Poison: 2 damage/round for 2 rounds",
+      "artPrompt": "a thin dagger with a green-coated blade"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Morning Star",
+      "rarity": "UNCOMMON",
+      "atk": 4,
+      "slot": "Hand (1H)",
+      "damageType": "Bludgeoning",
+      "durability": 10,
+      "artPrompt": "a spiked morning star with a heavy chain"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Mercenary's Halberd",
+      "rarity": "RARE",
+      "atk": 6,
+      "slot": "Hand (2H)",
+      "damageType": "Slashing",
+      "durability": 14,
+      "special": "+1 DEF (reach)",
+      "artPrompt": "a long-hafted halberd with a cruel blade"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Hunting Longbow",
+      "rarity": "COMMON",
+      "atk": 3,
+      "slot": "Hand (2H)",
+      "damageType": "Piercing",
+      "range": "Ranged",
+      "durability": 8,
+      "artPrompt": "a crude but sturdy longbow made of dark yew wood"
+    },
+    {
+      "type": "apparel",
+      "name": "Brigandine Coat",
+      "rarity": "UNCOMMON",
+      "slot": "Body",
+      "def": 3,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "iron-studded leather",
+      "artPrompt": "a coat of overlapping iron plates riveted to leather"
+    },
+    {
+      "type": "apparel",
+      "name": "Boiled Leather Cuirass",
+      "rarity": "COMMON",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "boiled leather",
+      "artPrompt": "a hardened leather cuirass darkened by fire"
+    },
+    {
+      "type": "apparel",
+      "name": "Iron Helm",
+      "rarity": "COMMON",
+      "slot": "Head",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "iron",
+      "artPrompt": "a dented iron helm with a nose guard"
+    },
+    {
+      "type": "apparel",
+      "name": "Blackened Plate Armor",
+      "rarity": "RARE",
+      "slot": "Body",
+      "def": 5,
+      "hpBonus": 2,
+      "durability": 20,
+      "fabric": "blackened steel",
+      "artPrompt": "a full suit of blackened plate armor, scarred by battle"
+    },
+    {
+      "type": "apparel",
+      "name": "Mail Coif",
+      "rarity": "UNCOMMON",
+      "slot": "Head",
+      "def": 2,
+      "hpBonus": 1,
+      "durability": 12,
+      "fabric": "chain mail",
+      "artPrompt": "a chain mail hood protecting head and neck"
+    },
+    {
+      "type": "apparel",
+      "name": "Worn Gambeson",
+      "rarity": "COMMON",
+      "slot": "Body",
+      "def": 1,
+      "hpBonus": 1,
+      "durability": 6,
+      "fabric": "padded linen",
+      "artPrompt": "a thick padded jacket, stained and patched"
+    },
+    {
+      "type": "apparel",
+      "name": "Plague Doctor's Coat",
+      "rarity": "UNCOMMON",
+      "slot": "Body",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "waxed canvas",
+      "special": "Resist poison effects",
+      "artPrompt": "a long waxed coat with a beaked mask hanging from the collar"
+    },
+    {
+      "type": "skill",
+      "name": "Shieldbreaker",
+      "category": "Combat",
+      "modifier": "Ignore +2 of target's DEF",
+      "tier": "UNCOMMON",
+      "artPrompt": "a warrior shattering a shield with a massive blow"
+    },
+    {
+      "type": "skill",
+      "name": "Grit",
+      "category": "Defense",
+      "modifier": "Survive one lethal hit with 1 HP (once per game)",
+      "tier": "RARE",
+      "artPrompt": "a battered fighter refusing to fall"
+    },
+    {
+      "type": "skill",
+      "name": "Dirty Fighting",
+      "category": "Combat",
+      "modifier": "+2 ATK and +2 to Feint rolls",
+      "tier": "UNCOMMON",
+      "artPrompt": "a fighter throwing sand in an opponent's eyes"
+    },
+    {
+      "type": "skill",
+      "name": "Interrogation",
+      "category": "Social",
+      "modifier": "+3 to Talk rolls when intimidating",
+      "tier": "COMMON",
+      "artPrompt": "a stern figure interrogating a prisoner"
+    },
+    {
+      "type": "skill",
+      "name": "Scavenger's Eye",
+      "category": "Survival",
+      "modifier": "+2 to Investigate, find loot on UNCOMMON+ rolls",
+      "tier": "COMMON",
+      "artPrompt": "a figure picking through ruins by torchlight"
+    },
+    {
+      "type": "skill",
+      "name": "Ambush Tactics",
+      "category": "Combat",
+      "modifier": "+3 ATK on first attack of round",
+      "tier": "UNCOMMON",
+      "artPrompt": "shadowy figures leaping from concealment"
+    },
+    {
+      "type": "skill",
+      "name": "Field Surgery",
+      "category": "Survival",
+      "modifier": "Rest restores +4 extra HP",
+      "tier": "UNCOMMON",
+      "artPrompt": "crude surgical tools and bloodied bandages"
+    },
+    {
+      "type": "skill",
+      "name": "Executioner's Precision",
+      "category": "Combat",
+      "modifier": "Critical hits deal triple damage",
+      "tier": "RARE",
+      "artPrompt": "a hooded executioner with an axe raised"
+    },
+    {
+      "type": "magic",
+      "name": "Bloodletting",
+      "effectType": "Offensive",
+      "skillType": "Imperial",
+      "effect": "Deal 3 damage, heal self 3 HP",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "dark tendrils of blood magic draining a victim"
+    },
+    {
+      "type": "magic",
+      "name": "Ward of Iron",
+      "effectType": "Defensive",
+      "skillType": "Imperial",
+      "effect": "+4 DEF this round",
+      "energyCost": 3,
+      "reusable": true,
+      "artPrompt": "iron chains materializing as a protective barrier"
+    },
+    {
+      "type": "magic",
+      "name": "Plague Touch",
+      "effectType": "Offensive",
+      "skillType": "Imperial",
+      "effect": "Poison target: 2 damage/round for 3 rounds",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a rotting hand reaching out, green mist rising"
+    },
+    {
+      "type": "magic",
+      "name": "Corpse Light",
+      "effectType": "Utility",
+      "skillType": "Undead",
+      "effect": "Reveal all hidden items and threats this round",
+      "energyCost": 3,
+      "reusable": true,
+      "artPrompt": "eerie blue-green flames hovering in darkness"
+    },
+    {
+      "type": "magic",
+      "name": "Death's Grasp",
+      "effectType": "Offensive",
+      "skillType": "Undead",
+      "effect": "Deal 5 damage, target cannot Rest next round",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a spectral skeletal hand reaching up from the ground to seize a victim"
+    },
+    {
+      "type": "magic",
+      "name": "Hex of Weakness",
+      "effectType": "Offensive",
+      "skillType": "Imperial",
+      "effect": "Target loses 3 ATK and 2 DEF this round",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a hunched figure inscribing a dark sigil in blood on the ground"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Surgeon's Kit",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 10 HP",
+      "artPrompt": "a leather case with crude surgical instruments"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Whetstone",
+      "rarity": "COMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a coarse whetstone and sharpened blade"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Flask of Spirits",
+      "rarity": "COMMON",
+      "effect": "Restore 5 Energy, -1 DEF this round",
+      "artPrompt": "a dented hip flask of strong spirits"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Antidote",
+      "rarity": "UNCOMMON",
+      "effect": "Remove all poison effects",
+      "artPrompt": "a small vial of murky brown liquid"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Caltrops",
+      "rarity": "COMMON",
+      "effect": "Target's next Flee fails automatically",
+      "artPrompt": "a handful of scattered metal caltrops"
+    }
   ],
-
   "encounters": {
-    "threatCreatures": [
-      { "name": "Starving Hound", "type": "animal", "atk": 2, "def": 1, "hp": 7, "imageIcon": "pets", "behavior": "Attacks lowest HP target", "loot": ["Mangy Pelt"], "artPrompt": "a gaunt, feral dog snarling with bared fangs" },
-      { "name": "Deserter", "type": "npc", "atk": 3, "def": 2, "hp": 12, "imageIcon": "person_alert", "behavior": "Steals item on crit", "loot": ["Deserter's Blade", "Tattered Cloak"], "artPrompt": "a desperate soldier in broken armor" },
-      { "name": "Plague Rat Swarm", "type": "animal", "atk": 2, "def": 1, "hp": 10, "imageIcon": "bug_report", "behavior": "Poison on hit (2 turns)", "loot": ["Rat Tail", "Venom Gland"], "artPrompt": "a writhing mass of diseased rats" },
-      { "name": "Highwayman", "type": "npc", "atk": 4, "def": 2, "hp": 14, "imageIcon": "person_alert", "behavior": "Ambush: +2 ATK first round", "loot": ["Stolen Purse", "Crossbow Bolt"], "artPrompt": "a masked highwayman with a crossbow on a forest road" },
-      { "name": "Boar", "type": "animal", "atk": 3, "def": 3, "hp": 16, "imageIcon": "pets", "behavior": "Charges (+2 ATK first attack)", "loot": ["Boar Tusk"], "artPrompt": "a bristling wild boar charging through undergrowth" },
-      { "name": "Marauder Knight", "type": "npc", "atk": 6, "def": 4, "hp": 22, "imageIcon": "shield_person", "behavior": "Enrages below half HP (+2 ATK)", "loot": ["Blackened Blade", "Dented Shield"], "artPrompt": "a fallen knight in scarred black armor on horseback" },
-      { "name": "Grave Wight", "type": "monster", "atk": 5, "def": 2, "hp": 15, "imageIcon": "skull", "behavior": "Drains 2 Energy on hit", "loot": ["Grave Dust", "Wight's Ring"], "artPrompt": "a skeletal undead warrior crawling from a grave" },
-      { "name": "Torturer", "type": "npc", "atk": 5, "def": 1, "hp": 18, "imageIcon": "warning", "behavior": "Reduces target morale by 2 on hit", "loot": ["Iron Pincers", "Confession Scroll"], "artPrompt": "a hooded torturer with cruel instruments" }
+    "threatOverrides": [
+      {
+        "id": "weak_beast",
+        "name": "Starving Hound",
+        "loot": [
+          "Mangy Pelt"
+        ],
+        "artPrompt": "a gaunt, feral dog snarling with bared fangs"
+      },
+      {
+        "id": "scout",
+        "name": "Deserter",
+        "loot": [
+          "Deserter's Blade",
+          "Tattered Cloak"
+        ],
+        "artPrompt": "a desperate soldier in broken armor"
+      },
+      {
+        "id": "venomous",
+        "name": "Plague Rat Swarm",
+        "loot": [
+          "Rat Tail",
+          "Venom Gland"
+        ],
+        "artPrompt": "a writhing mass of diseased rats"
+      },
+      {
+        "id": "thief",
+        "name": "Highwayman",
+        "loot": [
+          "Stolen Purse",
+          "Crossbow Bolt"
+        ],
+        "behavior": "Ambush: +2 ATK first round",
+        "artPrompt": "a masked highwayman with a crossbow on a forest road"
+      },
+      {
+        "id": "alpha",
+        "name": "Boar",
+        "loot": [
+          "Boar Tusk"
+        ],
+        "behavior": "Charges (+2 ATK first attack)",
+        "artPrompt": "a bristling wild boar charging through undergrowth"
+      },
+      {
+        "id": "heavy",
+        "name": "Marauder Knight",
+        "loot": [
+          "Blackened Blade",
+          "Dented Shield"
+        ],
+        "artPrompt": "a fallen knight in scarred black armor on horseback"
+      },
+      {
+        "id": "specialist",
+        "name": "Grave Wight",
+        "loot": [
+          "Grave Dust",
+          "Wight's Ring"
+        ],
+        "behavior": "Drains 2 Energy on hit",
+        "artPrompt": "a skeletal undead warrior crawling from a grave"
+      },
+      {
+        "id": "boss",
+        "name": "Torturer",
+        "type": "npc",
+        "imageIcon": "warning",
+        "loot": [
+          "Iron Pincers",
+          "Confession Scroll"
+        ],
+        "behavior": "Reduces target morale by 2 on hit",
+        "artPrompt": "a hooded torturer with cruel instruments"
+      }
+    ],
+    "scenarioOverrides": [
+      {
+        "id": "distant_warning",
+        "name": "Crows Circling",
+        "description": "Crows circle overhead. A bad omen, but nothing approaches."
+      },
+      {
+        "id": "wandering_threat",
+        "name": "Prowling Beast",
+        "description": "Something prowls in the darkness nearby."
+      }
     ]
   }
 }

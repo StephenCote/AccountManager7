@@ -196,20 +196,13 @@
         let playerApparel = apparelCards.slice(0, apparelMid);
         let opponentApparel = apparelCards.slice(apparelMid);
 
-        // Theme cardPool adds extra modifier cards to the draw pile
-        let activeTheme = Th()?.getActiveTheme?.();
-        let themeModifiers = [];
-        if (activeTheme?.cardPool) {
-            themeModifiers = activeTheme.cardPool.filter(c =>
-                c.type === "skill" || c.type === "magic" || (c.type === "item" && c.subtype === "consumable")
-            );
-        }
-
-        let playableCards = [...skillCards, ...magicCards, ...consumableCards, ...themeModifiers];
+        // Theme cardPool cards are now included in deck.cards during assembly,
+        // so skillCards/magicCards/consumableCards already contain them
+        let playableCards = [...skillCards, ...magicCards, ...consumableCards];
 
         console.log("[CardGame v2] Card counts - skill:", skillCards.length,
             "magic:", magicCards.length, "consumable:", consumableCards.length,
-            "themeModifiers:", themeModifiers.length, "playable total:", playableCards.length);
+            "playable total:", playableCards.length);
 
         // If deck has no modifier cards, create basic skill cards
         if (playableCards.length === 0) {
@@ -386,6 +379,9 @@
 
         console.log("[CardGame v2] Player actions:", state.player.availableActions);
         console.log("[CardGame v2] Opponent actions:", state.opponent.availableActions);
+
+        // Reset initiative animation so it replays for the new game
+        resetInitAnimState();
 
         return state;
     }
@@ -1216,16 +1212,18 @@
             let defenseRoll = rollDefense(targetActor);
             let outcome = getCombatOutcome(attackRoll, defenseRoll);
 
-            console.log("[CardGame v2] Threat combat:", threat.name, "vs", threat.target, "- Outcome:", outcome.label);
+            console.log("[CardGame v2] Threat combat:", threat.name, "vs", threat.target,
+                "- ATK:", attackRoll.total, "vs DEF:", defenseRoll.total,
+                "- Outcome:", outcome.label, "(mult:", outcome.damageMultiplier, ")");
+
+            if (!gameState.threatResults) gameState.threatResults = [];
 
             if (outcome.damageMultiplier > 0) {
                 // Threat hit
                 let damage = calculateDamage(threatAttacker, outcome);
-                let damageResult = applyDamage(targetActor, damage.finalDamage);
+                applyDamage(targetActor, damage.finalDamage);
                 console.log("[CardGame v2] Threat dealt", damage.finalDamage, "damage to", threat.target);
 
-                // Store result for UI
-                if (!gameState.threatResults) gameState.threatResults = [];
                 gameState.threatResults.push({
                     threatName: threat.name,
                     target: threat.target,
@@ -1235,22 +1233,43 @@
                     defenseRoll,
                     combatOutcome: outcome
                 });
+            } else if (outcome.bothTakeDamage) {
+                // CLASH — both take damage
+                let clashDmg = outcome.bothTakeDamage;
+                applyDamage(targetActor, clashDmg);
+                threat.hp = Math.max(0, (threat.hp || threat.maxHp) - clashDmg);
+                console.log("[CardGame v2] Clash! Both take", clashDmg, "damage");
+
+                gameState.threatResults.push({
+                    threatName: threat.name,
+                    target: threat.target,
+                    outcome: "clash",
+                    damage: clashDmg,
+                    threatDamage: clashDmg,
+                    attackRoll,
+                    defenseRoll,
+                    combatOutcome: outcome
+                });
             } else {
                 // Defender blocked/parried
                 console.log("[CardGame v2]", threat.target, "defended against", threat.name);
 
-                // Grant loot on successful defense
-                let lootCard = {
-                    type: "item",
-                    subtype: "consumable",
-                    name: "Threat Loot (" + threat.lootRarity + ")",
-                    rarity: threat.lootRarity,
-                    effect: threat.lootRarity === "RARE" ? "Restore 5 HP" : "Restore 3 HP",
-                    flavor: "Spoils from defeating " + threat.name
-                };
+                // Grant loot from the threat's defined loot table
+                let lootItems = threat.lootItems || [];
+                let lootCard;
+                if (lootItems.length > 0) {
+                    lootCard = Object.assign({}, lootItems[0]);
+                } else {
+                    lootCard = {
+                        type: "loot",
+                        name: "Spoils of " + threat.name,
+                        rarity: threat.lootRarity || "COMMON",
+                        effect: threat.lootRarity === "RARE" ? "Restore 5 HP" : "Restore 3 HP",
+                        flavor: "Spoils from defeating " + threat.name
+                    };
+                }
                 targetActor.hand.push(lootCard);
 
-                if (!gameState.threatResults) gameState.threatResults = [];
                 gameState.threatResults.push({
                     threatName: threat.name,
                     target: threat.target,
@@ -1301,7 +1320,7 @@
         }
 
         let threat = gameState.endThreatResult.threat;
-        let responder = gameState.threatResponse?.responder || gameState.roundWinner;
+        let responder = gameState.threatResponse?.responder || threat.target || gameState.roundWinner;
         let responderActor = responder === "player" ? gameState.player : gameState.opponent;
         let defenseStack = gameState.threatResponse?.defenseStack || [];
 
@@ -1325,31 +1344,69 @@
         let defenseRoll = rollDefense(responderActor);
         let outcome = getCombatOutcome(attackRoll, defenseRoll);
 
-        console.log("[CardGame v2] End threat combat:", threat.name, "vs", responder, "- Outcome:", outcome.label);
+        console.log("[CardGame v2] End threat combat:", threat.name, "vs", responder,
+            "- ATK:", attackRoll.total, "vs DEF:", defenseRoll.total,
+            "- Outcome:", outcome.label, "(mult:", outcome.damageMultiplier, ")");
 
+        // Determine result: hit, clash, or defended
         if (outcome.damageMultiplier > 0) {
-            // Threat hit
+            // Threat hit the defender
             let damage = calculateDamage(threatAttacker, outcome);
             applyDamage(responderActor, damage.finalDamage);
+            // Threat takes no damage on a hit
+            threat.hp = threat.hp || threat.maxHp;
             gameState.endThreatResult.damageDealt = damage.finalDamage;
-            gameState.endThreatResult.combatResult = { attackRoll, defenseRoll, outcome, damage };
+            gameState.endThreatResult.threatDamage = 0;
+            gameState.endThreatResult.combatResult = { attackRoll, defenseRoll, outcome, damage, resultType: "hit" };
             console.log("[CardGame v2] End threat dealt", damage.finalDamage, "damage to", responder);
+        } else if (outcome.bothTakeDamage) {
+            // CLASH — both take 1 damage
+            let clashDmg = outcome.bothTakeDamage;
+            applyDamage(responderActor, clashDmg);
+            threat.hp = Math.max(0, (threat.hp || threat.maxHp) - clashDmg);
+            gameState.endThreatResult.damageDealt = clashDmg;
+            gameState.endThreatResult.threatDamage = clashDmg;
+            gameState.endThreatResult.combatResult = { attackRoll, defenseRoll, outcome, resultType: "clash" };
+            console.log("[CardGame v2] Clash! Both take", clashDmg, "damage");
         } else {
-            // Defender won
+            // Defender blocked/parried — defender wins
             gameState.endThreatResult.damageDealt = 0;
-            gameState.endThreatResult.combatResult = { attackRoll, defenseRoll, outcome, defended: true };
 
-            // Grant loot
-            let lootCard = {
-                type: "item",
-                subtype: "consumable",
-                name: "End Threat Loot (" + threat.lootRarity + ")",
-                rarity: threat.lootRarity,
-                effect: "Restore 4 HP",
-                flavor: "Spoils from defeating " + threat.name
-            };
-            responderActor.hand.push(lootCard);
-            gameState.endThreatResult.loot = lootCard;
+            // Counter-attack damage (parry/critical parry)
+            let counterDmg = 0;
+            if (outcome.damageMultiplier < 0) {
+                // Negative multiplier = counter damage to threat
+                counterDmg = Math.max(1, Math.floor(Math.abs(outcome.damageMultiplier) * (responderActor.character?.stats?.STR || 8)));
+            }
+            threat.hp = Math.max(0, (threat.hp || threat.maxHp) - counterDmg);
+            gameState.endThreatResult.threatDamage = counterDmg;
+            gameState.endThreatResult.combatResult = { attackRoll, defenseRoll, outcome, defended: true, counterDmg, resultType: "defended" };
+
+            // Grant loot from the threat's defined loot table
+            let lootItems = threat.lootItems || [];
+            if (lootItems.length > 0) {
+                let lootCard = Object.assign({}, lootItems[0]);
+                // Look up art from deck's loot cards
+                let ctx = window.CardGame.ctx || {};
+                let deckCards = ctx.viewingDeck?.cards || [];
+                let artMatch = deckCards.find(function(c) {
+                    return c.type === "loot" && c.name === lootCard.name && c.imageUrl;
+                });
+                if (artMatch) lootCard.imageUrl = artMatch.imageUrl;
+                responderActor.hand.push(lootCard);
+                gameState.endThreatResult.loot = lootCard;
+            } else {
+                // Fallback generic loot
+                let lootCard = {
+                    type: "loot",
+                    name: "Spoils of " + threat.name,
+                    rarity: threat.lootRarity || "COMMON",
+                    effect: "Restore 4 HP",
+                    flavor: "Spoils from defeating " + threat.name
+                };
+                responderActor.hand.push(lootCard);
+                gameState.endThreatResult.loot = lootCard;
+            }
             console.log("[CardGame v2]", responder, "defeated end threat, earned loot");
         }
 
@@ -1376,6 +1433,9 @@
         }
 
         // Return to cleanup phase to show the result before next round
+        // Mark cleanup as already applied so oninit doesn't re-run (which would
+        // draw a new scenario card and overwrite the end threat combat result)
+        gameState.cleanupApplied = true;
         gameState.phase = GAME_PHASES.CLEANUP;
         console.log("[CardGame v2] End threat resolved, returning to cleanup to show result");
         m.redraw();

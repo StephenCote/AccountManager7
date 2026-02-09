@@ -3,7 +3,6 @@
   "name": "High Fantasy",
   "version": "1.0",
   "description": "Classic high fantasy setting with vibrant magic, diverse races, and epic adventures",
-
   "artStyle": {
     "promptSuffix": "high fantasy, vibrant colors, detailed illustration, epic, magical atmosphere",
     "cardBorderStyle": "ornate-gold",
@@ -17,76 +16,234 @@
       "talk": "#1565C0",
       "encounter": "#6A1B9A",
       "skill": "#E65100",
-      "magic": "#00695C"
+      "magic": "#00695C",
+      "scenario": "#1B5E20",
+      "loot": "#F57F17"
     },
     "backgroundPrompt": "Fantasy landscape, rolling green hills, ancient stone castle in the distance, dramatic sky with golden clouds, mystical forest edge, high fantasy world, vibrant colors, epic panoramic view",
     "backgroundConfig": {
-      "width": 1024, "height": 1024, "steps": 40, "cfg": 7, "hires": true
+      "width": 1024,
+      "height": 1024,
+      "steps": 40,
+      "cfg": 7,
+      "hires": true
     },
     "sdConfig": {
-      "default":   { "style": "art", "steps": 30, "cfg": 7, "width": 512, "height": 512, "denoisingStrength": 0.7 },
-      "character":  { "width": 768, "height": 1024 },
-      "apparel":    { "width": 512, "height": 768 },
-      "item":       { "width": 512, "height": 512 },
-      "action":     { "width": 768, "height": 512, "denoisingStrength": 0.8 },
-      "talk":       { "width": 768, "height": 512, "denoisingStrength": 0.8 },
-      "encounter":  { "width": 768, "height": 768 },
-      "skill":      { "width": 512, "height": 512 },
-      "magic":      { "width": 512, "height": 512, "denoisingStrength": 0.75 }
+      "default": {
+        "style": "art",
+        "steps": 30,
+        "cfg": 7,
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.7
+      },
+      "character": {
+        "width": 768,
+        "height": 1024
+      },
+      "apparel": {
+        "width": 512,
+        "height": 768
+      },
+      "item": {
+        "width": 512,
+        "height": 512
+      },
+      "action": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "talk": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "encounter": {
+        "width": 768,
+        "height": 768
+      },
+      "skill": {
+        "width": 512,
+        "height": 512
+      },
+      "magic": {
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.75
+      },
+      "scenario": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "loot": {
+        "width": 512,
+        "height": 512
+      }
     }
   },
-
   "characterBuild": {
-    "statRange": [3, 18],
+    "statRange": [
+      3,
+      18
+    ],
     "statPointBuy": 72,
     "skillSlots": 4,
-    "equipSlots": ["head", "body", "handL", "handR", "feet", "ring", "back"],
-    "availableRaces": ["HUMAN", "ELF", "DWARF", "ORC", "HALFLING"],
+    "equipSlots": [
+      "head",
+      "body",
+      "handL",
+      "handR",
+      "feet",
+      "ring",
+      "back"
+    ],
+    "availableRaces": [
+      "HUMAN",
+      "ELF",
+      "DWARF",
+      "ORC",
+      "HALFLING"
+    ],
     "availableAlignments": "all"
   },
-
   "starterDeck": {
-    "apparel": { "min": 2, "max": 3, "rarity": "COMMON" },
-    "weapons": { "min": 1, "max": 2, "rarity": "COMMON" },
+    "apparel": {
+      "min": 2,
+      "max": 3,
+      "rarity": "COMMON"
+    },
+    "weapons": {
+      "min": 1,
+      "max": 2,
+      "rarity": "COMMON"
+    },
     "consumables": [
-      { "name": "Ration", "count": 2, "effect": "Restore 3 Energy" },
-      { "name": "Health Potion", "count": 1, "effect": "Restore 8 HP" },
-      { "name": "Bandage", "count": 1, "effect": "Restore 4 HP" },
-      { "name": "Torch", "count": 1, "effect": "+2 to Investigate rolls this round" }
+      {
+        "name": "Ration",
+        "count": 2,
+        "effect": "Restore 3 Energy"
+      },
+      {
+        "name": "Health Potion",
+        "count": 1,
+        "effect": "Restore 8 HP"
+      },
+      {
+        "name": "Bandage",
+        "count": 1,
+        "effect": "Restore 4 HP"
+      },
+      {
+        "name": "Torch",
+        "count": 1,
+        "effect": "+2 to Investigate rolls this round"
+      }
     ],
-    "skills": { "min": 1, "max": 2 },
-    "magicEffects": { "min": 0, "max": 1, "condition": "MAG >= 10 OR INT >= 12" }
+    "skills": {
+      "min": 1,
+      "max": 2
+    },
+    "magicEffects": {
+      "min": 0,
+      "max": 1,
+      "condition": "MAG >= 10 OR INT >= 12"
+    }
   },
-
   "encounterDeck": {
-    "threats": { "count": 12, "difficultyRange": [4, 10], "maxRarity": "RARE" },
-    "events": { "count": 10, "maxRarity": "UNCOMMON" },
-    "discoveries": { "count": 10, "maxRarity": "RARE" },
-    "npcs": { "count": 8, "maxRarity": "RARE", "source": "olio.charPerson.population", "roleAssignment": "random" },
-    "lootItems": { "count": 10, "rarityWeights": { "COMMON": 50, "UNCOMMON": 35, "RARE": 15 } },
-    "skillCards": { "count": 5, "minRarity": "UNCOMMON", "maxRarity": "RARE" },
-    "magicEffects": { "count": 2, "rarity": "RARE" }
+    "threats": {
+      "count": 12,
+      "difficultyRange": [
+        4,
+        10
+      ],
+      "maxRarity": "RARE"
+    },
+    "events": {
+      "count": 10,
+      "maxRarity": "UNCOMMON"
+    },
+    "discoveries": {
+      "count": 10,
+      "maxRarity": "RARE"
+    },
+    "npcs": {
+      "count": 8,
+      "maxRarity": "RARE",
+      "source": "olio.charPerson.population",
+      "roleAssignment": "random"
+    },
+    "lootItems": {
+      "count": 10,
+      "rarityWeights": {
+        "COMMON": 50,
+        "UNCOMMON": 35,
+        "RARE": 15
+      }
+    },
+    "skillCards": {
+      "count": 5,
+      "minRarity": "UNCOMMON",
+      "maxRarity": "RARE"
+    },
+    "magicEffects": {
+      "count": 2,
+      "rarity": "RARE"
+    }
   },
-
   "treasureVault": {
-    "bossThreats": { "count": 4, "difficultyRange": [12, 16], "minRarity": "EPIC" },
-    "legendaryWeapons": { "count": 2, "rarity": "LEGENDARY" },
-    "epicWeapons": { "count": 3, "rarity": "EPIC" },
-    "epicApparel": { "count": 3, "rarity": "EPIC" },
-    "epicConsumables": { "count": 2, "rarity": "EPIC" },
-    "epicSkills": { "count": 3, "minRarity": "RARE", "maxRarity": "EPIC" },
-    "legendaryMagic": { "count": 2, "rarity": "LEGENDARY" },
-    "drawTriggers": ["discovery_rare", "investigate_crit", "npc_quest_reward", "pot_jackpot_5plus"],
+    "bossThreats": {
+      "count": 4,
+      "difficultyRange": [
+        12,
+        16
+      ],
+      "minRarity": "EPIC"
+    },
+    "legendaryWeapons": {
+      "count": 2,
+      "rarity": "LEGENDARY"
+    },
+    "epicWeapons": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicApparel": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicConsumables": {
+      "count": 2,
+      "rarity": "EPIC"
+    },
+    "epicSkills": {
+      "count": 3,
+      "minRarity": "RARE",
+      "maxRarity": "EPIC"
+    },
+    "legendaryMagic": {
+      "count": 2,
+      "rarity": "LEGENDARY"
+    },
+    "drawTriggers": [
+      "discovery_rare",
+      "investigate_crit",
+      "npc_quest_reward",
+      "pot_jackpot_5plus"
+    ],
     "bossDefeatGrantsExtraDraw": true,
     "refillsOnCampaignSession": true
   },
-
   "balance": {
     "hpMax": 20,
     "moraleMax": 20,
     "energyFormula": "MAG or INT (by skill type)",
     "apFormula": "floor(END / 5) + 1",
-    "apRange": [1, 5],
+    "apRange": [
+      1,
+      5
+    ],
     "initiativeFormula": "1d20 + AGI",
     "potAnteRequired": true,
     "roundTimerSeconds": 60,
@@ -96,7 +253,6 @@
     "exhaustedEnabled": true,
     "hoardingReturnTarget": "encounterDeck"
   },
-
   "narration": {
     "announcerProfile": "arena-announcer",
     "gameStart": "The ancient arena stirs to life! Torches blaze along the stone walls as two champions prepare for battle. Let the cards decide their fate!",
@@ -127,24 +283,62 @@
       "Exhaustion sets in. Every move could be the last."
     ]
   },
-
   "magicConfig": {
-    "enabledSkillTypes": ["Imperial", "Undead", "Psionic"],
-    "magicEffectPool": ["Fireball", "Ice Wall", "Mind Read", "Raise Thrall", "Healing Light", "Thunder Strike", "Shield of Faith", "Shadow Step"]
+    "enabledSkillTypes": [
+      "Imperial",
+      "Undead",
+      "Psionic"
+    ],
+    "magicEffectPool": [
+      "Fireball",
+      "Ice Wall",
+      "Mind Read",
+      "Raise Thrall",
+      "Healing Light",
+      "Thunder Strike",
+      "Shield of Faith",
+      "Shadow Step"
+    ]
   },
-
   "cardNames": {
-    "meleeWeapon": { "name": "Short Sword", "damageType": "Slashing" },
-    "rangedWeapon": { "name": "Hunting Bow", "damageType": "Piercing" },
+    "meleeWeapon": {
+      "name": "Short Sword",
+      "damageType": "Slashing"
+    },
+    "rangedWeapon": {
+      "name": "Hunting Bow",
+      "damageType": "Piercing"
+    },
     "bodyArmor": "Leather Armor",
     "boots": "Worn Boots",
-    "strSkill": { "name": "Swordsmanship", "category": "Combat", "modifier": "+2 to Attack rolls with Slashing weapons" },
-    "agiSkill": { "name": "Quick Reflexes", "category": "Defense", "modifier": "+2 to Flee and initiative rolls" },
-    "defaultSkill": { "name": "Survival", "category": "Survival", "modifier": "+1 to Investigate and Rest rolls" },
-    "healMagic": { "name": "Healing Light", "effectType": "Restorative", "skillType": "Imperial", "effect": "Restore 6 HP to self or ally" },
-    "intMagic": { "name": "Mind Read", "effectType": "Discovery", "skillType": "Psionic", "effect": "View opponent's next planned action stack" }
+    "strSkill": {
+      "name": "Swordsmanship",
+      "category": "Combat",
+      "modifier": "+2 to Attack rolls with Slashing weapons"
+    },
+    "agiSkill": {
+      "name": "Quick Reflexes",
+      "category": "Defense",
+      "modifier": "+2 to Flee and initiative rolls"
+    },
+    "defaultSkill": {
+      "name": "Survival",
+      "category": "Survival",
+      "modifier": "+1 to Investigate and Rest rolls"
+    },
+    "healMagic": {
+      "name": "Healing Light",
+      "effectType": "Restorative",
+      "skillType": "Imperial",
+      "effect": "Restore 6 HP to self or ally"
+    },
+    "intMagic": {
+      "name": "Mind Read",
+      "effectType": "Discovery",
+      "skillType": "Psionic",
+      "effect": "View opponent's next planned action stack"
+    }
   },
-
   "outfits": {
     "male": {
       "scrappy": {
@@ -153,13 +347,83 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
-          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "patched tunic", "location": ["torso"], "fabric": "linen", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "loose breeches", "location": ["leg"], "fabric": "cotton", "color": "Tan", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "rope belt", "location": ["waist"], "fabric": "hemp", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "worn sandals", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" }
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "drawers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "patched tunic",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "loose breeches",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "Tan",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "rope belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "hemp",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn sandals",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          }
         ]
       },
       "functional": {
@@ -168,14 +432,94 @@
         "type": "casual",
         "gender": "male",
         "wearables": [
-          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "reinforced jerkin", "location": ["torso"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "sturdy trousers", "location": ["leg"], "fabric": "wool", "color": "Green", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "belt with pouches", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "traveling cloak", "location": ["back"], "fabric": "wool", "color": "Green", "level": "OVER", "gender": "male" },
-          { "schema": "olio.wearable", "name": "tall boots", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" }
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "drawers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "reinforced jerkin",
+            "location": [
+              "torso"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "sturdy trousers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Green",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "belt with pouches",
+            "location": [
+              "waist"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "traveling cloak",
+            "location": [
+              "back"
+            ],
+            "fabric": "wool",
+            "color": "Green",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tall boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          }
         ]
       },
       "fancy": {
@@ -184,14 +528,94 @@
         "type": "formal",
         "gender": "male",
         "wearables": [
-          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "male" },
-          { "schema": "olio.wearable", "name": "embroidered doublet", "location": ["torso"], "fabric": "silk", "color": "Blue", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "tailored hose", "location": ["leg"], "fabric": "silk", "color": "Blue", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "fur-trimmed mantle", "location": ["back"], "fabric": "velvet", "color": "Purple", "level": "OVER", "gender": "male" },
-          { "schema": "olio.wearable", "name": "signet ring", "location": ["finger"], "fabric": "gold", "color": "Gold", "level": "SUIT", "gender": "male" },
-          { "schema": "olio.wearable", "name": "polished shoes", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "drawers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "embroidered doublet",
+            "location": [
+              "torso"
+            ],
+            "fabric": "silk",
+            "color": "Blue",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tailored hose",
+            "location": [
+              "leg"
+            ],
+            "fabric": "silk",
+            "color": "Blue",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fur-trimmed mantle",
+            "location": [
+              "back"
+            ],
+            "fabric": "velvet",
+            "color": "Purple",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "signet ring",
+            "location": [
+              "finger"
+            ],
+            "fabric": "gold",
+            "color": "Gold",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "polished shoes",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
         ]
       }
     },
@@ -202,13 +626,83 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
-          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "threadbare shift", "location": ["torso"], "fabric": "linen", "color": "Gray", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "tattered skirt", "location": ["leg"], "fabric": "cotton", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "knotted cord belt", "location": ["waist"], "fabric": "hemp", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "bare-sole wraps", "location": ["foot"], "fabric": "linen", "color": "Gray", "level": "SUIT", "gender": "female" }
+          {
+            "schema": "olio.wearable",
+            "name": "chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bloomers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "threadbare shift",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tattered skirt",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "knotted cord belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "hemp",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bare-sole wraps",
+            "location": [
+              "foot"
+            ],
+            "fabric": "linen",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "female"
+          }
         ]
       },
       "functional": {
@@ -217,14 +711,94 @@
         "type": "casual",
         "gender": "female",
         "wearables": [
-          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "fitted bodice", "location": ["torso"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "riding skirt with leggings", "location": ["leg"], "fabric": "wool", "color": "Green", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "utility belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "hooded cloak", "location": ["back"], "fabric": "wool", "color": "Green", "level": "OVER", "gender": "female" },
-          { "schema": "olio.wearable", "name": "knee-high boots", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" }
+          {
+            "schema": "olio.wearable",
+            "name": "chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bloomers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fitted bodice",
+            "location": [
+              "torso"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "riding skirt with leggings",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Green",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "utility belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "hooded cloak",
+            "location": [
+              "back"
+            ],
+            "fabric": "wool",
+            "color": "Green",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "knee-high boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          }
         ]
       },
       "fancy": {
@@ -233,69 +807,509 @@
         "type": "formal",
         "gender": "female",
         "wearables": [
-          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "flowing gown", "location": ["torso", "leg"], "fabric": "silk", "color": "Blue", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "embroidered chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
-          { "schema": "olio.wearable", "name": "fur-lined stole", "location": ["back"], "fabric": "velvet", "color": "Purple", "level": "OVER", "gender": "female" },
-          { "schema": "olio.wearable", "name": "jeweled circlet", "location": ["head"], "fabric": "gold", "color": "Gold", "level": "SUIT", "gender": "female" },
-          { "schema": "olio.wearable", "name": "satin slippers", "location": ["foot"], "fabric": "silk", "color": "White", "level": "SUIT", "gender": "female" }
+          {
+            "schema": "olio.wearable",
+            "name": "chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bloomers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "flowing gown",
+            "location": [
+              "torso",
+              "leg"
+            ],
+            "fabric": "silk",
+            "color": "Blue",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "embroidered chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fur-lined stole",
+            "location": [
+              "back"
+            ],
+            "fabric": "velvet",
+            "color": "Purple",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "jeweled circlet",
+            "location": [
+              "head"
+            ],
+            "fabric": "gold",
+            "color": "Gold",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "satin slippers",
+            "location": [
+              "foot"
+            ],
+            "fabric": "silk",
+            "color": "White",
+            "level": "SUIT",
+            "gender": "female"
+          }
         ]
       }
     }
   },
-
   "cardPool": [
-    { "type": "item", "subtype": "weapon", "name": "Iron Longsword", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Slashing", "durability": 8, "artPrompt": "an iron longsword with a leather-wrapped grip" },
-    { "type": "item", "subtype": "weapon", "name": "Battle Axe", "rarity": "UNCOMMON", "atk": 5, "slot": "Hand (2H)", "damageType": "Slashing", "durability": 10, "artPrompt": "a heavy double-headed battle axe" },
-    { "type": "item", "subtype": "weapon", "name": "Elven Longbow", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 12, "artPrompt": "an elegant elven longbow with silver inlay" },
-    { "type": "item", "subtype": "weapon", "name": "Enchanted Warhammer", "rarity": "RARE", "atk": 6, "slot": "Hand (2H)", "damageType": "Bludgeoning", "durability": 15, "special": "+1 to Guard rolls", "artPrompt": "a glowing warhammer with runes etched into the head" },
-    { "type": "item", "subtype": "weapon", "name": "Mage Staff", "rarity": "UNCOMMON", "atk": 2, "slot": "Hand (2H)", "damageType": "Arcane", "durability": 10, "special": "+2 to Channel rolls", "artPrompt": "a wooden staff topped with a glowing crystal" },
-    { "type": "item", "subtype": "weapon", "name": "Silver Dagger", "rarity": "COMMON", "atk": 2, "slot": "Hand (1H)", "damageType": "Piercing", "durability": 6, "special": "+3 ATK vs undead", "artPrompt": "a silver dagger with ornate crossguard" },
-    { "type": "item", "subtype": "weapon", "name": "Dwarven Throwing Axes", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Slashing", "range": "Ranged", "durability": 8, "artPrompt": "a pair of balanced dwarven throwing axes with rune-etched heads" },
-
-    { "type": "apparel", "name": "Chain Mail Hauberk", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 0, "durability": 10, "fabric": "iron", "artPrompt": "a suit of interlocking chain mail armor" },
-    { "type": "apparel", "name": "Studded Leather Vest", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "leather", "artPrompt": "a leather vest with metal studs" },
-    { "type": "apparel", "name": "Plate Gauntlets", "rarity": "UNCOMMON", "slot": "Hand", "def": 2, "hpBonus": 0, "durability": 12, "fabric": "steel", "artPrompt": "shining steel plate gauntlets" },
-    { "type": "apparel", "name": "Dragonscale Breastplate", "rarity": "RARE", "slot": "Body", "def": 5, "hpBonus": 2, "durability": 20, "fabric": "dragonscale", "artPrompt": "a breastplate made from iridescent dragon scales" },
-    { "type": "apparel", "name": "Mithril Greaves", "rarity": "RARE", "slot": "Feet", "def": 3, "hpBonus": 1, "durability": 18, "fabric": "mithril", "artPrompt": "gleaming silvery greaves of mithril" },
-    { "type": "apparel", "name": "Traveler's Cloak", "rarity": "COMMON", "slot": "Back", "def": 1, "hpBonus": 0, "durability": 6, "fabric": "wool", "special": "+1 to Flee rolls", "artPrompt": "a weathered green traveling cloak" },
-    { "type": "apparel", "name": "Enchanted Robes", "rarity": "UNCOMMON", "slot": "Body", "def": 1, "hpBonus": 0, "durability": 8, "fabric": "silk", "special": "+2 to Channel rolls", "artPrompt": "flowing blue robes shimmering with arcane energy" },
-
-    { "type": "skill", "name": "Shield Wall", "category": "Defense", "modifier": "+3 DEF when Guard is active", "tier": "UNCOMMON", "artPrompt": "a warrior bracing behind a massive shield" },
-    { "type": "skill", "name": "Power Strike", "category": "Combat", "modifier": "+3 ATK on next Attack", "tier": "UNCOMMON", "artPrompt": "a warrior delivering an overhead strike with glowing weapon" },
-    { "type": "skill", "name": "Backstab", "category": "Combat", "modifier": "+4 ATK after successful Feint", "tier": "RARE", "artPrompt": "a rogue striking from the shadows" },
-    { "type": "skill", "name": "Eagle Eye", "category": "Ranged", "modifier": "+2 ATK with ranged weapons", "tier": "COMMON", "artPrompt": "an archer taking careful aim" },
-    { "type": "skill", "name": "Arcane Focus", "category": "Magic", "modifier": "+2 to Channel rolls, -1 energy cost", "tier": "UNCOMMON", "artPrompt": "a mage in deep concentration, arcane symbols orbiting" },
-    { "type": "skill", "name": "Battle Tactics", "category": "Combat", "modifier": "+1 ATK and +1 DEF this round", "tier": "COMMON", "artPrompt": "a commander surveying a battlefield" },
-    { "type": "skill", "name": "Herbalism", "category": "Survival", "modifier": "Rest restores +3 extra HP", "tier": "COMMON", "artPrompt": "hands grinding herbs with a mortar and pestle" },
-    { "type": "skill", "name": "Disarm", "category": "Combat", "modifier": "On hit, target loses weapon bonus next round", "tier": "RARE", "artPrompt": "a fighter knocking a sword from an opponent's hand" },
-
-    { "type": "magic", "name": "Fireball", "effectType": "Offensive", "skillType": "Imperial", "effect": "Deal 6 damage, ignores DEF", "energyCost": 5, "reusable": true, "artPrompt": "a massive fireball erupting from outstretched hands" },
-    { "type": "magic", "name": "Shield of Faith", "effectType": "Defensive", "skillType": "Imperial", "effect": "+4 DEF this round", "energyCost": 3, "reusable": true, "artPrompt": "a golden magical shield materializing around a warrior" },
-    { "type": "magic", "name": "Lightning Bolt", "effectType": "Offensive", "skillType": "Imperial", "effect": "Deal 4 damage, stun target (skip next action)", "energyCost": 4, "reusable": true, "artPrompt": "a crackling bolt of lightning arcing toward a target" },
-    { "type": "magic", "name": "Invisibility", "effectType": "Utility", "skillType": "Psionic", "effect": "Auto-succeed next Flee or Steal", "energyCost": 4, "reusable": true, "artPrompt": "a figure fading into translucency" },
-    { "type": "magic", "name": "Raise Thrall", "effectType": "Offensive", "skillType": "Undead", "effect": "Summon a skeletal thrall that deals 3 damage per round for 2 rounds", "energyCost": 5, "reusable": true, "artPrompt": "a necromancer raising a skeleton from the earth, dark energy swirling" },
-    { "type": "magic", "name": "Telekinetic Slam", "effectType": "Offensive", "skillType": "Psionic", "effect": "Deal 4 damage and push target back (cannot Guard next round)", "energyCost": 4, "reusable": true, "artPrompt": "a psionic warrior hurling an enemy through the air with a wave of force" },
-
-    { "type": "item", "subtype": "consumable", "name": "Greater Health Potion", "rarity": "UNCOMMON", "effect": "Restore 12 HP", "artPrompt": "a large glowing red potion bottle" },
-    { "type": "item", "subtype": "consumable", "name": "Elixir of Strength", "rarity": "UNCOMMON", "effect": "+3 ATK this round", "artPrompt": "a bubbling orange potion in a crystal vial" },
-    { "type": "item", "subtype": "consumable", "name": "Scroll of Protection", "rarity": "RARE", "effect": "+5 DEF this round", "artPrompt": "an ancient scroll glowing with protective runes" },
-    { "type": "item", "subtype": "consumable", "name": "Mana Crystal", "rarity": "UNCOMMON", "effect": "Restore 8 Energy", "artPrompt": "a pulsing blue crystal" },
-    { "type": "item", "subtype": "consumable", "name": "Smoke Bomb", "rarity": "COMMON", "effect": "Auto-succeed Flee this round", "artPrompt": "a small black sphere trailing smoke" }
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Iron Longsword",
+      "rarity": "COMMON",
+      "atk": 3,
+      "slot": "Hand (1H)",
+      "damageType": "Slashing",
+      "durability": 8,
+      "artPrompt": "an iron longsword with a leather-wrapped grip"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Battle Axe",
+      "rarity": "UNCOMMON",
+      "atk": 5,
+      "slot": "Hand (2H)",
+      "damageType": "Slashing",
+      "durability": 10,
+      "artPrompt": "a heavy double-headed battle axe"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Elven Longbow",
+      "rarity": "UNCOMMON",
+      "atk": 4,
+      "slot": "Hand (2H)",
+      "damageType": "Piercing",
+      "range": "Ranged",
+      "durability": 12,
+      "artPrompt": "an elegant elven longbow with silver inlay"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Enchanted Warhammer",
+      "rarity": "RARE",
+      "atk": 6,
+      "slot": "Hand (2H)",
+      "damageType": "Bludgeoning",
+      "durability": 15,
+      "special": "+1 to Guard rolls",
+      "artPrompt": "a glowing warhammer with runes etched into the head"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Mage Staff",
+      "rarity": "UNCOMMON",
+      "atk": 2,
+      "slot": "Hand (2H)",
+      "damageType": "Arcane",
+      "durability": 10,
+      "special": "+2 to Channel rolls",
+      "artPrompt": "a wooden staff topped with a glowing crystal"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Silver Dagger",
+      "rarity": "COMMON",
+      "atk": 2,
+      "slot": "Hand (1H)",
+      "damageType": "Piercing",
+      "durability": 6,
+      "special": "+3 ATK vs undead",
+      "artPrompt": "a silver dagger with ornate crossguard"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Dwarven Throwing Axes",
+      "rarity": "COMMON",
+      "atk": 3,
+      "slot": "Hand (1H)",
+      "damageType": "Slashing",
+      "range": "Ranged",
+      "durability": 8,
+      "artPrompt": "a pair of balanced dwarven throwing axes with rune-etched heads"
+    },
+    {
+      "type": "apparel",
+      "name": "Chain Mail Hauberk",
+      "rarity": "UNCOMMON",
+      "slot": "Body",
+      "def": 3,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "iron",
+      "artPrompt": "a suit of interlocking chain mail armor"
+    },
+    {
+      "type": "apparel",
+      "name": "Studded Leather Vest",
+      "rarity": "COMMON",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "leather",
+      "artPrompt": "a leather vest with metal studs"
+    },
+    {
+      "type": "apparel",
+      "name": "Plate Gauntlets",
+      "rarity": "UNCOMMON",
+      "slot": "Hand",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 12,
+      "fabric": "steel",
+      "artPrompt": "shining steel plate gauntlets"
+    },
+    {
+      "type": "apparel",
+      "name": "Dragonscale Breastplate",
+      "rarity": "RARE",
+      "slot": "Body",
+      "def": 5,
+      "hpBonus": 2,
+      "durability": 20,
+      "fabric": "dragonscale",
+      "artPrompt": "a breastplate made from iridescent dragon scales"
+    },
+    {
+      "type": "apparel",
+      "name": "Mithril Greaves",
+      "rarity": "RARE",
+      "slot": "Feet",
+      "def": 3,
+      "hpBonus": 1,
+      "durability": 18,
+      "fabric": "mithril",
+      "artPrompt": "gleaming silvery greaves of mithril"
+    },
+    {
+      "type": "apparel",
+      "name": "Traveler's Cloak",
+      "rarity": "COMMON",
+      "slot": "Back",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 6,
+      "fabric": "wool",
+      "special": "+1 to Flee rolls",
+      "artPrompt": "a weathered green traveling cloak"
+    },
+    {
+      "type": "apparel",
+      "name": "Enchanted Robes",
+      "rarity": "UNCOMMON",
+      "slot": "Body",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "silk",
+      "special": "+2 to Channel rolls",
+      "artPrompt": "flowing blue robes shimmering with arcane energy"
+    },
+    {
+      "type": "skill",
+      "name": "Shield Wall",
+      "category": "Defense",
+      "modifier": "+3 DEF when Guard is active",
+      "tier": "UNCOMMON",
+      "artPrompt": "a warrior bracing behind a massive shield"
+    },
+    {
+      "type": "skill",
+      "name": "Power Strike",
+      "category": "Combat",
+      "modifier": "+3 ATK on next Attack",
+      "tier": "UNCOMMON",
+      "artPrompt": "a warrior delivering an overhead strike with glowing weapon"
+    },
+    {
+      "type": "skill",
+      "name": "Backstab",
+      "category": "Combat",
+      "modifier": "+4 ATK after successful Feint",
+      "tier": "RARE",
+      "artPrompt": "a rogue striking from the shadows"
+    },
+    {
+      "type": "skill",
+      "name": "Eagle Eye",
+      "category": "Ranged",
+      "modifier": "+2 ATK with ranged weapons",
+      "tier": "COMMON",
+      "artPrompt": "an archer taking careful aim"
+    },
+    {
+      "type": "skill",
+      "name": "Arcane Focus",
+      "category": "Magic",
+      "modifier": "+2 to Channel rolls, -1 energy cost",
+      "tier": "UNCOMMON",
+      "artPrompt": "a mage in deep concentration, arcane symbols orbiting"
+    },
+    {
+      "type": "skill",
+      "name": "Battle Tactics",
+      "category": "Combat",
+      "modifier": "+1 ATK and +1 DEF this round",
+      "tier": "COMMON",
+      "artPrompt": "a commander surveying a battlefield"
+    },
+    {
+      "type": "skill",
+      "name": "Herbalism",
+      "category": "Survival",
+      "modifier": "Rest restores +3 extra HP",
+      "tier": "COMMON",
+      "artPrompt": "hands grinding herbs with a mortar and pestle"
+    },
+    {
+      "type": "skill",
+      "name": "Disarm",
+      "category": "Combat",
+      "modifier": "On hit, target loses weapon bonus next round",
+      "tier": "RARE",
+      "artPrompt": "a fighter knocking a sword from an opponent's hand"
+    },
+    {
+      "type": "magic",
+      "name": "Fireball",
+      "effectType": "Offensive",
+      "skillType": "Imperial",
+      "effect": "Deal 6 damage, ignores DEF",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a massive fireball erupting from outstretched hands"
+    },
+    {
+      "type": "magic",
+      "name": "Shield of Faith",
+      "effectType": "Defensive",
+      "skillType": "Imperial",
+      "effect": "+4 DEF this round",
+      "energyCost": 3,
+      "reusable": true,
+      "artPrompt": "a golden magical shield materializing around a warrior"
+    },
+    {
+      "type": "magic",
+      "name": "Lightning Bolt",
+      "effectType": "Offensive",
+      "skillType": "Imperial",
+      "effect": "Deal 4 damage, stun target (skip next action)",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a crackling bolt of lightning arcing toward a target"
+    },
+    {
+      "type": "magic",
+      "name": "Invisibility",
+      "effectType": "Utility",
+      "skillType": "Psionic",
+      "effect": "Auto-succeed next Flee or Steal",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a figure fading into translucency"
+    },
+    {
+      "type": "magic",
+      "name": "Raise Thrall",
+      "effectType": "Offensive",
+      "skillType": "Undead",
+      "effect": "Summon a skeletal thrall that deals 3 damage per round for 2 rounds",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a necromancer raising a skeleton from the earth, dark energy swirling"
+    },
+    {
+      "type": "magic",
+      "name": "Telekinetic Slam",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "Deal 4 damage and push target back (cannot Guard next round)",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a psionic warrior hurling an enemy through the air with a wave of force"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Greater Health Potion",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 12 HP",
+      "artPrompt": "a large glowing red potion bottle"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Elixir of Strength",
+      "rarity": "UNCOMMON",
+      "effect": "+3 ATK this round",
+      "artPrompt": "a bubbling orange potion in a crystal vial"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Scroll of Protection",
+      "rarity": "RARE",
+      "effect": "+5 DEF this round",
+      "artPrompt": "an ancient scroll glowing with protective runes"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Mana Crystal",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 8 Energy",
+      "artPrompt": "a pulsing blue crystal"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Smoke Bomb",
+      "rarity": "COMMON",
+      "effect": "Auto-succeed Flee this round",
+      "artPrompt": "a small black sphere trailing smoke"
+    }
   ],
-
   "encounters": {
-    "threatCreatures": [
-      { "name": "Wolf", "type": "animal", "atk": 2, "def": 1, "hp": 8, "imageIcon": "pets", "behavior": "Attacks lowest HP target", "loot": ["Wolf Pelt"], "artPrompt": "snarling wolf lunging forward, fangs bared" },
-      { "name": "Goblin Scout", "type": "npc", "atk": 3, "def": 1, "hp": 10, "imageIcon": "face", "behavior": "Flanks weakest defender", "loot": ["Goblin Dagger"], "artPrompt": "small goblin with a crude dagger sneaking through shadows" },
-      { "name": "Giant Spider", "type": "animal", "atk": 2, "def": 2, "hp": 12, "imageIcon": "bug_report", "behavior": "Poison on hit (2 turns)", "loot": ["Spider Silk", "Venom Sac"], "artPrompt": "enormous spider in a web, dripping venom" },
-      { "name": "Bandit", "type": "npc", "atk": 4, "def": 2, "hp": 15, "imageIcon": "person_alert", "behavior": "Steals item on crit", "loot": ["Stolen Coin Pouch"], "artPrompt": "masked bandit with a crossbow in a dark forest" },
-      { "name": "Dire Wolf", "type": "animal", "atk": 5, "def": 2, "hp": 18, "imageIcon": "pets", "behavior": "Attacks twice on crit", "loot": ["Dire Wolf Fang", "Thick Pelt"], "artPrompt": "massive wolf with glowing eyes, towering over its prey" },
-      { "name": "Orc Warrior", "type": "npc", "atk": 6, "def": 3, "hp": 20, "imageIcon": "shield_person", "behavior": "Enrages below half HP (+2 ATK)", "loot": ["Orc Blade", "Iron Shield"], "artPrompt": "armored orc warrior with a jagged sword and shield" },
-      { "name": "Skeleton Archer", "type": "monster", "atk": 4, "def": 1, "hp": 10, "imageIcon": "skull", "behavior": "Ranged attack, ignores front-line", "loot": ["Old Arrows", "Bone Fragment"], "artPrompt": "skeletal archer with a cracked bow, glowing eye sockets" },
-      { "name": "Troll", "type": "monster", "atk": 7, "def": 4, "hp": 25, "imageIcon": "landscape", "behavior": "Regenerates 2 HP per round", "loot": ["Troll Hide", "Regeneration Shard"], "artPrompt": "a hulking green troll swinging a massive club" }
+    "threatOverrides": [
+      {
+        "id": "weak_beast",
+        "name": "Wolf",
+        "loot": [
+          "Wolf Pelt"
+        ],
+        "artPrompt": "snarling wolf lunging forward, fangs bared"
+      },
+      {
+        "id": "scout",
+        "name": "Goblin Scout",
+        "loot": [
+          "Goblin Dagger"
+        ],
+        "artPrompt": "small goblin with a crude dagger sneaking through shadows"
+      },
+      {
+        "id": "venomous",
+        "name": "Giant Spider",
+        "loot": [
+          "Spider Silk",
+          "Venom Sac"
+        ],
+        "artPrompt": "enormous spider in a web, dripping venom"
+      },
+      {
+        "id": "thief",
+        "name": "Bandit",
+        "loot": [
+          "Stolen Coin Pouch"
+        ],
+        "artPrompt": "masked bandit with a crossbow in a dark forest"
+      },
+      {
+        "id": "alpha",
+        "name": "Dire Wolf",
+        "loot": [
+          "Dire Wolf Fang",
+          "Thick Pelt"
+        ],
+        "artPrompt": "massive wolf with glowing eyes, towering over its prey"
+      },
+      {
+        "id": "heavy",
+        "name": "Orc Warrior",
+        "loot": [
+          "Orc Blade",
+          "Iron Shield"
+        ],
+        "artPrompt": "armored orc warrior with a jagged sword and shield"
+      },
+      {
+        "id": "specialist",
+        "name": "Skeleton Archer",
+        "loot": [
+          "Old Arrows",
+          "Bone Fragment"
+        ],
+        "artPrompt": "skeletal archer with a cracked bow, glowing eye sockets"
+      },
+      {
+        "id": "boss",
+        "name": "Troll",
+        "loot": [
+          "Troll Hide",
+          "Regeneration Shard"
+        ],
+        "artPrompt": "a hulking green troll swinging a massive club"
+      }
+    ],
+    "scenarioOverrides": [
+      {
+        "id": "distant_warning",
+        "name": "Distant Howling",
+        "description": "You hear wolf howls in the distance, but nothing approaches."
+      },
+      {
+        "id": "wandering_threat",
+        "name": "Wandering Monster",
+        "description": "A creature stumbles upon your camp."
+      }
     ]
   }
 }

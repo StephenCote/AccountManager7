@@ -67,7 +67,7 @@
                     });
                 }
                 else{
-                    console.warn("Null", name);
+                    // console.warn("Null", name);
                 }
             }
             savedDecks = decks;
@@ -190,6 +190,88 @@
             // Load the deck's theme so prompts use the correct suffix
             if (data.themeId) {
                 await themes().loadThemeConfig(data.themeId);
+            }
+            // Ensure theme cardPool cards are in the deck (for older saved decks)
+            let activeTheme = themes().getActiveTheme?.();
+            if (activeTheme?.cardPool && data.cards) {
+                let existingNames = new Set(data.cards.map(c => c.name + "|" + c.type));
+                let missing = activeTheme.cardPool.filter(c =>
+                    (c.type === "skill" || c.type === "magic" || (c.type === "item" && c.subtype === "consumable"))
+                    && !existingNames.has(c.name + "|" + c.type)
+                );
+                if (missing.length > 0) {
+                    data.cards.push(...missing);
+                    data.cardCount = data.cards.length;
+                    console.log("[CardGame v2] Added " + missing.length + " theme cardPool cards to deck");
+                }
+            }
+            // Ensure threat creature cards are in the deck (for older saved decks)
+            let getThreatCreatures = window.CardGame.Engine?.getThreatCreatures;
+            if (getThreatCreatures && data.cards) {
+                let threats = getThreatCreatures();
+                let existingEncounters = new Set(data.cards.filter(c => c.type === "encounter").map(c => c.name));
+                let missingThreats = threats.filter(t => !existingEncounters.has(t.name));
+                if (missingThreats.length > 0) {
+                    let threatCards = missingThreats.map(function(t) {
+                        return {
+                            type: "encounter", subtype: "threat", name: t.name, id: t.id,
+                            atk: t.atk, def: t.def, hp: t.hp, imageIcon: t.imageIcon,
+                            behavior: t.behavior, artPrompt: t.artPrompt, loot: t.loot,
+                            _isThreatDef: true
+                        };
+                    });
+                    data.cards.push(...threatCards);
+                    data.cardCount = data.cards.length;
+                    console.log("[CardGame v2] Added " + threatCards.length + " threat creature cards to deck");
+                }
+            }
+            // Ensure scenario cards are in the deck (for older saved decks)
+            let getScenarioCards = window.CardGame.Engine?.getScenarioCards;
+            if (getScenarioCards && data.cards) {
+                let scenarios = getScenarioCards();
+                let existingScenarios = new Set(data.cards.filter(c => c.type === "scenario").map(c => c.id));
+                let missingScenarios = scenarios.filter(s => !existingScenarios.has(s.id));
+                if (missingScenarios.length > 0) {
+                    let scenarioCards = missingScenarios.map(function(s) {
+                        return {
+                            type: "scenario", name: s.name, id: s.id,
+                            effect: s.effect, description: s.description,
+                            icon: s.icon, cardColor: s.cardColor,
+                            bonus: s.bonus || null, bonusAmount: s.bonusAmount || null,
+                            threatBonus: s.threatBonus != null ? s.threatBonus : null,
+                            artPrompt: s.artPrompt, _isScenarioDef: true
+                        };
+                    });
+                    data.cards.push(...scenarioCards);
+                    data.cardCount = data.cards.length;
+                    console.log("[CardGame v2] Added " + scenarioCards.length + " scenario cards to deck");
+                }
+            }
+            // Ensure loot cards are in the deck (for older saved decks)
+            if (getThreatCreatures && data.cards) {
+                let threats = getThreatCreatures();
+                let existingLoot = new Set(data.cards.filter(c => c.type === "loot").map(c => c.name));
+                let seenLoot = new Set();
+                let lootCards = [];
+                threats.forEach(function(t) {
+                    (t.loot || []).forEach(function(lootName) {
+                        if (!seenLoot.has(lootName) && !existingLoot.has(lootName)) {
+                            seenLoot.add(lootName);
+                            lootCards.push({
+                                type: "loot", name: lootName, source: t.name,
+                                rarity: t.hp >= 18 ? "RARE" : t.hp >= 12 ? "UNCOMMON" : "COMMON",
+                                effect: "Spoils from " + t.name,
+                                artPrompt: "a " + lootName.toLowerCase() + ", item loot drop, fantasy treasure",
+                                _isLootDef: true
+                            });
+                        }
+                    });
+                });
+                if (lootCards.length > 0) {
+                    data.cards.push(...lootCards);
+                    data.cardCount = data.cards.length;
+                    console.log("[CardGame v2] Added " + lootCards.length + " loot cards to deck");
+                }
             }
             ctx().screen = "deckView";
             m.redraw();
@@ -331,11 +413,6 @@
                                     ]),
                                     // Deck name + campaign info
                                     m("div", { class: "cg2-deck-name" }, d.deckName),
-                                    d.campaign ? m("div", { class: "cg2-deck-campaign-info" }, [
-                                        m("span", { class: "cg2-campaign-level" }, "Lv." + d.campaign.level),
-                                        m("span", { class: "cg2-campaign-xp" }, d.campaign.xp + " XP"),
-                                        m("span", { class: "cg2-campaign-record" }, d.campaign.wins + "W/" + d.campaign.losses + "L")
-                                    ]) : null,
                                     // Action buttons
                                     m("div", { class: "cg2-deck-actions" }, [
                                         d.hasSave ? m("button", {

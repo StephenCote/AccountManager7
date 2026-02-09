@@ -214,8 +214,11 @@
 
         async deleteAll(deckName) {
             try {
-                let grp = await page.findObject("auth.group", "DATA", this._savesPath(deckName));
-                if (grp) await page.deleteObject("auth.group", grp.objectId);
+                let saves = await this.list(deckName);
+                for (let save of saves) {
+                    await page.deleteObject("data.data", save.objectId);
+                }
+                am7client.clearCache("data.data");
             } catch (e) {
                 console.warn("[CardGame v2] Failed to delete saves:", deckName, e);
             }

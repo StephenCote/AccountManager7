@@ -75,6 +75,73 @@
         ]);
     }
 
+    // ── Scenario Card Body Renderer ──────────────────────────────────
+    function renderScenarioBody(card, options) {
+        let noPreview = options?.noPreview;
+        let imageUrl = card.imageUrl;
+        let effectColor = card.effect === "threat" ? "#c62828" : "#43A047";
+        let effectLabel = card.effect === "threat" ? "Threat" : "Boon";
+        let effectIcon = card.effect === "threat" ? "warning" : "eco";
+
+        return [
+            m("div", { class: "cg2-card-image-area" },
+                imageUrl
+                    ? m("img", {
+                        src: imageUrl, class: "cg2-card-img",
+                        style: noPreview ? {} : { cursor: "pointer" },
+                        onclick: noPreview ? null : function(e) { e.stopPropagation(); CardGame.Rendering.showImagePreview(imageUrl); },
+                        onerror: function(e) { e.target.style.display = "none"; }
+                    })
+                    : m("span", {
+                        class: "material-symbols-outlined cg2-placeholder-icon",
+                        style: { color: card.cardColor || "#1B5E20" }
+                    }, card.icon || "explore")
+            ),
+            m("div", { class: "cg2-card-details" }, [
+                m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
+                    m("span", { class: "material-symbols-outlined cg2-detail-icon", style: { color: effectColor } }, effectIcon),
+                    m("span", { style: { color: effectColor, fontWeight: 600 } }, effectLabel)
+                ]),
+                card.description ? R.iconDetail("info", card.description) : null,
+                card.bonus === "heal" ? R.iconDetail("favorite", "+" + (card.bonusAmount || 3) + " HP to all") : null,
+                card.bonus === "energy" ? R.iconDetail("bolt", "+" + (card.bonusAmount || 2) + " Energy to all") : null,
+                card.bonus === "loot" ? R.iconDetail("inventory_2", "Discover loot!") : null,
+                card.threatBonus != null && card.effect === "threat" ? R.iconDetail("warning", "Threat DC +" + card.threatBonus) : null
+            ])
+        ];
+    }
+
+    // ── Loot Card Body Renderer ───────────────────────────────────────
+    function renderLootBody(card, options) {
+        let noPreview = options?.noPreview;
+        let imageUrl = card.imageUrl;
+
+        return [
+            m("div", { class: "cg2-card-image-area" },
+                imageUrl
+                    ? m("img", {
+                        src: imageUrl, class: "cg2-card-img",
+                        style: noPreview ? {} : { cursor: "pointer" },
+                        onclick: noPreview ? null : function(e) { e.stopPropagation(); CardGame.Rendering.showImagePreview(imageUrl); },
+                        onerror: function(e) { e.target.style.display = "none"; }
+                    })
+                    : m("span", {
+                        class: "material-symbols-outlined cg2-placeholder-icon",
+                        style: { color: "#F57F17" }
+                    }, "inventory_2")
+            ),
+            m("div", { class: "cg2-card-details" }, [
+                card.source ? R.iconDetail("pets", "From: " + card.source) : null,
+                card.rarity ? m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
+                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "star"),
+                    m("span", R.rarityStars(card.rarity))
+                ]) : null,
+                card.effect ? R.iconDetail("auto_awesome", card.effect) : null,
+                card.flavor ? m("div", { class: "cg2-flavor" }, "\u201C" + card.flavor + "\u201D") : null
+            ])
+        ];
+    }
+
     // ── Unified Card Body Renderer (Phase 7.0) ──────────────────────
     // Uses CARD_RENDER_CONFIG to render card body based on type
     function renderCardBody(card, type, options) {
@@ -92,7 +159,8 @@
                     src: imageUrl,
                     class: "cg2-card-img",
                     style: noPreview ? {} : { cursor: "pointer" },
-                    onclick: noPreview ? null : function(e) { e.stopPropagation(); CardGame.Rendering.showImagePreview(imageUrl); }
+                    onclick: noPreview ? null : function(e) { e.stopPropagation(); CardGame.Rendering.showImagePreview(imageUrl); },
+                    onerror: function(e) { e.target.style.display = "none"; }
                 })
                 : m("span", {
                     class: "material-symbols-outlined cg2-placeholder-icon",
@@ -239,6 +307,21 @@
                     m("span", { class: "material-symbols-outlined" }, "shield"), " " + card.def
                 ]));
                 break;
+            case "scenario":
+                if (card.effect === "threat") {
+                    stats.push(m("span", { class: "cg2-compact-stat", style: "color:#c62828" }, [
+                        m("span", { class: "material-symbols-outlined" }, "warning"), " Threat"
+                    ]));
+                } else {
+                    stats.push(m("span", { class: "cg2-compact-stat", style: "color:#43A047" }, [
+                        m("span", { class: "material-symbols-outlined" }, "eco"), " Boon"
+                    ]));
+                }
+                break;
+            case "loot":
+                if (card.rarity) stats.push(m("span", { class: "cg2-compact-stat" }, card.rarity));
+                if (card.effect) stats.push(m("span", { class: "cg2-compact-stat cg2-compact-effect" }, card.effect));
+                break;
             case "character":
                 let s = card.stats || {};
                 if (s.STR) stats.push(m("span", { class: "cg2-compact-stat" }, "STR " + s.STR));
@@ -267,6 +350,10 @@
         if (type === "apparel") return !card.def && !card.effect;
         // Encounters need behavior or stats
         if (type === "encounter") return !card.behavior && !card.atk;
+        // Scenario cards are complete if they have a description
+        if (type === "scenario") return !card.description;
+        // Loot cards are complete if they have a name
+        if (type === "loot") return !card.name;
         return false;
     }
 
@@ -292,12 +379,19 @@
                 // Options for render functions (e.g., noPreview disables image click)
                 let renderOpts = { noPreview: vnode.attrs.noPreview };
 
-                // Use unified renderCardBody for types with config, special handling for character
-                let bodyFn = type === "character"
-                    ? () => renderCharacterBody(card, renderOpts)
-                    : (C.CARD_RENDER_CONFIG[renderType]
-                        ? () => renderCardBody(card, renderType, renderOpts)
-                        : () => [m("div", "Unknown type: " + type)]);
+                // Use unified renderCardBody for types with config, special handling for character/scenario/loot
+                let bodyFn;
+                if (type === "character") {
+                    bodyFn = () => renderCharacterBody(card, renderOpts);
+                } else if (type === "scenario") {
+                    bodyFn = () => renderScenarioBody(card, renderOpts);
+                } else if (type === "loot") {
+                    bodyFn = () => renderLootBody(card, renderOpts);
+                } else if (C.CARD_RENDER_CONFIG[renderType]) {
+                    bodyFn = () => renderCardBody(card, renderType, renderOpts);
+                } else {
+                    bodyFn = () => [m("div", "Unknown type: " + type)];
+                }
                 let cardStyle = { borderColor: cfg.color };
                 if (vnode.attrs.bgImage) {
                     cardStyle.backgroundImage = "linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.5)), url('" + vnode.attrs.bgImage + "')";
@@ -360,6 +454,7 @@
     window.CardGame.Rendering = window.CardGame.Rendering || {};
     Object.assign(window.CardGame.Rendering, {
         renderCharacterBody, renderCharacterBackBody, renderCardBody,
+        renderScenarioBody, renderLootBody,
         renderCompactStats, isCardIncomplete, CardFace, CardBack
     });
 })();

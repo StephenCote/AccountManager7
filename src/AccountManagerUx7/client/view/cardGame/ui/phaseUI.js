@@ -96,32 +96,38 @@
                             m("div", { class: "cg2-init-card-back", style: backStyle }, [
                                 m("div", { class: "cg2-init-back-content" }, [
                                     m("div", { class: "cg2-init-back-label" }, charName),
-                                    m("div", { class: "cg2-dice-container" }, [
-                                        m(D20Dice, {
-                                            value: anim.rolling ? diceFace : (roll ? roll.raw : "?"),
-                                            rolling: anim.rolling,
-                                            winner: isWinner && anim.rollComplete
-                                        })
+                                    m("div", { class: "cg2-init-back-center" }, [
+                                        m("div", { class: "cg2-dice-container" }, [
+                                            m(D20Dice, {
+                                                value: anim.rolling ? diceFace : (roll ? roll.raw : "?"),
+                                                rolling: anim.rolling,
+                                                winner: isWinner && anim.rollComplete
+                                            })
+                                        ])
                                     ]),
-                                    roll && anim.rollComplete ? m("div", { class: "cg2-roll-breakdown" }, [
-                                        m("span", roll.raw),
-                                        m("span", " + "),
-                                        m("span", { class: "cg2-mod" }, roll.modifier),
-                                        m("span", " AGI = "),
-                                        m("strong", roll.total)
-                                    ]) : null,
-                                    anim.rollComplete && init.winner
-                                        ? (isWinner
-                                            ? m("div", { class: "cg2-init-winner-badge" }, [
-                                                m("span", { class: "material-symbols-outlined" }, "star"),
-                                                " Winner!"
-                                            ])
-                                            : m("div", { class: "cg2-init-loser-badge" }, "\u2014"))
-                                        : null
-                                ])
+                                    m("div", { class: "cg2-init-back-footer" }, [
+                                        roll && anim.rollComplete ? m("div", { class: "cg2-roll-breakdown" }, [
+                                            m("span", roll.raw),
+                                            m("span", " + "),
+                                            m("span", { class: "cg2-mod" }, roll.modifier),
+                                            m("span", " AGI = "),
+                                            m("strong", roll.total)
+                                        ]) : null,
+                                        anim.rollComplete && init.winner
+                                            ? (isWinner
+                                                ? m("div", { class: "cg2-init-winner-badge" }, [
+                                                    m("span", { class: "material-symbols-outlined" }, "star"),
+                                                    " Goes First!"
+                                                ])
+                                                : m("div", { class: "cg2-init-loser-badge" }, [
+                                                    m("span", { class: "material-symbols-outlined", style: "font-size:12px" }, "schedule"),
+                                                    " Goes Second"
+                                                ]))
+                                            : null
+                                    ])
                             ])
                         ])
-                    ]);
+                    ])]);
                 }
 
                 // Countdown phase
@@ -403,6 +409,67 @@
         };
     }
 
+    // ── End Threat Combat Result Display ────────────────────────────
+    function renderEndThreatResult(etr) {
+        let cr = etr.combatResult;
+        if (!cr) {
+            // No combat data - simple fallback
+            return m("div", { class: "cg2-scenario-threat" }, [
+                m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#c62828" },
+                    etr.threat.imageIcon || "pets"),
+                " ", m("strong", etr.threat.name),
+                etr.damageDealt > 0
+                    ? [" dealt ", m("span", { style: "color:#c62828;font-weight:bold" }, etr.damageDealt), " damage!"]
+                    : [" was ", m("span", { style: "color:#4CAF50;font-weight:bold" }, "defeated"), "!"]
+            ]);
+        }
+        let resultType = cr.resultType || (cr.defended ? "defended" : "hit");
+        let outcomeLabel = cr.outcome?.label || "Unknown";
+        let atkBreak = cr.attackRoll?.breakdown || "";
+        let defBreak = cr.defenseRoll?.breakdown || "";
+
+        return m("div", { class: "cg2-threat-combat-result" }, [
+            // Outcome header
+            m("div", { class: "cg2-threat-outcome-header cg2-threat-outcome-" + resultType }, [
+                m("span", { class: "material-symbols-outlined", style: "font-size:18px;vertical-align:middle;margin-right:4px" },
+                    resultType === "defended" ? "shield" : resultType === "clash" ? "flash_on" : "swords"),
+                m("strong", outcomeLabel)
+            ]),
+            // Roll breakdown
+            m("div", { class: "cg2-threat-rolls" }, [
+                m("div", { class: "cg2-threat-roll-row" }, [
+                    m("span", { class: "cg2-roll-label" }, etr.threat.name + " ATK:"),
+                    m("span", { class: "cg2-roll-value" }, atkBreak)
+                ]),
+                m("div", { class: "cg2-threat-roll-row" }, [
+                    m("span", { class: "cg2-roll-label" }, "Your DEF:"),
+                    m("span", { class: "cg2-roll-value" }, defBreak)
+                ])
+            ]),
+            // Damage result
+            resultType === "hit"
+                ? m("div", { class: "cg2-threat-damage-line cg2-threat-dmg-hit" }, [
+                    m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "heart_broken"),
+                    " You take ", m("strong", etr.damageDealt), " damage"
+                ])
+                : resultType === "clash"
+                    ? m("div", { class: "cg2-threat-damage-line cg2-threat-dmg-clash" }, [
+                        m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "flash_on"),
+                        " Both take ", m("strong", etr.damageDealt || 1), " damage"
+                    ])
+                    : m("div", { class: "cg2-threat-damage-line cg2-threat-dmg-def" }, [
+                        m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "shield"),
+                        " Threat defeated!",
+                        cr.counterDmg > 0 ? [" Counter: ", m("strong", cr.counterDmg), " damage"] : null
+                    ]),
+            // Loot earned
+            etr.loot ? m("div", { class: "cg2-threat-loot-earned" }, [
+                m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle;color:#FFB300" }, "inventory_2"),
+                " Earned: ", m("strong", etr.loot.name)
+            ]) : null
+        ]);
+    }
+
     // ── Cleanup Phase UI ──────────────────────────────────────────────
     function CleanupPhaseUI() {
         return {
@@ -548,41 +615,52 @@
                                 )
                             ]) : null,
 
-                        // Scenario card (with icon and color)
-                        gameState.endThreatResult ? m("div", {
-                            class: "cg2-scenario-card",
-                            style: gameState.endThreatResult.scenario.cardColor
-                                ? { borderLeftColor: gameState.endThreatResult.scenario.cardColor } : {}
-                        }, [
-                            m("div", { class: "cg2-scenario-title" }, [
-                                m("span", {
-                                    class: "material-symbols-outlined",
-                                    style: "font-size:16px;vertical-align:middle" +
-                                        (gameState.endThreatResult.scenario.cardColor ? ";color:" + gameState.endThreatResult.scenario.cardColor : "")
-                                }, gameState.endThreatResult.scenario.icon || (gameState.endThreatResult.threat ? "warning" : "eco")),
-                                " ", gameState.endThreatResult.scenario.name
-                            ]),
-                            m("div", { class: "cg2-scenario-desc" }, gameState.endThreatResult.scenario.description),
-                            gameState.endThreatResult.threat && !gameState.endThreatResult.responded
-                                ? m("div", { class: "cg2-end-threat cg2-end-threat-pending" }, [
-                                    m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#c62828" },
-                                        gameState.endThreatResult.threat.imageIcon || "pets"),
-                                    " ", m("strong", gameState.endThreatResult.threat.name),
-                                    " approaches! ",
-                                    m("span", { class: gameState.roundWinner === "player" ? "cg2-threat-target-you" : "cg2-threat-target-opp" },
-                                        gameState.roundWinner === "player" || gameState.roundWinner === "tie" ? "You" : "Opponent"),
-                                    " may prepare a defense."
-                                ])
-                                : null,
-                            gameState.endThreatResult.threat && gameState.endThreatResult.responded
-                                ? m("div", { class: "cg2-end-threat" }, [
-                                    m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#c62828" },
-                                        gameState.endThreatResult.threat.imageIcon || "pets"),
-                                    " ", m("strong", gameState.endThreatResult.threat.name),
-                                    gameState.endThreatResult.damageDealt > 0
-                                        ? [" dealt ", m("span", { style: "color:#c62828;font-weight:bold" }, gameState.endThreatResult.damageDealt), " damage!"]
-                                        : [" was ", m("span", { style: "color:#4CAF50;font-weight:bold" }, "defeated"), "!"]
-                                ]) : null
+                        // Scenario card display (rendered as actual card via CardFace)
+                        gameState.endThreatResult ? m("div", { class: "cg2-scenario-card-area" }, [
+                            // Render scenario as a CardFace card
+                            m("div", { class: "cg2-scenario-card-wrap" },
+                                m(NS.Rendering.CardFace, { card: gameState.endThreatResult.scenario, noPreview: false })
+                            ),
+                            // Bonus effect summary (adjacent to the card)
+                            m("div", { class: "cg2-scenario-result-panel" }, [
+                                gameState.endThreatResult.bonusApplied
+                                    ? m("div", { class: "cg2-scenario-bonus" }, [
+                                        gameState.endThreatResult.bonusApplied.type === "loot"
+                                            ? [m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#FFB300" }, "inventory_2"),
+                                               " Found: ", m("strong", gameState.endThreatResult.bonusApplied.card.name),
+                                               " \u2192 ", m("em", gameState.endThreatResult.bonusApplied.target === "player" ? "You" : "Opponent")]
+                                            : gameState.endThreatResult.bonusApplied.type === "heal"
+                                                ? [m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#4CAF50" }, "favorite"),
+                                                   " Both recover ", m("strong", "+" + gameState.endThreatResult.bonusApplied.amount + " HP")]
+                                                : gameState.endThreatResult.bonusApplied.type === "energy"
+                                                    ? [m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#42A5F5" }, "bolt"),
+                                                       " Both recover ", m("strong", "+" + gameState.endThreatResult.bonusApplied.amount + " Energy")]
+                                                    : null
+                                    ]) : null,
+
+                                // Threat info (pending)
+                                gameState.endThreatResult.threat && !gameState.endThreatResult.responded
+                                    ? m("div", { class: "cg2-scenario-threat cg2-end-threat-pending" }, [
+                                        m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;color:#c62828" },
+                                            gameState.endThreatResult.threat.imageIcon || "pets"),
+                                        " ", m("strong", gameState.endThreatResult.threat.name),
+                                        " approaches! ",
+                                        m("span", { class: gameState.endThreatResult.threat.target === "player" ? "cg2-threat-target-you" : "cg2-threat-target-opp" },
+                                            gameState.endThreatResult.threat.target === "player" ? "You" : "Opponent"),
+                                        " must defend.",
+                                        m("div", { class: "cg2-threat-stats-mini" }, [
+                                            m("span", "ATK " + gameState.endThreatResult.threat.atk),
+                                            m("span", "DEF " + gameState.endThreatResult.threat.def),
+                                            m("span", "HP " + gameState.endThreatResult.threat.hp)
+                                        ])
+                                    ])
+                                    : null,
+
+                                // Threat combat result (resolved)
+                                gameState.endThreatResult.threat && gameState.endThreatResult.responded
+                                    ? renderEndThreatResult(gameState.endThreatResult)
+                                    : null
+                            ])
                         ]) : null
                     ]),
 
