@@ -1148,7 +1148,6 @@
             console.log("Synthesize '" + name + "'");
             let d;
             try {
-                console.log(vprops);
                 d = await m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops });
             }
             catch (e) {

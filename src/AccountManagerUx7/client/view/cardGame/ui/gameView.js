@@ -992,6 +992,8 @@
                                             // Toggle selection for tap-to-place
                                             if (isSelected) {
                                                 selectedHandCard = null;  // Deselect
+                                                // Show preview on deselect so user can inspect
+                                                if (showCardPreview) showCardPreview(card);
                                             } else {
                                                 selectedHandCard = card;  // Select for placement
                                             }
@@ -1012,6 +1014,15 @@
                                         cardRole === "equip" ? "EQUIP"
                                         : cardRole === "magic" ? "SPELL"
                                         : cardRole === "item" ? "ITEM" : "SKILL"),
+                                    // Preview button (always available, doesn't affect selection)
+                                    m("button", {
+                                        class: "cg2-hand-preview-btn",
+                                        title: "Preview " + card.name,
+                                        onclick(e) {
+                                            e.stopPropagation();
+                                            if (showCardPreview) showCardPreview(card);
+                                        }
+                                    }, m("span", { class: "material-symbols-outlined" }, "visibility")),
                                     // Show art thumbnail if available
                                     card.imageUrl ? m("img", {
                                         src: card.imageUrl,

@@ -3056,6 +3056,37 @@
 .cg2-hand-card-wrapper:active {
     cursor: grabbing;
 }
+/* Preview button on hand cards */
+.cg2-hand-preview-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.5);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 15;
+    padding: 0;
+}
+.cg2-hand-preview-btn .material-symbols-outlined {
+    font-size: 14px;
+}
+.cg2-hand-card-wrapper:hover .cg2-hand-preview-btn,
+.cg2-hand-card-wrapper.cg2-hand-selected .cg2-hand-preview-btn {
+    opacity: 1;
+}
+/* Always show on touch devices (no hover) */
+@media (hover: none) and (pointer: coarse) {
+    .cg2-hand-preview-btn { opacity: 0.7; }
+}
 /* Selected hand card — tap-to-place highlight */
 .cg2-hand-card-wrapper.cg2-hand-selected {
     transform: translateY(-8px) scale(1.05);
