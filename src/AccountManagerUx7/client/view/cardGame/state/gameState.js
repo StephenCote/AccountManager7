@@ -538,6 +538,12 @@
             gameAnnouncerVoice = null;
         }
 
+        // Wire sibling voices so only one plays at a time
+        if (gameVoice && gameAnnouncerVoice) {
+            gameVoice.siblingVoice = gameAnnouncerVoice;
+            gameAnnouncerVoice.siblingVoice = gameVoice;
+        }
+
         // ── Phase 2: Trigger game start narration (plays while LLM components init) ──
         // Uses fallback text immediately; voice can start speaking during LLM init below
         if (!options?.skipNarration) {
@@ -907,6 +913,17 @@
             }
         } catch (e) {
             console.warn("[CardGame v2] Banter failed:", e);
+        }
+    }
+
+    // Stop all game voices and clear narration text
+    function skipNarration() {
+        if (gameAnnouncerVoice) gameAnnouncerVoice.stopCurrent();
+        if (gameVoice) gameVoice.stopCurrent();
+        if (gameState) {
+            gameState.narrationText = null;
+            gameState.narrationBusy = false;
+            m.redraw();
         }
     }
 
@@ -2344,6 +2361,7 @@
         narrateRoundStart,
         narrateRoundEnd,
         showNarrationSubtitle,
+        skipNarration,
         buildEmotionContext,
 
         // Initiative

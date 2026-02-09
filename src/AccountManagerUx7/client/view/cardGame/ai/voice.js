@@ -54,6 +54,7 @@
             this.queue = [];
             this.subtitlesOnly = false;
             this.deckName = "";
+            this.siblingVoice = null;  // Other voice instance — stopped before this one speaks
         }
 
         async initialize(voiceConfig) {
@@ -85,6 +86,11 @@
                 // Just show subtitles without audio
                 showNarrationSubtitle(text);
                 return;
+            }
+
+            // Stop sibling voice first — only one voice plays at a time
+            if (this.siblingVoice?.speaking) {
+                this.siblingVoice.stopCurrent();
             }
 
             // Stop any current speech and clear queue — new narration always takes priority

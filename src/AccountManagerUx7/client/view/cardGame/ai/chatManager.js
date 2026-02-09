@@ -210,7 +210,7 @@ Respond naturally in character. No game mechanics or meta-commentary, just dialo
                     }
                     // subtle: don't include emotion at all
                 }
-                parts.push(`\nAs ${this.npcName}, say ONE short quip or taunt (max 1 sentence). Stay in character.`);
+                parts.push(`\nAs ${this.npcName}, say ONE very short quip or taunt (max 10 words). Stay in character. This is spoken aloud so brevity is critical.`);
 
                 const prompt = parts.join("\n");
                 const response = await this.chat(prompt);

@@ -347,7 +347,12 @@
                                     ? m("div", { class: "cg2-narration-overlay" }, [
                                         m("div", { class: "cg2-narration-text" }, [
                                             m("span", { class: "material-symbols-outlined cg2-narration-icon" }, "campaign"),
-                                            gameState.narrationText
+                                            gameState.narrationText,
+                                            m("button", {
+                                                class: "cg2-narration-skip-btn",
+                                                title: "Skip",
+                                                onclick(e) { e.stopPropagation(); CardGame.GameState.skipNarration(); }
+                                            }, m("span", { class: "material-symbols-outlined" }, "skip_next"))
                                         ])
                                     ])
                                     : null,
