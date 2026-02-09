@@ -430,6 +430,45 @@
         console.log("[CardGame v2] Audio and LLM components cleaned up");
     }
 
+    // Resolve a voice profile objectId into voice synthesis properties
+    // Pattern: testVoice in formDef.js
+    async function resolveVoiceProfile(profileId) {
+        if (!profileId) return null;
+        try {
+            const profile = await am7client.getFull("identity.voice", profileId);
+            if (!profile) {
+                console.warn("[CardGame v2] Voice profile not found:", profileId);
+                return null;
+            }
+            let resolved = {
+                engine: profile.engine || "piper",
+                speaker: profile.speaker || "en_GB-alba-medium",
+                speakerId: profile.speakerId ?? -1,
+                speed: profile.speed || 1.2
+            };
+            // For xtts engine, load the voice sample data (base64 audio bytes)
+            if (resolved.engine === "xtts" && profile.voiceSample) {
+                let sampleId = profile.voiceSample.objectId || profile.voiceSample;
+                let sinst = am7model.newInstance("data.data");
+                let q = am7client.newQuery("data.data");
+                q.entity.request = am7view.viewFields(sinst);
+                q.field("organizationId", page.user.organizationId);
+                q.field("objectId", sampleId);
+                let sdr = await page.search(q);
+                if (sdr?.results?.length > 0 && sdr.results[0].dataBytesStore) {
+                    resolved.voiceSample = sdr.results[0].dataBytesStore;
+                } else {
+                    console.warn("[CardGame v2] Voice sample data not found for profile:", profileId);
+                }
+            }
+            console.log("[CardGame v2] Resolved voice profile:", profileId, "engine:", resolved.engine, "speaker:", resolved.speaker);
+            return resolved;
+        } catch (err) {
+            console.warn("[CardGame v2] Failed to resolve voice profile:", profileId, err);
+            return null;
+        }
+    }
+
     // Initialize LLM components (Director and Narrator) for a game
     async function initializeLLMComponents(state, deck, options) {
         // Clean up any existing audio/voice/LLM from previous game
@@ -458,6 +497,10 @@
 
         // ── Phase 1: Initialize voices FIRST so intro narration can play immediately ──
 
+        // Resolve voice profiles to get engine/speaker/voiceSample props
+        const opponentVoiceProps = opponentVoiceProfileId ? await resolveVoiceProfile(opponentVoiceProfileId) : null;
+        const announcerVoiceProps = announcerVoiceProfileId ? await resolveVoiceProfile(announcerVoiceProfileId) : null;
+
         // Initialize Opponent Voice (the opponent character's TTS voice)
         const voiceDeckName = deck?.deckName || "";
         if (CardGameVoice) {
@@ -465,7 +508,7 @@
                 gameVoice = new CardGameVoice();
                 await gameVoice.initialize({
                     subtitlesOnly: !opponentVoiceEnabled,
-                    voiceProfileId: opponentVoiceProfileId,
+                    voiceProps: opponentVoiceProps,
                     volume: 1.0,
                     deckName: voiceDeckName
                 });
@@ -483,7 +526,7 @@
                 gameAnnouncerVoice = new CardGameVoice();
                 await gameAnnouncerVoice.initialize({
                     subtitlesOnly: false,
-                    voiceProfileId: announcerVoiceProfileId,
+                    voiceProps: announcerVoiceProps,
                     volume: 1.0,
                     deckName: voiceDeckName
                 });

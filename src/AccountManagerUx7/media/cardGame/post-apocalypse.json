@@ -130,8 +130,8 @@
   },
 
   "magicConfig": {
-    "enabledSkillTypes": [],
-    "magicEffectPool": ["Rad Burst", "Mutant Surge", "Toxin Cloud", "Adrenaline Rush"]
+    "enabledSkillTypes": ["Psionic"],
+    "magicEffectPool": ["Rad Burst", "Mutant Surge", "Toxin Cloud", "Adrenaline Rush", "Wasteland Precognition", "Feral Howl"]
   },
 
   "cardNames": {
@@ -276,6 +276,8 @@
     { "type": "magic", "name": "Mutant Surge", "effectType": "Offensive", "skillType": "Psionic", "effect": "+4 STR and +4 ATK this round, take 2 damage", "energyCost": 4, "reusable": true, "artPrompt": "muscles grotesquely expanding with mutant power" },
     { "type": "magic", "name": "Toxin Cloud", "effectType": "Offensive", "skillType": "Imperial", "effect": "Poison target: 3 damage/round for 2 rounds", "energyCost": 4, "reusable": true, "artPrompt": "a cloud of toxic green gas billowing from cracked canisters" },
     { "type": "magic", "name": "Adrenaline Rush", "effectType": "Utility", "skillType": "Psionic", "effect": "Gain +2 AP this round, immune to stun", "energyCost": 5, "reusable": true, "artPrompt": "a fighter surrounded by a red aura of pure adrenaline" },
+    { "type": "magic", "name": "Wasteland Precognition", "effectType": "Discovery", "skillType": "Psionic", "effect": "View opponent's hand and dodge next attack (auto-miss)", "energyCost": 5, "reusable": true, "artPrompt": "a mutant with glowing eyes seeing ghostly afterimages of future attacks" },
+    { "type": "magic", "name": "Feral Howl", "effectType": "Offensive", "skillType": "Psionic", "effect": "Deal 3 damage to all enemies, reduce morale by 2", "energyCost": 4, "reusable": true, "artPrompt": "a feral mutant unleashing a psychic scream, shockwave rippling outward through ruins" },
 
     { "type": "item", "subtype": "consumable", "name": "Pre-War Medkit", "rarity": "UNCOMMON", "effect": "Restore 12 HP", "artPrompt": "a dusty first-aid kit with a faded red cross" },
     { "type": "item", "subtype": "consumable", "name": "Moonshine", "rarity": "COMMON", "effect": "Restore 5 Energy, -1 DEF this round", "artPrompt": "a jar of cloudy homebrew moonshine" },

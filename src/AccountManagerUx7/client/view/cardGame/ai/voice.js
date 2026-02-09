@@ -48,7 +48,7 @@
     class CardGameVoice {
         constructor() {
             this.enabled = false;
-            this.voiceProfileId = null;
+            this.voiceProps = null;    // Resolved voice properties: { engine, speaker, speakerId, speed, voiceSample }
             this.volume = 1.0;
             this.speaking = false;
             this.queue = [];
@@ -65,13 +65,17 @@
                 return true;
             }
 
-            this.voiceProfileId = voiceConfig?.voiceProfileId || null;
+            this.voiceProps = voiceConfig?.voiceProps || null;
             this.volume = voiceConfig?.volume ?? 1.0;
             this.subtitlesOnly = voiceConfig?.subtitlesOnly ?? false;
             this.deckName = voiceConfig?.deckName || "";
             this.enabled = true;
 
-            console.log("[CardGameVoice] Initialized. Profile:", this.voiceProfileId || "default");
+            if (this.voiceProps) {
+                console.log("[CardGameVoice] Initialized. Engine:", this.voiceProps.engine, "Speaker:", this.voiceProps.speaker);
+            } else {
+                console.log("[CardGameVoice] Initialized. Using default voice");
+            }
             return true;
         }
 
@@ -89,13 +93,14 @@
             }
 
             this.speaking = true;
-            const name = "cg-voice-" + hashStr(text + (this.deckName || "") + (this.voiceProfileId || ""));
+            const vpKey = this.voiceProps ? (this.voiceProps.engine || "") + (this.voiceProps.speaker || "") : "";
+            const name = "cg-voice-" + hashStr(text + (this.deckName || "") + vpKey);
 
             try {
                 // Use page.components.audio if available
                 const audioComponent = page?.components?.audio;
                 if (audioComponent?.createAudioSource) {
-                    const source = await audioComponent.createAudioSource(name, this.voiceProfileId, text);
+                    const source = await audioComponent.createAudioSource(name, this.voiceProps, text);
                     if (source) {
                         await this._playAudioSource(source);
                     }

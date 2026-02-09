@@ -253,6 +253,7 @@
     { "type": "item", "subtype": "weapon", "name": "Enchanted Warhammer", "rarity": "RARE", "atk": 6, "slot": "Hand (2H)", "damageType": "Bludgeoning", "durability": 15, "special": "+1 to Guard rolls", "artPrompt": "a glowing warhammer with runes etched into the head" },
     { "type": "item", "subtype": "weapon", "name": "Mage Staff", "rarity": "UNCOMMON", "atk": 2, "slot": "Hand (2H)", "damageType": "Arcane", "durability": 10, "special": "+2 to Channel rolls", "artPrompt": "a wooden staff topped with a glowing crystal" },
     { "type": "item", "subtype": "weapon", "name": "Silver Dagger", "rarity": "COMMON", "atk": 2, "slot": "Hand (1H)", "damageType": "Piercing", "durability": 6, "special": "+3 ATK vs undead", "artPrompt": "a silver dagger with ornate crossguard" },
+    { "type": "item", "subtype": "weapon", "name": "Dwarven Throwing Axes", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Slashing", "range": "Ranged", "durability": 8, "artPrompt": "a pair of balanced dwarven throwing axes with rune-etched heads" },
 
     { "type": "apparel", "name": "Chain Mail Hauberk", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 0, "durability": 10, "fabric": "iron", "artPrompt": "a suit of interlocking chain mail armor" },
     { "type": "apparel", "name": "Studded Leather Vest", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "leather", "artPrompt": "a leather vest with metal studs" },
@@ -275,6 +276,8 @@
     { "type": "magic", "name": "Shield of Faith", "effectType": "Defensive", "skillType": "Imperial", "effect": "+4 DEF this round", "energyCost": 3, "reusable": true, "artPrompt": "a golden magical shield materializing around a warrior" },
     { "type": "magic", "name": "Lightning Bolt", "effectType": "Offensive", "skillType": "Imperial", "effect": "Deal 4 damage, stun target (skip next action)", "energyCost": 4, "reusable": true, "artPrompt": "a crackling bolt of lightning arcing toward a target" },
     { "type": "magic", "name": "Invisibility", "effectType": "Utility", "skillType": "Psionic", "effect": "Auto-succeed next Flee or Steal", "energyCost": 4, "reusable": true, "artPrompt": "a figure fading into translucency" },
+    { "type": "magic", "name": "Raise Thrall", "effectType": "Offensive", "skillType": "Undead", "effect": "Summon a skeletal thrall that deals 3 damage per round for 2 rounds", "energyCost": 5, "reusable": true, "artPrompt": "a necromancer raising a skeleton from the earth, dark energy swirling" },
+    { "type": "magic", "name": "Telekinetic Slam", "effectType": "Offensive", "skillType": "Psionic", "effect": "Deal 4 damage and push target back (cannot Guard next round)", "energyCost": 4, "reusable": true, "artPrompt": "a psionic warrior hurling an enemy through the air with a wave of force" },
 
     { "type": "item", "subtype": "consumable", "name": "Greater Health Potion", "rarity": "UNCOMMON", "effect": "Restore 12 HP", "artPrompt": "a large glowing red potion bottle" },
     { "type": "item", "subtype": "consumable", "name": "Elixir of Strength", "rarity": "UNCOMMON", "effect": "+3 ATK this round", "artPrompt": "a bubbling orange potion in a crystal vial" },

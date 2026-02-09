@@ -1,0 +1,299 @@
+{
+  "themeId": "steampunk",
+  "name": "Steampunk",
+  "version": "1.0",
+  "description": "Victorian-era industrial fantasy with brass machinery, clockwork automatons, airships, and aether-powered inventions",
+
+  "artStyle": {
+    "promptSuffix": "steampunk, Victorian industrial, brass and copper, clockwork gears, steam-powered, sepia tones, detailed mechanical illustration",
+    "cardBorderStyle": "brass-riveted",
+    "cardBackVariant": "clockwork",
+    "fontFamily": "Segoe UI, system-ui, sans-serif",
+    "colorPalette": {
+      "character": "#B87333",
+      "apparel": "#8B7355",
+      "item": "#CD853F",
+      "action": "#8B0000",
+      "talk": "#4682B4",
+      "encounter": "#556B2F",
+      "skill": "#DAA520",
+      "magic": "#7B68EE"
+    },
+    "backgroundPrompt": "Vast steampunk cityscape, towering brass smokestacks billowing steam, intricate clockwork buildings, massive gears turning on building facades, airships floating between copper-domed towers, gas-lamp lit cobblestone streets, Victorian industrial architecture, warm amber and sepia tones, dramatic clouds of steam and smoke",
+    "backgroundConfig": {
+      "width": 1024, "height": 1024, "steps": 40, "cfg": 7, "hires": true
+    },
+    "sdConfig": {
+      "default":   { "style": "art", "steps": 30, "cfg": 7, "width": 512, "height": 512, "denoisingStrength": 0.7 },
+      "character":  { "width": 768, "height": 1024 },
+      "apparel":    { "width": 512, "height": 768 },
+      "item":       { "width": 512, "height": 512 },
+      "action":     { "width": 768, "height": 512, "denoisingStrength": 0.8 },
+      "talk":       { "width": 768, "height": 512, "denoisingStrength": 0.8 },
+      "encounter":  { "width": 768, "height": 768 },
+      "skill":      { "width": 512, "height": 512 },
+      "magic":      { "width": 512, "height": 512, "denoisingStrength": 0.75 }
+    }
+  },
+
+  "characterBuild": {
+    "statRange": [3, 18],
+    "statPointBuy": 72,
+    "skillSlots": 4,
+    "equipSlots": ["head", "body", "handL", "handR", "feet", "ring", "back"],
+    "availableRaces": ["HUMAN", "ELF", "DWARF", "ORC", "HALFLING"],
+    "availableAlignments": "all"
+  },
+
+  "starterDeck": {
+    "apparel": { "min": 2, "max": 3, "rarity": "COMMON" },
+    "weapons": { "min": 1, "max": 2, "rarity": "COMMON" },
+    "consumables": [
+      { "name": "Tinned Rations", "count": 2, "effect": "Restore 3 Energy" },
+      { "name": "Aether Tonic", "count": 1, "effect": "Restore 8 HP" },
+      { "name": "Bandage Roll", "count": 1, "effect": "Restore 4 HP" },
+      { "name": "Phosphor Flare", "count": 1, "effect": "+2 to Investigate rolls this round" }
+    ],
+    "skills": { "min": 1, "max": 2 },
+    "magicEffects": { "min": 0, "max": 1, "condition": "MAG >= 10 OR INT >= 12" }
+  },
+
+  "encounterDeck": {
+    "threats": { "count": 12, "difficultyRange": [4, 10], "maxRarity": "RARE" },
+    "events": { "count": 10, "maxRarity": "UNCOMMON" },
+    "discoveries": { "count": 10, "maxRarity": "RARE" },
+    "npcs": { "count": 8, "maxRarity": "RARE", "source": "olio.charPerson.population", "roleAssignment": "random" },
+    "lootItems": { "count": 10, "rarityWeights": { "COMMON": 45, "UNCOMMON": 35, "RARE": 20 } },
+    "skillCards": { "count": 5, "minRarity": "UNCOMMON", "maxRarity": "RARE" },
+    "magicEffects": { "count": 2, "rarity": "RARE" }
+  },
+
+  "treasureVault": {
+    "bossThreats": { "count": 4, "difficultyRange": [12, 16], "minRarity": "EPIC" },
+    "legendaryWeapons": { "count": 2, "rarity": "LEGENDARY" },
+    "epicWeapons": { "count": 3, "rarity": "EPIC" },
+    "epicApparel": { "count": 3, "rarity": "EPIC" },
+    "epicConsumables": { "count": 2, "rarity": "EPIC" },
+    "epicSkills": { "count": 3, "minRarity": "RARE", "maxRarity": "EPIC" },
+    "legendaryMagic": { "count": 2, "rarity": "LEGENDARY" },
+    "drawTriggers": ["discovery_rare", "investigate_crit", "npc_quest_reward", "pot_jackpot_5plus"],
+    "bossDefeatGrantsExtraDraw": true,
+    "refillsOnCampaignSession": true
+  },
+
+  "balance": {
+    "hpMax": 20,
+    "moraleMax": 20,
+    "energyFormula": "MAG or INT (by skill type)",
+    "apFormula": "floor(END / 5) + 1",
+    "apRange": [1, 5],
+    "initiativeFormula": "1d20 + AGI",
+    "potAnteRequired": true,
+    "roundTimerSeconds": 60,
+    "positionTimerSeconds": 15,
+    "lazyBonesEnabled": true,
+    "lethargyEnabled": true,
+    "exhaustedEnabled": true,
+    "hoardingReturnTarget": "encounterDeck"
+  },
+
+  "narration": {
+    "announcerProfile": "arena-announcer",
+    "gameStart": "Steam hisses from the iron grates as the grand clockwork arena whirs to life! Pistons drive the platform upward and gaslight blazes along the brass railings. Two inventors of fortune step into the ring. Let the gears of fate turn!",
+    "roundStart": [
+      "Pressure gauges spike as a new round of combat engages!",
+      "The great clock overhead strikes — another round commences amid billowing steam!",
+      "Gears grind and boilers roar. The combatants ready their contraptions for another exchange!",
+      "The arena's pneumatic barriers reset with a hiss. A new round begins!",
+      "Coal feeds the furnace of war. Steam clouds part to reveal the fighters once more."
+    ],
+    "roundEndTie": [
+      "The pressure equalizes — neither combatant gains the advantage. A draw!",
+      "Evenly matched! Their machines cancel each other out. Stalemate!"
+    ],
+    "criticalHit": [
+      "A catastrophic blow! Rivets fly and metal screams!",
+      "Direct hit to the boiler! The crowd gasps at the devastation!",
+      "Gears shatter under the force of that strike! Magnificent!"
+    ],
+    "criticalMiss": [
+      "A misfire! Steam vents wildly from a ruptured valve!",
+      "The mechanism jams at the worst possible moment!",
+      "Gears strip and the contraption sputters uselessly!"
+    ],
+    "lowHpTension": [
+      "Warning klaxons sound as both combatants trail sparks and leaking steam.",
+      "The arena reeks of hot oil and desperation. This bout nears its end.",
+      "Pressure failing on both sides. One more well-placed blow could end it all."
+    ]
+  },
+
+  "magicConfig": {
+    "enabledSkillTypes": ["Imperial", "Psionic"],
+    "magicEffectPool": ["Aether Bolt", "Galvanic Shield", "Mesmerist's Gaze", "Clockwork Familiar", "Tesla Surge", "Phlogiston Blast", "Aetheric Mending", "Temporal Stutter"]
+  },
+
+  "cardNames": {
+    "meleeWeapon": { "name": "Brass Wrench-Blade", "damageType": "Bludgeoning" },
+    "rangedWeapon": { "name": "Flintlock Pistol", "damageType": "Piercing" },
+    "bodyArmor": "Riveted Leather Cuirass",
+    "boots": "Iron-Shod Boots",
+    "strSkill": { "name": "Brawling", "category": "Combat", "modifier": "+2 to Attack rolls with Bludgeoning weapons" },
+    "agiSkill": { "name": "Acrobatic Escape", "category": "Defense", "modifier": "+2 to Flee and initiative rolls" },
+    "defaultSkill": { "name": "Tinkerer's Instinct", "category": "Survival", "modifier": "+1 to Investigate and Rest rolls" },
+    "healMagic": { "name": "Aetheric Mending", "effectType": "Restorative", "skillType": "Imperial", "effect": "Restore 6 HP to self or ally" },
+    "intMagic": { "name": "Mesmerist's Gaze", "effectType": "Discovery", "skillType": "Psionic", "effect": "View opponent's next planned action stack" }
+  },
+
+  "outfits": {
+    "male": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Urchin's Patchwork",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "oil-stained shirt", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "patched trousers", "location": ["leg"], "fabric": "wool", "color": "Brown", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "twine belt", "location": ["waist"], "fabric": "hemp", "color": "Brown", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "scuffed work boots", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Artificer's Workshop Kit",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "canvas work shirt", "location": ["torso"], "fabric": "canvas", "color": "Tan", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "heavy trousers", "location": ["leg"], "fabric": "wool", "color": "Charcoal", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "tool belt with pouches", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "leather apron", "location": ["back"], "fabric": "leather", "color": "Brown", "level": "OVER", "gender": "male" },
+          { "schema": "olio.wearable", "name": "steel-toed boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Gentleman Inventor's Finery",
+        "type": "formal",
+        "gender": "male",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "undershirt", "location": ["torso"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "drawers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "socks", "location": ["foot"], "fabric": "wool", "color": "White", "level": "BASE", "gender": "male" },
+          { "schema": "olio.wearable", "name": "brocade waistcoat", "location": ["torso"], "fabric": "silk", "color": "Burgundy", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "pressed trousers", "location": ["leg"], "fabric": "wool", "color": "Charcoal", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "long frock coat", "location": ["back"], "fabric": "wool", "color": "Black", "level": "OVER", "gender": "male" },
+          { "schema": "olio.wearable", "name": "brass pocket watch chain", "location": ["waist"], "fabric": "brass", "color": "Gold", "level": "SUIT", "gender": "male" },
+          { "schema": "olio.wearable", "name": "polished oxfords", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "male" }
+        ]
+      }
+    },
+    "female": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Factory Girl's Rags",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "soot-stained blouse", "location": ["torso"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "threadbare skirt", "location": ["leg"], "fabric": "cotton", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "knotted sash", "location": ["waist"], "fabric": "cotton", "color": "Gray", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "worn ankle boots", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Lady Mechanic's Garb",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "wool", "color": "Gray", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "fitted blouse with rolled sleeves", "location": ["torso"], "fabric": "cotton", "color": "Cream", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "split riding skirt", "location": ["leg"], "fabric": "wool", "color": "Charcoal", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "utility belt", "location": ["waist"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "aviator goggles", "location": ["head"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "lace-up boots", "location": ["foot"], "fabric": "leather", "color": "Brown", "level": "SUIT", "gender": "female" }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Lady Artificer's Evening Dress",
+        "type": "formal",
+        "gender": "female",
+        "wearables": [
+          { "schema": "olio.wearable", "name": "chemise", "location": ["chest"], "fabric": "linen", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "bloomers", "location": ["leg"], "fabric": "cotton", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "stockings", "location": ["foot"], "fabric": "silk", "color": "White", "level": "BASE", "gender": "female" },
+          { "schema": "olio.wearable", "name": "bustle gown with gear trim", "location": ["torso", "leg"], "fabric": "silk", "color": "Burgundy", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "capelet with brass clasps", "location": ["back"], "fabric": "velvet", "color": "Black", "level": "OVER", "gender": "female" },
+          { "schema": "olio.wearable", "name": "cameo brooch", "location": ["chest"], "fabric": "brass", "color": "Gold", "level": "SUIT", "gender": "female" },
+          { "schema": "olio.wearable", "name": "heeled button boots", "location": ["foot"], "fabric": "leather", "color": "Black", "level": "SUIT", "gender": "female" }
+        ]
+      }
+    }
+  },
+
+  "cardPool": [
+    { "type": "item", "subtype": "weapon", "name": "Brass Wrench-Blade", "rarity": "COMMON", "atk": 3, "slot": "Hand (1H)", "damageType": "Bludgeoning", "durability": 8, "artPrompt": "a heavy brass wrench modified into a fighting blade, gears visible at the hinge" },
+    { "type": "item", "subtype": "weapon", "name": "Pneumatic War-Hammer", "rarity": "UNCOMMON", "atk": 5, "slot": "Hand (2H)", "damageType": "Bludgeoning", "durability": 12, "artPrompt": "a massive steam-driven hammer with pistons and pressure gauges, venting steam" },
+    { "type": "item", "subtype": "weapon", "name": "Repeating Flintlock Carbine", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 10, "artPrompt": "an ornate brass and wood repeating rifle with a rotating cylinder mechanism" },
+    { "type": "item", "subtype": "weapon", "name": "Tesla Gauntlet", "rarity": "RARE", "atk": 6, "slot": "Hand (1H)", "damageType": "Electric", "durability": 14, "special": "Stun: target skips next action on crit", "artPrompt": "a brass gauntlet with copper coils crackling with arcs of blue electricity" },
+    { "type": "item", "subtype": "weapon", "name": "Aether Lance", "rarity": "RARE", "atk": 5, "slot": "Hand (2H)", "damageType": "Arcane", "durability": 12, "special": "+2 to Channel rolls", "artPrompt": "a long brass lance with a glowing green aether crystal mounted at the tip" },
+    { "type": "item", "subtype": "weapon", "name": "Clockwork Crossbow", "rarity": "COMMON", "atk": 2, "slot": "Hand (1H)", "damageType": "Piercing", "range": "Ranged", "durability": 8, "artPrompt": "a compact brass crossbow with a clockwork auto-loading mechanism" },
+
+    { "type": "apparel", "name": "Boilerplate Cuirass", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 0, "durability": 12, "fabric": "iron", "artPrompt": "a riveted iron breastplate with brass trim and steam vents along the shoulders" },
+    { "type": "apparel", "name": "Riveted Leather Vest", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "leather", "artPrompt": "a sturdy leather vest reinforced with brass rivets and buckles" },
+    { "type": "apparel", "name": "Brass Vambraces", "rarity": "UNCOMMON", "slot": "Hand", "def": 2, "hpBonus": 0, "durability": 10, "fabric": "brass", "artPrompt": "polished brass forearm guards with integrated gear mechanisms" },
+    { "type": "apparel", "name": "Clockwork Exo-Harness", "rarity": "RARE", "slot": "Body", "def": 5, "hpBonus": 2, "durability": 20, "fabric": "steel", "artPrompt": "a full mechanical exoskeleton with gears, pistons, and a boiler on the back" },
+    { "type": "apparel", "name": "Aether-Weave Longcoat", "rarity": "RARE", "slot": "Back", "def": 3, "hpBonus": 1, "durability": 14, "fabric": "wool", "special": "+2 to Channel rolls", "artPrompt": "a long dark coat with luminous aether threads woven through the fabric" },
+    { "type": "apparel", "name": "Aviator's Duster", "rarity": "COMMON", "slot": "Back", "def": 1, "hpBonus": 0, "durability": 6, "fabric": "leather", "special": "+1 to Flee rolls", "artPrompt": "a worn brown leather duster coat with brass buckles and flight goggles on the collar" },
+    { "type": "apparel", "name": "Cogsmith's Goggles", "rarity": "UNCOMMON", "slot": "Head", "def": 1, "hpBonus": 0, "durability": 8, "fabric": "brass", "special": "+2 to Investigate rolls", "artPrompt": "multi-lensed brass goggles with magnifying flip-down attachments" },
+
+    { "type": "skill", "name": "Fortified Position", "category": "Defense", "modifier": "+3 DEF when Guard is active", "tier": "UNCOMMON", "artPrompt": "a figure crouched behind a portable brass barricade with steam vents" },
+    { "type": "skill", "name": "Overclock Strike", "category": "Combat", "modifier": "+3 ATK on next Attack", "tier": "UNCOMMON", "artPrompt": "a warrior swinging a glowing overcharged mechanical weapon, sparks flying" },
+    { "type": "skill", "name": "Saboteur's Touch", "category": "Combat", "modifier": "+4 ATK after successful Feint", "tier": "RARE", "artPrompt": "a rogue planting a small clockwork device on an enemy's armor from behind" },
+    { "type": "skill", "name": "Sharpshooter's Scope", "category": "Ranged", "modifier": "+2 ATK with ranged weapons", "tier": "COMMON", "artPrompt": "a marksman aiming through a telescopic brass scope mounted on a rifle" },
+    { "type": "skill", "name": "Aetheric Attunement", "category": "Magic", "modifier": "+2 to Channel rolls, -1 energy cost", "tier": "UNCOMMON", "artPrompt": "an inventor channeling green aether energy through copper coils in their hands" },
+    { "type": "skill", "name": "Combat Engineering", "category": "Combat", "modifier": "+1 ATK and +1 DEF this round", "tier": "COMMON", "artPrompt": "an engineer rapidly assembling a turret from spare brass parts on a battlefield" },
+    { "type": "skill", "name": "Field Medicine", "category": "Survival", "modifier": "Rest restores +3 extra HP", "tier": "COMMON", "artPrompt": "a medic applying bandages and aether salve from a leather medical satchel" },
+    { "type": "skill", "name": "Disassemble", "category": "Combat", "modifier": "On hit, target loses weapon bonus next round", "tier": "RARE", "artPrompt": "an inventor yanking gears from an opponent's weapon, parts scattering" },
+
+    { "type": "magic", "name": "Phlogiston Blast", "effectType": "Offensive", "skillType": "Imperial", "effect": "Deal 6 damage, ignores DEF", "energyCost": 5, "reusable": true, "artPrompt": "a jet of superheated phlogiston flame erupting from a brass nozzle" },
+    { "type": "magic", "name": "Galvanic Shield", "effectType": "Defensive", "skillType": "Imperial", "effect": "+4 DEF this round", "energyCost": 3, "reusable": true, "artPrompt": "a crackling dome of electrical energy surrounding a defender" },
+    { "type": "magic", "name": "Tesla Surge", "effectType": "Offensive", "skillType": "Imperial", "effect": "Deal 4 damage, stun target (skip next action)", "energyCost": 4, "reusable": true, "artPrompt": "a massive electrical arc leaping between copper coils toward a target" },
+    { "type": "magic", "name": "Temporal Stutter", "effectType": "Utility", "skillType": "Psionic", "effect": "Auto-succeed next Flee or Steal", "energyCost": 4, "reusable": true, "artPrompt": "a figure flickering between moments in time, ghostly afterimages trailing behind" },
+    { "type": "magic", "name": "Mesmerist's Gaze", "effectType": "Offensive", "skillType": "Psionic", "effect": "Target cannot act next round (mesmerized), -2 morale", "energyCost": 5, "reusable": true, "artPrompt": "a Victorian mesmerist with spiraling eyes, hypnotic energy radiating from outstretched hands" },
+    { "type": "magic", "name": "Clockwork Familiar", "effectType": "Offensive", "skillType": "Imperial", "effect": "Summon a brass automaton that deals 3 damage per round for 2 rounds", "energyCost": 5, "reusable": true, "artPrompt": "a small clockwork bird made of brass gears taking flight, glowing aether eyes" },
+
+    { "type": "item", "subtype": "consumable", "name": "Concentrated Aether Tonic", "rarity": "UNCOMMON", "effect": "Restore 12 HP", "artPrompt": "a large glass bottle of glowing green aether tonic with brass fittings" },
+    { "type": "item", "subtype": "consumable", "name": "Berserker's Steam Injection", "rarity": "UNCOMMON", "effect": "+3 ATK this round", "artPrompt": "a brass syringe filled with pressurized amber stimulant fluid" },
+    { "type": "item", "subtype": "consumable", "name": "Ablative Plating Kit", "rarity": "RARE", "effect": "+5 DEF this round", "artPrompt": "a set of snap-on brass armor plates with steam-hardened ceramic backing" },
+    { "type": "item", "subtype": "consumable", "name": "Aether Battery", "rarity": "UNCOMMON", "effect": "Restore 8 Energy", "artPrompt": "a cylindrical brass battery cell pulsing with green aether energy" },
+    { "type": "item", "subtype": "consumable", "name": "Smoke Canister", "rarity": "COMMON", "effect": "Auto-succeed Flee this round", "artPrompt": "a brass cylinder spewing thick white steam and smoke" }
+  ],
+
+  "encounters": {
+    "threatCreatures": [
+      { "name": "Sewer Rat Swarm", "type": "animal", "atk": 2, "def": 1, "hp": 8, "imageIcon": "pest_control", "behavior": "Attacks lowest HP target", "loot": ["Rat Teeth"], "artPrompt": "a swarm of large mechanical-eyed rats pouring from a steam grate in a Victorian sewer" },
+      { "name": "Rogue Automaton", "type": "monster", "atk": 3, "def": 2, "hp": 12, "imageIcon": "smart_toy", "behavior": "Follows last received order pattern", "loot": ["Automaton Core", "Brass Gears"], "artPrompt": "a malfunctioning clockwork humanoid with glowing eyes and exposed gears, sparking" },
+      { "name": "Aether Spider", "type": "animal", "atk": 3, "def": 2, "hp": 10, "imageIcon": "bug_report", "behavior": "Poison on hit (aether burns, 2 turns)", "loot": ["Aether Gland", "Chitin Plate"], "artPrompt": "a large mechanical spider with aether-glowing joints and brass mandibles, leaking green fluid" },
+      { "name": "Gutter Thug", "type": "npc", "atk": 4, "def": 2, "hp": 14, "imageIcon": "person_alert", "behavior": "Steals item on crit", "loot": ["Stolen Coin Purse", "Crude Knife"], "artPrompt": "a Victorian street tough in a battered top hat wielding a lead pipe in a foggy alley" },
+      { "name": "Clockwork Hound", "type": "monster", "atk": 5, "def": 3, "hp": 16, "imageIcon": "pets", "behavior": "Attacks twice on crit", "loot": ["Precision Gears", "Copper Plating"], "artPrompt": "a brass clockwork hunting dog with iron fangs and glowing red optical sensors" },
+      { "name": "Ironclad Enforcer", "type": "npc", "atk": 6, "def": 4, "hp": 22, "imageIcon": "shield_person", "behavior": "Enrages below half HP (+2 ATK)", "loot": ["Enforcer's Badge", "Pneumatic Baton"], "artPrompt": "a hulking figure in full steam-powered iron armor with a massive mechanical fist" },
+      { "name": "Sky Pirate Bombardier", "type": "npc", "atk": 4, "def": 1, "hp": 12, "imageIcon": "flight", "behavior": "Ranged attack, ignores front-line", "loot": ["Bomb Casing", "Airship Token"], "artPrompt": "a goggled sky pirate in a leather duster dropping brass grenades from a rope ladder" },
+      { "name": "Aether Golem", "type": "monster", "atk": 7, "def": 4, "hp": 25, "imageIcon": "precision_manufacturing", "behavior": "Regenerates 2 HP per round (aether core)", "loot": ["Aether Core", "Golem Plating"], "artPrompt": "a towering golem of riveted iron plates with a glowing green aether furnace in its chest" }
+    ]
+  }
+}

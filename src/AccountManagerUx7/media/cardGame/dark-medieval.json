@@ -129,8 +129,8 @@
   },
 
   "magicConfig": {
-    "enabledSkillTypes": ["Imperial"],
-    "magicEffectPool": ["Cauterize", "Ward of Iron", "Plague Touch", "Bloodletting", "Corpse Light"]
+    "enabledSkillTypes": ["Imperial", "Undead"],
+    "magicEffectPool": ["Cauterize", "Ward of Iron", "Plague Touch", "Bloodletting", "Corpse Light", "Death's Grasp", "Hex of Weakness"]
   },
 
   "cardNames": {
@@ -253,6 +253,7 @@
     { "type": "item", "subtype": "weapon", "name": "Poisoned Stiletto", "rarity": "RARE", "atk": 2, "slot": "Hand (1H)", "damageType": "Piercing", "durability": 5, "special": "Poison: 2 damage/round for 2 rounds", "artPrompt": "a thin dagger with a green-coated blade" },
     { "type": "item", "subtype": "weapon", "name": "Morning Star", "rarity": "UNCOMMON", "atk": 4, "slot": "Hand (1H)", "damageType": "Bludgeoning", "durability": 10, "artPrompt": "a spiked morning star with a heavy chain" },
     { "type": "item", "subtype": "weapon", "name": "Mercenary's Halberd", "rarity": "RARE", "atk": 6, "slot": "Hand (2H)", "damageType": "Slashing", "durability": 14, "special": "+1 DEF (reach)", "artPrompt": "a long-hafted halberd with a cruel blade" },
+    { "type": "item", "subtype": "weapon", "name": "Hunting Longbow", "rarity": "COMMON", "atk": 3, "slot": "Hand (2H)", "damageType": "Piercing", "range": "Ranged", "durability": 8, "artPrompt": "a crude but sturdy longbow made of dark yew wood" },
 
     { "type": "apparel", "name": "Brigandine Coat", "rarity": "UNCOMMON", "slot": "Body", "def": 3, "hpBonus": 0, "durability": 10, "fabric": "iron-studded leather", "artPrompt": "a coat of overlapping iron plates riveted to leather" },
     { "type": "apparel", "name": "Boiled Leather Cuirass", "rarity": "COMMON", "slot": "Body", "def": 2, "hpBonus": 0, "durability": 8, "fabric": "boiled leather", "artPrompt": "a hardened leather cuirass darkened by fire" },
@@ -275,6 +276,8 @@
     { "type": "magic", "name": "Ward of Iron", "effectType": "Defensive", "skillType": "Imperial", "effect": "+4 DEF this round", "energyCost": 3, "reusable": true, "artPrompt": "iron chains materializing as a protective barrier" },
     { "type": "magic", "name": "Plague Touch", "effectType": "Offensive", "skillType": "Imperial", "effect": "Poison target: 2 damage/round for 3 rounds", "energyCost": 5, "reusable": true, "artPrompt": "a rotting hand reaching out, green mist rising" },
     { "type": "magic", "name": "Corpse Light", "effectType": "Utility", "skillType": "Undead", "effect": "Reveal all hidden items and threats this round", "energyCost": 3, "reusable": true, "artPrompt": "eerie blue-green flames hovering in darkness" },
+    { "type": "magic", "name": "Death's Grasp", "effectType": "Offensive", "skillType": "Undead", "effect": "Deal 5 damage, target cannot Rest next round", "energyCost": 5, "reusable": true, "artPrompt": "a spectral skeletal hand reaching up from the ground to seize a victim" },
+    { "type": "magic", "name": "Hex of Weakness", "effectType": "Offensive", "skillType": "Imperial", "effect": "Target loses 3 ATK and 2 DEF this round", "energyCost": 4, "reusable": true, "artPrompt": "a hunched figure inscribing a dark sigil in blood on the ground" },
 
     { "type": "item", "subtype": "consumable", "name": "Surgeon's Kit", "rarity": "UNCOMMON", "effect": "Restore 10 HP", "artPrompt": "a leather case with crude surgical instruments" },
     { "type": "item", "subtype": "consumable", "name": "Whetstone", "rarity": "COMMON", "effect": "+2 ATK this round", "artPrompt": "a coarse whetstone and sharpened blade" },

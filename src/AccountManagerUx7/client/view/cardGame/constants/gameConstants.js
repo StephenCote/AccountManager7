@@ -322,6 +322,11 @@
             name: "Post Apocalypse",
             backgroundPrompt: "Ruined cityscape overgrown with vegetation, crumbling skyscrapers, dusty wasteland, abandoned vehicles, harsh survival outpost",
             promptSuffix: "post-apocalyptic, desaturated palette, gritty detail"
+        },
+        "steampunk": {
+            name: "Steampunk",
+            backgroundPrompt: "Vast steampunk cityscape, towering brass smokestacks, intricate clockwork buildings, airships floating between copper-domed towers, gas-lamp lit cobblestone streets, Victorian industrial architecture, warm amber and sepia tones",
+            promptSuffix: "steampunk, Victorian industrial, brass and copper, clockwork gears, detailed mechanical illustration"
         }
     };
 

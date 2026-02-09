@@ -357,7 +357,7 @@
     async function loadThemeList() {
         themeEditorState.loading = true;
         m.redraw();
-        let builtins = ["high-fantasy", "dark-medieval", "sci-fi", "post-apocalypse"];
+        let builtins = ["high-fantasy", "dark-medieval", "sci-fi", "post-apocalypse", "steampunk"];
         let custom = await themeStorage.list();
         themeEditorState.themes = [
             ...builtins.map(id => ({ themeId: id, name: id.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()), isBuiltin: true, isCustom: false })),

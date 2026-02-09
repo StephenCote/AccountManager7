@@ -1112,8 +1112,7 @@
         return bytes.buffer;
     }
 
-    async function createAudioSource(name, profileId, content) {
-        //console.log(name, profileId);
+    async function createAudioSource(name, voiceProps, content) {
         if (content) {
             /// Strip emojis out - https://stackoverflow.com/questions/10992921/how-to-remove-emoji-code-using-javascript
             content = content.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, "");
@@ -1126,14 +1125,25 @@
             return;
         }
         if (!audioMap[name]) {
-            tmpAud = audioMap[name] = { name, profileId, content, pending: false };
+            tmpAud = audioMap[name] = { name, voiceProps, content, pending: false };
         }
         if (!audioMap[name].data && !audioMap[name].pending) {
             audioMap[name].pending = true;
-            let vprops = { "text": content, "speed": 1.2, voiceProfileId: profileId };
-            if (!vprops.voiceProfileId) {
-                vprops.engine = "piper";
-                vprops.speaker = "en_GB-alba-medium";
+            // Build voice synthesis request properties
+            // voiceProps can be: object (resolved voice profile), string (legacy profileId), or null (default)
+            let vprops;
+            if (voiceProps && typeof voiceProps === "object") {
+                // Resolved voice properties — use engine, speaker, voice_sample directly
+                vprops = { text: content, speed: voiceProps.speed || 1.2, engine: voiceProps.engine, speaker: voiceProps.speaker, speaker_id: voiceProps.speakerId };
+                if (voiceProps.voiceSample) {
+                    vprops.voice_sample = voiceProps.voiceSample;
+                }
+            } else if (voiceProps) {
+                // Legacy: string profileId
+                vprops = { text: content, speed: 1.2, voiceProfileId: voiceProps };
+            } else {
+                // No profile — default piper
+                vprops = { text: content, speed: 1.2, engine: "piper", speaker: "en_GB-alba-medium" };
             }
             console.log("Synthesize '" + name + "'");
             let d;
