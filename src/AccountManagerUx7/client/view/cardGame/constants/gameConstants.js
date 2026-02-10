@@ -366,6 +366,21 @@
             name: "Steampunk",
             backgroundPrompt: "Vast steampunk cityscape, towering brass smokestacks, intricate clockwork buildings, airships floating between copper-domed towers, gas-lamp lit cobblestone streets, Victorian industrial architecture, warm amber and sepia tones",
             promptSuffix: "steampunk, Victorian industrial, brass and copper, clockwork gears, detailed mechanical illustration"
+        },
+        "cyberpunk": {
+            name: "Cyberpunk",
+            backgroundPrompt: "Cyberpunk city at night, towering neon-lit skyscrapers, holographic billboards, rain-soaked streets reflecting neon pink and blue, flying cars, massive corporate mega-towers, dark alleyways with steam vents, dystopian urban sprawl",
+            promptSuffix: "cyberpunk, neon lights, rain-slicked streets, holographic signs, dark dystopian, detailed digital art"
+        },
+        "space-opera": {
+            name: "Space Opera",
+            backgroundPrompt: "Epic space opera vista, massive alien space station orbiting a ringed planet, colorful nebula in the background, starships docking, alien architecture with sweeping organic curves, distant stars and galaxies",
+            promptSuffix: "space opera, epic galactic, alien civilizations, vibrant nebulae, cinematic sci-fi, detailed illustration"
+        },
+        "horror": {
+            name: "Horror",
+            backgroundPrompt: "Gothic horror landscape, decrepit Victorian manor on a fog-shrouded hilltop, gnarled dead trees, full moon behind dark clouds, graveyard with tilted headstones, eerie green mist, crows circling, dark and foreboding atmosphere",
+            promptSuffix: "gothic horror, dark atmosphere, moonlit, supernatural, eerie fog, detailed dark illustration"
         }
     };
 

@@ -7111,7 +7111,7 @@ Items to resolve during implementation:
 **Known issues:**
 - Thumbnail servlet may fail for images in newly-created deck art directories (server-side group authorization issue for `page.makePath`-created groups)
 - Gallery picker falls back to character portrait group for decks created before the image-move feature
-- End-of-round threat encounters, scenario card integration, and loot cards need work — see [Phase 9.5 — Encounters, Scenarios & Loot](#phase-95--encounters-scenarios--loot) below
+- ~~End-of-round threat encounters, scenario card integration, and loot cards need work~~ — resolved, see [Phase 9.5 — Encounters, Scenarios & Loot](#phase-95--encounters-scenarios--loot) (all items ✅)
 
 **Next implementation phase: Phase 10 — Print & Export**
 - Print layout rendering (2.5" x 3.5" cards at 300 DPI)
@@ -7123,9 +7123,9 @@ Items to resolve during implementation:
 
 ---
 
-## Phase 9.5 — Encounters, Scenarios & Loot
+## Phase 9.5 — Encounters, Scenarios & Loot ✅ COMPLETE (2026-02-09)
 
-Analysis of unresolved implementations in the encounter/scenario/loot pipeline. These are functional gaps between the design doc and current code.
+Analysis of encounter/scenario/loot pipeline. All items in the implementation checklist below have been resolved.
 
 ### Problem 1: End-of-Round Threat Combat Doesn't Produce Meaningful Results
 
@@ -7395,39 +7395,39 @@ if (matchCard) {
 ### Implementation Checklist
 
 #### Encounter Cards
-- [ ] Fix end-threat target: round winner (not loser) per design doc
-- [ ] Add bonus action stack mechanic for end-threat response (1 stack from hand)
-- [ ] Handle CLASH outcome in threat combat (`bothTakeDamage`)
-- [ ] Add threat carry-over mechanic (undefeated end threat becomes beginning threat next round with +2 ATK)
-- [ ] Add flee option (1d20 + AGI vs difficulty)
-- [ ] Show combat result overlay with roll breakdowns (not just a text line in cleanup)
-- [ ] Add pot forfeiture on failed repel
+- [x] Fix end-threat target: round winner (not loser) per design doc — `encounters.js:341`
+- [x] Add bonus action stack mechanic for end-threat response (1 stack from hand) — `placeThreatDefenseCard()` in `gameState.js:1501`, `threatUI.js:165-173` defense stack UI
+- [x] Handle CLASH outcome in threat combat (`bothTakeDamage`) — `gameState.js:1394-1413`
+- [x] Add threat carry-over mechanic (undefeated end threat becomes beginning threat next round with +2 ATK) — `gameState.js:1456-1467`
+- [x] Add flee option (1d20 + AGI vs difficulty) — `gameState.js:1547-1620`, `threatUI.js:193-200`
+- [x] Show combat result overlay with roll breakdowns — `renderEndThreatResult()` in `phaseUI.js:443-531` (ATK/DEF breakdown, outcome, damage, flee result, carry-over, pot forfeiture)
+- [x] Add pot forfeiture on failed repel — `gameState.js:1384-1393` (hit), `1404-1413` (clash), `1600-1620` (flee)
 
 #### Scenario Cards
-- [ ] Add `scenario` entry to `CARD_TYPES` (gameConstants.js)
-- [ ] Add `scenario` entry to `CARD_RENDER_CONFIG` (gameConstants.js)
-- [ ] Add scenario cards to `assembleStarterDeck()` (characters.js)
-- [ ] Add `_isScenarioDef` marker so they don't enter the draw pile
-- [ ] Add scenario card art to `deckList.js` backfill (for older saved decks)
-- [ ] Render scenario cards using `CardFace` in cleanup phase (phaseUI.js)
-- [ ] Add loot reveal overlay for discovery scenarios
-- [ ] Add `lootPool` to scenario definitions for thematic loot
-- [ ] Add theme-specific scenario `lootPool` overrides
+- [x] Add `scenario` entry to `CARD_TYPES` (gameConstants.js)
+- [x] Add `scenario` entry to `CARD_RENDER_CONFIG` (gameConstants.js)
+- [x] Add scenario cards to `assembleStarterDeck()` — `characters.js:404-425`
+- [x] Add `_isScenarioDef` marker so they don't enter the draw pile — `characters.js:421`
+- [x] Add scenario card art to `deckList.js` backfill (for older saved decks) — `deckList.js:278-298`
+- [x] Render scenario cards using `CardFace` in cleanup phase — `phaseUI.js:720-722`
+- [x] Add loot reveal overlay for discovery scenarios — `phaseUI.js:638-652` (auto-dismiss 3s + click)
+- [x] Add `lootPool` to scenario definitions for thematic loot — `encounters.json` + theme files
+- [x] Add theme-specific scenario `lootPool` overrides — all 5 theme files have `scenarioOverrides` with `lootPool`
 
 #### Loot Cards
-- [ ] Add `loot` subtype routing in `cardFace.js` `renderCardBody()`
-- [ ] Add `loot` entry to `CARD_RENDER_CONFIG` (gameConstants.js)
-- [ ] Add loot card definitions to each theme's `cardPool` with artPrompts
-- [ ] Use creature's named `lootItems` instead of generic "End Threat Loot" in resolution
-- [ ] Add loot art lookup during threat resolution (match from deck cards)
-- [ ] Add loot cards to `assembleStarterDeck()` from threat creature loot arrays
-- [ ] Add `_isLootDef` marker so they don't enter the draw pile
+- [x] Add `loot` subtype routing in `cardFace.js` `renderCardBody()` — `renderLootBody()` function
+- [x] Add `loot` entry to `CARD_RENDER_CONFIG` (gameConstants.js)
+- [x] Add loot card definitions to each theme's `cardPool` with artPrompts — all 5 themes
+- [x] Use creature's named `lootItems` instead of generic "End Threat Loot" in resolution — `gameState.js:1429-1452`
+- [x] Add loot art lookup during threat resolution (match from deck cards) — `encounters.js` art lookup
+- [x] Add loot cards to `assembleStarterDeck()` from threat creature loot arrays — `characters.js:427-449`
+- [x] Add `_isLootDef` marker so they don't enter the draw pile — `characters.js:443`
 
 #### Deck View Integration
-- [ ] Ensure scenario cards appear in deck card grid with proper rendering
-- [ ] Ensure loot cards appear in deck card grid with proper rendering
-- [ ] Add scenario and loot cards to art generation pipeline (SD prompts from artPrompt field)
-- [ ] Backfill scenario and loot cards for older saved decks in `deckList.js`
+- [x] Ensure scenario cards appear in deck card grid with proper rendering — `CARD_TYPES` + `CARD_RENDER_CONFIG` + `CardFace` routing
+- [x] Ensure loot cards appear in deck card grid with proper rendering — `CARD_TYPES` + `CARD_RENDER_CONFIG` + `renderLootBody()`
+- [x] Add scenario and loot cards to art generation pipeline (SD prompts from artPrompt field) — `artPipeline.js:125-128` uses `card.artPrompt` when present
+- [x] Backfill scenario and loot cards for older saved decks in `deckList.js` — `deckList.js:278-325`
 
 ---
 
@@ -7492,7 +7492,7 @@ client/view/cardGame/
 | **Resolution UI** | ✅ Complete | Inline result row aligned with positions, dice animation, hold time, click-expand |
 | **Talk action** | ✅ Complete | Player Talk opens LLM chat; opponent Talk uses CHA contest roll |
 | **Cleanup phase** | ✅ Complete | Recovery, pot claiming, scenario display, loot reveal, auto-save |
-| **Threat system** | ✅ Partial | Nat 1 beginning threats work; end-of-round threats need rework (see Phase 9.5) |
+| **Threat system** | ✅ Complete | Nat 1 beginning threats, end-of-round threats, flee, carry-over, pot forfeiture, combat result overlay |
 | **AI opponent** | ✅ Complete | LLM director for placement with FIFO fallback; AI auto-fills positions |
 | **Narration** | ✅ Complete | LLM round start/end narration, resolution narration, ticker display |
 | **Poker Face** | ✅ Complete | Emotion display, banter triggers (attack, defense, magic) |
@@ -7598,10 +7598,10 @@ Art is stored under the deck folder (`~/CardGame/{deckName}/Art/`). Deck delete 
 
 ## Open Issues
 
-### Issue 1: Deck Delete Cleanup Verification
+### Issue 1: Deck Delete — Server Recursive Deletion Unverified
 Art is stored under the deck folder (`~/CardGame/{deckName}/Art/`) and deck delete removes the parent group via `page.deleteObject("auth.group", grp.objectId)`. This should recursively delete all children (Art, saves, campaign, gameConfig). **Verify** that the server's group delete actually performs recursive deletion — if not, children (art images, save files) would be orphaned.
 
-Additionally, deck-related LLM chat sessions (game chat, narration) are not cleaned up on delete. These should be removed using the deep-delete procedure from `chat.js` that also deletes referenced objects.
+~~Chat cleanup:~~ **Resolved.** `deleteDeck()` in `deckList.js` now calls `deleteGameChats(storageName)` before removing the deck group. This finds all `CG Chat/Narrator/Director` chat requests for the deck and deletes each via `am7chat.deleteChat(req, true)`, which also deletes referenced session objects. A manual "Delete All Chats" button was also added to the Game Config panel in `deckView.js`.
 
 ### Issue 2: Backend Model List Processing Error
 Jackson deserialization fails when processing `SWModelListResponse["files"]`:
@@ -7613,19 +7613,11 @@ at [Source: REDACTED; line: 1, column: 24]
 ```
 The backend expects `files` to be an array of simple objects but the SD Forge/SwarmUI API returns complex nested objects that Jackson cannot auto-deserialize into `ArrayList<Object>`. Fix requires updating `SWModelListResponse.files` to use a proper typed model or `JsonNode` instead of raw `ArrayList<Object>`.
 
-### Issue 3: End-of-Round Threats Need Rework
-See [Phase 9.5](#phase-95--encounters-scenarios--loot) for full analysis. Key gaps:
-- Target inversion (targets loser instead of winner per design)
-- No player agency (auto-roll instead of bonus action stack)
-- CLASH outcome not handled in threat combat
-- No threat carry-over to next round
-- Minimal combat result display
+### ~~Issue 3: End-of-Round Threats Need Rework~~ ✅ RESOLVED (2026-02-09)
+All Phase 9.5 encounter items implemented: target winner, defense stack, CLASH handling, threat carry-over (+2 ATK), flee (d20+AGI vs DC), pot forfeiture, full combat result overlay with roll breakdowns.
 
-### Issue 4: Scenario/Loot Card Integration Incomplete
-- Scenario cards not in deck assembly → no art generated for them
-- Loot from defeated threats uses generic names instead of creature's `lootItems`
-- No `lootPool` on scenario definitions for thematic rewards
-- See Phase 9.5 checklists for full fix list
+### ~~Issue 4: Scenario/Loot Card Integration Incomplete~~ ✅ RESOLVED (2026-02-09)
+All Phase 9.5 scenario/loot items implemented: scenario + loot cards in deck assembly with `_isScenarioDef`/`_isLootDef` markers, `CardFace` rendering, loot reveal overlay, `lootPool` on scenarios with theme overrides, named `lootItems` from creatures, loot art lookup, backfill for older decks, `artPrompt` support in art pipeline.
 
 ### Issue 5: Equipment Phase Is Display-Only
 `EquipPhaseUI` shows equipped items but doesn't allow changing them. Players should be able to swap weapons, equip found items, and manage gear between rounds.
@@ -7666,11 +7658,11 @@ Online play is 1v1 vs AI only. Design supports 3-4 player IRL with:
 ## Next Steps (Priority Order)
 
 ### Near-term (Gameplay Polish)
-1. **Verify deck delete cleanup** — confirm server recursive group deletion, add chat cleanup on delete
+1. **Verify deck delete cleanup** — confirm server recursive group deletion (chat cleanup implemented)
 2. **Equipment phase interactivity** — allow equipping/unequipping between rounds
-3. **End-threat rework** — implement Phase 9.5 fixes (target winner, bonus stack, carry-over)
-4. **Loot card integration** — use creature's named lootItems, add to deck assembly with art
-5. **Scenario card integration** — add to deck assembly, render with CardFace in cleanup
+3. ~~**End-threat rework**~~ ✅ Phase 9.5 complete (target winner, bonus stack, CLASH, carry-over, flee, pot forfeiture, combat overlay)
+4. ~~**Loot card integration**~~ ✅ Phase 9.5 complete (named lootItems, deck assembly, art, lootPool, backfill)
+5. ~~**Scenario card integration**~~ ✅ Phase 9.5 complete (deck assembly, CardFace in cleanup, loot reveal, artPrompt)
 
 ### Mid-term (Campaign & Balance)
 6. **XP & level-up** — wire XP tracking, implement level-up stat picker UI

@@ -1,0 +1,1409 @@
+{
+  "themeId": "space-opera",
+  "name": "Space Opera",
+  "version": "1.0",
+  "description": "Epic galactic adventure with alien civilizations, starship combat, ancient relics, and psionic powers",
+  "artStyle": {
+    "promptSuffix": "space opera, epic galactic, alien civilizations, vibrant nebulae, cinematic sci-fi, detailed illustration",
+    "cardBorderStyle": "starfield",
+    "cardBackVariant": "cosmic",
+    "fontFamily": "Segoe UI, system-ui, sans-serif",
+    "colorPalette": {
+      "character": "#FFD54F",
+      "apparel": "#78909C",
+      "item": "#66BB6A",
+      "action": "#EF5350",
+      "talk": "#42A5F5",
+      "encounter": "#AB47BC",
+      "skill": "#FFA726",
+      "magic": "#26C6DA",
+      "scenario": "#1B5E20",
+      "loot": "#F57F17"
+    },
+    "backgroundPrompt": "Epic space opera vista, massive alien space station orbiting a ringed planet, colorful nebula in the background, starships docking, alien architecture with sweeping organic curves, distant stars and galaxies, cinematic wide angle",
+    "backgroundConfig": {
+      "width": 1024,
+      "height": 1024,
+      "steps": 40,
+      "cfg": 7,
+      "hires": true
+    },
+    "sdConfig": {
+      "default": {
+        "style": "art",
+        "steps": 30,
+        "cfg": 7,
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.7
+      },
+      "character": {
+        "width": 768,
+        "height": 1024
+      },
+      "apparel": {
+        "width": 512,
+        "height": 768
+      },
+      "item": {
+        "width": 512,
+        "height": 512
+      },
+      "action": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "talk": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "encounter": {
+        "width": 768,
+        "height": 768
+      },
+      "skill": {
+        "width": 512,
+        "height": 512
+      },
+      "magic": {
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.75
+      },
+      "scenario": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "loot": {
+        "width": 512,
+        "height": 512
+      }
+    }
+  },
+  "characterBuild": {
+    "statRange": [
+      3,
+      18
+    ],
+    "statPointBuy": 72,
+    "skillSlots": 4,
+    "equipSlots": [
+      "head",
+      "body",
+      "handL",
+      "handR",
+      "feet",
+      "ring",
+      "back"
+    ],
+    "availableRaces": [
+      "HUMAN",
+      "ELF",
+      "DWARF",
+      "ORC",
+      "HALFLING"
+    ],
+    "availableAlignments": "all"
+  },
+  "starterDeck": {
+    "apparel": {
+      "min": 2,
+      "max": 3,
+      "rarity": "COMMON"
+    },
+    "weapons": {
+      "min": 1,
+      "max": 2,
+      "rarity": "COMMON"
+    },
+    "consumables": [
+      {
+        "name": "Field Rations",
+        "count": 2,
+        "effect": "Restore 3 Energy"
+      },
+      {
+        "name": "Bacta Patch",
+        "count": 1,
+        "effect": "Restore 8 HP"
+      },
+      {
+        "name": "Stim Injector",
+        "count": 1,
+        "effect": "Restore 4 HP"
+      },
+      {
+        "name": "Signal Flare",
+        "count": 1,
+        "effect": "+2 to Investigate rolls this round"
+      }
+    ],
+    "skills": {
+      "min": 1,
+      "max": 2
+    },
+    "magicEffects": {
+      "min": 0,
+      "max": 1,
+      "condition": "MAG >= 10 OR INT >= 12"
+    }
+  },
+  "encounterDeck": {
+    "threats": {
+      "count": 12,
+      "difficultyRange": [
+        4,
+        10
+      ],
+      "maxRarity": "RARE"
+    },
+    "events": {
+      "count": 10,
+      "maxRarity": "UNCOMMON"
+    },
+    "discoveries": {
+      "count": 10,
+      "maxRarity": "RARE"
+    },
+    "npcs": {
+      "count": 8,
+      "maxRarity": "RARE",
+      "source": "olio.charPerson.population",
+      "roleAssignment": "random"
+    },
+    "lootItems": {
+      "count": 10,
+      "rarityWeights": {
+        "COMMON": 45,
+        "UNCOMMON": 35,
+        "RARE": 20
+      }
+    },
+    "skillCards": {
+      "count": 5,
+      "minRarity": "UNCOMMON",
+      "maxRarity": "RARE"
+    },
+    "magicEffects": {
+      "count": 2,
+      "rarity": "RARE"
+    }
+  },
+  "treasureVault": {
+    "bossThreats": {
+      "count": 4,
+      "difficultyRange": [
+        12,
+        16
+      ],
+      "minRarity": "EPIC"
+    },
+    "legendaryWeapons": {
+      "count": 2,
+      "rarity": "LEGENDARY"
+    },
+    "epicWeapons": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicApparel": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicConsumables": {
+      "count": 2,
+      "rarity": "EPIC"
+    },
+    "epicSkills": {
+      "count": 3,
+      "minRarity": "RARE",
+      "maxRarity": "EPIC"
+    },
+    "legendaryMagic": {
+      "count": 2,
+      "rarity": "LEGENDARY"
+    },
+    "drawTriggers": [
+      "discovery_rare",
+      "investigate_crit",
+      "npc_quest_reward",
+      "pot_jackpot_5plus"
+    ],
+    "bossDefeatGrantsExtraDraw": true,
+    "refillsOnCampaignSession": true
+  },
+  "balance": {
+    "hpMax": 20,
+    "moraleMax": 20,
+    "energyFormula": "MAG or INT (by skill type)",
+    "apFormula": "floor(END / 5) + 1",
+    "apRange": [
+      1,
+      5
+    ],
+    "initiativeFormula": "1d20 + AGI",
+    "potAnteRequired": true,
+    "roundTimerSeconds": 60,
+    "positionTimerSeconds": 15,
+    "lazyBonesEnabled": true,
+    "lethargyEnabled": true,
+    "exhaustedEnabled": true,
+    "hoardingReturnTarget": "encounterDeck"
+  },
+  "narration": {
+    "announcerProfile": "arena-announcer",
+    "gameStart": "The ancient coliseum ship drifts into orbit. Force fields shimmer as two warriors from across the galaxy take their positions. The stars themselves bear witness. Let the duel begin!",
+    "roundStart": [
+      "Thrusters fire and the arena platform rotates. A new round of combat ignites beneath the twin suns!",
+      "The nebula pulses with light as the combatants circle each other. Another exchange begins!",
+      "Starship engines roar overhead. The crowd of a thousand species cheers as the next round commences!",
+      "Shields recharge and weapons hum with fresh power cells. The warriors engage once more!",
+      "The galactic anthem fades. Silence grips the coliseum. Then the clash resumes!"
+    ],
+    "roundEndTie": [
+      "The force fields equalize — neither warrior gains ground. The galaxy holds its breath!",
+      "Blasters cool and blades retract. A stalemate across the stars!"
+    ],
+    "criticalHit": [
+      "A devastating strike tears through shields! Sparks and starlight collide!",
+      "Direct hit to the core! The crowd erupts across a dozen worlds!",
+      "The force of that blow echoes through the void! Absolutely devastating!"
+    ],
+    "criticalMiss": [
+      "A wild shot arcs into the void! The targeting systems fail spectacularly!",
+      "The weapon misfires in a shower of sparks! A costly mistake!",
+      "The strike goes wide, scorching the arena wall! The stars seem to mock that attempt!"
+    ],
+    "lowHpTension": [
+      "Warning klaxons wail as both warriors trail smoke and sparks. The end draws near.",
+      "Shield generators flicker on both sides. One final strike could decide the fate of empires.",
+      "The coliseum falls silent. Both combatants battered and bleeding under alien skies. This is the moment."
+    ]
+  },
+  "magicConfig": {
+    "enabledSkillTypes": [
+      "Psionic",
+      "Imperial"
+    ],
+    "magicEffectPool": [
+      "Force Push",
+      "Astral Shield",
+      "Mind Trick",
+      "Warp Strike",
+      "Solar Flare",
+      "Gravity Crush",
+      "Life Surge",
+      "Void Touch"
+    ]
+  },
+  "cardNames": {
+    "meleeWeapon": {
+      "name": "Energy Sword",
+      "damageType": "Energy"
+    },
+    "rangedWeapon": {
+      "name": "Blaster Rifle",
+      "damageType": "Energy"
+    },
+    "bodyArmor": "Flight Suit",
+    "boots": "Grav-Boots",
+    "strSkill": {
+      "name": "Warrior's Discipline",
+      "category": "Combat",
+      "modifier": "+2 to Attack rolls with melee weapons"
+    },
+    "agiSkill": {
+      "name": "Pilot's Reflexes",
+      "category": "Defense",
+      "modifier": "+2 to Flee and initiative rolls"
+    },
+    "defaultSkill": {
+      "name": "Galactic Lore",
+      "category": "Survival",
+      "modifier": "+1 to Investigate and Rest rolls"
+    },
+    "healMagic": {
+      "name": "Life Surge",
+      "effectType": "Restorative",
+      "skillType": "Psionic",
+      "effect": "Restore 6 HP to self or ally"
+    },
+    "intMagic": {
+      "name": "Mind Trick",
+      "effectType": "Discovery",
+      "skillType": "Psionic",
+      "effect": "View opponent's next planned action stack"
+    }
+  },
+  "outfits": {
+    "male": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Spacer's Rags",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "compression shirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "compression shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "liner socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stained undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "Tan",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "patched cargo trousers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "neoprene",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "frayed utility belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "synthetic",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn spacer boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "composite",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Smuggler's Jacket",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "compression shirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "compression shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "liner socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fitted flight shirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "neoprene",
+            "color": "White",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "reinforced trousers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "composite",
+            "color": "Charcoal",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "blaster holster belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "synthetic",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "leather smuggler's jacket",
+            "location": [
+              "back"
+            ],
+            "fabric": "composite",
+            "color": "Brown",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "grip-sole boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "composite",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Senator's Regalia",
+        "type": "formal",
+        "gender": "male",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "compression shirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "compression shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "liner socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "silk",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "embroidered tunic",
+            "location": [
+              "torso"
+            ],
+            "fabric": "silk",
+            "color": "Ivory",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tailored senate trousers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "silk",
+            "color": "Navy",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "flowing ceremonial robe",
+            "location": [
+              "back"
+            ],
+            "fabric": "silk",
+            "color": "Blue",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "jeweled sash of office",
+            "location": [
+              "waist"
+            ],
+            "fabric": "silk",
+            "color": "Gold",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "polished ceremonial boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "composite",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
+        ]
+      }
+    },
+    "female": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Scavenger's Wraps",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "compression top",
+            "location": [
+              "chest"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "compression shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "liner socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tattered wrap top",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "Tan",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "patched leggings",
+            "location": [
+              "leg"
+            ],
+            "fabric": "neoprene",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "scrap-cord belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "synthetic",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "salvaged ankle boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "composite",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Pilot's Flight Suit",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "compression top",
+            "location": [
+              "chest"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "compression shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "liner socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fitted flight suit",
+            "location": [
+              "torso",
+              "leg"
+            ],
+            "fabric": "neoprene",
+            "color": "Orange",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "equipment harness",
+            "location": [
+              "waist"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "flight vest",
+            "location": [
+              "back"
+            ],
+            "fabric": "composite",
+            "color": "Gray",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "mag-lock flight boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "composite",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Ambassador's Gown",
+        "type": "formal",
+        "gender": "female",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "compression top",
+            "location": [
+              "chest"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "compression shorts",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "liner socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "silk",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "flowing ambassador's gown",
+            "location": [
+              "torso",
+              "leg"
+            ],
+            "fabric": "silk",
+            "color": "Silver",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "shimmer-weave stole",
+            "location": [
+              "back"
+            ],
+            "fabric": "silk",
+            "color": "Blue",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "crystal choker",
+            "location": [
+              "neck"
+            ],
+            "fabric": "composite",
+            "color": "Silver",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "elegant heeled boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "composite",
+            "color": "Silver",
+            "level": "SUIT",
+            "gender": "female"
+          }
+        ]
+      }
+    }
+  },
+  "cardPool": [
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Energy Sword",
+      "rarity": "COMMON",
+      "atk": 3,
+      "slot": "Hand (1H)",
+      "damageType": "Energy",
+      "durability": 8,
+      "artPrompt": "a glowing energy sword with a crystalline hilt, humming with plasma light, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Blaster Rifle",
+      "rarity": "UNCOMMON",
+      "atk": 5,
+      "slot": "Hand (2H)",
+      "damageType": "Energy",
+      "range": "Ranged",
+      "durability": 12,
+      "artPrompt": "a military-grade blaster rifle with a worn stock and glowing power cell, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Disruptor Cannon",
+      "rarity": "RARE",
+      "atk": 6,
+      "slot": "Hand (2H)",
+      "damageType": "Energy",
+      "durability": 14,
+      "artPrompt": "a massive disruptor cannon with crackling violet energy coils and alien glyphs etched along the barrel, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Vibro-Knife",
+      "rarity": "COMMON",
+      "atk": 2,
+      "slot": "Hand (1H)",
+      "damageType": "Slashing",
+      "durability": 8,
+      "artPrompt": "a compact vibro-knife with a high-frequency blade shimmering at the edge, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Force Pike",
+      "rarity": "RARE",
+      "atk": 5,
+      "slot": "Hand (2H)",
+      "damageType": "Energy",
+      "durability": 12,
+      "special": "+2 to Channel rolls",
+      "artPrompt": "a long ceremonial force pike crackling with blue psionic energy at its tip, wielded by an elite guard, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Scatter Blaster",
+      "rarity": "UNCOMMON",
+      "atk": 4,
+      "slot": "Hand (1H)",
+      "damageType": "Energy",
+      "range": "Ranged",
+      "durability": 10,
+      "artPrompt": "a wide-barreled scatter blaster pistol with multiple emitter nodes, worn and battle-scarred, space opera"
+    },
+    {
+      "type": "apparel",
+      "name": "Flight Suit",
+      "rarity": "COMMON",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "neoprene",
+      "artPrompt": "a standard-issue flight suit with rank patches and a zippered front, worn but functional, space opera"
+    },
+    {
+      "type": "apparel",
+      "name": "Durasteel Cuirass",
+      "rarity": "UNCOMMON",
+      "slot": "Body",
+      "def": 3,
+      "hpBonus": 0,
+      "durability": 12,
+      "fabric": "composite",
+      "artPrompt": "a polished durasteel breastplate with articulated shoulder guards and alien insignia, space opera"
+    },
+    {
+      "type": "apparel",
+      "name": "Praetorian Armor",
+      "rarity": "RARE",
+      "slot": "Body",
+      "def": 5,
+      "hpBonus": 2,
+      "durability": 20,
+      "fabric": "composite",
+      "artPrompt": "a full suit of ornate praetorian guard armor with gold trim, imposing helmet, and integrated shield emitters, space opera"
+    },
+    {
+      "type": "apparel",
+      "name": "Tactical Visor",
+      "rarity": "UNCOMMON",
+      "slot": "Head",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "composite",
+      "special": "+2 to Investigate rolls",
+      "artPrompt": "a sleek tactical visor with a holographic heads-up display and targeting reticle, space opera"
+    },
+    {
+      "type": "apparel",
+      "name": "Grav-Boots",
+      "rarity": "COMMON",
+      "slot": "Feet",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "composite",
+      "special": "+1 to Flee rolls",
+      "artPrompt": "heavy boots with glowing gravity repulsor pads on the soles, space opera"
+    },
+    {
+      "type": "apparel",
+      "name": "Force-Weave Robes",
+      "rarity": "RARE",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "silk",
+      "special": "+3 to Channel rolls",
+      "artPrompt": "flowing robes woven with luminous psionic threads that shimmer with an inner light, space opera"
+    },
+    {
+      "type": "apparel",
+      "name": "Smuggler's Duster",
+      "rarity": "UNCOMMON",
+      "slot": "Back",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "composite",
+      "special": "+1 to Flee rolls",
+      "artPrompt": "a long worn duster coat with hidden pockets and a weathered collar, favored by smugglers across the outer rim, space opera"
+    },
+    {
+      "type": "skill",
+      "name": "Deflection",
+      "category": "Defense",
+      "modifier": "+3 DEF when Guard is active",
+      "tier": "UNCOMMON",
+      "artPrompt": "a warrior deflecting blaster bolts with an energy blade, sparks flying in a starship corridor, space opera"
+    },
+    {
+      "type": "skill",
+      "name": "Berserker Charge",
+      "category": "Combat",
+      "modifier": "+3 ATK on next Attack",
+      "tier": "UNCOMMON",
+      "artPrompt": "a warrior charging forward with a roar, energy weapon blazing, in a gladiatorial arena under alien skies, space opera"
+    },
+    {
+      "type": "skill",
+      "name": "Assassin's Mark",
+      "category": "Combat",
+      "modifier": "+4 ATK after successful Feint",
+      "tier": "RARE",
+      "artPrompt": "a shadowy figure striking from the darkness of a space station ventilation shaft, blade gleaming, space opera"
+    },
+    {
+      "type": "skill",
+      "name": "Sharpshooting",
+      "category": "Ranged",
+      "modifier": "+2 ATK with ranged weapons",
+      "tier": "COMMON",
+      "artPrompt": "a marksman taking aim with a blaster rifle through a ship viewport, targeting reticle glowing, space opera"
+    },
+    {
+      "type": "skill",
+      "name": "Force Attunement",
+      "category": "Magic",
+      "modifier": "+2 to Channel rolls, -1 energy cost",
+      "tier": "UNCOMMON",
+      "artPrompt": "a psionic adept meditating amid floating debris, cosmic energy swirling around their outstretched hands, space opera"
+    },
+    {
+      "type": "skill",
+      "name": "Battle Meditation",
+      "category": "Combat",
+      "modifier": "+1 ATK and +1 DEF this round",
+      "tier": "COMMON",
+      "artPrompt": "a warrior in a focused combat stance, eyes closed, sensing the flow of battle through the cosmic force, space opera"
+    },
+    {
+      "type": "skill",
+      "name": "Field Medic",
+      "category": "Survival",
+      "modifier": "Rest restores +3 extra HP",
+      "tier": "COMMON",
+      "artPrompt": "a medic applying advanced alien salve from a glowing medical satchel aboard a starship, space opera"
+    },
+    {
+      "type": "skill",
+      "name": "Disabling Strike",
+      "category": "Combat",
+      "modifier": "On hit, target loses weapon bonus next round",
+      "tier": "RARE",
+      "artPrompt": "a precise strike shattering an opponent's weapon in a burst of sparks and energy fragments, space opera"
+    },
+    {
+      "type": "magic",
+      "name": "Force Push",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "Deal 5 damage, stun target 1 round",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a psionic warrior unleashing a devastating telekinetic shockwave that sends debris and an opponent flying across an arena, space opera"
+    },
+    {
+      "type": "magic",
+      "name": "Astral Shield",
+      "effectType": "Defensive",
+      "skillType": "Psionic",
+      "effect": "+4 DEF this round",
+      "energyCost": 3,
+      "reusable": true,
+      "artPrompt": "a shimmering dome of psionic energy forming around a defender, starlight refracting through the translucent barrier, space opera"
+    },
+    {
+      "type": "magic",
+      "name": "Solar Flare",
+      "effectType": "Offensive",
+      "skillType": "Imperial",
+      "effect": "Deal 6 damage, ignores DEF",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a warrior channeling the raw energy of a nearby star into a blinding beam of superheated plasma, space opera"
+    },
+    {
+      "type": "magic",
+      "name": "Warp Strike",
+      "effectType": "Utility",
+      "skillType": "Psionic",
+      "effect": "Auto-succeed next Flee or Steal",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a figure blinking through a fold in space-time, leaving ghostly afterimages as they reappear behind their target, space opera"
+    },
+    {
+      "type": "magic",
+      "name": "Gravity Crush",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "Target -2 AGI, cannot Flee for 2 rounds",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a dark sphere of compressed gravity pinning a target to the arena floor, cracks spreading outward as the gravity intensifies, space opera"
+    },
+    {
+      "type": "magic",
+      "name": "Void Touch",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "Summon a phantom that deals 3 damage per round for 2 rounds",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a spectral alien phantom materializing from the void, eyes burning with cold starlight, reaching toward a terrified opponent, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Bacta Tank Shot",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 12 HP",
+      "artPrompt": "a large syringe filled with glowing cyan bacta fluid with a pressurized injector mechanism, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Adrenaline Injector",
+      "rarity": "UNCOMMON",
+      "effect": "+3 ATK this round",
+      "artPrompt": "a sleek auto-injector filled with amber combat stimulant, designed for use in the heat of battle, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Ray Shield Generator",
+      "rarity": "RARE",
+      "effect": "+5 DEF this round",
+      "artPrompt": "a compact portable ray shield generator projecting a shimmering golden energy barrier, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Plasma Cell",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 8 Energy",
+      "artPrompt": "a cylindrical plasma cell pulsing with contained orange energy, standard power unit across the galaxy, space opera"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Flash Bang",
+      "rarity": "COMMON",
+      "effect": "Auto-succeed Flee this round",
+      "artPrompt": "a small spherical flash grenade emitting a blinding white burst of light and concussive force, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Scrap Metal",
+      "rarity": "COMMON",
+      "effect": "Restore 2 HP",
+      "artPrompt": "a handful of salvaged starship hull plating, dented and scorched, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Blaster Parts",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "disassembled blaster components including a power coupling and trigger assembly, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Kyber Fragment",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 4 Energy",
+      "artPrompt": "a small luminous crystal fragment humming with psionic resonance, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Toxic Spore",
+      "rarity": "UNCOMMON",
+      "effect": "Apply poison (2 dmg for 2 turns)",
+      "artPrompt": "a bulbous alien spore pod leaking bioluminescent toxic fluid, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Chitin Armor Shard",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a piece of hardened alien chitin exoskeleton, iridescent and surprisingly tough, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Stolen Credits",
+      "rarity": "COMMON",
+      "effect": "Draw 1 extra card",
+      "artPrompt": "a pouch of galactic credit chips in various denominations, hastily gathered, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Pirate's Cutlass",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a crude vibro-cutlass favored by space pirates, its blade chipped and humming, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Targeting Chip",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a precision targeting computer chip salvaged from a war beast's cybernetic implants, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Hull Fragment",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a reinforced durasteel hull fragment that can serve as an improvised shield, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Bounty Token",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a holographic bounty token displaying a target's face, carries authority across the galaxy, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Stun Grenade",
+      "rarity": "UNCOMMON",
+      "effect": "Apply stun (enemy skips 1 action)",
+      "artPrompt": "a compact stun grenade with a magnetic adhesion strip and blinking armed indicator, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Holocron Shard",
+      "rarity": "RARE",
+      "effect": "Draw 2 extra cards",
+      "artPrompt": "a fragment of an ancient alien holocron glowing with stored knowledge and swirling holographic symbols, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Mandalorian Plate",
+      "rarity": "RARE",
+      "effect": "+3 DEF this round",
+      "artPrompt": "a heavy piece of legendary warrior armor plating, forged from beskar-like alloy and scarred by countless battles, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Bio-Gel Canister",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 5 HP",
+      "artPrompt": "a sealed canister of advanced bio-regenerative gel used in field hospitals across the frontier, space opera"
+    },
+    {
+      "type": "loot",
+      "name": "Force Crystal",
+      "rarity": "RARE",
+      "effect": "Restore 8 Energy",
+      "artPrompt": "a large psionic force crystal radiating intense violet energy, humming with ancient power, space opera"
+    }
+  ],
+  "encounters": {
+    "threatOverrides": [
+      {
+        "id": "weak_beast",
+        "name": "Sand Stalker",
+        "loot": [
+          "Scrap Metal"
+        ],
+        "artPrompt": "a lean reptilian predator with bioluminescent scales stalking across desert dunes under twin suns, space opera"
+      },
+      {
+        "id": "scout",
+        "name": "Probe Droid",
+        "type": "monster",
+        "imageIcon": "smart_toy",
+        "loot": [
+          "Blaster Parts",
+          "Kyber Fragment"
+        ],
+        "behavior": "Scans and reports position, calls reinforcements",
+        "artPrompt": "a hovering spherical probe droid with multiple sensor arrays and a small blaster turret, red optical sensor glowing, space opera"
+      },
+      {
+        "id": "venomous",
+        "name": "Spore Crawler",
+        "loot": [
+          "Toxic Spore",
+          "Chitin Armor Shard"
+        ],
+        "behavior": "Poison on hit (toxic spore, 2 turns)",
+        "artPrompt": "a multi-legged alien crawler covered in pulsing bioluminescent spore pods, dripping corrosive fluid from its mandibles, space opera"
+      },
+      {
+        "id": "thief",
+        "name": "Space Pirate",
+        "loot": [
+          "Stolen Credits",
+          "Pirate's Cutlass"
+        ],
+        "artPrompt": "a roguish space pirate in mismatched armor with a vibro-cutlass and blaster, grinning beneath a scarred face, space opera"
+      },
+      {
+        "id": "alpha",
+        "name": "War Beast",
+        "type": "monster",
+        "loot": [
+          "Targeting Chip",
+          "Hull Fragment"
+        ],
+        "artPrompt": "a massive cybernetically enhanced alien war beast with razor claws and implanted targeting systems, snarling with fury, space opera"
+      },
+      {
+        "id": "heavy",
+        "name": "Imperial Sentinel",
+        "loot": [
+          "Bounty Token",
+          "Stun Grenade"
+        ],
+        "artPrompt": "a towering armored imperial sentinel wielding a heavy repeating blaster and wearing full tactical combat armor with a faceless visor, space opera"
+      },
+      {
+        "id": "specialist",
+        "name": "Bounty Hunter",
+        "type": "npc",
+        "imageIcon": "person",
+        "loot": [
+          "Holocron Shard",
+          "Bio-Gel Canister"
+        ],
+        "behavior": "Adapts tactics: +1 ATK each round",
+        "artPrompt": "a notorious bounty hunter in distinctive custom armor with a jetpack, wrist-mounted weapons, and a T-shaped visor helmet, space opera"
+      },
+      {
+        "id": "boss",
+        "name": "Dark Acolyte",
+        "imageIcon": "psychology",
+        "loot": [
+          "Mandalorian Plate",
+          "Force Crystal"
+        ],
+        "behavior": "Drains 3 Energy on hit, psionic attacks",
+        "artPrompt": "a menacing dark acolyte in flowing black robes, eyes burning with violet psionic fire, force energy crackling between their outstretched hands, space opera"
+      }
+    ],
+    "scenarioOverrides": [
+      {
+        "id": "distant_warning",
+        "name": "Hyperspace Echo",
+        "description": "Long-range sensors detect a disturbance, but it passes."
+      },
+      {
+        "id": "hidden_cache",
+        "name": "Ancient Vault",
+        "description": "You discover an ancient alien vault with preserved relics!",
+        "lootPool": [
+          { "name": "Kyber Fragment", "rarity": "UNCOMMON", "effect": "Restore 4 Energy", "artPrompt": "a small luminous crystal fragment humming with psionic resonance" },
+          { "name": "Bio-Gel Canister", "rarity": "UNCOMMON", "effect": "Restore 5 HP", "artPrompt": "a sealed canister of advanced bio-regenerative gel" },
+          { "name": "Force Crystal", "rarity": "RARE", "effect": "Restore 8 Energy", "artPrompt": "a large psionic force crystal radiating intense violet energy" }
+        ]
+      },
+      {
+        "id": "wandering_threat",
+        "name": "Stray War Droid",
+        "description": "An abandoned war droid activates as you approach."
+      }
+    ]
+  }
+}

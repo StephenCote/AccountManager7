@@ -1,0 +1,1434 @@
+{
+  "themeId": "cyberpunk",
+  "name": "Cyberpunk",
+  "version": "1.0",
+  "description": "Neon-lit dystopian future with megacorporations, cybernetic augmentation, hacking, and urban sprawl",
+  "artStyle": {
+    "promptSuffix": "cyberpunk, neon lights, rain-slicked streets, holographic signs, dark dystopian, detailed digital art",
+    "cardBorderStyle": "neon-circuit",
+    "cardBackVariant": "digital",
+    "fontFamily": "Segoe UI, system-ui, sans-serif",
+    "colorPalette": {
+      "character": "#E040FB",
+      "apparel": "#546E7A",
+      "item": "#00E676",
+      "action": "#FF1744",
+      "talk": "#00B0FF",
+      "encounter": "#D500F9",
+      "skill": "#FFAB00",
+      "magic": "#18FFFF",
+      "scenario": "#1B5E20",
+      "loot": "#F57F17"
+    },
+    "backgroundPrompt": "Cyberpunk city at night, towering neon-lit skyscrapers, holographic billboards, rain-soaked streets reflecting neon pink and blue, flying cars, massive corporate mega-towers, dark alleyways with steam vents, dystopian urban sprawl, cinematic wide angle",
+    "backgroundConfig": {
+      "width": 1024,
+      "height": 1024,
+      "steps": 40,
+      "cfg": 7,
+      "hires": true
+    },
+    "sdConfig": {
+      "default": {
+        "style": "art",
+        "steps": 30,
+        "cfg": 7,
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.7
+      },
+      "character": {
+        "width": 768,
+        "height": 1024
+      },
+      "apparel": {
+        "width": 512,
+        "height": 768
+      },
+      "item": {
+        "width": 512,
+        "height": 512
+      },
+      "action": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "talk": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "encounter": {
+        "width": 768,
+        "height": 768
+      },
+      "skill": {
+        "width": 512,
+        "height": 512
+      },
+      "magic": {
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.75
+      },
+      "scenario": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "loot": {
+        "width": 512,
+        "height": 512
+      }
+    }
+  },
+  "characterBuild": {
+    "statRange": [
+      3,
+      18
+    ],
+    "statPointBuy": 72,
+    "skillSlots": 4,
+    "equipSlots": [
+      "head",
+      "body",
+      "handL",
+      "handR",
+      "feet",
+      "ring",
+      "back"
+    ],
+    "availableRaces": [
+      "HUMAN",
+      "ELF",
+      "DWARF",
+      "ORC",
+      "HALFLING"
+    ],
+    "availableAlignments": "all"
+  },
+  "starterDeck": {
+    "apparel": {
+      "min": 2,
+      "max": 3,
+      "rarity": "COMMON"
+    },
+    "weapons": {
+      "min": 1,
+      "max": 2,
+      "rarity": "COMMON"
+    },
+    "consumables": [
+      {
+        "name": "Synth-Ration",
+        "count": 2,
+        "effect": "Restore 3 Energy"
+      },
+      {
+        "name": "Nano-Stim",
+        "count": 1,
+        "effect": "Restore 8 HP"
+      },
+      {
+        "name": "Combat Stim",
+        "count": 1,
+        "effect": "Restore 4 HP"
+      },
+      {
+        "name": "UV Flare",
+        "count": 1,
+        "effect": "+2 to Investigate rolls this round"
+      }
+    ],
+    "skills": {
+      "min": 1,
+      "max": 2
+    },
+    "magicEffects": {
+      "min": 0,
+      "max": 1,
+      "condition": "MAG >= 10 OR INT >= 12"
+    }
+  },
+  "encounterDeck": {
+    "threats": {
+      "count": 12,
+      "difficultyRange": [
+        4,
+        10
+      ],
+      "maxRarity": "RARE"
+    },
+    "events": {
+      "count": 10,
+      "maxRarity": "UNCOMMON"
+    },
+    "discoveries": {
+      "count": 10,
+      "maxRarity": "RARE"
+    },
+    "npcs": {
+      "count": 8,
+      "maxRarity": "RARE",
+      "source": "olio.charPerson.population",
+      "roleAssignment": "random"
+    },
+    "lootItems": {
+      "count": 10,
+      "rarityWeights": {
+        "COMMON": 45,
+        "UNCOMMON": 35,
+        "RARE": 20
+      }
+    },
+    "skillCards": {
+      "count": 5,
+      "minRarity": "UNCOMMON",
+      "maxRarity": "RARE"
+    },
+    "magicEffects": {
+      "count": 2,
+      "rarity": "RARE"
+    }
+  },
+  "treasureVault": {
+    "bossThreats": {
+      "count": 4,
+      "difficultyRange": [
+        12,
+        16
+      ],
+      "minRarity": "EPIC"
+    },
+    "legendaryWeapons": {
+      "count": 2,
+      "rarity": "LEGENDARY"
+    },
+    "epicWeapons": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicApparel": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicConsumables": {
+      "count": 2,
+      "rarity": "EPIC"
+    },
+    "epicSkills": {
+      "count": 3,
+      "minRarity": "RARE",
+      "maxRarity": "EPIC"
+    },
+    "legendaryMagic": {
+      "count": 2,
+      "rarity": "LEGENDARY"
+    },
+    "drawTriggers": [
+      "discovery_rare",
+      "investigate_crit",
+      "npc_quest_reward",
+      "pot_jackpot_5plus"
+    ],
+    "bossDefeatGrantsExtraDraw": true,
+    "refillsOnCampaignSession": true
+  },
+  "balance": {
+    "hpMax": 20,
+    "moraleMax": 20,
+    "energyFormula": "MAG or INT (by skill type)",
+    "apFormula": "floor(END / 5) + 1",
+    "apRange": [
+      1,
+      5
+    ],
+    "initiativeFormula": "1d20 + AGI",
+    "potAnteRequired": true,
+    "roundTimerSeconds": 60,
+    "positionTimerSeconds": 15,
+    "lazyBonesEnabled": true,
+    "lethargyEnabled": true,
+    "exhaustedEnabled": true,
+    "hoardingReturnTarget": "encounterDeck"
+  },
+  "narration": {
+    "announcerProfile": "arena-announcer",
+    "gameStart": "The holographic arena grid flickers to life in the undercity pit. Neon signs cast harsh shadows as two street fighters jack in. The crowd's neural feeds buzz with anticipation. Begin!",
+    "roundStart": [
+      "Targeting reticles flash as a new round of chrome-on-chrome combat initiates!",
+      "The arena's holographic counter ticks over — another round begins beneath the flickering neon!",
+      "Servos whine and cyberlimbs lock into fighting stance. The combatants reload for another exchange!",
+      "The EMP dampeners reset with a crackle. A new round begins in the neon haze!",
+      "Adrenaline injectors hiss. The fighters emerge from the holographic smoke for another round."
+    ],
+    "roundEndTie": [
+      "Systems deadlocked — neither combatant gains the advantage. A digital stalemate!",
+      "Evenly matched chrome! Their augments cancel each other out. No ground gained!"
+    ],
+    "criticalHit": [
+      "A devastating strike! Sparks fly from shattered cybernetics!",
+      "Direct hit to the neural jack! The crowd roars through their implants!",
+      "Chrome buckles under the force of that blow! Absolutely brutal!"
+    ],
+    "criticalMiss": [
+      "A system glitch! The targeting HUD flickers and the strike goes wide!",
+      "Cybernetic malfunction at the worst possible moment!",
+      "Neural lag spikes and the augmented limb freezes mid-swing!"
+    ],
+    "lowHpTension": [
+      "Warning alerts flash across both fighters' HUDs as sparks trail from damaged implants.",
+      "The air reeks of burnt circuitry and desperation. This bout nears its end.",
+      "Systems critical on both sides. One more precision strike could flatline them both."
+    ]
+  },
+  "magicConfig": {
+    "enabledSkillTypes": [
+      "Psionic",
+      "Imperial"
+    ],
+    "magicEffectPool": [
+      "Neural Spike",
+      "ICE Wall",
+      "Synaptic Link",
+      "Ghost Protocol",
+      "Plasma Overcharge",
+      "EMP Burst",
+      "Nano Repair",
+      "Chrome Surge"
+    ]
+  },
+  "cardNames": {
+    "meleeWeapon": {
+      "name": "Monomolecular Blade",
+      "damageType": "Slashing"
+    },
+    "rangedWeapon": {
+      "name": "Smart Pistol",
+      "damageType": "Piercing"
+    },
+    "bodyArmor": "Synth-Weave Jacket",
+    "boots": "Grip-Sole Runners",
+    "strSkill": {
+      "name": "Street Brawling",
+      "category": "Combat",
+      "modifier": "+2 to Attack rolls with melee weapons"
+    },
+    "agiSkill": {
+      "name": "Reflex Boosters",
+      "category": "Defense",
+      "modifier": "+2 to Flee and initiative rolls"
+    },
+    "defaultSkill": {
+      "name": "Street Smarts",
+      "category": "Survival",
+      "modifier": "+1 to Investigate and Rest rolls"
+    },
+    "healMagic": {
+      "name": "Nano Repair",
+      "effectType": "Restorative",
+      "skillType": "Imperial",
+      "effect": "Restore 6 HP to self or ally"
+    },
+    "intMagic": {
+      "name": "Neural Scan",
+      "effectType": "Discovery",
+      "skillType": "Psionic",
+      "effect": "View opponent's next planned action stack"
+    }
+  },
+  "outfits": {
+    "male": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Street Rat's Rags",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "boxer briefs",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "ankle socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "torn mesh tank top",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "patched cargo pants",
+            "location": [
+              "leg"
+            ],
+            "fabric": "neoprene",
+            "color": "Dark Gray",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "duct-tape belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "synthetic",
+            "color": "Silver",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "scuffed sneakers",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Runner's Kit",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "compression shirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "boxer briefs",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tactical socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "armored tech vest",
+            "location": [
+              "torso"
+            ],
+            "fabric": "kevlar",
+            "color": "Charcoal",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tactical cargo pants",
+            "location": [
+              "leg"
+            ],
+            "fabric": "neoprene",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "utility harness",
+            "location": [
+              "waist"
+            ],
+            "fabric": "neoprene",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "hooded synth-leather jacket",
+            "location": [
+              "back"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "grip-sole combat boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "neoprene",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Corporate Executive Suit",
+        "type": "formal",
+        "gender": "male",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "silk undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "boxer briefs",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "dress socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "nano-pressed dress shirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "carbon fiber",
+            "color": "White",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tailored slacks",
+            "location": [
+              "leg"
+            ],
+            "fabric": "carbon fiber",
+            "color": "Charcoal",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "smart-fabric overcoat",
+            "location": [
+              "back"
+            ],
+            "fabric": "carbon fiber",
+            "color": "Black",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "holo-buckle belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "synthetic",
+            "color": "Silver",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "polished chrome oxfords",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
+        ]
+      }
+    },
+    "female": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Gutter Punk's Scraps",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "sports bra",
+            "location": [
+              "chest"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "briefs",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "ankle socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "ripped crop top",
+            "location": [
+              "torso"
+            ],
+            "fabric": "synthetic",
+            "color": "Neon Pink",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "patched leggings",
+            "location": [
+              "leg"
+            ],
+            "fabric": "neoprene",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "frayed cord belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "synthetic",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn platform boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Netrunner's Gear",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "compression top",
+            "location": [
+              "chest"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "briefs",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tactical socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fitted tech bodysuit top",
+            "location": [
+              "torso"
+            ],
+            "fabric": "latex",
+            "color": "Dark Blue",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "reinforced cargo pants",
+            "location": [
+              "leg"
+            ],
+            "fabric": "kevlar",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "data-jack headband",
+            "location": [
+              "head"
+            ],
+            "fabric": "synthetic",
+            "color": "Silver",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "utility belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "neoprene",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "lace-up combat boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "neoprene",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Corporate Agent's Ensemble",
+        "type": "formal",
+        "gender": "female",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "silk camisole",
+            "location": [
+              "chest"
+            ],
+            "fabric": "synthetic",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "briefs",
+            "location": [
+              "leg"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "thigh-high stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "form-fitted smart-fabric dress",
+            "location": [
+              "torso",
+              "leg"
+            ],
+            "fabric": "carbon fiber",
+            "color": "Midnight Blue",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "armored shoulder cape",
+            "location": [
+              "back"
+            ],
+            "fabric": "kevlar",
+            "color": "Black",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "holo-gem choker",
+            "location": [
+              "chest"
+            ],
+            "fabric": "synthetic",
+            "color": "Neon Blue",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stiletto chrome boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "synthetic",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          }
+        ]
+      }
+    }
+  },
+  "cardPool": [
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Monomolecular Blade",
+      "rarity": "COMMON",
+      "atk": 3,
+      "slot": "Hand (1H)",
+      "damageType": "Slashing",
+      "durability": 8,
+      "artPrompt": "a sleek monomolecular-edged katana with a glowing cyan edge, cyberpunk neon lighting"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Smart Pistol",
+      "rarity": "UNCOMMON",
+      "atk": 4,
+      "slot": "Hand (1H)",
+      "damageType": "Piercing",
+      "range": "Ranged",
+      "durability": 10,
+      "artPrompt": "a compact futuristic smart pistol with targeting HUD overlay and neon blue accents"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Plasma Cutter",
+      "rarity": "RARE",
+      "atk": 6,
+      "slot": "Hand (2H)",
+      "damageType": "Energy",
+      "durability": 14,
+      "artPrompt": "a heavy industrial plasma cutter modified for combat, superheated orange beam, cyberpunk"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Shock Knuckles",
+      "rarity": "COMMON",
+      "atk": 2,
+      "slot": "Hand (1H)",
+      "damageType": "Electric",
+      "durability": 8,
+      "special": "Stun: target skips next action on crit",
+      "artPrompt": "chrome brass knuckles crackling with electric arcs, neon blue sparks, cyberpunk"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Neural Disruptor",
+      "rarity": "RARE",
+      "atk": 5,
+      "slot": "Hand (1H)",
+      "damageType": "Psionic",
+      "durability": 12,
+      "special": "+2 to Channel rolls",
+      "artPrompt": "a sleek chrome device emitting visible psychic distortion waves, purple energy arcs, cyberpunk"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Assault Carbine",
+      "rarity": "UNCOMMON",
+      "atk": 5,
+      "slot": "Hand (2H)",
+      "damageType": "Piercing",
+      "range": "Ranged",
+      "durability": 12,
+      "artPrompt": "a bullpup assault carbine with holographic sight and matte black finish, cyberpunk tactical"
+    },
+    {
+      "type": "apparel",
+      "name": "Synth-Weave Jacket",
+      "rarity": "COMMON",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "synthetic",
+      "artPrompt": "a reinforced synthetic fabric jacket with neon trim piping, cyberpunk streetwear"
+    },
+    {
+      "type": "apparel",
+      "name": "Kevlar Longcoat",
+      "rarity": "UNCOMMON",
+      "slot": "Body",
+      "def": 3,
+      "hpBonus": 0,
+      "durability": 12,
+      "fabric": "kevlar",
+      "artPrompt": "a long armored kevlar trenchcoat with glowing circuit patterns along the seams, cyberpunk"
+    },
+    {
+      "type": "apparel",
+      "name": "Chrome Exo-Frame",
+      "rarity": "RARE",
+      "slot": "Body",
+      "def": 5,
+      "hpBonus": 2,
+      "durability": 20,
+      "fabric": "carbon fiber",
+      "artPrompt": "a full chrome exoskeletal frame with hydraulic joints and neon power conduits, cyberpunk power armor"
+    },
+    {
+      "type": "apparel",
+      "name": "Optical Implant",
+      "rarity": "UNCOMMON",
+      "slot": "Head",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "synthetic",
+      "special": "+2 to Investigate rolls",
+      "artPrompt": "a cybernetic eye implant with glowing red iris and data overlay HUD, cyberpunk augmentation"
+    },
+    {
+      "type": "apparel",
+      "name": "Grip-Sole Runners",
+      "rarity": "COMMON",
+      "slot": "Feet",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 6,
+      "fabric": "neoprene",
+      "special": "+1 to Flee rolls",
+      "artPrompt": "sleek running shoes with magnetic grip soles and neon green accents, cyberpunk footwear"
+    },
+    {
+      "type": "apparel",
+      "name": "Reactive Armor Vest",
+      "rarity": "RARE",
+      "slot": "Body",
+      "def": 3,
+      "hpBonus": 1,
+      "durability": 14,
+      "fabric": "kevlar",
+      "special": "+2 to Channel rolls",
+      "artPrompt": "a high-tech reactive armor vest with glowing energy cells and neon circuit lines, cyberpunk military"
+    },
+    {
+      "type": "apparel",
+      "name": "Mirrorshade Jacket",
+      "rarity": "UNCOMMON",
+      "slot": "Back",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "synthetic",
+      "special": "+1 to Feint rolls",
+      "artPrompt": "a reflective chrome-coated jacket that distorts light and scanners, cyberpunk stealth wear"
+    },
+    {
+      "type": "skill",
+      "name": "Hardwired Reflexes",
+      "category": "Defense",
+      "modifier": "+3 DEF when Guard is active",
+      "tier": "UNCOMMON",
+      "artPrompt": "a figure with glowing neural implants dodging a hail of gunfire in slow motion, cyberpunk"
+    },
+    {
+      "type": "skill",
+      "name": "Overclocked Cyberarm",
+      "category": "Combat",
+      "modifier": "+3 ATK on next Attack",
+      "tier": "UNCOMMON",
+      "artPrompt": "a chrome cybernetic arm overcharging with crackling energy, pistons extending, cyberpunk"
+    },
+    {
+      "type": "skill",
+      "name": "Backdoor Exploit",
+      "category": "Combat",
+      "modifier": "+4 ATK after successful Feint",
+      "tier": "RARE",
+      "artPrompt": "a hacker exploiting a weakness in an enemy's cyber-defenses, holographic code streaming, cyberpunk"
+    },
+    {
+      "type": "skill",
+      "name": "Target Lock",
+      "category": "Ranged",
+      "modifier": "+2 ATK with ranged weapons",
+      "tier": "COMMON",
+      "artPrompt": "a targeting reticle locking onto an enemy through a cybernetic eye implant, HUD overlay, cyberpunk"
+    },
+    {
+      "type": "skill",
+      "name": "Neural Hacking",
+      "category": "Magic",
+      "modifier": "+2 to Channel rolls, -1 energy cost",
+      "tier": "UNCOMMON",
+      "artPrompt": "a netrunner jacked into cyberspace, streams of neon data flowing through neural cables, cyberpunk"
+    },
+    {
+      "type": "skill",
+      "name": "Tactical Overlay",
+      "category": "Combat",
+      "modifier": "+1 ATK and +1 DEF this round",
+      "tier": "COMMON",
+      "artPrompt": "a holographic tactical overlay highlighting enemy weak points and cover positions, cyberpunk HUD"
+    },
+    {
+      "type": "skill",
+      "name": "Street Surgeon",
+      "category": "Survival",
+      "modifier": "Rest restores +3 extra HP",
+      "tier": "COMMON",
+      "artPrompt": "a back-alley medic applying nano-gel and synthetic bandages under neon light, cyberpunk"
+    },
+    {
+      "type": "skill",
+      "name": "System Crash",
+      "category": "Combat",
+      "modifier": "On hit, target loses weapon bonus next round",
+      "tier": "RARE",
+      "artPrompt": "a hacker crashing an enemy's weapon systems, sparks flying from disabled tech, cyberpunk"
+    },
+    {
+      "type": "magic",
+      "name": "Neural Spike",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "Deal 5 damage, stun target (skip next action)",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a psionic warrior sending a devastating neural spike of purple energy into a target's brain, cyberpunk"
+    },
+    {
+      "type": "magic",
+      "name": "ICE Wall",
+      "effectType": "Defensive",
+      "skillType": "Imperial",
+      "effect": "+4 DEF this round",
+      "energyCost": 3,
+      "reusable": true,
+      "artPrompt": "a shimmering holographic firewall barrier of blue crystalline code forming a defensive wall, cyberpunk"
+    },
+    {
+      "type": "magic",
+      "name": "EMP Burst",
+      "effectType": "Offensive",
+      "skillType": "Imperial",
+      "effect": "Deal 4 damage, stun target (skip next action)",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a massive electromagnetic pulse expanding outward, disabling electronics and cybernetics, cyberpunk"
+    },
+    {
+      "type": "magic",
+      "name": "Ghost Protocol",
+      "effectType": "Utility",
+      "skillType": "Psionic",
+      "effect": "Auto-succeed next Flee or Steal",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a figure phasing into digital invisibility, body dissolving into pixelated static, cyberpunk"
+    },
+    {
+      "type": "magic",
+      "name": "Synaptic Link",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "Target cannot act next round, -2 morale",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "tendrils of psionic energy connecting two minds, the target writhing in neural overload, cyberpunk"
+    },
+    {
+      "type": "magic",
+      "name": "Chrome Surge",
+      "effectType": "Offensive",
+      "skillType": "Imperial",
+      "effect": "Summon a combat drone that deals 3 damage per round for 2 rounds",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a sleek chrome combat drone deploying from a wrist launcher, red targeting laser, cyberpunk"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Military-Grade Stim",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 12 HP",
+      "artPrompt": "a large military-grade auto-injector with glowing green bio-gel, cyberpunk medical tech"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Berserker Chip",
+      "rarity": "UNCOMMON",
+      "effect": "+3 ATK this round",
+      "artPrompt": "a small neural chip with red circuitry that plugs into a data jack behind the ear, cyberpunk"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Hardlight Shield",
+      "rarity": "RARE",
+      "effect": "+5 DEF this round",
+      "artPrompt": "a wrist-mounted hardlight shield projector emitting a solid holographic barrier, cyberpunk"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Power Cell",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 8 Energy",
+      "artPrompt": "a glowing cylindrical power cell with neon blue energy pulsing inside, cyberpunk tech"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Smoke Grenade",
+      "rarity": "COMMON",
+      "effect": "Auto-succeed Flee this round",
+      "artPrompt": "a compact tactical smoke grenade with digital timer display, cyberpunk military gear"
+    },
+    {
+      "type": "loot",
+      "name": "Scrap Wiring",
+      "rarity": "COMMON",
+      "effect": "Restore 2 HP",
+      "artPrompt": "a tangle of salvaged wiring and fiber optics, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Servo Parts",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "salvaged servo motors and actuators from a destroyed drone, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Neural Fragment",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 4 Energy",
+      "artPrompt": "a cracked neural processing chip still flickering with data, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Acid Capsule",
+      "rarity": "UNCOMMON",
+      "effect": "Apply poison (2 damage for 2 turns)",
+      "artPrompt": "a ruptured capsule leaking corrosive green acid, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Chrome Plating",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a shard of polished chrome armor plating, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Stolen Cred-Chip",
+      "rarity": "COMMON",
+      "effect": "Draw 1 extra card",
+      "artPrompt": "a stolen digital credit chip with flickering holographic display, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Street Blade",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a crude improvised blade made from sharpened scrap metal, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Cyber-Eye Lens",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a salvaged cybernetic eye lens with targeting software still active, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Reactive Mesh",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a patch of reactive nano-mesh armor material that hardens on impact, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Gang Badge",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a neon-lit gang identification badge with holographic skull insignia, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Taser Rod",
+      "rarity": "UNCOMMON",
+      "effect": "Apply stun (enemy skips 1 action)",
+      "artPrompt": "a telescoping taser baton crackling with electrical discharge, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Data Shard",
+      "rarity": "RARE",
+      "effect": "Draw 2 extra cards",
+      "artPrompt": "a glowing data shard containing encrypted corporate secrets, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Milspec Plating",
+      "rarity": "RARE",
+      "effect": "+3 DEF this round",
+      "artPrompt": "a piece of military-specification composite armor plating with serial numbers, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Bio-Gel Pack",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 5 HP",
+      "artPrompt": "a sealed pack of regenerative bio-gel that accelerates wound healing, cyberpunk"
+    },
+    {
+      "type": "loot",
+      "name": "Psi Amplifier",
+      "rarity": "RARE",
+      "effect": "Restore 8 Energy",
+      "artPrompt": "a rare psionic amplification device pulsing with violet energy, cyberpunk"
+    }
+  ],
+  "encounters": {
+    "threatOverrides": [
+      {
+        "id": "weak_beast",
+        "name": "Feral Cyber-Dog",
+        "loot": [
+          "Scrap Wiring"
+        ],
+        "artPrompt": "a feral dog with crude cybernetic implants and glowing red eyes prowling a neon-lit alley, cyberpunk"
+      },
+      {
+        "id": "scout",
+        "name": "Recon Drone",
+        "type": "monster",
+        "imageIcon": "smart_toy",
+        "loot": [
+          "Servo Parts",
+          "Neural Fragment"
+        ],
+        "behavior": "Scans and reports target location to allies",
+        "artPrompt": "a small hovering recon drone with rotating camera eye and blinking red sensor, neon city backdrop, cyberpunk"
+      },
+      {
+        "id": "venomous",
+        "name": "Toxic Crawler",
+        "loot": [
+          "Acid Capsule",
+          "Chrome Plating"
+        ],
+        "behavior": "Poison on hit (acid spray, 2 turns)",
+        "artPrompt": "a mutated insectoid creature with acid-dripping mandibles crawling through toxic waste in a sewer tunnel, cyberpunk"
+      },
+      {
+        "id": "thief",
+        "name": "Street Thief",
+        "loot": [
+          "Stolen Cred-Chip",
+          "Street Blade"
+        ],
+        "artPrompt": "a wiry street thief in a hooded jacket with cybernetic fingers picking a pocket in a crowded neon market, cyberpunk"
+      },
+      {
+        "id": "alpha",
+        "name": "Rogue Combat Bot",
+        "type": "monster",
+        "loot": [
+          "Cyber-Eye Lens",
+          "Reactive Mesh"
+        ],
+        "artPrompt": "a damaged military combat robot gone rogue, one arm replaced with a cannon, sparking and dangerous, cyberpunk"
+      },
+      {
+        "id": "heavy",
+        "name": "Corpo Enforcer",
+        "loot": [
+          "Gang Badge",
+          "Taser Rod"
+        ],
+        "artPrompt": "a massive corporate enforcer in heavy powered armor with a riot shield and shock baton, neon corporate logo, cyberpunk"
+      },
+      {
+        "id": "specialist",
+        "name": "Netrunner Assassin",
+        "type": "npc",
+        "imageIcon": "terminal",
+        "loot": [
+          "Data Shard",
+          "Bio-Gel Pack"
+        ],
+        "artPrompt": "a lean netrunner assassin with neural cables trailing from data jacks, dual wielding silenced pistols, holographic HUD active, cyberpunk"
+      },
+      {
+        "id": "boss",
+        "name": "Chrome Golem",
+        "imageIcon": "precision_manufacturing",
+        "loot": [
+          "Milspec Plating",
+          "Psi Amplifier"
+        ],
+        "behavior": "Regenerates 2 HP per round (nano-repair systems)",
+        "artPrompt": "a towering golem assembled from scrap chrome and military hardware, glowing reactor core in its chest, massive hydraulic fists, cyberpunk"
+      }
+    ],
+    "scenarioOverrides": [
+      {
+        "id": "distant_warning",
+        "name": "Signal Interference",
+        "description": "Your comms pick up encrypted chatter, but the signal fades."
+      },
+      {
+        "id": "hidden_cache",
+        "name": "Black Market Stash",
+        "description": "You find a hidden stash behind a false wall!",
+        "lootPool": [
+          {
+            "name": "Scrap Wiring",
+            "rarity": "COMMON",
+            "effect": "Restore 2 HP",
+            "artPrompt": "a tangle of salvaged wiring and fiber optics"
+          },
+          {
+            "name": "Cyber-Eye Lens",
+            "rarity": "UNCOMMON",
+            "effect": "+2 ATK this round",
+            "artPrompt": "a salvaged cybernetic eye lens with targeting software"
+          },
+          {
+            "name": "Psi Amplifier",
+            "rarity": "RARE",
+            "effect": "Restore 8 Energy",
+            "artPrompt": "a rare psionic amplification device pulsing with violet energy"
+          }
+        ]
+      },
+      {
+        "id": "wandering_threat",
+        "name": "Rogue Drone",
+        "description": "A damaged security drone locks onto your signal."
+      }
+    ]
+  }
+}

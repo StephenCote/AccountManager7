@@ -244,7 +244,10 @@
                         themeOption("dark-medieval", "Dark Medieval", "Gritty medieval setting with low magic and high mortality", "skull"),
                         themeOption("sci-fi", "Sci-Fi", "Far-future space setting with psionic powers and tech items", "rocket_launch"),
                         themeOption("post-apocalypse", "Post Apocalypse", "Harsh wasteland survival with scavenged gear and mutant threats", "destruction"),
-                        themeOption("steampunk", "Steampunk", "Victorian industrial setting with brass gadgets, clockwork and psionic powers", "settings")
+                        themeOption("steampunk", "Steampunk", "Victorian industrial setting with brass gadgets, clockwork and psionic powers", "settings"),
+                        themeOption("cyberpunk", "Cyberpunk", "Neon-lit dystopian future with megacorps, cybernetics and hacking", "memory"),
+                        themeOption("space-opera", "Space Opera", "Epic galactic adventure with alien civilizations and psionic powers", "globe"),
+                        themeOption("horror", "Horror", "Gothic horror with supernatural creatures and eldritch abominations", "nights_stay")
                     ]),
                     m("div", { class: "cg2-builder-nav" }, [
                         m("button", { class: "cg2-btn", onclick: () => { ctx().screen = "deckList"; m.redraw(); } }, "Cancel"),

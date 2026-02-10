@@ -121,6 +121,12 @@
             (theme && theme.artStyle && theme.artStyle.promptSuffix) ||
             "high fantasy, vibrant colors, detailed illustration";
 
+        // Use card's artPrompt if present (from encounters.json or theme overrides)
+        if (card.artPrompt) {
+            let sLabel = styleLabel(style);
+            return sLabel + " of ((" + card.artPrompt + ")), " + suffix;
+        }
+
         // Character cards -- server builds its own prompt from person data
         if (card.type === "character") {
             let prompt = "Portrait of " + (card.name || "a warrior") + ", " +
