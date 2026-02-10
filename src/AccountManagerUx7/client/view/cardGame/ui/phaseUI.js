@@ -1001,7 +1001,6 @@
     // ── Expose ────────────────────────────────────────────────────────
     NS.UI.InitiativePhaseUI = InitiativePhaseUI;
     NS.UI.EquipPhaseUI = EquipPhaseUI;
-    NS.UI.EquipSlot = EquipSlot;
     NS.UI.ResolutionPhaseUI = ResolutionPhaseUI;
     NS.UI.CleanupPhaseUI = CleanupPhaseUI;
 

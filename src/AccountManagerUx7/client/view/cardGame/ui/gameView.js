@@ -269,6 +269,7 @@
 
                 // Resolve UI components from namespace
                 let InitiativePhaseUI = CardGame.UI.InitiativePhaseUI;
+                let EquipPhaseUI = CardGame.UI.EquipPhaseUI;
                 let ThreatResponseUI = CardGame.UI.ThreatResponseUI;
                 let CleanupPhaseUI = CardGame.UI.CleanupPhaseUI;
                 let TalkChatUI = CardGame.UI.TalkChatUI;
@@ -330,6 +331,7 @@
                             // Phase-specific content
                             m("div", { class: "cg2-phase-content" }, [
                                 gameState.phase === GAME_PHASES.INITIATIVE && InitiativePhaseUI ? m(InitiativePhaseUI) : null,
+                                gameState.phase === GAME_PHASES.EQUIP && EquipPhaseUI ? m(EquipPhaseUI) : null,
                                 // Threat response phases
                                 (gameState.phase === GAME_PHASES.THREAT_RESPONSE || gameState.phase === GAME_PHASES.END_THREAT) && ThreatResponseUI
                                     ? m(ThreatResponseUI)
@@ -441,6 +443,7 @@
 
                             // Hand Tray (inside center column for compact layout)
                             (gameState.phase === GAME_PHASES.INITIATIVE ||
+                             gameState.phase === GAME_PHASES.EQUIP ||
                              gameState.phase === GAME_PHASES.DRAW_PLACEMENT ||
                              gameState.phase === GAME_PHASES.THREAT_RESPONSE ||
                              gameState.phase === GAME_PHASES.END_THREAT)
@@ -487,15 +490,17 @@
                         cardList.slice(0, maxShow).map((card, i) => {
                             let flipKey = stackId + "-" + i;
                             let isFlipped = stackFlipped[flipKey];
-                            let fanAngle = (i - (Math.min(cardList.length, maxShow) - 1) / 2) * 8;
-                            let fanOffset = i * 25;
+                            let count = Math.min(cardList.length, maxShow);
+                            let fanAngle = (i - (count - 1) / 2) * 8;
+                            let fanOffset = (i - (count - 1) / 2) * 35;
 
                             return m("div", {
                                 key: flipKey,
                                 class: "cg2-fanned-card-wrap" + (isFlipped ? " cg2-flipped" : ""),
                                 style: {
                                     zIndex: 10 + i,
-                                    transform: "translateX(" + fanOffset + "px) rotate(" + fanAngle + "deg)"
+                                    transform: "translateX(" + fanOffset + "px) rotate(" + fanAngle + "deg)",
+                                    "--fan-x": fanOffset + "px"
                                 },
                                 onclick(e) {
                                     e.stopPropagation();

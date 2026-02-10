@@ -225,6 +225,24 @@
         let playerHand = playerDrawPile.splice(0, initialHandSize);
         let opponentHand = opponentDrawPile.splice(0, initialHandSize);
 
+        // Ensure every character starts with a basic weapon and armor in hand
+        let starterWeapon = {
+            type: "item", subtype: "weapon", name: "Starter Blade",
+            slot: "Hand (1H)", rarity: "COMMON", atk: 1, def: 0,
+            durability: 8, range: "Melee", damageType: "Slashing",
+            effect: "+1 ATK", artPrompt: "a simple iron short sword"
+        };
+        let starterArmor = {
+            type: "apparel", name: "Starter Tunic",
+            slot: "Body", rarity: "COMMON", atk: 0, def: 1,
+            durability: 8, effect: "+1 DEF",
+            artPrompt: "a basic padded cloth tunic"
+        };
+        playerHand.push(Object.assign({}, starterWeapon));
+        playerHand.push(Object.assign({}, starterArmor));
+        opponentHand.push(Object.assign({}, starterWeapon));
+        opponentHand.push(Object.assign({}, starterArmor));
+
         console.log("[CardGame v2] Initial hands dealt - player:", playerHand.length, "opponent:", opponentHand.length);
         console.log("[CardGame v2] Player hand:", playerHand.map(c => c.name));
         console.log("[CardGame v2] Draw piles - player:", playerDrawPile.length, "opponent:", opponentDrawPile.length);

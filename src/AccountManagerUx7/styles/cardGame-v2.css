@@ -3368,6 +3368,12 @@
     justify-content: center;
     padding: 20px;
 }
+.cg2-char-select-container .cg2-phase-panel {
+    background: rgba(255,255,255,0.5);
+}
+.dark .cg2-char-select-container .cg2-phase-panel {
+    background: rgba(40,40,40,0.5);
+}
 .cg2-char-select-grid {
     display: flex;
     flex-wrap: wrap;
