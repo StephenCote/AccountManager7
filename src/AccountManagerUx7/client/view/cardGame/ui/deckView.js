@@ -538,6 +538,37 @@
                                     ])
                                 ]) : null,
 
+                                // ── Section: Chat Management ──
+                                m("div", { class: "cg2-config-section-label" }, "Chat Management"),
+                                m("div", { class: "cg2-config-row" }, [
+                                    m("label", { class: "cg2-config-label" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "16px", verticalAlign: "middle", marginRight: "6px" } }, "forum"),
+                                        "Game Chats"
+                                    ]),
+                                    m("div", { class: "cg2-config-control" }, [
+                                        m("button", {
+                                            class: "cg2-btn cg2-btn-sm cg2-btn-danger",
+                                            style: { fontSize: "11px" },
+                                            async onclick() {
+                                                let safeName = CardGame.ArtPipeline.currentDeckSafeName();
+                                                if (!safeName) return;
+                                                let count = await CardGame.UI.deleteGameChats(safeName);
+                                                if (count > 0) {
+                                                    page.toast("success", "Deleted " + count + " game chat(s)");
+                                                } else {
+                                                    page.toast("info", "No game chats found for this deck");
+                                                }
+                                                m.redraw();
+                                            }
+                                        }, [
+                                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "delete_sweep"),
+                                            "Delete All Chats"
+                                        ]),
+                                        m("span", { style: { fontSize: "10px", color: "#999", marginLeft: "8px" } },
+                                            "Removes Director, Narrator, and NPC chat sessions")
+                                    ])
+                                ]),
+
                                 // Save button
                                 m("div", { style: { marginTop: "12px", textAlign: "right" } }, [
                                     m("button", {

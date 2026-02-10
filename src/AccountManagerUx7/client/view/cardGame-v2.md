@@ -7428,3 +7428,258 @@ if (matchCard) {
 - [ ] Ensure loot cards appear in deck card grid with proper rendering
 - [ ] Add scenario and loot cards to art generation pipeline (SD prompts from artPrompt field)
 - [ ] Backfill scenario and loot cards for older saved decks in `deckList.js`
+
+---
+
+## Current Implementation Status (Feb 2026)
+
+Snapshot of what's built, what works, and what needs attention.
+
+### Module Architecture
+
+The codebase was refactored from a monolithic `cardGame-v2.js` into 29 modular files under `client/view/cardGame/`:
+
+```
+client/view/cardGame/
+├── constants/
+│   └── gameConstants.js          # Card types, themes, actions, status effects, combat outcomes
+├── engine/
+│   ├── actions.js                # Card placement, pot system, draw mechanics, action picker
+│   ├── combat.js                 # D20 resolution, damage calc, dual wield, criticals
+│   ├── effects.js                # Status effects, parseEffect(), applyParsedEffects()
+│   └── encounters.js             # Threat generation, scenario cards, end-threat resolution
+├── state/
+│   ├── gameState.js              # Phase management, resolution loop, LLM integration, save triggers
+│   └── storage.js                # Deck/game/campaign persistence via data.data blobs
+├── ui/
+│   ├── gameView.js               # Main layout, ActionBar, HandTray, CharacterSidebar, resolution row
+│   ├── phaseUI.js                # InitiativePhaseUI, EquipPhaseUI, CleanupPhaseUI
+│   ├── deckView.js               # Deck editor, SD config, game config, art grid
+│   ├── deckList.js               # Deck browser/launcher
+│   ├── cardPreview.js            # Full-screen card preview overlay
+│   ├── gameOverUI.js             # Victory/defeat screen
+│   ├── threatUI.js               # Threat response phase UI
+│   └── talkChatUI.js             # LLM chat for Talk action
+├── rendering/
+│   ├── cardFace.js               # CardFace/CardBack components, config-driven rendering
+│   └── d20Dice.js                # SVG D20 component with roll animation
+├── services/
+│   ├── artPipeline.js            # SD prompt building, art queue, image sequences, SD overrides
+│   ├── narrator.js               # LLM narration (round start/end, resolution)
+│   ├── director.js               # LLM AI opponent card placement
+│   ├── gameChatManager.js        # LLM chat session for Talk cards
+│   ├── pokerFace.js              # Emotion/banter system (MoodRing)
+│   └── characters.js             # Character generation, deck assembly, template system
+├── data/
+│   ├── encounters.json           # Threat creatures, scenario definitions
+│   ├── character-templates.json  # 12 balanced character archetypes
+│   └── action-definitions.json   # External action config (loaded at runtime)
+└── cardGame-v2-entry.js          # Module loader / namespace wiring
+```
+
+### What Works (Tested & Functional)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **Card rendering** | ✅ Complete | All 10 card types render with config-driven bodies, corner icons, rarity badges |
+| **Deck builder** | ✅ Complete | Theme selection, character generation, SD config overrides, art queue |
+| **Art pipeline** | ✅ Complete | Per-type prompt building, batch queue, image sequences, theme-aware styles |
+| **Initiative phase** | ✅ Complete | D20 animation, card flip, winner/loser badges, Nat 1 threat warnings |
+| **Draw & placement** | ✅ Complete | Virtual action picker, modifier stacking, drag-drop, item auto-select |
+| **Combat resolution** | ✅ Complete | ATK vs DEF, 9 outcomes, criticals, dual wield, armor reduction, status effects |
+| **Magic resolution** | ✅ Complete | Channel + direct magic with casting animation, potency roll, fizzle check |
+| **Non-combat actions** | ✅ Complete | Rest, Guard, Flee, Investigate, Trade, Steal, Craft, Feint, Use Item |
+| **Resolution UI** | ✅ Complete | Inline result row aligned with positions, dice animation, hold time, click-expand |
+| **Talk action** | ✅ Complete | Player Talk opens LLM chat; opponent Talk uses CHA contest roll |
+| **Cleanup phase** | ✅ Complete | Recovery, pot claiming, scenario display, loot reveal, auto-save |
+| **Threat system** | ✅ Partial | Nat 1 beginning threats work; end-of-round threats need rework (see Phase 9.5) |
+| **AI opponent** | ✅ Complete | LLM director for placement with FIFO fallback; AI auto-fills positions |
+| **Narration** | ✅ Complete | LLM round start/end narration, resolution narration, ticker display |
+| **Poker Face** | ✅ Complete | Emotion display, banter triggers (attack, defense, magic) |
+| **Save/resume** | ✅ Complete | Auto-save at cleanup, rolling 3-save backups, resume from deck list |
+| **Campaign** | ✅ Partial | Win/loss tracking per character, XP/leveling defined but not fully wired |
+| **Status effects** | ✅ Complete | 11 effects (stunned, poisoned, burning, etc.) with duration and turn-start callbacks |
+| **Card hoarding** | ✅ Complete | Exhausted check during resolution, lethargy check during cleanup |
+| **5 themes** | ✅ Complete | High-fantasy, dark-medieval, sci-fi, post-apocalypse, steampunk |
+
+### Resolution Phase Flow (Current)
+
+```
+advanceResolution() called per position:
+  ├── Skip check (stunned, empty stack)
+  ├── isAttack? ──────────────→ Combat branch
+  │   ├── "rolling" phase (1.5s dice animation, ATK vs DEF)
+  │   ├── resolveCombat() → currentCombatResult
+  │   ├── "result" phase (2.5s hold — outcome label + damage)
+  │   ├── "done" → pos.resolved, pos.combatResult set
+  │   ├── Exhausted check, magic-on-attack modifiers, threat loot
+  │   └── Auto-advance (1.5s gap)
+  │
+  ├── isMagicAction? ─────────→ Magic branch (Channel or direct magic)
+  │   ├── "rolling" phase (1.2s single die casting animation)
+  │   ├── Resolve spell (stat check → fizzle or roll + apply effects)
+  │   ├── "result" phase (2.0s hold — spell name + damage/healing)
+  │   ├── "done" → pos.resolved, pos.magicResult set
+  │   ├── Magic cards return to hand if reusable
+  │   └── Auto-advance (1.5s gap)
+  │
+  └── else ────────────────────→ Non-combat branch
+      ├── 1.0s delay
+      ├── Execute action (Rest/Guard/Flee/Talk/Trade/Steal/Craft/Feint/UseItem)
+      ├── pos.resolved immediately
+      └── Auto-advance (2.0s gap)
+```
+
+### Action Bar Layout (Current)
+
+```
+┌─ Action Bar ──────────────────────────────────────────────┐
+│  [Phase Label]  [Turn info]  [End Turn / Ready]           │
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐           │
+│  │Pos 1 │ │Pos 2 │ │Pos 3 │ │Pos 4 │ │Pos 5 │  ← Track │
+│  │ P/O  │ │ P/O  │ │ P/O  │ │ P/O  │ │ P/O  │           │
+│  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘           │
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐           │
+│  │Result│ │Result│ │Result│ │  ·   │ │      │  ← Results │
+│  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘  (res only)│
+│  ── You: 12 dealt, 3 taken │ Opp: 3 dealt, 12 taken ──  │
+└───────────────────────────────────────────────────────────┘
+```
+
+Result slots show:
+- **Combat:** ATK vs DEF dice → outcome label + damage → click for roll breakdown
+- **Magic:** Single die casting → spell name + damage/heal → click for MAG breakdown
+- **Non-combat:** Checkmark + action name (or red X if skipped/failed)
+
+### Card Placement Model (Current)
+
+Actions are **not** drawn from hand. The player clicks an empty position to open an icon picker showing available actions. Modifier cards (items, skills, magic) **are** drawn from hand and placed on top of actions.
+
+```
+Hand contains: [Sword] [Shield] [Fireball] [Swordsmanship] [Health Potion]
+                 item    item     magic       skill           item
+
+Player clicks empty position → action picker shows:
+  ⚔️ Attack | 🛡️ Guard | 🏃 Flee | 🔮 Channel | 💤 Rest | ...
+
+Player picks "Attack" → virtual action card created
+Player drags [Sword] from hand → stacked as weapon modifier
+Player drags [Swordsmanship] → stacked as skill modifier
+
+Position stack: [Attack] + [Sword] + [Swordsmanship]
+Roll: 1d20 + STR + Sword ATK + Swordsmanship bonus
+```
+
+### File Storage Layout (Current)
+
+```
+~/CardGame/
+├── {deckName}/
+│   ├── deck.json              # Deck snapshot (cards, theme, sdConfig)
+│   ├── gameConfig.json        # LLM/voice/poker face settings
+│   ├── Art/                   # Generated art (SD pipeline output)
+│   │   ├── background-{theme}-{ts}.png
+│   │   ├── tabletop-{theme}-{ts}.png
+│   │   ├── card-front-{theme}-{ts}.png
+│   │   ├── card-back-{theme}-{ts}.png
+│   │   └── {cardName}-{ts}.png      # Per-card art
+│   ├── saves/
+│   │   ├── save-{timestamp1}.json
+│   │   ├── save-{timestamp2}.json
+│   │   └── save-{timestamp3}.json   # Rolling 3-save max
+│   └── campaign.json          # Win/loss record per character
+│
+└── Characters/                # Generated olio.charPerson records
+```
+
+Art is stored under the deck folder (`~/CardGame/{deckName}/Art/`). Deck delete removes the parent group (`~/CardGame/{deckName}`) which should recursively clean up all children. **Note:** If the server does not perform recursive group deletion, art and saves would be orphaned — see [Open Issues](#open-issues).
+
+---
+
+## Open Issues
+
+### Issue 1: Deck Delete Cleanup Verification
+Art is stored under the deck folder (`~/CardGame/{deckName}/Art/`) and deck delete removes the parent group via `page.deleteObject("auth.group", grp.objectId)`. This should recursively delete all children (Art, saves, campaign, gameConfig). **Verify** that the server's group delete actually performs recursive deletion — if not, children (art images, save files) would be orphaned.
+
+Additionally, deck-related LLM chat sessions (game chat, narration) are not cleaned up on delete. These should be removed using the deep-delete procedure from `chat.js` that also deletes referenced objects.
+
+### Issue 2: Backend Model List Processing Error
+Jackson deserialization fails when processing `SWModelListResponse["files"]`:
+```
+Cannot deserialize value of type `java.util.ArrayList<java.lang.Object>` from Object value
+(token `JsonToken.START_OBJECT`)
+at [Source: REDACTED; line: 1, column: 24]
+(through reference chain: org.cote.accountmanager.olio.sd.swarm.SWModelListResponse["files"]->java.util.ArrayList[0])
+```
+The backend expects `files` to be an array of simple objects but the SD Forge/SwarmUI API returns complex nested objects that Jackson cannot auto-deserialize into `ArrayList<Object>`. Fix requires updating `SWModelListResponse.files` to use a proper typed model or `JsonNode` instead of raw `ArrayList<Object>`.
+
+### Issue 3: End-of-Round Threats Need Rework
+See [Phase 9.5](#phase-95--encounters-scenarios--loot) for full analysis. Key gaps:
+- Target inversion (targets loser instead of winner per design)
+- No player agency (auto-roll instead of bonus action stack)
+- CLASH outcome not handled in threat combat
+- No threat carry-over to next round
+- Minimal combat result display
+
+### Issue 4: Scenario/Loot Card Integration Incomplete
+- Scenario cards not in deck assembly → no art generated for them
+- Loot from defeated threats uses generic names instead of creature's `lootItems`
+- No `lootPool` on scenario definitions for thematic rewards
+- See Phase 9.5 checklists for full fix list
+
+### Issue 5: Equipment Phase Is Display-Only
+`EquipPhaseUI` shows equipped items but doesn't allow changing them. Players should be able to swap weapons, equip found items, and manage gear between rounds.
+
+### Issue 6: Campaign Progression Not Fully Wired
+XP formula and level-up stat selection are defined but:
+- XP accumulation not tracked across rounds
+- Level-up UI not implemented
+- Stat gains not persisted back to `olio.charPerson`
+
+### Issue 7: Treasure Vault Not Implemented
+The design specifies a separate high-rarity deck (boss encounters + legendary items) drawn via special triggers. Currently:
+- No vault deck exists in assembly
+- No vault draw triggers (discovery crits, NPC quests, pot jackpot)
+- No boss encounter mechanics (multi-round, persistence, chain rewards)
+
+### Issue 8: Durability System Not Implemented
+Design specifies durability on weapons and apparel (reduced per use/hit, destroyed at 0). Currently:
+- `durability` field exists in card templates but is never decremented
+- No equipment destruction logic
+- No "broken item → pot" mechanic
+
+### Issue 9: Round Pot Not Fully Implemented
+Pot system basics work (ante, claim on win) but missing:
+- Mid-round pot additions (stolen items, dropped items, destroyed equipment)
+- Pot jackpot → vault draw trigger (5+ cards)
+- Consumed items going to pot (currently just discarded)
+
+### Issue 10: Multiplayer (IRL) Not Implemented
+Online play is 1v1 vs AI only. Design supports 3-4 player IRL with:
+- Round-robin initiative
+- Directional combat (attack next, defend from previous)
+- Per-player encounter draws
+- This is an IRL-only feature requiring print support (Phase 10)
+
+---
+
+## Next Steps (Priority Order)
+
+### Near-term (Gameplay Polish)
+1. **Verify deck delete cleanup** — confirm server recursive group deletion, add chat cleanup on delete
+2. **Equipment phase interactivity** — allow equipping/unequipping between rounds
+3. **End-threat rework** — implement Phase 9.5 fixes (target winner, bonus stack, carry-over)
+4. **Loot card integration** — use creature's named lootItems, add to deck assembly with art
+5. **Scenario card integration** — add to deck assembly, render with CardFace in cleanup
+
+### Mid-term (Campaign & Balance)
+6. **XP & level-up** — wire XP tracking, implement level-up stat picker UI
+7. **Durability system** — decrement on use, destroy at 0, route to pot
+8. **Pot improvements** — mid-round additions, jackpot trigger
+9. **Balance tuning** — magic energy costs, threat difficulty scaling, status effect stacking
+10. **Treasure vault** — separate high-rarity deck, boss encounters, draw triggers
+
+### Long-term (Export & Expansion)
+11. **Print & export (Phase 10)** — PDF generation, PNG export, TTS format, rules reference
+12. **Multiplayer rules documentation** — IRL play reference cards for 3-4 player
+13. **Custom theme editor** — user-created themes with card pools and art styles

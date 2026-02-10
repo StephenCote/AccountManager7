@@ -239,7 +239,9 @@
       doClear();
       inst = am7model.prepareInstance(obj);
       window.dbgInst = inst;
-      doPeek();
+      doPeek().catch(function(e) {
+        console.warn("Failed to peek session", e);
+      });
     }
 
     async function chatInto() {
@@ -491,9 +493,9 @@
 
     async function deleteChat(s) {
       am7chat.deleteChat(s, false, async function () {
+        doClear();
         aSess = undefined;
         await loadConfigList();
-        doClear();
         m.redraw();
       });
     }
@@ -543,7 +545,7 @@
       let c1 = inst.api.promptConfig();
       let c2 = inst.api.chatConfig();
       let p;
-      if (c1 && c2) {
+      if (c1 && c2 && c1.name && c2.name) {
         /// Looking up the prompt and chat config to get the full objects
         ///
         chatCfg.peek = true;
@@ -1154,7 +1156,9 @@
       if (aPCfg == undefined && aCCfg == undefined) {
         loadConfigList().then(() => {
           if (aCCfg.length > 0) {
-            doPeek();
+            doPeek().catch(function(e) {
+              console.warn("Failed to peek on load", e);
+            });
           }
           m.redraw();
         });

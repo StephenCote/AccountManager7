@@ -166,8 +166,55 @@
         }
     }
 
+    // ── Delete Game Chats ───────────────────────────────────────────────
+    // Find and delete all LLM chat requests associated with a deck.
+    // Uses am7chat.deleteChat which also deletes the referenced session object.
+    async function deleteGameChats(storageName) {
+        if (!storageName || typeof am7chat === "undefined") return 0;
+        try {
+            let dir = await page.findObject("auth.group", "DATA", "~/ChatRequests");
+            if (!dir) return 0;
+            let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatRequest", am7model.forms.chatRequest));
+            q.field("groupId", dir.id);
+            q.cache(false);
+            q.entity.request.push("session", "sessionType", "chatConfig", "promptConfig", "objectId");
+            q.range(0, 100);
+            let qr = await page.search(q);
+            if (!qr || !qr.results) return 0;
+            am7model.updateListModel(qr.results);
+            // Match chat requests created for this deck (CG Chat/Narrator/Director + storageName)
+            let prefixes = ["CG Chat " + storageName, "CG Narrator " + storageName, "CG Director " + storageName];
+            let matches = qr.results.filter(function(r) {
+                return r.name && prefixes.indexOf(r.name) >= 0;
+            });
+            let deleted = 0;
+            for (let req of matches) {
+                try {
+                    await new Promise(function(resolve) {
+                        am7chat.deleteChat(req, true, function() { resolve(); });
+                    });
+                    deleted++;
+                } catch (e) {
+                    console.warn("[CardGame] Failed to delete chat:", req.name, e);
+                }
+            }
+            if (deleted > 0) {
+                console.log("[CardGame] Deleted " + deleted + " game chat(s) for deck:", storageName);
+            }
+            return deleted;
+        } catch (e) {
+            console.error("[CardGame] Error deleting game chats:", e);
+            return 0;
+        }
+    }
+
     // ── Delete Deck ────────────────────────────────────────────────────
     async function deleteDeck(storageName) {
+        // Clean up associated LLM chats first
+        let chatCount = await deleteGameChats(storageName);
+        if (chatCount > 0) {
+            page.toast("info", "Deleted " + chatCount + " game chat(s)");
+        }
         let deckStorage = storage().deckStorage;
         let ok = await deckStorage.remove(storageName);
         if (ok) {
@@ -461,6 +508,7 @@
         loadSavedDecks,
         saveDeck,
         deleteDeck,
+        deleteGameChats,
         viewDeck,
         playDeck,
         resumeGame,
