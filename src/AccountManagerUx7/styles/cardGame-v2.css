@@ -177,6 +177,13 @@
     height: 100%;
     object-fit: cover;
 }
+.cg2-compact-icon-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    min-height: 40px;
+}
 .cg2-card.cg2-card-compact .cg2-compact-stats {
     display: flex;
     flex-wrap: wrap;

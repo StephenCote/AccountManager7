@@ -392,28 +392,32 @@ Reply with ONLY the JSON object, no markdown or text.`;
             let pos = gameState.actionBar.positions.find(p => p.index === posIdx);
             if (!pos || pos.stack) continue;
 
-            // Pick best action: Attack first, then offense/magic, then any
-            let actionName = availableActions.find(a => a === "Attack") ||
-                            availableActions.find(a => ACTION_DEFS[a]?.type === "Offensive") ||
-                            availableActions.find(a => ACTION_DEFS[a]?.type === "Magic") ||
-                            availableActions[0];
+            // Try actions until one is placed or none remain
+            let placed = false;
+            let attempts = availableActions.length;
+            while (!placed && attempts > 0 && availableActions.length > 0) {
+                attempts--;
+                // Pick best action: Attack first, then offense/magic, then any
+                let actionName = availableActions.find(a => a === "Attack") ||
+                                availableActions.find(a => ACTION_DEFS[a]?.type === "Offensive") ||
+                                availableActions.find(a => ACTION_DEFS[a]?.type === "Magic") ||
+                                availableActions[0];
 
-            if (!actionName) break;
-            let def = ACTION_DEFS[actionName];
+                if (!actionName) break;
+                let def = ACTION_DEFS[actionName];
 
-            // Check energy cost
-            if (def?.energyCost && def.energyCost > opp.energy) {
-                availableActions = availableActions.filter(a => a !== actionName);
-                continue;
-            }
+                // Check energy cost — skip this action but keep trying others for this position
+                if (def?.energyCost && def.energyCost > opp.energy) {
+                    availableActions = availableActions.filter(a => a !== actionName);
+                    continue;
+                }
 
-            // Use selectAction (handles AP, energy, duplicate checks)
-            let placed = selectAction(gameState, posIdx, actionName);
-            if (placed) {
+                // Use selectAction (handles AP, energy, duplicate checks)
+                placed = selectAction(gameState, posIdx, actionName);
                 availableActions = availableActions.filter(a => a !== actionName);
-                console.log("[CardGame v2] AI selected action:", actionName, "at position", posIdx);
-            } else {
-                availableActions = availableActions.filter(a => a !== actionName);
+                if (placed) {
+                    console.log("[CardGame v2] AI selected action:", actionName, "at position", posIdx);
+                }
             }
         }
 

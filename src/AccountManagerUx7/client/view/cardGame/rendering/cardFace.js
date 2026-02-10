@@ -445,11 +445,17 @@
                 // For compact cards, render a minimal body with image and key stats
                 let compactBody = null;
                 if (compact) {
+                    let hasImage = !!card.imageUrl;
                     compactBody = m("div", { class: "cg2-card-body cg2-card-body-compact" }, [
-                        // Show image if available
-                        card.imageUrl ? m("div", { class: "cg2-card-image-area cg2-compact-image" },
+                        // Show image if available, otherwise show type icon as placeholder
+                        hasImage ? m("div", { class: "cg2-card-image-area cg2-compact-image" },
                             m("img", { src: card.imageUrl, class: "cg2-card-img" })
-                        ) : null,
+                        ) : m("div", { class: "cg2-compact-icon-placeholder" }, [
+                            m("span", {
+                                class: "material-symbols-outlined",
+                                style: { fontSize: "32px", color: cfg.color, opacity: 0.6 }
+                            }, card.icon || cfg.icon)
+                        ]),
                         // Show condensed stats based on type
                         m("div", { class: "cg2-compact-stats" }, renderCompactStats(card, type))
                     ]);
