@@ -53,17 +53,35 @@
 
     // ── Actor Stat Helpers ──────────────────────────────────────────────
 
-    // Get total ATK bonus from actor's card stack (weapons)
+    // Get total ATK bonus from actor's equipped items and card stack (weapons)
     function getActorATK(actor) {
         let total = 0;
+        let counted = new Set();
+        // From equipped slots (primary source)
+        if (actor.equipped) {
+            Object.values(actor.equipped).forEach(card => {
+                if (card && card.atk && !counted.has(card)) {
+                    counted.add(card);
+                    total += card.atk;
+                }
+            });
+        }
+        // From cardStack (unequipped items that still contribute)
         (actor.cardStack || []).forEach(card => {
-            if (card.atk) total += card.atk;
+            if (card.atk && !counted.has(card)) total += card.atk;
         });
         return total;
     }
 
     // Check if actor is dual-wielding (two one-handed weapons)
     function isDualWielding(actor) {
+        if (actor.equipped) {
+            let handL = actor.equipped.handL;
+            let handR = actor.equipped.handR;
+            return handL && handR && handL !== handR &&
+                handL.type === "item" && handL.subtype === "weapon" &&
+                handR.type === "item" && handR.subtype === "weapon";
+        }
         let oneHandedWeapons = (actor.cardStack || []).filter(card =>
             card.type === "item" &&
             card.subtype === "weapon" &&
@@ -75,19 +93,42 @@
 
     // Get ATK values for each weapon (for dual wield separate rolls)
     function getWeaponATKs(actor) {
-        let weapons = (actor.cardStack || []).filter(card =>
-            card.type === "item" &&
-            card.subtype === "weapon" &&
-            card.atk
-        );
-        return weapons.map(w => ({ name: w.name, atk: w.atk || 0 }));
+        let weapons = [];
+        let seen = new Set();
+        // From equipped hand slots
+        if (actor.equipped) {
+            [actor.equipped.handL, actor.equipped.handR].forEach(card => {
+                if (card && card.type === "item" && card.subtype === "weapon" && card.atk && !seen.has(card)) {
+                    seen.add(card);
+                    weapons.push({ name: card.name, atk: card.atk || 0 });
+                }
+            });
+        }
+        // Fallback to cardStack
+        if (weapons.length === 0) {
+            (actor.cardStack || []).filter(card =>
+                card.type === "item" && card.subtype === "weapon" && card.atk
+            ).forEach(w => weapons.push({ name: w.name, atk: w.atk || 0 }));
+        }
+        return weapons;
     }
 
-    // Get total DEF bonus from actor's card stack (armor, apparel)
+    // Get total DEF bonus from actor's equipped items and card stack (armor, apparel)
     function getActorDEF(actor) {
         let total = 0;
+        let counted = new Set();
+        // From equipped slots (primary source)
+        if (actor.equipped) {
+            Object.values(actor.equipped).forEach(card => {
+                if (card && card.def && !counted.has(card)) {
+                    counted.add(card);
+                    total += card.def;
+                }
+            });
+        }
+        // From cardStack (unequipped items that still contribute)
         (actor.cardStack || []).forEach(card => {
-            if (card.def) total += card.def;
+            if (card.def && !counted.has(card)) total += card.def;
         });
         return total;
     }
@@ -279,6 +320,12 @@
             // Hit - apply damage to defender
             damageResult = applyDamage(defenderActor, damage.finalDamage);
 
+            // Decrement defender's apparel durability on hit
+            let brokenArmor = decrementApparelDurability(defenderActor, outcome.isCriticalHit);
+            if (brokenArmor.length > 0) {
+                criticalEffects.brokenArmor = brokenArmor;
+            }
+
             // Critical Hit: ALWAYS reward the attacker with an elevated item card
             if (outcome.isCriticalHit) {
                 // Generate a special elevated item as reward
@@ -355,6 +402,75 @@
     }
 
     // Check if game is over (either actor HP <= 0)
+    // ── Durability System ────────────────────────────────────────────────
+
+    // Decrement apparel durability on defender when hit
+    function decrementApparelDurability(actor, isCritical) {
+        let broken = [];
+        let decAmount = isCritical ? 2 : 1;
+        if (!actor.equipped) return broken;
+
+        for (let slotKey of Object.keys(actor.equipped)) {
+            let card = actor.equipped[slotKey];
+            if (!card) continue;
+            if (card.type !== "apparel" && !(card.type === "item" && card.subtype === "armor")) continue;
+            if (card.durability == null) continue;
+            // Skip duplicate for two-handed (only decrement once)
+            if (slotKey === "handL" && actor.equipped.handR === card) continue;
+
+            card.durability = Math.max(0, card.durability - decAmount);
+            if (card.durability <= 0) {
+                broken.push({ card: card, slotKey: slotKey });
+                // Remove from equipped
+                if (card.slot === "Hand (2H)") {
+                    actor.equipped.handL = null;
+                    actor.equipped.handR = null;
+                } else {
+                    actor.equipped[slotKey] = null;
+                }
+                // Add to pot as salvage
+                let gs = window.CardGame.ctx ? window.CardGame.ctx.gameState : null;
+                if (gs && gs.pot) {
+                    gs.pot.push(card);
+                    console.log("[CardGame v2] DURABILITY: " + card.name + " destroyed, added to pot");
+                }
+            }
+        }
+        return broken;
+    }
+
+    // Decrement weapon durability after use in attack
+    function decrementWeaponDurability(actor) {
+        let broken = [];
+        if (!actor.equipped) return broken;
+
+        let seen = new Set();
+        for (let slotKey of ["handL", "handR"]) {
+            let card = actor.equipped[slotKey];
+            if (!card || seen.has(card)) continue;
+            seen.add(card);
+            if (card.type !== "item" || card.subtype !== "weapon") continue;
+            if (card.durability == null) continue;
+
+            card.durability = Math.max(0, card.durability - 1);
+            if (card.durability <= 0) {
+                broken.push({ card: card, slotKey: slotKey });
+                if (card.slot === "Hand (2H)") {
+                    actor.equipped.handL = null;
+                    actor.equipped.handR = null;
+                } else {
+                    actor.equipped[slotKey] = null;
+                }
+                let gs = window.CardGame.ctx ? window.CardGame.ctx.gameState : null;
+                if (gs && gs.pot) {
+                    gs.pot.push(card);
+                    console.log("[CardGame v2] DURABILITY: Weapon " + card.name + " destroyed, added to pot");
+                }
+            }
+        }
+        return broken;
+    }
+
     function checkGameOver(state) {
         let gs = state || (window.CardGame.ctx ? window.CardGame.ctx.gameState : null);
         if (!gs) return null;
@@ -378,7 +494,9 @@
         calculateDamage,
         applyDamage,
         resolveCombat,
-        checkGameOver
+        checkGameOver,
+        decrementApparelDurability,
+        decrementWeaponDurability
     });
 
     console.log('[CardGame] Engine/combat loaded');

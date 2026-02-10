@@ -52,6 +52,10 @@
     // Round winner claims all cards in the pot + any round loot
     function claimPot(state, winner) {
         let winnerActor = winner === "player" ? state.player : state.opponent;
+        let potSize = (state.pot ? state.pot.length : 0) + (state.roundLoot ? state.roundLoot.length : 0);
+
+        // Check for jackpot BEFORE clearing pot
+        let isJackpot = potSize >= 5;
 
         // Claim pot cards
         if (state.pot && state.pot.length > 0) {
@@ -76,6 +80,14 @@
             });
             console.log("[CardGame v2]", winner, "claimed", state.roundLoot.length, "loot items");
             state.roundLoot = [];
+        }
+
+        // Trigger jackpot if pot had 5+ cards
+        if (isJackpot) {
+            state._jackpotTriggered = true;
+            state._jackpotWinner = winner;
+            state._jackpotPotSize = potSize;
+            console.log("[CardGame v2] JACKPOT! Pot had", potSize, "cards - vault draw triggered for", winner);
         }
     }
 

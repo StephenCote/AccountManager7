@@ -2686,50 +2686,130 @@
 }
 
 /* ── Equip Phase ───────────────────────────────────── */
+.cg2-equip-explain { font-size: 12px; color: #aaa; margin: 0 0 12px; }
 .cg2-equip-slots {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     justify-content: center;
-    margin: 16px 0;
+    margin: 12px 0;
 }
 .cg2-equip-slot {
-    width: 100px;
-    padding: 10px;
-    background: #f5f5f5;
-    border: 1px solid #ddd;
-    border-radius: 8px;
+    width: 120px;
+    min-height: 72px;
+    padding: 8px;
+    background: rgba(255,255,255,0.05);
+    border: 2px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
     text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
 }
-.dark .cg2-equip-slot {
-    background: #2a2a2a;
-    border-color: #444;
-}
+.cg2-equip-slot:hover { border-color: rgba(184,134,11,0.4); background: rgba(184,134,11,0.06); }
+.dark .cg2-equip-slot { background: rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.1); }
 .cg2-equip-slot.cg2-slot-filled {
-    background: #e8f5e9;
-    border-color: #81c784;
+    background: rgba(46,125,50,0.1);
+    border-color: rgba(129,199,132,0.5);
 }
-.dark .cg2-equip-slot.cg2-slot-filled {
-    background: #1b3a1b;
-    border-color: #4a8;
+.dark .cg2-equip-slot.cg2-slot-filled { background: rgba(46,125,50,0.15); border-color: rgba(76,175,80,0.4); }
+.cg2-equip-slot.cg2-slot-accepts {
+    border-color: #B8860B;
+    border-style: dashed;
+    background: rgba(184,134,11,0.1);
+    animation: cg2-slot-pulse 1.2s ease-in-out infinite;
 }
-.cg2-slot-label {
-    font-size: 10px;
-    font-weight: 700;
-    color: #888;
-    text-transform: uppercase;
-    display: block;
-    margin-bottom: 4px;
+.cg2-equip-slot.cg2-slot-twohand { opacity: 0.5; }
+.cg2-slot-header { display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 4px; }
+.cg2-slot-icon { font-size: 14px; color: #888; }
+.cg2-slot-label { font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; }
+.cg2-slot-item-detail { }
+.cg2-slot-item-name { font-size: 11px; font-weight: 600; color: #81c784; margin-bottom: 2px; }
+.cg2-slot-item-stats { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.cg2-slot-stat { font-size: 9px; padding: 1px 4px; border-radius: 4px; font-weight: 600; }
+.cg2-stat-atk { background: rgba(229,115,115,0.2); color: #e57373; }
+.cg2-stat-def { background: rgba(100,181,246,0.2); color: #64b5f6; }
+.cg2-stat-dur { background: rgba(255,183,77,0.2); color: #ffb74d; }
+.cg2-slot-empty { font-size: 11px; color: #666; font-style: italic; }
+
+/* Equippable hand cards */
+.cg2-equip-hand { margin-top: 16px; }
+.cg2-equip-hand-title { font-size: 12px; font-weight: 700; color: #B8860B; text-transform: uppercase; margin-bottom: 8px; }
+.cg2-equip-hand-cards { display: flex; flex-wrap: wrap; gap: 8px; }
+.cg2-equip-hand-card {
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: 100px;
 }
-.cg2-slot-item {
-    font-size: 11px;
-    font-weight: 600;
-    color: #2e7d32;
+.cg2-equip-hand-card:hover { border-color: #B8860B; background: rgba(184,134,11,0.1); }
+.cg2-equip-hand-card.cg2-equip-selected {
+    border-color: #B8860B;
+    background: rgba(184,134,11,0.15);
+    box-shadow: 0 0 8px rgba(184,134,11,0.3);
 }
-.cg2-slot-empty {
-    font-size: 11px;
-    color: #999;
-    font-style: italic;
+.cg2-equip-card-name { font-size: 11px; font-weight: 600; color: #ddd; }
+.cg2-equip-card-stats { display: flex; gap: 6px; margin-top: 4px; }
+.cg2-equip-card-stat { font-size: 9px; color: #aaa; font-weight: 600; }
+.cg2-equip-card-slot { font-size: 9px; color: #888; font-style: italic; }
+
+/* ── Durability Summary ───────────────────────────────── */
+.cg2-durability-summary { margin-top: 10px; padding: 8px 12px; background: rgba(255,183,77,0.08); border-radius: 8px; border: 1px solid rgba(255,183,77,0.2); }
+.cg2-durability-title { font-size: 12px; font-weight: 700; color: #ffb74d; margin-bottom: 4px; }
+.cg2-durability-item { font-size: 11px; color: #ccc; padding: 2px 0; }
+.cg2-durability-item.cg2-durability-broken { color: #e57373; }
+.cg2-durability-destroyed { font-weight: 700; color: #ef5350; }
+.cg2-durability-value { color: #aaa; }
+
+/* ── Jackpot Banner ──────────────────────────────────── */
+.cg2-jackpot-banner {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 10px 18px; margin: 10px 0; border-radius: 8px;
+    background: linear-gradient(135deg, #f9a825 0%, #ff8f00 50%, #f9a825 100%);
+    color: #3e2723; font-weight: 700; font-size: 15px;
+    text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+    box-shadow: 0 0 16px rgba(249,168,37,0.5), inset 0 1px 0 rgba(255,255,255,0.3);
+    animation: cg2-jackpot-shimmer 2s ease-in-out infinite;
+}
+.cg2-jackpot-icon { font-size: 22px; color: #3e2723; animation: cg2-jackpot-spin 1.5s ease-in-out infinite; }
+@keyframes cg2-jackpot-shimmer {
+    0%, 100% { box-shadow: 0 0 16px rgba(249,168,37,0.5), inset 0 1px 0 rgba(255,255,255,0.3); }
+    50% { box-shadow: 0 0 28px rgba(249,168,37,0.8), inset 0 1px 0 rgba(255,255,255,0.5); }
+}
+@keyframes cg2-jackpot-spin {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(15deg); }
+    75% { transform: rotate(-15deg); }
+}
+
+/* ── Treasure Vault Draw ─────────────────────────────── */
+.cg2-vault-draw {
+    padding: 10px 14px; margin: 8px 0; border-radius: 8px;
+    border: 2px solid #DAA520; text-align: center;
+    background: linear-gradient(135deg, rgba(218,165,32,0.1), rgba(184,134,11,0.05));
+    animation: cg2-vault-shimmer 2s ease-in-out infinite;
+}
+.cg2-vault-draw.cg2-vault-boss {
+    border-color: #c62828;
+    background: linear-gradient(135deg, rgba(198,40,40,0.1), rgba(198,40,40,0.03));
+    animation: cg2-vault-boss-pulse 1.5s ease-in-out infinite;
+}
+.cg2-vault-draw-header {
+    font-weight: 700; font-size: 13px; color: #DAA520; margin-bottom: 6px;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+}
+.cg2-vault-boss .cg2-vault-draw-header { color: #ef5350; }
+.cg2-vault-boss-warning { color: #ef9a9a; }
+.cg2-vault-item-gained { color: #ccc; }
+@keyframes cg2-vault-shimmer {
+    0%, 100% { box-shadow: 0 0 8px rgba(218,165,32,0.3); }
+    50% { box-shadow: 0 0 16px rgba(218,165,32,0.6); }
+}
+@keyframes cg2-vault-boss-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(198,40,40,0.3); }
+    50% { box-shadow: 0 0 18px rgba(198,40,40,0.6); }
 }
 
 /* ── Placement Phase ───────────────────────────────── */
@@ -5556,6 +5636,30 @@
 .cg2-campaign-level { font-weight: 700; }
 .cg2-campaign-xp { opacity: 0.8; }
 .cg2-campaign-record { opacity: 0.7; font-size: 9px; }
+.cg2-campaign-level-badge {
+    display: inline-block; padding: 1px 5px; border-radius: 4px;
+    background: linear-gradient(135deg, #B8860B, #DAA520); color: #fff;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
+}
+.cg2-campaign-badge { flex-wrap: wrap; }
+
+/* ── XP Progress Bar ─────────────────────────────────── */
+.cg2-xp-bar-container {
+    display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 3px;
+}
+.cg2-xp-bar {
+    flex: 1; height: 6px; background: rgba(0,0,0,0.15); border-radius: 3px;
+    overflow: hidden; position: relative;
+}
+.cg2-xp-fill {
+    position: absolute; top: 0; left: 0; height: 100%;
+    background: linear-gradient(90deg, #B8860B, #DAA520);
+    border-radius: 3px; transition: width 0.5s ease;
+}
+.cg2-xp-text { font-size: 8px; color: #B8860B; white-space: nowrap; font-weight: 600; }
+.cg2-xp-bar-gameover .cg2-xp-bar { height: 8px; border-radius: 4px; }
+.cg2-xp-bar-gameover .cg2-xp-text { font-size: 10px; }
+.cg2-stat-xp .cg2-game-over-stat-value { color: #2E7D32; }
 
 /* ── Deck List Campaign Info ───────────────────────── */
 .cg2-deck-campaign-info {

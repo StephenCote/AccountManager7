@@ -7619,32 +7619,20 @@ All Phase 9.5 encounter items implemented: target winner, defense stack, CLASH h
 ### ~~Issue 4: Scenario/Loot Card Integration Incomplete~~ ✅ RESOLVED (2026-02-09)
 All Phase 9.5 scenario/loot items implemented: scenario + loot cards in deck assembly with `_isScenarioDef`/`_isLootDef` markers, `CardFace` rendering, loot reveal overlay, `lootPool` on scenarios with theme overrides, named `lootItems` from creatures, loot art lookup, backfill for older decks, `artPrompt` support in art pipeline.
 
-### Issue 5: Equipment Phase Is Display-Only
-`EquipPhaseUI` shows equipped items but doesn't allow changing them. Players should be able to swap weapons, equip found items, and manage gear between rounds.
+### ~~Issue 5: Equipment Phase Is Display-Only~~ ✅ Resolved
+Interactive EQUIP phase inserted after initiative. Players can click to equip/unequip items across 7 slots (head, body, handL, handR, feet, ring, back). AI auto-equips. ATK/DEF calculated from equipped items. Two-handed weapon support. `EQUIP_SLOT_MAP` constant maps card slot values to equipped keys.
 
-### Issue 6: Campaign Progression Not Fully Wired
-XP formula and level-up stat selection are defined but:
-- XP accumulation not tracked across rounds
-- Level-up UI not implemented
-- Stat gains not persisted back to `olio.charPerson`
+### ~~Issue 6: Campaign Progression Not Fully Wired~~ ✅ Resolved
+XP system fully wired: 10 base XP per round + damage dealt + 25 round victory bonus + HP bonus + 50 game victory bonus. Campaign stores xp, level, totalXpEarned, statGains, pendingLevelUps. XP bar shown in player sidebar during game and on game-over screen. Level-up stat picker UI (choose 2 stats per level). Campaign stat gains applied at game start. Threshold: level * 100 XP, max level 10.
 
-### Issue 7: Treasure Vault Not Implemented
-The design specifies a separate high-rarity deck (boss encounters + legendary items) drawn via special triggers. Currently:
-- No vault deck exists in assembly
-- No vault draw triggers (discovery crits, NPC quests, pot jackpot)
-- No boss encounter mechanics (multi-round, persistence, chain rewards)
+### ~~Issue 7: Treasure Vault Not Implemented~~ ✅ Resolved
+Vault assembled at game start from theme `treasureVault` config: EPIC/LEGENDARY items from cardPool + boss threats (difficulty 12-16). Pot jackpot (5+ cards) triggers vault draw. Boss draws queued as carried threats for next round. Item draws added to winner's hand. Vault draw reveal shown in cleanup phase with gold shimmer (items) or red pulse (bosses).
 
-### Issue 8: Durability System Not Implemented
-Design specifies durability on weapons and apparel (reduced per use/hit, destroyed at 0). Currently:
-- `durability` field exists in card templates but is never decremented
-- No equipment destruction logic
-- No "broken item → pot" mechanic
+### ~~Issue 8: Durability System Not Implemented~~ ✅ Resolved
+Weapons lose 1 durability per round when Attack action is used (cleanup phase). Apparel loses 1 durability per hit taken (-2 on critical hit, in combat resolution). Items at 0 durability are destroyed, removed from equipped slots, and added to pot. Durability summary shown in cleanup UI with "DESTROYED → Pot" labels.
 
-### Issue 9: Round Pot Not Fully Implemented
-Pot system basics work (ante, claim on win) but missing:
-- Mid-round pot additions (stolen items, dropped items, destroyed equipment)
-- Pot jackpot → vault draw trigger (5+ cards)
-- Consumed items going to pot (currently just discarded)
+### ~~Issue 9: Round Pot Not Fully Implemented~~ ✅ Resolved
+Consumed items routed to pot instead of discard. Destroyed equipment (durability 0) added to pot. Pot jackpot trigger: when pot has 5+ cards at claim time, `_jackpotTriggered` flag set with gold animated banner. Jackpot triggers treasure vault draw.
 
 ### Issue 10: Multiplayer (IRL) Not Implemented
 Online play is 1v1 vs AI only. Design supports 3-4 player IRL with:
@@ -7659,17 +7647,17 @@ Online play is 1v1 vs AI only. Design supports 3-4 player IRL with:
 
 ### Near-term (Gameplay Polish)
 1. **Verify deck delete cleanup** — confirm server recursive group deletion (chat cleanup implemented)
-2. **Equipment phase interactivity** — allow equipping/unequipping between rounds
+2. ~~**Equipment phase interactivity**~~ ✅ Interactive equip/unequip with 7 slots, AI auto-equip
 3. ~~**End-threat rework**~~ ✅ Phase 9.5 complete (target winner, bonus stack, CLASH, carry-over, flee, pot forfeiture, combat overlay)
 4. ~~**Loot card integration**~~ ✅ Phase 9.5 complete (named lootItems, deck assembly, art, lootPool, backfill)
 5. ~~**Scenario card integration**~~ ✅ Phase 9.5 complete (deck assembly, CardFace in cleanup, loot reveal, artPrompt)
 
 ### Mid-term (Campaign & Balance)
-6. **XP & level-up** — wire XP tracking, implement level-up stat picker UI
-7. **Durability system** — decrement on use, destroy at 0, route to pot
-8. **Pot improvements** — mid-round additions, jackpot trigger
+6. ~~**XP & level-up**~~ ✅ XP tracking, level-up stat picker, campaign persistence, XP bar in HUD
+7. ~~**Durability system**~~ ✅ Weapon/apparel durability decrement, destroy at 0, route to pot
+8. ~~**Pot improvements**~~ ✅ Consumed items to pot, destroyed equipment to pot, jackpot trigger
 9. **Balance tuning** — magic energy costs, threat difficulty scaling, status effect stacking
-10. **Treasure vault** — separate high-rarity deck, boss encounters, draw triggers
+10. ~~**Treasure vault**~~ ✅ Vault deck assembly, jackpot draw trigger, boss/item reveal in cleanup
 
 ### Long-term (Export & Expansion)
 11. **Print & export (Phase 10)** — PDF generation, PNG export, TTS format, rules reference

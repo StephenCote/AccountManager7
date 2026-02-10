@@ -276,7 +276,11 @@
                 discardPile: [],
                 // Card stack: modifier cards placed on character (apparel, items, buffs)
                 cardStack: dealInitialStack(playerApparel, playerItems),
+                // Equipment slots (populated from cardStack during init)
+                equipped: { head: null, body: null, handL: null, handR: null, feet: null, ring: null, back: null },
                 roundPoints: 0,
+                roundXp: 0,         // XP earned this round
+                totalGameXp: 0,     // XP earned across all rounds this game
                 statusEffects: [],  // Active status effects (stunned, poisoned, etc.)
                 typesPlayedThisRound: {}  // Track action types played this round for hoarding prevention
             },
@@ -310,6 +314,8 @@
                 discardPile: [],
                 // Card stack: modifier cards placed on character
                 cardStack: dealInitialStack(opponentApparel, opponentItems),
+                // Equipment slots (populated from cardStack during init)
+                equipped: { head: null, body: null, handL: null, handR: null, feet: null, ring: null, back: null },
                 roundPoints: 0,
                 statusEffects: [],  // Active status effects (stunned, poisoned, etc.)
                 typesPlayedThisRound: {}  // Track action types played this round for hoarding prevention
@@ -385,6 +391,48 @@
 
         console.log("[CardGame v2] Player actions:", state.player.availableActions);
         console.log("[CardGame v2] Opponent actions:", state.opponent.availableActions);
+
+        // Assemble treasure vault from theme config
+        let activeThemeConfig = Th()?.getActiveTheme?.() || null;
+        if (activeThemeConfig && activeThemeConfig.treasureVault && E().assembleTreasureVault) {
+            let vaultDeck = E().assembleTreasureVault(activeThemeConfig);
+            state.treasureVault = { deck: vaultDeck, drawn: [] };
+        } else {
+            state.treasureVault = { deck: [], drawn: [] };
+        }
+
+        // Auto-equip initial gear from card stacks
+        autoEquipFromStack(state.player);
+        autoEquipFromStack(state.opponent);
+
+        // Apply campaign stat gains to player character (persistent level-up bonuses)
+        try {
+            let campaign = await St().campaignStorage.load(state.deckName);
+            if (campaign && campaign.statGains) {
+                St().migrateCampaign(campaign);
+                let charStats = state.player.character.stats || {};
+                for (let stat in campaign.statGains) {
+                    if (campaign.statGains[stat] > 0 && charStats[stat] !== undefined) {
+                        charStats[stat] += campaign.statGains[stat];
+                    }
+                }
+                console.log("[CardGame v2] Applied campaign stat gains:", JSON.stringify(campaign.statGains), "→ level", campaign.level);
+                // Recalculate derived values from updated stats
+                let updatedEnd = charStats.END || charStats.end || playerEnd;
+                let updatedAp = Math.max(2, Math.floor(updatedEnd / 5) + 1);
+                if (updatedAp > state.player.ap) {
+                    state.player.ap = updatedAp;
+                    state.player.maxAp = updatedAp;
+                }
+                let updatedMag = charStats.MAG || charStats.mag || playerMag;
+                if (updatedMag > state.player.energy) {
+                    state.player.energy = updatedMag;
+                    state.player.maxEnergy = updatedMag;
+                }
+            }
+        } catch (e) {
+            console.warn("[CardGame v2] Could not apply campaign stat gains:", e);
+        }
 
         // Reset initiative animation so it replays for the new game
         resetInitAnimState();
@@ -1038,6 +1086,112 @@
         m.redraw();
     }
 
+    // ── Equipment Management ──────────────────────────────────────────────
+
+    function getSlotForCard(card) {
+        let EQUIP_SLOT_MAP = C().EQUIP_SLOT_MAP;
+        let cardSlot = card.slot || (card.type === "apparel" ? "Body" : null);
+        if (!cardSlot || !EQUIP_SLOT_MAP[cardSlot]) return null;
+        return EQUIP_SLOT_MAP[cardSlot];
+    }
+
+    function equipCard(actor, card, slotKey) {
+        if (!actor || !card || !slotKey) return;
+        // Unequip current item in slot
+        let currentItem = actor.equipped[slotKey];
+        if (currentItem) {
+            // For two-handed: only push back once (not from both slots)
+            if (currentItem.slot === "Hand (2H)") {
+                if (slotKey === "handR") actor.hand.push(currentItem);
+                actor.equipped.handL = null;
+                actor.equipped.handR = null;
+            } else {
+                actor.hand.push(currentItem);
+                actor.equipped[slotKey] = null;
+            }
+        }
+        // Handle two-handed equip: clear both hand slots
+        if (card.slot === "Hand (2H)") {
+            if (actor.equipped.handL && actor.equipped.handL !== currentItem) {
+                actor.hand.push(actor.equipped.handL);
+            }
+            if (actor.equipped.handR && actor.equipped.handR !== currentItem) {
+                actor.hand.push(actor.equipped.handR);
+            }
+            actor.equipped.handL = card;
+            actor.equipped.handR = card;
+        } else {
+            actor.equipped[slotKey] = card;
+        }
+        // Remove card from hand
+        let handIdx = actor.hand.indexOf(card);
+        if (handIdx >= 0) actor.hand.splice(handIdx, 1);
+        // Remove from cardStack
+        let stackIdx = (actor.cardStack || []).indexOf(card);
+        if (stackIdx >= 0) actor.cardStack.splice(stackIdx, 1);
+        console.log("[CardGame v2] Equipped", card.name, "to", slotKey);
+    }
+
+    function unequipCard(actor, slotKey) {
+        if (!actor || !slotKey) return;
+        let item = actor.equipped[slotKey];
+        if (!item) return;
+        // Two-handed: clear both slots, push card back once
+        if (item.slot === "Hand (2H)") {
+            actor.equipped.handL = null;
+            actor.equipped.handR = null;
+        } else {
+            actor.equipped[slotKey] = null;
+        }
+        actor.hand.push(item);
+        console.log("[CardGame v2] Unequipped", item.name, "from", slotKey);
+    }
+
+    function autoEquipFromStack(actor) {
+        if (!actor || !actor.cardStack) return;
+        let toEquip = actor.cardStack.filter(c =>
+            (c.type === "item" && c.subtype === "weapon") || c.type === "apparel"
+        );
+        // Sort by value: highest atk+def first
+        toEquip.sort((a, b) => ((b.atk || 0) + (b.def || 0)) - ((a.atk || 0) + (a.def || 0)));
+        for (let card of toEquip) {
+            let slots = getSlotForCard(card);
+            if (!slots) continue;
+            // Find first empty slot
+            let targetSlot = slots.find(s => !actor.equipped[s]);
+            if (targetSlot) {
+                equipCard(actor, card, targetSlot);
+            }
+        }
+    }
+
+    function aiAutoEquip(actor) {
+        if (!actor) return;
+        // Collect all equippable cards from hand + cardStack
+        let equippable = [...(actor.hand || []), ...(actor.cardStack || [])].filter(c =>
+            ((c.type === "item" && c.subtype === "weapon") || c.type === "apparel") &&
+            !Object.values(actor.equipped || {}).includes(c)
+        );
+        // Sort by value: highest atk+def first
+        equippable.sort((a, b) => ((b.atk || 0) + (b.def || 0)) - ((a.atk || 0) + (a.def || 0)));
+        for (let card of equippable) {
+            let slots = getSlotForCard(card);
+            if (!slots) continue;
+            let targetSlot = slots.find(s => !actor.equipped[s]);
+            if (targetSlot) {
+                equipCard(actor, card, targetSlot);
+            }
+        }
+    }
+
+    function enterEquipPhase() {
+        const GAME_PHASES = C().GAME_PHASES;
+        gameState.phase = GAME_PHASES.EQUIP;
+        // Auto-equip AI opponent
+        aiAutoEquip(gameState.opponent);
+        console.log("[CardGame v2] Phase advanced to: equip");
+    }
+
     // ── Phase Transitions ───────────────────────────────────────────────
     function advancePhase() {
         if (!gameState) return;
@@ -1049,8 +1203,10 @@
             if (gameState.beginningThreats && gameState.beginningThreats.length > 0) {
                 enterThreatResponsePhase("beginning");
             } else {
-                enterDrawPlacementPhase();
+                enterEquipPhase();
             }
+        } else if (gameState.phase === GAME_PHASES.EQUIP) {
+            enterDrawPlacementPhase();
         } else if (gameState.phase === GAME_PHASES.THREAT_RESPONSE) {
             // Threat response complete - resolve the threat combat, then continue to placement
             resolveThreatCombat();
@@ -1204,7 +1360,7 @@
             gameState.threatResponse.active = false;
             gameState.player.threatResponseAP = 0;
             gameState.opponent.threatResponseAP = 0;
-            enterDrawPlacementPhase();
+            enterEquipPhase();
             return;
         }
 
@@ -1321,8 +1477,8 @@
             return;
         }
 
-        // Continue to draw/placement phase
-        enterDrawPlacementPhase();
+        // Continue to equip phase (then draw/placement)
+        enterEquipPhase();
         m.redraw();
     }
 
@@ -1693,6 +1849,14 @@
             m.redraw();
             return;
         }
+
+        // Calculate round XP before resetting: 10 base + damage dealt + 25 if round winner
+        let roundXp = 10;
+        roundXp += gameState.player.roundPoints || 0;
+        if (gameState.roundWinner === "player") roundXp += 25;
+        gameState.player.roundXp = roundXp;
+        gameState.player.totalGameXp += roundXp;
+        console.log("[CardGame v2] Round", gameState.round, "XP:", roundXp, "(total:", gameState.player.totalGameXp + ")");
 
         gameState.round++;
         gameState.phase = GAME_PHASES.INITIATIVE;
@@ -2068,8 +2232,15 @@
                             owner.discardPile.push(coreCard);
                         }
 
-                        // Modifiers always go to discard
-                        pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
+                        // Modifiers: consumables go to pot, others to discard
+                        pos.stack.modifiers.forEach(function(mod) {
+                            if (mod.type === "item" && mod.subtype === "consumable") {
+                                gameState.pot.push(mod);
+                                console.log("[CardGame v2] Consumed", mod.name, "-> pot");
+                            } else {
+                                owner.discardPile.push(mod);
+                            }
+                        });
                     }
 
                     // Check for game over after each combat
@@ -2266,7 +2437,13 @@
                         owner.discardPile.push(card);
                     }
                     if (pos.stack?.modifiers) {
-                        pos.stack.modifiers.forEach(mod => owner.discardPile.push(mod));
+                        pos.stack.modifiers.forEach(function(mod) {
+                            if (mod.type === "item" && mod.subtype === "consumable") {
+                                gameState.pot.push(mod);
+                            } else {
+                                owner.discardPile.push(mod);
+                            }
+                        });
                     }
 
                     // Check for game over
@@ -2767,9 +2944,15 @@
 
         // Phase transitions
         advancePhase,
+        enterEquipPhase,
         enterDrawPlacementPhase,
         enterThreatResponsePhase,
         enterEndThreatPhase,
+
+        // Equipment management
+        equipCard,
+        unequipCard,
+        aiAutoEquip,
 
         // Threat combat
         resolveThreatCombat,

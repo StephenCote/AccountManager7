@@ -163,6 +163,18 @@
         END_THREAT: "end_threat"  // Phase for responding to end-of-round threats
     };
 
+    // ── Equipment Slot Mapping ─────────────────────────────────────────
+    // Maps card slot values to equipped object keys
+    const EQUIP_SLOT_MAP = {
+        "Head":      ["head"],
+        "Body":      ["body"],
+        "Feet":      ["feet"],
+        "Back":      ["back"],
+        "Ring":      ["ring"],
+        "Hand (1H)": ["handR"],          // Default to right hand
+        "Hand (2H)": ["handL", "handR"]  // Two-handed occupies both
+    };
+
     // ── Status Effects ───────────────────────────────────────────────
     const STATUS_EFFECTS = {
         STUNNED: {
@@ -472,6 +484,7 @@
         ITEM_SUBTYPE_ICONS,
         CARD_RENDER_CONFIG,
         GAME_PHASES,
+        EQUIP_SLOT_MAP,
         STATUS_EFFECTS,
         COMBAT_OUTCOMES,
         CARD_TEMPLATES,

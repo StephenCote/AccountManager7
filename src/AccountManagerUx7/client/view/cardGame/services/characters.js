@@ -510,7 +510,17 @@
 
             availableCharacters = allChars;
             if (allChars.length === 0) {
-                console.log("[CardGame v2] No characters found - will need to generate");
+                console.log("[CardGame v2] No characters found - auto-generating");
+                charsLoading = false;
+                m.redraw();
+                let themeId = getActiveTheme().themeId || "high-fantasy";
+                let generated = await generateCharactersFromTemplates(themeId, 8);
+                if (generated.length > 0) {
+                    availableCharacters = generated;
+                    selectedChars = generated.slice(0, 8);
+                }
+                m.redraw();
+                return;
             } else {
                 console.log("[CardGame v2] Total available characters: " + allChars.length);
             }

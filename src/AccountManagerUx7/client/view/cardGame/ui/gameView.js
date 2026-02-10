@@ -602,9 +602,24 @@
                         m("span", { class: "cg2-ap-value" }, (actor.ap - actor.apUsed) + "/" + actor.ap)
                     ]),
 
-                    // Campaign record (player only, no level)
+                    // Campaign record + XP bar (player only)
                     !isOpponent && activeCampaign ? m("div", { class: "cg2-campaign-badge" }, [
-                        m("span", { class: "cg2-campaign-record" }, activeCampaign.wins + "W/" + activeCampaign.losses + "L")
+                        m("span", { class: "cg2-campaign-level-badge" }, "Lv." + (activeCampaign.level || 1)),
+                        m("span", { class: "cg2-campaign-record" }, activeCampaign.wins + "W/" + activeCampaign.losses + "L"),
+                        // XP progress bar
+                        (function() {
+                            let xp = activeCampaign.xp || 0;
+                            let gameXp = gameState?.player?.totalGameXp || 0;
+                            let totalXp = xp + gameXp;
+                            let threshold = (activeCampaign.level || 1) * 100;
+                            let pct = Math.min(100, (totalXp / threshold) * 100);
+                            return m("div", { class: "cg2-xp-bar-container" }, [
+                                m("div", { class: "cg2-xp-bar" }, [
+                                    m("div", { class: "cg2-xp-fill", style: { width: pct + "%" } })
+                                ]),
+                                m("span", { class: "cg2-xp-text" }, totalXp + "/" + threshold)
+                            ]);
+                        })()
                     ]) : null,
 
                     // Chat button (Silence Rule: locked unless Talk card active)

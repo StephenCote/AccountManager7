@@ -434,6 +434,93 @@
         };
     }
 
+    // ── Treasure Vault ──────────────────────────────────────────────────
+
+    /**
+     * Assemble a treasure vault deck from the theme's cardPool and treasureVault config.
+     * Pulls EPIC/LEGENDARY items + boss threats into a shuffled deck.
+     * @param {Object} themeConfig - Full theme configuration
+     * @returns {Array} Shuffled vault deck of cards
+     */
+    function assembleTreasureVault(themeConfig) {
+        if (!themeConfig || !themeConfig.treasureVault) return [];
+        let vault = themeConfig.treasureVault;
+        let pool = themeConfig.cardPool || [];
+        let deck = [];
+        let shuffle = window.CardGame.Characters?.shuffle || function(a) { return a.sort(function() { return Math.random() - 0.5; }); };
+
+        // Gather EPIC/LEGENDARY items from cardPool
+        let epicLegendary = pool.filter(function(c) {
+            return c.rarity === "EPIC" || c.rarity === "LEGENDARY";
+        });
+
+        // Add items by vault category config (limited by count)
+        function addFromPool(filter, count) {
+            let candidates = epicLegendary.filter(filter);
+            shuffle(candidates);
+            for (let i = 0; i < Math.min(count, candidates.length); i++) {
+                let card = Object.assign({}, candidates[i]);
+                card._vaultItem = true;
+                deck.push(card);
+            }
+        }
+
+        if (vault.legendaryWeapons) {
+            addFromPool(function(c) { return c.type === "item" && c.subtype === "weapon" && c.rarity === "LEGENDARY"; }, vault.legendaryWeapons.count || 2);
+        }
+        if (vault.epicWeapons) {
+            addFromPool(function(c) { return c.type === "item" && c.subtype === "weapon" && c.rarity === "EPIC"; }, vault.epicWeapons.count || 3);
+        }
+        if (vault.epicApparel) {
+            addFromPool(function(c) { return c.type === "apparel" && c.rarity === "EPIC"; }, vault.epicApparel.count || 3);
+        }
+        if (vault.epicConsumables) {
+            addFromPool(function(c) { return c.type === "item" && c.subtype === "consumable" && c.rarity === "EPIC"; }, vault.epicConsumables.count || 2);
+        }
+        if (vault.epicSkills) {
+            addFromPool(function(c) { return c.type === "skill" && (c.rarity === "EPIC" || c.rarity === "RARE"); }, vault.epicSkills.count || 3);
+        }
+        if (vault.legendaryMagic) {
+            addFromPool(function(c) { return c.type === "magic" && c.rarity === "LEGENDARY"; }, vault.legendaryMagic.count || 2);
+        }
+
+        // Add boss threats
+        if (vault.bossThreats && vault.bossThreats.count > 0) {
+            let diffRange = vault.bossThreats.difficultyRange || [12, 16];
+            for (let i = 0; i < vault.bossThreats.count; i++) {
+                let diff = diffRange[0] + Math.floor(Math.random() * (diffRange[1] - diffRange[0] + 1));
+                let boss = createThreatEncounter(diff);
+                boss._vaultBoss = true;
+                boss.rarity = "LEGENDARY";
+                boss.name = "Boss: " + boss.name;
+                deck.push(boss);
+            }
+        }
+
+        shuffle(deck);
+        console.log("[CardGame v2] Treasure vault assembled:", deck.length, "cards",
+            "(" + deck.filter(function(c) { return c._vaultBoss; }).length + " bosses)");
+        return deck;
+    }
+
+    /**
+     * Draw the top card from the treasure vault.
+     * @param {Object} state - Game state with treasureVault
+     * @param {string} triggerName - What triggered the draw (for logging)
+     * @returns {Object|null} { type: "boss"|"item", card } or null if vault empty
+     */
+    function drawFromVault(state, triggerName) {
+        if (!state.treasureVault || !state.treasureVault.deck || state.treasureVault.deck.length === 0) {
+            console.log("[CardGame v2] Vault draw (" + triggerName + "): vault empty");
+            return null;
+        }
+        let card = state.treasureVault.deck.shift();
+        state.treasureVault.drawn.push(card);
+        let drawType = card._vaultBoss ? "boss" : "item";
+        console.log("[CardGame v2] Vault draw (" + triggerName + "):", drawType, "-", card.name);
+        return { type: drawType, card: card };
+    }
+
     // ── Export ───────────────────────────────────────────────────────────
     Object.assign(window.CardGame.Engine, {
         loadEncounterData,
@@ -447,7 +534,9 @@
         checkNat1Threats,
         insertBeginningThreats,
         drawScenarioCard,
-        checkEndThreat
+        checkEndThreat,
+        assembleTreasureVault,
+        drawFromVault
     });
 
     console.log('[CardGame] Engine/encounters loaded');

@@ -184,7 +184,18 @@
     }
 
     // ── Equip Phase UI ────────────────────────────────────────────────
+
+    function canEquipToSlot(card, slotKey) {
+        let EQUIP_SLOT_MAP = CardGame.Constants.EQUIP_SLOT_MAP;
+        let cardSlot = card.slot || (card.type === "apparel" ? "Body" : null);
+        if (!cardSlot || !EQUIP_SLOT_MAP[cardSlot]) return false;
+        let validSlots = EQUIP_SLOT_MAP[cardSlot];
+        return validSlots.indexOf(slotKey) >= 0;
+    }
+
     function EquipPhaseUI() {
+        let selectedCard = null;
+
         return {
             view() {
                 let gs = GS().state;
@@ -192,39 +203,109 @@
                 if (!gameState) return null;
 
                 let player = gameState.player;
-                let equipped = player.equipped;
+                let equipped = player.equipped || {};
+
+                // Equippable cards from hand and cardStack
+                let equippableHand = (player.hand || []).filter(function(c) {
+                    return (c.type === "item" && c.subtype === "weapon") || c.type === "apparel";
+                });
+                let equippableStack = (player.cardStack || []).filter(function(c) {
+                    return ((c.type === "item" && c.subtype === "weapon") || c.type === "apparel") &&
+                        !Object.values(equipped).includes(c);
+                });
+                let allEquippable = equippableHand.concat(equippableStack);
+
+                function onEquip(slotKey) {
+                    if (!selectedCard) return;
+                    GS().equipCard(player, selectedCard, slotKey);
+                    selectedCard = null;
+                }
+                function onUnequip(slotKey) {
+                    GS().unequipCard(player, slotKey);
+                    selectedCard = null;
+                }
+
+                let slotIcons = { head: "hard_hat", body: "shield", handL: "back_hand", handR: "front_hand", feet: "steps", ring: "circle", back: "camping" };
 
                 return m("div", { class: "cg2-phase-panel cg2-equip-panel" }, [
-                    m("h2", "Equip Phase"),
-                    m("p", "Adjust your equipment before combat. (Free action)"),
-                    m("div", { class: "cg2-equip-slots" }, [
-                        m(EquipSlot, { slot: "head", label: "Head", item: equipped.head }),
-                        m(EquipSlot, { slot: "body", label: "Body", item: equipped.body }),
-                        m(EquipSlot, { slot: "handL", label: "Left Hand", item: equipped.handL }),
-                        m(EquipSlot, { slot: "handR", label: "Right Hand", item: equipped.handR }),
-                        m(EquipSlot, { slot: "feet", label: "Feet", item: equipped.feet }),
-                        m(EquipSlot, { slot: "ring", label: "Ring", item: equipped.ring }),
-                        m(EquipSlot, { slot: "back", label: "Back", item: equipped.back })
+                    m("h2", [
+                        m("span", { class: "material-symbols-outlined", style: "vertical-align:middle;margin-right:8px" }, "inventory_2"),
+                        "Equipment Phase"
                     ]),
+                    m("p", { class: "cg2-equip-explain" }, "Click an item below, then click a slot to equip it. Click a filled slot to unequip."),
+
+                    // Equipment slots grid
+                    m("div", { class: "cg2-equip-slots" }, [
+                        ["head", "Head"], ["body", "Body"], ["handL", "Left Hand"], ["handR", "Right Hand"],
+                        ["feet", "Feet"], ["ring", "Ring"], ["back", "Back"]
+                    ].map(function(pair) {
+                        let slotKey = pair[0], label = pair[1];
+                        let item = equipped[slotKey];
+                        let canAccept = selectedCard && canEquipToSlot(selectedCard, slotKey);
+                        // Don't show as droppable if two-handed card already in the other hand slot
+                        let isTwoHandedDupe = item && equipped.handL === equipped.handR && (slotKey === "handL" || slotKey === "handR");
+
+                        return m("div", {
+                            class: "cg2-equip-slot" +
+                                (item ? " cg2-slot-filled" : "") +
+                                (canAccept ? " cg2-slot-accepts" : "") +
+                                (isTwoHandedDupe && slotKey === "handL" ? " cg2-slot-twohand" : ""),
+                            onclick: function() {
+                                if (item && !canAccept) {
+                                    onUnequip(slotKey);
+                                } else if (canAccept) {
+                                    onEquip(slotKey);
+                                }
+                            }
+                        }, [
+                            m("div", { class: "cg2-slot-header" }, [
+                                m("span", { class: "material-symbols-outlined cg2-slot-icon" }, slotIcons[slotKey] || "category"),
+                                m("span", { class: "cg2-slot-label" }, label)
+                            ]),
+                            item
+                                ? m("div", { class: "cg2-slot-item-detail" }, [
+                                    m("div", { class: "cg2-slot-item-name" }, item.name),
+                                    m("div", { class: "cg2-slot-item-stats" }, [
+                                        item.atk ? m("span", { class: "cg2-slot-stat cg2-stat-atk" }, "+" + item.atk + " ATK") : null,
+                                        item.def ? m("span", { class: "cg2-slot-stat cg2-stat-def" }, "+" + item.def + " DEF") : null,
+                                        item.durability != null ? m("span", { class: "cg2-slot-stat cg2-stat-dur" }, item.durability + " dur") : null
+                                    ])
+                                ])
+                                : m("span", { class: "cg2-slot-empty" }, canAccept ? "Click to equip" : "Empty")
+                        ]);
+                    })),
+
+                    // Available equipment from hand/stack
+                    allEquippable.length > 0 ? m("div", { class: "cg2-equip-hand" }, [
+                        m("div", { class: "cg2-equip-hand-title" }, "Available Equipment"),
+                        m("div", { class: "cg2-equip-hand-cards" },
+                            allEquippable.map(function(card) {
+                                let isSelected = selectedCard === card;
+                                return m("div", {
+                                    class: "cg2-equip-hand-card" + (isSelected ? " cg2-equip-selected" : ""),
+                                    onclick: function() {
+                                        selectedCard = isSelected ? null : card;
+                                    }
+                                }, [
+                                    m("div", { class: "cg2-equip-card-name" }, card.name),
+                                    m("div", { class: "cg2-equip-card-stats" }, [
+                                        card.atk ? m("span", { class: "cg2-equip-card-stat" }, "ATK +" + card.atk) : null,
+                                        card.def ? m("span", { class: "cg2-equip-card-stat" }, "DEF +" + card.def) : null,
+                                        card.slot ? m("span", { class: "cg2-equip-card-slot" }, card.slot) : null
+                                    ])
+                                ]);
+                            })
+                        )
+                    ]) : null,
+
                     m("button", {
                         class: "cg2-btn cg2-btn-primary",
                         style: { marginTop: "16px" },
-                        onclick() { GS().advancePhase(); }
-                    }, "Continue to Placement Phase")
-                ]);
-            }
-        };
-    }
-
-    function EquipSlot() {
-        return {
-            view(vnode) {
-                let { slot, label, item } = vnode.attrs;
-                return m("div", { class: "cg2-equip-slot" + (item ? " cg2-slot-filled" : "") }, [
-                    m("span", { class: "cg2-slot-label" }, label),
-                    item
-                        ? m("span", { class: "cg2-slot-item" }, item.name)
-                        : m("span", { class: "cg2-slot-empty" }, "Empty")
+                        onclick: function() { GS().advancePhase(); }
+                    }, [
+                        m("span", { class: "material-symbols-outlined", style: "vertical-align:middle;margin-right:4px" }, "arrow_forward"),
+                        "Continue to Placement Phase"
+                    ])
                 ]);
             }
         };
@@ -603,6 +684,64 @@
                     }, 3000);
                 }
 
+                // Weapon durability: decrement for each Attack action placed
+                gameState.durabilityChanges = [];
+                let decrementWeaponDurability = NS.Engine.decrementWeaponDurability;
+                if (decrementWeaponDurability) {
+                    let attackers = new Set();
+                    (gameState.actionBar.positions || []).forEach(function(pos) {
+                        if (!pos.stack || !pos.stack.coreCard) return;
+                        if (pos.stack.coreCard.name !== "Attack") return;
+                        let actor = pos.owner === "player" ? gameState.player : gameState.opponent;
+                        if (attackers.has(actor)) return;  // One decrement per actor per round
+                        attackers.add(actor);
+                        let broken = decrementWeaponDurability(actor);
+                        broken.forEach(function(b) {
+                            gameState.durabilityChanges.push({
+                                owner: pos.owner,
+                                cardName: b.card.name,
+                                broken: true,
+                                remaining: 0
+                            });
+                        });
+                        // Track surviving weapon durability
+                        if (actor.equipped) {
+                            [actor.equipped.handL, actor.equipped.handR].forEach(function(card) {
+                                if (card && card.type === "item" && card.subtype === "weapon" && card.durability != null) {
+                                    gameState.durabilityChanges.push({
+                                        owner: pos.owner,
+                                        cardName: card.name,
+                                        broken: false,
+                                        remaining: card.durability
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+
+                // Jackpot vault draw: if pot had 5+ cards, draw from vault
+                gameState._vaultDraw = null;
+                if (gameState._jackpotTriggered && NS.Engine.drawFromVault) {
+                    let draw = NS.Engine.drawFromVault(gameState, "pot_jackpot_5plus");
+                    if (draw) {
+                        gameState._vaultDraw = draw;
+                        if (draw.type === "boss") {
+                            // Boss → queue as carried threat for next round
+                            if (!gameState.carriedThreats) gameState.carriedThreats = [];
+                            draw.card.target = gameState._jackpotWinner || "player";
+                            gameState.carriedThreats.push(draw.card);
+                            console.log("[CardGame v2] Vault boss queued:", draw.card.name);
+                        } else {
+                            // Item → add to jackpot winner's hand
+                            let winner = gameState._jackpotWinner || "player";
+                            let actor = winner === "player" ? gameState.player : gameState.opponent;
+                            actor.hand.push(draw.card);
+                            console.log("[CardGame v2] Vault item →", winner + "'s hand:", draw.card.name);
+                        }
+                    }
+                }
+
                 gameState.cleanupApplied = true;
                 console.log("[CardGame v2] Cleanup - Round winner:", gameState.roundWinner,
                     "| Player HP:", gameState.player.hp, "(+" + gameState.player.hpRecovery + ")",
@@ -685,6 +824,37 @@
                         gameState.pot.length > 0 ? m("div", { class: "cg2-pot-carries" },
                             "Pot carries over: " + gameState.pot.length + " cards"
                         ) : null,
+                        // Jackpot banner
+                        gameState._jackpotTriggered ? m("div", { class: "cg2-jackpot-banner" }, [
+                            m("span", { class: "material-symbols-outlined cg2-jackpot-icon" }, "auto_awesome"),
+                            " JACKPOT! Pot had " + (gameState._jackpotPotSize || "5+") + " cards!"
+                        ]) : null,
+                        // Vault draw reveal
+                        gameState._vaultDraw ? m("div", {
+                            class: "cg2-vault-draw" + (gameState._vaultDraw.type === "boss" ? " cg2-vault-boss" : "")
+                        }, [
+                            m("div", { class: "cg2-vault-draw-header" }, [
+                                m("span", { class: "material-symbols-outlined" },
+                                    gameState._vaultDraw.type === "boss" ? "skull" : "diamond"),
+                                " Treasure Vault"
+                            ]),
+                            gameState._vaultDraw.type === "boss"
+                                ? m("div", { class: "cg2-vault-boss-warning" }, [
+                                    m("strong", gameState._vaultDraw.card.name),
+                                    m("div", { style: "font-size:11px;margin-top:4px;color:#ef9a9a" },
+                                        "A boss creature emerges! It will attack next round."),
+                                    m("div", { style: "font-size:10px;margin-top:2px;color:#aaa" },
+                                        "ATK " + gameState._vaultDraw.card.atk + " | DEF " + gameState._vaultDraw.card.def + " | HP " + gameState._vaultDraw.card.hp)
+                                ])
+                                : m("div", { class: "cg2-vault-item-gained" }, [
+                                    m("strong", gameState._vaultDraw.card.name),
+                                    m("div", { style: "font-size:11px;margin-top:4px;color:#81c784" },
+                                        (gameState._jackpotWinner === "player" ? "Added to your hand!" : "Opponent gained this item.")),
+                                    gameState._vaultDraw.card.rarity ? m("span", {
+                                        class: "cg2-loot-item cg2-loot-" + (gameState._vaultDraw.card.rarity || "EPIC").toLowerCase()
+                                    }, gameState._vaultDraw.card.rarity) : null
+                                ])
+                        ]) : null,
                         // Loot summary
                         gameState.lootClaimed && gameState.lootClaimed.length > 0
                             ? m("div", { class: "cg2-loot-summary" }, [
@@ -704,6 +874,26 @@
                                         ])
                                     )
                                 )
+                            ]) : null,
+
+                        // Durability changes summary
+                        gameState.durabilityChanges && gameState.durabilityChanges.length > 0
+                            ? m("div", { class: "cg2-durability-summary" }, [
+                                m("div", { class: "cg2-durability-title" }, [
+                                    m("span", { class: "material-symbols-outlined", style: "font-size:14px;vertical-align:middle" }, "build"),
+                                    " Equipment Wear"
+                                ]),
+                                gameState.durabilityChanges.map(function(change, i) {
+                                    return m("div", {
+                                        key: i,
+                                        class: "cg2-durability-item" + (change.broken ? " cg2-durability-broken" : "")
+                                    }, [
+                                        m("span", change.cardName),
+                                        change.broken
+                                            ? m("span", { class: "cg2-durability-destroyed" }, " DESTROYED \u2192 Pot")
+                                            : m("span", { class: "cg2-durability-value" }, " (" + change.remaining + " dur)")
+                                    ]);
+                                })
                             ]) : null,
 
                         // Scenario card display (rendered as actual card via CardFace)

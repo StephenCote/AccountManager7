@@ -18,7 +18,11 @@
                 "high-fantasy": { "trade": "Knight" },
                 "dark-medieval": { "trade": "Man-at-Arms" },
                 "sci-fi": { "trade": "Marine" },
-                "post-apocalypse": { "trade": "Enforcer" }
+                "post-apocalypse": { "trade": "Enforcer" },
+                "steampunk": { "trade": "Ironclad" },
+                "cyberpunk": { "trade": "Street Samurai" },
+                "space-opera": { "trade": "Vanguard" },
+                "horror": { "trade": "Monster Hunter" }
             }
         },
         {
@@ -32,7 +36,11 @@
                 "high-fantasy": { "trade": "Wizard" },
                 "dark-medieval": { "trade": "Alchemist" },
                 "sci-fi": { "trade": "Psionic" },
-                "post-apocalypse": { "trade": "Mutant" }
+                "post-apocalypse": { "trade": "Mutant" },
+                "steampunk": { "trade": "Aethermancer" },
+                "cyberpunk": { "trade": "Netrunner" },
+                "space-opera": { "trade": "Psion" },
+                "horror": { "trade": "Occultist" }
             }
         },
         {
@@ -46,7 +54,11 @@
                 "high-fantasy": { "trade": "Thief" },
                 "dark-medieval": { "trade": "Cutpurse" },
                 "sci-fi": { "trade": "Hacker" },
-                "post-apocalypse": { "trade": "Scavenger" }
+                "post-apocalypse": { "trade": "Scavenger" },
+                "steampunk": { "trade": "Gadgeteer" },
+                "cyberpunk": { "trade": "Shadow Runner" },
+                "space-opera": { "trade": "Smuggler" },
+                "horror": { "trade": "Grave Robber" }
             }
         },
         {
@@ -60,7 +72,11 @@
                 "high-fantasy": { "trade": "Priest" },
                 "dark-medieval": { "trade": "Monk" },
                 "sci-fi": { "trade": "Medic" },
-                "post-apocalypse": { "trade": "Healer" }
+                "post-apocalypse": { "trade": "Healer" },
+                "steampunk": { "trade": "Gearpriest" },
+                "cyberpunk": { "trade": "Ripperdoc" },
+                "space-opera": { "trade": "Ship Medic" },
+                "horror": { "trade": "Exorcist" }
             }
         },
         {
@@ -74,7 +90,11 @@
                 "high-fantasy": { "trade": "Ranger" },
                 "dark-medieval": { "trade": "Forester" },
                 "sci-fi": { "trade": "Scout" },
-                "post-apocalypse": { "trade": "Tracker" }
+                "post-apocalypse": { "trade": "Tracker" },
+                "steampunk": { "trade": "Aeronaut" },
+                "cyberpunk": { "trade": "Drone Jockey" },
+                "space-opera": { "trade": "Pathfinder" },
+                "horror": { "trade": "Stalker" }
             }
         },
         {
@@ -88,7 +108,11 @@
                 "high-fantasy": { "trade": "Bard" },
                 "dark-medieval": { "trade": "Minstrel" },
                 "sci-fi": { "trade": "Diplomat" },
-                "post-apocalypse": { "trade": "Storyteller" }
+                "post-apocalypse": { "trade": "Storyteller" },
+                "steampunk": { "trade": "Broadcasteer" },
+                "cyberpunk": { "trade": "Media Star" },
+                "space-opera": { "trade": "Ambassador" },
+                "horror": { "trade": "Mesmerist" }
             }
         },
         {
@@ -102,7 +126,11 @@
                 "high-fantasy": { "trade": "Paladin" },
                 "dark-medieval": { "trade": "Shield-Bearer" },
                 "sci-fi": { "trade": "Heavy" },
-                "post-apocalypse": { "trade": "Guardian" }
+                "post-apocalypse": { "trade": "Guardian" },
+                "steampunk": { "trade": "Steamguard" },
+                "cyberpunk": { "trade": "Corporate Agent" },
+                "space-opera": { "trade": "Sentinel" },
+                "horror": { "trade": "Inquisitor" }
             }
         },
         {
@@ -116,7 +144,11 @@
                 "high-fantasy": { "trade": "Barbarian" },
                 "dark-medieval": { "trade": "Mercenary" },
                 "sci-fi": { "trade": "Shock Trooper" },
-                "post-apocalypse": { "trade": "Raider" }
+                "post-apocalypse": { "trade": "Raider" },
+                "steampunk": { "trade": "Brawler" },
+                "cyberpunk": { "trade": "Cyber Berserker" },
+                "space-opera": { "trade": "War Chief" },
+                "horror": { "trade": "Feral Hunter" }
             }
         },
         {
@@ -130,7 +162,11 @@
                 "high-fantasy": { "trade": "Assassin" },
                 "dark-medieval": { "trade": "Poison Maker" },
                 "sci-fi": { "trade": "Operative" },
-                "post-apocalypse": { "trade": "Hunter" }
+                "post-apocalypse": { "trade": "Hunter" },
+                "steampunk": { "trade": "Saboteur" },
+                "cyberpunk": { "trade": "Wetwork Specialist" },
+                "space-opera": { "trade": "Bounty Hunter" },
+                "horror": { "trade": "Nightblade" }
             }
         },
         {
@@ -144,7 +180,11 @@
                 "high-fantasy": { "trade": "Spellblade" },
                 "dark-medieval": { "trade": "Templar" },
                 "sci-fi": { "trade": "Tech-Mage" },
-                "post-apocalypse": { "trade": "Psyker" }
+                "post-apocalypse": { "trade": "Psyker" },
+                "steampunk": { "trade": "Arcane Engineer" },
+                "cyberpunk": { "trade": "Combat Hacker" },
+                "space-opera": { "trade": "Force Adept" },
+                "horror": { "trade": "Warlock" }
             }
         },
         {
@@ -158,7 +198,11 @@
                 "high-fantasy": { "trade": "Sage" },
                 "dark-medieval": { "trade": "Herbalist" },
                 "sci-fi": { "trade": "Engineer" },
-                "post-apocalypse": { "trade": "Mechanic" }
+                "post-apocalypse": { "trade": "Mechanic" },
+                "steampunk": { "trade": "Inventor" },
+                "cyberpunk": { "trade": "Tech Specialist" },
+                "space-opera": { "trade": "Xenobiologist" },
+                "horror": { "trade": "Paranormal Investigator" }
             }
         },
         {
@@ -172,7 +216,11 @@
                 "high-fantasy": { "trade": "Lord" },
                 "dark-medieval": { "trade": "Squire" },
                 "sci-fi": { "trade": "Commander" },
-                "post-apocalypse": { "trade": "Chief" }
+                "post-apocalypse": { "trade": "Chief" },
+                "steampunk": { "trade": "Aristocrat" },
+                "cyberpunk": { "trade": "Fixer" },
+                "space-opera": { "trade": "Admiral" },
+                "horror": { "trade": "Patriarch" }
             }
         }
     ]
