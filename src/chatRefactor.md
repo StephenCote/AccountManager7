@@ -6,7 +6,11 @@
 2. [Identified Issues & Limitations](#2-identified-issues--limitations)
 3. [Refactor Proposals](#3-refactor-proposals)
 4. [Memory System Integration](#4-memory-system-integration)
-5. [Implementation Phases](#5-implementation-phases)
+5. [Always-Stream Backend with Buffer & Timeout](#5-always-stream-backend-with-buffer--timeout)
+6. [LLM Configuration Options Audit](#6-llm-configuration-options-audit)
+7. [Implementation Phases](#7-implementation-phases)
+8. [Policy-Based LLM Response Regulation](#8-policy-based-llm-response-regulation)
+9. [Testing Requirements](#9-testing-requirements)
 
 ---
 
@@ -462,6 +466,202 @@ Bring `magic8DirectorPrompt.json` into the `olio.llm.promptTemplate` schema:
 
 This unifies all prompt types under one schema, making them manageable through the same UI and API.
 
+### 3.6 Token Externalization & Custom Recursive Tokens
+
+#### 3.6.1 Problem: Tokens Are Hardcoded in Java
+
+All ~66 template substitutions live in `PromptUtil.java` as compiled Java code. Adding a new token — even a simple one like `${custom.worldLore}` — requires modifying `TemplatePatternEnumType`, `PromptUtil`, rebuilding, and redeploying. Users cannot create their own tokens through the UX.
+
+Analysis of the current 66 patterns reveals three categories:
+
+| Category | Count | Examples | Can Externalize? |
+|---|---|---|---|
+| **Simple field lookups** | 12 | `${system.firstName}`, `${user.gender}`, `${nlp.command}` | Yes — pure field reads |
+| **Format/enum mappings** | 26 | `${system.ppro}` → "his"/"her", `${rating}` → enum string, `${perspective}` → config list join | Yes — mapping tables + format strings |
+| **Computed/dynamic** | 22 | `${scene.auto}`, `${system.characterDesc}`, `${profile.leader}`, `${episode}`, `${dynamicRules}` | No — requires logic, utility calls, conditionals |
+
+~38 of 66 tokens are simple enough to externalize. The remaining 22 involve calls to `NarrativeUtil`, `PersonalityUtil`, `GroupDynamicUtil`, `McpContextBuilder`, compatibility calculations, random selection, and multi-branch conditionals. These must stay in code.
+
+#### 3.6.2 Design: Two-Tier Token Resolution
+
+**Tier 1 — Built-in computed tokens (remain in Java):**
+
+These are the 22 tokens that require code execution. They run first in the pipeline and produce concrete text:
+
+```
+${scene.auto}              → NarrativeUtil scene building
+${system.characterDesc}    → NarrativeUtil.describe()
+${profile.romanceCompat}   → multi-condition compatibility check
+${episode}                 → episode guidance assembly with loops
+${dynamicRules}            → conditional rule numbering
+${memory.context}          → memory retrieval pipeline
+${interaction.description} → random selection + NarrativeUtil
+${episode.reminder}        → MCP block builder
+...
+```
+
+**Tier 2 — Externalized tokens (JSON config, UX-manageable):**
+
+The remaining tokens are defined in a JSON mapping file. Each entry specifies a source path, optional format/transform, and optional default:
+
+```json
+{
+  "schema": "olio.llm.tokenMap",
+  "name": "Default Token Map",
+  "tokens": {
+    "system.firstName": {
+      "source": "chatConfig.systemCharacter.firstName",
+      "type": "field"
+    },
+    "system.ppro": {
+      "source": "chatConfig.systemCharacter.gender",
+      "type": "genderMap",
+      "map": { "male": "his", "female": "her", "other": "their" }
+    },
+    "rating": {
+      "source": "chatConfig.rating",
+      "type": "enumValue"
+    },
+    "ratingMpa": {
+      "source": "chatConfig.rating",
+      "type": "enumMethod",
+      "method": "getESRBMPA"
+    },
+    "perspective": {
+      "source": "promptConfig.${system.gender}Perspective",
+      "type": "listJoin",
+      "separator": "\n"
+    }
+  }
+}
+```
+
+Token types:
+- `field` — Direct property read from a dot-path
+- `literal` — Static string value
+- `genderMap` — Gender-based lookup table
+- `enumValue` — Enum `.value()` call
+- `enumMethod` — Static enum method call
+- `listJoin` — Join a `list<string>` field with separator
+- `composite` — Resolves to a string that contains other `${...}` tokens (recursive)
+
+#### 3.6.3 Custom Tokens with Recursive Resolution
+
+Users can define custom tokens that compose from existing tokens. These are resolved recursively — the custom token's value is itself a template string that undergoes token replacement:
+
+```json
+{
+  "schema": "olio.llm.tokenMap",
+  "name": "My RPG Tokens",
+  "extends": "Default Token Map",
+  "tokens": {
+    "custom.characterIntro": {
+      "type": "composite",
+      "value": "${system.firstName} is a ${system.asg} ${system.race} who works as a ${system.trade}."
+    },
+    "custom.worldContext": {
+      "type": "composite",
+      "value": "This story takes place in ${custom.worldName}. ${custom.worldLore}"
+    },
+    "custom.worldName": {
+      "type": "literal",
+      "value": "Aethermoor"
+    },
+    "custom.worldLore": {
+      "type": "literal",
+      "value": "A fractured realm where magic flows through crystalline ley lines and the three kingdoms wage an uneasy truce."
+    },
+    "custom.therapistFramework": {
+      "type": "composite",
+      "value": "${system.firstName} is a licensed therapist specializing in ${custom.specialty}. ${system.ppro} approach is ${custom.approach}."
+    },
+    "custom.specialty": {
+      "type": "literal",
+      "value": "cognitive behavioral therapy"
+    },
+    "custom.approach": {
+      "type": "literal",
+      "value": "empathetic, non-judgmental, and evidence-based"
+    }
+  }
+}
+```
+
+**Resolution order:**
+
+```
+Pass 1: Computed tokens (Tier 1 — Java code)
+  ${scene.auto} → "A foggy marketplace at dawn..."
+  ${system.characterDesc} → "Tall, scarred warrior with..."
+  ${dynamicRules} → "1. Stay in character.\n2. ..."
+  ${memory.context} → "<mcp:context>...</mcp:context>"
+
+Pass 2: Externalized tokens (Tier 2 — JSON config)
+  ${system.firstName} → "Kael"
+  ${system.asg} → "34 year old male warrior"
+  ${rating} → "RC"
+
+Pass 3: Custom composite tokens (recursive, max depth 5)
+  ${custom.characterIntro} → "Kael is a 34 year old male warrior elf who works as a warrior."
+  ${custom.worldContext} → "This story takes place in Aethermoor. A fractured realm where..."
+
+Pass 4: Cleanup — strip any remaining unreplaced ${custom.*} tokens
+```
+
+**Recursion safety:** Maximum resolution depth of 5 passes. If a token still contains `${...}` after 5 passes, it's left as-is (the validator from Phase 5 will flag it). Circular references (`${a}` → `${b}` → `${a}`) are detected by tracking visited tokens per resolution chain.
+
+#### 3.6.4 UX Token Management
+
+The token map is stored as an `olio.llm.tokenMap` model (new schema) in the user's `~/Chat` directory alongside promptConfigs and chatConfigs. The UX provides:
+
+1. **Token browser** — Lists all available tokens (built-in + custom), grouped by category. Shows each token's source, current resolved value (with sample character data), and whether it's built-in or custom.
+
+2. **Custom token editor** — Create/edit/delete custom tokens. For `composite` type, provides a template editor with autocomplete for `${...}` token names. Live preview shows the resolved result.
+
+3. **Token map selector** — Each promptConfig references a token map. Different prompts can use different custom tokens. The "Default Token Map" contains all built-in mappings and is always available as a base.
+
+4. **Import/export** — Token maps can be exported as JSON and shared between users or loaded from resources.
+
+#### 3.6.5 Backward Compatibility
+
+- The existing `TemplatePatternEnumType` enum and `PromptUtil` pipeline continue to work unchanged
+- All 66 current patterns remain as compiled Java. They are NOT removed.
+- The externalized token map provides a PARALLEL resolution path that runs alongside the existing pipeline
+- Custom tokens use the `${custom.*}` namespace, which does not conflict with any existing pattern
+- Existing prompts with no custom tokens are unaffected — Tier 2/3 resolution produces no changes when no externalized/custom tokens are present
+- Migration is opt-in: users who want custom tokens create a token map; users who don't, change nothing
+
+#### 3.6.6 Which Tokens MUST Stay in Code
+
+These 22 tokens involve logic that cannot be safely expressed in a JSON config:
+
+| Token | Why It Must Stay |
+|---|---|
+| `${scene.auto}` | Multi-branch conditional: if episode → empty; else assembles from scenel/cscene/setting |
+| `${system.characterDesc}` | Calls `NarrativeUtil.describe()` — full narrative generation |
+| `${system.characterDescLight}` | Same, with different flags |
+| `${system.characterDescPublic}` | Same, with public flag |
+| `${user.characterDesc}` | Same for user character |
+| `${user.characterDescLight}` | Same |
+| `${user.characterDescPublic}` | Same |
+| `${episode}` | Builds EPISODE GUIDANCE block from theme, stages list, previous summary |
+| `${episode.reminder}` | MCP block builder with nested JSON structure |
+| `${nlp.reminder}` | Conditional MCP builder |
+| `${setting}` | "random" → `NarrativeUtil.getRandomSetting()`, else prefix formatting |
+| `${interaction.description}` | Random selection from list + `NarrativeUtil.describeInteraction()` |
+| `${profile.romanceCompat}` | Multi-condition: age bounds, rating, gender, compatibility enum |
+| `${profile.leader}` | `PersonalityUtil.identifyLeaderPersonality()` + contest logic |
+| `${profile.raceCompat}` | `CompatibilityEnumType.compare()` enum logic |
+| `${profile.ageCompat}` | `profComp.doesAgeCrossBoundary()` method call |
+| `${user.consent}` | Complex conditional from rating + NLP state |
+| `${system.race}` | Race type lookup with filtering + template composition |
+| `${user.race}` | Same |
+| `${system.asg}` | Formatted string from age + gender + trade list (borderline — could externalize with a format string) |
+| `${user.asg}` | Same |
+| `${dynamicRules}` | Conditional rule assembly with sequential numbering |
+
+These tokens can still be USED inside custom composite tokens (e.g., `${custom.intro}` = `"Meet ${system.characterDesc}"`). They just can't be REDEFINED via JSON.
+
 ---
 
 ## 4. Memory System Integration
@@ -734,7 +934,1335 @@ memory.set("characterId2", id2);
 
 ---
 
-## 5. Implementation Phases
+## 5. Always-Stream Backend with Buffer & Timeout
+
+### 5.1 Problem
+
+Currently, `Chat.chat()` has two completely separate code paths:
+- **Non-streaming** (`stream=false`): Synchronous `ClientUtil.postToRecord()` — blocks until the full response arrives. There is NO way to cancel a runaway request. If the LLM hangs or produces an enormous response, the thread is stuck.
+- **Streaming** (`stream=true`): Async `ClientUtil.postToRecordAndStream()` with `CompletableFuture` — supports cancellation via `listener.isStopStream()`. But only available when the client opts into streaming.
+
+There is no response timeout on the HTTP client (only a 10-second connect timeout in `ClientUtil.postToRecordAndStream()`). A slow or hung LLM can block indefinitely.
+
+### 5.2 Design: Always Stream, Optionally Buffer
+
+**Principle:** The backend ALWAYS uses the streaming code path to the LLM. The `stream` flag on `chatConfig` only controls whether chunks are forwarded to the client in real-time or buffered and returned as a single response.
+
+```
+                        ┌─ stream=true  → forward chunks to client via WebSocket
+LLM ──stream──> Chat ──┤
+                        └─ stream=false → buffer chunks internally, return complete response
+```
+
+**Changes to `Chat.java`:**
+
+```java
+// chat() method — ALWAYS streams from LLM
+public OpenAIResponse chat(OpenAIRequest req) {
+    boolean clientStream = req.get("stream");
+
+    // ALWAYS request streaming from LLM for cancellability
+    req.set("stream", true);
+
+    OpenAIResponse aresp = new OpenAIResponse();
+    CompletableFuture<HttpResponse<Stream<String>>> streamFuture =
+        ClientUtil.postToRecordAndStream(getServiceUrl(req), authorizationToken, ser);
+
+    if (!clientStream) {
+        // BUFFERED MODE: stream from LLM but collect internally, block until done
+        // Uses orTimeout() for cancellation
+        try {
+            streamFuture
+                .orTimeout(requestTimeout, TimeUnit.SECONDS)
+                .thenAccept(response -> {
+                    response.body()
+                        .takeWhile(line -> !listener.isStopStream(req))
+                        .forEach(line -> processStreamChunk(line, aresp));
+                })
+                .join();  // Block until complete
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof TimeoutException) {
+                listener.onerror(user, req, aresp, "Request timed out after " + requestTimeout + "s");
+            } else {
+                listener.onerror(user, req, aresp, e.getMessage());
+            }
+        }
+        return aresp;
+    }
+    else {
+        // STREAMING MODE: forward chunks to listener as they arrive (existing behavior)
+        streamFuture
+            .orTimeout(requestTimeout, TimeUnit.SECONDS)
+            .thenAccept(response -> {
+                response.body()
+                    .takeWhile(line -> !listener.isStopStream(req))
+                    .forEach(line -> {
+                        processStreamChunk(line, aresp);
+                        listener.onupdate(user, req, aresp, lastChunk);
+                    });
+            })
+            .whenComplete((result, error) -> { /* existing completion logic */ })
+            .exceptionally(ex -> { /* existing error logic */ });
+        return null;  // Response delivered via callbacks
+    }
+}
+```
+
+**Key benefits:**
+- Every request is cancellable via `listener.stopStream()` regardless of `stream` flag
+- `CompletableFuture.orTimeout()` provides a hard timeout for hung LLM connections
+- The `doStop()` client action works for both streaming and non-streaming modes
+- Extract `processStreamChunk()` as a shared method to eliminate duplicated parsing logic
+
+### 5.3 Timeout Configuration
+
+**Add to `chatConfigModel.json`:**
+
+```json
+{
+    "name": "requestTimeout",
+    "type": "int",
+    "default": 120,
+    "description": "Maximum seconds to wait for an LLM response before cancelling. Applies to both streaming and non-streaming modes. 0 = no timeout."
+}
+```
+
+**Add to `ClientUtil.postToRecordAndStream()`:**
+
+```java
+// Accept timeout parameter
+public static CompletableFuture<HttpResponse<Stream<String>>> postToRecordAndStream(
+    String url, String authorizationToken, String json, int timeoutSeconds) {
+
+    HttpClient.Builder builder = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
+        .connectTimeout(Duration.ofSeconds(10));
+
+    if (timeoutSeconds > 0) {
+        // Per-request read timeout
+        builder.readTimeout(Duration.ofSeconds(timeoutSeconds));
+    }
+
+    HttpClient client = builder.build();
+    // ... rest unchanged ...
+}
+```
+
+---
+
+## 6. LLM Configuration Options Audit
+
+### 6.1 Current `olio.llm.chatOptions` Issues
+
+| Field | Current Default | Current Range | Issue | Recommended Fix |
+|-------|----------------|---------------|-------|----------------|
+| `top_k` | 50 | 0-1 | **`maxValue: 1` is wrong.** `top_k` is an integer count of candidate tokens, not a probability. Valid range is 0-200+ | Change `maxValue` to 500 |
+| `top_p` | 1.0 | 0.0-1.0 | Default 1.0 means no nucleus sampling. Reasonable but could be lower for focused output | OK as base default |
+| `min_p` | 0.1 | 0.0-1.0 | OK | OK |
+| `typical_p` | 0.85 | 0.0-1.0 | OK, but note: `applyChatOptions()` maps this to OpenAI's `presence_penalty` which is a different concept (range -2.0 to 2.0). This is a mapping bug. | Fix mapping in `applyChatOptions()` |
+| `temperature` | 1.0 | 0.0-2.0 | OK as base default, but too high for analytical tasks | OK as base; override via chatConfig templates |
+| `repeat_penalty` | 1.2 | 0.0-2.0 | OK, but mapped to `frequency_penalty` which has different semantics in OpenAI (range -2.0 to 2.0) | Fix mapping; add separate `frequency_penalty` and `presence_penalty` fields |
+| `num_ctx` | 8192 | unbounded | Low for modern models (GPT-4o supports 128k, Claude supports 200k). OK for Ollama local models. | OK as default for local; chatConfig templates override for cloud |
+| `num_gpu` | 1 | unbounded | Ollama-specific. Irrelevant for OpenAI/Anthropic. | OK, Ollama-specific |
+| **MISSING** | - | - | No `max_tokens` / `max_completion_tokens` field | Add field |
+| **MISSING** | - | - | No `frequency_penalty` (OpenAI-native) | Add field |
+| **MISSING** | - | - | No `presence_penalty` (OpenAI-native) | Add field |
+| **MISSING** | - | - | No `seed` for reproducible outputs | Add field |
+
+### 6.2 Recommended `chatOptionsModel.json` Updates (Additive)
+
+```json
+{
+    "name": "max_tokens",
+    "type": "int",
+    "default": 4096,
+    "description": "Maximum tokens in the LLM response. 0 = model default."
+},
+{
+    "name": "frequency_penalty",
+    "type": "double",
+    "default": 0.0,
+    "minValue": -2.0,
+    "maxValue": 2.0,
+    "description": "OpenAI frequency penalty. Positive values penalize repeated tokens."
+},
+{
+    "name": "presence_penalty",
+    "type": "double",
+    "default": 0.0,
+    "minValue": -2.0,
+    "maxValue": 2.0,
+    "description": "OpenAI presence penalty. Positive values encourage topic diversity."
+},
+{
+    "name": "seed",
+    "type": "int",
+    "default": 0,
+    "description": "Seed for deterministic output. 0 = random."
+}
+```
+
+**Fix `top_k` range:**
+```json
+{
+    "name": "top_k",
+    "type": "int",
+    "default": 50,
+    "minValue": 0,
+    "maxValue": 500
+}
+```
+
+**Fix `applyChatOptions()` mapping** in `ChatUtil.java`:
+- Map `frequency_penalty` directly to OpenAI's `frequency_penalty` (not from `repeat_penalty`)
+- Map `presence_penalty` directly to OpenAI's `presence_penalty` (not from `typical_p`)
+- Keep `repeat_penalty` for Ollama-native usage
+- Keep `typical_p` for Ollama-native usage
+
+### 6.3 ChatConfig Templates
+
+Stored as `olio.llm.chatConfig` JSON resource files, loadable via `ChatUtil.getCreateChatConfig()` pattern. Each template sets `chatOptions` with tuned LLM parameters, plus appropriate `rating`, `prune`, `assist`, `messageTrim`, `keyframeEvery`, and `remindEvery` values.
+
+#### General Chat
+
+**File:** `AccountManagerObjects7/.../resources/olio/llm/chatConfig.generalChat.json`
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| temperature | 0.8 | Natural, varied conversation |
+| top_p | 0.9 | Broad vocabulary |
+| frequency_penalty | 0.3 | Mild repetition avoidance |
+| presence_penalty | 0.1 | Slight topic diversity |
+| max_tokens | 4096 | Standard response length |
+| num_ctx | 16384 | Reasonable context for chat |
+| rating | E | General audience default |
+| prune | true | Keep context manageable |
+| messageTrim | 20 | Standard window |
+| keyframeEvery | 20 | Standard summarization |
+| remindEvery | 8 | Occasional reminders |
+| requestTimeout | 120 | 2 minute timeout |
+| stream | true | Real-time responses |
+| extractMemories | true | Build conversation memory |
+| memoryBudget | 500 | Standard memory injection |
+
+#### RPG / Roleplay
+
+**File:** `AccountManagerObjects7/.../resources/olio/llm/chatConfig.rpg.json`
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| temperature | 1.0 | Creative, unpredictable narrative |
+| top_p | 0.95 | Wide creative vocabulary |
+| frequency_penalty | 0.5 | Avoid repetitive descriptions |
+| presence_penalty | 0.3 | Encourage plot diversity |
+| max_tokens | 4096 | Room for descriptive responses |
+| num_ctx | 32768 | Large context for ongoing narrative |
+| rating | RC | Unrestricted creative content |
+| prune | true | Essential for long sessions |
+| messageTrim | 30 | Larger window for plot continuity |
+| keyframeEvery | 25 | Regular narrative summaries |
+| remindEvery | 6 | Frequent character/episode reminders |
+| assist | true | Full assistant intro and reminders |
+| includeScene | true | Scene descriptions active |
+| requestTimeout | 180 | 3 minutes for complex narrative |
+| stream | true | Real-time storytelling |
+| extractMemories | true | Track relationship development |
+| memoryBudget | 800 | Rich memory for character continuity |
+
+#### Coding Assistant
+
+**File:** `AccountManagerObjects7/.../resources/olio/llm/chatConfig.coding.json`
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| temperature | 0.3 | Low randomness for precise code |
+| top_p | 0.85 | Focused token selection |
+| frequency_penalty | 0.0 | Repetition OK in code (variable names, patterns) |
+| presence_penalty | 0.0 | No topic pressure |
+| max_tokens | 8192 | Large for code blocks |
+| num_ctx | 65536 | Large context for codebase understanding |
+| rating | E | N/A for code |
+| prune | true | Keep relevant code context |
+| messageTrim | 15 | Shorter window, larger messages |
+| keyframeEvery | 15 | Summarize code discussion frequently |
+| remindEvery | 0 | No reminders needed |
+| assist | false | No character roleplay |
+| requestTimeout | 300 | 5 minutes for complex code generation |
+| stream | true | Real-time code output |
+| extractMemories | true | Remember project decisions |
+| memoryBudget | 300 | Focused project memory |
+
+#### Content Analysis
+
+**File:** `AccountManagerObjects7/.../resources/olio/llm/chatConfig.contentAnalysis.json`
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| temperature | 0.4 | Consistent analytical output |
+| top_p | 0.85 | Focused but not too narrow |
+| frequency_penalty | 0.2 | Some variety in analysis phrasing |
+| presence_penalty | 0.1 | Slight breadth in analysis topics |
+| max_tokens | 8192 | Detailed analysis output |
+| num_ctx | 65536 | Large context for content under analysis |
+| rating | RC | Must analyze all content ratings without restriction |
+| prune | false | Keep full analysis context |
+| messageTrim | 40 | Large window for multi-round analysis |
+| keyframeEvery | 0 | No keyframing — preserve full analysis chain |
+| remindEvery | 0 | No reminders |
+| assist | false | No character roleplay |
+| requestTimeout | 300 | 5 minutes for deep analysis |
+| stream | false | Buffered — want complete analysis, not partial |
+| extractMemories | false | Analysis is session-specific |
+| memoryBudget | 0 | No memory injection |
+
+#### Behavioral Analysis (Clinical/Psychotherapy)
+
+**File:** `AccountManagerObjects7/.../resources/olio/llm/chatConfig.behavioral.json`
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| temperature | 0.5 | Balanced — empathetic but consistent |
+| top_p | 0.9 | Natural language for therapeutic context |
+| frequency_penalty | 0.3 | Avoid repetitive therapeutic phrases |
+| presence_penalty | 0.2 | Encourage exploring different angles |
+| max_tokens | 4096 | Standard therapeutic response |
+| num_ctx | 32768 | Large context for session continuity |
+| rating | RC | Must handle all content — trauma, abuse, etc. — without censorship |
+| prune | true | Manage session length |
+| messageTrim | 30 | Larger window for therapeutic continuity |
+| keyframeEvery | 20 | Regular session summaries |
+| remindEvery | 10 | Occasional framework reminders |
+| assist | true | Therapeutic framework in system prompt |
+| requestTimeout | 180 | 3 minutes |
+| stream | true | Real-time for conversational flow |
+| extractMemories | true | Critical — track patient history across sessions |
+| memoryBudget | 1000 | Large — patient history is essential context |
+| memoryExtractionEvery | 3 | Extract frequently — every exchange matters |
+
+#### Technical Evaluation
+
+**File:** `AccountManagerObjects7/.../resources/olio/llm/chatConfig.technicalEval.json`
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| temperature | 0.2 | Deterministic, precise evaluation |
+| top_p | 0.8 | Narrow, accurate token selection |
+| frequency_penalty | 0.0 | Repetition acceptable in structured evaluation |
+| presence_penalty | 0.0 | Stay on evaluation criteria |
+| max_tokens | 8192 | Detailed evaluation output |
+| num_ctx | 65536 | Large context for technical documents |
+| rating | E | Technical content |
+| prune | false | Preserve full evaluation chain |
+| messageTrim | 50 | Very large window |
+| keyframeEvery | 0 | No keyframing |
+| remindEvery | 0 | No reminders |
+| assist | false | No roleplay |
+| seed | 42 | Reproducible evaluations |
+| requestTimeout | 300 | 5 minutes for complex evaluation |
+| stream | false | Buffered — want complete evaluation |
+| extractMemories | false | Evaluation is session-specific |
+| memoryBudget | 0 | No memory injection |
+
+---
+
+## 8. Policy-Based LLM Response Regulation
+
+### 8.1 Problem Statement
+
+LLMs fail in predictable, detectable ways that degrade the chat experience:
+
+| Failure Mode | Symptom | Current Handling |
+|---|---|---|
+| **Timeout** | LLM hangs, no tokens arrive | Client can send `[stop]` via WebSocket; server marks `[interrupted]`. No automatic recovery. |
+| **Recursive loop** | LLM repeats the same phrase/structure endlessly, token stream never completes | No detection. Client must manually stop. |
+| **Wrong-character response** | LLM responds AS the user character instead of the system character (common in RPG, psychotherapy prompts) | No detection. Breaks immersion silently. |
+| **Refusal/hedging** | LLM inserts safety disclaimers, refuses content within the configured rating | No detection. Violates Section 0 directive. |
+
+The `chatConfig` already has a `policy` field (foreign reference to `policy.policy`) but it is unused. The existing policy evaluation infrastructure (`PolicyEvaluator`, `PolicyUtil`, `IOperation`, hierarchical rules/patterns/facts) provides everything needed to evaluate LLM responses against configurable rules.
+
+### 8.2 Response Policy Architecture
+
+**Principle:** Post-response evaluation. The policy evaluates the LLM's completed (or timed-out) response, not the user's input. The user's prompt content is NEVER filtered or rejected (Section 0).
+
+```
+LLM Response
+  ↓
+Chat.chat() receives response (or timeout)
+  ↓
+ResponsePolicyEvaluator.evaluate(response, chatConfig, request)
+  ↓
+  ├── PERMIT → return response to client (normal flow)
+  │
+  └── DENY → trigger recovery pipeline
+       ├── 1. Notify client via WebSocket: "Policy violation detected: {ruleType}"
+       ├── 2. Run autotuning LLM call to analyze and rewrite prompt
+       ├── 3. Save autotuned prompt as "{promptName} - autotuned - {N}"
+       ├── 4. Notify client via WebSocket: "Autotuned prompt saved as '{name}'"
+       └── 5. Return original response + policy violation metadata to client
+           (Do NOT retry automatically — user decides whether to use autotuned prompt)
+```
+
+**Key design decisions:**
+- **No automatic retry.** The system saves the autotuned prompt for the user to review and optionally adopt. Automatic retry could create infinite loops and wastes LLM tokens.
+- **Original response is always returned.** Even a flawed response may contain useful content. The policy metadata tells the client what went wrong.
+- **Evaluation happens server-side.** The client receives the response plus policy evaluation results. The client can display warnings but the server doesn't withhold content.
+
+### 8.3 Response Policy Operations (Custom IOperation Implementations)
+
+Each failure mode is detected by a custom `IOperation` class that implements the existing policy operation interface:
+
+#### 8.3.1 TimeoutDetectionOperation
+
+**Class:** `org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation implements IOperation`
+
+```java
+public OperationResponseEnumType operate(BaseRecord prt, BaseRecord prr,
+    BaseRecord pattern, BaseRecord sourceFact, BaseRecord referenceFact) {
+    // sourceFact.factData = response content (or null if timed out)
+    // referenceFact.factData = "timeout" (expected failure type)
+
+    String responseContent = read(sourceFact, referenceFact);
+    if (responseContent == null || responseContent.isEmpty()) {
+        // No response received — timeout or empty response
+        return OperationResponseEnumType.FAILED;  // Policy rule triggers
+    }
+    return OperationResponseEnumType.SUCCEEDED;  // Response exists, no timeout
+}
+```
+
+**Detects:** Null/empty responses from the LLM, which occur when `requestTimeout` triggers or the LLM connection drops.
+
+#### 8.3.2 RecursiveLoopDetectionOperation
+
+**Class:** `org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation implements IOperation`
+
+```java
+public OperationResponseEnumType operate(...) {
+    String responseContent = read(sourceFact, referenceFact);
+    if (responseContent == null) return OperationResponseEnumType.SUCCEEDED;
+
+    // Detect repeated phrases/blocks
+    // Strategy: sliding window of N-gram comparison
+    // If any 50+ character substring appears 3+ times, flag as recursive
+    int windowSize = 50;
+    int repeatThreshold = 3;
+
+    Map<String, Integer> seen = new HashMap<>();
+    for (int i = 0; i <= responseContent.length() - windowSize; i += windowSize / 2) {
+        String window = responseContent.substring(i, i + windowSize).trim().toLowerCase();
+        int count = seen.merge(window, 1, Integer::sum);
+        if (count >= repeatThreshold) {
+            return OperationResponseEnumType.FAILED;  // Recursive loop detected
+        }
+    }
+    return OperationResponseEnumType.SUCCEEDED;
+}
+```
+
+**Detects:** LLM producing the same text blocks repeatedly, which indicates a decoding loop. Configurable window size and threshold via fact parameters.
+
+#### 8.3.3 WrongCharacterDetectionOperation
+
+**Class:** `org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation implements IOperation`
+
+```java
+public OperationResponseEnumType operate(...) {
+    // sourceFact: response content
+    // referenceFact.factData: JSON with systemCharName and userCharName
+
+    String responseContent = read(sourceFact, referenceFact);
+    JSONObject charInfo = new JSONObject(referenceFact.get("factData"));
+    String userCharName = charInfo.getString("userCharName");
+    String systemCharName = charInfo.getString("systemCharName");
+
+    // Detect if LLM is responding AS the user character
+    // Heuristics:
+    // 1. Response starts with user character's name followed by dialogue marker
+    //    e.g., "Bob: ", "Bob said", "*Bob walks*"
+    // 2. Response uses first-person as user character
+    //    e.g., starts with "I" but context indicates it's speaking as user
+    // 3. Response contains role markers like "As Bob, I..."
+
+    String trimmed = responseContent.trim();
+    Pattern wrongCharPattern = Pattern.compile(
+        "^" + Pattern.quote(userCharName) + "\\s*[:>\\-]|" +
+        "\\*\\s*" + Pattern.quote(userCharName) + "\\s+\\w|" +
+        "(?i)^as\\s+" + Pattern.quote(userCharName)
+    );
+
+    if (wrongCharPattern.matcher(trimmed).find()) {
+        return OperationResponseEnumType.FAILED;  // Responding as wrong character
+    }
+    return OperationResponseEnumType.SUCCEEDED;
+}
+```
+
+**Detects:** LLM responding as the user character instead of the system character. Common in RPG and psychotherapy prompts where the LLM "takes over" both sides.
+
+#### 8.3.4 RefusalDetectionOperation
+
+**Class:** `org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation implements IOperation`
+
+```java
+public OperationResponseEnumType operate(...) {
+    String responseContent = read(sourceFact, referenceFact);
+    if (responseContent == null) return OperationResponseEnumType.SUCCEEDED;
+
+    // Detect common LLM refusal/hedging patterns
+    // Only triggers when rating allows the content (user has explicitly configured rating)
+    String lower = responseContent.toLowerCase();
+    String[] refusalPatterns = {
+        "i can't help with that",
+        "i'm not able to",
+        "as an ai language model",
+        "i must respectfully decline",
+        "i cannot generate content that",
+        "this goes against my guidelines",
+        "i'd prefer not to",
+        "let's keep things appropriate"
+    };
+
+    int matches = 0;
+    for (String pattern : refusalPatterns) {
+        if (lower.contains(pattern)) matches++;
+    }
+
+    // Single match could be in-character dialogue; 2+ indicates actual refusal
+    if (matches >= 2) {
+        return OperationResponseEnumType.FAILED;
+    }
+    return OperationResponseEnumType.SUCCEEDED;
+}
+```
+
+**Detects:** LLM inserting safety disclaimers or refusing configured content. Enforces Section 0 at the response level.
+
+### 8.4 Autotuning Pipeline
+
+When a policy violation is detected, a separate LLM call analyzes the prompt configuration and suggests corrections. The autotuned prompt is saved for user review — never applied automatically.
+
+#### 8.4.1 AutotuneRequest
+
+**New class:** `org.cote.accountmanager.olio.llm.policy.ChatAutotuner`
+
+```java
+public class ChatAutotuner {
+
+    /**
+     * Analyze a policy violation and generate an autotuned prompt.
+     * Uses the chatConfig's analyzeModel (or model if analyzeModel not set).
+     */
+    public AutotuneResult autotune(
+        BaseRecord user,
+        BaseRecord chatConfig,
+        BaseRecord promptConfig,
+        PolicyViolation violation
+    ) {
+        // 1. Build analysis prompt
+        String analysisPrompt = buildAnalysisPrompt(promptConfig, violation);
+
+        // 2. Call LLM with the analysis prompt (using analyzeModel for efficiency)
+        String model = chatConfig.get("analyzeModel");
+        if (model == null || model.isEmpty()) {
+            model = chatConfig.get("model");
+        }
+        String analysisResponse = callAnalysisLLM(chatConfig, model, analysisPrompt);
+
+        // 3. Parse suggested changes from LLM response
+        PromptRewriteSuggestion suggestion = parseRewriteSuggestion(analysisResponse);
+
+        // 4. Apply suggestions to create new promptConfig
+        BaseRecord autotunedPrompt = applyRewriteSuggestion(promptConfig, suggestion);
+
+        // 5. Generate autotuned name: "{promptName} - autotuned - {N}"
+        String baseName = promptConfig.get(FieldNames.FIELD_NAME);
+        int count = countExistingAutotuned(user, baseName) + 1;
+        String autotunedName = baseName + " - autotuned - " + count;
+        autotunedPrompt.set(FieldNames.FIELD_NAME, autotunedName);
+
+        // 6. Save the autotuned prompt (new record, does NOT overwrite original)
+        IOSystem.getActiveContext().getWriter().write(autotunedPrompt);
+
+        return new AutotuneResult(autotunedName, suggestion.getChangeSummary(), violation);
+    }
+
+    /**
+     * Count existing autotuned variants using Query/QueryUtil.
+     */
+    private int countExistingAutotuned(BaseRecord user, String baseName) {
+        Query query = QueryUtil.createQuery(ModelNames.MODEL_PROMPT_CONFIG);
+        query.field(FieldNames.FIELD_NAME, ComparatorEnumType.LIKE,
+            baseName + " - autotuned - %");
+        query.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
+        query.setContextUser(user);
+
+        // Use count query — no need to load all records
+        int count = IOSystem.getActiveContext().getSearch().count(query);
+        return count;
+    }
+}
+```
+
+#### 8.4.2 Analysis Prompt Structure
+
+The analysis prompt sent to the LLM for autotuning:
+
+```
+You are a prompt engineering expert. A chat prompt produced a policy violation.
+
+VIOLATION TYPE: {violationType}
+VIOLATION DETAILS: {violationDetails}
+
+CURRENT SYSTEM PROMPT (first 3 lines of system[]):
+{systemPromptPreview}
+
+CURRENT CHAT CONFIGURATION:
+- Rating: {rating}
+- Model: {model}
+- Service: {serviceType}
+- Has episodes: {hasEpisodes}
+- Has NLP: {useNLP}
+
+FAILURE ANALYSIS REQUEST:
+1. Why did the LLM produce this violation?
+2. What specific changes to the system prompt would prevent it?
+3. Provide the rewritten system prompt sections as JSON.
+
+Respond with JSON:
+{
+  "analysis": "Brief explanation of the failure cause",
+  "changes": [
+    {"field": "system", "action": "append", "content": "New instruction text"},
+    {"field": "assistantCensorWarning", "action": "replace", "content": "Replacement text"}
+  ],
+  "confidence": 0.0-1.0
+}
+```
+
+#### 8.4.3 Autotuned Prompt Naming Convention
+
+- Original: `"My RP Prompt"`
+- First autotune: `"My RP Prompt - autotuned - 1"`
+- Second autotune: `"My RP Prompt - autotuned - 2"`
+- Nth autotune: `"My RP Prompt - autotuned - N"`
+
+The count is determined by a `LIKE` query via `QueryUtil`:
+```sql
+SELECT COUNT(id) FROM promptConfig
+WHERE name LIKE 'My RP Prompt - autotuned - %'
+AND ownerId = {userId}
+```
+
+This ensures monotonically increasing numbers even if intermediate versions are deleted.
+
+### 8.5 WebSocket Status Notifications
+
+During policy evaluation and recovery, the server sends real-time status notifications to the client via the existing `WebSocketService.chirpUser()` mechanism. This follows the `ChainEventHandler` pattern.
+
+#### 8.5.1 Notification Types
+
+```java
+// Notification format: WebSocketService.chirpUser(user, new String[] { action, type, data })
+
+// Policy evaluation started
+chirpUser(user, new String[] { "policyEvent", "evaluating",
+    "{\"requestId\":\"...\",\"policyName\":\"...\"}" });
+
+// Policy violation detected
+chirpUser(user, new String[] { "policyEvent", "violation",
+    "{\"requestId\":\"...\",\"ruleType\":\"WRONG_CHARACTER\",\"details\":\"...\"}" });
+
+// Autotuning started
+chirpUser(user, new String[] { "policyEvent", "autotuning",
+    "{\"requestId\":\"...\",\"model\":\"...\"}" });
+
+// Autotuning complete
+chirpUser(user, new String[] { "policyEvent", "autotuned",
+    "{\"requestId\":\"...\",\"promptName\":\"My RP - autotuned - 3\",\"confidence\":0.85}" });
+
+// Autotuning failed (analysis LLM also failed)
+chirpUser(user, new String[] { "policyEvent", "autotuneFailed",
+    "{\"requestId\":\"...\",\"error\":\"...\"}" });
+
+// Policy evaluation complete (no violations)
+chirpUser(user, new String[] { "policyEvent", "passed",
+    "{\"requestId\":\"...\"}" });
+```
+
+#### 8.5.2 Client-Side Handling (chat.js)
+
+Add a WebSocket message handler for `policyEvent` type:
+
+```javascript
+// In WebSocket message handler:
+case "policyEvent":
+    handlePolicyEvent(data);
+    break;
+
+function handlePolicyEvent(data) {
+    let event = JSON.parse(data[2]);
+    switch(data[1]) {
+        case "evaluating":
+            showStatusIndicator("Checking response quality...");
+            break;
+        case "violation":
+            showStatusIndicator("Issue detected: " + event.ruleType, "warning");
+            break;
+        case "autotuning":
+            showStatusIndicator("Generating improved prompt...");
+            break;
+        case "autotuned":
+            showStatusIndicator("Improved prompt saved: " + event.promptName, "success");
+            showAutotunedPromptLink(event.promptName);  // Offer to switch
+            break;
+        case "autotuneFailed":
+            showStatusIndicator("Auto-correction failed", "error");
+            break;
+        case "passed":
+            hideStatusIndicator();
+            break;
+    }
+}
+```
+
+### 8.6 Enhanced UX Stop Capability with Failover
+
+#### 8.6.1 Current State
+
+The existing stop mechanism (`doStop()` in chat.js → `[stop]` WebSocket message → `asyncRequestStop` map → `isStopStream()` polling) works ONLY when the LLM is actively streaming tokens. If the LLM is hung (no tokens arriving), the `isStopStream()` check never executes because the stream `forEach` loop is blocked waiting for data.
+
+#### 8.6.2 Design: Two-Phase Stop with Failover
+
+**Phase 1 — Graceful Stop (existing + enhanced):**
+- Client sends `[stop]` via WebSocket (existing behavior)
+- Server sets `asyncRequestStop` flag (existing behavior)
+- **New:** Start a failover timer (configurable, default 5 seconds)
+
+**Phase 2 — Forced Stop (new failover):**
+- If the stream doesn't terminate within the failover window:
+  - Server cancels the `CompletableFuture` via `future.cancel(true)`
+  - Server closes the underlying `HttpClient` connection
+  - Server sends `onerror` callback with "Request forcefully terminated"
+  - Server notifies client: `chirpUser(user, new String[] { "chatEvent", "forceStop", "{...}" })`
+
+```java
+// In ChatListener or Chat.java:
+public void stopStream(OpenAIRequest request) {
+    String oid = getRequestId(request);
+    if (oid == null || !asyncRequests.containsKey(oid)) return;
+
+    // Phase 1: Set graceful stop flag (existing)
+    asyncRequestStop.put(oid, true);
+
+    // Phase 2: Schedule forced cancellation after failover window
+    int failoverSeconds = 5;
+    CompletableFuture<?> streamFuture = asyncStreamFutures.get(oid);
+    if (streamFuture != null) {
+        CompletableFuture.delayedExecutor(failoverSeconds, TimeUnit.SECONDS)
+            .execute(() -> {
+                if (!streamFuture.isDone()) {
+                    logger.warn("Force-cancelling hung stream: " + oid);
+                    streamFuture.cancel(true);
+                    // Notify client
+                    chirpUser(user, new String[] {
+                        "chatEvent", "forceStop",
+                        "{\"requestId\":\"" + oid + "\",\"reason\":\"LLM unresponsive\"}"
+                    });
+                }
+            });
+    }
+}
+```
+
+#### 8.6.3 Client-Side Enhancements
+
+```javascript
+function doStop() {
+    if (!chatCfg.streaming) {
+        return;
+    }
+
+    // Visual feedback
+    showStatusIndicator("Stopping...");
+
+    let chatReq = {
+        schema: inst.model.name,
+        objectId: inst.api.objectId(),
+        uid: page.uid(),
+        message: "[stop]"
+    };
+    page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
+
+    // Client-side failover timer
+    stopFailoverTimer = setTimeout(() => {
+        showStatusIndicator("LLM unresponsive. Force stopping...", "warning");
+        // Send force-stop signal
+        chatReq.message = "[force-stop]";
+        page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
+    }, 8000);  // 8 seconds client-side (server has 5s, so 8s is backup)
+}
+
+// Clear failover timer when response completes or stops
+function onChatComplete() {
+    if (stopFailoverTimer) {
+        clearTimeout(stopFailoverTimer);
+        stopFailoverTimer = null;
+    }
+    hideStatusIndicator();
+}
+```
+
+### 8.7 Sample Policies (JSON Resource Files)
+
+Stored alongside other template resources. Each policy uses the existing `policy.policy` schema with custom `IOperation` classes for pattern evaluation.
+
+#### 8.7.1 Response Quality Policy (Comprehensive)
+
+**File:** `AccountManagerObjects7/.../resources/olio/llm/policy.responseQuality.json`
+
+```json
+{
+  "name": "Response Quality Policy",
+  "description": "Evaluates LLM responses for timeout, recursive loops, wrong-character responses, and refusals",
+  "enabled": true,
+  "decisionAge": 0,
+  "condition": "ALL",
+  "rules": [
+    {
+      "name": "Timeout Check",
+      "description": "Verify the LLM produced a non-empty response",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": {
+            "name": "responseContent",
+            "type": "ATTRIBUTE",
+            "factData": ""
+          },
+          "match": {
+            "name": "expectedNonEmpty",
+            "type": "STATIC",
+            "factData": "timeout"
+          },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Recursive Loop Check",
+      "description": "Detect repetitive/looping LLM output",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": {
+            "name": "responseContent",
+            "type": "ATTRIBUTE",
+            "factData": ""
+          },
+          "match": {
+            "name": "loopConfig",
+            "type": "STATIC",
+            "factData": "{\"windowSize\": 50, \"repeatThreshold\": 3}"
+          },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Character Identity Check",
+      "description": "Verify the LLM responds as the system character, not as the user character",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": {
+            "name": "responseContent",
+            "type": "ATTRIBUTE",
+            "factData": ""
+          },
+          "match": {
+            "name": "characterNames",
+            "type": "STATIC",
+            "factData": "{\"systemCharName\": \"\", \"userCharName\": \"\"}"
+          },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Refusal Detection",
+      "description": "Detect LLM refusals or safety hedging within configured rating",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": {
+            "name": "responseContent",
+            "type": "ATTRIBUTE",
+            "factData": ""
+          },
+          "match": {
+            "name": "refusalConfig",
+            "type": "STATIC",
+            "factData": "{\"minMatchesForRefusal\": 2}"
+          },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 8.7.2 RPG-Specific Policy
+
+**File:** `AccountManagerObjects7/.../resources/olio/llm/policy.rpgQuality.json`
+
+Extends the base response quality policy with RPG-specific checks:
+
+```json
+{
+  "name": "RPG Response Quality Policy",
+  "description": "Response quality checks tailored for roleplay sessions",
+  "enabled": true,
+  "decisionAge": 0,
+  "condition": "ALL",
+  "rules": [
+    {
+      "name": "Character Identity Check (Strict)",
+      "description": "Strict character identity enforcement for immersive RP",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": { "name": "responseContent", "type": "ATTRIBUTE", "factData": "" },
+          "match": { "name": "characterNames", "type": "STATIC", "factData": "{}" },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Recursive Loop Check",
+      "description": "Detect description loops in narrative",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": { "name": "responseContent", "type": "ATTRIBUTE", "factData": "" },
+          "match": { "name": "loopConfig", "type": "STATIC", "factData": "{\"windowSize\": 40, \"repeatThreshold\": 2}" },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Refusal Detection (Strict)",
+      "description": "Zero tolerance for refusals in RP context",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": { "name": "responseContent", "type": "ATTRIBUTE", "factData": "" },
+          "match": { "name": "refusalConfig", "type": "STATIC", "factData": "{\"minMatchesForRefusal\": 1}" },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 8.7.3 Behavioral/Psychotherapy Policy
+
+**File:** `AccountManagerObjects7/.../resources/olio/llm/policy.behavioral.json`
+
+Tailored for clinical/psychotherapy chat where character identity is critical:
+
+```json
+{
+  "name": "Behavioral Session Policy",
+  "description": "Quality checks for therapeutic/behavioral chat sessions where maintaining distinct character roles is critical",
+  "enabled": true,
+  "decisionAge": 0,
+  "condition": "ALL",
+  "rules": [
+    {
+      "name": "Therapist Identity Check",
+      "description": "Ensure LLM maintains therapist role and does not speak as the patient",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": { "name": "responseContent", "type": "ATTRIBUTE", "factData": "" },
+          "match": { "name": "characterNames", "type": "STATIC", "factData": "{}" },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Timeout Check",
+      "description": "Detect unresponsive LLM during sensitive sessions",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": { "name": "responseContent", "type": "ATTRIBUTE", "factData": "" },
+          "match": { "name": "expectedNonEmpty", "type": "STATIC", "factData": "timeout" },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Refusal Detection",
+      "description": "Detect LLM refusing to engage with therapeutic content",
+      "type": "PERMIT",
+      "condition": "ALL",
+      "patterns": [
+        {
+          "type": "OPERATION",
+          "fact": { "name": "responseContent", "type": "ATTRIBUTE", "factData": "" },
+          "match": { "name": "refusalConfig", "type": "STATIC", "factData": "{\"minMatchesForRefusal\": 1}" },
+          "operation": {
+            "operation": "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation",
+            "type": "FUNCTION"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 8.8 Integration Point: Chat.java Post-Response Hook
+
+The policy evaluation hooks into `Chat.continueChat()` after the LLM response is received and before the session is saved:
+
+```java
+// In Chat.continueChat(), after chat() returns:
+OpenAIResponse response = chat(req);
+
+// Policy evaluation (if policy is configured)
+BaseRecord policy = chatConfig.get("policy");
+if (policy != null && policy.get("enabled")) {
+    ResponsePolicyEvaluator evaluator = new ResponsePolicyEvaluator();
+
+    // Notify client: evaluation starting
+    notifyPolicyEvent(user, req, "evaluating", policy.get(FieldNames.FIELD_NAME));
+
+    PolicyViolation violation = evaluator.evaluate(
+        response, chatConfig, promptConfig, req
+    );
+
+    if (violation != null) {
+        // Notify client: violation detected
+        notifyPolicyEvent(user, req, "violation", violation.toJSON());
+
+        // Attempt autotuning
+        try {
+            notifyPolicyEvent(user, req, "autotuning", chatConfig.get("model"));
+
+            ChatAutotuner autotuner = new ChatAutotuner();
+            AutotuneResult result = autotuner.autotune(
+                user, chatConfig, promptConfig, violation
+            );
+
+            notifyPolicyEvent(user, req, "autotuned", result.toJSON());
+        } catch (Exception e) {
+            logger.error("Autotune failed: " + e.getMessage());
+            notifyPolicyEvent(user, req, "autotuneFailed", e.getMessage());
+        }
+
+        // Attach violation metadata to response (client can display warning)
+        response.set("policyViolation", violation.toJSON());
+    } else {
+        notifyPolicyEvent(user, req, "passed", null);
+    }
+}
+
+// Continue with normal flow: save session, etc.
+saveSession(req, response);
+```
+
+### 8.9 ResponsePolicyEvaluator
+
+**New class:** `org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator`
+
+Wraps the existing `PolicyEvaluator` with chat-specific fact population:
+
+```java
+public class ResponsePolicyEvaluator {
+
+    public PolicyViolation evaluate(
+        OpenAIResponse response,
+        BaseRecord chatConfig,
+        BaseRecord promptConfig,
+        OpenAIRequest request
+    ) {
+        BaseRecord policy = chatConfig.get("policy");
+        if (policy == null || !policy.get("enabled")) return null;
+
+        // Build policy request with chat-specific facts
+        BaseRecord policyRequest = RecordFactory.newInstance(ModelNames.MODEL_POLICY_REQUEST);
+        policyRequest.set("urn", policy.get("urn"));
+
+        List<BaseRecord> facts = new ArrayList<>();
+
+        // Fact 1: Response content
+        BaseRecord contentFact = newFact("responseContent", FactEnumType.ATTRIBUTE);
+        contentFact.set("factData", response != null ? response.getMessage() : "");
+        facts.add(contentFact);
+
+        // Fact 2: Character names (for wrong-character detection)
+        BaseRecord charFact = newFact("characterNames", FactEnumType.ATTRIBUTE);
+        String sysName = chatConfig.get("systemCharacter.firstName");
+        String usrName = chatConfig.get("userCharacter.firstName");
+        charFact.set("factData", "{\"systemCharName\":\"" + sysName
+            + "\",\"userCharName\":\"" + usrName + "\"}");
+        facts.add(charFact);
+
+        policyRequest.set("facts", facts);
+
+        // Evaluate using existing PolicyEvaluator
+        PolicyEvaluator evaluator = new PolicyEvaluator();
+        BaseRecord policyResponse = evaluator.evaluatePolicyRequest(policyRequest);
+
+        String responseType = policyResponse.get("type");
+        if ("DENY".equals(responseType)) {
+            return PolicyViolation.fromPolicyResponse(policyResponse);
+        }
+        return null;  // PERMIT — no violation
+    }
+}
+```
+
+---
+
+## 9. Testing Requirements
+
+### 9.1 Testing Philosophy: No Availability Gates, No Mocked Success
+
+**THIS IS A NON-NEGOTIABLE REQUIREMENT.**
+
+Every phase is incomplete until its tests are written, run against real services, and pass. There are no "assume this works" shortcuts:
+
+- **Real test database.** All tests extend `BaseTest`, which provides a fully functional test DB via `getTestOrganization()`. Schema changes, queries, persistence, and model instantiation are tested against the actual data layer.
+- **Real LLM service.** Tests that involve LLM calls (`Chat.continueChat()`, `ChatAutotuner.autotune()`, streaming responses) must run against a configured LLM endpoint. The test properties (`test.llm.serviceType`, `test.llm.openai.*`, `test.llm.ollama.server`) must point to a live service. Do NOT mock LLM responses as "successful" and call the test done.
+- **Real policy evaluation.** Policy tests use the actual `PolicyEvaluator` pipeline, not mock evaluators. `IOperation` classes are tested with real inputs and the actual `operate()` method.
+- **Failures are defects.** If a test fails, it indicates a defect that must be resolved before the phase is marked complete. "It works on my machine" or "the LLM was down" is not acceptable — if the LLM is intermittent, the code must handle that gracefully, and that handling must be tested.
+- **No `@Ignore` or `assumeTrue` gates that skip the test when the service is unavailable.** If the test requires an LLM, configure the LLM. If it requires vectors, configure the embedding service. Tests must run.
+
+### 9.2 Regression Test Suite
+
+Before each phase begins implementation AND after each phase completes, the following existing tests must pass. These are selected to cover the full stack from model schema to streaming chat to memory to policy evaluation:
+
+| Test Class | Test Method | What It Validates | Why It's Here |
+|---|---|---|---|
+| `TestChat` | `TestChatConfigModels` | chatConfig + promptConfig model creation | Validates schema changes don't break model instantiation |
+| `TestChat` | `TestRandomChatConfig` | Full prompt template pipeline with episodes, NLP, rating | Validates PromptUtil pipeline changes don't break existing template composition |
+| `TestChat2` | `TestRequestPersistence` | OpenAIRequest persistence to database | Validates persistence layer for chat requests |
+| `TestMcpChatIntegration` | ALL (20 tests) | MCP citation, reminder, keyframe formatting and filtering | Validates template/formatting changes don't break MCP block generation |
+| `TestMemoryUtil` | ALL (12 tests) | Memory model schema, creation, queries, extraction, formatting | Validates memory system changes don't break existing functionality |
+| `TestChatPolicy` | `TestChatPolicyRewriteRequest` | Policy evaluation with LLM via PolicyEvaluator | Validates policy infrastructure still works after adding new IOperation classes |
+| `TestMemoryDuel` | `testChatDuelWithMemories` | Full streaming chat with memory extraction, two characters | End-to-end integration: streaming + chat + memory + characters |
+
+**Regression protocol:**
+1. **Pre-phase baseline:** Run ALL regression tests before starting implementation. Record results. All must pass.
+2. **During implementation:** Run relevant subset after each significant code change.
+3. **Post-phase gate:** Run ALL regression tests after implementation. All must pass. Any regression is a defect that blocks phase completion.
+
+### 9.3 Per-Phase Test Requirements
+
+Each phase has three categories of tests:
+
+1. **New feature tests** — Validate the new functionality introduced in the phase
+2. **Edge case tests** — Boundary conditions, null inputs, error handling
+3. **Integration tests** — New features working with existing features end-to-end
+
+All tests must:
+- Run against the real test DB (extends `BaseTest`)
+- Run against real LLM endpoints where applicable
+- Assert specific outcomes (not just "didn't throw")
+- Complete within a reasonable timeout (use `@Test(timeout=...)` for LLM calls)
+- Clean up after themselves (no inter-test state leakage)
+
+#### Phase 1 Tests: Template Quality
+
+| # | Test Name | What It Tests | Services Required |
+|---|---|---|---|
+| 1 | `TestDynamicRuleNumbering` | episodes=off, NLP=off, rating=E → rules numbered 1,2,3 sequentially, no gaps | DB |
+| 2 | `TestDynamicRulesWithEpisodes` | episodes on → episode rule is #1, all subsequent sequential | DB |
+| 3 | `TestDynamicRulesWithAllFeatures` | all features on → all rules present, numbered 1-N with no gaps | DB |
+| 4 | `TestConditionalExclusion_EpisodesOff` | `${episode}`, `${episodeRule}` resolve to `""` with no orphan whitespace | DB |
+| 5 | `TestConditionalExclusion_NLPOff` | `${nlp}`, `${nlpReminder}` resolve to `""` with no orphan whitespace | DB |
+| 6 | `TestBackwardCompat_ExistingPromptConfig` | Load `prompt.config.json`, apply full pipeline → output identical to pre-refactor baseline | DB |
+| 7 | `TestBlankLineCleanup` | Template with disabled sections → no blank lines in final output | DB |
+
+**Phase 1 gate:** Tests 1-7 pass + ALL regression tests pass.
+
+#### Phase 2 Tests: Memory Template Variables & Retrieval
+
+| # | Test Name | What It Tests | Services Required |
+|---|---|---|---|
+| 8 | `TestMemoryPatternResolution` | promptConfig with `${memory.context}`, inject memory data → token resolved | DB |
+| 9 | `TestMemoryPatternsDefaultToEmpty` | Existing prompt.config.json → no `${memory.` substring in output | DB |
+| 10 | `TestCanonicalCharacterIds` | `canonicalCharacterIds("def","abc") == canonicalCharacterIds("abc","def")` | DB |
+| 11 | `TestMemoryContextFormatting` | Memories formatted via `MemoryUtil.formatMemoriesAsContext` → correct MCP block | DB |
+| 12 | `TestRoleAgnosticMemoryRetrieval` | Bob(user)+Rob(system) stores memory → Bob(system)+Rob(user) retrieves same | DB |
+| 13 | `TestCrossPartnerMemoryRetrieval` | Bob+Rob stores, Bob+Nob stores → query "all Bob's memories" returns both | DB |
+| 14 | `TestCreateMemoryWithCharacterIds` | Create memory with characterId1+characterId2 → verify persisted correctly | DB |
+| 15 | `TestSearchMemoriesByCharacterPair` | 3 memories pair(A,B), 2 pair(A,C) → search pair(A,B) returns exactly 3 | DB |
+| 16 | `TestSearchMemoriesByCharacter` | Same setup → search character A returns all 5 | DB |
+| 17 | `TestRoleSwapProducesSameIds` | Bob system+Rob user, then Bob user+Rob system → identical characterId1/characterId2 | DB |
+| 18 | `TestMemoryRetrievalIntegration` | Full `retrieveRelevantMemories()` with pair + cross-partner + keyframe | DB, LLM |
+
+**Phase 2 gate:** Tests 8-18 pass + ALL regression tests pass.
+
+#### Phase 3 Tests: Keyframe-to-Memory Pipeline
+
+| # | Test Name | What It Tests | Services Required |
+|---|---|---|---|
+| 19 | `TestKeyframeMemoryPersistence` | extractMemories=true → `tool.memory` record created with OUTCOME type | DB, LLM |
+| 20 | `TestKeyframeMemoryScoping` | Two character pairs → pair-scoped queries return correct memories | DB, LLM |
+| 21 | `TestKeyframePruneKeepsTwo` | After multiple keyframes → last 2 are kept, older ones pruned | DB, LLM |
+| 22 | `TestKeyframeToMemoryToPromptRoundtrip` | Keyframe → memory persist → new session → memory appears in prompt | DB, LLM |
+
+**Phase 3 gate:** Tests 19-22 pass + ALL regression tests pass.
+
+#### Phase 4 Tests: Prompt Templates
+
+| # | Test Name | What It Tests | Services Required |
+|---|---|---|---|
+| 23 | `TestOpenChatTemplate` | Load prompt.openChat.json → validate → process pipeline → no unreplaced tokens | DB |
+| 24 | `TestRPGTemplate` | Load prompt.rpg.json → full pipeline with episodes/NLP/scene → all tokens resolved | DB |
+| 25 | `TestSMSTemplate` | Load prompt.sms.json → image/audio tokens pass through, all others resolved | DB |
+| 26 | `TestMemoryChatTemplate` | Load prompt.memoryChat.json → inject memories → `${memory.*}` resolved | DB |
+| 27 | `TestOpenChatLLMIntegration` | Use openChat template with real LLM → get coherent response | DB, LLM |
+| 28 | `TestRPGTemplateLLMIntegration` | Use rpg template with characters + real LLM → character-appropriate response | DB, LLM |
+
+**Phase 4 gate:** Tests 23-28 pass + ALL regression tests pass.
+
+#### Phase 5 Tests: Conversion/Migration
+
+| # | Test Name | What It Tests | Services Required |
+|---|---|---|---|
+| 29 | `TestValidatorDetectsUnknownTokens` | promptConfig with `${nonexistent}` → flagged | DB |
+| 30 | `TestValidatorPassesValidConfig` | Existing prompt.config.json passes | DB |
+| 31 | `TestValidatorIgnoresRuntimeTokens` | `${image.selfie}`, `${audio.hello}` not flagged | DB |
+| 32 | `TestValidatorUnreplacedTokens` | Composed template with unreplaced `${memory.context}` → detected | DB |
+| 33 | `TestMigratorDryRun` | Reports changes, fieldsUpdated=0 | DB |
+| 34 | `TestMigratorAppliesChanges` | system[] updated, fieldsUpdated > 0 | DB |
+| 35 | `TestMigratorIdempotent` | Running twice → no additional changes | DB |
+
+**Phase 5 gate:** Tests 29-35 pass + ALL regression tests pass.
+
+#### Phase 7 Tests: Always-Stream & Timeout
+
+| # | Test Name | What It Tests | Services Required |
+|---|---|---|---|
+| 36 | `TestStreamBufferMode` | stream=false → Chat.chat() returns complete response (not null) | DB, LLM |
+| 37 | `TestStreamTimeoutTriggered` | requestTimeout=1 → TimeoutException caught, onerror called | DB, LLM |
+| 38 | `TestStreamCancellation` | stopStream() works in buffered mode | DB, LLM |
+| 39 | `TestStreamingModeUnchanged` | stream=true → existing streaming behavior still works | DB, LLM |
+
+**Phase 7 gate:** Tests 36-39 pass + ALL regression tests pass.
+
+#### Phase 8 Tests: LLM Config & ChatConfig Templates
+
+| # | Test Name | What It Tests | Services Required |
+|---|---|---|---|
+| 40 | `TestTopKRangeFixed` | top_k accepts values > 1 (50, 200) | DB |
+| 41 | `TestApplyChatOptionsOpenAI` | frequency_penalty and presence_penalty mapped correctly for OpenAI | DB |
+| 42 | `TestApplyChatOptionsOllama` | repeat_penalty and typical_p mapped correctly for Ollama | DB |
+| 43 | `TestChatConfigTemplateLoads` | All 6 chatConfig templates deserialize correctly | DB |
+| 44 | `TestChatConfigTemplateDefaults` | Each template's chatOptions fields within valid ranges | DB |
+| 45 | `TestChatWithFixedOptions` | Use corrected chatOptions with real LLM → successful response | DB, LLM |
+
+**Phase 8 gate:** Tests 40-45 pass + ALL regression tests pass.
+
+#### Phase 9 Tests: Policy-Based Response Regulation
+
+| # | Test Name | What It Tests | Services Required |
+|---|---|---|---|
+| 46 | `TestTimeoutDetection` | null/empty response → FAILED; normal → SUCCEEDED | DB |
+| 47 | `TestRecursiveLoopDetection` | Repeated 50-char block 3x → FAILED; normal text → SUCCEEDED | DB |
+| 48 | `TestRecursiveLoopConfigurable` | windowSize=30, threshold=2 → detects shorter loops | DB |
+| 49 | `TestWrongCharacterDetection` | "Bob: Hello" when Bob is user → FAILED | DB |
+| 50 | `TestWrongCharacterNarrative` | "*Bob walks over*" when Bob is user → FAILED | DB |
+| 51 | `TestRefusalDetection` | 2+ refusal phrases → FAILED; 0-1 → SUCCEEDED | DB |
+| 52 | `TestRefusalStrictMode` | minMatches=1, single phrase → FAILED | DB |
+| 53 | `TestResponsePolicyEvaluator` | Full policy wired up → PERMIT for good, DENY for bad | DB |
+| 54 | `TestAutotunerCountQuery` | 3 autotuned prompts → count returns 3, next is "- autotuned - 4" | DB |
+| 55 | `TestAutotunerIdempotent` | Same violation → new prompt each time, incrementing count | DB |
+| 56 | `TestAutotunerLLMCall` | Real autotuning LLM call → valid rewrite suggestion returned | DB, LLM |
+| 57 | `TestPolicyWebSocketNotifications` | Mock handler → verify notification sequence | DB |
+| 58 | `TestStopFailover` | Stop flag set → future cancelled after failover window | DB |
+| 59 | `TestForceStopMessage` | [force-stop] → immediate cancellation | DB |
+| 60 | `TestPolicyPassthrough` | No policy on chatConfig → no evaluation, response unchanged | DB |
+| 61 | `TestSamplePolicyLoads` | All 3 sample policy JSON files → deserialize into valid records | DB |
+| 62 | `TestPolicyWithRealLLM` | Full pipeline: LLM call → policy evaluation → autotuning on violation | DB, LLM |
+
+**Phase 9 gate:** Tests 46-62 pass + ALL regression tests pass.
+
+### 9.4 Test Infrastructure Requirements
+
+| Requirement | How To Configure |
+|---|---|
+| Test database | Provided by `BaseTest.getTestOrganization()` — no additional setup |
+| LLM endpoint (Ollama) | `test.llm.ollama.server` in `resource.properties` — must be a running Ollama instance |
+| LLM endpoint (OpenAI) | `test.llm.openai.server`, `test.llm.openai.apiKey` in `resource.properties` |
+| LLM service type | `test.llm.serviceType` — set to `OLLAMA` or `OPENAI` |
+| Embedding service | `test.vector.embeddingUrl` in `resource.properties` (for vector/memory search tests) |
+| Test timeout | LLM-involving tests use `@Test(timeout = 120000)` minimum (2 minutes); streaming tests use 180000 (3 minutes) |
+
+### 9.5 Defect Resolution Protocol
+
+When a test fails:
+
+1. **Root cause first.** Do not modify the test assertion to match incorrect behavior. Find and fix the code defect.
+2. **Reproduce.** Ensure the failure is reproducible, not a transient LLM issue. If the LLM gives different responses each time, the test assertion must account for that (e.g., assert response is non-null and non-empty, not assert response equals exact text).
+3. **Fix forward.** After fixing the defect, re-run the full phase test suite AND the regression suite.
+4. **Document.** If a test reveals a design issue (e.g., the autotuner analysis prompt produces poor suggestions), update the design document with the lesson learned and adjust the implementation.
+
+---
+
+## 7. Implementation Phases
 
 ### Phase 1: Template Cleanup (Low risk, high impact)
 
