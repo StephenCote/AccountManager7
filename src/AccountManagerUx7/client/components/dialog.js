@@ -733,22 +733,23 @@
         return tokens;
     }
 
-    function audioTokenName(text, profileId) {
-        let hash = page.components.audioComponents ?
-            page.components.audioComponents.simpleHash(text + (profileId || '')) :
-            Math.abs(text.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)).toString(36);
-        return "at-" + hash;
-    }
-
     // Expose audio token functions globally
     if (typeof window !== "undefined") {
         window.am7audioTokens = {
             cache: resolvedAudioCache,
             parse: parseAudioTokens,
-            register: function(text, profileId) {
-                let name = audioTokenName(text, profileId);
+            // Caller supplies a stable, unique name (built with session/role/index context)
+            register: function(name, text, profileId) {
                 if (!resolvedAudioCache[name]) {
                     resolvedAudioCache[name] = { text: text, profileId: profileId, source: null };
+                } else if (profileId && resolvedAudioCache[name].profileId !== profileId) {
+                    // Profile changed (e.g. was undefined on first render, now resolved)
+                    // Destroy stale source so it re-synthesises with the correct voice
+                    if (resolvedAudioCache[name].source) {
+                        resolvedAudioCache[name].source.destroy();
+                    }
+                    resolvedAudioCache[name].profileId = profileId;
+                    resolvedAudioCache[name].source = null;
                 }
                 return name;
             },

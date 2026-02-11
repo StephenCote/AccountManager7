@@ -483,30 +483,32 @@ getChatPrompt()
   └── 4. Compose final prompt (existing)
 ```
 
-**New method in Chat.java:**
+**New method in Chat.java** (see Section 4.6 for full role-agnostic design):
 
 ```java
 private MemoryContext retrieveRelevantMemories(BaseRecord chatConfig) {
     BaseRecord systemChar = chatConfig.get("systemCharacter");
     BaseRecord userChar = chatConfig.get("userCharacter");
+    String sysId = systemChar.get("objectId");
+    String usrId = userChar.get("objectId");
 
-    // 1. Character-pair memories (cross-conversation)
-    List<BaseRecord> pairMemories = vectorUtil.searchByCharacterPair(
-        systemChar.get("objectId"),
-        userChar.get("objectId"),
-        memoryBudget  // token budget for memory section
-    );
+    // Canonical ordering — role-agnostic (see Section 4.6)
+    String id1 = sysId.compareTo(usrId) <= 0 ? sysId : usrId;
+    String id2 = sysId.compareTo(usrId) <= 0 ? usrId : sysId;
 
-    // 2. Character-specific memories (personality, preferences)
-    List<BaseRecord> charMemories = vectorUtil.searchByCharacter(
-        systemChar.get("objectId"),
-        EnumSet.of(MemoryType.PERSONALITY, MemoryType.PREFERENCE)
-    );
+    // 1. Pair-specific memories (direct relationship history, role-agnostic)
+    List<BaseRecord> pairMemories = searchMemories(id1, id2, null, memoryBudget);
+
+    // 2. Each character's memories from OTHER partners (cross-partner knowledge)
+    List<BaseRecord> sysCharMemories = searchCharacterMemories(sysId,
+        EnumSet.of(MemoryType.PERSONALITY, MemoryType.PREFERENCE, MemoryType.NOTE));
+    List<BaseRecord> usrCharMemories = searchCharacterMemories(usrId,
+        EnumSet.of(MemoryType.PERSONALITY, MemoryType.PREFERENCE, MemoryType.NOTE));
 
     // 3. Recent session summary (if continuing)
     BaseRecord lastKeyframe = findLastKeyframe(chatConfig);
 
-    return new MemoryContext(pairMemories, charMemories, lastKeyframe);
+    return new MemoryContext(pairMemories, sysCharMemories, usrCharMemories, lastKeyframe);
 }
 ```
 
@@ -559,11 +561,11 @@ private void addKeyFrame(OpenAIRequest req) {
         memory.set("sourceUri", "am7://keyframe/" + cfgObjId);
         memory.set("conversationId", req.get("objectId"));
 
-        // Also tag with character pair for cross-conversation retrieval
-        memory.set("annotations", JSON.of(Map.of(
-            "systemCharacterId", chatConfig.get("systemCharacter.objectId"),
-            "userCharacterId", chatConfig.get("userCharacter.objectId")
-        )));
+        // Tag with BOTH character IDs in canonical order (role-agnostic — see Section 4.6)
+        String sysId = chatConfig.get("systemCharacter.objectId");
+        String usrId = chatConfig.get("userCharacter.objectId");
+        memory.set("characterId1", sysId.compareTo(usrId) <= 0 ? sysId : usrId);
+        memory.set("characterId2", sysId.compareTo(usrId) <= 0 ? usrId : sysId);
 
         IOSystem.getActiveContext().getWriter().write(memory);
         vectorizeMemory(memory);
@@ -613,36 +615,121 @@ public class MemoryBudgetManager {
 
 Add `memoryBudget` field to `chatConfig` (default: 500 tokens).
 
-### 4.6 Cross-Conversation Memory Scoping
+### 4.6 Cross-Conversation, Role-Agnostic Memory Scoping
 
-Replace the current `conversationId`-only scoping with a hierarchical scope:
+**Design principle:** Memories belong to CHARACTERS, not to roles. A character named "Bob" accumulates memories whether he is in the `systemCharacter` or `userCharacter` role. When Bob talks to Rob, both Bob and Rob gain memories. Those memories should be available in any future conversation involving either character, regardless of which role they occupy.
+
+Replace the current `conversationId`-only scoping with a three-tier, role-agnostic model:
 
 ```
-Character Pair Scope (systemChar + userChar)
-  └── Conversation Scope (specific session)
-       └── Exchange Scope (specific message pair)
+Character Scope (single character across ALL conversations)
+  └── Character Pair Scope (two specific characters, role-agnostic)
+       └── Conversation Scope (specific session)
 ```
 
-**Query hierarchy:**
-1. **New conversation** with known character pair: Load character-pair-scoped memories
-2. **Continuing conversation**: Load pair memories + conversation-specific memories
-3. **New character pairing**: Load only character-specific personality/preference memories
+**Memory model fields (on `tool.memory`):**
 
-Add to `VectorUtil`:
+Instead of a single `characterPairId` string, use two separate indexed character fields stored in canonical (alphabetical) order:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `characterId1` | string | First character objectId (alphabetically lower) |
+| `characterId2` | string | Second character objectId (alphabetically higher) |
+| `conversationId` | string | (existing) Specific session ID |
+
+The canonical ordering ensures the same pair always produces the same field values regardless of who is system vs user:
+
+```
+Bob (objectId: "aaa") as user + Rob (objectId: "bbb") as system:
+  → characterId1 = "aaa", characterId2 = "bbb"
+
+Bob (objectId: "aaa") as SYSTEM + Rob (objectId: "bbb") as USER:
+  → characterId1 = "aaa", characterId2 = "bbb"  (SAME — role doesn't matter)
+```
+
+**Query patterns:**
+
+| Query | SQL/Filter | Use Case |
+|-------|-----------|----------|
+| All of Bob's memories | `WHERE characterId1 = 'aaa' OR characterId2 = 'aaa'` | Loading Bob's personality/preferences for any conversation |
+| Bob + Rob memories | `WHERE characterId1 = 'aaa' AND characterId2 = 'bbb'` | Loading pair-specific history when Bob and Rob chat |
+| Bob + Rob in session X | `WHERE characterId1 = 'aaa' AND characterId2 = 'bbb' AND conversationId = 'X'` | Loading session-specific context |
+
+**Example scenario:**
+
+Bob has been in three conversations:
+- Session 1: Bob (user) + Rob (system) — Bob learns Rob likes pizza
+- Session 2: Bob (user) + Nob (system) — Bob reveals he's afraid of spiders
+- Session 3: Bob (system) + Rob (user) — Roles swapped, but same pair
+
+Memory retrieval for Session 3 (Bob as system, Rob as user):
+1. **Pair query** (Bob+Rob): Returns "Rob likes pizza" from Session 1 — role swap is invisible
+2. **Character query** (Bob): Also returns "Bob is afraid of spiders" from Session 2 with Nob — cross-partner knowledge
+3. **Character query** (Rob): Returns Rob's own accumulated memories from other conversations
+
+**Retrieval pipeline in `Chat.retrieveRelevantMemories()`:**
 
 ```java
-public List<BaseRecord> searchMemories(
-    String systemCharId,
-    String userCharId,
-    Set<MemoryType> types,
-    int maxResults,
-    float minSimilarity
-) {
-    // Vector similarity search with metadata filters
-    // Filters: characterPair AND memoryType IN types
-    // Ordered by: importance DESC, createdDate DESC
-    // Limited to: maxResults with minSimilarity threshold
+private MemoryContext retrieveRelevantMemories(BaseRecord chatConfig) {
+    BaseRecord systemChar = chatConfig.get("systemCharacter");
+    BaseRecord userChar = chatConfig.get("userCharacter");
+    String sysId = systemChar.get("objectId");
+    String usrId = userChar.get("objectId");
+
+    // Canonical ordering for pair queries
+    String id1 = sysId.compareTo(usrId) <= 0 ? sysId : usrId;
+    String id2 = sysId.compareTo(usrId) <= 0 ? usrId : sysId;
+
+    // 1. Pair-specific memories (highest priority — direct relationship history)
+    List<BaseRecord> pairMemories = searchMemories(id1, id2, null, memoryBudget);
+
+    // 2. System character's memories from OTHER partners (personality, cross-partner knowledge)
+    List<BaseRecord> sysCharMemories = searchCharacterMemories(sysId,
+        EnumSet.of(MemoryType.PERSONALITY, MemoryType.PREFERENCE, MemoryType.NOTE));
+
+    // 3. User character's memories from OTHER partners (same)
+    List<BaseRecord> usrCharMemories = searchCharacterMemories(usrId,
+        EnumSet.of(MemoryType.PERSONALITY, MemoryType.PREFERENCE, MemoryType.NOTE));
+
+    // 4. Recent session summary (if continuing an existing session)
+    BaseRecord lastKeyframe = findLastKeyframe(chatConfig);
+
+    return new MemoryContext(pairMemories, sysCharMemories, usrCharMemories, lastKeyframe);
 }
+```
+
+**Memory storage (role-agnostic write):**
+
+When persisting a memory from any conversation, ALWAYS store both character IDs in canonical order. Never store which character was system vs user — the memory belongs to both characters equally:
+
+```java
+// In persistKeyframeAsMemory() and extractMemoriesFromExchange():
+String id1 = min(systemCharId, userCharId);  // alphabetical
+String id2 = max(systemCharId, userCharId);
+memory.set("characterId1", id1);
+memory.set("characterId2", id2);
+```
+
+**MCP context block format (updated for role-agnostic scoping):**
+
+```xml
+<mcp:context type="resource" uri="am7://memory/{characterId1}/{characterId2}" ephemeral="true">
+{"schema":"urn:am7:narrative:memory","data":{
+  "pairHistory": [
+    {"summary": "They met at a coffee shop", "importance": 8, "session": "2025-01-15"},
+    {"summary": "Had an argument about politics", "importance": 6, "session": "2025-01-20"}
+  ],
+  "characterFacts": {
+    "Bob": [
+      {"summary": "Afraid of spiders", "importance": 5, "from": "conversation with Nob"}
+    ],
+    "Rob": [
+      {"summary": "Likes pizza", "importance": 4, "from": "conversation with Bob"}
+    ]
+  },
+  "lastSession": "They reconciled after the argument and planned to meet again."
+}}
+</mcp:context>
 ```
 
 ---

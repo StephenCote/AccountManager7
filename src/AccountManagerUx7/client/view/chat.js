@@ -267,10 +267,15 @@
             profileId = chatCfg?.user?.profile?.objectId;
         }
 
+        // Build stable names following TTS convention: sessionId-role-audio-msgIndex-tokenIndex-hash
+        let sessionId = inst ? inst.api.objectId() : 'nosess';
+
         let result = content;
         for (let i = tokens.length - 1; i >= 0; i--) {
             let token = tokens[i];
-            let name = window.am7audioTokens.register(token.text, profileId);
+            let textHash = page.components.audioComponents.simpleHash(token.text);
+            let name = sessionId + '-' + msgRole + '-audio-' + msgIndex + '-' + i + '-' + textHash;
+            window.am7audioTokens.register(name, token.text, profileId);
             let state = window.am7audioTokens.state(name);
 
             let icon, iconClass;
