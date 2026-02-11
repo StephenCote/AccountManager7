@@ -14,6 +14,22 @@
 			"type": "string",
 			"maxLength": 128,
 			"description": "Denormalized from tool.memory for conversation scoping"
+		},
+		{
+			"name": "personId1",
+			"type": "long",
+			"description": "Denormalized from tool.memory for person pair filtering"
+		},
+		{
+			"name": "personId2",
+			"type": "long",
+			"description": "Denormalized from tool.memory for person pair filtering"
+		},
+		{
+			"name": "personModel",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Denormalized from tool.memory for model type filtering"
 		}
 	]
 }

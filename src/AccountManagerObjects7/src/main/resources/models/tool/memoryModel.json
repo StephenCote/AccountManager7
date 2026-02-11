@@ -47,6 +47,22 @@
 			"name": "conversationId",
 			"type": "string",
 			"maxLength": 128
+		},
+		{
+			"name": "personId1",
+			"type": "long",
+			"description": "First person ID in canonical (lower) order for cross-conversation pair retrieval"
+		},
+		{
+			"name": "personId2",
+			"type": "long",
+			"description": "Second person ID in canonical (higher) order for cross-conversation pair retrieval"
+		},
+		{
+			"name": "personModel",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Model type of the person records (e.g. identity.person, olio.charPerson)"
 		}
 	]
 }

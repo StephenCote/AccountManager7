@@ -1,4 +1,4 @@
-package org.cote.accountmanager.agent;
+package org.cote.accountmanager.util;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -23,7 +23,6 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
-import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 
 public class MemoryUtil {
@@ -31,8 +30,24 @@ public class MemoryUtil {
 
 	private static final String MEMORY_GROUP_PATH = "~/Memories";
 
+	/// Returns canonical person pair IDs with the lower ID first.
+	/// This ensures that the same pair always produces the same (id1, id2)
+	/// regardless of which person is system vs user.
+	public static long[] canonicalPersonIds(long id1, long id2) {
+		if (id1 <= id2) {
+			return new long[] { id1, id2 };
+		}
+		return new long[] { id2, id1 };
+	}
+
 	public static BaseRecord createMemory(BaseRecord user, String content, String summary,
 			MemoryTypeEnumType type, int importance, String sourceUri, String conversationId) {
+		return createMemory(user, content, summary, type, importance, sourceUri, conversationId, 0L, 0L);
+	}
+
+	public static BaseRecord createMemory(BaseRecord user, String content, String summary,
+			MemoryTypeEnumType type, int importance, String sourceUri, String conversationId,
+			long personId1, long personId2) {
 
 		BaseRecord memory = null;
 		try {
@@ -51,6 +66,11 @@ public class MemoryUtil {
 			if (conversationId != null) {
 				memory.set("conversationId", conversationId);
 			}
+			if (personId1 > 0L && personId2 > 0L) {
+				long[] canon = canonicalPersonIds(personId1, personId2);
+				memory.set("personId1", canon[0]);
+				memory.set("personId2", canon[1]);
+			}
 
 			memory = IOSystem.getActiveContext().getAccessPoint().create(user, memory);
 			if (memory == null) {
@@ -59,7 +79,7 @@ public class MemoryUtil {
 			}
 
 			// Create vector embeddings for semantic search
-			createMemoryVectors(user, memory, content, type, conversationId);
+			createMemoryVectors(user, memory, content, type, conversationId, personId1, personId2);
 
 		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
 			logger.error("Error creating memory: " + e.getMessage());
@@ -68,7 +88,7 @@ public class MemoryUtil {
 	}
 
 	private static void createMemoryVectors(BaseRecord user, BaseRecord memory, String content,
-			MemoryTypeEnumType type, String conversationId) {
+			MemoryTypeEnumType type, String conversationId, long personId1, long personId2) {
 
 		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
 		if (vu == null || !VectorUtil.isVectorSupported()) {
@@ -83,6 +103,11 @@ public class MemoryUtil {
 			plist.parameter("content", content);
 			plist.parameter("memoryType", type != null ? type.value() : "NOTE");
 			plist.parameter("conversationId", conversationId);
+			if (personId1 > 0L && personId2 > 0L) {
+				long[] canon = canonicalPersonIds(personId1, personId2);
+				plist.parameter("personId1", canon[0]);
+				plist.parameter("personId2", canon[1]);
+			}
 
 			BaseRecord vlist = IOSystem.getActiveContext().getFactory()
 				.newInstance(ModelNames.MODEL_VECTOR_MEMORY_LIST, user, null, plist);
@@ -137,6 +162,82 @@ public class MemoryUtil {
 			}
 		} catch (Exception e) {
 			logger.error("Error querying conversation memories: " + e.getMessage());
+		}
+		return results;
+	}
+
+	/// Search for memories belonging to a specific person pair.
+	/// Person IDs are canonicalized so the order doesn't matter.
+	public static List<BaseRecord> searchMemoriesByPersonPair(BaseRecord user, long pId1, long pId2, int limit) {
+		List<BaseRecord> results = new ArrayList<>();
+		try {
+			long[] canon = canonicalPersonIds(pId1, pId2);
+			BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(
+				user, ModelNames.MODEL_GROUP, MEMORY_GROUP_PATH,
+				GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID)
+			);
+			if (group == null) {
+				return results;
+			}
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+			q.field("personId1", canon[0]);
+			q.field("personId2", canon[1]);
+			q.planMost(true);
+			q.setRequestRange(0L, limit);
+			BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findRecords(q);
+			if (recs != null) {
+				results.addAll(Arrays.asList(recs));
+			}
+		} catch (Exception e) {
+			logger.error("Error querying person pair memories: " + e.getMessage());
+		}
+		return results;
+	}
+
+	/// Search for all memories involving a specific person (as either id1 or id2).
+	public static List<BaseRecord> searchMemoriesByPerson(BaseRecord user, long personId, int limit) {
+		List<BaseRecord> results = new ArrayList<>();
+		try {
+			BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(
+				user, ModelNames.MODEL_GROUP, MEMORY_GROUP_PATH,
+				GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID)
+			);
+			if (group == null) {
+				return results;
+			}
+			// Query memories where person appears as either id1 or id2
+			Query q1 = QueryUtil.createQuery(ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+			q1.field("personId1", personId);
+			q1.planMost(true);
+			q1.setRequestRange(0L, limit);
+			BaseRecord[] recs1 = IOSystem.getActiveContext().getSearch().findRecords(q1);
+			if (recs1 != null) {
+				results.addAll(Arrays.asList(recs1));
+			}
+
+			Query q2 = QueryUtil.createQuery(ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+			q2.field("personId2", personId);
+			q2.planMost(true);
+			q2.setRequestRange(0L, limit);
+			BaseRecord[] recs2 = IOSystem.getActiveContext().getSearch().findRecords(q2);
+			if (recs2 != null) {
+				// Deduplicate — a memory where personId appears as both id1 and id2 would be returned by both queries
+				for (BaseRecord r : recs2) {
+					long rid = r.get(FieldNames.FIELD_ID);
+					boolean dup = results.stream().anyMatch(existing -> (long) existing.get(FieldNames.FIELD_ID) == rid);
+					if (!dup) {
+						results.add(r);
+					}
+				}
+			}
+
+			// Sort by importance descending, limit
+			results.sort((a, b) -> Integer.compare((int) b.get("importance"), (int) a.get("importance")));
+			if (results.size() > limit) {
+				results = new ArrayList<>(results.subList(0, limit));
+			}
+		} catch (Exception e) {
+			logger.error("Error querying person memories: " + e.getMessage());
 		}
 		return results;
 	}

@@ -18,6 +18,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.util.MemoryUtil;
 
 public class AM7AgentTool {
 	public static final Logger logger = LogManager.getLogger(AM7AgentTool.class);

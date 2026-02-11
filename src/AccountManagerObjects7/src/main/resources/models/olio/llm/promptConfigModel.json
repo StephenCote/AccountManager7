@@ -162,6 +162,21 @@
 			"name": "episodeRule",
 			"type": "list",
 			"baseType": "string"
+		},
+		{
+			"name": "responseRules",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "revisionRules",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "clarificationRules",
+			"type": "list",
+			"baseType": "string"
 		}
 	]
 }

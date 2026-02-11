@@ -9,6 +9,7 @@ public enum TemplatePatternEnumType {
 	ASSISTANT_CENSOR_WARN("assistCensorWarn"),
 	AUTO_SCENE("scene.auto"),
 	CENSOR_WARN("censorWarn"),
+	DYNAMIC_RULES("dynamicRules"),
 	EPISODE("episode"),
 	EPISODE_ASSIST("episodeAssist"),
 
@@ -25,6 +26,11 @@ public enum TemplatePatternEnumType {
 	LOCATION_NAME("location.name"),
 	LOCATION_TERRAIN("location.terrain"),
 	LOCATION_TERRAINS("location.terrains"),
+	MEMORY_CONTEXT("memory.context"),
+	MEMORY_COUNT("memory.count"),
+	MEMORY_FACTS("memory.facts"),
+	MEMORY_LAST_SESSION("memory.lastSession"),
+	MEMORY_RELATIONSHIP("memory.relationship"),
 	NLP_COMMAND("nlp.command"),
 	NLP("nlp"),
 

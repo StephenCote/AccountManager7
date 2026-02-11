@@ -9,7 +9,7 @@ import static org.junit.Assert.fail;
 import java.util.List;
 import java.util.UUID;
 
-import org.cote.accountmanager.agent.MemoryUtil;
+import org.cote.accountmanager.util.MemoryUtil;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.record.BaseRecord;

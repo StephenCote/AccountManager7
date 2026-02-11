@@ -20,6 +20,7 @@ public class PromptBuilderContext {
 	public String scenel = null;
 	public String cscene = null;
 	public String setting = null;
+	public String memoryContext = null;
 
 	public PromptBuilderContext(BaseRecord promptConfig, BaseRecord chatConfig, String template, boolean firstPerson) {
 		this.promptConfig = promptConfig;

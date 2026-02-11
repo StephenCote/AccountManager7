@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.cote.accountmanager.agent.MemoryUtil;
+import org.cote.accountmanager.util.MemoryUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;

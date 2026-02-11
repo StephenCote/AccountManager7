@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio.llm;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -25,8 +26,20 @@ import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class PromptUtil {
 	public static final Logger logger = LogManager.getLogger(PromptUtil.class);
-	
+
 	private static SecureRandom rand = new SecureRandom();
+
+	/// Thread-local memory context set by Chat.java before template processing.
+	/// Consumed and cleared by buildMemoryReplacements().
+	private static final ThreadLocal<String> pendingMemoryContext = new ThreadLocal<>();
+
+	public static void setMemoryContext(String memoryContext) {
+		pendingMemoryContext.set(memoryContext);
+	}
+
+	public static String getMemoryContext() {
+		return pendingMemoryContext.get();
+	}
 	
 	public static String composeTemplate(List<String> list) {
 		return list.stream().collect(Collectors.joining(System.lineSeparator()));
@@ -142,23 +155,74 @@ public class PromptUtil {
 			// logger.info("No chat configuration provided");
 			return templ;
 		}
-		
+
 	    PromptBuilderContext ctx = new PromptBuilderContext(promptConfig, chatConfig, templ, firstPerson);
-	    
+
+	    // === TEMPLATE REPLACEMENT PIPELINE ===
+	    // Stages MUST execute in this order due to data dependencies:
+	    //
+	    // Stage 1: buildRaceReplacements        - ${system.race}, ${user.race}
+	    //   No dependencies
+	    //
+	    // Stage 2: buildSceneReplacements       - ${scene}
+	    //   Sets ctx.cscene, ctx.scenel for Stage 4
+	    //
+	    // Stage 3: buildSettingReplacements     - ${setting}, ${location.terrains}
+	    //   Sets ctx.setting for Stage 4
+	    //
+	    // Stage 4: buildEpisodeReplacements     - ${episode}, ${episodeRule}, ${scene.auto}
+	    //   Depends on: ctx.cscene (Stage 2), ctx.scenel (Stage 2), ctx.setting (Stage 3)
+	    //   Sets ctx.episode for Stage 7
+	    //
+	    // Stage 5: buildMemoryReplacements      - ${memory.context}, ${memory.relationship}, etc.
+	    //   Consumes thread-local pendingMemoryContext set by Chat.java
+	    //
+	    // Stage 6: buildRatingNlpConsentReplacements - ${censorWarn}, ${nlp}, ${user.consent}
+	    //   Depends on: rating from chatConfig
+	    //
+	    // Stage 7: buildDynamicRulesReplacement  - ${dynamicRules}
+	    //   Depends on: ctx.episode (Stage 4), ctx.rating, useNLP (Stage 6 conditions)
+	    //   Output contains unresolved ${...} tokens resolved by Stages 8-12
+	    //
+	    // Stage 8: buildPronounAgeTradeReplacements - names, pronouns, ${perspective}
+	    //   Resolves tokens embedded in dynamic rules output
+	    //
+	    // Stage 9: buildRatingReplacements      - ${rating}, ${ratingMpa}, etc.
+	    // Stage 10: buildCharacterDescriptionReplacements - ${system.characterDesc}, etc.
+	    // Stage 11: buildProfileReplacements    - ${profile.*} compatibility
+	    // Stage 12: buildInteractionReplacements - ${interaction.description}
+
 	    buildRaceReplacements(ctx);
 	    buildSceneReplacements(ctx);
 	    buildSettingReplacements(ctx);
 	    buildEpisodeReplacements(ctx);
+	    buildMemoryReplacements(ctx);
 	    buildRatingNlpConsentReplacements(ctx);
+	    buildDynamicRulesReplacement(ctx);
 	    buildPronounAgeTradeReplacements(ctx);
 	    buildRatingReplacements(ctx);
 	    buildCharacterDescriptionReplacements(ctx);
 	    buildProfileReplacements(ctx);
 	    buildInteractionReplacements(ctx);
 	    return ctx.template.trim();
-	
+
 	}
 	
+	private static void buildMemoryReplacements(PromptBuilderContext ctx) {
+		// Consume thread-local memory context set by Chat.java
+		String memCtx = pendingMemoryContext.get();
+		if (memCtx != null) {
+			ctx.memoryContext = memCtx;
+			pendingMemoryContext.remove();
+		}
+
+		ctx.replace(TemplatePatternEnumType.MEMORY_CONTEXT, ctx.memoryContext != null ? ctx.memoryContext : "");
+		ctx.replace(TemplatePatternEnumType.MEMORY_RELATIONSHIP, "");
+		ctx.replace(TemplatePatternEnumType.MEMORY_FACTS, "");
+		ctx.replace(TemplatePatternEnumType.MEMORY_LAST_SESSION, "");
+		ctx.replace(TemplatePatternEnumType.MEMORY_COUNT, "0");
+	}
+
 	private static void buildInteractionReplacements(PromptBuilderContext ctx) {
 		BaseRecord interaction = ctx.chatConfig.get(OlioFieldNames.FIELD_INTERACTION);
 		if(interaction == null) {
@@ -303,12 +367,59 @@ public class PromptUtil {
 
 	}
 	
+	private static void addRuleIfPresent(List<String> rules, BaseRecord promptConfig, String fieldName) {
+		List<String> field = promptConfig.get(fieldName);
+		if(field != null && !field.isEmpty()) {
+			rules.add(composeTemplate(field));
+		}
+	}
+
+	private static void buildDynamicRulesReplacement(PromptBuilderContext ctx) {
+		List<String> rules = new ArrayList<>();
+		boolean useNLP = ctx.chatConfig.get("useNLP");
+
+		// Episode rules (conditional) or default "stay in character"
+		if(ctx.episode) {
+			addRuleIfPresent(rules, ctx.promptConfig, "episodeRule");
+		}
+		else {
+			rules.add("Always stay in character.");
+		}
+
+		// Censor warning (conditional on AO/RC rating)
+		if(ctx.rating == ESRBEnumType.AO || ctx.rating == ESRBEnumType.RC) {
+			addRuleIfPresent(rules, ctx.promptConfig, "systemCensorWarning");
+		}
+
+		// Response rules (always present when defined)
+		addRuleIfPresent(rules, ctx.promptConfig, "responseRules");
+
+		// NLP rules (conditional on useNLP)
+		if(useNLP) {
+			addRuleIfPresent(rules, ctx.promptConfig, "systemNlp");
+		}
+
+		// Revision rules (always present when defined)
+		addRuleIfPresent(rules, ctx.promptConfig, "revisionRules");
+
+		// Clarification rules (always present when defined)
+		addRuleIfPresent(rules, ctx.promptConfig, "clarificationRules");
+
+		// Number dynamically
+		StringBuilder sb = new StringBuilder();
+		for(int i = 0; i < rules.size(); i++) {
+			if(i > 0) sb.append(System.lineSeparator());
+			sb.append((i + 1) + ". " + rules.get(i));
+		}
+		ctx.replace(TemplatePatternEnumType.DYNAMIC_RULES, sb.toString());
+	}
+
 	private static void buildEpisodeReplacements(PromptBuilderContext ctx) {
 		BaseRecord episodeRec = getNextEpisode(ctx.chatConfig);
 		String episodicLabel = "";
 		String episodeText = "";
 		String episodeReminderText = "";
-		String episodeRuleText = "1) Always stay in character";
+		String episodeRuleText = "Always stay in character";
 		String episodeAssistText = "";
 		// boolean isEpisode = false;
 		if(episodeRec != null) {
@@ -316,7 +427,7 @@ public class PromptUtil {
 			ctx.episode = true;
 			episodeAssistText = episodeRec.get("episodeAssist");
 			if(episodeAssistText == null) episodeAssistText = "";
-			episodicLabel = "episodic";
+			episodicLabel = " episodic";
 			// Matcher.quoteReplacement(
 			episodeRuleText =  ((List<String>)ctx.promptConfig.get("episodeRule")).stream().collect(Collectors.joining(System.lineSeparator()));
 			StringBuilder elBuff = new StringBuilder();

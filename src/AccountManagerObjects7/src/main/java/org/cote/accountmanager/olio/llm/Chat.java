@@ -27,6 +27,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
@@ -35,9 +36,11 @@ import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.MemoryUtil;
 import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
+import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 
 import jakarta.ws.rs.core.MediaType;
 
@@ -978,8 +981,20 @@ public class Chat {
 		);
 		msg.setContent(builder.build());
 
-		/// Filter out previous keyframes (both old and MCP format)
-		List<OpenAIMessage> msgs = req.getMessages().stream()
+		/// Phase 3: Persist keyframe analysis as a durable memory
+		persistKeyframeAsMemory(analysisText, lab, cfgObjId, systemChar, userChar);
+
+		/// Filter out previous keyframes, keeping the last 2 (Phase 3: keep 2 instead of 1)
+		List<OpenAIMessage> keyframes = req.getMessages().stream()
+				.filter(m -> {
+					String c = m.getContent();
+					if(c == null) return false;
+					if(c.startsWith("(KeyFrame")) return true;
+					if(c.contains("<mcp:context") && c.contains("/keyframe/")) return true;
+					return false;
+				})
+				.collect(Collectors.toList());
+		List<OpenAIMessage> nonKeyframes = req.getMessages().stream()
 				.filter(m -> {
 					String c = m.getContent();
 					if(c == null) return true;
@@ -988,8 +1003,110 @@ public class Chat {
 					return true;
 				})
 				.collect(Collectors.toList());
-		msgs.add(msg);
-		req.setMessages(msgs);
+
+		/// Keep the most recent keyframe (the second-to-last), discard older ones
+		/// Combined with the new keyframe being added, this gives us 2 keyframes total
+		if (keyframes.size() > 1) {
+			/// Keep only the last existing keyframe
+			OpenAIMessage lastExisting = keyframes.get(keyframes.size() - 1);
+			nonKeyframes.add(lastExisting);
+		} else if (keyframes.size() == 1) {
+			/// Keep the single existing keyframe
+			nonKeyframes.add(keyframes.get(0));
+		}
+		nonKeyframes.add(msg);
+		req.setMessages(nonKeyframes);
+	}
+
+	/// Phase 3: Persist the keyframe analysis text as a durable OUTCOME memory
+	/// tagged with both character IDs in canonical order for cross-conversation retrieval.
+	private void persistKeyframeAsMemory(String analysisText, String characterLabel,
+			String cfgObjId, BaseRecord systemChar, BaseRecord userChar) {
+
+		if (analysisText == null || analysisText.trim().isEmpty()) {
+			return;
+		}
+
+		boolean extractMemories = false;
+		try {
+			extractMemories = chatConfig.get("extractMemories");
+		} catch (Exception e) {
+			// field may not be set
+		}
+		if (!extractMemories) {
+			return;
+		}
+
+		/// Check memoryExtractionEvery — controls how often keyframes produce memories
+		/// 0 = every keyframe, N = every Nth keyframe
+		int extractionEvery = 0;
+		try {
+			extractionEvery = chatConfig.get("memoryExtractionEvery");
+		} catch (Exception e) {
+			// field may not be set, default to 0 (every keyframe)
+		}
+
+		if (extractionEvery > 0 && cfgObjId != null) {
+			/// Count existing keyframe memories for this conversation to determine if we should extract
+			List<BaseRecord> existingMemories = MemoryUtil.getConversationMemories(user, cfgObjId);
+			int keyframeMemCount = (int) existingMemories.stream()
+				.filter(m -> {
+					Object mt = m.get("memoryType");
+					return mt != null && MemoryTypeEnumType.OUTCOME.toString().equals(mt.toString());
+				})
+				.count();
+			if (keyframeMemCount % extractionEvery != 0) {
+				logger.info("Skipping keyframe memory extraction (extraction every " + extractionEvery + ", keyframe memory count=" + keyframeMemCount + ")");
+				return;
+			}
+		}
+
+		try {
+			long sysId = systemChar.get(FieldNames.FIELD_ID);
+			long usrId = userChar.get(FieldNames.FIELD_ID);
+
+			/// Truncate analysis to a summary (first 200 chars, ending at sentence boundary)
+			String summary = truncateToSentence(analysisText, 200);
+
+			String sourceUri = "am7://keyframe/" + (cfgObjId != null ? cfgObjId : "default");
+			String conversationId = cfgObjId;
+
+			BaseRecord memory = MemoryUtil.createMemory(
+				user,
+				analysisText,
+				summary,
+				MemoryTypeEnumType.OUTCOME,
+				7,  // Keyframe summaries are moderately important
+				sourceUri,
+				conversationId,
+				sysId,
+				usrId
+			);
+
+			if (memory != null) {
+				logger.info("Persisted keyframe as memory for " + characterLabel);
+			} else {
+				logger.warn("Failed to persist keyframe as memory for " + characterLabel);
+			}
+		} catch (Exception e) {
+			logger.warn("Error persisting keyframe as memory: " + e.getMessage());
+		}
+	}
+
+	/// Truncate text to maxLen characters, ending at a sentence boundary if possible.
+	private String truncateToSentence(String text, int maxLen) {
+		if (text == null || text.length() <= maxLen) {
+			return text;
+		}
+		String truncated = text.substring(0, maxLen);
+		int lastPeriod = truncated.lastIndexOf('.');
+		int lastExcl = truncated.lastIndexOf('!');
+		int lastQ = truncated.lastIndexOf('?');
+		int lastSentEnd = Math.max(lastPeriod, Math.max(lastExcl, lastQ));
+		if (lastSentEnd > maxLen / 2) {
+			return truncated.substring(0, lastSentEnd + 1);
+		}
+		return truncated + "...";
 	}
 
 	public void handleResponse(OpenAIRequest req, OpenAIResponse rep, boolean emitResponse) {
@@ -1059,9 +1176,12 @@ public class Chat {
 			}
 		}
 
-		/// Don't prune the last key frame
+		/// Phase 3: Don't prune the last 2 keyframes for better continuity
 		if (kfs.size() > 0) {
 			kfs.get(kfs.size() - 1).setPruned(false);
+			if (kfs.size() > 1) {
+				kfs.get(kfs.size() - 2).setPruned(false);
+			}
 		}
 		boolean useAssist = chatConfig.get("assist");
 		int qual = countBackTo(req, "(KeyFrame:");
@@ -1309,6 +1429,79 @@ public class Chat {
 		return url;
 	}
 
+	/// Phase 2: Retrieve relevant memories for the character pair and format as MCP context.
+	/// Uses direct queries since MemoryUtil is in the Agent layer.
+	private String retrieveRelevantMemories(BaseRecord systemChar, BaseRecord userChar) {
+		if (chatConfig == null || systemChar == null || userChar == null) {
+			return "";
+		}
+		int memoryBudget = chatConfig.get("memoryBudget");
+		if (memoryBudget <= 0) {
+			return "";
+		}
+
+		try {
+			long sysId = systemChar.get(FieldNames.FIELD_ID);
+			long usrId = userChar.get(FieldNames.FIELD_ID);
+			// Canonical ordering — role-agnostic
+			long id1 = Math.min(sysId, usrId);
+			long id2 = Math.max(sysId, usrId);
+
+			int maxMemories = Math.max(1, memoryBudget / 100);
+
+			BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(
+				user, ModelNames.MODEL_GROUP, "~/Memories",
+				"DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID)
+			);
+			if (group == null) {
+				return "";
+			}
+
+			// Query pair-specific memories
+			org.cote.accountmanager.io.Query q = org.cote.accountmanager.io.QueryUtil.createQuery(
+				ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID)
+			);
+			q.field("personId1", id1);
+			q.field("personId2", id2);
+			q.planMost(true);
+			q.setRequestRange(0L, maxMemories);
+			BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findRecords(q);
+
+			if (recs == null || recs.length == 0) {
+				return "";
+			}
+
+			// Format as MCP context block
+			McpContextBuilder ctxBuilder = new McpContextBuilder();
+			for (BaseRecord memory : recs) {
+				String content = memory.get("content");
+				if (content == null) continue;
+
+				String summary = memory.get("summary");
+				String memoryType = "NOTE";
+				Object mt = memory.get("memoryType");
+				if (mt != null) memoryType = mt.toString();
+
+				String uri = "am7://memory/" + id1 + "/" + id2;
+				ctxBuilder.addResource(
+					uri,
+					"urn:am7:narrative:memory",
+					Map.of(
+						"content", content,
+						"summary", summary != null ? summary : "",
+						"memoryType", memoryType,
+						"importance", memory.get("importance")
+					),
+					true
+				);
+			}
+			return ctxBuilder.build();
+		} catch (Exception e) {
+			logger.warn("Error retrieving memories: " + e.getMessage());
+			return "";
+		}
+	}
+
 	public OpenAIRequest getChatPrompt() {
 		String model = null;
 		if (chatConfig != null) {
@@ -1330,6 +1523,12 @@ public class Chat {
 			useAssist = chatConfig.get("assist");
 			systemChar = chatConfig.get("systemCharacter");
 			userChar = chatConfig.get("userCharacter");
+
+			// Phase 2: Retrieve and inject memory context before template processing
+			String memoryCtx = retrieveRelevantMemories(systemChar, userChar);
+			if (memoryCtx != null && !memoryCtx.isEmpty()) {
+				PromptUtil.setMemoryContext(memoryCtx);
+			}
 		}
 		if (promptConfig != null) {
 			if (systemChar != null && userChar != null) {
@@ -1339,7 +1538,7 @@ public class Chat {
 					userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, chatConfig);
 				}
 				sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
-				
+
 			} else {
 				sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, null);
 				assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, null);

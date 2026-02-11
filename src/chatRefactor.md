@@ -8,9 +8,11 @@
 4. [Memory System Integration](#4-memory-system-integration)
 5. [Always-Stream Backend with Buffer & Timeout](#5-always-stream-backend-with-buffer--timeout)
 6. [LLM Configuration Options Audit](#6-llm-configuration-options-audit)
-7. [Implementation Phases](#7-implementation-phases)
+7. [Implementation Phases](#7-implementation-phases) (Phases 1-10)
 8. [Policy-Based LLM Response Regulation](#8-policy-based-llm-response-regulation)
 9. [Testing Requirements](#9-testing-requirements)
+10. [Keyframe System Evaluation](#10-keyframe-system-evaluation)
+11. [Open Issue Tracker](#11-open-issue-tracker)
 
 ---
 
@@ -240,6 +242,23 @@ The consent prefix, rating consent, NLP consent, and censor warning blocks toget
 **P3 - SMS prompt doesn't use available template variables**
 
 `chatPrompt.json` only uses a small subset of available variables (`${system.firstName}`, `${perspective}`, `${censorWarn}`, `${rating}`, `${ratingMpa}`). It doesn't use scene, setting, episode, interaction, or character description variables, meaning those features silently do nothing when the SMS prompt is selected.
+
+### 2.5 Dynamic Multimedia Token Issues
+
+**P1 - `${image.*}` and `${audio.*}` tokens need aggressive re-evaluation**
+
+The dynamic multimedia tags (`${image.TAG}`, `${image.TAG,TAG}`, `${audio.TEXT}`) are not working well. These tokens are currently processed client-side in `chat.js` (`processImageTokensInContent()`, `processAudioTokensInContent()`) after message rendering, but the end-to-end pipeline has multiple reliability issues:
+
+- **Inconsistent LLM generation:** Models frequently fail to produce correctly-formatted multimedia tokens, especially multi-tag image tokens (`${image.TAG1,TAG2}`). The syntax is fragile and not well-reinforced in prompt templates.
+- **Client-side parsing brittleness:** Token extraction relies on regex matching within rendered message content, which breaks when tokens span markdown formatting boundaries or are partially escaped.
+- **No server-side validation:** The server has no awareness of multimedia tokens, so malformed tokens pass through silently and render as literal text.
+- **Template disconnect:** Prompt templates that instruct the LLM to use multimedia tokens (e.g., `"Send pics: ${image.TAG}"` in system rules) are not reliably producing the desired behavior across different LLM backends.
+
+**Impact:** Any changes to the multimedia token system will require corresponding updates to:
+- JSON prompt templates (`prompt.config.json`, `chatPrompt.json`, and any custom templates) that reference image/audio token syntax in their instruction text
+- Client-side rendering in `chat.js` (`processImageTokensInContent`, `processAudioTokensInContent`)
+- Potentially the `chatOptions` model if token enable/disable flags change
+- Magic8 director prompt (`magic8DirectorPrompt.json`) which has its own `imageTagsAppendix` system
 
 ---
 
@@ -2136,34 +2155,34 @@ All tests must:
 
 **Phase 1 gate:** Tests 1-7 pass + ALL regression tests pass.
 
-#### Phase 2 Tests: Memory Template Variables & Retrieval
+#### Phase 2 Tests: Memory Template Variables & Retrieval — ALL PASSING
 
-| # | Test Name | What It Tests | Services Required |
-|---|---|---|---|
-| 8 | `TestMemoryPatternResolution` | promptConfig with `${memory.context}`, inject memory data → token resolved | DB |
-| 9 | `TestMemoryPatternsDefaultToEmpty` | Existing prompt.config.json → no `${memory.` substring in output | DB |
-| 10 | `TestCanonicalCharacterIds` | `canonicalCharacterIds("def","abc") == canonicalCharacterIds("abc","def")` | DB |
-| 11 | `TestMemoryContextFormatting` | Memories formatted via `MemoryUtil.formatMemoriesAsContext` → correct MCP block | DB |
-| 12 | `TestRoleAgnosticMemoryRetrieval` | Bob(user)+Rob(system) stores memory → Bob(system)+Rob(user) retrieves same | DB |
-| 13 | `TestCrossPartnerMemoryRetrieval` | Bob+Rob stores, Bob+Nob stores → query "all Bob's memories" returns both | DB |
-| 14 | `TestCreateMemoryWithCharacterIds` | Create memory with characterId1+characterId2 → verify persisted correctly | DB |
-| 15 | `TestSearchMemoriesByCharacterPair` | 3 memories pair(A,B), 2 pair(A,C) → search pair(A,B) returns exactly 3 | DB |
-| 16 | `TestSearchMemoriesByCharacter` | Same setup → search character A returns all 5 | DB |
-| 17 | `TestRoleSwapProducesSameIds` | Bob system+Rob user, then Bob user+Rob system → identical characterId1/characterId2 | DB |
-| 18 | `TestMemoryRetrievalIntegration` | Full `retrieveRelevantMemories()` with pair + cross-partner + keyframe | DB, LLM |
+| # | Test Name | What It Tests | Services Required | Status |
+|---|---|---|---|---|
+| 8 | `testMemoryPatternResolution` | promptConfig with `${memory.context}`, inject memory data → token resolved | DB | PASS |
+| 9 | `testMemoryPatternsDefaultToEmpty` | Prompt without memory tokens → no `${memory.` substring in output | DB | PASS |
+| 10 | `testCanonicalPersonIds` | `canonicalPersonIds(200,100) == canonicalPersonIds(100,200)` | None | PASS |
+| 11 | `testMemoryContextFormatting` | Memories formatted via `MemoryUtil.formatMemoriesAsContext` → correct MCP block | DB | PASS |
+| 12 | `testRoleAgnosticMemoryRetrieval` | Bob(user)+Rob(system) stores memory → Bob(system)+Rob(user) retrieves same | DB | PASS |
+| 13 | `testCrossPartnerMemoryRetrieval` | Bob+Rob stores, Bob+Nob stores → query "all Bob's memories" returns both | DB | PASS |
+| 14 | `testCreateMemoryWithPersonIds` | Create memory with personId1+personId2 → verify persisted with canonical ordering | DB | PASS |
+| 15 | `testSearchMemoriesByPersonPair` | 3 memories pair(A,B), 2 pair(A,C) → search pair(A,B) returns exactly 3 | DB | PASS |
+| 16 | `testSearchMemoriesByPerson` | Same setup → search person A returns all 5 | DB | PASS |
+| 17 | `testRoleSwapProducesSameIds` | Bob system+Rob user, then Bob user+Rob system → identical personId1/personId2 | DB | PASS |
+| 18 | `testMemoryRetrievalIntegration` | Full `retrieveRelevantMemories()` with pair memories → prompt contains MCP context | DB | PASS |
 
-**Phase 2 gate:** Tests 8-18 pass + ALL regression tests pass.
+**Phase 2 gate:** Tests 8-18 pass + ALL regression tests pass. **GATE MET.**
 
 #### Phase 3 Tests: Keyframe-to-Memory Pipeline
 
-| # | Test Name | What It Tests | Services Required |
-|---|---|---|---|
-| 19 | `TestKeyframeMemoryPersistence` | extractMemories=true → `tool.memory` record created with OUTCOME type | DB, LLM |
-| 20 | `TestKeyframeMemoryScoping` | Two character pairs → pair-scoped queries return correct memories | DB, LLM |
-| 21 | `TestKeyframePruneKeepsTwo` | After multiple keyframes → last 2 are kept, older ones pruned | DB, LLM |
-| 22 | `TestKeyframeToMemoryToPromptRoundtrip` | Keyframe → memory persist → new session → memory appears in prompt | DB, LLM |
+| # | Test Name | What It Tests | Services Required | Status |
+|---|---|---|---|---|
+| 19 | `testKeyframeMemoryPersistence` | extractMemories=true → `tool.memory` record created with OUTCOME type, person pair IDs set | DB, LLM | PASS |
+| 20 | `testKeyframeMemoryScoping` | Two character pairs → pair-scoped queries return correct memories, role-agnostic | DB | PASS |
+| 21 | `testKeyframePruneKeepsTwo` | After multiple keyframes → last 2 are kept in history, memories persisted | DB, LLM | PASS |
+| 22 | `testKeyframeToMemoryToPromptRoundtrip` | Keyframe → memory persist → new session → memory appears in prompt via `${memory.context}` | DB | PASS |
 
-**Phase 3 gate:** Tests 19-22 pass + ALL regression tests pass.
+**Phase 3 gate:** Tests 19-22 pass + ALL regression tests pass. **GATE MET.**
 
 #### Phase 4 Tests: Prompt Templates
 
@@ -2240,6 +2259,34 @@ All tests must:
 
 **Phase 9 gate:** Tests 46-62 pass + ALL regression tests pass.
 
+#### Phase 6 Tests: UX Test Suite
+
+| # | Test Name | Category | What It Tests | Services Required |
+|---|---|---|---|---|
+| 63 | `TestConfigLoad` | config | chatConfig and promptConfig load from `~/Chat` without error | Server |
+| 64 | `TestServerReachable` | config | chatConfig's serverUrl responds to health check / model list | Server, LLM |
+| 65 | `TestPromptComposition` | prompt | System/user/assistant prompts compose, `${dynamicRules}` resolves, output length > 0 | Server |
+| 66 | `TestNoOrphanTokens` | prompt | Composed prompts contain no unresolved `${...}` tokens | Server |
+| 67 | `TestPromptDataDump` | prompt | Full prompt text logged via testLogData for manual inspection | Server |
+| 68 | `TestChatSessionCreate` | chat | `getChatRequest()` returns valid session object | Server |
+| 69 | `TestChatSendReceive` | chat | Send message, receive non-empty assistant response | Server, LLM |
+| 70 | `TestChatSessionCleanup` | chat | `deleteChat(req, true)` succeeds | Server |
+| 71 | `TestStreamConnect` | stream | WebSocket streaming connects and receives chunks | Server, LLM |
+| 72 | `TestStreamFullResponse` | stream | Streamed chunks assemble into complete response | Server, LLM |
+| 73 | `TestHistoryOrdering` | history | Send 3 messages, retrieve history, verify chronological order | Server, LLM |
+| 74 | `TestHistoryContent` | history | Retrieved messages match sent content | Server, LLM |
+| 75 | `TestPruning` | prune | Send messages beyond messageTrim, verify old messages pruned | Server, LLM |
+| 76 | `TestKeyframeCreation` | prune | After keyframeEvery messages, verify keyframe exists | Server, LLM |
+| 77 | `TestEpisodeGuidance` | episode | With episodes configured, verify episode guidance appears in prompt | Server |
+| 78 | `TestEpisodeTransition` | episode | `#NEXT EPISODE#` response detected and handled | Server, LLM |
+| 79 | `TestAnalysisPipeline` | analyze | Send content for analysis, receive structured analysis response | Server, LLM |
+| 80 | `TestNarrationPipeline` | narrate | Send scene content, receive formatted summary | Server, LLM |
+| 81 | `TestPolicyEvaluation` | policy | If policy configured, verify evaluation and rewrite | Server, LLM |
+
+**Phase 6 gate:** All UX tests pass with at least one named chatConfig against a live Ollama server. Debug output is copy-paste ready for diagnosis.
+
+**Note:** These are browser-side tests run via the UX test view, not JUnit tests. They validate the full client-to-server-to-LLM pipeline end-to-end.
+
 ### 9.4 Test Infrastructure Requirements
 
 | Requirement | How To Configure |
@@ -2275,28 +2322,62 @@ When a test fails:
 
 **Files modified:** `PromptUtil.java`, `prompt.config.json`
 
-### Phase 2: Memory Retrieval (Medium risk, high impact)
+### Phase 2: Memory Retrieval (Medium risk, high impact) — IMPLEMENTED
 
 **Goal:** Make memories available during prompt composition.
 
-1. **Add `retrieveRelevantMemories()`** to `Chat.java`
-2. **Add memory template variables** to `TemplatePatternEnumType` (`${memory.context}`, `${memory.relationship}`, etc.)
-3. **Add `buildMemoryReplacements()`** stage to `PromptUtil` pipeline (after episode, before character descriptions)
-4. **Implement character-pair memory query** in `VectorUtil`
-5. **Add `memoryBudget` field** to `chatConfigModel.json`
+**Status:** Complete. All 11 Phase 2 tests pass. All regression tests pass.
 
-**Files modified:** `Chat.java`, `PromptUtil.java`, `TemplatePatternEnumType.java`, `VectorUtil.java`, `chatConfigModel.json`
+1. **Add `retrieveRelevantMemories()`** to `Chat.java` — Done. Queries `tool.memory` by canonical person pair IDs, formats as MCP context blocks via `McpContextBuilder`, passes to `PromptUtil` via ThreadLocal.
+2. **Add memory template variables** to `TemplatePatternEnumType` — Done. Added `MEMORY_CONTEXT`, `MEMORY_RELATIONSHIP`, `MEMORY_FACTS`, `MEMORY_LAST_SESSION`, `MEMORY_COUNT`.
+3. **Add `buildMemoryReplacements()`** stage to `PromptUtil` pipeline — Done. Stage 5 in the 12-stage pipeline (after episode, before rating/NLP/consent). Reads from ThreadLocal `pendingMemoryContext`, clears after use.
+4. **Implement person-pair memory query** in `MemoryUtil` — Done. `searchMemoriesByPersonPair()` and `searchMemoriesByPerson()` with canonical ID ordering. Queries use `personId1`/`personId2` fields (role-agnostic).
+5. **Add `memoryBudget` field** to `chatConfigModel.json` — Done. Int field, default 0 (disabled). Controls token budget for memory context injection.
+6. **Add `personId1`/`personId2`/`personModel` fields** to `memoryModel.json` and `vectorMemoryModel.json` — Done. Uses person-centric naming with model type for polymorphic identity (supports `identity.person` and `olio.charPerson`).
 
-### Phase 3: Keyframe-to-Memory Pipeline (Medium risk, medium impact)
+**Files modified:** `Chat.java`, `PromptUtil.java`, `PromptBuilderContext.java`, `TemplatePatternEnumType.java`, `MemoryUtil.java`, `VectorMemoryListFactory.java`, `chatConfigModel.json`, `memoryModel.json`, `vectorMemoryModel.json`
+**Files added:** `TestMemoryPhase2.java`
+
+**Design decisions:**
+- Person pair IDs are canonicalized (lower ID first) so the same pair always produces the same `(personId1, personId2)` regardless of system/user role assignment.
+- Memory context is passed from `Chat.java` to the template pipeline via `PromptUtil.pendingMemoryContext` (ThreadLocal) to avoid changing method signatures across the pipeline chain.
+- `personModel` field on memory records enables polymorphic person references (could be `identity.person` or `olio.charPerson`).
+- `MEMORY_RELATIONSHIP`, `MEMORY_FACTS`, `MEMORY_LAST_SESSION` default to empty strings in Phase 2. Phase 3+ can populate them with categorized memory content.
+
+**Known issues:**
+- `personModel` field is defined in the schema but not yet populated by `MemoryUtil.createMemory()` or `Chat.retrieveRelevantMemories()`. Callers should set it when the person model type is known. (Still open after Phase 3.)
+- `MEMORY_RELATIONSHIP`, `MEMORY_FACTS`, `MEMORY_LAST_SESSION`, `MEMORY_COUNT` are always empty/zero in Phase 2. Splitting memory content by category is deferred to Phase 4+. (Still open after Phase 3.)
+- The `extractMemoriesFromResponse()` method in `MemoryUtil` does not yet pass person pair IDs when creating memories from LLM extraction responses. (Still open after Phase 3 — Phase 3 addressed keyframe-sourced memories but not LLM-extracted memories.)
+
+### Phase 3: Keyframe-to-Memory Pipeline (Medium risk, medium impact) — IMPLEMENTED
 
 **Goal:** Make keyframes durable and accumulative.
 
-1. **Persist keyframe summaries as memories** in `addKeyFrame()`
-2. **Tag memories with character pair IDs** for cross-conversation retrieval
-3. **Add `memoryExtractionEvery` config** to control extraction frequency
-4. **Keep last 2 keyframes** instead of 1 for better continuity during active conversations
+**Status:** Complete. All 4 Phase 3 tests pass. All 28 regression tests pass (Phase 2: 11, MemoryUtil: 12, MemoryDuel: 1, Phase 3: 4).
 
-**Files modified:** `Chat.java`, `chatConfigModel.json`, `memoryModel.json` (add annotations field)
+1. **Persist keyframe summaries as memories** in `addKeyFrame()` — Done. New `persistKeyframeAsMemory()` method creates `tool.memory` records with type `OUTCOME` and importance 7 from keyframe analysis text. Summary is truncated to sentence boundary at 200 chars via `truncateToSentence()`.
+2. **Tag memories with character pair IDs** for cross-conversation retrieval — Done. Both character IDs are stored in canonical order (lower ID first) via `MemoryUtil.createMemory()` with `personId1`/`personId2`. Role-agnostic: same pair always produces same IDs regardless of system/user assignment.
+3. **Add `memoryExtractionEvery` config** to control extraction frequency — Done. New `memoryExtractionEvery` field on `chatConfigModel.json` (int, default 0). When 0, every keyframe produces a memory. When N>0, only every Nth keyframe (counted by existing OUTCOME memories for that conversation) produces a memory.
+4. **Keep last 2 keyframes** instead of 1 for better continuity during active conversations — Done. Two changes:
+   - `addKeyFrame()`: When building new message list, keeps the most recent existing keyframe plus the new one (2 total in message history).
+   - `pruneCount()`: Marks last 2 keyframes as non-pruned instead of just 1.
+
+**Files modified:** `Chat.java`, `chatConfigModel.json`
+**Files added:** `TestKeyframeMemory.java`
+
+**Design decisions:**
+- Keyframe memories use `OUTCOME` type per the design document (Section 4.3), reflecting that keyframes summarize conversation outcomes/events.
+- The `conversationId` on keyframe memories is set to the chatConfig's `objectId`, linking memories to the specific chat configuration rather than a session ID. This allows cross-session memory retrieval for the same chatConfig.
+- `persistKeyframeAsMemory()` is gated by `extractMemories=true` on the chatConfig. When false, keyframes are still created as message history but not persisted as durable memories.
+- The `memoryExtractionEvery` frequency check counts only OUTCOME-type memories for the conversation, so other memory types created externally don't interfere with the keyframe extraction cadence.
+- Memory vectorization happens automatically via `MemoryUtil.createMemory()` → `createMemoryVectors()`, making keyframe memories semantically searchable.
+
+**Known issues:**
+- `personModel` field is still not populated by `persistKeyframeAsMemory()` or `MemoryUtil.createMemory()`. Callers should set it when the person model type is known.
+- `MEMORY_RELATIONSHIP`, `MEMORY_FACTS`, `MEMORY_LAST_SESSION`, `MEMORY_COUNT` template variables are still always empty/zero. Splitting memory content by category (grouping OUTCOME vs RELATIONSHIP vs FACT memories) is deferred to Phase 4+.
+- The `extractMemoriesFromResponse()` method in `MemoryUtil` still does not pass person pair IDs when creating memories from LLM extraction responses. This remains an open issue from Phase 2.
+- The LLM model `qwen3` returns a `thinking` field in streaming responses that the `RecordDeserializer` does not recognize on the `openaiMessage` model, producing `Invalid field: olio.llm.openai.openaiMessage.thinking` error logs. This is a pre-existing issue unrelated to Phase 3 — the `openaiMessage` model schema needs a `thinking` field added to support models with chain-of-thought output.
+- When `keyframeEvery` is set very low (e.g., 2), each keyframe triggers an `analyze()` LLM call which is expensive. The `memoryExtractionEvery` config mitigates memory storage volume but does not reduce LLM calls for the analysis itself.
 
 ### Phase 4: Structured Template Schema (Higher risk, high long-term impact)
 
@@ -2309,6 +2390,7 @@ When a test fails:
 5. **Migrate existing prompts** to new schema (keep old schema working via adapter)
 6. **Unify Magic8 prompt** under the new schema
 7. **Update chat.js** if any client-side template handling changes
+8. **Populate `MEMORY_RELATIONSHIP`, `MEMORY_FACTS`, `MEMORY_LAST_SESSION`, `MEMORY_COUNT`** — Split retrieved memories by `memoryType` into categorized template variables. OUTCOME/EVENT → `MEMORY_LAST_SESSION`, RELATIONSHIP → `MEMORY_RELATIONSHIP`, FACT/NOTE/PREFERENCE → `MEMORY_FACTS`, count → `MEMORY_COUNT`. (Open issue from Phases 2-3.)
 
 **New files:** `promptTemplateModel.json`, `PromptTemplateComposer.java`, `PromptConditionEvaluator.java`
 **Modified files:** `PromptUtil.java` (add adapter), prompt JSON files, `chat.js`
@@ -2323,6 +2405,311 @@ When a test fails:
 4. **Standardize token processing** - Image and audio token processing should work identically regardless of prompt template style
 
 **Files modified:** `ChatUtil.java` (server-side formatting), `chat.js` (simplify rendering)
+
+### Phase 6: UX Test Suite (Low risk, high impact)
+
+**Goal:** Provide a shared test framework and LLM capability test suite runnable from the browser UX, with clear debug output for diagnosing pipeline issues.
+
+**Prerequisites:** All backend phases that affect the prompt/chat pipeline should be complete before implementing this phase, so tests validate the final system.
+
+#### 6.1 Shared Test Framework
+
+Extract reusable test infrastructure from CardGame's `testMode.js` into a shared module that both CardGame and new LLM tests can use.
+
+**`client/test/testFramework.js`** — Core framework:
+
+| Component | Purpose |
+|-----------|---------|
+| `testState` | `{ running, logs[], results{pass,fail,warn,skip}, currentTest, completed, selectedCategories[], logFilter, selectedSuite }` |
+| `testLog(category, message, status)` | Append a log entry with status `"info"`, `"pass"`, `"fail"`, or `"warn"` |
+| `testLogData(category, label, data)` | Log structured data (JSON/text) for debug copy-paste — appears as expandable block |
+| `runSuite(suiteId)` | Run a registered suite's selected categories sequentially |
+| `TestConsoleUI` | Mithril component — scrollable log console with color-coded status, filter by category/status |
+| `TestToolbarUI` | Mithril component — Run button, suite selector dropdown, status spinner |
+| `TestCategoryToggleUI` | Mithril component — category checkboxes with icons and labels |
+| `TestResultsSummaryUI` | Mithril component — pass/fail/warn/skip counts |
+| `exportLogs()` | Copy all logs to clipboard as formatted text (includes DATA blocks in full) |
+| `clearLogs()` | Reset logs and results |
+
+**`client/test/testRegistry.js`** — Suite registration:
+
+```javascript
+// Each test suite registers itself
+TestFramework.registerSuite("llm", {
+  label: "LLM Chat Pipeline",
+  icon: "smart_toy",
+  categories: { /* ... */ },
+  run: async function(selectedCategories) { /* ... */ }
+});
+
+// CardGame registers separately
+TestFramework.registerSuite("cardGame", {
+  label: "Card Game",
+  icon: "playing_cards",
+  categories: { /* ... */ },
+  run: async function(selectedCategories) { /* ... */ }
+});
+```
+
+#### 6.2 LLM Test Suite
+
+**`client/test/llm/llmTestSuite.js`** — Test categories and implementations.
+
+**Prerequisites:**
+- A named `olio.llm.chatConfig` must exist in `~/Chat` (e.g., "Ollama Test Chat")
+- A named `olio.llm.promptConfig` must exist (uses default or named config)
+- The test suite UI presents a config picker to select which chatConfig to use
+- All testing targets a remote Ollama server (OpenAI API format with Ollama URI/response differences)
+
+**Test Categories:**
+
+| Category | Icon | Tests |
+|----------|------|-------|
+| **config** | `settings` | Validate chatConfig loads, promptConfig loads, server URL reachable, model available |
+| **prompt** | `description` | Template composition: system/user/assistant prompts compose without errors, `${dynamicRules}` resolves, no orphan `${...}` tokens in output |
+| **chat** | `chat` | Create session, send message, receive response, verify response structure |
+| **stream** | `stream` | WebSocket streaming: connect, receive chunks, full response assembled |
+| **history** | `history` | Message history: send 3 messages, retrieve history, verify ordering and content |
+| **prune** | `content_cut` | Pruning: send messages beyond messageTrim, verify old messages pruned, keyframe created |
+| **episode** | `movie` | Episode flow: configure episodes, verify episode guidance in prompt, `#NEXT EPISODE#` detection |
+| **analyze** | `analytics` | Analysis pipeline: send content, get analysis response, verify structure |
+| **narrate** | `auto_stories` | Narration pipeline: send scene, get summary, verify format |
+| **policy** | `policy` | Policy evaluation: if policy configured, verify request rewrite |
+
+**Test Implementation Pattern:**
+
+Each test function receives `(log, logData, chatCfg, promptCfg)` and follows:
+1. Setup — create session / prepare state
+2. Execute — call the API under test
+3. Assert — log pass/fail with descriptive message
+4. Debug — log full response data via `logData()` for copy-paste diagnosis
+5. Cleanup — delete test sessions
+
+```javascript
+async function testChat(log, logData, chatCfg, promptCfg) {
+  log("chat", "=== Chat Session Tests ===");
+
+  // 1. Create session
+  let req;
+  try {
+    req = await am7chat.getChatRequest("LLM Test - " + Date.now(), chatCfg, promptCfg);
+    log("chat", "Session created: " + req.name, req ? "pass" : "fail");
+  } catch(e) {
+    log("chat", "Session create failed: " + e.message, "fail");
+    return;
+  }
+
+  // 2. Send message
+  try {
+    let resp = await am7chat.chat(req, "Say exactly: TEST_OK");
+    let content = extractLastAssistantMessage(resp);
+    log("chat", "Response received (" + content.length + " chars)", content ? "pass" : "fail");
+    logData("chat", "Response content", content);
+  } catch(e) {
+    log("chat", "Chat failed: " + e.message, "fail");
+    logData("chat", "Error details", e.stack);
+  }
+
+  // 3. Cleanup
+  try {
+    await am7chat.deleteChat(req, true);
+    log("chat", "Session cleaned up", "pass");
+  } catch(e) {
+    log("chat", "Cleanup failed: " + e.message, "warn");
+  }
+}
+```
+
+#### 6.3 Integrated Test View
+
+**`client/view/testView.js`** — Test view accessible from the app menu bar.
+
+**Visibility:**
+- Renders a "Test" button in the top menu bar
+- Only visible when `page.testMode === true` OR `page.productionMode === false`
+- Flags set via URL param (`?testMode=true`) or app config
+
+**UI Layout:**
+```
++--------------------------------------------------+
+| [Back]  Test Suite  [Suite: ▼ LLM]  [Run Tests]  |
++--------------------------------------------------+
+| Config: [chatConfig picker ▼]  [promptConfig ▼]  |
++--------------------------------------------------+
+| [config] [prompt] [chat] [stream] [history] ...   |
++--------------------------------------------------+
+| RESULTS: 12 pass  1 fail  2 warn    [All] [Issues]|
++--------------------------------------------------+
+| 13:04:21 [config] ✓ chatConfig loaded             |
+| 13:04:21 [config] ✓ Server URL reachable          |
+| 13:04:22 [prompt] ✓ System prompt composed (847ch)|
+| 13:04:22 [prompt] ✗ Orphan token: ${custom.foo}   |
+| 13:04:22 [prompt] DATA: {"system":"This is a..."} |
+| 13:04:23 [chat]   ✓ Session created: Test-1234    |
+| 13:04:25 [chat]   ✓ Response received (142 chars) |
+| 13:04:25 [chat]   DATA: "Hello! I'm Kael..."      |
++--------------------------------------------------+
+| [Copy Logs to Clipboard]                          |
++--------------------------------------------------+
+```
+
+**Debug Data Output:**
+
+The `testLogData()` function logs structured data as expandable/collapsible blocks. "Copy Logs to Clipboard" includes DATA entries in full:
+
+```
+[13:04:22] [prompt] [PASS] System prompt composed (847 chars)
+[13:04:22] [prompt] [DATA] System prompt content:
+  This is a fully immersive RC/XXX (Banned)-rated role-playing conversation/game.
+  You (the LLM) control Kael Brightforge. ...
+  RULES:
+  1. Always stay in character.
+  2. Create a response for Kael's next turn:
+  ...
+[13:04:22] [prompt] [FAIL] Orphan token found: ${custom.foo}
+```
+
+#### 6.4 CardGame Test Refactor
+
+Refactor CardGame's `testMode.js` to register with the shared framework:
+
+- Wrap existing test categories as a registered suite via `TestFramework.registerSuite("cardGame", ...)`
+- Use shared `testLog` / `TestConsoleUI` instead of CardGame-specific implementations
+- CardGame's test button routes to the shared test view with "Card Game" suite pre-selected
+
+#### 6.5 Files
+
+| Action | File | Purpose |
+|--------|------|---------|
+| **Create** | `client/test/testFramework.js` | Shared test state, logging, UI components |
+| **Create** | `client/test/testRegistry.js` | Suite registration + suite selector |
+| **Create** | `client/test/llm/llmTestSuite.js` | LLM test categories and implementations |
+| **Create** | `client/view/testView.js` | Integrated test view with config pickers |
+| **Modify** | `index.html` | Add `<script>` tags for test framework + LLM test suite + test view |
+| **Modify** | `client/components/topMenu.js` | Add conditional "Test" menu button |
+| **Modify** | `client/pageClient.js` | Add `page.testMode` and `page.productionMode` flags |
+| **Refactor** | `client/view/cardGame/test/testMode.js` | Register with shared framework, use shared UI components |
+
+### Phase 7: Always-Stream Backend with Buffer & Timeout (Medium risk, medium impact)
+
+**Goal:** Unify streaming/non-streaming code paths and add timeout support (Section 5).
+
+1. **Always-stream from LLM** — Refactor `Chat.chat()` to always use the streaming code path. `stream` flag controls whether chunks are forwarded to client or buffered internally.
+2. **Add `requestTimeout`** to `chatConfigModel.json` — Hard timeout for hung LLM connections via `CompletableFuture.orTimeout()`.
+3. **Extract `processStreamChunk()`** — Shared method to eliminate duplicated stream parsing logic.
+4. **Add `thinking` field to `openaiMessageModel.json`** — Models like `qwen3` return a `thinking` field for chain-of-thought output. The `RecordDeserializer` currently logs errors for this unrecognized field. Add `thinking` (type: string) to the model schema. (Open issue from Phase 3 testing.)
+
+**Files modified:** `Chat.java`, `ClientUtil.java`, `chatConfigModel.json`, `openaiMessageModel.json`
+
+### Phase 8: LLM Configuration & ChatOptions Fix (Low risk, high impact)
+
+**Goal:** Fix configuration mapping bugs, add missing fields, and provide chatConfig templates (Section 6).
+
+1. **Fix `top_k` maxValue** — Change from `1` to `500` in `chatOptionsModel.json`. Currently prevents valid values like 50. (Open issue from Section 6.1.)
+2. **Fix `applyChatOptions()` mapping bug** — `typical_p` is incorrectly mapped to OpenAI's `presence_penalty` and `repeat_penalty` is mapped to `frequency_penalty`. These are different concepts with different semantics and ranges. Fix to map native OpenAI fields directly. (Open issue from Section 6.1.)
+3. **Add missing chatOptions fields** — Add `max_tokens` (int, default 4096), `frequency_penalty` (double, -2.0 to 2.0), `presence_penalty` (double, -2.0 to 2.0), `seed` (int, default 0) to `chatOptionsModel.json`. (Open issue from Section 6.1.)
+4. **Create chatConfig templates** — Provide preset JSON templates for General Chat, RPG, Coding, Content Analysis, Behavioral, and Technical Eval use cases (Section 6.3).
+
+**Files modified:** `chatOptionsModel.json`, `ChatUtil.applyChatOptions()`, `chatConfigModel.json`
+**Files added:** `chatConfig.generalChat.json`, `chatConfig.rpg.json`, `chatConfig.coding.json`, `chatConfig.contentAnalysis.json`, `chatConfig.behavioral.json`, `chatConfig.technicalEval.json`
+
+### Phase 9: Policy-Based LLM Response Regulation (Higher risk, medium impact)
+
+**Goal:** Detect and respond to LLM failures using the existing policy evaluation infrastructure (Section 8).
+
+1. **Implement `TimeoutDetectionOperation`** — Detect null/empty responses from timeout or connection drop.
+2. **Implement `RecursiveLoopDetectionOperation`** — Detect repeated text blocks (50-char window, 3x threshold).
+3. **Implement `WrongCharacterDetectionOperation`** — Detect LLM responding as the user character.
+4. **Implement `RefusalDetectionOperation`** — Detect LLM safety refusals within configured rating.
+5. **Implement `ResponsePolicyEvaluator`** — Wire operations into policy evaluation pipeline.
+6. **Implement `ChatAutotuner`** — LLM-based prompt analysis and rewrite on policy violation.
+7. **Create sample policy JSON files** — Default policies for RPG, Clinical, and General use cases.
+
+**New files:** `TimeoutDetectionOperation.java`, `RecursiveLoopDetectionOperation.java`, `WrongCharacterDetectionOperation.java`, `RefusalDetectionOperation.java`, `ResponsePolicyEvaluator.java`, `ChatAutotuner.java`, sample policy JSONs
+**Modified files:** `Chat.java` (post-response evaluation hook)
+
+### Phase 10: Memory System Hardening & Keyframe Refactor (Low risk, medium impact)
+
+**Goal:** Complete memory system gaps, refactor keyframe/memory overlap, and relocate tests.
+
+1. **Populate `personModel` field** — Set `personModel` in `MemoryUtil.createMemory()` and `Chat.persistKeyframeAsMemory()` when the person type is known (e.g., `"olio.charPerson"`). (Open issue from Phases 2-3.)
+2. **Pass person pair IDs in `extractMemoriesFromResponse()`** — Add `personId1`/`personId2` parameters so LLM-extracted memories are tagged with the character pair. (Open issue from Phases 2-3.)
+3. **Relocate memory/keyframe tests to Objects7** — `TestMemoryUtil`, `TestMemoryPhase2`, `TestKeyframeMemory`, and `TestMemoryDuel` have zero Agent7 imports and depend entirely on Objects7 classes (`Chat`, `MemoryUtil`, `PromptUtil`, etc.). Move them to `AccountManagerObjects7/src/test/java/` to match their actual dependency scope. (Open issue from Phase 3.)
+4. **Deprecate old `(KeyFrame:` format** — Remove backward-compatibility checks for `(KeyFrame:` prefix in `pruneCount()`, `countBackTo()`, `addKeyFrame()`, and `getFormattedChatHistory()`. Require MCP format only. Reduces code complexity.
+5. **Add keyframe cost guard** — When `keyframeEvery` is low (e.g., 2-3), each keyframe triggers an expensive `analyze()` LLM call. Add a minimum floor (e.g., `keyframeEvery >= 5` when `extractMemories=true`) or a rate limiter to prevent excessive LLM costs. (Open issue from Phase 3.)
+
+**Files modified:** `MemoryUtil.java`, `Chat.java`, `ChatUtil.java`
+**Files relocated:** `TestMemoryUtil.java`, `TestMemoryPhase2.java`, `TestKeyframeMemory.java`, `TestMemoryDuel.java` → `AccountManagerObjects7/src/test/java/`
+
+---
+
+## 10. Keyframe System Evaluation
+
+### 10.1 Current Role
+
+Keyframes serve as periodic narrative checkpoints that:
+- Call `analyze()` to generate an LLM summary of recent conversation
+- Inject the summary as an MCP context block into the message stream
+- Survive message pruning (last 2 are kept), providing continuity when old messages are trimmed
+- (Phase 3) Persist as durable OUTCOME memories for cross-session retrieval
+
+### 10.2 Overlap with Memory System
+
+After Phase 2-3 implementation, there is significant overlap:
+
+| Capability | Keyframe System | Memory System |
+|-----------|----------------|---------------|
+| Periodic summarization | `addKeyFrame()` via `analyze()` | Not automatic (requires `extractMemories`) |
+| Inline context for LLM | Last 2 keyframes in message stream | `${memory.context}` injected at prompt composition |
+| Cross-session persistence | Phase 3: persists as OUTCOME memories | Native — all memories are durable |
+| Semantic search | Only via persisted memory (Phase 3) | Native — vector embeddings on all memories |
+| Role-agnostic retrieval | Via memory system (Phase 3) | Native — canonical person pair IDs |
+
+### 10.3 What Keyframes Still Provide
+
+1. **Inline narrative anchors** — Keyframes live in the active message stream between user/assistant turns. The LLM sees them as part of the conversation flow, not as a separate context block. This is qualitatively different from `${memory.context}` which appears only in the system prompt.
+2. **Prune survival** — When messages are trimmed, keyframes bridge the gap between the system prompt and recent messages. Without them, pruning creates a jarring discontinuity.
+3. **Automatic generation** — The memory system requires explicit extraction triggers. Keyframes are generated automatically by the prune system at regular intervals.
+
+### 10.4 Verdict: Refactor, Not Remove
+
+Keyframes are **not redundant** but **need refactoring** to eliminate duplication with the memory system:
+
+**Keep:**
+- Automatic periodic analysis via `analyze()` — this is the core value
+- Inline injection into message stream for narrative continuity
+- Prune-aware retention (last 2 keyframes)
+
+**Refactor:**
+- Consolidate counting/filtering: Replace separate `countBackTo("(KeyFrame:")` and `countBackTo("(Reminder:")` with a unified `countBackToMcp(String uriFragment)` method
+- Deprecate old `(KeyFrame:` text format — require MCP format only (Phase 10 item 4)
+- Consider reducing keyframe content in message stream to a short summary, with full analysis stored only in the memory system
+
+**Future consideration (not currently planned):**
+- Once the memory system has reliable semantic retrieval and importance scoring, keyframes could potentially be replaced entirely by automatic memory injection. This would require: (a) memory retrieval fast enough for inline use, (b) importance scoring that reliably selects the right context, and (c) testing that LLM output quality doesn't degrade. This is an architectural decision for Phase 4+ evaluation.
+
+---
+
+## 11. Open Issue Tracker
+
+All known open issues with their assigned resolution phase:
+
+| # | Issue | Source | Assigned Phase | Priority |
+|---|-------|--------|---------------|----------|
+| OI-1 | `personModel` field not populated by `MemoryUtil.createMemory()` or `Chat.persistKeyframeAsMemory()` | Phase 2-3 known issues | Phase 10 (item 1) | P3 |
+| OI-2 | `MEMORY_RELATIONSHIP`, `MEMORY_FACTS`, `MEMORY_LAST_SESSION`, `MEMORY_COUNT` always empty/zero | Phase 2-3 known issues | Phase 4 (item 8) | P2 |
+| OI-3 | `extractMemoriesFromResponse()` does not pass person pair IDs | Phase 2-3 known issues | Phase 10 (item 2) | P2 |
+| OI-4 | `openaiMessage` model missing `thinking` field — qwen3/CoT models produce error logs | Phase 3 testing | Phase 7 (item 4) | P2 |
+| OI-5 | Low `keyframeEvery` values trigger expensive `analyze()` LLM calls | Phase 3 known issues | Phase 10 (item 5) | P3 |
+| OI-6 | `top_k` maxValue=1 prevents valid values (should be 500) | Section 6.1 | Phase 8 (item 1) | P1 |
+| OI-7 | `typical_p` incorrectly mapped to OpenAI `presence_penalty` in `applyChatOptions()` | Section 6.1 | Phase 8 (item 2) | P1 |
+| OI-8 | `repeat_penalty` mapped to `frequency_penalty` with different semantics | Section 6.1 | Phase 8 (item 2) | P1 |
+| OI-9 | Missing `max_tokens` field on chatOptions | Section 6.1 | Phase 8 (item 3) | P2 |
+| OI-10 | Missing `frequency_penalty` field on chatOptions (OpenAI-native) | Section 6.1 | Phase 8 (item 3) | P2 |
+| OI-11 | Missing `presence_penalty` field on chatOptions (OpenAI-native) | Section 6.1 | Phase 8 (item 3) | P2 |
+| OI-12 | Missing `seed` field on chatOptions | Section 6.1 | Phase 8 (item 3) | P3 |
+| OI-13 | Memory/keyframe tests in Agent7 have no Agent7 dependencies — should relocate to Objects7 | Phase 3 testing | Phase 10 (item 3) | P3 |
+| OI-14 | Old `(KeyFrame:` text format still supported alongside MCP format — maintenance burden | Phase 3 code review | Phase 10 (item 4) | P3 |
 
 ---
 
@@ -2391,6 +2778,8 @@ When a test fails:
 | `keyframeEvery` | int | 20 | Messages between keyframes |
 | `remindEvery` | int | 6 | Messages between reminders |
 | `extractMemories` | boolean | false | Enable memory extraction |
+| `memoryBudget` | int | 0 | Token budget for memory context injection (0=disabled) |
+| `memoryExtractionEvery` | int | 0 | Keyframes between memory extractions (0=every keyframe) |
 | `useNLP` | boolean | false | Enable NLP commands |
 | `nlpCommand` | String | - | NLP goal text |
 | `useJailBreak` | boolean | false | Enable jailbreak prompt |

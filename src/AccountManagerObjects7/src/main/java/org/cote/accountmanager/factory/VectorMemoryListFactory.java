@@ -24,9 +24,13 @@ public class VectorMemoryListFactory extends VectorListFactory {
 	{
 		String memoryType = null;
 		String conversationId = null;
+		long personId1 = 0L;
+		long personId2 = 0L;
 		if(parameterList != null) {
 			memoryType = parameterList.getParameter("memoryType", String.class, null);
 			conversationId = parameterList.getParameter("conversationId", String.class, null);
+			personId1 = parameterList.getParameter("personId1", Long.class, 0L);
+			personId2 = parameterList.getParameter("personId2", Long.class, 0L);
 		}
 
 		BaseRecord vlist = super.newInstance(contextUser, recordTemplate, parameterList, arguments);
@@ -39,6 +43,10 @@ public class VectorMemoryListFactory extends VectorListFactory {
 				BaseRecord v2 = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_VECTOR_MEMORY, contextUser, v, null);
 				v2.set("memoryType", memoryType);
 				v2.set("conversationId", conversationId);
+				if(personId1 > 0L && personId2 > 0L) {
+					v2.set("personId1", personId1);
+					v2.set("personId2", personId2);
+				}
 				nvects.add(v2);
 			}
 			vlist2.set("vectors", nvects);

@@ -209,6 +209,18 @@
 			"name": "extractMemories",
 			"type": "boolean",
 			"description": "When true, the agent layer will automatically extract discrete memories (engrams) from chat sessions after save."
+		},
+		{
+			"name": "memoryBudget",
+			"type": "int",
+			"default": 0,
+			"description": "Token budget for memory context injection in prompts. 0 = disabled. Typical values: 500 (light), 800 (standard), 1000+ (rich)."
+		},
+		{
+			"name": "memoryExtractionEvery",
+			"type": "int",
+			"default": 0,
+			"description": "When extractMemories is true, the number of keyframes between automatic memory extraction from keyframe analysis text. 0 = extract on every keyframe. Typical values: 0 (every keyframe), 3 (every 3rd), 5 (every 5th)."
 		}
 
 	]
