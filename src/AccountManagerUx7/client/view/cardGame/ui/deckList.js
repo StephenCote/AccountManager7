@@ -198,6 +198,28 @@
                     console.warn("[CardGame] Failed to delete chat:", req.name, e);
                 }
             }
+            // Also delete chatConfig objects from ~/CardGame/Chats
+            let cgChatDir = await page.findObject("auth.group", "DATA", "~/CardGame/Chats");
+            if (cgChatDir) {
+                let cq = am7view.viewQuery(am7model.newInstance("olio.llm.chatConfig"));
+                cq.field("groupId", cgChatDir.id);
+                cq.cache(false);
+                cq.range(0, 100);
+                let cqr = await page.search(cq);
+                if (cqr && cqr.results) {
+                    let cfgMatches = cqr.results.filter(function(r) {
+                        return r.name && prefixes.indexOf(r.name) >= 0;
+                    });
+                    for (let cfg of cfgMatches) {
+                        try {
+                            await page.deleteObject(cfg[am7model.jsonModelKey], cfg.objectId);
+                            deleted++;
+                        } catch (e) {
+                            console.warn("[CardGame] Failed to delete chatConfig:", cfg.name, e);
+                        }
+                    }
+                }
+            }
             if (deleted > 0) {
                 console.log("[CardGame] Deleted " + deleted + " game chat(s) for deck:", storageName);
             }

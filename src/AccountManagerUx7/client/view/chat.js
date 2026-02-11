@@ -143,35 +143,52 @@
     }
 
     // Resolve all image tokens in a message (chat.js version)
+    // Processes one token at a time, patching after each to keep positions and server state in sync
     async function resolveChatImages(msgIndex) {
-        let msgs = chatCfg.history?.messages;
-        if (!msgs || !msgs[msgIndex]) return;
         if (!window.am7imageTokens) return;
-        let msg = msgs[msgIndex];
-        if (!msg.content) return;
+        let maxIterations = 10;
+        let iteration = 0;
 
-        let tokens = window.am7imageTokens.parse(msg.content);
-        if (!tokens.length) return;
+        while (iteration < maxIterations) {
+            iteration++;
 
-        let character = msg.role === "user" ? chatCfg.user : chatCfg.system;
-        if (!character) return;
+            // Re-read message content on each iteration so positions reflect any prior patches
+            let msgs = chatCfg.history?.messages;
+            if (!msgs || !msgs[msgIndex]) return;
+            let msg = msgs[msgIndex];
+            if (!msg.content) return;
 
-        let replacements = [];
+            let character = msg.role === "user" ? chatCfg.user : chatCfg.system;
+            if (!character) return;
 
-        for (let token of tokens) {
-            if (token.id && window.am7imageTokens.cache[token.id]) continue;
+            let tokens = window.am7imageTokens.parse(msg.content);
 
-            let resolved = await window.am7imageTokens.resolve(token, character);
-            if (resolved && resolved.image) {
-                if (!token.id) {
-                    let newToken = "${image." + resolved.image.objectId + "." + token.tags.join(",") + "}";
-                    replacements.push({from: token.match, to: newToken});
+            // Find first unresolved token
+            let unresolvedToken = null;
+            for (let token of tokens) {
+                if (!token.id || !window.am7imageTokens.cache[token.id]) {
+                    unresolvedToken = token;
+                    break;
                 }
             }
-        }
 
-        if (replacements.length) {
-            await patchChatImageToken(replacements);
+            if (!unresolvedToken) break; // All resolved
+
+            try {
+                let resolved = await window.am7imageTokens.resolve(unresolvedToken, character);
+                if (resolved && resolved.image) {
+                    if (!unresolvedToken.id) {
+                        let newToken = "${image." + resolved.image.objectId + "." + unresolvedToken.tags.join(",") + "}";
+                        await patchChatImageToken([{from: unresolvedToken.match, to: newToken}]);
+                    }
+                } else {
+                    // Resolution returned null – skip to avoid infinite loop
+                    break;
+                }
+            } catch (e) {
+                console.error("Error resolving image token:", unresolvedToken.match, e);
+                break;
+            }
         }
         m.redraw();
     }
@@ -227,6 +244,61 @@
         }
         selectedImageTags = [];
         showTagSelector = false;
+    }
+
+    // ==========================================
+    // Audio token inline processing
+    // ==========================================
+
+    function escapeHtmlAttr(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // Process content string: replace ${audio.text} tokens with inline audio players
+    function processAudioTokensInContent(content, msgRole, msgIndex) {
+        if (!content || !window.am7audioTokens) return content;
+        let tokens = window.am7audioTokens.parse(content);
+        if (!tokens.length) return content;
+
+        let profileId;
+        if (msgRole === "assistant") {
+            profileId = chatCfg?.system?.profile?.objectId;
+        } else {
+            profileId = chatCfg?.user?.profile?.objectId;
+        }
+
+        let result = content;
+        for (let i = tokens.length - 1; i >= 0; i--) {
+            let token = tokens[i];
+            let name = window.am7audioTokens.register(token.text, profileId);
+            let state = window.am7audioTokens.state(name);
+
+            let icon, iconClass;
+            switch (state) {
+                case 'loading':
+                    icon = 'hourglass_top';
+                    iconClass = ' animate-pulse';
+                    break;
+                case 'playing':
+                    icon = 'pause_circle';
+                    iconClass = '';
+                    break;
+                default:
+                    icon = 'play_circle';
+                    iconClass = '';
+                    break;
+            }
+
+            let btn = '<button class="inline-flex items-center p-1 rounded-full bg-indigo-500/20 hover:bg-indigo-500/40 border border-indigo-500/30 align-middle cursor-pointer select-none" ' +
+                'onclick="window.am7audioTokens.play(\'' + name + '\'); return false;" ' +
+                'title="' + escapeHtmlAttr(token.text) + '">' +
+                '<span class="material-symbols-outlined text-lg text-indigo-400' + iconClass + '">' + icon + '</span></button>';
+            // Button is the HTML5 control; the rest is markdown (italic quote) for marked to render
+            let html = btn + ' *"' + token.text + '"*';
+
+            result = result.substring(0, token.start) + html + result.substring(token.end);
+        }
+        return result;
     }
 
     function doClear() {
@@ -879,8 +951,9 @@
         }
 
         if (typeof cnt == "string") {
-          // Process image tokens before markdown parsing
+          // Process image and audio tokens before markdown parsing
           cnt = processImageTokensInContent(cnt, msg.role, midx);
+          cnt = processAudioTokensInContent(cnt, msg.role, midx);
           //cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
           cnt = m.trust(marked.parse(cnt = page.components.emoji.markdownEmojis(cnt.replace(/\r/, ""))));
         }

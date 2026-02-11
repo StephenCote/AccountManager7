@@ -708,6 +708,75 @@
         };
     }
 
+    // ==========================================
+    // Audio Token System (inline audio synthesis in chat)
+    // ==========================================
+
+    let resolvedAudioCache = {};
+
+    function parseAudioTokens(content) {
+        if (!content) return [];
+        let tokens = [];
+        let regex = /\$\{audio\.([^}]+)\}/g;
+        let match;
+        while ((match = regex.exec(content)) !== null) {
+            let text = match[1].trim();
+            if (text.length > 0) {
+                tokens.push({
+                    match: match[0],
+                    text: text,
+                    start: match.index,
+                    end: match.index + match[0].length
+                });
+            }
+        }
+        return tokens;
+    }
+
+    function audioTokenName(text, profileId) {
+        let hash = page.components.audioComponents ?
+            page.components.audioComponents.simpleHash(text + (profileId || '')) :
+            Math.abs(text.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)).toString(36);
+        return "at-" + hash;
+    }
+
+    // Expose audio token functions globally
+    if (typeof window !== "undefined") {
+        window.am7audioTokens = {
+            cache: resolvedAudioCache,
+            parse: parseAudioTokens,
+            register: function(text, profileId) {
+                let name = audioTokenName(text, profileId);
+                if (!resolvedAudioCache[name]) {
+                    resolvedAudioCache[name] = { text: text, profileId: profileId, source: null };
+                }
+                return name;
+            },
+            play: function(name) {
+                let entry = resolvedAudioCache[name];
+                if (!entry) return;
+                if (!entry.source) {
+                    entry.source = page.components.audioComponents.createAudioSource({
+                        name: name,
+                        content: entry.text,
+                        profileId: entry.profileId,
+                        autoStopOthers: true,
+                        onPlayStateChange: function() { m.redraw(); }
+                    });
+                }
+                entry.source.togglePlayPause();
+            },
+            state: function(name) {
+                let entry = resolvedAudioCache[name];
+                if (!entry || !entry.source) return 'idle';
+                if (entry.source.isLoading()) return 'loading';
+                if (entry.source.isPlaying()) return 'playing';
+                if (entry.source.state && entry.source.state.buffer) return 'ready';
+                return 'idle';
+            }
+        };
+    }
+
     async function getCurrentWearLevel(inst){
         // Get store with getFull to get apparel with inuse flags
         let storeRef = inst.api.store();

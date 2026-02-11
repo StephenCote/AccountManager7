@@ -22,11 +22,20 @@
             this.lastError = null;
         }
 
-        // Find the ~/Chat directory
+        // Find the ~/Chat directory (used for template lookup)
         static async findChatDir() {
             const chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
             if (!chatDir) {
                 console.warn("[CardGameLLM] ~/Chat not found");
+            }
+            return chatDir;
+        }
+
+        // Find or create the ~/CardGame/Chats directory for CardGame chatConfig storage
+        static async findCardGameChatDir() {
+            const chatDir = await page.makePath("auth.group", "data", "~/CardGame/Chats");
+            if (!chatDir) {
+                console.warn("[CardGameLLM] ~/CardGame/Chats could not be created");
             }
             return chatDir;
         }
@@ -146,13 +155,20 @@
                     return false;
                 }
 
+                // Use ~/CardGame/Chats for chatConfig storage
+                const cgChatDir = await CardGameLLM.findCardGameChatDir();
+                if (!cgChatDir) {
+                    this.lastError = "~/CardGame/Chats directory not found";
+                    return false;
+                }
+
                 this.promptConfig = await CardGameLLM.ensurePromptConfig(chatDir, promptName, systemPrompt);
                 if (!this.promptConfig) {
                     this.lastError = "Failed to create prompt config";
                     return false;
                 }
 
-                this.chatConfig = await CardGameLLM.ensureChatConfig(chatDir, template, chatName, temperature);
+                this.chatConfig = await CardGameLLM.ensureChatConfig(cgChatDir, template, chatName, temperature);
                 if (!this.chatConfig) {
                     this.lastError = "Failed to create chat config";
                     return false;
