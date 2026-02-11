@@ -5,6 +5,7 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -160,7 +161,12 @@ public class SDUtil {
 				MediaType.APPLICATION_JSON_TYPE
 			);
 			if (resp != null && resp.getFiles() != null) {
-				models.addAll(resp.getFiles());
+				for (Map<String, Object> file : resp.getFiles()) {
+					Object name = file.get("name");
+					if (name != null) {
+						models.add(name.toString());
+					}
+				}
 			}
 		} catch (Exception e) {
 			logger.warn("Could not list models from SD server: " + e.getMessage());

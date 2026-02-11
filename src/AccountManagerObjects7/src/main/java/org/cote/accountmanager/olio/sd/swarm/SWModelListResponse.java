@@ -2,23 +2,24 @@ package org.cote.accountmanager.olio.sd.swarm;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class SWModelListResponse {
-	private List<String> files = new ArrayList<>();
+	private List<Map<String, Object>> files = new ArrayList<>();
 	private List<String> folders = new ArrayList<>();
 
 	public SWModelListResponse() {
 
 	}
 
-	public List<String> getFiles() {
+	public List<Map<String, Object>> getFiles() {
 		return files;
 	}
 
-	public void setFiles(List<String> files) {
+	public void setFiles(List<Map<String, Object>> files) {
 		this.files = files;
 	}
 
