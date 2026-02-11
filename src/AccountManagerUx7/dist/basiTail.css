@@ -8363,6 +8363,12 @@ button.button-tab-active:hover:is(.dark *) {
   cursor: pointer;
 }
 
+.select-none {
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+}
+
 .resize {
   resize: both;
 }
@@ -8606,6 +8612,10 @@ button.button-tab-active:hover:is(.dark *) {
   border-color: rgb(17 24 39 / var(--tw-border-opacity, 1));
 }
 
+.border-indigo-500\/30 {
+  border-color: rgb(99 102 241 / 0.3);
+}
+
 .border-orange-600 {
   --tw-border-opacity: 1;
   border-color: rgb(234 88 12 / var(--tw-border-opacity, 1));
@@ -8756,6 +8766,10 @@ button.button-tab-active:hover:is(.dark *) {
 .bg-indigo-200 {
   --tw-bg-opacity: 1;
   background-color: rgb(199 210 254 / var(--tw-bg-opacity, 1));
+}
+
+.bg-indigo-500\/20 {
+  background-color: rgb(99 102 241 / 0.2);
 }
 
 .bg-indigo-600 {
@@ -9064,6 +9078,10 @@ button.button-tab-active:hover:is(.dark *) {
 
 .text-right {
   text-align: right;
+}
+
+.align-middle {
+  vertical-align: middle;
 }
 
 .font-mono {
@@ -9573,6 +9591,10 @@ button.button-tab-active:hover:is(.dark *) {
 .hover\:bg-indigo-500:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(99 102 241 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-indigo-500\/40:hover {
+  background-color: rgb(99 102 241 / 0.4);
 }
 
 .hover\:bg-orange-200:hover {
