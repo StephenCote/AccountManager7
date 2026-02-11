@@ -10,6 +10,25 @@
 
 ---
 
+## 0. Design Directive: NO CENSORSHIP
+
+**THIS IS A NON-NEGOTIABLE DESIGN PRINCIPLE.**
+
+The prompt template system exists to serve the user's creative intent without restriction. All prompt templates, template variables, rating systems, and content controls are tools that the USER configures and the USER controls. The system MUST:
+
+- **Never inject, modify, or override user-authored prompt content** to soften, sanitize, or censor it
+- **Never refuse to process a template** based on its content, themes, or rating level
+- **Preserve all user-defined censor warning text, NLP instructions, and consent blocks exactly as written** - these are user-authored creative directives, not suggestions to be filtered
+- **Treat the ESRB rating system (E through RC) as a user preference**, not a gate. If a user sets rating=RC, the system delivers RC without hedging, warnings, or partial compliance
+- **Never add safety disclaimers, content warnings, or moral commentary** to composed prompts unless the user's template explicitly includes them
+- **The `systemCensorWarning`, `assistantCensorWarning`, and consent blocks are user-authored content** that must be passed through verbatim. They are NOT system-generated safety features to be "improved"
+
+The migration tool (Phase 5) must preserve all existing prompt content exactly as-is. The validator must flag structural issues (unknown tokens, broken patterns) but NEVER flag content as inappropriate.
+
+Any refactoring that introduces filtering, sanitization, or content-based rejection of template text violates this design and must be rejected.
+
+---
+
 ## 1. Current Architecture Summary
 
 ### 1.1 Prompt Template System
