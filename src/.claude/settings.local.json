@@ -29,7 +29,8 @@
       "Bash(tee:*)",
       "Bash(node --check:*)",
       "Bash(wc -l:*)",
-      "Bash(more:*)"
+      "Bash(more:*)",
+      "Bash(xxd:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

@@ -5,94 +5,81 @@
  * Visibility: Renders when page.testMode === true OR page.productionMode === false
  * URL param: ?testMode=true enables test mode
  *
- * Depends on: window.TestFramework, window.TestRegistry, window.LLMTestSuite, page
+ * LLM configs auto-load from media/prompts/ templates — no manual picking needed.
+ *
+ * Depends on: window.TestFramework, window.TestRegistry, page
  */
 (function() {
     "use strict";
 
     let TF = window.TestFramework;
-    let configsLoaded = false;
 
-    // ── Config Picker UI ──────────────────────────────────────────────
-    function ConfigPickerUI() {
+    // ── LLM Config Status (read-only display) ────────────────────────
+    function ConfigStatusUI() {
         return {
             view: function() {
                 let llm = window.LLMTestSuite;
                 if (!llm) return null;
 
-                let ss = llm.suiteState;
-
-                // Only show config pickers for LLM suite
                 let currentSuite = TF.testState.selectedSuite;
                 if (currentSuite !== "llm") return null;
 
-                return m("div", { class: "tf-config-picker" }, [
-                    m("label", { style: { fontWeight: 600, fontSize: "13px", marginRight: "8px" } }, "Config:"),
+                let ss = llm.suiteState;
+                if (!ss.chatConfig && !ss.promptConfig) {
+                    return m("div", { class: "tf-config-status" },
+                        m("span", { style: { color: "#999", fontStyle: "italic", fontSize: "12px" } },
+                            "Configs auto-load from media/prompts/ when tests run")
+                    );
+                }
 
-                    // Chat config picker
-                    m("select", {
-                        class: "tf-config-select",
-                        value: ss.chatConfigName || "",
-                        onchange: function(e) {
-                            let name = e.target.value;
-                            let cfg = ss.availableChatConfigs.find(function(c) { return c.name === name; });
-                            llm.setChatConfig(cfg || null);
-                            m.redraw();
-                        }
-                    }, [
-                        m("option", { value: "" }, "-- chatConfig --"),
-                        ss.availableChatConfigs.map(function(c) {
-                            return m("option", { value: c.name }, c.name);
-                        })
-                    ]),
+                let badges = [];
 
-                    // Prompt config picker
-                    m("select", {
-                        class: "tf-config-select",
-                        style: { marginLeft: "8px" },
-                        value: ss.promptConfigName || "",
-                        onchange: function(e) {
-                            let name = e.target.value;
-                            let cfg = ss.availablePromptConfigs.find(function(c) { return c.name === name; });
-                            llm.setPromptConfig(cfg || null);
-                            m.redraw();
+                // Show config variants
+                let variants = ss.chatConfigs || {};
+                let variantKeys = Object.keys(variants);
+                if (variantKeys.length > 0) {
+                    for (let i = 0; i < variantKeys.length; i++) {
+                        let v = variants[variantKeys[i]];
+                        if (v) {
+                            badges.push(m("span", { class: "tf-config-badge" }, [
+                                m("span", { class: "material-symbols-outlined", style: { fontSize: "13px", verticalAlign: "middle", marginRight: "3px" } }, "settings"),
+                                v.name
+                            ]));
                         }
-                    }, [
-                        m("option", { value: "" }, "-- promptConfig --"),
-                        ss.availablePromptConfigs.map(function(c) {
-                            return m("option", { value: c.name }, c.name);
-                        })
-                    ])
-                ]);
+                    }
+                } else if (ss.chatConfig) {
+                    badges.push(m("span", { class: "tf-config-badge" }, [
+                        m("span", { class: "material-symbols-outlined", style: { fontSize: "13px", verticalAlign: "middle", marginRight: "3px" } }, "settings"),
+                        ss.chatConfig.name
+                    ]));
+                }
+
+                if (ss.promptConfig) {
+                    badges.push(m("span", { class: "tf-config-badge" }, [
+                        m("span", { class: "material-symbols-outlined", style: { fontSize: "13px", verticalAlign: "middle", marginRight: "3px" } }, "description"),
+                        ss.promptConfig.name
+                    ]));
+                }
+                if (ss.systemCharacter) {
+                    badges.push(m("span", { class: "tf-config-badge" }, [
+                        m("span", { class: "material-symbols-outlined", style: { fontSize: "13px", verticalAlign: "middle", marginRight: "3px" } }, "person"),
+                        (ss.systemCharacter.firstName || ss.systemCharacter.name || "sys")
+                    ]));
+                }
+                if (ss.userCharacter) {
+                    badges.push(m("span", { class: "tf-config-badge" }, [
+                        m("span", { class: "material-symbols-outlined", style: { fontSize: "13px", verticalAlign: "middle", marginRight: "3px" } }, "person_outline"),
+                        (ss.userCharacter.firstName || ss.userCharacter.name || "user")
+                    ]));
+                }
+
+                return m("div", { class: "tf-config-status" }, badges);
             }
         };
     }
 
     // ── Main Test View ────────────────────────────────────────────────
     function getTestView() {
-        // Load configs on first render
-        if (!configsLoaded) {
-            configsLoaded = true;
-            if (window.LLMTestSuite) {
-                window.LLMTestSuite.loadAvailableConfigs().then(function() {
-                    // Auto-select first configs if available
-                    let ss = window.LLMTestSuite.suiteState;
-                    if (!ss.chatConfig && ss.availableChatConfigs.length > 0) {
-                        window.LLMTestSuite.setChatConfig(ss.availableChatConfigs[0]);
-                    }
-                    if (!ss.promptConfig && ss.availablePromptConfigs.length > 0) {
-                        window.LLMTestSuite.setPromptConfig(ss.availablePromptConfigs[0]);
-                    }
-                    m.redraw();
-                });
-            }
-            // Initialize selected categories from the default suite
-            let suite = window.TestRegistry ? window.TestRegistry.getSelectedSuite() : null;
-            if (suite && TF.testState.selectedCategories.length === 0) {
-                TF.testState.selectedCategories = Object.keys(suite.categories || {});
-            }
-        }
-
         let suite = window.TestRegistry ? window.TestRegistry.getSelectedSuite() : null;
         let categories = suite ? (suite.categories || {}) : {};
 
@@ -103,14 +90,16 @@
                     // Toolbar
                     m(TF.TestToolbarUI, {
                         title: "Test Suite",
-                        subtitle: suite ? suite.label : null,
                         onBack: function() {
                             m.route.set("/main");
                         }
                     }),
 
-                    // Config picker (LLM-specific)
-                    m(ConfigPickerUI),
+                    // Suite tabs (compartmentalized by app)
+                    m(TF.SuiteTabsUI),
+
+                    // LLM config status (auto-loaded, read-only)
+                    m(ConfigStatusUI),
 
                     // Category toggles
                     m(TF.TestCategoryToggleUI, { categories: categories }),

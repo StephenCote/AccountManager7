@@ -1,0 +1,15 @@
+{
+    "schema": "olio.llm.chatConfig",
+    "name": "LLM Test Config",
+    "model": "way-local",
+    "serverUrl": "http://192.168.1.42:11434",
+    "serviceType": "OLLAMA",
+    "messageTrim": 6,
+    "remindEvery": 4,
+    "keyframeEvery": 3,
+    "stream": true,
+    "prune": true,
+    "rating": "E",
+    "assist": true,
+    "startMode": "none"
+}

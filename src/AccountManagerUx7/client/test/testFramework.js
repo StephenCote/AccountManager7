@@ -18,6 +18,7 @@
     // ── State ─────────────────────────────────────────────────────────
     let testState = {
         running: false,
+        aborted: false,
         logs: [],
         results: { pass: 0, fail: 0, warn: 0, skip: 0 },
         currentTest: null,
@@ -29,6 +30,7 @@
 
     // ── Logging ───────────────────────────────────────────────────────
     function testLog(category, message, status) {
+        if (testState.aborted) throw new Error("__ABORTED__");
         if (status === undefined) status = "info";
         let entry = {
             time: new Date().toISOString().substring(11, 19),
@@ -75,12 +77,32 @@
     function registerSuite(suiteId, config) {
         suites[suiteId] = config;
         if (!testState.selectedSuite) {
-            testState.selectedSuite = suiteId;
+            selectSuite(suiteId);
         }
     }
 
     function getSuites() {
         return suites;
+    }
+
+    // ── Suite selection ─────────────────────────────────────────────
+    function selectSuite(suiteId) {
+        let suite = suites[suiteId];
+        if (!suite) return;
+        testState.selectedSuite = suiteId;
+        testState.selectedCategories = Object.keys(suite.categories || {});
+        clearLogs();
+    }
+
+    // ── Abort ────────────────────────────────────────────────────────
+    function stopSuite() {
+        if (!testState.running) return;
+        testState.aborted = true;
+        m.redraw();
+    }
+
+    function isAborted() {
+        return testState.aborted;
     }
 
     // ── Run suite ─────────────────────────────────────────────────────
@@ -92,26 +114,50 @@
         }
 
         testState.running = true;
+        testState.aborted = false;
         testState.logs = [];
         testState.results = { pass: 0, fail: 0, warn: 0, skip: 0 };
         testState.completed = false;
         testState.currentTest = null;
         m.redraw();
 
+        let wasAborted = false;
         try {
             await suite.run(testState.selectedCategories);
         } catch (e) {
-            testLog("", "Suite error: " + e.message, "fail");
-            testLogData("", "Error stack", e.stack);
+            if (e.message === "__ABORTED__" || testState.aborted) {
+                wasAborted = true;
+            } else {
+                testState.aborted = false;
+                testLog("", "Suite error: " + e.message, "fail");
+                testLogData("", "Error stack", e.stack);
+            }
         }
 
         testState.currentTest = null;
         testState.running = false;
         testState.completed = true;
-        testLog("", "=== Suite complete: " + testState.results.pass + " pass, "
-            + testState.results.fail + " fail, " + testState.results.warn + " warn, "
-            + testState.results.skip + " skip ===",
-            testState.results.fail > 0 ? "fail" : "pass");
+        testState.aborted = false;
+
+        if (wasAborted) {
+            // Push summary directly to avoid the abort check in testLog
+            testState.logs.push({
+                time: new Date().toISOString().substring(11, 19),
+                category: "", message: "=== Suite aborted: " + testState.results.pass + " pass, "
+                    + testState.results.fail + " fail, " + testState.results.warn + " warn, "
+                    + testState.results.skip + " skip ===",
+                status: "warn", type: "log"
+            });
+            testState.results.warn++;
+        } else {
+            testState.logs.push({
+                time: new Date().toISOString().substring(11, 19),
+                category: "", message: "=== Suite complete: " + testState.results.pass + " pass, "
+                    + testState.results.fail + " fail, " + testState.results.warn + " warn, "
+                    + testState.results.skip + " skip ===",
+                status: testState.results.fail > 0 ? "fail" : "pass", type: "log"
+            });
+        }
         m.redraw();
     }
 
@@ -227,38 +273,16 @@
         };
     }
 
-    // TestToolbarUI — run button, suite selector, status
+    // TestToolbarUI — run button, status (suite tabs are separate)
     function TestToolbarUI() {
         return {
             view: function(vnode) {
                 let onBack = vnode.attrs.onBack;
                 let title = vnode.attrs.title || "Test Suite";
-                let subtitle = vnode.attrs.subtitle;
 
                 return m("div", { class: "tf-toolbar" }, [
                     onBack ? m("button", { class: "tf-btn", onclick: onBack }, "\u2190 Back") : null,
                     m("span", { style: { fontWeight: 700, fontSize: "16px", marginLeft: "8px" } }, title),
-                    subtitle ? m("span", {
-                        style: { marginLeft: "8px", fontSize: "12px", background: "#e8e8e8",
-                            padding: "2px 8px", borderRadius: "4px" }
-                    }, subtitle) : null,
-
-                    // Suite selector
-                    Object.keys(suites).length > 1 ? m("select", {
-                        class: "tf-suite-select",
-                        style: { marginLeft: "12px" },
-                        value: testState.selectedSuite || "",
-                        onchange: function(e) {
-                            testState.selectedSuite = e.target.value;
-                            let suite = suites[testState.selectedSuite];
-                            if (suite) {
-                                testState.selectedCategories = Object.keys(suite.categories || {});
-                            }
-                            clearLogs();
-                        }
-                    }, Object.entries(suites).map(function(pair) {
-                        return m("option", { value: pair[0] }, pair[1].label || pair[0]);
-                    })) : null,
 
                     // Run / status
                     !testState.running ? m("button", {
@@ -268,11 +292,49 @@
                         m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "play_arrow"),
                         "Run Tests"
                     ]) : null,
-                    testState.running ? m("span", { style: { marginLeft: "auto", color: "#B8860B", fontWeight: 600, fontSize: "13px" } }, [
-                        m("span", { class: "material-symbols-outlined tf-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "sync"),
-                        testState.currentTest || "Running..."
+                    testState.running ? m("span", { style: { marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px" } }, [
+                        m("span", { style: { color: "#B8860B", fontWeight: 600, fontSize: "13px" } }, [
+                            m("span", { class: "material-symbols-outlined tf-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "sync"),
+                            testState.currentTest || "Running..."
+                        ]),
+                        m("button", {
+                            class: "tf-btn tf-btn-stop",
+                            onclick: function() { stopSuite(); }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "stop"),
+                            "Stop"
+                        ])
                     ]) : null
                 ]);
+            }
+        };
+    }
+
+    // SuiteTabsUI — tab-style buttons for switching between test suites
+    function SuiteTabsUI() {
+        return {
+            view: function() {
+                let keys = Object.keys(suites);
+                if (keys.length <= 1) return null;
+
+                return m("div", { class: "tf-suite-tabs" },
+                    keys.map(function(key) {
+                        let suite = suites[key];
+                        let active = testState.selectedSuite === key;
+                        return m("button", {
+                            class: "tf-suite-tab" + (active ? " active" : ""),
+                            onclick: function() {
+                                if (!active) selectSuite(key);
+                            }
+                        }, [
+                            suite.icon ? m("span", {
+                                class: "material-symbols-outlined",
+                                style: { fontSize: "16px", verticalAlign: "middle", marginRight: "4px" }
+                            }, suite.icon) : null,
+                            suite.label || key
+                        ]);
+                    })
+                );
             }
         };
     }
@@ -348,14 +410,18 @@
         testLog: testLog,
         testLogData: testLogData,
         runSuite: runSuite,
+        stopSuite: stopSuite,
+        isAborted: isAborted,
         registerSuite: registerSuite,
+        selectSuite: selectSuite,
         getSuites: getSuites,
         clearLogs: clearLogs,
         exportLogs: exportLogs,
         TestConsoleUI: TestConsoleUI,
         TestToolbarUI: TestToolbarUI,
         TestCategoryToggleUI: TestCategoryToggleUI,
-        TestResultsSummaryUI: TestResultsSummaryUI
+        TestResultsSummaryUI: TestResultsSummaryUI,
+        SuiteTabsUI: SuiteTabsUI
     };
 
     console.log("[TestFramework] loaded");

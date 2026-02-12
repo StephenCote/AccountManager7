@@ -2265,24 +2265,28 @@ All tests must:
 
 | # | Test Name | Category | What It Tests | Services Required |
 |---|---|---|---|---|
-| 63 | `TestConfigLoad` | config | chatConfig and promptConfig load from `~/Chat` without error | Server |
-| 64 | `TestServerReachable` | config | chatConfig's serverUrl responds to health check / model list | Server, LLM |
-| 65 | `TestPromptComposition` | prompt | System/user/assistant prompts compose, `${dynamicRules}` resolves, output length > 0 | Server |
-| 66 | `TestNoOrphanTokens` | prompt | Composed prompts contain no unresolved `${...}` tokens | Server |
+| 63 | `TestConfigLoad` | config | chatConfig and promptConfig auto-load from templates into `~/Tests` | Server |
+| 64 | `TestServerReachable` | config | chatConfig's serverUrl responds via REST chat endpoint | Server, LLM |
+| 65 | `TestPromptComposition` | prompt | System/user/assistant prompts compose, output length > 0 | Server |
+| 66 | `TestTokenClassification` | prompt | Classify `${...}` tokens as runtime (pass) vs unknown (warn) | Server |
+| 66b | `TestMediaTokenPresence` | prompt | Verify `${image.*}` and `${audio.*}` tokens present in prompt | Server |
 | 67 | `TestPromptDataDump` | prompt | Full prompt text logged via testLogData for manual inspection | Server |
-| 68 | `TestChatSessionCreate` | chat | `getChatRequest()` returns valid session object | Server |
+| 68 | `TestChatSessionCreate` | chat | `getChatRequest()` returns valid session object (standard variant) | Server |
+| 68b | `TestAssistExchange` | chat | When assist=true, detect pre-loaded messages in raw request | Server |
 | 69 | `TestChatSendReceive` | chat | Send message, receive non-empty assistant response | Server, LLM |
 | 70 | `TestChatSessionCleanup` | chat | `deleteChat(req, true)` succeeds | Server |
-| 71 | `TestStreamConnect` | stream | WebSocket streaming connects and receives chunks | Server, LLM |
+| 71 | `TestStreamConnect` | stream | WebSocket streaming connects and receives chunks (streaming variant) | Server, LLM |
 | 72 | `TestStreamFullResponse` | stream | Streamed chunks assemble into complete response | Server, LLM |
 | 73 | `TestHistoryOrdering` | history | Send 3 messages, retrieve history, verify chronological order | Server, LLM |
 | 74 | `TestHistoryContent` | history | Retrieved messages match sent content | Server, LLM |
-| 75 | `TestPruning` | prune | Send messages beyond messageTrim, verify old messages pruned | Server, LLM |
+| 74b | `TestAssistHistoryExclusion` | history | Verify assist exchange is excluded from history | Server, LLM |
+| 75 | `TestPruning` | prune | Send messages beyond messageTrim, verify old messages pruned (streaming variant) | Server, LLM |
 | 76 | `TestKeyframeCreation` | prune | After keyframeEvery messages, verify keyframe exists | Server, LLM |
-| 77 | `TestEpisodeGuidance` | episode | With episodes configured, verify episode guidance appears in prompt | Server |
-| 78 | `TestEpisodeTransition` | episode | `#NEXT EPISODE#` response detected and handled | Server, LLM |
-| 79 | `TestAnalysisPipeline` | analyze | Send content for analysis, receive structured analysis response | Server, LLM |
-| 80 | `TestNarrationPipeline` | narrate | Send scene content, receive formatted summary | Server, LLM |
+| 77 | `TestEpisodeGuidance` | episode | With episodes configured, verify episode guidance appears in prompt (streaming variant) | Server |
+| 77b | `TestEpisodeStructure` | episode | Validate episode has name, stages array, and theme | Server |
+| 78 | `TestEpisodeTransitionRule` | episode | Verify `episodeRule` array present on promptConfig (not chatConfig) | Server |
+| 79 | `TestAnalysisPipeline` | analyze | Send content for analysis, receive structured analysis response (standard variant) | Server, LLM |
+| 80 | `TestNarrationPipeline` | narrate | Send scene content, receive formatted summary (standard variant) | Server, LLM |
 | 81 | `TestPolicyEvaluation` | policy | If policy configured, verify evaluation and rewrite | Server, LLM |
 
 **Phase 6 gate:** All UX tests pass with at least one named chatConfig against a live Ollama server. Debug output is copy-paste ready for diagnosis.
@@ -2485,9 +2489,9 @@ TestFramework.registerSuite("cardGame", {
 **`client/test/llm/llmTestSuite.js`** — Test categories and implementations.
 
 **Prerequisites:**
-- A named `olio.llm.chatConfig` must exist in `~/Chat` (e.g., "Ollama Test Chat")
-- A named `olio.llm.promptConfig` must exist (uses default or named config)
-- The test suite UI presents a config picker to select which chatConfig to use
+- Template files `llmTestChatConfig.json` and `llmTestPromptConfig.json` must exist in `media/prompts/`
+- Auto-setup creates `~/Tests` group, test characters, promptConfig, and chatConfig variants on first run
+- No manual config picking required — suite is self-sufficient
 - All testing targets a remote Ollama server (OpenAI API format with Ollama URI/response differences)
 
 **Test Categories:**
@@ -2507,33 +2511,48 @@ TestFramework.registerSuite("cardGame", {
 
 **Test Implementation Pattern:**
 
-Each test function receives `(log, logData, chatCfg, promptCfg)` and follows:
-1. Setup — create session / prepare state
-2. Execute — call the API under test
-3. Assert — log pass/fail with descriptive message
-4. Debug — log full response data via `logData()` for copy-paste diagnosis
-5. Cleanup — delete test sessions
+Each test function receives `(selectedCategories)` via the suite runner, uses `getVariant(name)` to select the appropriate chatConfig variant, and follows:
+1. Guard — check category enabled, null-check config before accessing `.name`
+2. Setup — create session / prepare state
+3. Execute — call the API under test
+4. Assert — log pass/fail with descriptive message
+5. Debug — log full response data via `logData()` for copy-paste diagnosis
+6. Cleanup — delete test sessions
+
+**Config Variants:**
+- `getVariant("streaming")` — `stream=true, prune=true`, has episodes with stages — used by stream, prune, episode tests
+- `getVariant("standard")` — `stream=false, prune=false` — used by chat, history, analyze, narrate tests
 
 ```javascript
-async function testChat(log, logData, chatCfg, promptCfg) {
+async function testChat(cats) {
+  if (!cats.includes("chat")) return;
   log("chat", "=== Chat Session Tests ===");
+
+  let chatCfg = getVariant("standard");
+  let promptCfg = suiteState.promptConfig;
+  if (!chatCfg || !promptCfg) {
+    log("chat", "chatConfig or promptConfig missing - skipping", "skip");
+    return;
+  }
+  log("chat", "Using variant: " + chatCfg.name, "info");
 
   // 1. Create session
   let req;
   try {
     req = await am7chat.getChatRequest("LLM Test - " + Date.now(), chatCfg, promptCfg);
-    log("chat", "Session created: " + req.name, req ? "pass" : "fail");
+    log("chat", "Session created: " + (req ? req.name : "null"), req ? "pass" : "fail");
   } catch(e) {
     log("chat", "Session create failed: " + e.message, "fail");
     return;
   }
+  if (!req) return;
 
   // 2. Send message
   try {
     let resp = await am7chat.chat(req, "Say exactly: TEST_OK");
     let content = extractLastAssistantMessage(resp);
-    log("chat", "Response received (" + content.length + " chars)", content ? "pass" : "fail");
-    logData("chat", "Response content", content);
+    log("chat", "Response received (" + (content ? content.length : 0) + " chars)", content ? "pass" : "fail");
+    logData("chat", "Response content", content || "(empty)");
   } catch(e) {
     log("chat", "Chat failed: " + e.message, "fail");
     logData("chat", "Error details", e.stack);
@@ -2624,27 +2643,64 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 #### 6.6 Implementation Notes
 
 **Files created:** `testFramework.js`, `testRegistry.js`, `llmTestSuite.js`, `testView.js`
+**Files created (templates):** `media/prompts/llmTestChatConfig.json`, `media/prompts/llmTestPromptConfig.json`
 **Files modified:** `index.html`, `topMenu.js`, `pageClient.js`, `testMode.js`, `applicationRouter.js`, `pageStyle.css`
 
 **Implementation details:**
 
-1. **Shared TestFramework** (`testFramework.js`) — Core state (`testState`), logging (`testLog`, `testLogData`), suite registration (`registerSuite`), and four reusable Mithril UI components (`TestConsoleUI`, `TestToolbarUI`, `TestCategoryToggleUI`, `TestResultsSummaryUI`). Exposed as `window.TestFramework`.
+1. **Shared TestFramework** (`testFramework.js`) — Core state (`testState`), logging (`testLog`, `testLogData`), suite registration (`registerSuite`), abort mechanism (`stopSuite` / `isAborted` — throws `__ABORTED__` on next `testLog` call), and five reusable Mithril UI components (`TestConsoleUI`, `TestToolbarUI`, `TestCategoryToggleUI`, `TestResultsSummaryUI`, `SuiteTabsUI`). Exposed as `window.TestFramework`.
 
-2. **TestRegistry** (`testRegistry.js`) — `SuiteSelectorUI` dropdown component and helpers (`getSelectedSuiteCategories`, `getSelectedSuite`) for the test view. Exposed as `window.TestRegistry`.
+2. **TestRegistry** (`testRegistry.js`) — Suite selector helpers (`getSelectedSuiteCategories`, `getSelectedSuite`) for the test view. Exposed as `window.TestRegistry`.
 
-3. **LLM Test Suite** (`llmTestSuite.js`) — Registers as `"llm"` suite with 10 test categories: config, prompt, chat, stream, history, prune, episode, analyze, narrate, policy. Each category implements the test pattern from the spec (setup, execute, assert, debug data, cleanup). Config picker integration via `window.LLMTestSuite.suiteState` allows the test view to select chatConfig/promptConfig. Tests 63-81 implemented.
+3. **LLM Test Suite** (`llmTestSuite.js`) — Registers as `"llm"` suite with 10 test categories: config, prompt, chat, stream, history, prune, episode, analyze, narrate, policy. Tests 63-81 implemented (including sub-tests 66b, 68b, 74b, 77b).
 
-4. **Test View** (`testView.js`) — Integrated view at `/test` route with config pickers (chatConfig, promptConfig dropdowns), suite selector, category toggles, results summary, and scrollable debug console. Auto-loads available configs on first render. Registered as `page.views.testView`.
+   **Auto-setup system** (`autoSetupConfigs()`):
+   - Loads template JSON from `media/prompts/` via `m.request` (no custom deserializer — mithril handles JSON natively)
+   - Creates `~/Tests` group via `page.makePath("auth.group", "data", "~/Tests")`
+   - Creates two test characters: Aria Cortez (F, 28) and Max Reeves (M, 32)
+   - Creates promptConfig from template with `episodeRule`, image/audio tokens, and perspective sections
+   - Creates two chatConfig variants from template:
+     - **"LLM Test Streaming"**: `stream=true, prune=true`, with episode (name, stages, theme) and character references
+     - **"LLM Test Standard"**: `stream=false, prune=false`, with character references only
+   - `findOrCreateConfig()` finds existing by name and skips creation — **delete server-side objects to pick up template changes**
+   - `getVariant(name)` helper returns the appropriate config for each test function
+
+   **Token classification** (Test 66): Comprehensive runtime token pattern recognizes `image`, `audio`, `nlp`, `system`, `user`, `perspective`, `censorWarn`, `assistCensorWarn`, `rating`, `ratingName`, `ratingDescription`, `ratingMpa`, `scene`, `setting`, `episode`, `episodeRule`, `dynamicRules`, `memory`, `interaction`, `profile`, `location` prefixes as valid runtime tokens. Unknown tokens produce warnings instead of failures.
+
+   **Assist exchange awareness** (Tests 68b, 74b): When `chatConfig.assist=true`, the session has a hidden initial exchange (user input + assistant response) that is NOT in history but IS in the raw request object. Tests verify the pre-loaded messages exist in the raw request and are excluded from the history API.
+
+   **Phase dependency annotations**: Tests for unimplemented phases include `// PHASE DEP:` code comments and runtime log headers:
+   - Stream tests: `[Phase 7 pending: Always-Stream refactor]`
+   - Prune tests: `[Phase 10 pending: Keyframe refactor]`
+   - Episode tests: `[Phase 7 pending: transition execution]`
+   - Policy tests: `[Phase 9 pending: evaluation not implemented]`
+
+   **Episode architecture**: `episodeRule` (transition markers like `#NEXT EPISODE#`, `#OUT OF EPISODE#`) lives on promptConfig. Episode data (`episodes` array with `name`, `number`, `stages[]`, `theme`, `completed`) lives on chatConfig. Test 77b validates the full episode structure including the stages array.
+
+4. **Test View** (`testView.js`) — Integrated view at `/test` route with `ConfigStatusUI` showing variant badges (iterates `suiteState.chatConfigs`), prompt badge, and character badges. Suite tabs via `SuiteTabsUI`, category toggles, results summary, and scrollable debug console. Registered as `page.views.testView`.
 
 5. **CardGame Refactor** (`testMode.js`) — Refactored to delegate state to `TF.testState` and logging to `TF.testLog()`. Test body extracted to `runTestBody()` shared between standalone (`runTestSuite()`) and framework (`runCardGameTests()`) entry points. `TestModeUI` rebuilt using shared `TF.TestToolbarUI`, `TF.TestCategoryToggleUI`, `TF.TestResultsSummaryUI`, and `TF.TestConsoleUI` components while preserving CardGame-specific back navigation. Registered as `"cardGame"` suite.
 
 6. **Visibility** — Test button in top menu visible when `page.testMode === true` (URL param `?testMode=true`) or `page.productionMode === false` (URL param `?productionMode=false`). Uses `science` material icon.
 
+**Template files:**
+
+- `media/prompts/llmTestChatConfig.json` — chatConfig template with `"schema": "olio.llm.chatConfig"`, model, serverUrl, serviceType, messageTrim, remindEvery, keyframeEvery, stream, prune, rating, assist, startMode. User should customize `model` and `serverUrl` for their environment.
+- `media/prompts/llmTestPromptConfig.json` — promptConfig template with `"schema": "olio.llm.promptConfig"`, system prompt (includes `${image.selfie}` and `${audio.hello}` tokens), assistant prompt, systemAnalyze, systemNarrate, episodeRule (with `#NEXT EPISODE#` and `#OUT OF EPISODE#` markers), systemCensorWarning, femalePerspective, malePerspective, userConsentPrefix, userConsentRating.
+
 **Known issues:**
-- **OI-20: LLM-dependent tests require live server** — Tests 64, 69, 71-72, 73-80 require a running Ollama (or OpenAI-compatible) server and configured chatConfig/promptConfig in `~/Chat`. These tests will show "skip" or "fail" status when the LLM server is unreachable. This is by design per the spec.
+- **OI-20: LLM-dependent tests require live server** — Tests 64, 69, 71-72, 73-80 require a running Ollama (or OpenAI-compatible) server. These tests will show "skip" or "fail" when the LLM server is unreachable. This is by design.
 - **OI-21: Stream tests require WebSocket** — Tests 71-72 require an active WebSocket connection (`page.wss`) and `chatConfig.stream=true`. If streaming is not configured, tests fall back to a warning.
 - **OI-22: Policy tests placeholder** — Test 81 (TestPolicyEvaluation) only validates configuration presence since Phase 9 (policy implementation) is not yet complete. Full policy evaluation testing will be enabled after Phase 9.
 - **OI-23: CardGame shared state coupling** — The refactored `testMode.js` shares `TF.testState` with other suites. Running CardGame tests via the shared test view clears LLM test results and vice versa. Each suite run resets the shared state. This is expected behavior for sequential suite execution.
+- **OI-24: findOrCreateConfig caching** — `findOrCreateConfig()` finds existing objects by name and skips creation. If templates change (e.g., new episodeRule, new image/audio tokens, new episode stages), existing server-side objects must be manually deleted before re-running the suite to pick up changes.
+- **OI-25: Episode transition execution not testable** — Test 78 validates `episodeRule` config presence on promptConfig but cannot test actual `#NEXT EPISODE#` / `#OUT OF EPISODE#` detection and handling, which is server-side. Full episode transition testing requires Phase 7 (Always-Stream) completion.
+- **OI-26: Keyframe detection heuristic** — Test 76 checks for `[MCP:KeyFrame` or `(KeyFrame:` text patterns in message history. False negatives possible if keyframe format changes. Will need update after Phase 10 (keyframe refactor).
+
+**Skipped / deferred features:**
+- **Config picker UI** — Original spec called for chatConfig/promptConfig dropdown pickers. Replaced by auto-setup system that creates configs from templates. No manual selection needed.
+- **Magic8 test integration** — OI-17 (Magic8 client-side template wiring) was not addressed in Phase 6. Magic8 tests are not part of the LLM test suite.
+- **Full episode transition testing** — Deferred to Phase 7 when the always-stream backend enables server-side `#NEXT EPISODE#` detection and response.
 
 ### Phase 7: Always-Stream Backend with Buffer & Timeout (Medium risk, medium impact)
 
@@ -2656,6 +2712,27 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 4. **Add `thinking` field to `openaiMessageModel.json`** — Models like `qwen3` return a `thinking` field for chain-of-thought output. The `RecordDeserializer` currently logs errors for this unrecognized field. Add `thinking` (type: string) to the model schema. (Open issue from Phase 3 testing.)
 
 **Files modified:** `Chat.java`, `ClientUtil.java`, `chatConfigModel.json`, `openaiMessageModel.json`
+
+#### Phase 7 Prep Notes
+
+**UX test suite readiness for Phase 7:**
+- Stream tests (71-72) already test WebSocket streaming with the "LLM Test Streaming" variant (`stream=true`). After Phase 7, these should validate the always-stream buffer behavior when `stream=false` (chunks buffered internally, full response returned via REST).
+- Episode tests (77-78) validate config structure and `episodeRule` presence. After Phase 7, Test 78 should be extended to test actual `#NEXT EPISODE#` / `#OUT OF EPISODE#` detection by sending messages that trigger episode transitions against the streaming variant's "Test Handoff" episode (3 stages).
+- Phase dependency annotations in `llmTestSuite.js` mark stream and episode tests with `[Phase 7 pending]` log headers. These should be removed/updated after Phase 7 implementation.
+
+**Key backend files to review before starting Phase 7:**
+- `Chat.java` — Current `chat()` method with separate streaming/non-streaming paths
+- `ClientUtil.java` — HTTP client for LLM API calls, stream chunk parsing
+- `chatConfigModel.json` — Needs `requestTimeout` field added
+- `openaiMessageModel.json` — Needs `thinking` field added (OI-4)
+
+**Test episode available for transition testing:**
+- The "LLM Test Streaming" chatConfig variant includes a "Test Handoff" episode with 3 stages: greet/offer token, hand token, confirm received. The `episodeRule` on the promptConfig defines `#NEXT EPISODE#` and `#OUT OF EPISODE#` transition markers. This provides a complete test fixture for episode transition validation once the server-side detection is implemented.
+
+**Open issues resolved by Phase 7:**
+- OI-4: `openaiMessage` missing `thinking` field (item 4)
+- OI-21: Stream tests require WebSocket (always-stream removes this dependency for non-streaming config)
+- OI-25: Episode transition execution (server-side detection becomes testable)
 
 ### Phase 8: LLM Configuration & ChatOptions Fix (Low risk, high impact)
 
@@ -2714,19 +2791,19 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 
 ### Next Phase Recommendation
 
-**Recommended next: Phase 8 (LLM Config & ChatOptions Fix)** followed by **Phase 1 (remainder)**.
+**Recommended next: Phase 7 (Always-Stream Backend)**.
 
 **Rationale:**
 
-- **Phase 8** has three **P1 bugs** (OI-6: `top_k` maxValue=1, OI-7: `typical_p` mapped to wrong field, OI-8: `repeat_penalty` semantics mismatch) that affect actual LLM behavior in production. These are low-risk, self-contained fixes to `chatOptionsModel.json` and `ChatUtil.applyChatOptions()`.
+- **Phase 7** is the user's stated next target. It unifies streaming/non-streaming code paths, adds timeout support, and is a prerequisite for Phase 9 (policy-based regulation). The UX test suite (Phase 6) has stream/episode tests with phase dependency annotations ready to validate Phase 7 changes, including a test episode fixture ("Test Handoff" with 3 stages) for transition testing.
+
+- **Phase 8** has three **P1 bugs** (OI-6: `top_k` maxValue=1, OI-7: `typical_p` mapped to wrong field, OI-8: `repeat_penalty` semantics mismatch) that affect actual LLM behavior. These are low-risk, self-contained fixes that can be done before or after Phase 7.
 
 - **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
 
-- **Phase 7** (always-stream) is medium risk and is a prerequisite for Phase 9 (policy-based regulation, which needs timeout support). Phase 7 should come before Phase 9 but after Phase 8.
+- **Phase 6** (UX test suite) is now **COMPLETED**. LLM-dependent tests (63-81) will become fully functional as backend phases are implemented. Phase dependency annotations mark tests that will need updates after Phase 7.
 
-- **Phase 6** (UX test suite) is now **COMPLETED**. LLM-dependent tests (63-81) will become fully functional as backend phases are implemented.
-
-**Suggested order:** 8 → 1 (remainder) → 7 → 10 → 9
+**Suggested order:** 7 → 8 → 1 (remainder) → 10 → 9
 
 ---
 
@@ -2803,6 +2880,12 @@ All known open issues with their assigned resolution phase:
 | OI-18 | Client-side prune functions retained for backward compatibility — can be removed once all active sessions refresh | Phase 5 implementation | Future cleanup | P4 |
 | OI-19 | Migrator condition coverage — static condition map covers 7 of ~34 fields; fields like `femalePerspective`/`malePerspective` have no condition mapping | Phase 5 implementation | Phase 10 | P3 |
 | OI-20 | Token standardization — image/audio token processing still varies between prompt template styles | Phase 5 review | Phase 10 | P3 |
+| OI-21 | Stream tests require WebSocket — Tests 71-72 need active `page.wss` and `chatConfig.stream=true` | Phase 6 implementation | Phase 7 | P3 |
+| OI-22 | Policy tests placeholder — Test 81 validates config presence only; evaluation requires Phase 9 | Phase 6 implementation | Phase 9 | P3 |
+| OI-23 | CardGame shared state coupling — switching suites resets shared `TF.testState` | Phase 6 implementation | By design | P4 |
+| OI-24 | `findOrCreateConfig` caching — template changes require manual deletion of existing server objects | Phase 6 implementation | Future: add update-if-changed | P3 |
+| OI-25 | Episode transition execution not testable — `#NEXT EPISODE#` detection is server-side | Phase 6 implementation | Phase 7 | P3 |
+| OI-26 | Keyframe detection heuristic — Test 76 pattern-matches `[MCP:KeyFrame` / `(KeyFrame:` text; fragile | Phase 6 implementation | Phase 10 | P3 |
 
 ---
 

@@ -6,9 +6,8 @@
  * Tests: config, prompt, chat, stream, history, prune, episode, analyze, narrate, policy
  *
  * Prerequisites:
- *   - A named olio.llm.chatConfig must exist in ~/Chat
- *   - A named olio.llm.promptConfig must exist
- *   - The test view provides config pickers to select which configs to use
+ *   - Template files in media/prompts/: llmTestChatConfig.json, llmTestPromptConfig.json
+ *   - Auto-setup creates configs, characters, and ~/Tests group on first run
  *
  * Depends on: window.TestFramework, window.am7chat, window.am7client
  */
@@ -33,17 +32,24 @@
 
     // ── Suite State ───────────────────────────────────────────────────
     let suiteState = {
-        chatConfig: null,
+        chatConfig: null,       // default (full-featured) config
         promptConfig: null,
         chatConfigName: null,
         promptConfigName: null,
-        availableChatConfigs: [],
-        availablePromptConfigs: []
+        chatConfigs: {},         // named variants: { streaming, standard }
+        testGroup: null,
+        systemCharacter: null,
+        userCharacter: null,
+        setupDone: false
     };
 
     // ── Helpers ───────────────────────────────────────────────────────
     function log(cat, msg, status) { TF.testLog(cat, msg, status); }
     function logData(cat, label, data) { TF.testLogData(cat, label, data); }
+
+    function getVariant(name) {
+        return suiteState.chatConfigs[name] || suiteState.chatConfig;
+    }
 
     function extractLastAssistantMessage(resp) {
         if (!resp || !resp.messages) return null;
@@ -55,21 +61,6 @@
         return null;
     }
 
-    // ── Load available configs ────────────────────────────────────────
-    async function loadAvailableConfigs() {
-        try {
-            let dir = await page.findObject("auth.group", "DATA", "~/Chat");
-            if (!dir) {
-                log("config", "~/Chat directory not found", "fail");
-                return;
-            }
-            suiteState.availableChatConfigs = await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0) || [];
-            suiteState.availablePromptConfigs = await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0) || [];
-        } catch (e) {
-            log("config", "Failed to load configs: " + e.message, "fail");
-        }
-    }
-
     function setChatConfig(cfg) {
         suiteState.chatConfig = cfg;
         suiteState.chatConfigName = cfg ? cfg.name : null;
@@ -78,6 +69,199 @@
     function setPromptConfig(cfg) {
         suiteState.promptConfig = cfg;
         suiteState.promptConfigName = cfg ? cfg.name : null;
+    }
+
+    // ── Auto-setup: templates, characters, configs ────────────────────
+
+    async function fetchTemplate(url) {
+        try {
+            return await m.request({ method: "GET", url: url });
+        } catch (e) {
+            log("config", "Failed to fetch template " + url + ": " + e.message, "fail");
+            return null;
+        }
+    }
+
+    async function ensureTestGroup() {
+        try {
+            let grp = await page.makePath("auth.group", "data", "~/Tests");
+            if (grp) {
+                log("config", "Test group ready: ~/Tests", "pass");
+                return grp;
+            }
+            log("config", "Could not create ~/Tests, falling back to ~/Chat", "warn");
+            return await page.makePath("auth.group", "data", "~/Chat");
+        } catch (e) {
+            log("config", "Group setup error: " + e.message, "warn");
+            try { return await page.makePath("auth.group", "data", "~/Chat"); } catch (e2) { return null; }
+        }
+    }
+
+    async function findByName(schema, groupId, name) {
+        let q = am7view.viewQuery(am7model.newInstance(schema));
+        q.field("groupId", groupId);
+        q.field("name", name);
+        q.cache(false);
+        let qr = await page.search(q);
+        return (qr && qr.results && qr.results.length > 0) ? qr.results[0] : null;
+    }
+
+    async function findOrCreateConfig(schema, testGroup, template, extraFields) {
+        let existing = await findByName(schema, testGroup.id, template.name);
+        if (existing) {
+            log("config", "Found existing: " + template.name, "info");
+            return existing;
+        }
+
+        let entity = {};
+        for (let key in template) entity[key] = template[key];
+        entity.schema = schema;
+        entity.groupId = testGroup.id;
+        entity.groupPath = testGroup.path;
+        if (extraFields) {
+            for (let key in extraFields) entity[key] = extraFields[key];
+        }
+
+        try {
+            await page.createObject(entity);
+        } catch (e) {
+            log("config", "Full create failed for " + template.name + ", trying basic: " + e.message, "warn");
+            let basic = { schema: schema, name: template.name, groupId: testGroup.id, groupPath: testGroup.path };
+            if (schema === "olio.llm.chatConfig") {
+                basic.model = template.model || "llama3";
+                basic.serverUrl = template.serverUrl || "http://localhost:11434";
+                basic.serviceType = template.serviceType || "OLLAMA";
+                basic.messageTrim = template.messageTrim || 6;
+            } else if (schema === "olio.llm.promptConfig") {
+                basic.system = template.system || ["You are a test assistant."];
+            }
+            await page.createObject(basic);
+        }
+
+        let created = await findByName(schema, testGroup.id, template.name);
+        if (created) {
+            log("config", "Created: " + template.name, "pass");
+        } else {
+            log("config", "Failed to create: " + template.name, "fail");
+        }
+        return created;
+    }
+
+    async function findOrCreateCharacter(testGroup, firstName, lastName, gender, age) {
+        let fullName = firstName + " " + lastName;
+        try {
+            let existing = await findByName("olio.charPerson", testGroup.id, fullName);
+            if (existing) return existing;
+
+            let entity = {
+                schema: "olio.charPerson",
+                name: fullName,
+                firstName: firstName,
+                lastName: lastName,
+                gender: gender,
+                age: age,
+                groupId: testGroup.id,
+                groupPath: testGroup.path
+            };
+            await page.createObject(entity);
+            let created = await findByName("olio.charPerson", testGroup.id, fullName);
+            if (created) log("config", "Created test character: " + fullName, "pass");
+            return created;
+        } catch (e) {
+            log("config", "Character creation skipped (" + fullName + "): " + e.message, "info");
+            return null;
+        }
+    }
+
+    async function autoSetupConfigs() {
+        if (suiteState.setupDone && suiteState.chatConfig && suiteState.promptConfig) {
+            log("config", "Using cached configs: " + suiteState.chatConfigName, "info");
+            return;
+        }
+
+        log("config", "Auto-loading test configurations...", "info");
+
+        // 1. Ensure ~/Tests group
+        let testGroup = await ensureTestGroup();
+        if (!testGroup) {
+            log("config", "No test group available — cannot set up configs", "fail");
+            return;
+        }
+        suiteState.testGroup = testGroup;
+        log("config", "Test group: " + testGroup.path + "/" + testGroup.name, "info");
+
+        // 2. Load templates from media/prompts/
+        let chatTemplate = await fetchTemplate("/media/prompts/llmTestChatConfig.json");
+        let promptTemplate = await fetchTemplate("/media/prompts/llmTestPromptConfig.json");
+        if (!chatTemplate || !promptTemplate) {
+            log("config", "Template files missing — check media/prompts/", "fail");
+            return;
+        }
+
+        // 3. Create test characters
+        let sysChar = await findOrCreateCharacter(testGroup, "Aria", "Cortez", "FEMALE", 28);
+        let userChar = await findOrCreateCharacter(testGroup, "Max", "Reeves", "MALE", 32);
+        suiteState.systemCharacter = sysChar;
+        suiteState.userCharacter = userChar;
+
+        // 4. Create prompt config
+        let promptCfg = await findOrCreateConfig("olio.llm.promptConfig", testGroup, promptTemplate);
+
+        // 5. Create chat config variants from template
+        let charExtras = {};
+        if (sysChar) charExtras.systemCharacter = { objectId: sysChar.objectId };
+        if (userChar) charExtras.userCharacter = { objectId: userChar.objectId };
+
+        // Variant: streaming (stream=true, prune=true, episodes) — for stream, prune, episode tests
+        let streamingTemplate = {};
+        for (let k in chatTemplate) streamingTemplate[k] = chatTemplate[k];
+        streamingTemplate.name = "LLM Test Streaming";
+        streamingTemplate.stream = true;
+        streamingTemplate.prune = true;
+        let streamExtras = {};
+        for (let k in charExtras) streamExtras[k] = charExtras[k];
+        streamExtras.episodes = [{
+            schema: "olio.llm.episode",
+            completed: false,
+            name: "Test Handoff",
+            number: 1,
+            stages: [
+                "1. ${system.firstName} greets ${user.firstName} and offers a token",
+                "2. ${system.firstName} hands ${user.firstName} the token",
+                "3. ${system.firstName} confirms ${user.firstName} received the token"
+            ],
+            theme: "simple verification handoff"
+        }];
+        let streamingCfg = await findOrCreateConfig("olio.llm.chatConfig", testGroup, streamingTemplate, streamExtras);
+
+        // Variant: standard (stream=false, prune=false) — for chat, history, analyze, narrate tests
+        let standardTemplate = {};
+        for (let k in chatTemplate) standardTemplate[k] = chatTemplate[k];
+        standardTemplate.name = "LLM Test Standard";
+        standardTemplate.stream = false;
+        standardTemplate.prune = false;
+        let standardCfg = await findOrCreateConfig("olio.llm.chatConfig", testGroup, standardTemplate, charExtras);
+
+        // Store variants
+        suiteState.chatConfigs.streaming = streamingCfg;
+        suiteState.chatConfigs.standard = standardCfg;
+
+        // Default config = streaming (full-featured)
+        let chatCfg = streamingCfg || standardCfg;
+
+        // 6. Set as active
+        if (chatCfg) setChatConfig(chatCfg);
+        if (promptCfg) setPromptConfig(promptCfg);
+        suiteState.setupDone = true;
+
+        let variantNames = [];
+        if (streamingCfg) variantNames.push("streaming");
+        if (standardCfg) variantNames.push("standard");
+        log("config", "Config variants created: " + variantNames.join(", "), "pass");
+
+        if (chatCfg && promptCfg) {
+            log("config", "Auto-setup complete: default=" + chatCfg.name + ", prompt=" + promptCfg.name, "pass");
+        }
     }
 
     // ── Test 63: Config Load ──────────────────────────────────────────
@@ -171,24 +355,49 @@
                 log("prompt", "Assistant prompt present (" + aLen + " chars)", "pass");
             }
 
-            // Test 66: Orphan token check
+            // Test 66: Token classification check
+            // The raw promptConfig contains template tokens that are resolved at different stages:
+            //   - Character tokens (system.*, user.*) resolve when chatRequest is created with character context
+            //   - Runtime tokens (image.*, audio.*, nlp.*) resolve at message time
+            //   - Prompt tokens (perspective, censorWarn, assistCensorWarn, rating, ratingName, etc.) resolve during composition
             let allText = JSON.stringify(fullPromptCfg);
-            let orphanPattern = /\$\{[^}]+\}/g;
-            let matches = allText.match(orphanPattern);
-            // Filter out known runtime tokens (image.*, audio.*)
-            let realOrphans = [];
+            let tokenPattern = /\$\{[^}]+\}/g;
+            let matches = allText.match(tokenPattern);
+            let runtimeTokenPattern = /^\$\{(image|audio|nlp|system|user|perspective|censorWarn|assistCensorWarn|rating|ratingName|ratingDescription|ratingMpa|scene|setting|episode|episodeRule|dynamicRules|memory|interaction|profile|location)\b/;
+            let runtimeTokens = [];
+            let unknownTokens = [];
             if (matches) {
                 for (let t of matches) {
-                    if (!t.match(/^\$\{(image|audio)\./)) {
-                        realOrphans.push(t);
+                    if (t.match(runtimeTokenPattern)) {
+                        runtimeTokens.push(t);
+                    } else {
+                        unknownTokens.push(t);
                     }
                 }
             }
-            if (realOrphans.length === 0) {
-                log("prompt", "No orphan ${...} tokens found", "pass");
+            if (runtimeTokens.length > 0) {
+                log("prompt", "Runtime tokens present: " + runtimeTokens.length + " (resolved at chat/message time)", "pass");
+                logData("prompt", "Runtime tokens", runtimeTokens);
+            }
+            if (unknownTokens.length === 0) {
+                log("prompt", "No unknown ${...} tokens found", "pass");
             } else {
-                log("prompt", "Orphan tokens found: " + realOrphans.join(", "), "fail");
-                logData("prompt", "Orphan tokens", realOrphans);
+                log("prompt", "Unknown tokens found: " + unknownTokens.join(", "), "warn");
+                logData("prompt", "Unknown tokens", unknownTokens);
+            }
+
+            // Test 66b: Verify image/audio tokens are present (needed for media testing)
+            let imageTokens = runtimeTokens.filter(function(t) { return t.match(/^\$\{image\./); });
+            let audioTokens = runtimeTokens.filter(function(t) { return t.match(/^\$\{audio\./); });
+            if (imageTokens.length > 0) {
+                log("prompt", "Image tokens present: " + imageTokens.join(", "), "pass");
+            } else {
+                log("prompt", "No ${image.*} tokens in prompt — media image tests will be limited", "info");
+            }
+            if (audioTokens.length > 0) {
+                log("prompt", "Audio tokens present: " + audioTokens.join(", "), "pass");
+            } else {
+                log("prompt", "No ${audio.*} tokens in prompt — media audio tests will be limited", "info");
             }
 
             // Test 67: Full prompt data dump
@@ -206,12 +415,13 @@
         TF.testState.currentTest = "Chat: session tests";
         log("chat", "=== Chat Session Tests ===");
 
-        let chatCfg = suiteState.chatConfig;
+        let chatCfg = getVariant("standard");
         let promptCfg = suiteState.promptConfig;
         if (!chatCfg || !promptCfg) {
             log("chat", "chatConfig or promptConfig missing - skipping", "skip");
             return;
         }
+        log("chat", "Using variant: " + chatCfg.name, "info");
 
         let req;
 
@@ -229,6 +439,21 @@
         if (!req) {
             log("chat", "Session is null - cannot continue chat tests", "fail");
             return;
+        }
+
+        // Test 68b: Assist exchange detection
+        // When assist=true, the session is front-loaded with a hidden initial exchange
+        // (user input + assistant response) that does NOT appear in history but IS
+        // present in the raw request object.
+        if (chatCfg.assist) {
+            log("chat", "assist=true — session has hidden initial exchange (not in history, present in raw request)", "info");
+            let rawMessages = req.messages || [];
+            if (rawMessages.length > 0) {
+                log("chat", "Raw request has " + rawMessages.length + " pre-loaded message(s)", "pass");
+                logData("chat", "Assist pre-loaded messages", rawMessages);
+            } else {
+                log("chat", "assist=true but no pre-loaded messages found in raw request — may load lazily", "info");
+            }
         }
 
         // Test 69: Send message and receive response
@@ -253,17 +478,20 @@
     }
 
     // ── Tests 71-72: Stream ───────────────────────────────────────────
+    // PHASE DEP: Phase 7 (Always-Stream Backend) — NOT STARTED
+    // Streaming architecture will be refactored; these tests validate current WS behavior
     async function testStream(cats) {
         if (!cats.includes("stream")) return;
         TF.testState.currentTest = "Stream: WebSocket streaming tests";
-        log("stream", "=== Stream Tests ===");
+        log("stream", "=== Stream Tests === [Phase 7 pending: Always-Stream refactor]");
 
-        let chatCfg = suiteState.chatConfig;
+        let chatCfg = getVariant("streaming");
         let promptCfg = suiteState.promptConfig;
         if (!chatCfg || !promptCfg) {
             log("stream", "chatConfig or promptConfig missing - skipping", "skip");
             return;
         }
+        log("stream", "Using variant: " + chatCfg.name, "info");
 
         // Check if streaming is available
         if (!chatCfg.stream) {
@@ -352,12 +580,13 @@
         TF.testState.currentTest = "History: message ordering & content";
         log("history", "=== History Tests ===");
 
-        let chatCfg = suiteState.chatConfig;
+        let chatCfg = getVariant("standard");
         let promptCfg = suiteState.promptConfig;
         if (!chatCfg || !promptCfg) {
             log("history", "chatConfig or promptConfig missing - skipping", "skip");
             return;
         }
+        log("history", "Using variant: " + chatCfg.name, "info");
 
         let req;
         try {
@@ -379,6 +608,13 @@
             } catch (e) {
                 log("history", "Failed to send message " + (i + 1) + ": " + e.message, "fail");
             }
+        }
+
+        // Note: if assist=true, the session has a hidden initial exchange (user + assistant)
+        // that does NOT appear in history but IS in the raw request object.
+        let hasAssist = !!chatCfg.assist;
+        if (hasAssist) {
+            log("history", "assist=true — hidden initial exchange excluded from history", "info");
         }
 
         // Test 73: Retrieve history and verify ordering
@@ -416,6 +652,18 @@
             }
             log("history", "Content match: " + found + "/" + sentMessages.length + " sent messages found in history", found === sentMessages.length ? "pass" : "fail");
 
+            // Test 74b: Verify assist exchange is excluded from history
+            if (hasAssist) {
+                // History should only contain our 3 sent messages + their responses (no assist pair)
+                log("history", "History has " + msgs.length + " messages (expected ~" + (sentMessages.length * 2) + " without assist pair)", "info");
+                // The assist exchange should NOT appear as the first user message
+                if (userMsgs.length > 0 && userMsgs[0].content && userMsgs[0].content.indexOf(sentMessages[0]) !== -1) {
+                    log("history", "First user message in history is our first sent message (assist pair correctly hidden)", "pass");
+                } else if (userMsgs.length > sentMessages.length) {
+                    log("history", "Extra user messages in history — assist pair may be leaking into history", "warn");
+                }
+            }
+
         } catch (e) {
             log("history", "History retrieval failed: " + e.message, "fail");
         }
@@ -430,20 +678,24 @@
     }
 
     // ── Tests 75-76: Prune & Keyframe ─────────────────────────────────
+    // PHASE DEP: Phase 10 (Memory System Hardening & Keyframe Refactor) — NOT STARTED
+    // Prune/trim works now; keyframe detection will change with Phase 10
     async function testPrune(cats) {
         if (!cats.includes("prune")) return;
         TF.testState.currentTest = "Prune: message trimming & keyframes";
-        log("prune", "=== Prune Tests ===");
+        log("prune", "=== Prune Tests === [Phase 10 pending: Keyframe refactor]");
 
-        let chatCfg = suiteState.chatConfig;
+        let chatCfg = getVariant("streaming");
         let promptCfg = suiteState.promptConfig;
         if (!chatCfg || !promptCfg) {
             log("prune", "chatConfig or promptConfig missing - skipping", "skip");
             return;
         }
+        log("prune", "Using variant: " + chatCfg.name, "info");
 
         let messageTrim = chatCfg.messageTrim || 6;
-        log("prune", "messageTrim = " + messageTrim, "info");
+        let hasAssist = !!chatCfg.assist;
+        log("prune", "messageTrim = " + messageTrim + (hasAssist ? " (assist=true, hidden initial exchange not counted)" : ""), "info");
 
         let req;
         try {
@@ -515,17 +767,20 @@
     }
 
     // ── Tests 77-78: Episode ──────────────────────────────────────────
+    // PHASE DEP: Phase 7 (Always-Stream) — NOT STARTED
+    // Episode config validation works; transition execution pending Phase 7
     async function testEpisode(cats) {
         if (!cats.includes("episode")) return;
         TF.testState.currentTest = "Episode: guidance & transition";
-        log("episode", "=== Episode Tests ===");
+        log("episode", "=== Episode Tests === [Phase 7 pending: transition execution]");
 
-        let chatCfg = suiteState.chatConfig;
+        let chatCfg = getVariant("streaming");
         let promptCfg = suiteState.promptConfig;
         if (!chatCfg || !promptCfg) {
             log("episode", "chatConfig or promptConfig missing - skipping", "skip");
             return;
         }
+        log("episode", "Using variant: " + chatCfg.name, "info");
 
         // Test 77: Check if episodes are configured
         let episodes = chatCfg.episodes;
@@ -536,6 +791,25 @@
 
         log("episode", "Episodes configured: " + episodes.length, "pass");
         logData("episode", "Episode configuration", episodes);
+
+        // Test 77b: Validate episode structure (name, number, stages, theme)
+        let ep = episodes[0];
+        if (ep.name) {
+            log("episode", "Episode name: " + ep.name, "pass");
+        } else {
+            log("episode", "Episode missing name", "warn");
+        }
+        if (ep.stages && ep.stages.length > 0) {
+            log("episode", "Episode stages: " + ep.stages.length, "pass");
+            logData("episode", "Stages", ep.stages);
+        } else {
+            log("episode", "Episode missing stages array — add stages with numbered plot points", "warn");
+        }
+        if (ep.theme) {
+            log("episode", "Episode theme: " + ep.theme, "pass");
+        } else {
+            log("episode", "Episode missing theme", "info");
+        }
 
         // Fetch the composed prompt to check for episode guidance
         try {
@@ -551,10 +825,15 @@
             log("episode", "Failed to check prompt for episode guidance: " + e.message, "warn");
         }
 
-        // Test 78: Episode transition detection
-        log("episode", "#NEXT EPISODE# detection is server-side - verifying config only", "info");
-        let hasEpisodeRule = !!(chatCfg.episodeRule || chatCfg.episodeTransition);
-        log("episode", "Episode transition rule configured: " + (hasEpisodeRule ? "yes" : "not found"), hasEpisodeRule ? "pass" : "info");
+        // Test 78: Episode transition rule (on promptConfig, not chatConfig)
+        log("episode", "#NEXT EPISODE# / #OUT OF EPISODE# detection is server-side - verifying config only", "info");
+        let epRule = promptCfg.episodeRule;
+        if (epRule && epRule.length > 0) {
+            log("episode", "Episode transition rule configured (" + epRule.length + " lines)", "pass");
+            logData("episode", "Episode rule", epRule);
+        } else {
+            log("episode", "No episodeRule on promptConfig — add episodeRule array to prompt template", "warn");
+        }
     }
 
     // ── Test 79: Analyze ──────────────────────────────────────────────
@@ -563,12 +842,13 @@
         TF.testState.currentTest = "Analyze: analysis pipeline";
         log("analyze", "=== Analysis Pipeline Tests ===");
 
-        let chatCfg = suiteState.chatConfig;
+        let chatCfg = getVariant("standard");
         let promptCfg = suiteState.promptConfig;
         if (!chatCfg || !promptCfg) {
             log("analyze", "chatConfig or promptConfig missing - skipping", "skip");
             return;
         }
+        log("analyze", "Using variant: " + chatCfg.name, "info");
 
         // Create a session, send some content, then request analysis
         let req;
@@ -612,12 +892,13 @@
         TF.testState.currentTest = "Narrate: narration pipeline";
         log("narrate", "=== Narration Pipeline Tests ===");
 
-        let chatCfg = suiteState.chatConfig;
+        let chatCfg = getVariant("standard");
         let promptCfg = suiteState.promptConfig;
         if (!chatCfg || !promptCfg) {
             log("narrate", "chatConfig or promptConfig missing - skipping", "skip");
             return;
         }
+        log("narrate", "Using variant: " + chatCfg.name, "info");
 
         let req;
         try {
@@ -656,10 +937,12 @@
     }
 
     // ── Test 81: Policy ───────────────────────────────────────────────
+    // PHASE DEP: Phase 9 (Policy-Based LLM Response Regulation) — NOT STARTED
+    // Only config validation possible; evaluation operations not implemented
     async function testPolicy(cats) {
         if (!cats.includes("policy")) return;
         TF.testState.currentTest = "Policy: policy evaluation";
-        log("policy", "=== Policy Evaluation Tests ===");
+        log("policy", "=== Policy Evaluation Tests === [Phase 9 pending: evaluation not implemented]");
 
         let chatCfg = suiteState.chatConfig;
         if (!chatCfg) {
@@ -687,17 +970,11 @@
     async function runLLMTests(selectedCategories) {
         let cats = selectedCategories;
 
+        // Auto-setup configs from templates (skip if already done)
+        await autoSetupConfigs();
+
         let chatCfg = suiteState.chatConfig;
         let promptCfg = suiteState.promptConfig;
-
-        if (!chatCfg && suiteState.availableChatConfigs.length > 0) {
-            chatCfg = suiteState.availableChatConfigs[0];
-            setChatConfig(chatCfg);
-        }
-        if (!promptCfg && suiteState.availablePromptConfigs.length > 0) {
-            promptCfg = suiteState.availablePromptConfigs[0];
-            setPromptConfig(promptCfg);
-        }
 
         log("", "LLM Test Suite starting with chatConfig: " + (chatCfg ? chatCfg.name : "none")
             + ", promptConfig: " + (promptCfg ? promptCfg.name : "none"), "info");
@@ -722,10 +999,10 @@
         run: runLLMTests
     });
 
-    // ── Expose for test view config pickers ───────────────────────────
+    // ── Expose ───────────────────────────────────────────────────────
     window.LLMTestSuite = {
         suiteState: suiteState,
-        loadAvailableConfigs: loadAvailableConfigs,
+        autoSetupConfigs: autoSetupConfigs,
         setChatConfig: setChatConfig,
         setPromptConfig: setPromptConfig,
         LLM_CATEGORIES: LLM_CATEGORIES

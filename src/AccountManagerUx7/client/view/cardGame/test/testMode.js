@@ -65,14 +65,10 @@
         results: { pass: 0, fail: 0, warn: 0, skip: 0 },
         currentTest: null,
         completed: false,
-        selectedCategories: Object.keys(TEST_CATEGORIES),
+        selectedCategories: [],
         logFilter: "all",
         selectedSuite: null
     };
-    // Ensure CardGame categories are selected by default when this suite is active
-    if (testState.selectedCategories.length === 0) {
-        testState.selectedCategories = Object.keys(TEST_CATEGORIES);
-    }
     let autoPlaySpeed = 500;
 
     // ── Public setters for testDeck (called from DeckView / DeckList) ────

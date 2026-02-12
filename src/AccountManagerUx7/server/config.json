@@ -6,6 +6,8 @@
     "allowUntrustedCerts": true,
     "directories" : [
         "/client/components",
+        "/client/test",
+        "/client/test/llm",
         "/client/view",
         "/client/view/cardGame",
         "/client/view/cardGame/ai",
