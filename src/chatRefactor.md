@@ -2913,7 +2913,185 @@ seed                   → seed (if supported)        → seed (if supported)
 7. **Create sample policy JSON files** — Default policies for RPG, Clinical, and General use cases.
 
 **New files:** `TimeoutDetectionOperation.java`, `RecursiveLoopDetectionOperation.java`, `WrongCharacterDetectionOperation.java`, `RefusalDetectionOperation.java`, `ResponsePolicyEvaluator.java`, `ChatAutotuner.java`, sample policy JSONs
-**Modified files:** `Chat.java` (post-response evaluation hook)
+**Modified files:** `Chat.java` (post-response evaluation hook), `ChatListener.java` (async post-response hook), `WebSocketService.java` (chirp notifications)
+
+#### Phase 9 Prep Notes
+
+**Current code state (post-Phase 8):**
+
+**1. Policy Evaluation Infrastructure — Already Implemented:**
+
+The core policy framework is fully functional and used for authorization decisions. Phase 9 reuses this infrastructure for LLM response evaluation.
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `PolicyEvaluator` | `AccountManagerObjects7/.../policy/PolicyEvaluator.java` | Hierarchical rule/pattern evaluation with scoring |
+| `IOperation` | `AccountManagerObjects7/.../policy/operation/IOperation.java` | Custom operation interface: `read()` + `operate()` → `OperationResponseEnumType` |
+| `Operation` (abstract) | `AccountManagerObjects7/.../policy/operation/Operation.java` | Base class with `IReader`, `ISearch`, `FactUtil` injection |
+| `PolicyUtil` | `AccountManagerObjects7/.../policy/PolicyUtil.java` | Dynamic fact/pattern/rule construction and evaluation helpers |
+| `FactUtil` | `AccountManagerObjects7/.../policy/FactUtil.java` | Fact data extraction and resolution |
+
+**IOperation interface (line 30-31):**
+```java
+public interface IOperation {
+    public <T> T read(BaseRecord sourceFact, final BaseRecord referenceFact);
+    public OperationResponseEnumType operate(final BaseRecord prt, BaseRecord prr,
+        final BaseRecord pattern, BaseRecord sourceFact, final BaseRecord referenceFact);
+}
+```
+
+Return values: `OperationResponseEnumType.SUCCEEDED` (rule passes), `FAILED` (rule triggers), `ERROR`, `UNKNOWN`.
+
+**Existing Operation implementations** (examples to follow):
+- `RegexOperation.java` — Pattern-cached regex matching against fact data
+- `TokenOperation.java` — Token-based access check
+- `OwnerOperation.java` — Resource ownership check
+
+All extend `Operation` base class which provides `IReader`, `ISearch`, and `FactUtil` via constructor injection.
+
+**2. Policy Model Schemas (in `resources/models/policy/`):**
+
+| Schema | Key Fields | Notes |
+|--------|------------|-------|
+| `policy.policy` | `rules[]`, `enabled`, `decisionAge`, `condition` (ANY/ALL/NONE) | Top-level policy container |
+| `policy.rule` | `patterns[]`, `rules[]` (recursive), `condition`, `type` (PERMIT/DENY), `score` | Rule node — can nest child rules |
+| `policy.pattern` | `fact`, `match`, `operation`, `operationClass`, `type` (PARAMETER/OPERATION/EXPRESSION/AUTHORIZATION/SEPARATION_OF_DUTY), `comparator` | Pattern — references source fact, match fact, and optional custom operation |
+| `policy.fact` | `factData`, `type` (ATTRIBUTE/PARAMETER/FUNCTION), `valueType`, `parameters[]` | Fact holder — **already has `chatConfig` and `promptConfig` foreign references** (lines 95-107 in factModel.json) |
+| `policy.operation` | `operation` (class name), `type` (INTERNAL/FUNCTION) | Operation definition — `FUNCTION` type invokes the class via `IOperation` interface |
+
+**Critical discovery:** `policy.fact` already has `chatConfig` (→ `olio.llm.chatConfig`) and `promptConfig` (→ `olio.llm.promptConfig`) foreign references. This was pre-built for Phase 9 — facts can natively reference chat and prompt configurations.
+
+**3. `chatConfig.policy` field — Pre-built but Unused:**
+
+In `chatConfigModel.json` (line 207-213):
+```json
+{
+    "name": "policy",
+    "type": "model",
+    "baseModel": "policy.policy",
+    "foreign": true,
+    "followReference": false,
+    "description": "Development: Using a policy to route conversation requests through conditional rules and logic."
+}
+```
+
+This field exists on every chatConfig instance but is never referenced in `Chat.java` or `ChatListener.java`. Phase 9 activates it.
+
+**4. Post-Response Hook Locations (two paths):**
+
+**Path A — Synchronous (buffer mode, `stream=false`):**
+`Chat.continueChat()` lines 341-347:
+```java
+if(!stream) {
+    lastRep = chat(req);                       // Line 341: LLM call
+    if (lastRep != null) {
+        handleResponse(req, lastRep, false);   // Line 343: Add to history
+    }
+    // *** PHASE 9 HOOK HERE: evaluate policy AFTER handleResponse, BEFORE saveSession ***
+    saveSession(req);                          // Line 347: Persist
+}
+```
+
+**Path B — Asynchronous (streaming mode, `stream=true`):**
+`ChatListener.oncomplete()` lines 243-255:
+```java
+chat.handleResponse(request, response, false);  // Line 243
+// *** PHASE 9 HOOK HERE ***
+chat.saveSession(request);                       // Line 255
+```
+
+Both paths need the hook. The streaming path also has access to `WebSocketService.chirpUser()` for real-time notifications.
+
+**5. WebSocket Notification via `chirpUser()`:**
+
+`WebSocketService.java` line 434:
+```java
+public static boolean chirpUser(BaseRecord user, String[] chirps)
+```
+
+Already used for chat lifecycle events:
+- `chirpUser(user, new String[] {"chatStart", objectId, requestJson})`
+- `chirpUser(user, new String[] {"chatUpdate", objectId, message})`
+- `chirpUser(user, new String[] {"chatComplete", objectId})`
+- `chirpUser(user, new String[] {"chatError", objectId, msg})`
+- `chirpUser(user, new String[] {"chainEvent", "chainStart", planQuery})`
+
+Phase 9 adds `policyEvent` type following the same `new String[] {action, type, data}` pattern.
+
+**Note:** `chirpUser` is in the Service7 module, not Objects7. The four detection operations and `ResponsePolicyEvaluator` will live in Objects7 (`olio.llm.policy` package). The chirp calls must be made from `ChatListener` (Service7) which already imports `WebSocketService`, not from the operations themselves.
+
+**6. Existing UX Policy Test (placeholder):**
+
+`llmTestSuite.js` Test 81 (`testPolicy`) is already stubbed as a Phase 9 placeholder:
+```javascript
+async function testPolicy(cats) {
+    // PHASE DEP: Phase 9 (Policy-Based LLM Response Regulation) — NOT STARTED
+    // Only config validation possible; evaluation operations not implemented
+    ...
+    let hasPolicy = !!(chatCfg.responsePolicy || chatCfg.policy);
+    ...
+    log("policy", "Policy evaluation tests will be fully functional after Phase 9 implementation", "info");
+}
+```
+
+Phase 9 should expand this with actual policy evaluation tests and add `policyEvent` WebSocket handler tests.
+
+**7. Implementation Plan:**
+
+| Step | Component | Package/Location | Dependencies |
+|------|-----------|------------------|-------------|
+| 1 | `TimeoutDetectionOperation` | `olio.llm.policy` (Objects7) | `IOperation`, `Operation` base class |
+| 2 | `RecursiveLoopDetectionOperation` | `olio.llm.policy` (Objects7) | `IOperation`, `Operation` base class |
+| 3 | `WrongCharacterDetectionOperation` | `olio.llm.policy` (Objects7) | `IOperation`, `Operation` base class |
+| 4 | `RefusalDetectionOperation` | `olio.llm.policy` (Objects7) | `IOperation`, `Operation` base class |
+| 5 | `ResponsePolicyEvaluator` | `olio.llm.policy` (Objects7) | Steps 1-4, `PolicyEvaluator`, `FactUtil` |
+| 6 | Sample policy JSON files | `resources/olio/llm/` (Objects7) | Steps 1-4 (references operation class names) |
+| 7 | Post-response hooks in `Chat.continueChat()` and `ChatListener.oncomplete()` | Objects7 + Service7 | Step 5, `chatConfig.policy` field |
+| 8 | `ChatAutotuner` | `olio.llm.policy` (Objects7) | Step 5, `Chat` LLM call infrastructure |
+| 9 | WebSocket `policyEvent` notifications | Service7 (`ChatListener`) | Step 7, `WebSocketService.chirpUser()` |
+| 10 | Enhanced stop with failover | Objects7 (`Chat`) + Service7 (`ChatListener`) | `CompletableFuture.cancel()` |
+| 11 | Backend tests (TestResponsePolicy.java) | Objects7 test | Steps 1-8 |
+| 12 | UX test updates (llmTestSuite.js) | UX | Steps 7, 9 |
+| 13 | UX `policyEvent` handler (chat.js / SessionDirector.js) | UX | Step 9 |
+
+**8. Test Plan (Tests 46-62):**
+
+| Test | Name | Description | LLM Required |
+|------|------|-------------|:---:|
+| 46 | `TestTimeoutDetection` | Null/empty response → FAILED | No |
+| 47 | `TestTimeoutWithContent` | Non-empty response → SUCCEEDED | No |
+| 48 | `TestRecursiveLoopDetection` | Repeated 50-char blocks ≥3x → FAILED | No |
+| 49 | `TestRecursiveLoopClean` | Varied text → SUCCEEDED | No |
+| 50 | `TestWrongCharacterDetection` | Response starts with user char name + colon → FAILED | No |
+| 51 | `TestWrongCharacterClean` | Response starts with system char name → SUCCEEDED | No |
+| 52 | `TestRefusalDetection` | 2+ refusal phrases → FAILED | No |
+| 53 | `TestRefusalClean` | Normal response → SUCCEEDED | No |
+| 54 | `TestResponsePolicyEvaluatorPermit` | All operations pass → PERMIT | No |
+| 55 | `TestResponsePolicyEvaluatorDeny` | One operation fails → DENY with violation details | No |
+| 56 | `TestPolicyLoadFromResource` | Load sample policy JSON, verify structure | No |
+| 57 | `TestChatAutotunerAnalysis` | Autotune generates rewrite suggestion from violation | Yes |
+| 58 | `TestChatAutotunerSave` | Autotuned prompt saved with correct naming convention | Yes |
+| 59 | `TestPolicyHookBufferMode` | `stream=false` → policy evaluated post-response | Yes |
+| 60 | `TestPolicyHookStreamMode` | `stream=true` → policy evaluated in oncomplete | Yes |
+| 61 | `TestEnhancedStopGraceful` | Graceful stop terminates within timeout | Yes |
+| 62 | `TestEnhancedStopFailover` | Forced cancellation after failover window | Yes |
+
+Tests 46-56 are unit-testable with synthetic responses (no LLM server required). Tests 57-62 require a live LLM.
+
+**9. Open Issues to Address in Phase 9:**
+
+- **OI-22**: Policy tests placeholder (Test 81) — will be expanded with actual evaluation
+- **OI-36**: Adaptive chatOptions recommendation — `ChatAutotuner` provides the infrastructure; chatOptions rebalancing can be added to the analysis prompt as a secondary suggestion alongside prompt rewrites
+
+**10. Risk Assessment:**
+
+| Risk | Impact | Mitigation |
+|------|--------|-----------|
+| `PolicyEvaluator` integration mismatch — operations may not receive facts in expected format | High | Unit test each operation with synthetic facts before wiring into evaluator |
+| `ChatAutotuner` LLM call fails — analysis model produces unparseable JSON | Medium | Catch parse errors, log raw response, return autotune failure (no retry) |
+| `chirpUser` in Service7 vs operations in Objects7 — cross-module boundary | Medium | Operations return violation objects; hook code in `ChatListener` (Service7) calls chirpUser |
+| Enhanced stop `future.cancel(true)` may not interrupt HttpClient | Medium | Test with actual Ollama hang scenario; fall back to connection close if cancel insufficient |
+| Recursive loop detection false positives on legitimate repeated content (e.g., poetry, lists) | Low | Configurable window size and threshold via policy fact parameters; conservative defaults (50 chars, 3x) |
 
 ### Phase 10: Memory System Hardening & Keyframe Refactor (Low risk, medium impact)
 
@@ -2937,27 +3115,38 @@ seed                   → seed (if supported)        → seed (if supported)
 | 3 — Keyframe-to-Memory Pipeline | **IMPLEMENTED** | Medium | Medium | 19-22 (all pass) |
 | 4 — Structured Template Schema | **COMPLETED** | Higher | High | 23-28 (all pass) |
 | 5 — Client-Side Cleanup & Validation/Migration | **COMPLETED** | Low | Medium | 29-35 (all pass) |
-| 6 — UX Test Suite | **COMPLETED** | Low | High | 63-81 (browser) |
+| 6 — UX Test Suite | **COMPLETED** | Low | High | 63-81, 82-85 (browser) |
 | 7 — Always-Stream Backend | **COMPLETED** | Medium | Medium | 36-39 (all pass) |
-| 8 — LLM Config & ChatOptions Fix | Not started | Low | High | 40-45 |
+| 8 — LLM Config & ChatOptions Fix | **COMPLETED** | Low | High | 40-45 (all pass), 82-85 (browser) |
 | 9 — Policy-Based Response Regulation | Not started | Higher | Medium | 46-62 |
 | 10 — Memory Hardening & Keyframe Refactor | Not started | Low | Medium | (no numbered tests) |
 
 ### Next Phase Recommendation
 
-**Recommended next: Phase 8 (LLM Config & ChatOptions Fix)**.
+**Recommended next: Phase 9 (Policy-Based Response Regulation)** or **Phase 1 (remainder)**.
 
 **Rationale:**
 
-- **Phase 7** is now **COMPLETED**. Always-stream backend with buffer/timeout support is implemented, all backend tests (36-39) pass, all regression tests (TestChat, TestChat2, TestChatAsync) pass, UX tests updated.
+- **Phase 8** is now **COMPLETED**. All three P1 bugs fixed (OI-6: `top_k` maxValue, OI-7: `typical_p` mapping, OI-8: `repeat_penalty` mapping). New fields added to chatOptions (`frequency_penalty`, `presence_penalty`, `max_tokens`, `seed`). Request model defaults corrected. Six chatConfig templates created. UX form updated. All backend tests (40-45) pass, all regression tests pass.
 
-- **Phase 8** has three **P1 bugs** (OI-6: `top_k` maxValue=1, OI-7: `typical_p` mapped to wrong field, OI-8: `repeat_penalty` semantics mismatch) that affect actual LLM behavior. These are low-risk, self-contained fixes.
+- **Phase 8 implementation summary:**
+  - `chatOptionsModel.json`: Fixed `top_k` maxValue 1→500, added `max_tokens`, `frequency_penalty`, `presence_penalty`, `seed` fields
+  - `openaiRequestModel.json`: Fixed `frequency_penalty`/`presence_penalty` defaults 1.3→0.0, added `seed` field
+  - `ChatUtil.applyChatOptions()`: Rewrote to read new fields directly from chatOptions (no more cross-mapping of `repeat_penalty`→`frequency_penalty` or `typical_p`→`presence_penalty`). Added service-type-aware max token field selection.
+  - `Chat.applyAnalyzeOptions()`: Fixed to use `getMaxTokenField()` instead of hardcoded `max_completion_tokens`. Fixed penalty field mapping.
+  - Created 6 chatConfig template JSON files in `olio/llm/templates/`
+  - Added `ChatUtil.loadChatConfigTemplate()`, `getChatConfigTemplateNames()`, `applyChatConfigTemplate()` methods
+  - Updated UX `formDef.js`: Replaced old `typical_p`/`repeat_penalty` form fields with correct `frequency_penalty`/`presence_penalty`/`max_tokens`/`seed` fields
+  - Updated UX `SessionDirector.js`: Added new fields to optKeys copy list
+  - Fixed UX `modelDef.js`: Updated `olio.llm.chatOptions` schema (top_k maxValue 1→500, added `max_tokens`, `frequency_penalty`, `presence_penalty`, `seed` fields). Fixed `olio.llm.openai.openaiRequest` defaults (`frequency_penalty`/`presence_penalty` 1.3→0.0, added `seed` field)
+  - Updated `llmTestChatConfig.json`: Added `chatOptions` section with template defaults
+  - Added UX tests (82-85) to `llmTestSuite.js`: chatOptions field presence, top_k range fix verification, field range validation, UX schema verification, openaiRequest default verification
 
 - **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
 
-- **Phase 9** (Policy-Based Response Regulation) depends on Phase 7's always-stream backend being complete (now satisfied) and Phase 8's config fixes for correct LLM parameters.
+- **Phase 9** (Policy-Based Response Regulation) dependencies are now fully satisfied: Phase 7 (always-stream) and Phase 8 (config fixes) are both complete.
 
-**Suggested order:** 8 → 1 (remainder) → 10 → 9
+**Suggested order:** 1 (remainder) → 10 → 9
 
 ---
 
@@ -3022,13 +3211,13 @@ All known open issues with their assigned resolution phase:
 | OI-3 | `extractMemoriesFromResponse()` does not pass person pair IDs | Phase 2-3 known issues | Phase 10 (item 2) | P2 |
 | OI-4 | ~~`openaiMessage` model missing `thinking` field — qwen3/CoT models produce error logs~~ | Phase 3 testing | ~~Phase 7 (item 4)~~ **RESOLVED** | ~~P2~~ |
 | OI-5 | Low `keyframeEvery` values trigger expensive `analyze()` LLM calls | Phase 3 known issues | Phase 10 (item 5) | P3 |
-| OI-6 | `top_k` maxValue=1 prevents valid values (should be 500) | Section 6.1 | Phase 8 (item 1) | P1 |
-| OI-7 | `typical_p` incorrectly mapped to OpenAI `presence_penalty` in `applyChatOptions()` | Section 6.1 | Phase 8 (item 2) | P1 |
-| OI-8 | `repeat_penalty` mapped to `frequency_penalty` with different semantics | Section 6.1 | Phase 8 (item 2) | P1 |
-| OI-9 | Missing `max_tokens` field on chatOptions | Section 6.1 | Phase 8 (item 3) | P2 |
-| OI-10 | Missing `frequency_penalty` field on chatOptions (OpenAI-native) | Section 6.1 | Phase 8 (item 3) | P2 |
-| OI-11 | Missing `presence_penalty` field on chatOptions (OpenAI-native) | Section 6.1 | Phase 8 (item 3) | P2 |
-| OI-12 | Missing `seed` field on chatOptions | Section 6.1 | Phase 8 (item 3) | P3 |
+| OI-6 | ~~`top_k` maxValue=1 prevents valid values (should be 500)~~ | Section 6.1 | ~~Phase 8 (item 1)~~ **RESOLVED** | ~~P1~~ |
+| OI-7 | ~~`typical_p` incorrectly mapped to OpenAI `presence_penalty` in `applyChatOptions()`~~ | Section 6.1 | ~~Phase 8 (item 2)~~ **RESOLVED** | ~~P1~~ |
+| OI-8 | ~~`repeat_penalty` mapped to `frequency_penalty` with different semantics~~ | Section 6.1 | ~~Phase 8 (item 2)~~ **RESOLVED** | ~~P1~~ |
+| OI-9 | ~~Missing `max_tokens` field on chatOptions~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P2~~ |
+| OI-10 | ~~Missing `frequency_penalty` field on chatOptions (OpenAI-native)~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P2~~ |
+| OI-11 | ~~Missing `presence_penalty` field on chatOptions (OpenAI-native)~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P2~~ |
+| OI-12 | ~~Missing `seed` field on chatOptions~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P3~~ |
 | OI-13 | Memory/keyframe tests in Agent7 have no Agent7 dependencies — should relocate to Objects7 | Phase 3 testing | Phase 10 (item 3) | P3 |
 | OI-14 | Old `(KeyFrame:` text format still supported alongside MCP format — maintenance burden | Phase 3 code review | Phase 10 (item 4) | P3 |
 | OI-18 | Client-side prune functions retained for backward compatibility — can be removed once all active sessions refresh | Phase 5 implementation | Future cleanup | P4 |
@@ -3045,7 +3234,11 @@ All known open issues with their assigned resolution phase:
 | OI-29 | Ollama native `options` object not supported — `top_k`, `typical_p`, `repeat_penalty`, `min_p`, `repeat_last_n` not sent after Phase 8 mapping fix | Phase 8 prep | Future: add `options` model to request | P3 |
 | OI-30 | `applyAnalyzeOptions()` hardcodes `temperature=0.4`, `top_p=0.5`, etc. instead of reading from config | Phase 8 prep | Future cleanup | P4 |
 | OI-31 | `getNarratePrompt()` double-applies chatOptions — calls `applyAnalyzeOptions()` then `applyChatOptions()` again | Phase 8 prep | Future cleanup | P4 |
-| OI-32 | `openaiRequestModel.json` defaults for `frequency_penalty` and `presence_penalty` are 1.3 — should be 0.0 to match OpenAI API defaults | Phase 8 prep | Phase 8 | P2 |
+| OI-32 | ~~`openaiRequestModel.json` defaults for `frequency_penalty` and `presence_penalty` are 1.3 — should be 0.0 to match OpenAI API defaults~~ | Phase 8 prep | ~~Phase 8~~ **RESOLVED** | ~~P2~~ |
+| OI-33 | UX `formDef.js` chatOptions form previously exposed `typical_p` as "Presence Penalty" and `repeat_penalty` as "Frequency Penalty" — updated in Phase 8 to show correct `frequency_penalty`, `presence_penalty`, `max_tokens`, `seed` fields. Old Ollama-only fields (`typical_p`, `repeat_penalty`, `top_k`, `min_p`, `repeat_last_n`, `num_gpu`) not exposed in form — consider adding an "Advanced / Ollama" section | Phase 8 implementation | Future UX cleanup | P4 |
+| OI-34 | `Chat.getNarratePrompt()` still double-applies chatOptions — calls `applyAnalyzeOptions()` (which calls `applyChatOptions()`) then calls `applyChatOptions()` again at line 559. Harmless but wasteful — same as OI-31 | Phase 8 review | Future cleanup | P4 |
+| OI-35 | `Chat.getSDPrompt()` calls `applyChatOptions(req)` on the source request instead of the new `areq` at line 611 — likely a pre-existing bug where SD prompt options are applied to wrong request object | Phase 8 review | Future bug fix | P3 |
+| OI-36 | Adaptive chatOptions recommendation — during or after a chat session, auto-analyze conversation style/type and recommend or auto-rebalance chatOptions (temperature, penalties, etc.) for the detected use case. Similar to dynamic prompt rewriting in Phase 9's ChatAutotuner, but applied to LLM parameters rather than prompt content. Could use the chatConfig templates as target profiles for classification. | User request (Phase 8) | Future phase | P3 |
 
 ---
 

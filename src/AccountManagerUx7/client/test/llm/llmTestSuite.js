@@ -19,6 +19,7 @@
     // ── Test Categories ───────────────────────────────────────────────
     const LLM_CATEGORIES = {
         config:  { label: "Config",   icon: "settings" },
+        options: { label: "Options",  icon: "tune" },
         prompt:  { label: "Prompt",   icon: "description" },
         chat:    { label: "Chat",     icon: "chat" },
         stream:  { label: "Stream",   icon: "stream" },
@@ -312,6 +313,151 @@
             log("config", "Model: " + chatCfg.model, "pass");
         } else {
             log("config", "No model specified on chatConfig", "warn");
+        }
+    }
+
+    // ── Tests 82-85: ChatOptions (Phase 8) ────────────────────────────
+    async function testChatOptions(cats) {
+        if (!cats.includes("options")) return;
+        TF.testState.currentTest = "Options: chatOptions field validation";
+        log("options", "=== ChatOptions Tests (Phase 8) ===");
+
+        let chatCfg = suiteState.chatConfig;
+        if (!chatCfg) {
+            log("options", "chatConfig missing - skipping", "skip");
+            return;
+        }
+
+        // Test 82: chatOptions exists on chatConfig
+        let opts = chatCfg.chatOptions;
+        if (!opts) {
+            log("options", "chatOptions not present on chatConfig — check template includes chatOptions section", "fail");
+            logData("options", "chatConfig keys", Object.keys(chatCfg));
+            return;
+        }
+        log("options", "chatOptions present on chatConfig", "pass");
+        logData("options", "chatOptions", opts);
+
+        // Test 82b: Verify Phase 8 new fields exist
+        let requiredFields = ["temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens", "seed"];
+        let missingFields = [];
+        for (let i = 0; i < requiredFields.length; i++) {
+            if (opts[requiredFields[i]] === undefined) {
+                missingFields.push(requiredFields[i]);
+            }
+        }
+        if (missingFields.length === 0) {
+            log("options", "All Phase 8 fields present: " + requiredFields.join(", "), "pass");
+        } else {
+            log("options", "Missing Phase 8 fields: " + missingFields.join(", "), "fail");
+        }
+
+        // Test 83: top_k maxValue fixed (should accept values > 1)
+        // Verify the model schema allows top_k > 1 by checking the value from template
+        let topK = opts.top_k;
+        if (topK !== undefined) {
+            log("options", "top_k value: " + topK, topK >= 0 ? "pass" : "fail");
+            if (topK > 1) {
+                log("options", "top_k > 1 accepted (maxValue fix verified): " + topK, "pass");
+            } else {
+                log("options", "top_k <= 1 — value may be clamped by old maxValue=1 bug", "warn");
+            }
+        } else {
+            log("options", "top_k not set on chatOptions", "info");
+        }
+
+        // Test 83b: Verify field ranges
+        let rangeChecks = [
+            { field: "temperature", min: 0, max: 2 },
+            { field: "top_p", min: 0, max: 1 },
+            { field: "frequency_penalty", min: -2, max: 2 },
+            { field: "presence_penalty", min: -2, max: 2 },
+            { field: "max_tokens", min: 0, max: 120000 },
+            { field: "top_k", min: 0, max: 500 }
+        ];
+        let rangeOk = true;
+        for (let i = 0; i < rangeChecks.length; i++) {
+            let rc = rangeChecks[i];
+            let val = opts[rc.field];
+            if (val !== undefined && (val < rc.min || val > rc.max)) {
+                log("options", rc.field + " = " + val + " out of range [" + rc.min + ", " + rc.max + "]", "fail");
+                rangeOk = false;
+            }
+        }
+        if (rangeOk) {
+            log("options", "All field ranges valid", "pass");
+        }
+
+        // Test 84: UX model schema has updated chatOptions (verify via am7model)
+        try {
+            let modelDef = am7model.getModel("olio.llm.chatOptions");
+            if (modelDef && modelDef.fields) {
+                let fieldNames = modelDef.fields.map(function(f) { return f.name; });
+                let phase8Fields = ["frequency_penalty", "presence_penalty", "max_tokens", "seed"];
+                let schemaOk = true;
+                for (let i = 0; i < phase8Fields.length; i++) {
+                    if (fieldNames.indexOf(phase8Fields[i]) === -1) {
+                        log("options", "UX schema missing field: " + phase8Fields[i], "fail");
+                        schemaOk = false;
+                    }
+                }
+                if (schemaOk) {
+                    log("options", "UX model schema includes all Phase 8 fields", "pass");
+                }
+
+                // Verify top_k maxValue fixed in schema
+                let topKField = modelDef.fields.find(function(f) { return f.name === "top_k"; });
+                if (topKField) {
+                    let maxVal = topKField.maxValue;
+                    if (maxVal !== undefined && maxVal > 1) {
+                        log("options", "UX schema top_k maxValue = " + maxVal + " (fixed from 1)", "pass");
+                    } else if (maxVal !== undefined && maxVal <= 1) {
+                        log("options", "UX schema top_k maxValue still " + maxVal + " — modelDef.js not updated", "fail");
+                    }
+                }
+            } else {
+                log("options", "Could not read olio.llm.chatOptions model definition", "warn");
+            }
+        } catch (e) {
+            log("options", "Schema check error: " + e.message, "warn");
+        }
+
+        // Test 85: openaiRequest model defaults corrected
+        try {
+            let reqModel = am7model.getModel("olio.llm.openai.openaiRequest");
+            if (reqModel && reqModel.fields) {
+                let fpField = reqModel.fields.find(function(f) { return f.name === "frequency_penalty"; });
+                let ppField = reqModel.fields.find(function(f) { return f.name === "presence_penalty"; });
+
+                if (fpField) {
+                    let fpDef = fpField["default"];
+                    if (fpDef !== undefined && fpDef <= 0.1) {
+                        log("options", "openaiRequest frequency_penalty default = " + fpDef + " (fixed from 1.3)", "pass");
+                    } else {
+                        log("options", "openaiRequest frequency_penalty default = " + fpDef + " — should be 0.0", "fail");
+                    }
+                }
+                if (ppField) {
+                    let ppDef = ppField["default"];
+                    if (ppDef !== undefined && ppDef <= 0.1) {
+                        log("options", "openaiRequest presence_penalty default = " + ppDef + " (fixed from 1.3)", "pass");
+                    } else {
+                        log("options", "openaiRequest presence_penalty default = " + ppDef + " — should be 0.0", "fail");
+                    }
+                }
+
+                // Verify seed field added
+                let seedField = reqModel.fields.find(function(f) { return f.name === "seed"; });
+                if (seedField) {
+                    log("options", "openaiRequest has seed field", "pass");
+                } else {
+                    log("options", "openaiRequest missing seed field", "fail");
+                }
+            } else {
+                log("options", "Could not read openaiRequest model definition", "warn");
+            }
+        } catch (e) {
+            log("options", "Request model check error: " + e.message, "warn");
         }
     }
 
@@ -1089,6 +1235,7 @@
             + ", promptConfig: " + (promptCfg ? promptCfg.name : "none"), "info");
 
         await testConfigLoad(cats);
+        await testChatOptions(cats);
         await testPromptComposition(cats);
         await testChatSession(cats);
         await testStream(cats);

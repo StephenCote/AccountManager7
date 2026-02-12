@@ -515,15 +515,18 @@ public class Chat {
 		applyChatOptions(areq);
 		double temperature = 0.4;
 		double top_p = 0.5;
-		double repeat_penalty = 1.3;
-		double typical_p = 0.5;
+		double frequency_penalty = 0.0;
+		double presence_penalty = 0.0;
 		int num_ctx = 8192;
 		try {
 			areq.set("temperature", temperature);
 			areq.set("top_p", top_p);
-			areq.set("frequency_penalty", repeat_penalty);
-			areq.set("presence_penalty", typical_p);
-			areq.set("max_completion_tokens", num_ctx);
+			areq.set("frequency_penalty", frequency_penalty);
+			areq.set("presence_penalty", presence_penalty);
+			String tokField = ChatUtil.getMaxTokenField(chatConfig);
+			if(tokField != null && tokField.length() > 0) {
+				areq.set(tokField, num_ctx);
+			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}

@@ -1,0 +1,26 @@
+{
+	"schema": "olio.llm.chatConfig",
+	"rating": "RC",
+	"prune": true,
+	"assist": true,
+	"stream": true,
+	"includeScene": true,
+	"messageTrim": 30,
+	"keyframeEvery": 25,
+	"remindEvery": 6,
+	"requestTimeout": 180,
+	"extractMemories": true,
+	"memoryBudget": 800,
+	"memoryExtractionEvery": 0,
+	"chatOptions": {
+		"schema": "olio.llm.chatOptions",
+		"temperature": 1.0,
+		"top_p": 0.95,
+		"top_k": 50,
+		"frequency_penalty": 0.5,
+		"presence_penalty": 0.3,
+		"max_tokens": 4096,
+		"num_ctx": 32768,
+		"seed": 0
+	}
+}

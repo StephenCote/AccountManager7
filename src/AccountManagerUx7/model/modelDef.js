@@ -9891,7 +9891,7 @@
           "type": "int",
           "default": 50,
           "minValue": 0,
-          "maxValue": 1
+          "maxValue": 500
         },
         {
           "name": "top_p",
@@ -9946,6 +9946,32 @@
           "name": "num_gpu",
           "type": "int",
           "default": 1
+        },
+        {
+          "name": "max_tokens",
+          "type": "int",
+          "default": 4096,
+          "minValue": 0,
+          "maxValue": 120000
+        },
+        {
+          "name": "frequency_penalty",
+          "type": "double",
+          "default": 0.0,
+          "minValue": -2.0,
+          "maxValue": 2.0
+        },
+        {
+          "name": "presence_penalty",
+          "type": "double",
+          "default": 0.0,
+          "minValue": -2.0,
+          "maxValue": 2.0
+        },
+        {
+          "name": "seed",
+          "type": "int",
+          "default": 0
         }
       ]
     },
@@ -10290,12 +10316,17 @@
         {
           "name": "frequency_penalty",
           "type": "double",
-          "default": 1.3
+          "default": 0.0
         },
         {
           "name": "presence_penalty",
           "type": "double",
-          "default": 1.3
+          "default": 0.0
+        },
+        {
+          "name": "seed",
+          "type": "int",
+          "default": 0
         },
         {
           "name": "messages",

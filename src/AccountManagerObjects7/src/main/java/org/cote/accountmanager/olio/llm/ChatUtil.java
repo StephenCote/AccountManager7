@@ -361,6 +361,66 @@ public class ChatUtil {
 	public static BaseRecord getDefaultPrompt() {
 		return JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 	}
+
+	private static final String TEMPLATE_RESOURCE_PREFIX = "olio/llm/templates/chatConfig.";
+	private static final String TEMPLATE_RESOURCE_SUFFIX = ".json";
+	private static final String[] CHAT_CONFIG_TEMPLATE_NAMES = {
+		"generalChat", "rpg", "coding", "contentAnalysis", "behavioral", "technicalEval"
+	};
+
+	public static String[] getChatConfigTemplateNames() {
+		return CHAT_CONFIG_TEMPLATE_NAMES.clone();
+	}
+
+	public static BaseRecord loadChatConfigTemplate(String templateName) {
+		String resource = ResourceUtil.getInstance().getResource(TEMPLATE_RESOURCE_PREFIX + templateName + TEMPLATE_RESOURCE_SUFFIX);
+		if(resource == null) {
+			logger.warn("Chat config template not found: " + templateName);
+			return null;
+		}
+		return JSONUtil.importObject(resource, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+	}
+
+	public static void applyChatConfigTemplate(BaseRecord chatConfig, String templateName) {
+		BaseRecord template = loadChatConfigTemplate(templateName);
+		if(template == null) {
+			logger.warn("Failed to load chat config template: " + templateName);
+			return;
+		}
+		try {
+			String[] boolFields = {"prune", "assist", "stream", "includeScene", "extractMemories"};
+			String[] intFields = {"messageTrim", "keyframeEvery", "remindEvery", "requestTimeout", "memoryBudget", "memoryExtractionEvery"};
+			String[] stringFields = {"rating"};
+
+			for(String f : boolFields) {
+				if(template.hasField(f)) chatConfig.set(f, (boolean) template.get(f));
+			}
+			for(String f : intFields) {
+				if(template.hasField(f)) chatConfig.set(f, (int) template.get(f));
+			}
+			for(String f : stringFields) {
+				if(template.hasField(f)) chatConfig.set(f, template.get(f));
+			}
+
+			BaseRecord templateOpts = template.get("chatOptions");
+			if(templateOpts != null) {
+				BaseRecord opts = chatConfig.get("chatOptions");
+				if(opts != null) {
+					String[] doubleOptFields = {"temperature", "top_p", "frequency_penalty", "presence_penalty"};
+					String[] intOptFields = {"top_k", "max_tokens", "num_ctx", "seed"};
+					for(String f : doubleOptFields) {
+						if(templateOpts.hasField(f)) opts.set(f, (double) templateOpts.get(f));
+					}
+					for(String f : intOptFields) {
+						if(templateOpts.hasField(f)) opts.set(f, (int) templateOpts.get(f));
+					}
+				}
+			}
+		} catch(FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Error applying chat config template: " + e.getMessage());
+		}
+	}
+
 	public static BaseRecord getCreatePromptConfig(BaseRecord user, String name) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_NAME, name);
@@ -1244,31 +1304,48 @@ public class ChatUtil {
 	public static void applyChatOptions(OpenAIRequest req, BaseRecord cfg) {
 		String modelName = null;
 		BaseRecord opts = null;
+		LLMServiceEnumType serviceType = LLMServiceEnumType.OPENAI;
 
 		if(cfg != null) {
 			modelName = cfg.get("model");
 			opts = cfg.get("chatOptions");
+			serviceType = cfg.getEnum("serviceType");
+			if(serviceType == null) {
+				serviceType = LLMServiceEnumType.OPENAI;
+			}
 		}
 		try {
 			req.setModel(modelName);
-			double temperature = 0.9; 
+			double temperature = 0.9;
 			double top_p = 0.5;
-			double repeat_penalty = 1.3;
-			double typical_p = 0.0;
+			double frequency_penalty = 0.0;
+			double presence_penalty = 0.0;
+			int max_tokens = 4096;
 			int num_ctx = 8192;
+			int seed = 0;
 			if(opts != null) {
 				temperature = opts.get("temperature");
 				top_p = opts.get("top_p");
-				repeat_penalty = opts.get("repeat_penalty");
-				typical_p = opts.get("typical_p");
+				frequency_penalty = opts.get("frequency_penalty");
+				presence_penalty = opts.get("presence_penalty");
+				max_tokens = opts.get("max_tokens");
 				num_ctx = opts.get("num_ctx");
-		    }
+				seed = opts.get("seed");
+			}
 			req.set("temperature", temperature);
 			req.set("top_p", top_p);
-			req.set("frequency_penalty", repeat_penalty);
-			req.set("presence_penalty", typical_p);
+			req.set("frequency_penalty", frequency_penalty);
+			req.set("presence_penalty", presence_penalty);
+			if(seed != 0) {
+				req.set("seed", seed);
+			}
 
-			req.set(getMaxTokenField(cfg), num_ctx);
+			/// Use service-type-aware max token field
+			String tokField = getMaxTokenField(cfg);
+			if(tokField != null && tokField.length() > 0) {
+				int tokValue = (serviceType == LLMServiceEnumType.OLLAMA) ? num_ctx : max_tokens;
+				req.set(tokField, tokValue);
+			}
 
 		}
 		catch (ModelNotFoundException | FieldException | ValueException ex) {

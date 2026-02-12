@@ -4834,18 +4834,28 @@
                 layout: 'third',
                 format: "range"
             },
-            num_ctx: {
-                label: "Maximum Tokens",
+            max_tokens: {
+                label: "Max Tokens",
                 layout: 'third',
                 format: "range"
             },
-            typical_p: {
+            num_ctx: {
+                label: "Context Window",
+                layout: 'third',
+                format: "range"
+            },
+            frequency_penalty: {
+                label: "Frequency Penalty",
+                layout: 'third',
+                format: "range"
+            },
+            presence_penalty: {
                 label: "Presence Penalty",
                 layout: 'third',
                 format: "range"
             },
-            repeat_penalty: {
-                label: "Frequency Penalty",
+            seed: {
+                label: "Seed",
                 layout: 'third',
                 format: "range"
             }

@@ -241,7 +241,7 @@
             };
             if (t.chatOptions) {
                 const co = { schema: "olio.llm.chatOptions" };
-                const optKeys = ["max_tokens", "min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
+                const optKeys = ["max_tokens", "min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p", "frequency_penalty", "presence_penalty", "seed"];
                 for (const k of optKeys) {
                     if (t.chatOptions[k] !== undefined) co[k] = t.chatOptions[k];
                 }
@@ -308,7 +308,7 @@
             // Copy chatOptions from template but set higher temperature for test diversity
             const co = { schema: "olio.llm.chatOptions" };
             if (t.chatOptions) {
-                const optKeys = ["max_tokens", "min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p"];
+                const optKeys = ["max_tokens", "min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p", "frequency_penalty", "presence_penalty", "seed"];
                 for (const k of optKeys) {
                     if (t.chatOptions[k] !== undefined) co[k] = t.chatOptions[k];
                 }
