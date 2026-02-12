@@ -178,6 +178,12 @@
 			"name": "stream",
 			"type": "boolean"
 		},
+		{
+			"name": "requestTimeout",
+			"type": "int",
+			"default": 120,
+			"description": "Hard timeout in seconds for LLM connections. Used with CompletableFuture.orTimeout() to abort hung requests. 0 = no timeout."
+		},
 
 		{
 			"name": "remindEvery",

@@ -19,6 +19,10 @@
 		{
 			"name": "refusal",
 			"type": "string"
+		},
+		{
+			"name": "thinking",
+			"type": "string"
 		}
 
 	]

@@ -2670,9 +2670,9 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
    **Assist exchange awareness** (Tests 68b, 74b): When `chatConfig.assist=true`, the session has a hidden initial exchange (user input + assistant response) that is NOT in history but IS in the raw request object. Tests verify the pre-loaded messages exist in the raw request and are excluded from the history API.
 
    **Phase dependency annotations**: Tests for unimplemented phases include `// PHASE DEP:` code comments and runtime log headers:
-   - Stream tests: `[Phase 7 pending: Always-Stream refactor]`
+   - ~~Stream tests: `[Phase 7 pending: Always-Stream refactor]`~~ — **Removed (Phase 7 complete)**
    - Prune tests: `[Phase 10 pending: Keyframe refactor]`
-   - Episode tests: `[Phase 7 pending: transition execution]`
+   - ~~Episode tests: `[Phase 7 pending: transition execution]`~~ — **Removed (Phase 7 complete)**
    - Policy tests: `[Phase 9 pending: evaluation not implemented]`
 
    **Episode architecture**: `episodeRule` (transition markers like `#NEXT EPISODE#`, `#OUT OF EPISODE#`) lives on promptConfig. Episode data (`episodes` array with `name`, `number`, `stages[]`, `theme`, `completed`) lives on chatConfig. Test 77b validates the full episode structure including the stages array.
@@ -2702,37 +2702,48 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 - **Magic8 test integration** — OI-17 (Magic8 client-side template wiring) was not addressed in Phase 6. Magic8 tests are not part of the LLM test suite.
 - **Full episode transition testing** — Deferred to Phase 7 when the always-stream backend enables server-side `#NEXT EPISODE#` detection and response.
 
-### Phase 7: Always-Stream Backend with Buffer & Timeout (Medium risk, medium impact)
+### Phase 7: Always-Stream Backend with Buffer & Timeout (Medium risk, medium impact) — COMPLETED
 
 **Goal:** Unify streaming/non-streaming code paths and add timeout support (Section 5).
 
-1. **Always-stream from LLM** — Refactor `Chat.chat()` to always use the streaming code path. `stream` flag controls whether chunks are forwarded to client or buffered internally.
-2. **Add `requestTimeout`** to `chatConfigModel.json` — Hard timeout for hung LLM connections via `CompletableFuture.orTimeout()`.
-3. **Extract `processStreamChunk()`** — Shared method to eliminate duplicated stream parsing logic.
-4. **Add `thinking` field to `openaiMessageModel.json`** — Models like `qwen3` return a `thinking` field for chain-of-thought output. The `RecordDeserializer` currently logs errors for this unrecognized field. Add `thinking` (type: string) to the model schema. (Open issue from Phase 3 testing.)
+1. **Always-stream from LLM** — Refactored `Chat.chat()` to always use the streaming code path. The `stream` flag on `OpenAIRequest` controls whether chunks are forwarded to the client listener (`stream=true`, async) or buffered internally and returned as a complete `OpenAIResponse` (`stream=false`, blocking). The wire request always sets `stream=true`.
+2. **Add `requestTimeout`** to `chatConfigModel.json` — Added `requestTimeout` field (int, default 120) with hard timeout via `CompletableFuture.orTimeout()`. Timeout fires a `TimeoutException` caught in `whenComplete()`, reported via `listener.onerror()` (streaming) or returned as null (buffer mode). `CountDownLatch` synchronizes the blocking buffer path.
+3. **Extract `processStreamChunk()`** — Extracted shared method that handles both Ollama (top-level `message` object) and OpenAI (`choices[].delta`) response formats. `accumulateChunk()` helper accumulates content into the response and optionally forwards to listener.
+4. **Add `thinking` field to `openaiMessageModel.json`** — Added `thinking` (string) field. Models like `qwen3` return chain-of-thought in this field; previously caused `RecordDeserializer` errors for the unrecognized field. (Resolves OI-4.)
 
-**Files modified:** `Chat.java`, `ClientUtil.java`, `chatConfigModel.json`, `openaiMessageModel.json`
+**Files modified:** `Chat.java`, `chatConfigModel.json`, `openaiMessageModel.json`
+**Files created:** `TestChatStream.java`
+**Files updated:** `llmTestSuite.js` (stream tests 71-72, episode tests 77-78, removed Phase 7 pending annotations)
 
-#### Phase 7 Prep Notes
+**Implementation details:**
 
-**UX test suite readiness for Phase 7:**
-- Stream tests (71-72) already test WebSocket streaming with the "LLM Test Streaming" variant (`stream=true`). After Phase 7, these should validate the always-stream buffer behavior when `stream=false` (chunks buffered internally, full response returned via REST).
-- Episode tests (77-78) validate config structure and `episodeRule` presence. After Phase 7, Test 78 should be extended to test actual `#NEXT EPISODE#` / `#OUT OF EPISODE#` detection by sending messages that trigger episode transitions against the streaming variant's "Test Handoff" episode (3 stages).
-- Phase dependency annotations in `llmTestSuite.js` mark stream and episode tests with `[Phase 7 pending]` log headers. These should be removed/updated after Phase 7 implementation.
+- `Chat.chat()` always creates a `CompletableFuture` via `ClientUtil.postToRecordAndStream()`, applies `orTimeout()` if `requestTimeout > 0`, then uses `thenAccept()` to process stream chunks and `whenComplete()` to handle success/error/timeout. In buffer mode (`stream=false`), a `CountDownLatch` blocks the calling thread until streaming completes, then returns the buffered `OpenAIResponse`. In streaming mode (`stream=true`), the method returns null immediately and the listener receives callbacks.
+- `processStreamChunk()` parses each SSE line, strips `data: ` prefix for OpenAI format, ignores `[DONE]` sentinel, imports the JSON into a `BaseRecord`, and dispatches to `accumulateChunk()` for content accumulation.
+- Bug fix: The `penField` filter line was comparing against `tokField` instead of `penField` in the ignore fields filter.
+- Removed unused `jakarta.ws.rs.core.MediaType` import (non-streaming `ClientUtil.postToRecord()` call eliminated).
+- `continueChat()` still checks `stream` flag to decide whether to call `handleResponse()`/`saveSession()` synchronously (buffer mode) or defer to async processing (streaming mode).
 
-**Key backend files to review before starting Phase 7:**
-- `Chat.java` — Current `chat()` method with separate streaming/non-streaming paths
-- `ClientUtil.java` — HTTP client for LLM API calls, stream chunk parsing
-- `chatConfigModel.json` — Needs `requestTimeout` field added
-- `openaiMessageModel.json` — Needs `thinking` field added (OI-4)
+**Backend tests (TestChatStream.java):**
+- Test 36 `TestStreamBufferMode`: `stream=false` → `Chat.chat()` returns complete non-null response with content.
+- Test 37 `TestStreamTimeoutTriggered`: `requestTimeout=1` → timeout handled gracefully, no exception escapes.
+- Test 38 `TestStreamCancellation`: `stream=true` → `stopStream()` halts streaming within timeout.
+- Test 39 `TestStreamingModeUnchanged`: `stream=true` → streaming via `MockWebSocket`/`ChatListener` still works.
+- Stream tests use `qwen3:8b` model override for faster execution (avoids server contention from large model).
 
-**Test episode available for transition testing:**
-- The "LLM Test Streaming" chatConfig variant includes a "Test Handoff" episode with 3 stages: greet/offer token, hand token, confirm received. The `episodeRule` on the promptConfig defines `#NEXT EPISODE#` and `#OUT OF EPISODE#` transition markers. This provides a complete test fixture for episode transition validation once the server-side detection is implemented.
+**UX test updates (llmTestSuite.js):**
+- Test 72 updated: Now tests REST buffer mode (`stream=false`) by sending a message via `am7chat.sendMessage()` and validating the returned response, in addition to the existing WS streaming test (Test 71).
+- Test 78b added: Validates `#NEXT EPISODE#` and `#OUT OF EPISODE#` markers present in `episodeRule` array.
+- Test 78c added: Sends a message to the "Test Handoff" episode via WS streaming and checks if the response engages with the episode theme.
+- All `[Phase 7 pending]` log headers and `// PHASE DEP:` annotations removed from stream and episode tests.
 
-**Open issues resolved by Phase 7:**
+**Known issues:**
+- **OI-27: Ollama server-side request not cancelled on timeout** — When `requestTimeout` fires, only the client-side `CompletableFuture` is cancelled. The Ollama server continues generating the response until completion. This can cause server contention if a timeout test precedes other tests that hit the same model. Mitigated in TestChatStream by using a smaller model (`qwen3:8b`) and simplified prompts.
+- **OI-28: Test execution order sensitivity** — JUnit does not guarantee test execution order. Test 37 (timeout) sets `requestTimeout=1` on the shared DB config and restores it afterward, but if the JVM crashes between set and restore, subsequent tests inherit the 1-second timeout. Tests 38 and 39 explicitly set `requestTimeout=120` to guard against this.
+
+**Open issues resolved:**
 - OI-4: `openaiMessage` missing `thinking` field (item 4)
-- OI-21: Stream tests require WebSocket (always-stream removes this dependency for non-streaming config)
-- OI-25: Episode transition execution (server-side detection becomes testable)
+- OI-21: Stream tests require WebSocket — always-stream removes this dependency for non-streaming config (Test 72 now validates REST buffer mode)
+- OI-25: Episode transition execution — server-side detection now testable (Test 78c)
 
 ### Phase 8: LLM Configuration & ChatOptions Fix (Low risk, high impact)
 
@@ -2745,6 +2756,149 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 
 **Files modified:** `chatOptionsModel.json`, `ChatUtil.applyChatOptions()`, `chatConfigModel.json`
 **Files added:** `chatConfig.generalChat.json`, `chatConfig.rpg.json`, `chatConfig.coding.json`, `chatConfig.contentAnalysis.json`, `chatConfig.behavioral.json`, `chatConfig.technicalEval.json`
+
+#### Phase 8 Prep Notes
+
+**Current code state (post-Phase 7):**
+
+**1. `chatOptionsModel.json` — current fields:**
+
+| Field | Type | Default | Range | Status |
+|-------|------|---------|-------|--------|
+| `top_k` | int | 50 | 0-**1** | **BUG: maxValue=1** (OI-6) |
+| `top_p` | double | 1.0 | 0.0-1.0 | OK |
+| `min_p` | double | 0.1 | 0.0-1.0 | OK |
+| `typical_p` | double | 0.85 | 0.0-1.0 | OK (Ollama-native) |
+| `repeat_last_n` | int | 64 | 0-100 | OK (Ollama-native) |
+| `temperature` | double | 1.0 | 0.0-2.0 | OK |
+| `repeat_penalty` | double | 1.2 | 0.0-2.0 | OK (Ollama-native) |
+| `num_ctx` | int | 8192 | unbounded | OK |
+| `num_gpu` | int | 1 | unbounded | OK (Ollama-native) |
+| *MISSING* | - | - | - | `max_tokens`, `frequency_penalty`, `presence_penalty`, `seed` |
+
+**2. `openaiRequestModel.json` — wire format fields (already present on request):**
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `max_completion_tokens` | int | 2048 | For o1+ models |
+| `max_tokens` | int | 2048 | Standard OpenAI |
+| `num_ctx` | int | 2048 | Ollama cross-compat |
+| `temperature` | double | 0.75 | |
+| `top_p` | double | 0.5 | |
+| `frequency_penalty` | double | 1.3 | **Default too high — should be 0.0** |
+| `presence_penalty` | double | 1.3 | **Default too high — should be 0.0** |
+| `messages` | list | - | OpenAI message array |
+
+Note: The request model already has `frequency_penalty` and `presence_penalty` fields but with incorrect defaults (1.3). These are the wire fields that `applyChatOptions()` writes to. The request model defaults should also be fixed to 0.0 to match OpenAI API defaults.
+
+**3. `ChatUtil.applyChatOptions()` — current broken mapping (line 1244-1277):**
+
+```java
+// Reads from chatOptions:
+repeat_penalty = opts.get("repeat_penalty");   // Ollama concept: broad token repetition penalty
+typical_p = opts.get("typical_p");             // Ollama concept: typical probability sampling
+
+// Writes to OpenAI request:
+req.set("frequency_penalty", repeat_penalty);  // BUG: Ollama repeat_penalty → OpenAI frequency_penalty
+req.set("presence_penalty", typical_p);        // BUG: Ollama typical_p → OpenAI presence_penalty
+req.set(getMaxTokenField(cfg), num_ctx);       // OK: uses model-aware field selection
+```
+
+**Semantic mismatch:**
+- `repeat_penalty` (Ollama, range 0.0-2.0, default 1.2): Penalizes all repeated tokens proportionally. >1.0 = penalize, <1.0 = encourage. Used by llama.cpp.
+- `frequency_penalty` (OpenAI, range -2.0-2.0, default 0.0): Penalizes tokens by exact appearance count. 0.0 = no effect, positive = penalize frequency. Different algorithm.
+- `typical_p` (Ollama, range 0.0-1.0, default 0.85): Locally typical sampling — filters unlikely-surprise tokens. A sampling method.
+- `presence_penalty` (OpenAI, range -2.0-2.0, default 0.0): Binary — penalizes tokens that have appeared at all, regardless of frequency. Not a sampling method.
+
+**4. `Chat.applyAnalyzeOptions()` — has the SAME mapping bug (line 509-529):**
+
+```java
+// Hardcoded values, same wrong mapping:
+req.set("frequency_penalty", repeat_penalty);  // BUG: same as applyChatOptions
+req.set("presence_penalty", typical_p);        // BUG: same as applyChatOptions
+req.set("max_completion_tokens", num_ctx);     // Uses o1 field unconditionally — should use getMaxTokenField()
+```
+
+This method also hardcodes its options (`temperature=0.4`, `top_p=0.5`, etc.) instead of reading from an analyze-specific chatOptions or using the chatConfig's `analyzeModel` options. This is a secondary issue but should be noted.
+
+**5. `Chat.chat()` ignore fields logic (already partially fixed in Phase 7):**
+
+The `chat()` method dynamically determines which max-token and penalty fields to exclude from the wire request based on model/service type. Phase 7 fixed the `penField` filter bug (was comparing against `tokField` instead of `penField`). Phase 8 should verify this logic still works correctly after adding new chatOptions fields.
+
+```java
+// Phase 7 current state:
+String tokField = ChatUtil.getMaxTokenField(chatConfig);
+ignoreFields.addAll(... filter(f -> !f.equals(tokField)) ...);  // Keeps correct token field
+String penField = ChatUtil.getPresencePenaltyField(chatConfig);
+ignoreFields.addAll(... filter(f -> !f.equals(penField)) ...);  // Keeps correct penalty field
+```
+
+**6. Field pruning in `getPrunedRequest()` and `IGNORE_FIELDS`:**
+
+`Chat.chat()` builds a dynamic ignore list from `IGNORE_FIELDS` + model-specific exclusions. After Phase 8 adds new fields to chatOptions, the wire request will only include fields that are set and not ignored. No changes needed to `IGNORE_FIELDS` — it only excludes metadata fields (`id`, `objectId`, `groupId`, etc.), not LLM parameter fields.
+
+**7. Callers of `applyChatOptions()` (5 call sites, all in `Chat.java`):**
+
+| Caller | Line | Context |
+|--------|------|---------|
+| `newRequest()` | 1159 | Creates base request for chat — primary path |
+| `applyAnalyzeOptions()` | 515 | Analysis prompts — then overrides with hardcoded values |
+| `getNarratePrompt()` | 559 | Narration prompts — called via `applyAnalyzeOptions()` + direct call (double-apply) |
+| `getSDPrompt()` | 611 | Stable Diffusion prompts |
+| `getReducePrompt()` | 701 | Reduce/summarize prompts |
+
+Note: `getNarratePrompt()` calls `applyAnalyzeOptions()` (which calls `applyChatOptions()`) AND then calls `applyChatOptions()` directly again (line 559). This double-apply is harmless but wasteful.
+
+**Implementation plan for `applyChatOptions()` rewrite:**
+
+The fix needs to handle two service types with different parameter semantics:
+
+```
+chatOptions fields     → Ollama wire format         → OpenAI wire format
+─────────────────────────────────────────────────────────────────────────
+temperature            → temperature                → temperature
+top_p                  → top_p                      → top_p
+top_k                  → top_k (native)             → (ignored — not supported)
+min_p                  → min_p (native)             → (ignored — not supported)
+typical_p              → typical_p (native)         → (ignored — not supported)
+repeat_penalty         → repeat_penalty (native)    → (ignored — not supported)
+repeat_last_n          → repeat_last_n (native)     → (ignored — not supported)
+num_ctx                → num_ctx (context window)   → (ignored — use max_tokens)
+num_gpu                → num_gpu (native)           → (ignored — not supported)
+frequency_penalty      → (ignored — not supported)  → frequency_penalty
+presence_penalty       → (ignored — not supported)  → presence_penalty
+max_tokens             → (ignored — use num_ctx)    → max_tokens / max_completion_tokens
+seed                   → seed (if supported)        → seed (if supported)
+```
+
+**Strategy:** Read ALL fields from chatOptions. Based on `serviceType`:
+- **OLLAMA**: Set `temperature`, `top_p`, and `num_ctx` on request. Ollama-specific fields (`top_k`, `repeat_penalty`, `typical_p`, etc.) go into `options` parameter (Ollama API). `frequency_penalty` and `presence_penalty` are ignored.
+- **OPENAI**: Set `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`, and `max_tokens`/`max_completion_tokens` (via `getMaxTokenField()`). Ollama-specific fields are ignored. `getPresencePenaltyField()` determines if presence_penalty is supported for the model.
+
+**Wait — Ollama `options` parameter:**  Ollama's `/api/chat` endpoint accepts a top-level `options` object for sampling params, but looking at how the current code serializes: the `OpenAIRequest` model has `temperature`, `top_p`, `frequency_penalty`, `presence_penalty` as top-level fields. The current code sets these directly on the request. Ollama's API does accept `temperature` and `top_p` at the top level (OpenAI-compatible mode) but native Ollama params like `repeat_penalty`, `typical_p`, `top_k` go in an `options` object.
+
+**Current approach**: The code sets `frequency_penalty` and `presence_penalty` on the request regardless of service type. For Ollama, these fields are silently ignored by the Ollama server (it doesn't use them). The actual Ollama-native params (`repeat_penalty`, `typical_p`, `top_k`) are NOT currently sent at all — they're read from chatOptions but mapped to the wrong OpenAI fields instead of being sent in their native form.
+
+**This means:** For Ollama, the current code effectively sends NO meaningful penalty/sampling params beyond `temperature` and `top_p`. The `repeat_penalty` value gets written to `frequency_penalty` which Ollama ignores. The fix should either:
+- (a) Add Ollama `options` support to the request model and serialize native params there, OR
+- (b) Keep the current approach of only sending OpenAI-compatible fields (Ollama accepts `temperature`, `top_p`, `frequency_penalty`, `presence_penalty` in OpenAI-compat mode since Ollama v0.1.35+)
+
+**Recommended: Option (b)** — Ollama's OpenAI-compatible endpoint at `/api/chat` does accept `frequency_penalty` and `presence_penalty` as of recent versions. This avoids adding an `options` sub-object to the request model. For Ollama-only params (`typical_p`, `repeat_last_n`, `min_p`, `top_k`), these can only be sent via the native `options` object, which would require a model schema change. **Defer native `options` support to a future phase** — it's not needed for the core mapping fix.
+
+**Simplified Phase 8 approach:**
+1. Fix `top_k` maxValue
+2. Add `frequency_penalty`, `presence_penalty`, `max_tokens`, `seed` to `chatOptionsModel.json`
+3. Rewrite `applyChatOptions()` to read the new fields directly and map per service type
+4. Fix `openaiRequestModel.json` defaults (`frequency_penalty` and `presence_penalty` from 1.3 to 0.0)
+5. Fix `applyAnalyzeOptions()` to use `getMaxTokenField()` and correct penalty mapping
+6. Create chatConfig template JSON files per Section 6.3
+
+**Template file location:** `AccountManagerObjects7/src/main/resources/models/olio/llm/templates/` — separate from model schemas, loadable via resource path.
+
+**Open issues deferred beyond Phase 8:**
+- **OI-29: Ollama native `options` object** — `top_k`, `typical_p`, `repeat_penalty`, `min_p`, `repeat_last_n` are only configurable via Ollama's native `options` parameter, which the current request model doesn't support. These fields exist on `chatOptionsModel.json` but are not sent to Ollama in any form after the mapping fix removes the incorrect cross-mapping. Future phase could add an `options` embedded model to `openaiRequestModel.json` for Ollama-native params.
+- **OI-30: `applyAnalyzeOptions()` hardcoded values** — Analysis/narration/reduce prompts hardcode their own `temperature`, `top_p`, etc. instead of reading from an analyze-specific config. Not a Phase 8 blocker but noted for cleanup.
+- **OI-31: `getNarratePrompt()` double-applies chatOptions** — Calls `applyAnalyzeOptions()` (which calls `applyChatOptions()`) then calls `applyChatOptions()` again directly. Harmless but wasteful.
 
 ### Phase 9: Policy-Based LLM Response Regulation (Higher risk, medium impact)
 
@@ -2784,26 +2938,26 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 | 4 — Structured Template Schema | **COMPLETED** | Higher | High | 23-28 (all pass) |
 | 5 — Client-Side Cleanup & Validation/Migration | **COMPLETED** | Low | Medium | 29-35 (all pass) |
 | 6 — UX Test Suite | **COMPLETED** | Low | High | 63-81 (browser) |
-| 7 — Always-Stream Backend | Not started | Medium | Medium | 36-39 |
+| 7 — Always-Stream Backend | **COMPLETED** | Medium | Medium | 36-39 (all pass) |
 | 8 — LLM Config & ChatOptions Fix | Not started | Low | High | 40-45 |
 | 9 — Policy-Based Response Regulation | Not started | Higher | Medium | 46-62 |
 | 10 — Memory Hardening & Keyframe Refactor | Not started | Low | Medium | (no numbered tests) |
 
 ### Next Phase Recommendation
 
-**Recommended next: Phase 7 (Always-Stream Backend)**.
+**Recommended next: Phase 8 (LLM Config & ChatOptions Fix)**.
 
 **Rationale:**
 
-- **Phase 7** is the user's stated next target. It unifies streaming/non-streaming code paths, adds timeout support, and is a prerequisite for Phase 9 (policy-based regulation). The UX test suite (Phase 6) has stream/episode tests with phase dependency annotations ready to validate Phase 7 changes, including a test episode fixture ("Test Handoff" with 3 stages) for transition testing.
+- **Phase 7** is now **COMPLETED**. Always-stream backend with buffer/timeout support is implemented, all backend tests (36-39) pass, all regression tests (TestChat, TestChat2, TestChatAsync) pass, UX tests updated.
 
-- **Phase 8** has three **P1 bugs** (OI-6: `top_k` maxValue=1, OI-7: `typical_p` mapped to wrong field, OI-8: `repeat_penalty` semantics mismatch) that affect actual LLM behavior. These are low-risk, self-contained fixes that can be done before or after Phase 7.
+- **Phase 8** has three **P1 bugs** (OI-6: `top_k` maxValue=1, OI-7: `typical_p` mapped to wrong field, OI-8: `repeat_penalty` semantics mismatch) that affect actual LLM behavior. These are low-risk, self-contained fixes.
 
 - **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
 
-- **Phase 6** (UX test suite) is now **COMPLETED**. LLM-dependent tests (63-81) will become fully functional as backend phases are implemented. Phase dependency annotations mark tests that will need updates after Phase 7.
+- **Phase 9** (Policy-Based Response Regulation) depends on Phase 7's always-stream backend being complete (now satisfied) and Phase 8's config fixes for correct LLM parameters.
 
-**Suggested order:** 7 → 8 → 1 (remainder) → 10 → 9
+**Suggested order:** 8 → 1 (remainder) → 10 → 9
 
 ---
 

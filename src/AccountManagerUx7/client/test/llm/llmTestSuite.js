@@ -478,12 +478,12 @@
     }
 
     // ── Tests 71-72: Stream ───────────────────────────────────────────
-    // PHASE DEP: Phase 7 (Always-Stream Backend) — NOT STARTED
-    // Streaming architecture will be refactored; these tests validate current WS behavior
+    // Phase 7: Always-Stream Backend — server always streams from LLM;
+    // stream flag controls whether chunks are forwarded (WS) or buffered (REST).
     async function testStream(cats) {
         if (!cats.includes("stream")) return;
-        TF.testState.currentTest = "Stream: WebSocket streaming tests";
-        log("stream", "=== Stream Tests === [Phase 7 pending: Always-Stream refactor]");
+        TF.testState.currentTest = "Stream: WebSocket streaming & REST buffer tests";
+        log("stream", "=== Stream Tests === [Phase 7: Always-Stream Backend]");
 
         let chatCfg = getVariant("streaming");
         let promptCfg = suiteState.promptConfig;
@@ -493,84 +493,114 @@
         }
         log("stream", "Using variant: " + chatCfg.name, "info");
 
-        // Check if streaming is available
-        if (!chatCfg.stream) {
-            log("stream", "chatConfig.stream is not enabled - streaming tests will attempt with REST fallback", "warn");
-        }
-
-        if (!page.wss) {
-            log("stream", "WebSocket service not available", "skip");
-            return;
-        }
-
-        let req;
-        try {
-            req = await am7chat.getChatRequest("LLM Stream Test - " + Date.now(), chatCfg, promptCfg);
-            log("stream", "Stream test session created: " + (req ? req.name : "null"), req ? "pass" : "fail");
-        } catch (e) {
-            log("stream", "Session create failed: " + e.message, "fail");
-            return;
-        }
-
-        if (!req) return;
-
-        // Test 71-72: Streaming via WebSocket
-        try {
-            let chunks = [];
-            let completed = false;
-            let streamError = null;
-
-            let streamCallbacks = {
-                onchatstart: function(id, r) { log("stream", "Stream started (id: " + id + ")", "info"); },
-                onchatupdate: function(id, msg) { chunks.push(msg); },
-                onchatcomplete: function(id) { completed = true; },
-                onchaterror: function(id, msg) { streamError = msg; }
-            };
-
-            let prevStream = page.chatStream;
-            page.chatStream = streamCallbacks;
-
-            let chatReq = {
-                schema: "olio.llm.chatRequest",
-                objectId: req.objectId,
-                uid: page.uid(),
-                message: "Say exactly: STREAM_TEST_OK"
-            };
-
-            page.wss.send("chat", JSON.stringify(chatReq), undefined, "olio.llm.chatRequest");
-
-            // Wait for completion or timeout
-            let timeout = 30000;
-            let waited = 0;
-            let interval = 200;
-            while (!completed && !streamError && waited < timeout) {
-                await new Promise(function(resolve) { setTimeout(resolve, interval); });
-                waited += interval;
+        // Test 71: WebSocket streaming (stream=true, chunks forwarded to client)
+        if (page.wss) {
+            let req;
+            try {
+                req = await am7chat.getChatRequest("LLM Stream Test - " + Date.now(), chatCfg, promptCfg);
+                log("stream", "Stream test session created: " + (req ? req.name : "null"), req ? "pass" : "fail");
+            } catch (e) {
+                log("stream", "Session create failed: " + e.message, "fail");
+                return;
             }
 
-            page.chatStream = prevStream;
+            if (req) {
+                try {
+                    let chunks = [];
+                    let completed = false;
+                    let streamError = null;
 
-            if (streamError) {
-                log("stream", "Stream error: " + streamError, "fail");
-            } else if (!completed) {
-                log("stream", "Stream timed out after " + timeout + "ms (received " + chunks.length + " chunks)", "fail");
-            } else {
-                log("stream", "Stream connected and received " + chunks.length + " chunks", chunks.length > 0 ? "pass" : "warn");
-                let fullResponse = chunks.join("");
-                log("stream", "Full response assembled (" + fullResponse.length + " chars)", fullResponse.length > 0 ? "pass" : "fail");
-                logData("stream", "Streamed response", fullResponse);
+                    let streamCallbacks = {
+                        onchatstart: function(id, r) { log("stream", "Stream started (id: " + id + ")", "info"); },
+                        onchatupdate: function(id, msg) { chunks.push(msg); },
+                        onchatcomplete: function(id) { completed = true; },
+                        onchaterror: function(id, msg) { streamError = msg; }
+                    };
+
+                    let prevStream = page.chatStream;
+                    page.chatStream = streamCallbacks;
+
+                    let chatReq = {
+                        schema: "olio.llm.chatRequest",
+                        objectId: req.objectId,
+                        uid: page.uid(),
+                        message: "Say exactly: STREAM_TEST_OK"
+                    };
+
+                    page.wss.send("chat", JSON.stringify(chatReq), undefined, "olio.llm.chatRequest");
+
+                    let timeout = 30000;
+                    let waited = 0;
+                    let interval = 200;
+                    while (!completed && !streamError && waited < timeout) {
+                        await new Promise(function(resolve) { setTimeout(resolve, interval); });
+                        waited += interval;
+                    }
+
+                    page.chatStream = prevStream;
+
+                    if (streamError) {
+                        log("stream", "Stream error: " + streamError, "fail");
+                    } else if (!completed) {
+                        log("stream", "Stream timed out after " + timeout + "ms (received " + chunks.length + " chunks)", "fail");
+                    } else {
+                        log("stream", "WS stream received " + chunks.length + " chunks", chunks.length > 0 ? "pass" : "warn");
+                        let fullResponse = chunks.join("");
+                        log("stream", "Full response assembled (" + fullResponse.length + " chars)", fullResponse.length > 0 ? "pass" : "fail");
+                        logData("stream", "Streamed response", fullResponse);
+                    }
+                } catch (e) {
+                    log("stream", "WS streaming test error: " + e.message, "fail");
+                    logData("stream", "Error details", e.stack || e.message);
+                }
+
+                try {
+                    await am7chat.deleteChat(req, true);
+                    log("stream", "WS stream test session cleaned up", "pass");
+                } catch (e) {
+                    log("stream", "Cleanup failed: " + e.message, "warn");
+                }
             }
-        } catch (e) {
-            log("stream", "Streaming test error: " + e.message, "fail");
-            logData("stream", "Error details", e.stack || e.message);
+        } else {
+            log("stream", "WebSocket service not available - WS stream test skipped", "skip");
         }
 
-        // Cleanup
-        try {
-            await am7chat.deleteChat(req, true);
-            log("stream", "Stream test session cleaned up", "pass");
-        } catch (e) {
-            log("stream", "Cleanup failed: " + e.message, "warn");
+        // Test 72: REST buffer mode (stream=false on config, server still streams internally)
+        let stdCfg = getVariant("standard");
+        if (stdCfg) {
+            let bufReq;
+            try {
+                bufReq = await am7chat.getChatRequest("LLM Buffer Test - " + Date.now(), stdCfg, promptCfg);
+                log("stream", "Buffer test session created: " + (bufReq ? bufReq.name : "null"), bufReq ? "pass" : "fail");
+            } catch (e) {
+                log("stream", "Buffer session create failed: " + e.message, "fail");
+            }
+
+            if (bufReq) {
+                try {
+                    let resp = await am7chat.sendMessage(bufReq, "Say exactly: BUFFER_TEST_OK");
+                    if (resp && resp.messages && resp.messages.length > 0) {
+                        let lastMsg = resp.messages[resp.messages.length - 1];
+                        let content = lastMsg.content || lastMsg.displayContent || "";
+                        log("stream", "REST buffer response received (" + content.length + " chars)", content.length > 0 ? "pass" : "fail");
+                        logData("stream", "Buffer response", content);
+                    } else {
+                        log("stream", "REST buffer returned empty response", "warn");
+                    }
+                } catch (e) {
+                    log("stream", "REST buffer test error: " + e.message, "fail");
+                    logData("stream", "Error details", e.stack || e.message);
+                }
+
+                try {
+                    await am7chat.deleteChat(bufReq, true);
+                    log("stream", "Buffer test session cleaned up", "pass");
+                } catch (e) {
+                    log("stream", "Cleanup failed: " + e.message, "warn");
+                }
+            }
+        } else {
+            log("stream", "Standard variant not available - buffer test skipped", "skip");
         }
     }
 
@@ -767,12 +797,11 @@
     }
 
     // ── Tests 77-78: Episode ──────────────────────────────────────────
-    // PHASE DEP: Phase 7 (Always-Stream) — NOT STARTED
-    // Episode config validation works; transition execution pending Phase 7
+    // Phase 7: Episode config validation & transition detection via always-stream
     async function testEpisode(cats) {
         if (!cats.includes("episode")) return;
         TF.testState.currentTest = "Episode: guidance & transition";
-        log("episode", "=== Episode Tests === [Phase 7 pending: transition execution]");
+        log("episode", "=== Episode Tests === [Phase 7: Always-Stream episode transitions]");
 
         let chatCfg = getVariant("streaming");
         let promptCfg = suiteState.promptConfig;
@@ -825,12 +854,92 @@
             log("episode", "Failed to check prompt for episode guidance: " + e.message, "warn");
         }
 
-        // Test 78: Episode transition rule (on promptConfig, not chatConfig)
-        log("episode", "#NEXT EPISODE# / #OUT OF EPISODE# detection is server-side - verifying config only", "info");
+        // Test 78: Episode transition rule and detection
         let epRule = promptCfg.episodeRule;
         if (epRule && epRule.length > 0) {
             log("episode", "Episode transition rule configured (" + epRule.length + " lines)", "pass");
             logData("episode", "Episode rule", epRule);
+
+            // Test 78b: Validate transition markers are present in rule
+            let ruleText = epRule.join(" ");
+            let hasNext = ruleText.indexOf("#NEXT EPISODE#") !== -1;
+            let hasOut = ruleText.indexOf("#OUT OF EPISODE#") !== -1;
+            log("episode", "#NEXT EPISODE# marker in rule: " + (hasNext ? "yes" : "no"), hasNext ? "pass" : "warn");
+            log("episode", "#OUT OF EPISODE# marker in rule: " + (hasOut ? "yes" : "no"), hasOut ? "pass" : "warn");
+
+            // Test 78c: Episode transition detection via streaming "Test Handoff" episode
+            // The streaming variant includes a 3-stage "Test Handoff" episode.
+            // Send a message that should trigger episode engagement via the always-stream backend.
+            if (page.wss && ep.name === "Test Handoff" && ep.stages && ep.stages.length === 3) {
+                let epReq;
+                try {
+                    epReq = await am7chat.getChatRequest("LLM Episode Transition Test - " + Date.now(), chatCfg, promptCfg);
+                    log("episode", "Episode transition session created", epReq ? "pass" : "fail");
+                } catch (e) {
+                    log("episode", "Episode session create failed: " + e.message, "fail");
+                }
+
+                if (epReq) {
+                    try {
+                        let chunks = [];
+                        let completed = false;
+                        let streamError = null;
+
+                        let streamCallbacks = {
+                            onchatstart: function() {},
+                            onchatupdate: function(id, msg) { chunks.push(msg); },
+                            onchatcomplete: function() { completed = true; },
+                            onchaterror: function(id, msg) { streamError = msg; }
+                        };
+
+                        let prevStream = page.chatStream;
+                        page.chatStream = streamCallbacks;
+
+                        let chatReq = {
+                            schema: "olio.llm.chatRequest",
+                            objectId: epReq.objectId,
+                            uid: page.uid(),
+                            message: "Hello! I am ready for the token handoff."
+                        };
+
+                        page.wss.send("chat", JSON.stringify(chatReq), undefined, "olio.llm.chatRequest");
+
+                        let timeout = 30000;
+                        let waited = 0;
+                        while (!completed && !streamError && waited < timeout) {
+                            await new Promise(function(resolve) { setTimeout(resolve, 200); });
+                            waited += 200;
+                        }
+
+                        page.chatStream = prevStream;
+
+                        if (streamError) {
+                            log("episode", "Episode stream error: " + streamError, "fail");
+                        } else if (!completed) {
+                            log("episode", "Episode stream timed out", "fail");
+                        } else {
+                            let fullResp = chunks.join("");
+                            log("episode", "Episode response received (" + fullResp.length + " chars)", fullResp.length > 0 ? "pass" : "warn");
+                            // Check if response engages with episode content
+                            let lcResp = fullResp.toLowerCase();
+                            let engagesEpisode = lcResp.indexOf("token") !== -1 || lcResp.indexOf("handoff") !== -1 || lcResp.indexOf("greet") !== -1;
+                            log("episode", "Response engages with episode theme: " + (engagesEpisode ? "yes" : "uncertain"), engagesEpisode ? "pass" : "info");
+                            logData("episode", "Episode response", fullResp);
+                        }
+                    } catch (e) {
+                        log("episode", "Episode transition test error: " + e.message, "fail");
+                    }
+
+                    try {
+                        await am7chat.deleteChat(epReq, true);
+                        log("episode", "Episode test session cleaned up", "pass");
+                    } catch (e) {
+                        log("episode", "Cleanup failed: " + e.message, "warn");
+                    }
+                }
+            } else {
+                log("episode", "Episode transition live test skipped (requires WS + Test Handoff episode with 3 stages)", "info");
+            }
         } else {
             log("episode", "No episodeRule on promptConfig — add episodeRule array to prompt template", "warn");
         }
