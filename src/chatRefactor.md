@@ -2199,19 +2199,19 @@ All tests must:
 
 **Phase 4 gate:** Tests 23-28 pass + ALL regression tests pass. **GATE MET.**
 
-#### Phase 5 Tests: Conversion/Migration
+#### Phase 5 Tests: Validation/Migration + Server-Side Display
 
-| # | Test Name | What It Tests | Services Required |
-|---|---|---|---|
-| 29 | `TestValidatorDetectsUnknownTokens` | promptConfig with `${nonexistent}` → flagged | DB |
-| 30 | `TestValidatorPassesValidConfig` | Existing prompt.config.json passes | DB |
-| 31 | `TestValidatorIgnoresRuntimeTokens` | `${image.selfie}`, `${audio.hello}` not flagged | DB |
-| 32 | `TestValidatorUnreplacedTokens` | Composed template with unreplaced `${memory.context}` → detected | DB |
-| 33 | `TestMigratorDryRun` | Reports changes, fieldsUpdated=0 | DB |
-| 34 | `TestMigratorAppliesChanges` | system[] updated, fieldsUpdated > 0 | DB |
-| 35 | `TestMigratorIdempotent` | Running twice → no additional changes | DB |
+| # | Test Name | What It Tests | Services Required | Status |
+|---|---|---|---|---|
+| 29 | `TestValidatorDetectsUnknownTokens` | promptConfig with `${nonexistent}` → flagged | DB | PASS |
+| 30 | `TestValidatorPassesValidConfig` | Existing prompt.config.json passes | DB | PASS |
+| 31 | `TestValidatorIgnoresRuntimeTokens` | `${image.selfie}`, `${audio.hello}` not flagged | DB | PASS |
+| 32 | `TestValidatorUnreplacedTokens` | Composed template with unreplaced `${memory.context}` → detected | DB | PASS |
+| 33 | `TestMigratorDryRun` | Reports changes, fieldsUpdated=0 | DB | PASS |
+| 34 | `TestMigratorAppliesChanges` | Template created in DB with sections | DB | PASS |
+| 35 | `TestMigratorIdempotent` | Running twice → second returns alreadyExists | DB | PASS |
 
-**Phase 5 gate:** Tests 29-35 pass + ALL regression tests pass.
+**Phase 5 gate:** Tests 29-35 pass + ALL regression tests pass. **GATE MET.**
 
 #### Phase 7 Tests: Always-Stream & Timeout
 
@@ -2357,7 +2357,7 @@ When a test fails:
 
 **Goal:** Make keyframes durable and accumulative.
 
-**Status:** Complete. All 4 Phase 3 tests pass. All regression tests pass. (Total through Phase 4: 36 tests — Phase 2: 11, MemoryUtil: 12, MemoryDuel: 1, Phase 3: 4, Phase 4: 8.)
+**Status:** Complete. All 4 Phase 3 tests pass. All regression tests pass. (Total through Phase 5: 43 tests — Phase 2: 11, MemoryUtil: 12, MemoryDuel: 1, Phase 3: 4, Phase 4: 8, Phase 5: 7.)
 
 1. **Persist keyframe summaries as memories** in `addKeyFrame()` — Done. New `persistKeyframeAsMemory()` method creates `tool.memory` records with type `OUTCOME` and importance 7 from keyframe analysis text. Summary is truncated to sentence boundary at 200 chars via `truncateToSentence()`.
 2. **Tag memories with character pair IDs** for cross-conversation retrieval — Done. Both character IDs are stored in canonical order (lower ID first) via `MemoryUtil.createMemory()` with `personId1`/`personId2`. Role-agnostic: same pair always produces same IDs regardless of system/user assignment.
@@ -2413,16 +2413,27 @@ When a test fails:
 | Test 27 | LLM response assertion | Skipped when `test.llm.type` not configured or LLM server unreachable (`chat()` returns null). Test logs warning and returns gracefully. |
 | Test 28 | LLM response assertion | Same as Test 27 (LLM server availability). |
 
-### Phase 5: Client-Side Cleanup (Low risk, medium impact)
+### Phase 5: Client-Side Cleanup & Validation/Migration Tooling — COMPLETED
 
-**Goal:** Remove duplicated logic and improve display pipeline.
+**Goal:** Remove duplicated logic, improve display pipeline, and provide validation/migration tooling for prompt configs.
 
-1. **Move display pruning to server** - Have `/rest/chat/history` return pre-pruned messages with a `displayContent` field alongside raw `content`
-2. **Remove client-side `pruneTag`/`pruneToMark`** functions from chat.js
-3. **Add message metadata** - Server returns `{content, displayContent, hasThoughts, hasMetrics, hasKeyframe}` so client can toggle visibility without re-parsing
-4. **Standardize token processing** - Image and audio token processing should work identically regardless of prompt template style
+**Part A — Validation & Migration (Tests 29-35):**
+1. **PromptConfigValidator** — Scans all `list<string>` fields in promptConfig for `${...}` tokens, checks against known set from `TemplatePatternEnumType`. Runtime tokens (`image.*`, `audio.*`, `nlp.*`) are always allowed.
+2. **PromptConfigMigrator** — Converts flat promptConfig records to structured promptTemplate records with sections, role derivation from field name prefix, condition derivation from static map, and idempotency checking.
+3. **Supporting POJOs** — `ValidationResult` (with inner `UnknownToken`), `MigrationReport`, `MigrationResult`.
 
-**Files modified:** `ChatUtil.java` (server-side formatting), `chat.js` (simplify rendering)
+**Part B — Server-Side Display Enhancement:**
+1. **Ephemeral display fields on messageModel** — Added `displayContent` (string), `hasThoughts`, `hasMetrics`, `hasKeyframe` (boolean) as ephemeral fields (serialized but not persisted).
+2. **ChatUtil.populateDisplayFields()** — Called in `getChatResponse()` for each message. Mirrors client-side `pruneAll` logic: strips `<think>`/`<thought>` tags, MCP context blocks, `(Metrics`/`(Reminder`/`(KeyFrame` markers, `[interrupted]` markers, reserved special tokens.
+3. **chat.js updated** — Prefers `msg.displayContent` when available and `hideThoughts` is active, falls back to existing `pruneTag`/`pruneToMark` for backward compatibility with pre-enhancement sessions.
+
+**Files created:** `ValidationResult.java`, `PromptConfigValidator.java`, `MigrationReport.java`, `MigrationResult.java`, `PromptConfigMigrator.java`
+**Files modified:** `messageModel.json`, `ChatUtil.java`, `chat.js`
+
+**Known issues:**
+- **OI-17: Client-side prune functions retained** — The `pruneTag`/`pruneToMark`/`pruneAll` functions are kept in chat.js for backward compatibility with sessions that predate the server-side display fields. They can be removed once all active sessions have been refreshed.
+- **OI-18: Migrator condition coverage** — The static condition map in `PromptConfigMigrator` covers the 7 most common conditional fields (`systemNlp`, `assistantNlp`, `userConsentNlp`, `systemCensorWarning`, `assistantCensorWarning`, `episodeRule`, `jailBreak`). Fields like `femalePerspective`/`malePerspective` have no condition mapping and will always be included. Adding conditions for these requires understanding the intended chatConfig gate fields.
+- **OI-19: Token standardization** — Image and audio token processing still varies between prompt template styles. Phase 5 did not address item 4 from the original plan (standardize token processing) as it requires deeper changes to the image/audio pipeline in Chat.java.
 
 ### Phase 6: UX Test Suite (Low risk, high impact)
 
@@ -2667,7 +2678,7 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 | 2 — Memory Retrieval | **IMPLEMENTED** | Medium | High | 8-18 (all pass) |
 | 3 — Keyframe-to-Memory Pipeline | **IMPLEMENTED** | Medium | Medium | 19-22 (all pass) |
 | 4 — Structured Template Schema | **COMPLETED** | Higher | High | 23-28 (all pass) |
-| 5 — Client-Side Cleanup | Not started | Low | Medium | 29-35 |
+| 5 — Client-Side Cleanup & Validation/Migration | **COMPLETED** | Low | Medium | 29-35 (all pass) |
 | 6 — UX Test Suite | Not started (prereq: backend phases done) | Low | High | 63-81 (browser) |
 | 7 — Always-Stream Backend | Not started | Medium | Medium | 36-39 |
 | 8 — LLM Config & ChatOptions Fix | Not started | Low | High | 40-45 |
@@ -2676,21 +2687,19 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 
 ### Next Phase Recommendation
 
-**Recommended next: Phase 5 (Client-Side Cleanup)** followed by **Phase 8 (LLM Config Fix)**.
+**Recommended next: Phase 8 (LLM Config & ChatOptions Fix)** followed by **Phase 1 (remainder)**.
 
 **Rationale:**
 
-- **Phase 5** is low risk and directly builds on Phase 4's structured templates. With server-side template composition now working, moving display pruning and message metadata to the server simplifies the client. This also unblocks Phase 6 (UX Test Suite) which has a prerequisite that "all backend phases that affect the prompt/chat pipeline should be complete."
-
 - **Phase 8** has three **P1 bugs** (OI-6: `top_k` maxValue=1, OI-7: `typical_p` mapped to wrong field, OI-8: `repeat_penalty` semantics mismatch) that affect actual LLM behavior in production. These are low-risk, self-contained fixes to `chatOptionsModel.json` and `ChatUtil.applyChatOptions()`.
 
-- **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards. Phase 1 could be folded into Phase 5 or done as a standalone micro-phase.
+- **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
 
-- **Phase 7** (always-stream) is medium risk and is a prerequisite for Phase 9 (policy-based regulation, which needs timeout support). Phase 7 should come before Phase 9 but after Phase 5/8.
+- **Phase 7** (always-stream) is medium risk and is a prerequisite for Phase 9 (policy-based regulation, which needs timeout support). Phase 7 should come before Phase 9 but after Phase 8.
 
-- **Phase 6** (UX test suite) should come last among backend-affecting phases (after 5, 7, 8) since it tests the full pipeline end-to-end.
+- **Phase 6** (UX test suite) should come last among backend-affecting phases (after 7, 8) since it tests the full pipeline end-to-end.
 
-**Suggested order:** 5 → 8 → 1 (remainder) → 7 → 10 → 9 → 6
+**Suggested order:** 8 → 1 (remainder) → 7 → 10 → 9 → 6
 
 ---
 
@@ -2764,6 +2773,9 @@ All known open issues with their assigned resolution phase:
 | OI-12 | Missing `seed` field on chatOptions | Section 6.1 | Phase 8 (item 3) | P3 |
 | OI-13 | Memory/keyframe tests in Agent7 have no Agent7 dependencies — should relocate to Objects7 | Phase 3 testing | Phase 10 (item 3) | P3 |
 | OI-14 | Old `(KeyFrame:` text format still supported alongside MCP format — maintenance burden | Phase 3 code review | Phase 10 (item 4) | P3 |
+| OI-18 | Client-side prune functions retained for backward compatibility — can be removed once all active sessions refresh | Phase 5 implementation | Future cleanup | P4 |
+| OI-19 | Migrator condition coverage — static condition map covers 7 of ~34 fields; fields like `femalePerspective`/`malePerspective` have no condition mapping | Phase 5 implementation | Phase 10 | P3 |
+| OI-20 | Token standardization — image/audio token processing still varies between prompt template styles | Phase 5 review | Phase 10 | P3 |
 
 ---
 

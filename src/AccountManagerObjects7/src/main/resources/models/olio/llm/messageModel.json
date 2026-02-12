@@ -17,6 +17,26 @@
 			"name": "pruned",
 			"type": "boolean",
 			"ephemeral": true
+		},
+		{
+			"name": "displayContent",
+			"type": "string",
+			"ephemeral": true
+		},
+		{
+			"name": "hasThoughts",
+			"type": "boolean",
+			"ephemeral": true
+		},
+		{
+			"name": "hasMetrics",
+			"type": "boolean",
+			"ephemeral": true
+		},
+		{
+			"name": "hasKeyframe",
+			"type": "boolean",
+			"ephemeral": true
 		}
 	]
 }

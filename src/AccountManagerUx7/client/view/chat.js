@@ -922,7 +922,12 @@
         let ecls = "";
         let bectl = false;
         let lastMsg = (midx == (chatCfg.history.messages.length - 1));
-        if (hideThoughts && !editMode) {
+        /// Prefer server-side displayContent when available and hideThoughts is active
+        let useServerDisplay = hideThoughts && !editMode && msg.displayContent;
+        if (useServerDisplay) {
+          cnt = msg.displayContent;
+        }
+        if (!useServerDisplay && hideThoughts && !editMode) {
           cnt = pruneOut(cnt, "--- CITATION", "END CITATIONS ---")
           // cnt = pruneTag(cnt, "citation");
         }
@@ -933,7 +938,7 @@
           if (midx == chatCfg.history.messages.length - 1) {
             ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
           }
-          if (hideThoughts && !editMode) {
+          if (!useServerDisplay && hideThoughts && !editMode) {
             cnt = pruneToMark(cnt, "<|reserved_special_token");
             cnt = pruneTag(cnt, "think");
             cnt = pruneTag(cnt, "thought");
@@ -946,7 +951,7 @@
           }
 
         }
-        if (!bectl && hideThoughts) {
+        if (!useServerDisplay && !bectl && hideThoughts) {
           cnt = pruneToMark(cnt, "(Metrics");
           cnt = pruneToMark(cnt, "(Reminder");
           cnt = pruneToMark(cnt, "(KeyFrame");

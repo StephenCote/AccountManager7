@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -1031,6 +1032,7 @@ public class ChatUtil {
 				msg.setContent(filterResult.getContent());
 			}
 			rep.getMessages().add(msg);
+			populateDisplayFields(msg);
 			/// Attach pending citations to assistant response messages
 			if(Chat.assistantRole.equals(msg.getRole()) && !pendingCitations.isEmpty()) {
 				attachCitations(msg, pendingCitations);
@@ -1038,6 +1040,57 @@ public class ChatUtil {
 			}
 		}
 		return rep;
+	}
+
+	private static final Pattern THINK_PATTERN = Pattern.compile("<think>.*?</think>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+	private static final Pattern THOUGHT_PATTERN = Pattern.compile("<thought>.*?</thought>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+	/**
+	 * Populate ephemeral display fields on a message.
+	 * Sets hasThoughts, hasMetrics, hasKeyframe flags and builds displayContent
+	 * with internal markers stripped (mirrors client-side pruneAll logic).
+	 */
+	private static void populateDisplayFields(OpenAIMessage msg) {
+		String content = msg.getContent();
+		if (content == null || content.isEmpty()) {
+			return;
+		}
+
+		try {
+			String lower = content.toLowerCase();
+			boolean hasThoughts = lower.contains("<think>") || lower.contains("<thought>");
+			boolean hasMetrics = content.contains("(Metrics");
+			boolean hasKeyframe = content.contains("(KeyFrame") || (content.contains("<mcp:context") && content.contains("/keyframe/"));
+
+			msg.set("hasThoughts", hasThoughts);
+			msg.set("hasMetrics", hasMetrics);
+			msg.set("hasKeyframe", hasKeyframe);
+
+			// Build displayContent by stripping internal markers
+			String display = content;
+			display = stripAtMark(display, "<|reserved_special_token");
+			display = THINK_PATTERN.matcher(display).replaceAll("");
+			display = THOUGHT_PATTERN.matcher(display).replaceAll("");
+			display = McpContextParser.stripAll(display);
+			display = stripAtMark(display, "(Metrics");
+			display = stripAtMark(display, "(Reminder");
+			display = stripAtMark(display, "(KeyFrame");
+			display = display.replace("[interrupted]", "");
+			display = display.trim();
+
+			msg.set("displayContent", display);
+		} catch (Exception e) {
+			logger.warn("Error populating display fields: " + e.getMessage());
+		}
+	}
+
+	/** Truncate content at the first occurrence of a marker string. */
+	private static String stripAtMark(String content, String mark) {
+		int idx = content.indexOf(mark);
+		if (idx > -1) {
+			return content.substring(0, idx);
+		}
+		return content;
 	}
 
 	private static void attachCitations(OpenAIMessage msg, List<McpContext> mcpCitations) {

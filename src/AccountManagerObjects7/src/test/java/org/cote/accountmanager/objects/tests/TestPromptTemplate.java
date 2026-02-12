@@ -17,9 +17,14 @@ import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
+import org.cote.accountmanager.olio.llm.MigrationReport;
+import org.cote.accountmanager.olio.llm.MigrationResult;
 import org.cote.accountmanager.olio.llm.PromptConditionEvaluator;
+import org.cote.accountmanager.olio.llm.PromptConfigMigrator;
+import org.cote.accountmanager.olio.llm.PromptConfigValidator;
 import org.cote.accountmanager.olio.llm.PromptTemplateComposer;
 import org.cote.accountmanager.olio.llm.PromptUtil;
+import org.cote.accountmanager.olio.llm.ValidationResult;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -40,6 +45,16 @@ import org.junit.Test;
  * Test 26: TestMemoryChatTemplate - Load prompt.memoryChat.json -> inject memories -> ${memory.*} resolved
  * Test 27: TestOpenChatLLMIntegration - Use openChat template with real LLM -> get coherent response (DB, LLM)
  * Test 28: TestRPGTemplateLLMIntegration - Use rpg template with characters + real LLM -> character-appropriate response (DB, LLM)
+ *
+ * Phase 5 Tests: Validation & Migration
+ *
+ * Test 29: TestValidatorDetectsUnknownTokens - Unknown ${nonexistent} token flagged
+ * Test 30: TestValidatorPassesValidConfig - Default promptConfig validates clean
+ * Test 31: TestValidatorIgnoresRuntimeTokens - ${image.*} and ${audio.*} are allowed
+ * Test 32: TestValidatorUnreplacedTokens - validateComposed detects unreplaced tokens
+ * Test 33: TestMigratorDryRun - analyze and dry-run produce report without DB changes
+ * Test 34: TestMigratorAppliesChanges - migrate with apply=true creates template in DB
+ * Test 35: TestMigratorIdempotent - second migrate returns alreadyExists=true
  */
 public class TestPromptTemplate extends BaseTest {
 
@@ -549,6 +564,247 @@ public class TestPromptTemplate extends BaseTest {
 		} catch (Exception e) {
 			logger.error(e);
 			fail("TestTemplateModelSchema failed: " + e.getMessage());
+		}
+	}
+
+	// --- Phase 5 Tests: Validation & Migration ---
+
+	// --- Test 29: Validator Detects Unknown Tokens ---
+	@Test
+	public void TestValidatorDetectsUnknownTokens() {
+		logger.info("Test 29: Validator detects unknown ${nonexistent} token");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/PromptTemplate");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "ptTestUser29", testOrgContext.getOrganizationId());
+
+		try {
+			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, "PT Validator Unknown " + UUID.randomUUID().toString());
+			assertNotNull("Prompt config should not be null", promptConfig);
+
+			// Inject an unknown token into the system field
+			List<String> system = promptConfig.get("system");
+			assertNotNull("system field should not be null", system);
+			system.add("This has an ${nonexistent} token and ${alsoFake} token.");
+
+			ValidationResult result = PromptConfigValidator.validate(promptConfig);
+			assertFalse("Config with unknown tokens should not be valid", result.isValid());
+			assertTrue("Should have at least 2 unknown tokens", result.getUnknownTokens().size() >= 2);
+
+			boolean foundNonexistent = false;
+			boolean foundAlsoFake = false;
+			for (ValidationResult.UnknownToken ut : result.getUnknownTokens()) {
+				if ("nonexistent".equals(ut.getToken())) foundNonexistent = true;
+				if ("alsoFake".equals(ut.getToken())) foundAlsoFake = true;
+			}
+			assertTrue("Should flag 'nonexistent'", foundNonexistent);
+			assertTrue("Should flag 'alsoFake'", foundAlsoFake);
+
+			logger.info("Test 29 PASSED: Validator detected " + result.getUnknownTokens().size() + " unknown tokens");
+
+		} catch (Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			fail("Test 29 failed: " + e.getMessage());
+		}
+	}
+
+	// --- Test 30: Validator Passes Valid Config ---
+	@Test
+	public void TestValidatorPassesValidConfig() {
+		logger.info("Test 30: Validator passes default promptConfig (all tokens known)");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/PromptTemplate");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "ptTestUser30", testOrgContext.getOrganizationId());
+
+		try {
+			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, "PT Validator Valid " + UUID.randomUUID().toString());
+			assertNotNull("Prompt config should not be null", promptConfig);
+
+			ValidationResult result = PromptConfigValidator.validate(promptConfig);
+			assertTrue("Default promptConfig should validate clean, but found: " + result.getUnknownTokens(), result.isValid());
+
+			logger.info("Test 30 PASSED: Default promptConfig validates with no unknown tokens");
+
+		} catch (Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			fail("Test 30 failed: " + e.getMessage());
+		}
+	}
+
+	// --- Test 31: Validator Ignores Runtime Tokens ---
+	@Test
+	public void TestValidatorIgnoresRuntimeTokens() {
+		logger.info("Test 31: Validator ignores runtime tokens (image.*, audio.*, nlp.*)");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/PromptTemplate");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "ptTestUser31", testOrgContext.getOrganizationId());
+
+		try {
+			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, "PT Validator Runtime " + UUID.randomUUID().toString());
+			assertNotNull("Prompt config should not be null", promptConfig);
+
+			// Inject runtime tokens into the system field
+			List<String> system = promptConfig.get("system");
+			assertNotNull("system field should not be null", system);
+			system.add("Photo: ${image.selfie} and audio: ${audio.hello} and NLP: ${nlp.sentiment}");
+
+			ValidationResult result = PromptConfigValidator.validate(promptConfig);
+			assertTrue("Config with only runtime tokens should be valid, but found: " + result.getUnknownTokens(), result.isValid());
+
+			logger.info("Test 31 PASSED: Runtime tokens (image.*, audio.*, nlp.*) correctly ignored");
+
+		} catch (Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			fail("Test 31 failed: " + e.getMessage());
+		}
+	}
+
+	// --- Test 32: Validator Unreplaced Tokens in Composed Text ---
+	@Test
+	public void TestValidatorUnreplacedTokens() {
+		logger.info("Test 32: validateComposed detects unreplaced tokens in composed text");
+
+		try {
+			String composedWithUnreplaced = "Hello ${character.name}, your quest is ${memory.context} and ${unknownField}.";
+			ValidationResult result = PromptConfigValidator.validateComposed(composedWithUnreplaced);
+			assertFalse("Composed text with unreplaced tokens should not be valid", result.isValid());
+			assertTrue("Should have unreplaced tokens", result.getUnknownTokens().size() > 0);
+
+			// Composed text with only runtime tokens should be valid
+			String composedRuntimeOnly = "See ${image.selfie} and hear ${audio.greeting}.";
+			ValidationResult resultRuntime = PromptConfigValidator.validateComposed(composedRuntimeOnly);
+			assertTrue("Composed text with only runtime tokens should be valid", resultRuntime.isValid());
+
+			// Null input should be valid (empty)
+			ValidationResult resultNull = PromptConfigValidator.validateComposed(null);
+			assertTrue("Null composed text should be valid", resultNull.isValid());
+
+			logger.info("Test 32 PASSED: validateComposed correctly detects unreplaced tokens");
+
+		} catch (Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			fail("Test 32 failed: " + e.getMessage());
+		}
+	}
+
+	// --- Test 33: Migrator Dry Run ---
+	@Test
+	public void TestMigratorDryRun() {
+		logger.info("Test 33: Migrator dry-run produces report without DB changes");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/PromptTemplate");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "ptTestUser33", testOrgContext.getOrganizationId());
+
+		try {
+			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, "PT Migrator DryRun " + UUID.randomUUID().toString());
+			assertNotNull("Prompt config should not be null", promptConfig);
+
+			// Analyze
+			MigrationReport report = PromptConfigMigrator.analyze(promptConfig);
+			assertTrue("Should scan some fields", report.getFieldsScanned() > 0);
+			assertTrue("Should find fields with content", report.getFieldsWithContent() > 0);
+			assertTrue("Sections to create should match fields with content", report.getSectionsToCreate() == report.getFieldsWithContent());
+			assertTrue("Section names should not be empty", !report.getSectionNames().isEmpty());
+			assertTrue("Section names should include 'system'", report.getSectionNames().contains("system"));
+
+			logger.info("Analysis: scanned=" + report.getFieldsScanned() + ", withContent=" + report.getFieldsWithContent()
+				+ ", sections=" + report.getSectionsToCreate() + ", names=" + report.getSectionNames());
+
+			// Dry-run migrate
+			MigrationResult result = PromptConfigMigrator.migrate(testUser, promptConfig, false);
+			assertTrue("Should be dry-run", result.isDryRun());
+			assertFalse("Should not already exist", result.isAlreadyExists());
+			assertEquals("Dry-run should not update fields", 0, result.getFieldsUpdated());
+			assertNotNull("Template name should be set", result.getTemplateName());
+			assertTrue("Sections created should match report", result.getSectionsCreated() > 0);
+
+			logger.info("Test 33 PASSED: Dry-run completed - template='" + result.getTemplateName()
+				+ "', sectionsCreated=" + result.getSectionsCreated());
+
+		} catch (Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			fail("Test 33 failed: " + e.getMessage());
+		}
+	}
+
+	// --- Test 34: Migrator Applies Changes ---
+	@Test
+	public void TestMigratorAppliesChanges() {
+		logger.info("Test 34: Migrator apply=true creates template in DB");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/PromptTemplate");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "ptTestUser34", testOrgContext.getOrganizationId());
+
+		try {
+			String uniqueName = "PT Migrator Apply " + UUID.randomUUID().toString();
+			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, uniqueName);
+			assertNotNull("Prompt config should not be null", promptConfig);
+
+			// Apply migration
+			MigrationResult result = PromptConfigMigrator.migrate(testUser, promptConfig, true);
+			assertFalse("Should not be dry-run", result.isDryRun());
+			assertFalse("Should not already exist", result.isAlreadyExists());
+			assertTrue("Should have created sections", result.getSectionsCreated() > 0);
+			assertTrue("Should have updated fields", result.getFieldsUpdated() > 0);
+
+			// Verify the template exists in DB
+			String templateName = result.getTemplateName();
+			assertNotNull("Template name should be set", templateName);
+
+			BaseRecord found = org.cote.accountmanager.util.DocumentUtil.getRecord(
+				testUser, OlioModelNames.MODEL_PROMPT_TEMPLATE, templateName, "~/Chat"
+			);
+			assertNotNull("Template should exist in DB after migration", found);
+
+			// Verify sections were persisted
+			List<BaseRecord> sections = found.get("sections");
+			assertNotNull("Template should have sections", sections);
+			assertTrue("Template should have at least one section", sections.size() > 0);
+
+			logger.info("Test 34 PASSED: Migration created template '" + templateName
+				+ "' with " + sections.size() + " sections");
+
+		} catch (Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			fail("Test 34 failed: " + e.getMessage());
+		}
+	}
+
+	// --- Test 35: Migrator Idempotent ---
+	@Test
+	public void TestMigratorIdempotent() {
+		logger.info("Test 35: Migrator is idempotent - second migrate returns alreadyExists");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/PromptTemplate");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "ptTestUser35", testOrgContext.getOrganizationId());
+
+		try {
+			String uniqueName = "PT Migrator Idempotent " + UUID.randomUUID().toString();
+			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, uniqueName);
+			assertNotNull("Prompt config should not be null", promptConfig);
+
+			// First migration
+			MigrationResult first = PromptConfigMigrator.migrate(testUser, promptConfig, true);
+			assertFalse("First migration should not be alreadyExists", first.isAlreadyExists());
+			assertTrue("First migration should create sections", first.getSectionsCreated() > 0);
+
+			// Second migration - should detect existing
+			MigrationResult second = PromptConfigMigrator.migrate(testUser, promptConfig, true);
+			assertTrue("Second migration should return alreadyExists", second.isAlreadyExists());
+			assertEquals("Second migration should not update fields", 0, second.getFieldsUpdated());
+			assertEquals("Second migration should not create sections", 0, second.getSectionsCreated());
+
+			logger.info("Test 35 PASSED: Second migration correctly returned alreadyExists=true");
+
+		} catch (Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			fail("Test 35 failed: " + e.getMessage());
 		}
 	}
 
