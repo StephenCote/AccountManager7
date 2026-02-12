@@ -2618,6 +2618,33 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 | **Modify** | `client/components/topMenu.js` | Add conditional "Test" menu button |
 | **Modify** | `client/pageClient.js` | Add `page.testMode` and `page.productionMode` flags |
 | **Refactor** | `client/view/cardGame/test/testMode.js` | Register with shared framework, use shared UI components |
+| **Modify** | `client/applicationRouter.js` | Add `/test` route |
+| **Modify** | `styles/pageStyle.css` | Add `tf-*` CSS classes for shared test framework UI |
+
+#### 6.6 Implementation Notes
+
+**Files created:** `testFramework.js`, `testRegistry.js`, `llmTestSuite.js`, `testView.js`
+**Files modified:** `index.html`, `topMenu.js`, `pageClient.js`, `testMode.js`, `applicationRouter.js`, `pageStyle.css`
+
+**Implementation details:**
+
+1. **Shared TestFramework** (`testFramework.js`) — Core state (`testState`), logging (`testLog`, `testLogData`), suite registration (`registerSuite`), and four reusable Mithril UI components (`TestConsoleUI`, `TestToolbarUI`, `TestCategoryToggleUI`, `TestResultsSummaryUI`). Exposed as `window.TestFramework`.
+
+2. **TestRegistry** (`testRegistry.js`) — `SuiteSelectorUI` dropdown component and helpers (`getSelectedSuiteCategories`, `getSelectedSuite`) for the test view. Exposed as `window.TestRegistry`.
+
+3. **LLM Test Suite** (`llmTestSuite.js`) — Registers as `"llm"` suite with 10 test categories: config, prompt, chat, stream, history, prune, episode, analyze, narrate, policy. Each category implements the test pattern from the spec (setup, execute, assert, debug data, cleanup). Config picker integration via `window.LLMTestSuite.suiteState` allows the test view to select chatConfig/promptConfig. Tests 63-81 implemented.
+
+4. **Test View** (`testView.js`) — Integrated view at `/test` route with config pickers (chatConfig, promptConfig dropdowns), suite selector, category toggles, results summary, and scrollable debug console. Auto-loads available configs on first render. Registered as `page.views.testView`.
+
+5. **CardGame Refactor** (`testMode.js`) — Refactored to delegate state to `TF.testState` and logging to `TF.testLog()`. Test body extracted to `runTestBody()` shared between standalone (`runTestSuite()`) and framework (`runCardGameTests()`) entry points. `TestModeUI` rebuilt using shared `TF.TestToolbarUI`, `TF.TestCategoryToggleUI`, `TF.TestResultsSummaryUI`, and `TF.TestConsoleUI` components while preserving CardGame-specific back navigation. Registered as `"cardGame"` suite.
+
+6. **Visibility** — Test button in top menu visible when `page.testMode === true` (URL param `?testMode=true`) or `page.productionMode === false` (URL param `?productionMode=false`). Uses `science` material icon.
+
+**Known issues:**
+- **OI-20: LLM-dependent tests require live server** — Tests 64, 69, 71-72, 73-80 require a running Ollama (or OpenAI-compatible) server and configured chatConfig/promptConfig in `~/Chat`. These tests will show "skip" or "fail" status when the LLM server is unreachable. This is by design per the spec.
+- **OI-21: Stream tests require WebSocket** — Tests 71-72 require an active WebSocket connection (`page.wss`) and `chatConfig.stream=true`. If streaming is not configured, tests fall back to a warning.
+- **OI-22: Policy tests placeholder** — Test 81 (TestPolicyEvaluation) only validates configuration presence since Phase 9 (policy implementation) is not yet complete. Full policy evaluation testing will be enabled after Phase 9.
+- **OI-23: CardGame shared state coupling** — The refactored `testMode.js` shares `TF.testState` with other suites. Running CardGame tests via the shared test view clears LLM test results and vice versa. Each suite run resets the shared state. This is expected behavior for sequential suite execution.
 
 ### Phase 7: Always-Stream Backend with Buffer & Timeout (Medium risk, medium impact)
 
@@ -2679,7 +2706,7 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 | 3 — Keyframe-to-Memory Pipeline | **IMPLEMENTED** | Medium | Medium | 19-22 (all pass) |
 | 4 — Structured Template Schema | **COMPLETED** | Higher | High | 23-28 (all pass) |
 | 5 — Client-Side Cleanup & Validation/Migration | **COMPLETED** | Low | Medium | 29-35 (all pass) |
-| 6 — UX Test Suite | Not started (prereq: backend phases done) | Low | High | 63-81 (browser) |
+| 6 — UX Test Suite | **COMPLETED** | Low | High | 63-81 (browser) |
 | 7 — Always-Stream Backend | Not started | Medium | Medium | 36-39 |
 | 8 — LLM Config & ChatOptions Fix | Not started | Low | High | 40-45 |
 | 9 — Policy-Based Response Regulation | Not started | Higher | Medium | 46-62 |
@@ -2697,9 +2724,9 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 
 - **Phase 7** (always-stream) is medium risk and is a prerequisite for Phase 9 (policy-based regulation, which needs timeout support). Phase 7 should come before Phase 9 but after Phase 8.
 
-- **Phase 6** (UX test suite) should come last among backend-affecting phases (after 7, 8) since it tests the full pipeline end-to-end.
+- **Phase 6** (UX test suite) is now **COMPLETED**. LLM-dependent tests (63-81) will become fully functional as backend phases are implemented.
 
-**Suggested order:** 8 → 1 (remainder) → 7 → 10 → 9 → 6
+**Suggested order:** 8 → 1 (remainder) → 7 → 10 → 9
 
 ---
 

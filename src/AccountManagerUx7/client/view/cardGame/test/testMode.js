@@ -53,20 +53,27 @@
         playthrough: { label: "Playthrough", icon: "sports_esports" }
     };
 
-    // ── State ────────────────────────────────────────────────────────────
+    // ── State (delegated to shared TestFramework) ─────────────────────
+    let TF = window.TestFramework;
     let testDeck = null;       // Deck selected for testing (set from DeckView)
     let testDeckName = null;
 
-    let testState = {
+    // Use shared framework state; extend with CardGame-specific fields
+    let testState = TF ? TF.testState : {
         running: false,
-        logs: [],       // [{ time, category, message, status: "info"|"pass"|"fail"|"warn" }]
+        logs: [],
         results: { pass: 0, fail: 0, warn: 0, skip: 0 },
         currentTest: null,
         completed: false,
         selectedCategories: Object.keys(TEST_CATEGORIES),
-        autoPlaySpeed: 500,  // ms between auto-play actions
-        logFilter: "all"     // "all" | "issues" (warn + fail only)
+        logFilter: "all",
+        selectedSuite: null
     };
+    // Ensure CardGame categories are selected by default when this suite is active
+    if (testState.selectedCategories.length === 0) {
+        testState.selectedCategories = Object.keys(TEST_CATEGORIES);
+    }
+    let autoPlaySpeed = 500;
 
     // ── Public setters for testDeck (called from DeckView / DeckList) ────
     function setTestDeck(deck, name) {
@@ -78,25 +85,46 @@
         testDeckName = null;
     }
 
-    // ── Logging ──────────────────────────────────────────────────────────
+    // ── Logging (delegates to shared TestFramework) ─────────────────────
     function testLog(category, message, status) {
-        if (status === undefined) status = "info";
-        let entry = { time: new Date().toISOString().substring(11, 19), category: category, message: message, status: status };
-        testState.logs.push(entry);
-        if (status === "pass") testState.results.pass++;
-        else if (status === "fail") testState.results.fail++;
-        else if (status === "warn") testState.results.warn++;
-        console.log("[TestMode] [" + category + "] [" + status + "] " + message);
-        m.redraw();
+        if (TF) {
+            TF.testLog(category, message, status);
+        } else {
+            if (status === undefined) status = "info";
+            let entry = { time: new Date().toISOString().substring(11, 19), category: category, message: message, status: status };
+            testState.logs.push(entry);
+            if (status === "pass") testState.results.pass++;
+            else if (status === "fail") testState.results.fail++;
+            else if (status === "warn") testState.results.warn++;
+            console.log("[TestMode] [" + category + "] [" + status + "] " + message);
+            m.redraw();
+        }
     }
 
-    // ── Main Test Suite ──────────────────────────────────────────────────
+    // ── Framework-compatible entry point ─────────────────────────────────
+    // Called by TestFramework.runSuite("cardGame") — state managed by framework
+    async function runCardGameTests(selectedCategories) {
+        testState.selectedCategories = selectedCategories || Object.keys(TEST_CATEGORIES);
+        await runTestBody();
+    }
+
+    // ── Standalone entry point (from CardGame UI) ─────────────────────
     async function runTestSuite() {
         testState.running = true;
         testState.logs = [];
         testState.results = { pass: 0, fail: 0, warn: 0, skip: 0 };
         testState.completed = false;
         m.redraw();
+        await runTestBody();
+        testState.currentTest = null;
+        testState.running = false;
+        testState.completed = true;
+        testLog("", "=== Test suite complete: " + testState.results.pass + " pass, " + testState.results.fail + " fail, " + testState.results.warn + " warn ===", testState.results.fail > 0 ? "fail" : "pass");
+        m.redraw();
+    }
+
+    // ── Test body (shared between standalone and framework modes) ──────
+    async function runTestBody() {
 
         let cats = testState.selectedCategories;
 
@@ -1637,134 +1665,50 @@
             }
         }
 
-        testState.currentTest = null;
-        testState.running = false;
-        testState.completed = true;
-        testLog("", "=== Test suite complete: " + testState.results.pass + " pass, " + testState.results.fail + " fail, " + testState.results.warn + " warn ===", testState.results.fail > 0 ? "fail" : "pass");
-        m.redraw();
     }
 
-    // ── Test Mode UI Component ───────────────────────────────────────────
+    // ── Test Mode UI Component (uses shared TestFramework components) ──
     function TestModeUI() {
-        let consoleEl = null;
-
-        function scrollToBottom() {
-            if (consoleEl) {
-                consoleEl.scrollTop = consoleEl.scrollHeight;
-            }
-        }
-
         return {
-            oncreate: function() { scrollToBottom(); },
-            onupdate: function() { scrollToBottom(); },
             view: function() {
-                let statusColors = { info: "#777", pass: "#2E7D32", fail: "#C62828", warn: "#E65100" };
-                let statusIcons = { info: "info", pass: "check_circle", fail: "error", warn: "warning" };
                 let context = ctx();
-                let filterIssues = testState.logFilter === "issues";
-                let visibleLogs = filterIssues
-                    ? testState.logs.filter(function(e) { return e.status === "fail" || e.status === "warn"; })
-                    : testState.logs;
 
                 return m("div", { class: "cg2-test-mode" }, [
-                    m("div", { class: "cg2-toolbar" }, [
-                        m("button", { class: "cg2-btn", onclick: function() {
+                    // Toolbar with CardGame-specific back button
+                    m(TF.TestToolbarUI, {
+                        title: "Card Game Tests",
+                        subtitle: testDeckName || null,
+                        onBack: function() {
                             if (testDeck && context.viewingDeck) {
                                 if (window.CardGame.ctx) window.CardGame.ctx.screen = "deckView";
                             } else {
                                 if (window.CardGame.ctx) window.CardGame.ctx.screen = "deckList";
                             }
                             m.redraw();
-                        } }, "\u2190 Back"),
-                        m("span", { style: { fontWeight: 700, fontSize: "16px", marginLeft: "8px" } }, "Test Mode"),
-                        testDeckName ? m("span", { class: "cg2-deck-theme-badge", style: { marginLeft: "8px" } }, testDeckName) : null,
-                        !testState.running ? m("button", {
-                            class: "cg2-btn cg2-btn-primary", style: { marginLeft: "auto" },
-                            onclick: function() { runTestSuite(); }
-                        }, [m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "play_arrow"), "Run All Tests"]) : null,
-                        testState.running ? m("span", { style: { marginLeft: "auto", color: "#B8860B", fontWeight: 600, fontSize: "13px" } }, [
-                            m("span", { class: "material-symbols-outlined cg2-spin", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "4px" } }, "sync"),
-                            testState.currentTest || "Running..."
-                        ]) : null
-                    ]),
+                        }
+                    }),
 
                     // Category toggles
-                    m("div", { class: "cg2-test-categories" },
-                        Object.entries(TEST_CATEGORIES).map(function(pair) {
-                            let key = pair[0];
-                            let cat = pair[1];
-                            let active = testState.selectedCategories.includes(key);
-                            return m("label", { class: "cg2-test-cat" + (active ? " active" : ""), onclick: function() {
-                                if (active) testState.selectedCategories = testState.selectedCategories.filter(function(c) { return c !== key; });
-                                else testState.selectedCategories.push(key);
-                                m.redraw();
-                            } }, [
-                                m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, cat.icon),
-                                " " + cat.label
-                            ]);
-                        })
-                    ),
+                    m(TF.TestCategoryToggleUI, { categories: TEST_CATEGORIES }),
 
-                    // Results summary + filter toggles
-                    testState.completed ? m("div", { class: "cg2-test-summary" }, [
-                        m("span", { class: "cg2-test-result-pass" }, testState.results.pass + " pass"),
-                        m("span", { class: "cg2-test-result-fail" }, testState.results.fail + " fail"),
-                        m("span", { class: "cg2-test-result-warn" }, testState.results.warn + " warn"),
-                        m("span", { style: { marginLeft: "auto", display: "flex", gap: "4px" } }, [
-                            m("button", {
-                                class: "cg2-test-filter-btn" + (!filterIssues ? " active" : ""),
-                                onclick: function() { testState.logFilter = "all"; m.redraw(); }
-                            }, "All"),
-                            m("button", {
-                                class: "cg2-test-filter-btn" + (filterIssues ? " active" : ""),
-                                onclick: function() { testState.logFilter = "issues"; m.redraw(); }
-                            }, [
-                                m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", verticalAlign: "middle", marginRight: "2px" } }, "error"),
-                                "Issues" + ((testState.results.fail + testState.results.warn) > 0
-                                    ? " (" + (testState.results.fail + testState.results.warn) + ")" : "")
-                            ])
-                        ])
-                    ]) : null,
+                    // Results summary
+                    m(TF.TestResultsSummaryUI),
 
-                    // Debug console log
-                    m("div", {
-                        class: "cg2-test-console",
-                        oncreate: function(vnode) { consoleEl = vnode.dom; scrollToBottom(); },
-                        onupdate: function(vnode) { consoleEl = vnode.dom; scrollToBottom(); }
-                    }, (function() {
-                        let items = [];
-                        let lastCat = null;
-                        for (let entry of visibleLogs) {
-                            // Add section header when category changes
-                            if (entry.category && entry.category !== lastCat) {
-                                let catLabel = TEST_CATEGORIES[entry.category]?.label || entry.category;
-                                items.push(m("div", { class: "cg2-test-section-header" }, catLabel));
-                                lastCat = entry.category;
-                            }
-                            let isBold = entry.status === "fail" || entry.status === "warn";
-                            items.push(m("div", { class: "cg2-test-log-entry", "data-status": entry.status }, [
-                                m("span", { class: "cg2-test-log-time" }, entry.time),
-                                entry.category ? m("span", { class: "cg2-test-log-cat", "data-cat": entry.category }, entry.category) : null,
-                                m("span", {
-                                    class: "material-symbols-outlined",
-                                    style: { fontSize: "13px", color: statusColors[entry.status] || "#666", verticalAlign: "middle", marginRight: "4px" }
-                                }, statusIcons[entry.status] || "info"),
-                                m("span", { style: {
-                                    color: statusColors[entry.status] || "#333",
-                                    fontWeight: isBold ? 700 : 400
-                                } }, entry.message)
-                            ]));
-                        }
-                        if (testState.logs.length === 0) {
-                            items.push(m("div", { class: "cg2-test-empty" }, testDeck
-                                ? "Click 'Run All Tests' to test deck: " + (testDeckName || "selected")
-                                : "Select a deck first, or click 'Run All Tests' for generic tests."));
-                        }
-                        return items;
-                    })())
+                    // Console
+                    m(TF.TestConsoleUI, { categories: TEST_CATEGORIES })
                 ]);
             }
         };
+    }
+
+    // ── Register with shared TestFramework ──────────────────────────────
+    if (TF) {
+        TF.registerSuite("cardGame", {
+            label: "Card Game",
+            icon: "playing_cards",
+            categories: TEST_CATEGORIES,
+            run: runCardGameTests
+        });
     }
 
     // ── Expose on CardGame.TestMode namespace ────────────────────────────
@@ -1779,5 +1723,5 @@
         TestModeUI: TestModeUI
     });
 
-    console.log("[CardGame] test/testMode loaded");
+    console.log("[CardGame] test/testMode loaded (registered with TestFramework)");
 }());

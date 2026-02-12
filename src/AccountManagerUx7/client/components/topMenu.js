@@ -190,7 +190,8 @@
                             button(null, "dashboard", (mr.match(/^\/main/gi) ? "active" : ""), page.home),
                             button(0, "explore", (mr.match(/^\/nav/gi) ? "active" : ""), page.nav),
                             button(0, "chat", (mr.match(/^\/chat/gi) ? "active" : ""), page.chat),
-                            button(0, "notifications", (notiActive ? "active-red" : (mr.match(/^\/list\/message/gi) ? "active" : "")), page.messages)
+                            button(0, "notifications", (notiActive ? "active-red" : (mr.match(/^\/list\/message/gi) ? "active" : "")), page.messages),
+                            (page.testMode || !page.productionMode) ? button(0, "science", (mr.match(/^\/test/gi) ? "active" : ""), function(){ m.route.set("/test"); }) : null
                         ])
                     ]),
                     (x.attrs.customTray ? x.attrs.customTray() : ""),

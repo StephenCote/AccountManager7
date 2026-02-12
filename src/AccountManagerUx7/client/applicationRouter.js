@@ -18,7 +18,8 @@
         "/game/:name" : page.views.game,
         "/cardGame-v2": page.views.cardGameV2,
         "/hyp": page.views.hyp,
-        "/magic8": page.views.magic8
+        "/magic8": page.views.magic8,
+        "/test": page.views.testView
     };
     
     

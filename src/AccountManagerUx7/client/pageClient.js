@@ -181,7 +181,9 @@
             await am7client.clearCache("data.data");
             await am7client.clearCache("data.tag");
             return tags;
-        }
+        },
+        testMode: (new URLSearchParams(window.location.search)).get("testMode") === "true",
+        productionMode: (new URLSearchParams(window.location.search)).get("productionMode") !== "false"
 
     };
 

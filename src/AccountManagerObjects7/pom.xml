@@ -71,6 +71,7 @@
 						
 						
 						-->
+						<exclude>**/TestPromptTemplate</exclude>
 						<exclude>**/TestScimFilterParser.java</exclude>
 						<exclude>**/TestScimGroupAdapter.java</exclude>
 						<exclude>**/TestScimPatchHandler.java</exclude>

@@ -31,6 +31,11 @@ const jsFiles = [
     'client/decorator.js',
     'client/chat.js',
 
+    // Shared Test Framework (Phase 6)
+    'client/test/testFramework.js',
+    'client/test/testRegistry.js',
+    'client/test/llm/llmTestSuite.js',
+
     // CardGame v2 — Modular (order matches index.js loading order)
     'client/view/cardGame/constants/gameConstants.js',
     'client/view/cardGame/state/storage.js',
@@ -117,6 +122,9 @@ const jsFiles = [
     'client/view/magic8/components/SessionConfigEditor.js',
     'client/view/magic8/Magic8App.js',
     'client/view/magic8/index.js',
+
+    // Test view (Phase 6)
+    'client/view/testView.js',
 
     // Router (must be last)
     'client/applicationRouter.js'
