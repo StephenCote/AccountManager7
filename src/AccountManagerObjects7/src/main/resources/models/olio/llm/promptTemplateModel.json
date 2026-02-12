@@ -1,0 +1,41 @@
+{
+	"name": "olio.llm.promptTemplate",
+	"inherits": ["data.directory", "common.description"],
+	"group": "Chat",
+	"icon": "chat",
+	"label": "Prompt Template",
+	"description": "Structured prompt template with composable, conditional sections, ordering, and inheritance.",
+	"fields": [
+		{
+			"name": "templateVersion",
+			"type": "int",
+			"default": 1,
+			"description": "Schema version for forward compatibility"
+		},
+		{
+			"name": "extends",
+			"type": "string",
+			"description": "Name of a parent template to inherit sections from. Resolved at compose time."
+		},
+		{
+			"name": "sections",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.promptSection",
+			"description": "Ordered list of composable template sections"
+		},
+		{
+			"name": "sectionOrder",
+			"type": "list",
+			"baseType": "string",
+			"description": "Explicit ordering of section names for composition. If empty, sections are composed in list order."
+		},
+		{
+			"name": "role",
+			"type": "string",
+			"maxLength": 16,
+			"default": "system",
+			"description": "Default role this template targets (system, user, assistant)"
+		}
+	]
+}

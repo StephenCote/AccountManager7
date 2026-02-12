@@ -1,0 +1,37 @@
+{
+	"name": "olio.llm.promptSection",
+	"label": "Prompt Section",
+	"description": "A composable section within a prompt template. Each section has a name, content lines, and optional conditions.",
+	"fields": [
+		{
+			"name": "sectionName",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Unique section identifier (e.g. 'intro', 'rules', 'episode', 'memory', 'scene')"
+		},
+		{
+			"name": "role",
+			"type": "string",
+			"maxLength": 16,
+			"description": "Role override for this section (system, user, assistant). If empty, inherits from parent template."
+		},
+		{
+			"name": "lines",
+			"type": "list",
+			"baseType": "string",
+			"description": "Template content lines for this section. Supports ${...} token replacement."
+		},
+		{
+			"name": "condition",
+			"type": "string",
+			"maxLength": 256,
+			"description": "Condition expression evaluated against chatConfig. If empty, section is always included. Examples: 'useNLP', 'rating==AO||rating==RC', '!useJailBreak', 'episodes.size>0'"
+		},
+		{
+			"name": "priority",
+			"type": "int",
+			"default": 100,
+			"description": "Sort priority when sectionOrder is not specified. Lower values come first."
+		}
+	]
+}

@@ -1,0 +1,56 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "Open Chat Template",
+	"description": "Simple open chat template without character roleplay or episodes",
+	"templateVersion": 1,
+	"role": "system",
+	"sectionOrder": ["intro", "memory", "rules"],
+	"sections": [
+		{
+			"sectionName": "intro",
+			"role": "system",
+			"lines": [
+				"This is a ${rating}/${ratingMpa}-rated conversation.",
+				"${censorWarn}"
+			],
+			"priority": 10
+		},
+		{
+			"sectionName": "memory",
+			"role": "system",
+			"condition": "memoryBudget",
+			"lines": [
+				"${memory.context}"
+			],
+			"priority": 20
+		},
+		{
+			"sectionName": "rules",
+			"role": "system",
+			"lines": [
+				"RULES:",
+				"${dynamicRules}"
+			],
+			"priority": 30
+		},
+		{
+			"sectionName": "userIntro",
+			"role": "user",
+			"lines": [
+				"My name is ${user.firstName}. ${user.fullName}. I am a ${user.asg}.",
+				"${user.consent}"
+			],
+			"priority": 10
+		},
+		{
+			"sectionName": "assistantIntro",
+			"role": "assistant",
+			"lines": [
+				"My name is ${system.firstName}, and I am a ${system.asg}.",
+				"${assistCensorWarn}",
+				"${firstSecondWho}"
+			],
+			"priority": 10
+		}
+	]
+}

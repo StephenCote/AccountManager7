@@ -133,6 +133,12 @@ public class PolicyUtil {
 	};
 	
 	private boolean trace = false;
+
+	/// ThreadLocal depth counter for getForeignPatterns recursion.
+	/// Prevents StackOverflowError when deeply nested foreign references (e.g., character → apparel → references)
+	/// cause unbounded recursive policy evaluation via getSchemaRules → getForeignPatterns → getResourcePolicy.
+	private static final ThreadLocal<Integer> foreignPolicyDepth = ThreadLocal.withInitial(() -> 0);
+	private static final int MAX_FOREIGN_POLICY_DEPTH = 2;
 	
 	public PolicyUtil(IReader reader, IWriter writer, ISearch search) {
 		this.reader = reader;
@@ -389,35 +395,47 @@ public class PolicyUtil {
 			logger.debug("Skip policy check for deleting object with foreign reference");
 		}
 		else {
-			List<BaseRecord> objects = new ArrayList<>();
-			if(fs.getFieldType() == FieldEnumType.LIST) {
-				objects = object.get(f.getName());
-			}
-			else if(fs.getFieldType() == FieldEnumType.MODEL) {
-				objects.add(object.get(f.getName()));
-			}
-			else {
-				logger.error("Unhandled field type: " + fs.getFieldType().toString());
-			}
-			for(BaseRecord linkedObj : objects) {
-				if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
-					reader.populate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getSchema(), PolicyEvaluator.FIELD_POPULATION));
+			int depth = foreignPolicyDepth.get();
+			if(depth >= MAX_FOREIGN_POLICY_DEPTH) {
+				if(trace) {
+					logger.info("Skip foreign policy evaluation for " + fs.getName() + " - depth limit reached (" + depth + ")");
 				}
-
-				if(RecordUtil.isIdentityRecord(linkedObj)) {
-					try {
-						PolicyType recPolicy = this.getResourcePolicy(POLICY_SYSTEM_READ_OBJECT, actor, null, linkedObj).toConcrete();
-						patterns.addAll(recPolicy.getRules().get(0).getPatterns());
-					}
-					catch(ReaderException e) {
-						logger.error(e);
-					}
+				return patterns;
+			}
+			foreignPolicyDepth.set(depth + 1);
+			try {
+				List<BaseRecord> objects = new ArrayList<>();
+				if(fs.getFieldType() == FieldEnumType.LIST) {
+					objects = object.get(f.getName());
+				}
+				else if(fs.getFieldType() == FieldEnumType.MODEL) {
+					objects.add(object.get(f.getName()));
 				}
 				else {
-					logger.debug("Skip " + fs.getName() + " because it does not have an identity value and therefore cannot be checked for system level read access.");
+					logger.error("Unhandled field type: " + fs.getFieldType().toString());
+				}
+				for(BaseRecord linkedObj : objects) {
+					if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
+						reader.populate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getSchema(), PolicyEvaluator.FIELD_POPULATION));
+					}
+
+					if(RecordUtil.isIdentityRecord(linkedObj)) {
+						try {
+							PolicyType recPolicy = this.getResourcePolicy(POLICY_SYSTEM_READ_OBJECT, actor, null, linkedObj).toConcrete();
+							patterns.addAll(recPolicy.getRules().get(0).getPatterns());
+						}
+						catch(ReaderException e) {
+							logger.error(e);
+						}
+					}
+					else {
+						logger.debug("Skip " + fs.getName() + " because it does not have an identity value and therefore cannot be checked for system level read access.");
+					}
 				}
 			}
-
+			finally {
+				foreignPolicyDepth.set(depth);
+			}
 		}
 		return patterns;
 	}

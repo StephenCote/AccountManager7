@@ -1471,8 +1471,12 @@ public class Chat {
 				return "";
 			}
 
-			// Format as MCP context block
+			// Categorize memories by type and build MCP context
 			McpContextBuilder ctxBuilder = new McpContextBuilder();
+			List<String> relationshipSummaries = new ArrayList<>();
+			List<String> factSummaries = new ArrayList<>();
+			String lastSessionText = "";
+
 			for (BaseRecord memory : recs) {
 				String content = memory.get("content");
 				if (content == null) continue;
@@ -1494,7 +1498,36 @@ public class Chat {
 					),
 					true
 				);
+
+				// Categorize by memoryType for template variables
+				String displayText = summary != null && !summary.isEmpty() ? summary : content;
+				switch (memoryType) {
+					case "OUTCOME":
+					case "EVENT":
+						// Most recent OUTCOME/EVENT becomes lastSession
+						lastSessionText = displayText;
+						break;
+					case "RELATIONSHIP":
+						relationshipSummaries.add(displayText);
+						break;
+					case "FACT":
+					case "NOTE":
+					case "PREFERENCE":
+					case "INSIGHT":
+						factSummaries.add(displayText);
+						break;
+					default:
+						factSummaries.add(displayText);
+						break;
+				}
 			}
+
+			// Set categorized memory thread-locals for PromptUtil
+			PromptUtil.setMemoryRelationship(String.join("; ", relationshipSummaries));
+			PromptUtil.setMemoryFacts(String.join("; ", factSummaries));
+			PromptUtil.setMemoryLastSession(lastSessionText);
+			PromptUtil.setMemoryCount(recs.length);
+
 			return ctxBuilder.build();
 		} catch (Exception e) {
 			logger.warn("Error retrieving memories: " + e.getMessage());

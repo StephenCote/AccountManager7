@@ -32,6 +32,10 @@ public class PromptUtil {
 	/// Thread-local memory context set by Chat.java before template processing.
 	/// Consumed and cleared by buildMemoryReplacements().
 	private static final ThreadLocal<String> pendingMemoryContext = new ThreadLocal<>();
+	private static final ThreadLocal<String> pendingMemoryRelationship = new ThreadLocal<>();
+	private static final ThreadLocal<String> pendingMemoryFacts = new ThreadLocal<>();
+	private static final ThreadLocal<String> pendingMemoryLastSession = new ThreadLocal<>();
+	private static final ThreadLocal<Integer> pendingMemoryCount = new ThreadLocal<>();
 
 	public static void setMemoryContext(String memoryContext) {
 		pendingMemoryContext.set(memoryContext);
@@ -39,6 +43,22 @@ public class PromptUtil {
 
 	public static String getMemoryContext() {
 		return pendingMemoryContext.get();
+	}
+
+	public static void setMemoryRelationship(String value) {
+		pendingMemoryRelationship.set(value);
+	}
+
+	public static void setMemoryFacts(String value) {
+		pendingMemoryFacts.set(value);
+	}
+
+	public static void setMemoryLastSession(String value) {
+		pendingMemoryLastSession.set(value);
+	}
+
+	public static void setMemoryCount(int count) {
+		pendingMemoryCount.set(count);
 	}
 	
 	public static String composeTemplate(List<String> list) {
@@ -216,11 +236,22 @@ public class PromptUtil {
 			pendingMemoryContext.remove();
 		}
 
+		// Consume categorized memory thread-locals
+		String relationship = pendingMemoryRelationship.get();
+		String facts = pendingMemoryFacts.get();
+		String lastSession = pendingMemoryLastSession.get();
+		Integer count = pendingMemoryCount.get();
+
+		pendingMemoryRelationship.remove();
+		pendingMemoryFacts.remove();
+		pendingMemoryLastSession.remove();
+		pendingMemoryCount.remove();
+
 		ctx.replace(TemplatePatternEnumType.MEMORY_CONTEXT, ctx.memoryContext != null ? ctx.memoryContext : "");
-		ctx.replace(TemplatePatternEnumType.MEMORY_RELATIONSHIP, "");
-		ctx.replace(TemplatePatternEnumType.MEMORY_FACTS, "");
-		ctx.replace(TemplatePatternEnumType.MEMORY_LAST_SESSION, "");
-		ctx.replace(TemplatePatternEnumType.MEMORY_COUNT, "0");
+		ctx.replace(TemplatePatternEnumType.MEMORY_RELATIONSHIP, relationship != null ? relationship : "");
+		ctx.replace(TemplatePatternEnumType.MEMORY_FACTS, facts != null ? facts : "");
+		ctx.replace(TemplatePatternEnumType.MEMORY_LAST_SESSION, lastSession != null ? lastSession : "");
+		ctx.replace(TemplatePatternEnumType.MEMORY_COUNT, count != null ? String.valueOf(count) : "0");
 	}
 
 	private static void buildInteractionReplacements(PromptBuilderContext ctx) {

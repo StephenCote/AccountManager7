@@ -1,0 +1,87 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "Memory Chat Template",
+	"description": "Chat template with full memory injection support for cross-session continuity",
+	"templateVersion": 1,
+	"role": "system",
+	"sectionOrder": ["intro", "character", "memoryContext", "memoryDetails", "rules", "scene"],
+	"sections": [
+		{
+			"sectionName": "intro",
+			"role": "system",
+			"lines": [
+				"This is a fully immersive${episodic} ${rating}/${ratingMpa}-rated role-playing conversation/game."
+			],
+			"priority": 10
+		},
+		{
+			"sectionName": "character",
+			"role": "system",
+			"lines": [
+				"You (the LLM) control ${system.fullName}. ${system.race} ${system.characterDesc}"
+			],
+			"priority": 20
+		},
+		{
+			"sectionName": "memoryContext",
+			"role": "system",
+			"condition": "memoryBudget",
+			"lines": [
+				"PREVIOUS MEMORIES:",
+				"${memory.context}",
+				"Last session: ${memory.lastSession}",
+				"Key relationships: ${memory.relationship}",
+				"Known facts: ${memory.facts}",
+				"Total memories: ${memory.count}"
+			],
+			"priority": 30
+		},
+		{
+			"sectionName": "memoryDetails",
+			"role": "system",
+			"condition": "memoryBudget",
+			"lines": [
+				"Use the memories above to maintain continuity with previous sessions.",
+				"Reference past events naturally when relevant."
+			],
+			"priority": 35
+		},
+		{
+			"sectionName": "rules",
+			"role": "system",
+			"lines": [
+				"RULES:",
+				"${dynamicRules}"
+			],
+			"priority": 40
+		},
+		{
+			"sectionName": "scene",
+			"role": "system",
+			"lines": [
+				"${scene.auto}"
+			],
+			"priority": 50
+		},
+		{
+			"sectionName": "userIntro",
+			"role": "user",
+			"lines": [
+				"My name is ${user.firstName}. ${user.fullName}. I am a ${user.asg}. ${user.race}",
+				"Here is some information about me: ${user.characterDescPublic}"
+			],
+			"priority": 10
+		},
+		{
+			"sectionName": "assistantIntro",
+			"role": "assistant",
+			"lines": [
+				"My name is ${system.firstName}, and I am a ${system.asg}.",
+				"${system.race}",
+				"${assistCensorWarn}",
+				"${firstSecondWho}"
+			],
+			"priority": 10
+		}
+	]
+}

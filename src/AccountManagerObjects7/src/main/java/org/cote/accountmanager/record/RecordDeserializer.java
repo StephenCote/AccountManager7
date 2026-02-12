@@ -476,7 +476,6 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				}
     				else {
 	    				TypeReference tr = null;
-	    				String dbg = value.toString();
 
 	    				if(currentNode.getListElementModel() != null || (lft.getBaseType() != null && lft.getBaseType().equals(FieldTypes.TYPE_MODEL))) {
 	    					tr = new TypeReference<List<LooseRecord>>() {};
