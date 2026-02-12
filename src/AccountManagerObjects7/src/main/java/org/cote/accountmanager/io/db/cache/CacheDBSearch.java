@@ -20,8 +20,8 @@ import org.cote.accountmanager.util.RecordUtil;
 
 public class CacheDBSearch extends DBSearch implements ICache {
 	
-	/// 2023/06/29 - There is a currency problem with this rather simplistic cache when put under load
-	/// For some reason, the mapped values become transposed somehow
+	/// 2023/06/29 - There was a concurrency problem with the cache under load where mapped values became transposed.
+	/// Fixed by synchronizing find() to make the check-fetch-store cycle atomic.
 
 	//private Map<String, QueryResult> cache = new ConcurrentHashMap<>();
 	private Map<String,  Map<String, QueryResult>> cacheMap = new ConcurrentHashMap<>();
@@ -119,14 +119,14 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	}
 	
 	@Override
-	public QueryResult find(final Query query) throws ReaderException {
+	public synchronized QueryResult find(final Query query) throws ReaderException {
 
 		if(query.key() == null) {
 			throw new ReaderException("Null query key");
 		}
 
 		checkCache();
-		
+
 		Map<String, QueryResult> cache = getCacheMap(query.get(FieldNames.FIELD_TYPE));
 		final String hash = query.hash();
 		if(hash == null) {

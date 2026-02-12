@@ -9,6 +9,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -41,8 +44,6 @@ import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
-
-import jakarta.ws.rs.core.MediaType;
 
 public class Chat {
 
@@ -83,6 +84,7 @@ public class Chat {
 	private boolean deferRemote = false;
 	private boolean enableKeyFrame = true;
 	private IChatListener listener = null;
+	private int requestTimeout = 120;
 	
 	private String llmSystemPrompt = """
 			You play the role of an assistant named Siren.
@@ -158,6 +160,14 @@ public class Chat {
 		this.deferRemote = deferRemote;
 	}
 
+	public int getRequestTimeout() {
+		return requestTimeout;
+	}
+
+	public void setRequestTimeout(int requestTimeout) {
+		this.requestTimeout = requestTimeout;
+	}
+
 	private void configureChat() {
 		if (chatConfig != null) {
 			setServerUrl(chatConfig.get("serverUrl"));
@@ -168,6 +178,7 @@ public class Chat {
 			remind = chatConfig.get("remindEvery");
 			keyFrameEvery = chatConfig.get("keyframeEvery");
 			messageTrim = chatConfig.get("messageTrim");
+			requestTimeout = chatConfig.get("requestTimeout");
 		}
 	}
 
@@ -1287,134 +1298,178 @@ public class Chat {
 		return msg;
 	}
 
+	/// Phase 7: Always-stream from LLM. The stream flag controls whether chunks
+	/// are forwarded to the client listener or buffered internally.
+	/// When stream=false, this method blocks until the response is complete and returns it.
+	/// When stream=true, chunks are forwarded via the listener and the method returns null (async).
 	public OpenAIResponse chat(OpenAIRequest req) {
 		if (req == null) {
 			return null;
 		}
-		
+
 		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);
 		String tokField = ChatUtil.getMaxTokenField(chatConfig);
-		ignoreFields.addAll(Arrays.asList(new String[] {"num_ctx", "max_tokens", "max_completion_tokens"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));	
-		
+		ignoreFields.addAll(Arrays.asList(new String[] {"num_ctx", "max_tokens", "max_completion_tokens"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));
+
 		String penField = ChatUtil.getPresencePenaltyField(chatConfig);
-		ignoreFields.addAll(Arrays.asList(new String[] {"presence_penalty"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));	
+		ignoreFields.addAll(Arrays.asList(new String[] {"presence_penalty"}).stream().filter(f -> !f.equals(penField)).collect(Collectors.toList()));
 
-		
-		String ser = JSONUtil.exportObject(ChatUtil.getPrunedRequest(req, ignoreFields), RecordSerializerConfig.getHiddenForeignUnfilteredModule());
+		boolean forwardToClient = (boolean) req.get("stream");
 
-		OpenAIResponse orec = null;
-		boolean stream = req.get("stream");
-		if(!stream) {
-			BaseRecord rec = ClientUtil.postToRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, ClientUtil.getResource(getServiceUrl(req)), authorizationToken, ser, MediaType.APPLICATION_JSON_TYPE);
-			if (rec != null) {
-				orec = new OpenAIResponse(rec);
+		/// Always set stream=true on the wire request so the LLM always streams
+		OpenAIRequest wireReq = ChatUtil.getPrunedRequest(req, ignoreFields);
+		wireReq.setStream(true);
+		String ser = JSONUtil.exportObject(wireReq, RecordSerializerConfig.getHiddenForeignUnfilteredModule());
+
+		OpenAIResponse aresp = new OpenAIResponse();
+		CountDownLatch latch = forwardToClient ? null : new CountDownLatch(1);
+		final OpenAIResponse[] bufferResult = new OpenAIResponse[] { null };
+		final String[] bufferError = new String[] { null };
+
+		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = ClientUtil.postToRecordAndStream(getServiceUrl(req), authorizationToken, ser);
+
+		/// Apply requestTimeout via orTimeout if configured
+		if (requestTimeout > 0) {
+			streamFuture = streamFuture.orTimeout(requestTimeout, TimeUnit.SECONDS);
+		}
+
+		streamFuture.thenAccept(response -> {
+			if (response == null || response.body() == null) {
+				logger.warn("Null response from streaming chat");
+				return;
+			}
+			boolean hasListener = listener != null;
+			response.body()
+				.takeWhile(line -> !hasListener || !listener.isStopStream(req))
+				.forEach(line -> {
+					processStreamChunk(line, req, aresp, forwardToClient);
+				});
+		}).whenComplete((result, error) -> {
+			if (error != null) {
+				String errMsg;
+				if (error instanceof TimeoutException || (error.getCause() != null && error.getCause() instanceof TimeoutException)) {
+					errMsg = "Request timed out after " + requestTimeout + " seconds";
+				} else {
+					errMsg = "Error during streaming chat response: " + error.getMessage();
+				}
+				if (forwardToClient && listener != null) {
+					listener.onerror(user, req, aresp, errMsg);
+				} else {
+					bufferError[0] = errMsg;
+					logger.error(errMsg);
+				}
 			} else {
-				logger.warn("Null response");
+				if (forwardToClient && listener != null) {
+					listener.oncomplete(user, req, aresp);
+				} else {
+					bufferResult[0] = aresp;
+				}
+			}
+			if (latch != null) {
+				latch.countDown();
+			}
+		});
+
+		if (!forwardToClient) {
+			/// Buffer mode: block until streaming completes
+			try {
+				int waitSeconds = requestTimeout > 0 ? requestTimeout + 5 : 300;
+				if (!latch.await(waitSeconds, TimeUnit.SECONDS)) {
+					logger.error("Buffer mode timed out waiting for stream completion");
+					return null;
+				}
+			} catch (InterruptedException e) {
+				logger.error("Buffer mode interrupted", e);
+				Thread.currentThread().interrupt();
+				return null;
+			}
+			if (bufferError[0] != null) {
+				logger.error("Stream error in buffer mode: " + bufferError[0]);
+				if (listener != null) {
+					listener.onerror(user, req, aresp, bufferError[0]);
+				}
+				return null;
+			}
+			return bufferResult[0];
+		}
+
+		/// Streaming mode: return null, caller uses listener callbacks
+		return null;
+	}
+
+	/// Phase 7: Shared stream chunk processing — eliminates duplicated parsing logic
+	/// between Ollama (message-based) and OpenAI (choices/delta-based) response formats.
+	private void processStreamChunk(String line, OpenAIRequest req, OpenAIResponse aresp, boolean forwardToClient) {
+		if (line == null || line.isEmpty()) {
+			return;
+		}
+
+		String json = line;
+		if (serviceType == LLMServiceEnumType.OPENAI && line.startsWith("data: ")) {
+			json = line.substring(6);
+		}
+		if ("[DONE]".equals(json)) {
+			return;
+		}
+
+		BaseRecord asyncResp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, json);
+		if (asyncResp == null) {
+			if (forwardToClient && listener != null) {
+				listener.onerror(user, req, aresp, "Failed to import response object from: " + json);
+			}
+			return;
+		}
+		if (asyncResp.get("error") != null) {
+			if (forwardToClient && listener != null) {
+				listener.onerror(user, req, aresp, "Received an error: " + asyncResp.get("error"));
+			}
+			return;
+		}
+
+		List<BaseRecord> choices = asyncResp.get("choices");
+		if (choices.isEmpty()) {
+			/// Ollama format: message at top level
+			BaseRecord deltaMessage = asyncResp.get("message");
+			if (deltaMessage == null) {
+				logger.info("Received empty message ... treat as completed");
+				return;
+			}
+			String contentChunk = deltaMessage.get("content");
+			boolean done = asyncResp.get("done");
+			if (done) {
+				return;
+			}
+			if (contentChunk != null && contentChunk.length() > 0) {
+				accumulateChunk(aresp, deltaMessage, contentChunk, forwardToClient, req);
+			}
+		} else {
+			/// OpenAI format: choices array with delta objects
+			for (BaseRecord choice : choices) {
+				BaseRecord delta = choice.get("delta");
+				if (delta != null && delta.hasField("content")) {
+					String contentChunk = delta.get("content");
+					if (contentChunk != null) {
+						accumulateChunk(aresp, delta, contentChunk, forwardToClient, req);
+					}
+				}
 			}
 		}
-		else {
-			OpenAIResponse aresp = new OpenAIResponse();
-	
-	        CompletableFuture<HttpResponse<Stream<String>>> streamFuture  = ClientUtil.postToRecordAndStream(getServiceUrl(req), authorizationToken, ser);
-	        
-	        streamFuture.thenAccept(response -> {
-				if (response == null || response.body() == null) {
-					logger.warn("Null response from streaming chat");
-					return;
-				}
-	            response.body()
-	                .takeWhile(line -> !listener.isStopStream(req))
-	                .forEach(line -> {
-	                		String json = null;
-	                		if (serviceType == LLMServiceEnumType.OPENAI && line.startsWith("data: ")) {
-	                        json = line.substring(6);
-	                		}
-	                		else {
-	                			json = line;
-	                		}
-                        if ("[DONE]".equals(json)) {
-                            return;
-                        }
+	}
 
-                        BaseRecord asyncResp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, json);
-                        if (asyncResp == null) {
-                            listener.onerror(user, req, aresp, "Failed to import response object from: " + json);
-                            return;
-                        }
-                        if(asyncResp.get("error") != null) {
-                            listener.onerror(user, req, aresp, "Received an error: " + asyncResp.get("error"));
-                            return;
-                        }
-                        List<BaseRecord> choices = asyncResp.get("choices");
-                        if(choices.isEmpty()) {
-                            BaseRecord amsg = aresp.get("message");
-                            BaseRecord deltaMessage = asyncResp.get("message");
-                            if(deltaMessage == null) {
-	                            	logger.info("Received empty message ... treat as completed");
-	                            	logger.info(json);
-	                            	logger.info(getServiceUrl(req) + " '" + authorizationToken + "'");
-	                            	return;
-                            }
-                            String contentChunk = deltaMessage.get("content");
-                            boolean done = asyncResp.get("done");
-                            if(done) {
-								return;
-                            }
-                            if (contentChunk != null && contentChunk.length() > 0) {
-
-	                            if (amsg == null) {
-	                                if (deltaMessage.get("role") == null) {
-	                                	deltaMessage.setValue("role", "assistant");
-	                                }
-	                                aresp.setValue("message", deltaMessage);
-	                            } else {
-	                                amsg.setValue("content", (String) amsg.get("content") + contentChunk);
-	                            }
-	                            listener.onupdate(user, req,  aresp, contentChunk);
-                            }
-                            else {
-                            		logger.info("Received null ... treat as completed");
-                            		return;
-                            }
-                        }
-                        else {
-	                        for (BaseRecord choice : choices) {
-	                            BaseRecord delta = choice.get("delta");
-	                            if (delta != null && delta.hasField("content")) {
-	                                String contentChunk = delta.get("content");
-	                                if (contentChunk != null) {
-	                                    BaseRecord amsg = aresp.get("message");
-	                                    if (amsg == null) {
-	                                        if (delta.get("role") == null) {
-	                                            delta.setValue("role", "assistant");
-	                                        }
-	                                        aresp.setValue("message", delta);
-	                                    } else {
-	                                        amsg.setValue("content", (String) amsg.get("content") + contentChunk);
-	                                    }
-	                                    listener.onupdate(user, req,  aresp, contentChunk);
-	                                }
-	                            }
-	                        }
-                        }
-                        
-	                    
-	                });
-	        }).whenComplete((result, error) -> {
-	            if (error != null) {
-	            		listener.onerror(user, req, aresp, "Error during streaming chat response: " + error.getMessage());
-	            } else {
-	                listener.oncomplete(user, req, aresp);
-	            }
-                
-	            
-	        }).exceptionally(ex -> {
-	        		listener.onerror(user, req, aresp, ex.getMessage());
-                return null;
-            });
-
+	/// Accumulate a content chunk into the response and optionally forward to listener.
+	private void accumulateChunk(OpenAIResponse aresp, BaseRecord delta, String contentChunk, boolean forwardToClient, OpenAIRequest req) {
+		BaseRecord amsg = aresp.get("message");
+		if (amsg == null) {
+			if (delta.get("role") == null) {
+				delta.setValue("role", "assistant");
+			}
+			aresp.setValue("message", delta);
+		} else {
+			amsg.setValue("content", (String) amsg.get("content") + contentChunk);
 		}
-		return orec;
+		if (forwardToClient && listener != null) {
+			listener.onupdate(user, req, aresp, contentChunk);
+		}
 	}
 
 	public String getServiceUrl(OpenAIRequest req) {

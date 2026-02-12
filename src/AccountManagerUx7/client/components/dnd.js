@@ -249,6 +249,7 @@
             }
             var formData = new FormData();
             formData.append("organizationPath", am7client.currentOrganization);
+            if(entity.groupId) formData.append("groupId", entity.groupId);
             formData.append("groupPath", entity.groupPath);
             let fname = files[i].name;
             formData.append("name", files[i].name);
