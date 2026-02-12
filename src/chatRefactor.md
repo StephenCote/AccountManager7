@@ -3020,7 +3020,7 @@ All known open issues with their assigned resolution phase:
 | OI-16 | ~~StackOverflowError in deeply nested record authorization — RecordDeserializer debug `toString()` removed + PolicyUtil `getForeignPatterns` depth-limited + slim `copyRecord()` update pattern~~ | Phase 4 testing | ~~Phase 10~~ **RESOLVED** | ~~P3~~ |
 | OI-17 | Magic8 client-side template (`SessionDirector.js`) not yet wired to server-side `prompt.magic8.json` | Phase 4 implementation | Phase 6+ | P3 |
 | OI-3 | `extractMemoriesFromResponse()` does not pass person pair IDs | Phase 2-3 known issues | Phase 10 (item 2) | P2 |
-| OI-4 | `openaiMessage` model missing `thinking` field — qwen3/CoT models produce error logs | Phase 3 testing | Phase 7 (item 4) | P2 |
+| OI-4 | ~~`openaiMessage` model missing `thinking` field — qwen3/CoT models produce error logs~~ | Phase 3 testing | ~~Phase 7 (item 4)~~ **RESOLVED** | ~~P2~~ |
 | OI-5 | Low `keyframeEvery` values trigger expensive `analyze()` LLM calls | Phase 3 known issues | Phase 10 (item 5) | P3 |
 | OI-6 | `top_k` maxValue=1 prevents valid values (should be 500) | Section 6.1 | Phase 8 (item 1) | P1 |
 | OI-7 | `typical_p` incorrectly mapped to OpenAI `presence_penalty` in `applyChatOptions()` | Section 6.1 | Phase 8 (item 2) | P1 |
@@ -3034,12 +3034,18 @@ All known open issues with their assigned resolution phase:
 | OI-18 | Client-side prune functions retained for backward compatibility — can be removed once all active sessions refresh | Phase 5 implementation | Future cleanup | P4 |
 | OI-19 | Migrator condition coverage — static condition map covers 7 of ~34 fields; fields like `femalePerspective`/`malePerspective` have no condition mapping | Phase 5 implementation | Phase 10 | P3 |
 | OI-20 | Token standardization — image/audio token processing still varies between prompt template styles | Phase 5 review | Phase 10 | P3 |
-| OI-21 | Stream tests require WebSocket — Tests 71-72 need active `page.wss` and `chatConfig.stream=true` | Phase 6 implementation | Phase 7 | P3 |
+| OI-21 | ~~Stream tests require WebSocket — Tests 71-72 need active `page.wss` and `chatConfig.stream=true`~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
 | OI-22 | Policy tests placeholder — Test 81 validates config presence only; evaluation requires Phase 9 | Phase 6 implementation | Phase 9 | P3 |
 | OI-23 | CardGame shared state coupling — switching suites resets shared `TF.testState` | Phase 6 implementation | By design | P4 |
 | OI-24 | `findOrCreateConfig` caching — template changes require manual deletion of existing server objects | Phase 6 implementation | Future: add update-if-changed | P3 |
-| OI-25 | Episode transition execution not testable — `#NEXT EPISODE#` detection is server-side | Phase 6 implementation | Phase 7 | P3 |
+| OI-25 | ~~Episode transition execution not testable — `#NEXT EPISODE#` detection is server-side~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
 | OI-26 | Keyframe detection heuristic — Test 76 pattern-matches `[MCP:KeyFrame` / `(KeyFrame:` text; fragile | Phase 6 implementation | Phase 10 | P3 |
+| OI-27 | Ollama server-side request not cancelled on client timeout — `CompletableFuture` cancellation doesn't reach server | Phase 7 implementation | Future: Ollama abort API | P3 |
+| OI-28 | Test execution order sensitivity — Test 37 sets requestTimeout=1 on shared DB config; crash between set/restore leaks value | Phase 7 testing | Mitigated by explicit resets | P4 |
+| OI-29 | Ollama native `options` object not supported — `top_k`, `typical_p`, `repeat_penalty`, `min_p`, `repeat_last_n` not sent after Phase 8 mapping fix | Phase 8 prep | Future: add `options` model to request | P3 |
+| OI-30 | `applyAnalyzeOptions()` hardcodes `temperature=0.4`, `top_p=0.5`, etc. instead of reading from config | Phase 8 prep | Future cleanup | P4 |
+| OI-31 | `getNarratePrompt()` double-applies chatOptions — calls `applyAnalyzeOptions()` then `applyChatOptions()` again | Phase 8 prep | Future cleanup | P4 |
+| OI-32 | `openaiRequestModel.json` defaults for `frequency_penalty` and `presence_penalty` are 1.3 — should be 0.0 to match OpenAI API defaults | Phase 8 prep | Phase 8 | P2 |
 
 ---
 
