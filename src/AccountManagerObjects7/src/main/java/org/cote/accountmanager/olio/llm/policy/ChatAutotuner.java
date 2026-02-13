@@ -9,6 +9,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
@@ -40,16 +41,22 @@ public class ChatAutotuner {
 		}
 
 		try {
-			String analysisPrompt = buildAnalysisPrompt(promptConfig, chatConfig, violations);
+			/// Resolve the full chatConfig from DB to ensure persisted field values are available
+			BaseRecord resolvedConfig = OlioUtil.getFullRecord(chatConfig);
+			if (resolvedConfig == null) {
+				resolvedConfig = chatConfig;
+			}
+
+			String analysisPrompt = buildAnalysisPrompt(promptConfig, resolvedConfig, violations);
 
 			/// Use analyzeModel for efficiency, fall back to main model
-			String model = chatConfig.get("analyzeModel");
+			String model = resolvedConfig.get("analyzeModel");
 			if (model == null || model.isEmpty()) {
-				model = chatConfig.get("model");
+				model = resolvedConfig.get("model");
 			}
 
 			/// Make the analysis LLM call
-			String analysisResponse = callAnalysisLLM(user, chatConfig, model, analysisPrompt);
+			String analysisResponse = callAnalysisLLM(user, resolvedConfig, model, analysisPrompt);
 			if (analysisResponse == null || analysisResponse.trim().isEmpty()) {
 				logger.warn("ChatAutotuner: Analysis LLM returned empty response");
 				return new AutotuneResult(null, "Analysis LLM returned empty response", violations);
@@ -168,6 +175,7 @@ public class ChatAutotuner {
 
 			OpenAIResponse resp = chat.chat(areq);
 			if (resp == null) {
+				logger.warn("ChatAutotuner: chat.chat() returned null");
 				return null;
 			}
 
@@ -184,6 +192,7 @@ public class ChatAutotuner {
 					return message.get("content");
 				}
 			}
+			logger.warn("ChatAutotuner: No content found in LLM response");
 			return null;
 		} catch (Exception e) {
 			logger.error("ChatAutotuner: LLM call failed: " + e.getMessage());
