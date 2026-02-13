@@ -1,8 +1,5 @@
 package org.cote.accountmanager.util;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -25,16 +22,14 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 
 public abstract class PathUtil implements IPath {
-	
+
 	public static final Logger logger = LogManager.getLogger(PathUtil.class);
-	
+
 	private final IReader reader;
 	private final IWriter writer;
 	private final ISearch search;
 	private boolean trace = false;
-	
-	private Map<String, BaseRecord> pathMap = new ConcurrentHashMap<>();
-	
+
 	public PathUtil(IReader reader, ISearch search) {
 		this(reader, null, search);
 	}
@@ -43,48 +38,36 @@ public abstract class PathUtil implements IPath {
 		this.writer = writer;
 		this.search = search;
 	}
-	
-	
+
+
+
 	public void clearCache() {
-		pathMap.clear();
+		// no-op
 	}
-	
+
 	public boolean isTrace() {
 		return trace;
 	}
 	public void setTrace(boolean trace) {
 		this.trace = trace;
 	}
-	public synchronized BaseRecord findPath(BaseRecord owner, String model, String path, String type, long organizationId) {
+	public BaseRecord findPath(BaseRecord owner, String model, String path, String type, long organizationId) {
 		return makePath(owner, model, path, type, organizationId, false);
 	}
-	
-	
-	
+
 	/// Synchronized make path - when concurrent sessions hit the hierarchical create method, it's possible that the same object can be created twice, violating any constraint condition
 	/// This in turn MAY result in a corrupted cache entry (still looking into that currency issue)
 	///
 	public synchronized BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId) {
 		return makePath(owner, model, path, type, organizationId, true);
 	}
-	
-	private synchronized BaseRecord makePath(final BaseRecord owner, final String model, final String basePath, final String type, final long organizationId, boolean doCreate) {
+	private BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId, boolean doCreate) {
 		BaseRecord node = null;
-		String path = basePath;
-		long parentId = 0L;
-		String ptype = type;
-		String key = organizationId + "-" + ptype + "-" + path;
-		if(!doCreate && pathMap.containsKey(key)) {
-			return pathMap.get(key);
-		}
-		
+
 		if(owner != null) {
 			IOSystem.getActiveContext().getRecordUtil().populate(owner);
 		}
-		if(doCreate) {
-			//logger.warn("MAKE PATH: " + path);
-			// ErrorUtil.printStackTrace();
-		}
+
 		if(path.startsWith("~/")) {
 			if(owner != null) {
 				String homePath = owner.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH);
@@ -104,15 +87,16 @@ public abstract class PathUtil implements IPath {
 		}
 
 		String[] pathE = path.split("/");
+		long parentId = 0L;
 
-		
+
 		try {
 			for(String e : pathE) {
 				if(e == null || e.length() == 0) {
 					continue;
 				}
-				String utype = ptype;
-				
+				String utype = type;
+
 				/// When trying to get type specific paths, allow to build off a singular base such as /home/{name} vs. duplicating /home/{name}
 				/// TODO: This needs to be configurable because it would also be helpful in the Community layout
 				///
@@ -124,7 +108,7 @@ public abstract class PathUtil implements IPath {
 						utype = "USER";
 					}
 				}
-				
+
 				BaseRecord[] nodes = search.findByNameInParent(model, parentId, e, utype, organizationId);
 				if(trace) {
 					logger.info("Found " + nodes.length + " " + model + " named " + e + " in #" + parentId);
@@ -135,7 +119,7 @@ public abstract class PathUtil implements IPath {
 					}
 					if(!doCreate) {
 						if(trace) {
-							logger.warn("Failed to find '" + e + "' " + (utype != null ? "of type (" + utype + ") " : "") + "in parent " + parentId + " in path " + path + " in organization " + organizationId + ", create = false");
+							logger.warn("Failed to find '" + e + "' " + (type != null ? "of type (" + type + ") " : "") + "in parent " + parentId + " in path " + path + ", create = false");
 						}
 						node = null;
 						break;
@@ -146,7 +130,7 @@ public abstract class PathUtil implements IPath {
 						node.set(FieldNames.FIELD_PARENT_ID, parentId);
 						node.set(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 						if(type != null && node.hasField(FieldNames.FIELD_TYPE)) {
-							node.set(FieldNames.FIELD_TYPE, ptype);
+							node.set(FieldNames.FIELD_TYPE, type);
 						}
 						if(owner != null) {
 							node.set(FieldNames.FIELD_OWNER_ID, owner.get(FieldNames.FIELD_ID));
@@ -160,10 +144,10 @@ public abstract class PathUtil implements IPath {
 								||
 								(prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(owner, PolicyUtil.POLICY_SYSTEM_CREATE_OBJECT, owner, node)).getType() != PolicyResponseEnumType.PERMIT)
 						) {
-							logger.error("Not authorized to create " + model + " " + (ptype != null ? "of type (" + ptype + ") " : "") + "node " + e + " with parent #" + parentId + " in path " + path);
+							logger.error("Not authorized to create " + model + " " + (type != null ? "of type (" + type + ") " : "") + "node " + e + " with parent #" + parentId + " in path " + path);
 							return null;
 						}
-						
+
 						writer.write(node);
 						writer.flush();
 						parentId = node.get(FieldNames.FIELD_ID);
@@ -173,7 +157,7 @@ public abstract class PathUtil implements IPath {
 					node = nodes[0];
 					parentId = node.get(FieldNames.FIELD_ID);
 					if(type == null) {
-						ptype = node.get(FieldNames.FIELD_TYPE);
+						type = node.get(FieldNames.FIELD_TYPE);
 					}
 				}
 				else {
@@ -188,10 +172,6 @@ public abstract class PathUtil implements IPath {
 		catch(ValueException | WriterException | ReaderException | FieldException | ModelNotFoundException e) {
 			logger.error(e.getMessage());
 			node = null;
-		}
-		
-		if(!doCreate && node != null) {
-			pathMap.put(key,  node);
 		}
 
 		return node;
