@@ -5323,8 +5323,8 @@
     };
     am7model.forms = forms;
 
-    // Dynamically update SD model field limits from the server
-    if (typeof am7sd !== "undefined" && am7sd.fetchModels) {
+    // Dynamically update SD model field limits from the server (defer until authenticated)
+    if (typeof am7sd !== "undefined" && am7sd.fetchModels && typeof page !== "undefined" && page.authenticated()) {
         am7sd.fetchModels().then(function(models) {
             if (models && models.length > 0) {
                 let mf = am7model.getModelField("olio.sd.config", "model");

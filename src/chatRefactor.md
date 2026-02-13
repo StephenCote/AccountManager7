@@ -3099,13 +3099,59 @@ Tests 46-56 are unit-testable with synthetic responses (no LLM server required).
 
 #### Problem Statement
 
-The current chat UX has three structural deficits:
+The current chat UX has four structural deficits:
 
 1. **No shared components** — `chat.js` (1354 lines), `Magic8App.js`, and `CardGameApp.js` each implement their own LLM interaction patterns (REST chat, WebSocket streaming, polling loops) with no reusable components. Common concerns like message rendering, token processing (image/audio), character display, and streaming state management are duplicated or divergent.
 
 2. **Poor conversation management** — `chat.js` manages conversations as flat state (`chatCfg.history`) with no multi-conversation UI. Switching sessions requires `pickSession()` with no conversation list, search, or metadata display. Users cannot see, compare, or organize multiple conversations.
 
 3. **Duct-taped object association** — Chat configs, prompt configs, characters, and other objects are associated via `page.context().contextObjects["chatConfig"]` set by the drag-and-drop blender (`dnd.js`), with `sendToMagic8()` using `sessionStorage` for cross-view handoff. This makes it difficult to discover, attach, or manage object associations within a conversation.
+
+4. **Minimal chat.js API** — `chat.js` exports only 5 methods (`makePrompt`, `makeChat`, `getChatRequest`, `deleteChat`, `chat`). No helpers for history retrieval, response content extraction, JSON directive parsing, config template cloning, streaming abstraction, or error recovery. Every consumer reimplements these.
+
+#### Known Issues and Gaps (from Phase 9 UX testing)
+
+| # | Issue | Impact | Resolution |
+|---|-------|--------|------------|
+| OI-42 | REST config endpoints hardcoded to `~/Chat` group — fixed with group-agnostic owner-based search | Config lookup fails for configs in other groups | **Resolved** (Phase 9 patch) |
+| OI-40 | `policyEvent` WebSocket handler not wired in `chat.js`/`SessionDirector.js` | Policy violations not visible to user | 10a: `StreamStateIndicator` |
+| OI-20 | Image/audio token processing varies across views | Inconsistent media rendering | 10a: `ChatTokenRenderer` |
+| OI-24 | `findOrCreateConfig` caching — template changes require manual deletion | Stale test configs | 10b: add update-if-changed |
+| OI-43 | History retrieval intermittently returns 2/3 messages (Phase 9 UX test 73-74) | Potential message persistence timing issue or messageTrim interaction | 10b: investigate |
+| OI-44 | `formDef.js` calls `am7sd.fetchModels()` at module load before authentication — 403 on login screen | Console errors on every page load | **Resolved** (auth guard added) |
+| OI-45 | `am7chat.sendMessage()` called in test suite but doesn't exist in `chat.js` API | Test hang until fixed | **Resolved** (changed to `am7chat.chat()`) |
+| NEW | No `getHistory()` helper in `chat.js` — tests and views must manually construct REST call | Code duplication, fragile | 10a: `LLMConnector.getHistory()` |
+| NEW | No `extractContent(response)` helper — SessionDirector, llmBase, and test suite each reimplement | Three divergent implementations | 10a: `LLMConnector.extractContent()` |
+| NEW | No streaming abstraction — WebSocket streaming requires knowing `page.wss` internals | Cannot reuse across views | 10a: `LLMConnector.streamChat()` |
+| NEW | CardGame `chatManager.js` manually tracks conversation array client-side (separate from server history) | Diverges from server state | 10b: unified history |
+| NEW | SessionDirector (1444 lines) reimplements config management, response parsing, JSON repair | Large duplication surface | 10a: extract to shared |
+
+#### Duplication Audit
+
+The following patterns are duplicated across 3+ files:
+
+| Pattern | `chat.js` | `SessionDirector.js` | `llmBase.js` / `chatManager.js` | Shared Component |
+|---------|-----------|---------------------|--------------------------------|-----------------|
+| Config template clone + customize | `makeChat()` | `_ensureChatConfig()` | `ensureChatConfig()` | `LLMConnector.cloneConfig()` |
+| Prompt create-or-find | `makePrompt()` | `_ensurePromptConfig()` | `ensurePromptConfig()` | `LLMConnector.ensurePrompt()` |
+| Response content extraction | (none) | `_extractContent()` | `extractContent()` | `LLMConnector.extractContent()` |
+| JSON directive parsing | (none) | `_parseDirective()` + repair | `cleanJsonResponse()` | `LLMConnector.parseDirective()` |
+| History retrieval | (none — manual REST) | (none — stateless) | `currentConversation[]` | `LLMConnector.getHistory()` |
+| Error tracking | (none) | `consecutiveErrors` count | `lastError` field | `LLMConnector.errorState` |
+
+#### Object Association Audit
+
+Current mechanisms (to be replaced by 10.3 MCP):
+
+| Mechanism | Where Used | Type | Persistent? |
+|-----------|-----------|------|------------|
+| `page.context().contextObjects["chatConfig"]` | `dnd.js` → `chat.js` | In-memory route context | No |
+| `sessionStorage.setItem('magic8Context')` | `chat.js` → `Magic8App.js` | Session storage | Per-tab |
+| `page.member(container, member)` | `dnd.js` blender | DB membership | Yes |
+| `chatRequest.chatConfig` / `.promptConfig` | `ChatUtil.getCreateChatRequest()` | DB foreign ref | Yes |
+| Direct array push + `page.patchObject()` | `dnd.js` contact/address | DB field update | Yes |
+
+No generic "associate object X with conversation Y" API exists.
 
 #### Architecture
 
@@ -3117,11 +3163,26 @@ Extract shared concerns from `chat.js`, `Magic8App.js`, and `CardGameApp.js` int
 |-----------|--------------|---------|
 | `ChatMessageList` | `chat.js` message rendering | Renders message history with role-based styling, markdown, thought display |
 | `ChatInput` | `chat.js` input area | Text input with send/cancel, streaming state, character counter |
-| `ChatTokenRenderer` | `chat.js` image/audio token processing | Resolves `${image.*}` and `${audio.*}` tokens, handles caching |
+| `ChatTokenRenderer` | `chat.js` image/audio token processing | Resolves `${image.*}` and `${audio.*}` tokens, handles caching (OI-20) |
 | `CharacterBadge` | `chat.js` character portrait display | Displays character name + portrait for system/user characters |
-| `StreamStateIndicator` | `chat.js` pending/streaming flags | Shows loading, streaming, error states |
+| `StreamStateIndicator` | `chat.js` pending/streaming flags | Shows loading, streaming, error, policy violation states (OI-40) |
 | `ChatConfigPanel` | `chat.js` config selection | Chat/prompt config picker with template browser |
-| `LLMConnector` | Multiple views | Unified REST + WebSocket chat API (send, stream, cancel, history) |
+| `LLMConnector` | Multiple views | Unified REST + WebSocket chat API (see below) |
+
+**`LLMConnector` API** (replaces ad-hoc patterns across all views):
+
+```
+LLMConnector.ensurePrompt(name, system[])     — create-or-find prompt config
+LLMConnector.ensureConfig(name, template, overrides) — clone-and-customize chat config
+LLMConnector.createSession(name, chatCfg, promptCfg) — get/create chat request
+LLMConnector.chat(session, message)            — send message (REST, buffered)
+LLMConnector.streamChat(session, message, onChunk) — send message (WebSocket, streaming)
+LLMConnector.getHistory(session)               — retrieve message history
+LLMConnector.extractContent(response)          — extract last assistant message
+LLMConnector.parseDirective(content, options)  — parse JSON from LLM response (lenient)
+LLMConnector.deleteSession(session, force)     — clean up session + request
+LLMConnector.cancelStream()                    — cancel active stream
+```
 
 **New file:** `client/components/chat/` — shared component directory.
 
@@ -3135,6 +3196,7 @@ Replace the flat `chatCfg` state with a conversation-first UI:
 - **Multi-tab or split-pane** — View multiple conversations simultaneously (e.g., compare two prompt strategies).
 - **Conversation metadata** — Display policy evaluation status, autotuned prompt history, memory extraction state.
 - **Quick-create** — New conversation dialog with config/prompt template selection and character assignment.
+- **REST API revision** — Config endpoints now search by owner across all groups (OI-42 resolved). Add objectId-based lookup endpoints for direct addressing.
 
 **10.3 — Object Association via MCP**
 
@@ -3153,29 +3215,49 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 
 #### Implementation Items
 
-1. Create `client/components/chat/` directory with shared components extracted from `chat.js`
-2. Refactor `chat.js` to use shared components (preserve all existing functionality)
-3. Refactor `Magic8App.js` and `SessionDirector.js` to use `LLMConnector` from shared components
-4. Refactor `CardGameApp.js` LLM subsystems to use `LLMConnector`
-5. Implement conversation list sidebar with search/filter/grouping
-6. Implement conversation metadata display (policy status, autotuned prompts, memories)
-7. Define MCP tool schema for object association (attach/detach/list)
-8. Implement server-side MCP tool handlers for conversation context management
-9. Implement UX context panel with drag-and-drop object association
-10. Replace `sendToMagic8()` sessionStorage handoff with conversation ID reference
-11. Add UX tests for: shared components, conversation manager, MCP tools, cross-view handoff
+**10a — Common Components:**
+1. Create `client/components/chat/` directory with `LLMConnector.js` (unified API)
+2. Extract `ChatMessageList`, `ChatInput`, `ChatTokenRenderer`, `CharacterBadge`, `StreamStateIndicator`, `ChatConfigPanel` from `chat.js`
+3. Refactor `chat.js` to use shared components (preserve all existing functionality)
+4. Refactor `Magic8App.js` and `SessionDirector.js` to use `LLMConnector` (eliminates ~400 lines of duplicated config/response handling)
+5. Refactor `CardGameApp.js` / `llmBase.js` / `chatManager.js` to use `LLMConnector`
+6. Wire `policyEvent` WebSocket handler into `StreamStateIndicator` (OI-40)
 
-**Files created:** `client/components/chat/ChatMessageList.js`, `ChatInput.js`, `ChatTokenRenderer.js`, `CharacterBadge.js`, `StreamStateIndicator.js`, `ChatConfigPanel.js`, `LLMConnector.js`, `ConversationManager.js`, `ContextPanel.js`
-**Files modified:** `chat.js` (major refactor), `Magic8App.js`, `SessionDirector.js`, `CardGameApp.js`, `cardGame/ai/llmBase.js`, `dnd.js`, `pageClient.js`
-**Backend files:** MCP tool handler classes in `AccountManagerService7/`
+**10b — Conversation Manager:**
+7. Implement conversation list sidebar with search/filter/grouping
+8. Implement conversation metadata display (policy status, autotuned prompts, memories)
+9. Add REST endpoint for objectId-based config lookup: `/rest/chat/config/prompt/id/{objectId}` (OI-42 extension)
+10. Investigate and fix history message loss (OI-43: 2/3 messages found in UX test 73-74)
+11. Add `findOrCreateConfig` update-if-changed to avoid stale test configs (OI-24)
 
-**Risk factors:**
+**10c — MCP Integration:**
+12. Define MCP tool schema for object association (attach/detach/list)
+13. Implement server-side MCP tool handlers for conversation context management
+14. Implement UX context panel with drag-and-drop object association
+15. Replace `sendToMagic8()` sessionStorage handoff with conversation ID reference
+16. Add UX tests for: shared components, conversation manager, MCP tools, cross-view handoff
+
+**Files created:** `client/components/chat/LLMConnector.js`, `ChatMessageList.js`, `ChatInput.js`, `ChatTokenRenderer.js`, `CharacterBadge.js`, `StreamStateIndicator.js`, `ChatConfigPanel.js`, `ConversationManager.js`, `ContextPanel.js`
+**Files modified:** `chat.js` (major refactor), `Magic8App.js`, `SessionDirector.js`, `CardGameApp.js`, `cardGame/ai/llmBase.js`, `cardGame/ai/chatManager.js`, `dnd.js`, `pageClient.js`, `formDef.js`
+**Backend files:** MCP tool handler classes in `AccountManagerService7/`, `ChatService.java` (objectId endpoint), `ChatUtil.java` (group-agnostic search)
+
+#### Risk Factors
+
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | Large refactor scope across 3+ views | High | Phase into sub-increments: 10a (shared components), 10b (conversation manager), 10c (MCP integration) |
 | Breaking existing Magic8/CardGame workflows | Medium | Keep existing API contracts, add new components alongside old code, deprecate incrementally |
 | MCP integration complexity with existing `McpContextBuilder` | Medium | Start with server-side MCP tools, wire UX after backend is tested |
 | Performance impact of conversation list queries | Low | Paginate conversation list, lazy-load history and metadata |
+| SessionDirector.js (1444 lines) tightly coupled to Magic8 state | Medium | Extract LLM concerns only, leave biometric/directive logic in place |
+
+#### Recommendations
+
+1. **Start with `LLMConnector`** — This single component eliminates the most duplication and provides the foundation for all other Phase 10 work. Build and test it against the existing `chat.js` flow before touching other views.
+2. **Preserve `am7chat` as thin wrapper** — Keep `chat.js` backward-compatible by having it delegate to `LLMConnector`. This avoids breaking any existing code that references `am7chat.*`.
+3. **Extract, don't rewrite, SessionDirector** — The 1444-line `SessionDirector.js` has significant Magic8-specific logic (biometrics, directives, mood ring). Only extract the LLM interaction patterns (config management, response parsing, JSON repair); leave domain logic in place.
+4. **Defer MCP (10c) until 10a+10b are stable** — MCP integration touches the deepest architectural layer. Get shared components and conversation management working first.
+5. **UX test expansion** — Current test suite (63-85) covers config, prompt, chat, stream, history, prune, episode, analyze, narrate, policy. Phase 10 should add tests for: shared component rendering, conversation CRUD, multi-session management, cross-view handoff, MCP tool invocation. Suggested test range: 86-110.
 
 ### Phase 11: Memory System Hardening & Keyframe Refactor (Low risk, medium impact)
 
@@ -3202,8 +3284,8 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 | 6 — UX Test Suite | **COMPLETED** | Low | High | 63-81, 82-85 (browser) |
 | 7 — Always-Stream Backend | **COMPLETED** | Medium | Medium | 36-39 (all pass) |
 | 8 — LLM Config & ChatOptions Fix | **COMPLETED** | Low | High | 40-45 (all pass), 82-85 (browser) |
-| 9 — Policy-Based Response Regulation | **COMPLETED** | Higher | Medium | 46-62 (all pass), 81 (browser) |
-| 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | Not started | Medium | High | (no numbered tests yet) |
+| 9 — Policy-Based Response Regulation | **COMPLETED** | Higher | Medium | 46-62 (backend, all pass); 63-85 (browser: 47 pass, 2 fail, 6 warn) |
+| 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | Not started | Medium | High | 86-110 (planned) |
 | 11 — Memory Hardening & Keyframe Refactor | Not started | Low | Medium | (no numbered tests) |
 
 ### Next Phase Recommendation
@@ -3244,7 +3326,15 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
   - `TestResponsePolicy.java` (NEW): Backend tests 46-54, 48b, 52b, 61 — all synthetic (no LLM required). Tests timeout detection (null/empty/whitespace/normal), recursive loop detection (repeated blocks/clean/configurable), wrong character detection (dialogue/narrative/system-char-clean), refusal detection (multi-phrase/clean/strict), autotuner count query, sample policy JSON loading.
   - `llmTestSuite.js` (MODIFIED): Test 81 (`testPolicy`) expanded from Phase 9 placeholder to full implementation — policy field existence check, policy configuration validation, WebSocket handler verification, live policy evaluation test.
 
-- **Phase 10** (UX Chat Refactor) is the highest-impact remaining work. The current `chat.js` (1354 lines) is a monolith with no shared components across the three chat-enabled views (chat, magic8, cardGame). Conversation management is flat (no list, search, or grouping). Object associations rely on drag-and-drop blender + `sessionStorage` hacks. The MCP integration opportunity (leveraging existing `McpContextBuilder`) would replace duct-taped patterns with structured tool-based context management. Recommended sub-phasing: **10a** (extract shared components), **10b** (conversation manager), **10c** (MCP integration).
+- **Phase 10** (UX Chat Refactor) is the highest-impact remaining work. Design audit identified:
+  - **6 duplicated patterns** across `chat.js`, `SessionDirector.js` (1444 lines), and `llmBase.js`/`chatManager.js` — config template cloning, prompt create-or-find, response content extraction, JSON directive parsing, history retrieval, error tracking.
+  - **5 missing `chat.js` API methods** — `getHistory()`, `extractContent()`, `streamChat()`, `parseDirective()`, config clone helpers. Every consumer reimplements these (OI-46).
+  - **5 distinct object association mechanisms** — none generic, all type-specific. No "associate object with conversation" API exists (OI-49).
+  - **8 new open issues** (OI-42 through OI-49) identified during Phase 9 UX testing and design audit, of which 4 were resolved immediately (OI-42, OI-44, OI-45, and the `sendMessage` bug).
+  - **2 UX test failures** — history message loss (OI-43), needing investigation in 10b.
+  - **Recommended sub-phasing:** 10a (extract shared components + `LLMConnector`), 10b (conversation manager + REST API revision), 10c (MCP integration).
+
+- **Phase 9 UX test results:** 47 pass, 2 fail (history ordering + content match), 6 warn (pre-Phase 8 config caching, episode stages, episodeRule missing), 0 skip. The 2 failures are tracked in OI-43.
 
 - **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
 
@@ -3348,6 +3438,14 @@ All known open issues with their assigned resolution phase:
 | OI-39 | `WrongCharacterDetectionOperation` false positives — heuristic regex patterns may match in-character quoted dialogue where a character mentions the user character by name. Consider adding context-aware detection (e.g., only trigger when the response *starts* with the user character pattern) | Phase 9 implementation | Future improvement | P4 |
 | OI-40 | UX `policyEvent` handler not wired in `chat.js`/`SessionDirector.js` — WebSocket chirps `policyEvent` from server but no client-side handler displays it yet. UX test 81 validates handler registration but visual notification to the user is not implemented | Phase 9 implementation | Phase 10 (10a: shared StreamStateIndicator) | P3 |
 | OI-41 | `chatConfigModel.json` `analyzeModel` default was `dolphin-llama3` (stale), causing ChatAutotuner to use a non-deployed model. Fixed by removing the default — `analyzeModel` is now empty by default and falls back to `model`. Existing DB records with `analyzeModel=dolphin-llama3` may need migration | Phase 9 testing | Resolved (schema fix applied) | P4 |
+| OI-42 | ~~REST config endpoints (`/rest/chat/config/prompt/{name}`, `/rest/chat/config/chat/{name}`) only search within a single group path (default `~/Chat`). Configs in other groups required `?group=` parameter.~~ Fixed: `ChatUtil.getConfig()` now searches by owner+name across all groups when no group specified. `?group=` parameter still available for narrowing. Phase 10 should still add objectId-based lookup endpoint | Phase 9 UX testing | **Resolved** (group-agnostic search). Phase 10 for objectId endpoint | ~~P2~~ |
+| OI-43 | UX history test (73-74) intermittently finds only 2/3 sent messages. History returns 5 messages instead of expected 6. Possible message persistence timing issue or messageTrim interaction on the standard config variant | Phase 9 UX testing | Phase 10 (10b: investigate) | P3 |
+| OI-44 | ~~`formDef.js` calls `am7sd.fetchModels()` at module load before authentication, causing 403 on `/rest/olio/sdModels` on the login screen~~ Fixed: added `page.authenticated()` guard | Phase 9 UX testing | **Resolved** (auth guard) | ~~P2~~ |
+| OI-45 | ~~`llmTestSuite.js` Test 72 called `am7chat.sendMessage()` which doesn't exist in `chat.js` (only `chat()` is exported), causing test hang~~ Fixed: changed to `am7chat.chat()` | Phase 9 UX testing | **Resolved** | ~~P2~~ |
+| OI-46 | `chat.js` exports only 5 methods — no `getHistory()`, `extractContent()`, `streamChat()`, `parseDirective()`, or config clone helpers. Every consumer reimplements these patterns | Phase 10 design audit | Phase 10 (10a: `LLMConnector`) | P2 |
+| OI-47 | `SessionDirector.js` (1444 lines) reimplements config management (`_ensureChatConfig`, `_ensurePromptConfig`), response extraction (`_extractContent`), JSON directive parsing + repair, and error tracking — all duplicated from `chat.js` and `llmBase.js` patterns | Phase 10 design audit | Phase 10 (10a: extract to `LLMConnector`) | P2 |
+| OI-48 | `cardGame/ai/chatManager.js` manually tracks `currentConversation[]` array client-side, diverging from server-side history. Context preamble built from last 4 messages of local array, not server history | Phase 10 design audit | Phase 10 (10b: unified history via `LLMConnector.getHistory()`) | P3 |
+| OI-49 | No generic object association API — `dnd.js` blender hardcodes type-specific association logic (role membership, group membership, tag membership, chatConfig context routing). No programmatic API for associating arbitrary objects with conversations | Phase 10 design audit | Phase 10 (10c: MCP context binding) | P3 |
 
 ---
 

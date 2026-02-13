@@ -128,20 +128,20 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response getPromptConfig(@PathParam(FieldNames.FIELD_NAME) String name, @QueryParam("group") String group, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		String groupPath = (group != null && !group.isEmpty()) ? group : "~/Chat";
+		String groupPath = (group != null && !group.isEmpty()) ? group : null;
 		BaseRecord cfg = ChatUtil.getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, null, name, groupPath);
 		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
 	}
-	
 
-	
+
+
 	@RolesAllowed({"admin","user"})
 	@GET
 	@Path("/config/chat/{name:[\\.A-Za-z0-9%\\s]+}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response getChatConfig(@PathParam(FieldNames.FIELD_NAME) String name, @QueryParam("group") String group, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		String groupPath = (group != null && !group.isEmpty()) ? group : "~/Chat";
+		String groupPath = (group != null && !group.isEmpty()) ? group : null;
 		BaseRecord cfg = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, name, groupPath);
 		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
 	}

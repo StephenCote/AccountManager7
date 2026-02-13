@@ -1045,23 +1045,29 @@ public class ChatUtil {
 	}
 
 	public static BaseRecord getConfig(BaseRecord user, String modelName, String objectId, String name) {
-		return getConfig(user, modelName, objectId, name, "~/Chat");
+		return getConfig(user, modelName, objectId, name, null);
 	}
 
 	public static BaseRecord getConfig(BaseRecord user, String modelName, String objectId, String name, String groupPath) {
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		BaseRecord cfg = null;
-		if(dir != null) {
-			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-			if(name != null) {
-				q.field(FieldNames.FIELD_NAME, name);
+		Query q = QueryUtil.createQuery(modelName);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
+		if(groupPath != null && !groupPath.isEmpty()) {
+			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if(dir != null) {
+				q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			}
-			if(objectId != null) {
-				q.field(FieldNames.FIELD_OBJECT_ID, objectId);
-			}
-			q.planMost(true);
-			cfg = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		}
+		if(name != null) {
+			q.field(FieldNames.FIELD_NAME, name);
+		}
+		if(objectId != null) {
+			q.field(FieldNames.FIELD_OBJECT_ID, objectId);
+		}
+		q.setContextUser(user);
+		q.planMost(true);
+		cfg = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		return cfg;
 	}
 	
