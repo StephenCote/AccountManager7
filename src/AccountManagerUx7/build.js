@@ -31,6 +31,10 @@ const jsFiles = [
     'client/decorator.js',
     'client/chat.js',
 
+    // Shared Chat Components (Phase 10)
+    'client/components/chat/LLMConnector.js',
+    'client/components/chat/ChatTokenRenderer.js',
+
     // Shared Test Framework (Phase 6)
     'client/test/testFramework.js',
     'client/test/testRegistry.js',

@@ -18,17 +18,20 @@
 
     // ── Test Categories ───────────────────────────────────────────────
     const LLM_CATEGORIES = {
-        config:  { label: "Config",   icon: "settings" },
-        options: { label: "Options",  icon: "tune" },
-        prompt:  { label: "Prompt",   icon: "description" },
-        chat:    { label: "Chat",     icon: "chat" },
-        stream:  { label: "Stream",   icon: "stream" },
-        history: { label: "History",  icon: "history" },
-        prune:   { label: "Prune",    icon: "content_cut" },
-        episode: { label: "Episode",  icon: "movie" },
-        analyze: { label: "Analyze",  icon: "analytics" },
-        narrate: { label: "Narrate",  icon: "auto_stories" },
-        policy:  { label: "Policy",   icon: "policy" }
+        config:    { label: "Config",    icon: "settings" },
+        options:   { label: "Options",   icon: "tune" },
+        prompt:    { label: "Prompt",    icon: "description" },
+        chat:      { label: "Chat",      icon: "chat" },
+        stream:    { label: "Stream",    icon: "stream" },
+        history:   { label: "History",   icon: "history" },
+        prune:     { label: "Prune",     icon: "content_cut" },
+        episode:   { label: "Episode",   icon: "movie" },
+        analyze:   { label: "Analyze",   icon: "analytics" },
+        narrate:   { label: "Narrate",   icon: "auto_stories" },
+        policy:    { label: "Policy",    icon: "policy" },
+        connector: { label: "Connector", icon: "hub" },
+        token:     { label: "Tokens",    icon: "image" },
+        convmgr:   { label: "ConvMgr",   icon: "forum" }
     };
 
     // ── Suite State ───────────────────────────────────────────────────
@@ -110,7 +113,37 @@
     async function findOrCreateConfig(schema, testGroup, template, extraFields) {
         let existing = await findByName(schema, testGroup.id, template.name);
         if (existing) {
-            log("config", "Found existing: " + template.name, "info");
+            // OI-24: Update-if-changed — sync key fields from template
+            let needsPatch = false;
+            let syncFields = schema === "olio.llm.chatConfig"
+                ? ["serverUrl", "serviceType", "model", "stream", "prune", "messageTrim"]
+                : ["system"];
+            for (let i = 0; i < syncFields.length; i++) {
+                let f = syncFields[i];
+                if (template[f] !== undefined && JSON.stringify(existing[f]) !== JSON.stringify(template[f])) {
+                    existing[f] = template[f];
+                    needsPatch = true;
+                }
+            }
+            if (extraFields) {
+                for (let f in extraFields) {
+                    if (extraFields.hasOwnProperty(f) && JSON.stringify(existing[f]) !== JSON.stringify(extraFields[f])) {
+                        existing[f] = extraFields[f];
+                        needsPatch = true;
+                    }
+                }
+            }
+            if (needsPatch) {
+                try {
+                    delete existing.apiKey;
+                    await page.patchObject(existing);
+                    log("config", "Updated stale config (OI-24): " + template.name, "info");
+                } catch (e) {
+                    log("config", "Config update failed: " + e.message, "warn");
+                }
+            } else {
+                log("config", "Found existing (up to date): " + template.name, "info");
+            }
             return existing;
         }
 
@@ -1277,6 +1310,498 @@
         log("policy", "Phase 9 policy evaluation infrastructure is active", "info");
     }
 
+    // ── Tests 86-100: LLMConnector (Phase 10) ───────────────────────
+    async function testConnector(cats) {
+        if (!cats.includes("connector")) return;
+        TF.testState.currentTest = "Connector: LLMConnector unit + integration tests";
+        log("connector", "=== LLMConnector Tests (Phase 10a) ===");
+
+        // Test 86: Module availability
+        if (!window.LLMConnector) {
+            log("connector", "LLMConnector not loaded — check build.js order", "fail");
+            return;
+        }
+        let methods = ["findChatDir", "getOpenChatTemplate", "ensurePrompt", "ensureConfig",
+            "createSession", "chat", "streamChat", "cancelStream", "getHistory",
+            "extractContent", "parseDirective", "repairJson", "deleteSession",
+            "cloneConfig", "pruneTag", "pruneToMark", "pruneOther", "pruneOut", "pruneAll",
+            "onPolicyEvent", "handlePolicyEvent", "removePolicyEventHandler"];
+        let missing = methods.filter(function(m) { return typeof LLMConnector[m] !== "function"; });
+        if (missing.length === 0) {
+            log("connector", "All " + methods.length + " methods present", "pass");
+        } else {
+            log("connector", "Missing methods: " + missing.join(", "), "fail");
+        }
+        if (LLMConnector.errorState) {
+            log("connector", "errorState object present", "pass");
+        } else {
+            log("connector", "errorState missing", "fail");
+        }
+
+        // Test 87: findChatDir
+        try {
+            let chatDir = await LLMConnector.findChatDir();
+            log("connector", "findChatDir: " + (chatDir ? chatDir.path + "/" + chatDir.name : "null"), chatDir ? "pass" : "fail");
+        } catch (e) {
+            log("connector", "findChatDir error: " + e.message, "fail");
+        }
+
+        // Test 88: ensurePrompt create + update
+        let testPromptName = "LLM Test Connector Prompt - " + Date.now();
+        try {
+            let pc = await LLMConnector.ensurePrompt(testPromptName, ["Test system prompt line 1"], suiteState.testGroup);
+            log("connector", "ensurePrompt create: " + (pc ? pc.name : "null"), pc ? "pass" : "fail");
+            if (pc) {
+                let origId = pc.objectId;
+                // Call again with updated system
+                let pc2 = await LLMConnector.ensurePrompt(testPromptName, ["Updated system prompt"], suiteState.testGroup);
+                log("connector", "ensurePrompt update: same objectId=" + (pc2 && pc2.objectId === origId), pc2 && pc2.objectId === origId ? "pass" : "fail");
+                // Verify update via REST
+                try {
+                    let fetched = await m.request({
+                        method: 'GET',
+                        url: g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(testPromptName) + "?group=" + encodeURIComponent(suiteState.testGroup.path + "/" + suiteState.testGroup.name),
+                        withCredentials: true
+                    });
+                    let systemOk = fetched && fetched.system && fetched.system[0] === "Updated system prompt";
+                    log("connector", "OI-24: ensurePrompt update-if-changed verified via REST", systemOk ? "pass" : "warn");
+                } catch (e) {
+                    log("connector", "REST verification skipped: " + e.message, "info");
+                }
+                // Cleanup
+                try { await page.deleteObject("olio.llm.promptConfig", pc.objectId); } catch(e) {}
+            }
+        } catch (e) {
+            log("connector", "ensurePrompt error: " + e.message, "fail");
+        }
+
+        // Test 89: ensureConfig create + update-if-changed
+        let testCfgName = "LLM Test Connector Config - " + Date.now();
+        try {
+            let chatDir = await LLMConnector.findChatDir();
+            let template = await LLMConnector.getOpenChatTemplate(chatDir);
+            if (!template) {
+                log("connector", "Open Chat template not found — skipping ensureConfig test", "skip");
+            } else {
+                let cc = await LLMConnector.ensureConfig(testCfgName, template, { messageTrim: 8 }, suiteState.testGroup);
+                log("connector", "ensureConfig create: " + (cc ? cc.name : "null"), cc ? "pass" : "fail");
+                if (cc) {
+                    // Update with different override
+                    let cc2 = await LLMConnector.ensureConfig(testCfgName, template, { messageTrim: 99 }, suiteState.testGroup);
+                    log("connector", "ensureConfig update: messageTrim=" + (cc2 ? cc2.messageTrim : "?"), cc2 && cc2.messageTrim === 99 ? "pass" : "warn");
+                    // Cleanup
+                    try { await page.deleteObject("olio.llm.chatConfig", cc.objectId); } catch(e) {}
+                }
+            }
+        } catch (e) {
+            log("connector", "ensureConfig error: " + e.message, "fail");
+        }
+
+        // Test 90: extractContent — multiple response shapes
+        let shapes = [
+            { input: { messages: [{ role: "assistant", content: "hello" }] }, expected: "hello", label: "{messages}" },
+            { input: { messages: [{ role: "assistant", displayContent: "display", content: "raw" }] }, expected: "display", label: "{messages+displayContent}" },
+            { input: { message: "msg" }, expected: "msg", label: "{message}" },
+            { input: { content: "cnt" }, expected: "cnt", label: "{content}" },
+            { input: { choices: [{ message: { content: "choice" } }] }, expected: "choice", label: "{choices}" },
+            { input: "plain", expected: "plain", label: "string" },
+            { input: null, expected: null, label: "null" }
+        ];
+        let extractOk = true;
+        for (let i = 0; i < shapes.length; i++) {
+            let s = shapes[i];
+            let result = LLMConnector.extractContent(s.input);
+            if (result !== s.expected) {
+                log("connector", "extractContent " + s.label + ": got '" + result + "', expected '" + s.expected + "'", "fail");
+                extractOk = false;
+            }
+        }
+        if (extractOk) log("connector", "extractContent: all " + shapes.length + " shapes correct", "pass");
+
+        // Test 91: parseDirective — clean JSON
+        let pd1 = LLMConnector.parseDirective('{"action": "test", "value": 42}');
+        log("connector", "parseDirective clean JSON: " + (pd1 && pd1.action === "test" && pd1.value === 42), pd1 && pd1.action === "test" ? "pass" : "fail");
+
+        // Test 92: parseDirective — markdown fenced
+        let pd2 = LLMConnector.parseDirective('```json\n{"action": "fenced"}\n```');
+        log("connector", "parseDirective markdown fenced: " + (pd2 && pd2.action === "fenced"), pd2 && pd2.action === "fenced" ? "pass" : "fail");
+
+        // Test 93: parseDirective — lenient mode
+        let pd3 = LLMConnector.parseDirective('{action: "lenient", value: 42,}');
+        log("connector", "parseDirective lenient (unquoted keys, trailing comma): " + (pd3 && pd3.action === "lenient"), pd3 && pd3.action === "lenient" ? "pass" : "fail");
+
+        // Test 94: parseDirective — truncated JSON repair
+        let pd4 = LLMConnector.parseDirective('{"action": "truncated", "nested": {"key": "val');
+        log("connector", "parseDirective truncated repair: " + (pd4 ? "parsed" : "null"), pd4 ? "pass" : "warn");
+        if (pd4) logData("connector", "Repaired result", pd4);
+
+        // Test 95: repairJson — unbalanced braces
+        let rj1 = LLMConnector.repairJson('{"a": {"b": 1}');
+        let rjParsed = false;
+        try { JSON.parse(rj1); rjParsed = true; } catch(e) {}
+        log("connector", "repairJson unbalanced braces: parseable=" + rjParsed, rjParsed ? "pass" : "fail");
+
+        // Test 96: Content pruning
+        let pt1 = LLMConnector.pruneTag("Hello <think>internal thought</think> world", "think");
+        let pt1ok = pt1 === "Hello  world";
+        log("connector", "pruneTag: '" + pt1 + "' " + (pt1ok ? "correct" : "unexpected"), pt1ok ? "pass" : "fail");
+
+        let pt2 = LLMConnector.pruneToMark("Hello (Metrics: data)", "(Metrics");
+        let pt2ok = pt2 === "Hello ";
+        log("connector", "pruneToMark: '" + pt2 + "' " + (pt2ok ? "correct" : "unexpected"), pt2ok ? "pass" : "fail");
+
+        let pt3 = LLMConnector.pruneOther("Hello [interrupted] world");
+        let pt3ok = pt3 === "Hello  world";
+        log("connector", "pruneOther: '" + pt3 + "' " + (pt3ok ? "correct" : "unexpected"), pt3ok ? "pass" : "fail");
+
+        let pt4 = LLMConnector.pruneOut("Before --- CITATION text END CITATIONS --- After", "--- CITATION", "END CITATIONS ---");
+        let pt4ok = pt4 === "Before  After";
+        log("connector", "pruneOut: '" + pt4 + "' " + (pt4ok ? "correct" : "unexpected"), pt4ok ? "pass" : "fail");
+
+        // Test 97: cloneConfig
+        let cloneInput = { objectId: "abc", id: 123, urn: "urn:test", name: "Template", model: "llama3", messageTrim: 6 };
+        let cloned = LLMConnector.cloneConfig(cloneInput, { messageTrim: 10, model: "qwen3" });
+        let cloneOk = cloned && !cloned.objectId && !cloned.id && !cloned.urn && cloned.model === "qwen3" && cloned.messageTrim === 10 && cloned.name === "Template";
+        log("connector", "cloneConfig: overrides applied, identity stripped = " + cloneOk, cloneOk ? "pass" : "fail");
+
+        // Test 98: getHistory live (requires LLM)
+        let chatCfg = getVariant("standard");
+        let promptCfg = suiteState.promptConfig;
+        if (chatCfg && promptCfg) {
+            let histReq;
+            try {
+                histReq = await LLMConnector.createSession("LLM Connector History Test - " + Date.now(), chatCfg, promptCfg);
+                log("connector", "createSession: " + (histReq ? "ok" : "null"), histReq ? "pass" : "fail");
+            } catch (e) {
+                log("connector", "createSession failed: " + e.message, "fail");
+            }
+            if (histReq) {
+                try {
+                    let chatResp = await LLMConnector.chat(histReq, "Say exactly: CONNECTOR_TEST");
+                    let content = LLMConnector.extractContent(chatResp);
+                    log("connector", "chat response: " + (content ? content.length + " chars" : "empty"), content ? "pass" : "fail");
+
+                    let hist = await LLMConnector.getHistory(histReq);
+                    let msgCount = hist && hist.messages ? hist.messages.length : 0;
+                    log("connector", "getHistory: " + msgCount + " messages", msgCount >= 2 ? "pass" : "fail");
+                    logData("connector", "History", hist ? hist.messages : null);
+                } catch (e) {
+                    log("connector", "Live test error: " + e.message, "fail");
+                }
+                try { await LLMConnector.deleteSession(histReq, true); } catch(e) {}
+            }
+        } else {
+            log("connector", "Live tests skipped — configs missing", "skip");
+        }
+
+        // Test 99: streamChat (requires WebSocket)
+        if (page.wss && chatCfg && promptCfg) {
+            let streamCfg = getVariant("streaming");
+            if (streamCfg) {
+                let streamReq;
+                try {
+                    streamReq = await LLMConnector.createSession("LLM Connector Stream Test - " + Date.now(), streamCfg, promptCfg);
+                } catch (e) {
+                    log("connector", "Stream session create failed: " + e.message, "fail");
+                }
+                if (streamReq) {
+                    try {
+                        let chunks = [];
+                        let completed = false;
+                        let streamErr = null;
+                        let started = false;
+
+                        LLMConnector.streamChat(streamReq, "Say exactly: STREAM_CONNECTOR_OK", {
+                            onchatstart: function() { started = true; },
+                            onchatupdate: function(id, msg) { chunks.push(msg); },
+                            onchatcomplete: function() { completed = true; },
+                            onchaterror: function(id, msg) { streamErr = msg; }
+                        });
+
+                        let timeout = 30000, waited = 0;
+                        while (!completed && !streamErr && waited < timeout) {
+                            await new Promise(function(r) { setTimeout(r, 200); });
+                            waited += 200;
+                        }
+
+                        if (streamErr) {
+                            log("connector", "streamChat error: " + streamErr, "fail");
+                        } else if (!completed) {
+                            log("connector", "streamChat timeout after " + timeout + "ms (" + chunks.length + " chunks)", "fail");
+                        } else {
+                            log("connector", "streamChat: started=" + started + ", chunks=" + chunks.length + ", completed=" + completed, "pass");
+                            logData("connector", "Streamed content", chunks.join(""));
+                        }
+                    } catch (e) {
+                        log("connector", "streamChat error: " + e.message, "fail");
+                    }
+                    try { await LLMConnector.deleteSession(streamReq, true); } catch(e) {}
+                }
+            } else {
+                log("connector", "Streaming variant not available — streamChat skipped", "skip");
+            }
+        } else {
+            log("connector", "WebSocket or configs unavailable — streamChat skipped", "skip");
+        }
+
+        // Test 100: am7chat delegation (OI-46 verification)
+        let delegationMethods = ["getHistory", "extractContent", "streamChat", "parseDirective", "cloneConfig"];
+        let delegationOk = true;
+        for (let i = 0; i < delegationMethods.length; i++) {
+            if (typeof am7chat[delegationMethods[i]] !== "function") {
+                log("connector", "am7chat." + delegationMethods[i] + " missing", "fail");
+                delegationOk = false;
+            }
+        }
+        if (delegationOk) {
+            log("connector", "am7chat has all 5 Phase 10 exports (OI-46)", "pass");
+            // Quick functional check
+            let dcResult = am7chat.extractContent({ messages: [{ role: "assistant", content: "delegation_test" }] });
+            log("connector", "am7chat.extractContent delegation: " + (dcResult === "delegation_test"), dcResult === "delegation_test" ? "pass" : "fail");
+        }
+    }
+
+    // ── Tests 101-104: ChatTokenRenderer (Phase 10) ──────────────────
+    async function testTokenRenderer(cats) {
+        if (!cats.includes("token")) return;
+        TF.testState.currentTest = "Tokens: ChatTokenRenderer tests";
+        log("token", "=== ChatTokenRenderer Tests (Phase 10a, OI-20) ===");
+
+        // Test 101: Module availability
+        if (!window.ChatTokenRenderer) {
+            log("token", "ChatTokenRenderer not loaded — check build.js order", "fail");
+            return;
+        }
+        let methods = ["processImageTokens", "processAudioTokens", "pruneForDisplay", "parseImageTokens", "parseAudioTokens"];
+        let missing = methods.filter(function(m) { return typeof ChatTokenRenderer[m] !== "function"; });
+        if (missing.length === 0) {
+            log("token", "All " + methods.length + " methods present", "pass");
+        } else {
+            log("token", "Missing methods: " + missing.join(", "), "fail");
+        }
+
+        // Test 102: pruneForDisplay
+        let testContent = "<think>internal thoughts</think>Hello world (Metrics: data here)";
+        let pruned1 = ChatTokenRenderer.pruneForDisplay(testContent, true);
+        let ok1 = pruned1.indexOf("think") === -1 && pruned1.indexOf("Hello world") !== -1 && pruned1.indexOf("Metrics") === -1;
+        log("token", "pruneForDisplay hideThoughts=true: thoughts removed, text preserved = " + ok1, ok1 ? "pass" : "fail");
+
+        let pruned2 = ChatTokenRenderer.pruneForDisplay(testContent, false);
+        let ok2 = pruned2.indexOf("think") !== -1 && pruned2.indexOf("Metrics") === -1;
+        log("token", "pruneForDisplay hideThoughts=false: thoughts kept, metrics removed = " + ok2, ok2 ? "pass" : "fail");
+
+        // Test 102b: pruneForDisplay with citations
+        let citContent = "Response text --- CITATION source END CITATIONS --- trailing";
+        let pruned3 = ChatTokenRenderer.pruneForDisplay(citContent, false);
+        let ok3 = pruned3.indexOf("CITATION") === -1 && pruned3.indexOf("Response text") !== -1;
+        log("token", "pruneForDisplay citations removed = " + ok3, ok3 ? "pass" : "fail");
+
+        // Test 103: Image token parsing
+        if (window.am7imageTokens) {
+            let imgTokens = ChatTokenRenderer.parseImageTokens("Here is ${image.portrait} and ${image.landscape}");
+            log("token", "parseImageTokens: found " + imgTokens.length + " tokens", imgTokens.length === 2 ? "pass" : "warn");
+            if (imgTokens.length > 0) logData("token", "Image tokens", imgTokens);
+        } else {
+            log("token", "am7imageTokens not available — image token test skipped", "info");
+        }
+
+        // Test 104: Audio token parsing
+        if (window.am7audioTokens) {
+            let audTokens = ChatTokenRenderer.parseAudioTokens("Listen to ${audio.Hello world} here");
+            log("token", "parseAudioTokens: found " + audTokens.length + " tokens", audTokens.length >= 1 ? "pass" : "warn");
+            if (audTokens.length > 0) logData("token", "Audio tokens", audTokens);
+        } else {
+            log("token", "am7audioTokens not available — audio token test skipped", "info");
+        }
+    }
+
+    // ── Tests 105-110: Conversation Manager (Phase 10b) ──────────────
+    async function testConversationManager(cats) {
+        if (!cats.includes("convmgr")) return;
+        TF.testState.currentTest = "ConvMgr: conversation management tests";
+        log("convmgr", "=== Conversation Manager Tests (Phase 10b) ===");
+
+        let chatCfg = getVariant("standard");
+        let promptCfg = suiteState.promptConfig;
+
+        // Test 105: findOrCreateConfig update-if-changed (OI-24 live)
+        if (suiteState.testGroup) {
+            let updateTestName = "LLM OI24 Update Test - " + Date.now();
+            try {
+                // Create with messageTrim=6
+                let cfg1 = await findOrCreateConfig("olio.llm.chatConfig", suiteState.testGroup,
+                    { name: updateTestName, model: chatCfg ? chatCfg.model : "llama3", serverUrl: chatCfg ? chatCfg.serverUrl : "http://localhost:11434", serviceType: chatCfg ? chatCfg.serviceType : "OLLAMA", messageTrim: 6 });
+                if (!cfg1) {
+                    log("convmgr", "OI-24: Could not create test config", "fail");
+                } else {
+                    // Update with messageTrim=10
+                    let cfg2 = await findOrCreateConfig("olio.llm.chatConfig", suiteState.testGroup,
+                        { name: updateTestName, model: chatCfg ? chatCfg.model : "llama3", serverUrl: chatCfg ? chatCfg.serverUrl : "http://localhost:11434", serviceType: chatCfg ? chatCfg.serviceType : "OLLAMA", messageTrim: 10 });
+                    let updated = cfg2 && cfg2.messageTrim === 10;
+                    log("convmgr", "OI-24: findOrCreateConfig update-if-changed messageTrim 6→10: " + updated, updated ? "pass" : "fail");
+                    // Cleanup
+                    try { await page.deleteObject("olio.llm.chatConfig", cfg1.objectId); } catch(e) {}
+                }
+            } catch (e) {
+                log("convmgr", "OI-24 test error: " + e.message, "fail");
+            }
+        } else {
+            log("convmgr", "OI-24 test skipped — no test group", "skip");
+        }
+
+        // Test 106: History message count after 3 exchanges with delays (OI-43 investigation)
+        if (chatCfg && promptCfg) {
+            let histReq;
+            try {
+                histReq = await am7chat.getChatRequest("LLM OI43 History Test - " + Date.now(), chatCfg, promptCfg);
+                log("convmgr", "OI-43: Test session created", histReq ? "pass" : "fail");
+            } catch (e) {
+                log("convmgr", "OI-43: Session create failed: " + e.message, "fail");
+            }
+            if (histReq) {
+                let sentMessages = ["OI43 apple", "OI43 banana", "OI43 cherry"];
+                for (let i = 0; i < sentMessages.length; i++) {
+                    try {
+                        await am7chat.chat(histReq, sentMessages[i]);
+                        log("convmgr", "OI-43: Sent " + (i + 1) + "/" + sentMessages.length, "info");
+                        // OI-43: Add 300ms delay between messages to rule out persistence timing
+                        if (i < sentMessages.length - 1) {
+                            await new Promise(function(r) { setTimeout(r, 300); });
+                        }
+                    } catch (e) {
+                        log("convmgr", "OI-43: Send failed: " + e.message, "fail");
+                    }
+                }
+
+                // Retrieve history
+                try {
+                    let hist = await LLMConnector.getHistory(histReq);
+                    let msgs = hist ? hist.messages : [];
+                    let userMsgs = msgs.filter(function(m) { return m.role === "user"; });
+                    log("convmgr", "OI-43: Total messages=" + msgs.length + ", user messages=" + userMsgs.length, "info");
+
+                    // Count how many of our sent messages appear
+                    let found = 0;
+                    for (let i = 0; i < sentMessages.length; i++) {
+                        for (let j = 0; j < msgs.length; j++) {
+                            if ((msgs[j].content || "").indexOf(sentMessages[i]) !== -1) { found++; break; }
+                        }
+                    }
+                    let allFound = found === sentMessages.length;
+                    log("convmgr", "OI-43: Found " + found + "/" + sentMessages.length + " sent messages in history", allFound ? "pass" : "fail");
+                    if (!allFound) {
+                        log("convmgr", "OI-43: messageTrim=" + (chatCfg.messageTrim || "unset") + ", prune=" + chatCfg.prune + ", assist=" + chatCfg.assist, "info");
+                        logData("convmgr", "OI-43: Full history dump", msgs);
+                    }
+                } catch (e) {
+                    log("convmgr", "OI-43: History retrieval failed: " + e.message, "fail");
+                }
+                try { await am7chat.deleteChat(histReq, true); } catch(e) {}
+            }
+        } else {
+            log("convmgr", "OI-43 test skipped — configs missing", "skip");
+        }
+
+        // Test 107: History with assist=true exclusion
+        if (chatCfg && promptCfg && chatCfg.assist) {
+            let assistReq;
+            try {
+                assistReq = await am7chat.getChatRequest("LLM Assist Test - " + Date.now(), chatCfg, promptCfg);
+            } catch (e) {
+                log("convmgr", "Assist test session failed: " + e.message, "fail");
+            }
+            if (assistReq) {
+                try {
+                    await am7chat.chat(assistReq, "ASSIST_CHECK_MSG");
+                    let hist = await LLMConnector.getHistory(assistReq);
+                    let msgs = hist ? hist.messages : [];
+                    let userMsgs = msgs.filter(function(m) { return m.role === "user"; });
+                    let firstIsOurs = userMsgs.length > 0 && (userMsgs[0].content || "").indexOf("ASSIST_CHECK_MSG") !== -1;
+                    log("convmgr", "Assist exclusion: first user msg is ours = " + firstIsOurs, firstIsOurs ? "pass" : "fail");
+                } catch (e) {
+                    log("convmgr", "Assist test error: " + e.message, "fail");
+                }
+                try { await am7chat.deleteChat(assistReq, true); } catch(e) {}
+            }
+        } else {
+            log("convmgr", "Assist test skipped (assist=" + (chatCfg ? chatCfg.assist : "?") + ")", "info");
+        }
+
+        // Test 108: objectId-based config REST endpoint
+        if (chatCfg) {
+            try {
+                let resp = await m.request({
+                    method: 'GET',
+                    url: g_application_path + "/rest/chat/config/chat/id/" + chatCfg.objectId,
+                    withCredentials: true
+                });
+                let hasName = resp && resp.name;
+                log("convmgr", "objectId config endpoint (chat): " + (hasName ? resp.name : "no name"), hasName ? "pass" : "fail");
+            } catch (e) {
+                if (e.code === 404) {
+                    log("convmgr", "objectId config endpoint not deployed yet (404) — Phase 10 REST pending", "warn");
+                } else {
+                    log("convmgr", "objectId endpoint error: " + (e.code || e.message), "warn");
+                }
+            }
+        }
+        if (promptCfg) {
+            try {
+                let resp = await m.request({
+                    method: 'GET',
+                    url: g_application_path + "/rest/chat/config/prompt/id/" + promptCfg.objectId,
+                    withCredentials: true
+                });
+                let hasName = resp && resp.name;
+                log("convmgr", "objectId config endpoint (prompt): " + (hasName ? resp.name : "no name"), hasName ? "pass" : "fail");
+            } catch (e) {
+                if (e.code === 404) {
+                    log("convmgr", "objectId prompt endpoint not deployed yet (404) — Phase 10 REST pending", "warn");
+                } else {
+                    log("convmgr", "objectId prompt endpoint error: " + (e.code || e.message), "warn");
+                }
+            }
+        }
+
+        // Test 109: policyEvent handler wiring (OI-40)
+        if (window.LLMConnector) {
+            let handlerCalled = false;
+            let handlerData = null;
+            function testHandler(data) { handlerCalled = true; handlerData = data; }
+            LLMConnector.onPolicyEvent(testHandler);
+            LLMConnector.handlePolicyEvent({ type: "violation", data: "test_violation" });
+            log("convmgr", "OI-40: policyEvent handler called = " + handlerCalled, handlerCalled ? "pass" : "fail");
+            if (handlerData) {
+                log("convmgr", "OI-40: policyEvent data.type = " + handlerData.type, handlerData.type === "violation" ? "pass" : "fail");
+            }
+            LLMConnector.removePolicyEventHandler(testHandler);
+            // Verify removal
+            handlerCalled = false;
+            LLMConnector.handlePolicyEvent({ type: "test2" });
+            log("convmgr", "OI-40: handler removed, not called on second fire = " + !handlerCalled, !handlerCalled ? "pass" : "fail");
+        } else {
+            log("convmgr", "OI-40 test skipped — LLMConnector not loaded", "skip");
+        }
+
+        // Test 110: Error state tracking
+        if (window.LLMConnector && LLMConnector.errorState) {
+            LLMConnector.errorState.reset();
+            LLMConnector.errorState.record("test error 1");
+            let e1 = LLMConnector.errorState.lastError === "test error 1" && LLMConnector.errorState.consecutiveErrors === 1;
+            log("convmgr", "errorState record: lastError correct, count=1: " + e1, e1 ? "pass" : "fail");
+
+            LLMConnector.errorState.record("test error 2");
+            let e2 = LLMConnector.errorState.consecutiveErrors === 2;
+            log("convmgr", "errorState record #2: count=2: " + e2, e2 ? "pass" : "fail");
+
+            LLMConnector.errorState.reset();
+            let e3 = LLMConnector.errorState.consecutiveErrors === 0 && LLMConnector.errorState.lastError === null;
+            log("convmgr", "errorState reset: count=0, lastError=null: " + e3, e3 ? "pass" : "fail");
+        } else {
+            log("convmgr", "errorState test skipped — not available", "skip");
+        }
+    }
+
     // ── Main Suite Runner ─────────────────────────────────────────────
     async function runLLMTests(selectedCategories) {
         let cats = selectedCategories;
@@ -1301,6 +1826,9 @@
         await testAnalyze(cats);
         await testNarrate(cats);
         await testPolicy(cats);
+        await testConnector(cats);
+        await testTokenRenderer(cats);
+        await testConversationManager(cats);
     }
 
     // ── Register with TestFramework ───────────────────────────────────

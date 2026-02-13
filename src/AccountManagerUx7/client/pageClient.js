@@ -452,6 +452,14 @@
                     page.chainStream["on" + eventType](eventData);
                 }
             }
+            else if(c1 === "policyEvent"){
+                // Phase 10 (OI-40): Route policy violation events to LLMConnector
+                if(window.LLMConnector){
+                    let evtData = null;
+                    try { evtData = JSON.parse(msg.chirps[2]); } catch(e) { evtData = msg.chirps[2]; }
+                    LLMConnector.handlePolicyEvent({ type: msg.chirps[1], data: evtData });
+                }
+            }
             else if(c1.match(/^game\.action\./)){
                 // Game action messages (start, progress, complete, error, interrupt, cancel)
                 if(page.gameStream || window.gameStream){

@@ -92,6 +92,20 @@
 
     let profile = false;
 
+    // Phase 10 (OI-40): Register policyEvent display handler
+    if (window.LLMConnector) {
+        LLMConnector.onPolicyEvent(function(evt) {
+            let msg = "Policy violation detected";
+            if (evt && evt.data) {
+                try {
+                    let details = typeof evt.data === "string" ? JSON.parse(evt.data) : evt.data;
+                    if (details.details) msg = details.details;
+                } catch(e) {}
+            }
+            page.toast("warn", msg, 5000);
+        });
+    }
+
     // Image token state
     let resolvingImages = {};
     let showTagSelector = false;
@@ -596,13 +610,11 @@
       if (!inst) {
         return Promise.resolve(null);
       }
-
-      let chatReq = {
+      // Phase 10: Delegate to LLMConnector
+      return LLMConnector.getHistory({
         schema: inst.model.name,
-        objectId: inst.api.objectId(),
-        uid: page.uid()
-      };
-      return m.request({ method: 'POST', url: g_application_path + "/rest/chat/history", withCredentials: true, body: chatReq });
+        objectId: inst.api.objectId()
+      });
     }
 
     function newChatConfig() {
@@ -1049,57 +1061,12 @@
       return ret;
     }
 
-    function pruneAll(cnt) {
-      cnt = pruneToMark(cnt, "<|reserved_special_token");
-      cnt = pruneTag(cnt, "think");
-      cnt = pruneTag(cnt, "thought");
-      cnt = pruneToMark(cnt, "(Metrics");
-      cnt = pruneToMark(cnt, "(Reminder");
-      cnt = pruneToMark(cnt, "(KeyFrame");
-      cnt = pruneOther(cnt);
-      return cnt;
-    }
-
-    function pruneOther(cnt) {
-      cnt = cnt.replace(/\[interrupted\]/g, "");
-      return cnt;
-    }
-
-    function pruneToMark(cnt, mark) {
-      let idx = cnt.indexOf(mark);
-      if (idx > -1) {
-        cnt = cnt.substring(0, idx);
-      }
-      return cnt;
-    }
-
-    function pruneOut(cnt, start, end){
-      let idx1 = cnt.indexOf(start);
-      let idx2 = cnt.indexOf(end);
-      if(idx1 > -1 && idx2 > -1 && idx2 > idx1){
-        cnt = cnt.substring(0, idx1) + cnt.substring(idx2 + end.length, cnt.length);  
-      }
-      return cnt;
-    }
-
-    function pruneTag(cnt, tag) {
-      let tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
-      let maxCheck = 20;
-      let check = 0;
-      while (tdx1 > -1) {
-        if (check++ >= maxCheck) {
-          console.error("Break on loop!");
-          break;
-        }
-
-        let tdx2 = cnt.toLowerCase().indexOf("</" + tag + ">");
-        if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
-          cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + tag.length + 3, cnt.length);
-        }
-        tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
-      }
-      return cnt;
-    }
+    // Phase 10: Prune functions delegate to LLMConnector shared implementations
+    function pruneAll(cnt) { return LLMConnector.pruneAll(cnt); }
+    function pruneOther(cnt) { return LLMConnector.pruneOther(cnt); }
+    function pruneToMark(cnt, mark) { return LLMConnector.pruneToMark(cnt, mark); }
+    function pruneOut(cnt, start, end) { return LLMConnector.pruneOut(cnt, start, end); }
+    function pruneTag(cnt, tag) { return LLMConnector.pruneTag(cnt, tag); }
 
     function getChatBottomMenuView() {
       // if(!showFooter) return "";

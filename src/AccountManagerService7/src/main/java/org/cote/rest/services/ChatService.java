@@ -147,6 +147,26 @@ public class ChatService {
 	}
 	
 	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/config/prompt/id/{objectId:[A-Fa-f0-9\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getPromptConfigById(@PathParam("objectId") String objectId, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord cfg = ChatUtil.getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, objectId, null);
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/config/chat/id/{objectId:[A-Fa-f0-9\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getChatConfigById(@PathParam("objectId") String objectId, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord cfg = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, objectId, null);
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+	}
+
+	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/new")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)

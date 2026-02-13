@@ -142,11 +142,19 @@
     }
 
     let am7chat = {
+        // Existing API (backward compatible)
         makePrompt,
         makeChat,
         getChatRequest,
         deleteChat,
-        chat
+        chat,
+
+        // Phase 10 exports (OI-46: delegates to LLMConnector)
+        getHistory: function(session) { return LLMConnector.getHistory(session); },
+        extractContent: function(response) { return LLMConnector.extractContent(response); },
+        streamChat: function(session, message, callbacks) { return LLMConnector.streamChat(session, message, callbacks); },
+        parseDirective: function(content, options) { return LLMConnector.parseDirective(content, options); },
+        cloneConfig: function(template, overrides) { return LLMConnector.cloneConfig(template, overrides); }
     };
 
     if (typeof module != "undefined") {

@@ -60,43 +60,41 @@
             try {
                 this._setStatus('initializing');
 
-                // 1. Find ~/Chat directory
-                const chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
+                // 1. Find ~/Chat directory (Phase 10: LLMConnector)
+                const chatDir = await LLMConnector.findChatDir();
                 if (!chatDir) {
                     throw new Error("Chat directory ~/Chat not found");
                 }
 
-                // 2. Find "Open Chat" config template
-                const chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0);
-                const templateCfg = chatConfigs.find(c => c.name === "Open Chat");
-                if (!templateCfg) {
-                    throw new Error("Chat config 'Open Chat' not found in ~/Chat");
-                }
-
-                // 3. Load full template for LLM settings
-                const fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
+                // 2-3. Find and load "Open Chat" template (Phase 10: LLMConnector)
+                const fullTemplate = await LLMConnector.getOpenChatTemplate(chatDir);
                 if (!fullTemplate) {
                     throw new Error("Failed to load 'Open Chat' template");
                 }
 
-                // 4. Create or update prompt config with current command
+                // 4. Create or update prompt config (Phase 10: LLMConnector.ensurePrompt)
                 const systemPrompt = await this._buildSystemPrompt(command);
-                this.promptConfig = await this._ensurePromptConfig(chatDir, systemPrompt);
+                const promptName = this.sessionName
+                    ? "Magic8 Director - " + this.sessionName
+                    : "Magic8 Director";
+                this.promptConfig = await LLMConnector.ensurePrompt(promptName, systemPrompt, chatDir);
                 if (!this.promptConfig) {
                     throw new Error("Failed to create prompt config");
                 }
 
-                // 5. Find or create chat config cloned from template
-                this.chatConfig = await this._ensureChatConfig(chatDir, fullTemplate);
+                // 5. Find or create chat config (Phase 10: LLMConnector.ensureConfig)
+                this.chatConfig = await LLMConnector.ensureConfig(
+                    "Magic8 Director", fullTemplate, { messageTrim: 4 }, chatDir
+                );
                 if (!this.chatConfig) {
                     throw new Error("Failed to create chat config");
                 }
 
-                // 6. Create chat request
+                // 6. Create chat request (Phase 10: LLMConnector.createSession)
                 const requestName = this.sessionName
                     ? 'Magic8 Director - ' + this.sessionName
                     : 'Magic8 Director';
-                this.chatRequest = await am7chat.getChatRequest(requestName, this.chatConfig, this.promptConfig);
+                this.chatRequest = await LLMConnector.createSession(requestName, this.chatConfig, this.promptConfig);
                 if (!this.chatRequest) {
                     throw new Error("Failed to create chat request");
                 }
@@ -111,212 +109,9 @@
             }
         }
 
-        /**
-         * Find or create the prompt config, updating system lines if it already exists
-         * @param {Object} chatDir - ~/Chat group object
-         * @param {Array<string>} systemPrompt - System prompt lines
-         * @returns {Object|null} Prompt config object
-         * @private
-         */
-        async _ensurePromptConfig(chatDir, systemPrompt) {
-            const promptName = this.sessionName
-                ? "Magic8 Director - " + this.sessionName
-                : "Magic8 Director";
-            let q = am7view.viewQuery(am7model.newInstance("olio.llm.promptConfig"));
-            q.field("groupId", chatDir.id);
-            q.field("name", promptName);
-            q.cache(false);
-            let qr = await page.search(q);
-
-            if (qr && qr.results && qr.results.length > 0) {
-                // Prompt exists - update system lines to reflect current command
-                let existing = qr.results[0];
-                existing.system = systemPrompt;
-                await page.patchObject(existing);
-                console.log('SessionDirector: Updated prompt config system lines');
-                return existing;
-            }
-
-            // Create new prompt config
-            let icfg = am7model.newInstance("olio.llm.promptConfig");
-            icfg.api.groupId(chatDir.id);
-            icfg.api.groupPath(chatDir.path);
-            icfg.api.name(promptName);
-            icfg.entity.system = systemPrompt;
-            await page.createObject(icfg.entity);
-
-            // Re-fetch to get the created object
-            qr = await page.search(q);
-            return (qr && qr.results && qr.results.length > 0) ? qr.results[0] : null;
-        }
-
-        /**
-         * Find or create a diagnostic-specific prompt config.
-         * Uses separate "Magic8 Diagnostics" name to avoid modifying live session prompt.
-         * @param {Object} chatDir - ~/Chat group object
-         * @param {Array<string>} systemPrompt - System prompt lines
-         * @returns {Object|null} Prompt config object
-         * @private
-         */
-        async _ensureDiagnosticPromptConfig(chatDir, systemPrompt) {
-            const promptName = "Magic8 Diagnostics";
-            let q = am7view.viewQuery(am7model.newInstance("olio.llm.promptConfig"));
-            q.field("groupId", chatDir.id);
-            q.field("name", promptName);
-            q.cache(false);
-            let qr = await page.search(q);
-
-            if (qr && qr.results && qr.results.length > 0) {
-                let existing = qr.results[0];
-                existing.system = systemPrompt;
-                await page.patchObject(existing);
-                return existing;
-            }
-
-            let icfg = am7model.newInstance("olio.llm.promptConfig");
-            icfg.api.groupId(chatDir.id);
-            icfg.api.groupPath(chatDir.path);
-            icfg.api.name(promptName);
-            icfg.entity.system = systemPrompt;
-            await page.createObject(icfg.entity);
-            qr = await page.search(q);
-            return (qr && qr.results && qr.results.length > 0) ? qr.results[0] : null;
-        }
-
-        /**
-         * Find or create chat config from template
-         * @param {Object} chatDir - ~/Chat group object
-         * @param {Object} fullTemplate - Full "Open Chat" template object
-         * @returns {Object|null} Chat config object
-         * @private
-         */
-        async _ensureChatConfig(chatDir, fullTemplate) {
-            const chatConfigName = "Magic8 Director";
-            let q = am7view.viewQuery("olio.llm.chatConfig");
-            q.field("groupId", chatDir.id);
-            q.field("name", chatConfigName);
-            q.cache(false);
-            let qr = await page.search(q);
-
-            if (qr && qr.results && qr.results.length > 0) {
-                let chatCfg = qr.results[0];
-                // Sync LLM settings from template
-                if (fullTemplate && (
-                    chatCfg.serverUrl !== fullTemplate.serverUrl ||
-                    chatCfg.serviceType !== fullTemplate.serviceType ||
-                    chatCfg.model !== fullTemplate.model
-                )) {
-                    chatCfg.serverUrl = fullTemplate.serverUrl;
-                    chatCfg.serviceType = fullTemplate.serviceType;
-                    chatCfg.model = fullTemplate.model;
-                    chatCfg.apiVersion = fullTemplate.apiVersion;
-                    // Remove apiKey before patching - EncryptFieldProvider errors on null values
-                    delete chatCfg.apiKey;
-                    await page.patchObject(chatCfg);
-                    console.log('SessionDirector: Updated chat config LLM settings');
-                }
-                return chatCfg;
-            }
-
-            // Build new chatConfig from template
-            const t = fullTemplate;
-            const newChatCfg = {
-                schema: "olio.llm.chatConfig",
-                groupId: chatDir.id,
-                groupPath: chatDir.path,
-                name: chatConfigName,
-                model: t.model,
-                serverUrl: t.serverUrl,
-                serviceType: t.serviceType,
-                apiVersion: t.apiVersion,
-                rating: t.rating,
-                setting: t.setting,
-                assist: t.assist,
-                stream: t.stream,
-                prune: t.prune,
-                useNLP: t.useNLP,
-                messageTrim: 4,
-                remindEvery: t.remindEvery,
-                keyframeEvery: t.keyframeEvery
-            };
-            if (t.chatOptions) {
-                const co = { schema: "olio.llm.chatOptions" };
-                const optKeys = ["max_tokens", "min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p", "frequency_penalty", "presence_penalty", "seed"];
-                for (const k of optKeys) {
-                    if (t.chatOptions[k] !== undefined) co[k] = t.chatOptions[k];
-                }
-                newChatCfg.chatOptions = co;
-            }
-            return await page.createObject(newChatCfg);
-        }
-
-        /**
-         * Find or create a diagnostic-specific chat config from template.
-         * Uses separate "Magic8 Diagnostics" name with higher temperature for test diversity.
-         * @param {Object} chatDir - ~/Chat group object
-         * @param {Object} fullTemplate - Full "Open Chat" template object
-         * @returns {Object|null} Chat config object
-         * @private
-         */
-        async _ensureDiagnosticChatConfig(chatDir, fullTemplate) {
-            const chatConfigName = "Magic8 Diagnostics";
-            let q = am7view.viewQuery("olio.llm.chatConfig");
-            q.field("groupId", chatDir.id);
-            q.field("name", chatConfigName);
-            q.cache(false);
-            let qr = await page.search(q);
-
-            if (qr && qr.results && qr.results.length > 0) {
-                let chatCfg = qr.results[0];
-                // Always sync LLM connection from template
-                chatCfg.serverUrl = fullTemplate.serverUrl;
-                chatCfg.serviceType = fullTemplate.serviceType;
-                chatCfg.model = fullTemplate.model;
-                chatCfg.apiVersion = fullTemplate.apiVersion;
-                // Remove apiKey before patching - EncryptFieldProvider errors on null values
-                delete chatCfg.apiKey;
-                // Preserve existing chatOptions schema metadata, only update temperature
-                if (chatCfg.chatOptions) {
-                    chatCfg.chatOptions.temperature = 0.8;
-                } else {
-                    chatCfg.chatOptions = { schema: "olio.llm.chatOptions", temperature: 0.8 };
-                }
-                await page.patchObject(chatCfg);
-                return chatCfg;
-            }
-
-            const t = fullTemplate;
-            const newChatCfg = {
-                schema: "olio.llm.chatConfig",
-                groupId: chatDir.id,
-                groupPath: chatDir.path,
-                name: chatConfigName,
-                model: t.model,
-                serverUrl: t.serverUrl,
-                serviceType: t.serviceType,
-                apiVersion: t.apiVersion,
-                rating: t.rating,
-                setting: t.setting,
-                assist: t.assist,
-                stream: t.stream,
-                prune: t.prune,
-                useNLP: t.useNLP,
-                messageTrim: 4,
-                remindEvery: t.remindEvery,
-                keyframeEvery: t.keyframeEvery
-            };
-            // Copy chatOptions from template but set higher temperature for test diversity
-            const co = { schema: "olio.llm.chatOptions" };
-            if (t.chatOptions) {
-                const optKeys = ["max_tokens", "min_p", "num_ctx", "num_gpu", "repeat_last_n", "repeat_penalty", "temperature", "top_k", "top_p", "typical_p", "frequency_penalty", "presence_penalty", "seed"];
-                for (const k of optKeys) {
-                    if (t.chatOptions[k] !== undefined) co[k] = t.chatOptions[k];
-                }
-            }
-            co.temperature = 0.8;
-            newChatCfg.chatOptions = co;
-            return await page.createObject(newChatCfg);
-        }
+        // Phase 10 (OI-47): _ensurePromptConfig, _ensureDiagnosticPromptConfig,
+        // _ensureChatConfig, and _ensureDiagnosticChatConfig removed.
+        // Now delegated to LLMConnector.ensurePrompt() and LLMConnector.ensureConfig().
 
         /**
          * Load the prompt template JSON from the static file.
@@ -726,42 +521,25 @@
         }
 
         /**
-         * Extract assistant content from LLM response
+         * Extract assistant content from LLM response.
+         * Phase 10 (OI-47): Delegates to LLMConnector.extractContent()
          * @param {Object} response - Chat response object
          * @returns {string|null} Content string
          * @private
          */
         _extractContent(response) {
-            if (!response) return null;
-
-            // Handle different response shapes
-            if (typeof response === 'string') return response;
-
-            // olio.llm.chatResponse — extract last assistant message content
-            if (response.messages && Array.isArray(response.messages)) {
-                for (let i = response.messages.length - 1; i >= 0; i--) {
-                    if (response.messages[i].role === 'assistant' && response.messages[i].content) {
-                        return response.messages[i].content;
-                    }
-                }
+            let content = LLMConnector.extractContent(response);
+            // Fallback: if LLMConnector returns null but we have a response object, stringify it
+            if (content === null && response && typeof response === 'object') {
+                return JSON.stringify(response);
             }
-
-            if (response.message) return response.message;
-            if (response.content) return response.content;
-            if (response.choices && response.choices[0]) {
-                const choice = response.choices[0];
-                return choice.message?.content || choice.content || choice.text;
-            }
-            if (response.results && response.results.length > 0) {
-                return response.results[0].content || response.results[0].message;
-            }
-
-            return JSON.stringify(response);
+            return content;
         }
 
         /**
-         * Parse a JSON directive from LLM response content
-         * Handles markdown fences, extraneous text, and validation
+         * Parse a JSON directive from LLM response content.
+         * Phase 10 (OI-47): JSON parsing delegated to LLMConnector.parseDirective().
+         * Domain-specific directive field validation remains here.
          * @param {string} content - Raw LLM response
          * @returns {Object|null} Parsed directive or null
          * @private
@@ -769,95 +547,20 @@
         _parseDirective(content) {
             if (!content) return null;
 
-            let jsonStr = content.trim();
-
-            // Strip markdown code fences
-            jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-
-            // Find the first { to last } block
-            const firstBrace = jsonStr.indexOf('{');
-            if (firstBrace === -1) {
+            // Phase 10: Delegate JSON parsing to LLMConnector
+            let directive = LLMConnector.parseDirective(content);
+            if (!directive) {
                 console.warn('SessionDirector: No JSON object found in response');
                 return null;
             }
 
-            const lastBrace = jsonStr.lastIndexOf('}');
-            if (lastBrace !== -1 && lastBrace > firstBrace) {
-                jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
-            } else {
-                jsonStr = jsonStr.substring(firstBrace);
-            }
-
-            // Repair unbalanced braces/brackets (truncated LLM responses)
-            jsonStr = this._repairTruncatedJson(jsonStr);
-
-            // Try strict JSON first, then lenient JS-object parsing
-            let directive;
+            // Domain-specific directive field validation (Magic8-specific)
             try {
-                directive = JSON.parse(jsonStr);
-            } catch (strictErr) {
-                // Local LLMs often return JS-like objects: unquoted keys, single-quoted strings, trailing commas
-                try {
-                    let fixed = jsonStr;
-
-                    // Step 0: Strip JS-style comments
-                    fixed = fixed.replace(/\/\/[^\n]*/g, '');
-                    fixed = fixed.replace(/\/\*[\s\S]*?\*\//g, '');
-
-                    // Step 1: Protect existing double-quoted strings from regex modification
-                    const preserved = [];
-                    fixed = fixed.replace(/"(?:[^"\\]|\\.)*"/g, (match) => {
-                        preserved.push(match);
-                        return '"__P' + (preserved.length - 1) + '__"';
-                    });
-
-                    // Step 2: Quote unquoted keys (word followed by colon, after { , or [)
-                    fixed = fixed.replace(/([{,\[]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":');
-
-                    // Step 2.5: Quote bare identifier values (word after colon, not true/false/null)
-                    fixed = fixed.replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*([,}\]])/g, (match, val, term) => {
-                        if (val === 'true' || val === 'false' || val === 'null') return match;
-                        return ': "' + val + '"' + term;
-                    });
-                    // Also handle bare identifiers inside arrays: [word, word]
-                    fixed = fixed.replace(/([[,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=[,\]])/g, (match, prefix, val) => {
-                        if (val === 'true' || val === 'false' || val === 'null') return match;
-                        return prefix + '"' + val + '"';
-                    });
-
-                    // Step 3: Convert single-quoted strings to double-quoted
-                    fixed = fixed.replace(/'([^']*?)'/g, '"$1"');
-
-                    // Step 4: Remove trailing commas before } or ]
-                    fixed = fixed.replace(/,\s*([}\]])/g, '$1');
-
-                    // Step 5: Remove leading commas after { or [
-                    fixed = fixed.replace(/([{\[]\s*),/g, '$1');
-
-                    // Step 6: Restore preserved double-quoted strings
-                    fixed = fixed.replace(/"__P(\d+)__"/g, (_, i) => preserved[parseInt(i)]);
-
-                    // Step 7: Repair any remaining unbalanced braces
-                    fixed = this._repairTruncatedJson(fixed);
-
-                    directive = JSON.parse(fixed);
-                    console.log('SessionDirector: Parsed directive using lenient JS-object mode');
-                } catch (lenientErr) {
-                    console.warn('SessionDirector: Failed to parse directive (strict & lenient):', strictErr.message);
-                    return null;
-                }
-            }
-
-            try {
-
-                // Validate expected fields - ignore unknown
                 const valid = {};
 
                 if (directive.audio && typeof directive.audio === 'object') {
                     valid.audio = {};
-                    // Named preset
                     if (typeof directive.audio.preset === 'string') valid.audio.preset = directive.audio.preset;
-                    // Named band with optional transitions
                     const validBands = ['delta', 'theta', 'alphaTheta', 'alpha', 'beta', 'gamma'];
                     if (typeof directive.audio.band === 'string' && validBands.includes(directive.audio.band)) {
                         valid.audio.band = directive.audio.band;
@@ -875,11 +578,9 @@
                         valid.audio.thirdTransition = directive.audio.thirdTransition;
                     }
                     if (typeof directive.audio.baseFreq === 'number') valid.audio.baseFreq = directive.audio.baseFreq;
-                    // Legacy raw Hz sweep (backwards compatible)
                     if (typeof directive.audio.sweepStart === 'number') valid.audio.sweepStart = directive.audio.sweepStart;
                     if (typeof directive.audio.sweepTrough === 'number') valid.audio.sweepTrough = directive.audio.sweepTrough;
                     if (typeof directive.audio.sweepEnd === 'number') valid.audio.sweepEnd = directive.audio.sweepEnd;
-                    // Isochronic
                     if (typeof directive.audio.isochronicEnabled === 'boolean') valid.audio.isochronicEnabled = directive.audio.isochronicEnabled;
                     if (typeof directive.audio.isochronicRate === 'number') valid.audio.isochronicRate = directive.audio.isochronicRate;
                     if (typeof directive.audio.isochronicBand === 'string' && validBands.includes(directive.audio.isochronicBand)) {
@@ -911,13 +612,11 @@
                     if (typeof directive.generateImage.imageAction === 'string') valid.generateImage.imageAction = directive.generateImage.imageAction;
                     if (typeof directive.generateImage.denoisingStrength === 'number') valid.generateImage.denoisingStrength = directive.generateImage.denoisingStrength;
                     if (typeof directive.generateImage.cfg === 'number') valid.generateImage.cfg = directive.generateImage.cfg;
-                    // Tags as "tag1+tag2" string or ["tag1","tag2"] array
                     if (typeof directive.generateImage.tags === 'string') {
                         valid.generateImage.tags = directive.generateImage.tags.split('+').map(t => t.trim()).filter(t => t);
                     } else if (Array.isArray(directive.generateImage.tags)) {
                         valid.generateImage.tags = directive.generateImage.tags.filter(t => typeof t === 'string');
                     }
-                    // Only keep if at least one field was set
                     if (Object.keys(valid.generateImage).length === 0) delete valid.generateImage;
                 }
 
@@ -943,7 +642,6 @@
                     valid.progressPct = Math.max(0, Math.min(100, Math.round(directive.progressPct)));
                 }
 
-                // Validate suggestMood
                 if (directive.suggestMood && typeof directive.suggestMood === 'object') {
                     const validEmotions = ['neutral', 'happy', 'sad', 'angry', 'fear', 'surprise', 'disgust'];
                     const validGenders = ['Man', 'Woman'];
@@ -960,7 +658,6 @@
                     if (Object.keys(valid.suggestMood).length === 0) delete valid.suggestMood;
                 }
 
-                // Validate askUser
                 if (directive.askUser && typeof directive.askUser === 'object') {
                     if (typeof directive.askUser.question === 'string' && directive.askUser.question.trim().length > 0) {
                         valid.askUser = {
@@ -971,52 +668,12 @@
 
                 return valid;
             } catch (err) {
-                console.warn('SessionDirector: Failed to parse JSON directive:', err.message);
+                console.warn('SessionDirector: Failed to validate directive fields:', err.message);
                 return null;
             }
         }
 
-        /**
-         * Repair truncated JSON by closing unbalanced braces/brackets and
-         * trimming any trailing incomplete key-value pair
-         * @param {string} json - Potentially truncated JSON string
-         * @returns {string} Repaired JSON string
-         * @private
-         */
-        _repairTruncatedJson(json) {
-            // Remove trailing incomplete value (after last comma or colon outside strings)
-            json = json.replace(/,\s*[a-zA-Z_"'][^{}[\]]*$/, '');
-            json = json.replace(/:\s*$/, ': null');
-            // Remove naked trailing comma (truncated mid-object/array)
-            json = json.replace(/,\s*$/, '');
-
-            let openBraces = 0, openBrackets = 0;
-            let inString = false, escape = false, stringChar = '';
-            for (const ch of json) {
-                if (escape) { escape = false; continue; }
-                if (ch === '\\') { escape = true; continue; }
-                if (!inString && (ch === '"' || ch === "'")) { inString = true; stringChar = ch; continue; }
-                if (inString && ch === stringChar) { inString = false; continue; }
-                if (inString) continue;
-                if (ch === '{') openBraces++;
-                else if (ch === '}') openBraces--;
-                else if (ch === '[') openBrackets++;
-                else if (ch === ']') openBrackets--;
-            }
-
-            // Close unclosed strings (if truncated mid-string)
-            if (inString) json += stringChar;
-
-            if (openBrackets > 0 || openBraces > 0) {
-                for (let i = 0; i < openBrackets; i++) json += ']';
-                for (let i = 0; i < openBraces; i++) json += '}';
-                // Clean up trailing commas before the newly added closing braces/brackets
-                json = json.replace(/,\s*([}\]])/g, '$1');
-                console.log('SessionDirector: Repaired truncated JSON (added ' + openBraces + ' braces, ' + openBrackets + ' brackets)');
-            }
-
-            return json;
-        }
+        // Phase 10 (OI-47): _repairTruncatedJson removed — now LLMConnector.repairJson()
 
         /**
          * Verify that a directive was applied correctly by comparing against post-application state
@@ -1112,10 +769,10 @@
 
             // === INFRASTRUCTURE TESTS ===
 
-            // Test 1: ~/Chat directory
+            // Test 1: ~/Chat directory (Phase 10: LLMConnector)
             let chatDir;
             try {
-                chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
+                chatDir = await LLMConnector.findChatDir();
                 if (chatDir && chatDir.objectId) {
                     log('Find ~/Chat directory', true, chatDir.objectId);
                 } else {
@@ -1127,16 +784,16 @@
                 return results;
             }
 
-            // Test 2: "Open Chat" template
-            let templateCfg, fullTemplate;
+            // Test 2-3: "Open Chat" template (Phase 10: LLMConnector)
+            let fullTemplate;
             try {
-                const chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0);
-                templateCfg = chatConfigs.find(c => c.name === "Open Chat");
-                if (templateCfg) {
-                    log('Find "Open Chat" template', true, templateCfg.objectId);
+                fullTemplate = await LLMConnector.getOpenChatTemplate(chatDir);
+                if (fullTemplate && fullTemplate.serverUrl) {
+                    log('Find "Open Chat" template', true, fullTemplate.objectId || 'loaded');
+                    log('Load template details', true,
+                        `model=${fullTemplate.model}, service=${fullTemplate.serviceType}, server=${fullTemplate.serverUrl}`);
                 } else {
-                    const names = chatConfigs.map(c => c.name).join(', ');
-                    log('Find "Open Chat" template', false, 'Available: ' + (names || 'none'));
+                    log('Find "Open Chat" template', false, 'Not found or missing serverUrl');
                     return results;
                 }
             } catch (err) {
@@ -1144,26 +801,11 @@
                 return results;
             }
 
-            // Test 3: Load full template
-            try {
-                fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
-                if (fullTemplate && fullTemplate.serverUrl) {
-                    log('Load template details', true,
-                        `model=${fullTemplate.model}, service=${fullTemplate.serviceType}, server=${fullTemplate.serverUrl}`);
-                } else {
-                    log('Load template details', false, 'Template loaded but missing serverUrl');
-                    return results;
-                }
-            } catch (err) {
-                log('Load template details', false, err.message);
-                return results;
-            }
-
             // Test 4: Diagnostic prompt config (separate from live session)
             let promptConfig;
             try {
                 const systemPrompt = await this._buildSystemPrompt(testCommand);
-                promptConfig = await this._ensureDiagnosticPromptConfig(chatDir, systemPrompt);
+                promptConfig = await LLMConnector.ensurePrompt("Magic8 Diagnostics", systemPrompt, chatDir);
                 if (promptConfig && promptConfig.objectId) {
                     log('Diagnostic prompt config', true,
                         `objectId=${promptConfig.objectId}, system lines=${promptConfig.system?.length || '?'}`);
@@ -1179,7 +821,10 @@
             // Test 5: Diagnostic chat config (separate, temperature=0.8)
             let chatConfig;
             try {
-                chatConfig = await this._ensureDiagnosticChatConfig(chatDir, fullTemplate);
+                chatConfig = await LLMConnector.ensureConfig(
+                    "Magic8 Diagnostics", fullTemplate,
+                    { messageTrim: 4, chatOptions: { temperature: 0.8 } }, chatDir
+                );
                 if (chatConfig && chatConfig.objectId) {
                     const temp = chatConfig.chatOptions?.temperature;
                     log('Diagnostic chat config', true,
@@ -1196,7 +841,7 @@
             // Test 6: Diagnostic chat request
             let chatRequest;
             try {
-                chatRequest = await am7chat.getChatRequest("Magic8 Diagnostics", chatConfig, promptConfig);
+                chatRequest = await LLMConnector.createSession("Magic8 Diagnostics", chatConfig, promptConfig);
                 if (chatRequest) {
                     log('Diagnostic chat request', true,
                         `objectId=${chatRequest.objectId || 'inline'}`);
