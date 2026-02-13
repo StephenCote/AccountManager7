@@ -54,8 +54,6 @@ public class ChatAutotuner {
 			if (model == null || model.isEmpty()) {
 				model = resolvedConfig.get("model");
 			}
-
-			/// Make the analysis LLM call
 			String analysisResponse = callAnalysisLLM(user, resolvedConfig, model, analysisPrompt);
 			if (analysisResponse == null || analysisResponse.trim().isEmpty()) {
 				logger.warn("ChatAutotuner: Analysis LLM returned empty response");

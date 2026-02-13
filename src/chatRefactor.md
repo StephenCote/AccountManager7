@@ -2671,7 +2671,7 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 
    **Phase dependency annotations**: Tests for unimplemented phases include `// PHASE DEP:` code comments and runtime log headers:
    - ~~Stream tests: `[Phase 7 pending: Always-Stream refactor]`~~ — **Removed (Phase 7 complete)**
-   - Prune tests: `[Phase 10 pending: Keyframe refactor]`
+   - Prune tests: `[Phase 11 pending: Keyframe refactor]`
    - ~~Episode tests: `[Phase 7 pending: transition execution]`~~ — **Removed (Phase 7 complete)**
    - Policy tests: `[Phase 9 pending: evaluation not implemented]`
 
@@ -2695,7 +2695,7 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 - **OI-23: CardGame shared state coupling** — The refactored `testMode.js` shares `TF.testState` with other suites. Running CardGame tests via the shared test view clears LLM test results and vice versa. Each suite run resets the shared state. This is expected behavior for sequential suite execution.
 - **OI-24: findOrCreateConfig caching** — `findOrCreateConfig()` finds existing objects by name and skips creation. If templates change (e.g., new episodeRule, new image/audio tokens, new episode stages), existing server-side objects must be manually deleted before re-running the suite to pick up changes.
 - **OI-25: Episode transition execution not testable** — Test 78 validates `episodeRule` config presence on promptConfig but cannot test actual `#NEXT EPISODE#` / `#OUT OF EPISODE#` detection and handling, which is server-side. Full episode transition testing requires Phase 7 (Always-Stream) completion.
-- **OI-26: Keyframe detection heuristic** — Test 76 checks for `[MCP:KeyFrame` or `(KeyFrame:` text patterns in message history. False negatives possible if keyframe format changes. Will need update after Phase 10 (keyframe refactor).
+- **OI-26: Keyframe detection heuristic** — Test 76 checks for `[MCP:KeyFrame` or `(KeyFrame:` text patterns in message history. False negatives possible if keyframe format changes. Will need update after Phase 11 (keyframe refactor).
 
 **Skipped / deferred features:**
 - **Config picker UI** — Original spec called for chatConfig/promptConfig dropdown pickers. Replaced by auto-setup system that creates configs from templates. No manual selection needed.
@@ -3093,7 +3093,91 @@ Tests 46-56 are unit-testable with synthetic responses (no LLM server required).
 | Enhanced stop `future.cancel(true)` may not interrupt HttpClient | Medium | Test with actual Ollama hang scenario; fall back to connection close if cancel insufficient |
 | Recursive loop detection false positives on legitimate repeated content (e.g., poetry, lists) | Low | Configurable window size and threshold via policy fact parameters; conservative defaults (50 chars, 3x) |
 
-### Phase 10: Memory System Hardening & Keyframe Refactor (Low risk, medium impact)
+### Phase 10: UX Chat Refactor — Common Components, Conversation Management, MCP (Medium risk, high impact)
+
+**Goal:** Unify the chat.js view with embeddable views (magic8, cardGame) via common components, redesign conversation management for multi-conversation workflows, and replace the ad-hoc chatInfo/blender object association pattern with MCP-based context binding.
+
+#### Problem Statement
+
+The current chat UX has three structural deficits:
+
+1. **No shared components** — `chat.js` (1354 lines), `Magic8App.js`, and `CardGameApp.js` each implement their own LLM interaction patterns (REST chat, WebSocket streaming, polling loops) with no reusable components. Common concerns like message rendering, token processing (image/audio), character display, and streaming state management are duplicated or divergent.
+
+2. **Poor conversation management** — `chat.js` manages conversations as flat state (`chatCfg.history`) with no multi-conversation UI. Switching sessions requires `pickSession()` with no conversation list, search, or metadata display. Users cannot see, compare, or organize multiple conversations.
+
+3. **Duct-taped object association** — Chat configs, prompt configs, characters, and other objects are associated via `page.context().contextObjects["chatConfig"]` set by the drag-and-drop blender (`dnd.js`), with `sendToMagic8()` using `sessionStorage` for cross-view handoff. This makes it difficult to discover, attach, or manage object associations within a conversation.
+
+#### Architecture
+
+**10.1 — Common Chat Components**
+
+Extract shared concerns from `chat.js`, `Magic8App.js`, and `CardGameApp.js` into reusable Mithril components:
+
+| Component | Extracts From | Purpose |
+|-----------|--------------|---------|
+| `ChatMessageList` | `chat.js` message rendering | Renders message history with role-based styling, markdown, thought display |
+| `ChatInput` | `chat.js` input area | Text input with send/cancel, streaming state, character counter |
+| `ChatTokenRenderer` | `chat.js` image/audio token processing | Resolves `${image.*}` and `${audio.*}` tokens, handles caching |
+| `CharacterBadge` | `chat.js` character portrait display | Displays character name + portrait for system/user characters |
+| `StreamStateIndicator` | `chat.js` pending/streaming flags | Shows loading, streaming, error states |
+| `ChatConfigPanel` | `chat.js` config selection | Chat/prompt config picker with template browser |
+| `LLMConnector` | Multiple views | Unified REST + WebSocket chat API (send, stream, cancel, history) |
+
+**New file:** `client/components/chat/` — shared component directory.
+
+**10.2 — Conversation Manager**
+
+Replace the flat `chatCfg` state with a conversation-first UI:
+
+- **Conversation list sidebar** — Shows all chat sessions for the user with name, last message preview, timestamp, associated characters, and config metadata.
+- **Conversation search/filter** — Filter by character, config, date range, or content.
+- **Conversation grouping** — Group by chatConfig, universe, or custom tags.
+- **Multi-tab or split-pane** — View multiple conversations simultaneously (e.g., compare two prompt strategies).
+- **Conversation metadata** — Display policy evaluation status, autotuned prompt history, memory extraction state.
+- **Quick-create** — New conversation dialog with config/prompt template selection and character assignment.
+
+**10.3 — Object Association via MCP**
+
+Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) tool definitions:
+
+- **Context binding tools** — Define MCP tools that allow the LLM (or user) to attach objects to a conversation context:
+  - `attachChatConfig(configId)` — Bind a chatConfig to the active conversation
+  - `attachPromptConfig(promptId)` — Bind a promptConfig
+  - `attachCharacter(characterId, role)` — Bind a character as system or user role
+  - `attachEpisode(episodeId)` — Bind narrative episodes
+  - `listAttachments()` — Show current conversation's bound objects
+  - `detach(objectId)` — Remove an association
+- **Context panel** — UI sidebar showing all objects currently associated with the conversation, with drag-and-drop to add/remove.
+- **Cross-view handoff** — Replace `sessionStorage.setItem('magic8Context', ...)` with a structured handoff via conversation ID reference. Magic8 and CardGame load context from the conversation's MCP-managed attachments.
+- **Server-side MCP integration** — Leverage the existing `McpContextBuilder` infrastructure to expose conversation context as MCP resources/tools.
+
+#### Implementation Items
+
+1. Create `client/components/chat/` directory with shared components extracted from `chat.js`
+2. Refactor `chat.js` to use shared components (preserve all existing functionality)
+3. Refactor `Magic8App.js` and `SessionDirector.js` to use `LLMConnector` from shared components
+4. Refactor `CardGameApp.js` LLM subsystems to use `LLMConnector`
+5. Implement conversation list sidebar with search/filter/grouping
+6. Implement conversation metadata display (policy status, autotuned prompts, memories)
+7. Define MCP tool schema for object association (attach/detach/list)
+8. Implement server-side MCP tool handlers for conversation context management
+9. Implement UX context panel with drag-and-drop object association
+10. Replace `sendToMagic8()` sessionStorage handoff with conversation ID reference
+11. Add UX tests for: shared components, conversation manager, MCP tools, cross-view handoff
+
+**Files created:** `client/components/chat/ChatMessageList.js`, `ChatInput.js`, `ChatTokenRenderer.js`, `CharacterBadge.js`, `StreamStateIndicator.js`, `ChatConfigPanel.js`, `LLMConnector.js`, `ConversationManager.js`, `ContextPanel.js`
+**Files modified:** `chat.js` (major refactor), `Magic8App.js`, `SessionDirector.js`, `CardGameApp.js`, `cardGame/ai/llmBase.js`, `dnd.js`, `pageClient.js`
+**Backend files:** MCP tool handler classes in `AccountManagerService7/`
+
+**Risk factors:**
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Large refactor scope across 3+ views | High | Phase into sub-increments: 10a (shared components), 10b (conversation manager), 10c (MCP integration) |
+| Breaking existing Magic8/CardGame workflows | Medium | Keep existing API contracts, add new components alongside old code, deprecate incrementally |
+| MCP integration complexity with existing `McpContextBuilder` | Medium | Start with server-side MCP tools, wire UX after backend is tested |
+| Performance impact of conversation list queries | Low | Paginate conversation list, lazy-load history and metadata |
+
+### Phase 11: Memory System Hardening & Keyframe Refactor (Low risk, medium impact)
 
 **Goal:** Complete memory system gaps, refactor keyframe/memory overlap, and relocate tests.
 
@@ -3118,12 +3202,13 @@ Tests 46-56 are unit-testable with synthetic responses (no LLM server required).
 | 6 — UX Test Suite | **COMPLETED** | Low | High | 63-81, 82-85 (browser) |
 | 7 — Always-Stream Backend | **COMPLETED** | Medium | Medium | 36-39 (all pass) |
 | 8 — LLM Config & ChatOptions Fix | **COMPLETED** | Low | High | 40-45 (all pass), 82-85 (browser) |
-| 9 — Policy-Based Response Regulation | **COMPLETED** | Higher | Medium | 46-54 (all pass), 81 (browser) |
-| 10 — Memory Hardening & Keyframe Refactor | Not started | Low | Medium | (no numbered tests) |
+| 9 — Policy-Based Response Regulation | **COMPLETED** | Higher | Medium | 46-62 (all pass), 81 (browser) |
+| 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | Not started | Medium | High | (no numbered tests yet) |
+| 11 — Memory Hardening & Keyframe Refactor | Not started | Low | Medium | (no numbered tests) |
 
 ### Next Phase Recommendation
 
-**Recommended next: Phase 1 (remainder)** or **Phase 10 (Memory Hardening)**.
+**Recommended next: Phase 10 (UX Chat Refactor)**.
 
 **Rationale:**
 
@@ -3159,11 +3244,13 @@ Tests 46-56 are unit-testable with synthetic responses (no LLM server required).
   - `TestResponsePolicy.java` (NEW): Backend tests 46-54, 48b, 52b, 61 — all synthetic (no LLM required). Tests timeout detection (null/empty/whitespace/normal), recursive loop detection (repeated blocks/clean/configurable), wrong character detection (dialogue/narrative/system-char-clean), refusal detection (multi-phrase/clean/strict), autotuner count query, sample policy JSON loading.
   - `llmTestSuite.js` (MODIFIED): Test 81 (`testPolicy`) expanded from Phase 9 placeholder to full implementation — policy field existence check, policy configuration validation, WebSocket handler verification, live policy evaluation test.
 
+- **Phase 10** (UX Chat Refactor) is the highest-impact remaining work. The current `chat.js` (1354 lines) is a monolith with no shared components across the three chat-enabled views (chat, magic8, cardGame). Conversation management is flat (no list, search, or grouping). Object associations rely on drag-and-drop blender + `sessionStorage` hacks. The MCP integration opportunity (leveraging existing `McpContextBuilder`) would replace duct-taped patterns with structured tool-based context management. Recommended sub-phasing: **10a** (extract shared components), **10b** (conversation manager), **10c** (MCP integration).
+
 - **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
 
-- **Phase 10** (Memory Hardening & Keyframe Refactor) has no phase dependencies and can proceed at any time.
+- **Phase 11** (Memory Hardening & Keyframe Refactor) has no phase dependencies and can proceed at any time.
 
-**Suggested order:** 1 (remainder) → 10
+**Suggested order:** 10a → 10b → 10c → 1 (remainder) → 11
 
 ---
 
@@ -3206,7 +3293,7 @@ Keyframes are **not redundant** but **need refactoring** to eliminate duplicatio
 
 **Refactor:**
 - Consolidate counting/filtering: Replace separate `countBackTo("(KeyFrame:")` and `countBackTo("(Reminder:")` with a unified `countBackToMcp(String uriFragment)` method
-- Deprecate old `(KeyFrame:` text format — require MCP format only (Phase 10 item 4)
+- Deprecate old `(KeyFrame:` text format — require MCP format only (Phase 11 item 4)
 - Consider reducing keyframe content in message stream to a short summary, with full analysis stored only in the memory system
 
 **Future consideration (not currently planned):**
@@ -3220,14 +3307,14 @@ All known open issues with their assigned resolution phase:
 
 | # | Issue | Source | Assigned Phase | Priority |
 |---|-------|--------|---------------|----------|
-| OI-1 | `personModel` field not populated by `MemoryUtil.createMemory()` or `Chat.persistKeyframeAsMemory()` | Phase 2-3 known issues | Phase 10 (item 1) | P3 |
+| OI-1 | `personModel` field not populated by `MemoryUtil.createMemory()` or `Chat.persistKeyframeAsMemory()` | Phase 2-3 known issues | Phase 11 (item 1) | P3 |
 | OI-2 | ~~`MEMORY_RELATIONSHIP`, `MEMORY_FACTS`, `MEMORY_LAST_SESSION`, `MEMORY_COUNT` always empty/zero~~ | Phase 2-3 known issues | ~~Phase 4 (item 8)~~ **RESOLVED** | ~~P2~~ |
-| OI-15 | `${nlp.command}` pipeline ordering: Stage 6 replaces before Stage 7 can reintroduce via dynamic rules | Phase 4 implementation | Phase 10 | P3 |
+| OI-15 | `${nlp.command}` pipeline ordering: Stage 6 replaces before Stage 7 can reintroduce via dynamic rules | Phase 4 implementation | Phase 11 | P3 |
 | OI-16 | ~~StackOverflowError in deeply nested record authorization — RecordDeserializer debug `toString()` removed + PolicyUtil `getForeignPatterns` depth-limited + slim `copyRecord()` update pattern~~ | Phase 4 testing | ~~Phase 10~~ **RESOLVED** | ~~P3~~ |
 | OI-17 | Magic8 client-side template (`SessionDirector.js`) not yet wired to server-side `prompt.magic8.json` | Phase 4 implementation | Phase 6+ | P3 |
-| OI-3 | `extractMemoriesFromResponse()` does not pass person pair IDs | Phase 2-3 known issues | Phase 10 (item 2) | P2 |
+| OI-3 | `extractMemoriesFromResponse()` does not pass person pair IDs | Phase 2-3 known issues | Phase 11 (item 2) | P2 |
 | OI-4 | ~~`openaiMessage` model missing `thinking` field — qwen3/CoT models produce error logs~~ | Phase 3 testing | ~~Phase 7 (item 4)~~ **RESOLVED** | ~~P2~~ |
-| OI-5 | Low `keyframeEvery` values trigger expensive `analyze()` LLM calls | Phase 3 known issues | Phase 10 (item 5) | P3 |
+| OI-5 | Low `keyframeEvery` values trigger expensive `analyze()` LLM calls | Phase 3 known issues | Phase 11 (item 5) | P3 |
 | OI-6 | ~~`top_k` maxValue=1 prevents valid values (should be 500)~~ | Section 6.1 | ~~Phase 8 (item 1)~~ **RESOLVED** | ~~P1~~ |
 | OI-7 | ~~`typical_p` incorrectly mapped to OpenAI `presence_penalty` in `applyChatOptions()`~~ | Section 6.1 | ~~Phase 8 (item 2)~~ **RESOLVED** | ~~P1~~ |
 | OI-8 | ~~`repeat_penalty` mapped to `frequency_penalty` with different semantics~~ | Section 6.1 | ~~Phase 8 (item 2)~~ **RESOLVED** | ~~P1~~ |
@@ -3235,17 +3322,17 @@ All known open issues with their assigned resolution phase:
 | OI-10 | ~~Missing `frequency_penalty` field on chatOptions (OpenAI-native)~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P2~~ |
 | OI-11 | ~~Missing `presence_penalty` field on chatOptions (OpenAI-native)~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P2~~ |
 | OI-12 | ~~Missing `seed` field on chatOptions~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P3~~ |
-| OI-13 | Memory/keyframe tests in Agent7 have no Agent7 dependencies — should relocate to Objects7 | Phase 3 testing | Phase 10 (item 3) | P3 |
-| OI-14 | Old `(KeyFrame:` text format still supported alongside MCP format — maintenance burden | Phase 3 code review | Phase 10 (item 4) | P3 |
+| OI-13 | Memory/keyframe tests in Agent7 have no Agent7 dependencies — should relocate to Objects7 | Phase 3 testing | Phase 11 (item 3) | P3 |
+| OI-14 | Old `(KeyFrame:` text format still supported alongside MCP format — maintenance burden | Phase 3 code review | Phase 11 (item 4) | P3 |
 | OI-18 | Client-side prune functions retained for backward compatibility — can be removed once all active sessions refresh | Phase 5 implementation | Future cleanup | P4 |
-| OI-19 | Migrator condition coverage — static condition map covers 7 of ~34 fields; fields like `femalePerspective`/`malePerspective` have no condition mapping | Phase 5 implementation | Phase 10 | P3 |
-| OI-20 | Token standardization — image/audio token processing still varies between prompt template styles | Phase 5 review | Phase 10 | P3 |
+| OI-19 | Migrator condition coverage — static condition map covers 7 of ~34 fields; fields like `femalePerspective`/`malePerspective` have no condition mapping | Phase 5 implementation | Phase 11 | P3 |
+| OI-20 | Token standardization — image/audio token processing still varies between prompt template styles | Phase 5 review | Phase 10 (10a: extract to ChatTokenRenderer) | P3 |
 | OI-21 | ~~Stream tests require WebSocket — Tests 71-72 need active `page.wss` and `chatConfig.stream=true`~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
 | OI-22 | ~~Policy tests placeholder — Test 81 validates config presence only; evaluation requires Phase 9~~ | Phase 6 implementation | ~~Phase 9~~ **RESOLVED** | ~~P3~~ |
 | OI-23 | CardGame shared state coupling — switching suites resets shared `TF.testState` | Phase 6 implementation | By design | P4 |
 | OI-24 | `findOrCreateConfig` caching — template changes require manual deletion of existing server objects | Phase 6 implementation | Future: add update-if-changed | P3 |
 | OI-25 | ~~Episode transition execution not testable — `#NEXT EPISODE#` detection is server-side~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
-| OI-26 | Keyframe detection heuristic — Test 76 pattern-matches `[MCP:KeyFrame` / `(KeyFrame:` text; fragile | Phase 6 implementation | Phase 10 | P3 |
+| OI-26 | Keyframe detection heuristic — Test 76 pattern-matches `[MCP:KeyFrame` / `(KeyFrame:` text; fragile | Phase 6 implementation | Phase 11 | P3 |
 | OI-27 | Ollama server-side request not cancelled on client timeout — `CompletableFuture` cancellation doesn't reach server | Phase 7 implementation | Future: Ollama abort API | P3 |
 | OI-28 | Test execution order sensitivity — Test 37 sets requestTimeout=1 on shared DB config; crash between set/restore leaks value | Phase 7 testing | Mitigated by explicit resets | P4 |
 | OI-29 | Ollama native `options` object not supported — `top_k`, `typical_p`, `repeat_penalty`, `min_p`, `repeat_last_n` not sent after Phase 8 mapping fix | Phase 8 prep | Future: add `options` model to request | P3 |
@@ -3257,9 +3344,10 @@ All known open issues with their assigned resolution phase:
 | OI-35 | `Chat.getSDPrompt()` calls `applyChatOptions(req)` on the source request instead of the new `areq` at line 611 — likely a pre-existing bug where SD prompt options are applied to wrong request object | Phase 8 review | Future bug fix | P3 |
 | OI-36 | ~~Adaptive chatOptions recommendation — during or after a chat session, auto-analyze conversation style/type and recommend or auto-rebalance chatOptions (temperature, penalties, etc.) for the detected use case. Similar to dynamic prompt rewriting in Phase 9's ChatAutotuner, but applied to LLM parameters rather than prompt content. Could use the chatConfig templates as target profiles for classification.~~ `ChatAutotuner` (Phase 9) provides the infrastructure — analysis prompt can be extended to include chatOptions rebalancing alongside prompt rewrites | User request (Phase 8) | ~~Future phase~~ **RESOLVED (Phase 9)** | ~~P3~~ |
 | OI-37 | **RESOLVED** (Phase 9) — Tests 55-62 all implemented: pipeline DENY/PERMIT (55-56), ChatAutotuner analysis + naming (57-58), policy hook buffer/stream mode (59-60), enhanced stop failover (62). All 19 tests pass with live LLM (`qwen3:8b` for autotuner, `qwen3-coder:30b` for chat) | Phase 9 implementation | Resolved | — |
-| OI-38 | **RESOLVED** (Phase 9) — `ChatAutotuner.autotune()` was reading `chatConfig.get("model")` from a minimally-populated record returned by `getAccessPoint().create()`, which fell back to the schema default `dolphin-llama3`. Fixed by calling `OlioUtil.getFullRecord(chatConfig)` to resolve persisted field values before reading model/analyzeModel | Phase 9 implementation | Resolved | — |
+| OI-38 | **RESOLVED** (Phase 9) — `ChatAutotuner.autotune()` was using `dolphin-llama3` for analysis due to two issues: (1) `analyzeModel` schema default was `dolphin-llama3` instead of empty, so the fallback to `model` field never triggered; (2) chatConfig records from `getAccessPoint().create()` didn't retain in-memory field values. Fixed by: removing the stale `analyzeModel` default from chatConfigModel.json, and calling `OlioUtil.getFullRecord(chatConfig)` to resolve persisted field values | Phase 9 implementation | Resolved | — |
 | OI-39 | `WrongCharacterDetectionOperation` false positives — heuristic regex patterns may match in-character quoted dialogue where a character mentions the user character by name. Consider adding context-aware detection (e.g., only trigger when the response *starts* with the user character pattern) | Phase 9 implementation | Future improvement | P4 |
-| OI-40 | UX `policyEvent` handler not wired in `chat.js`/`SessionDirector.js` — WebSocket chirps `policyEvent` from server but no client-side handler displays it yet. UX test 81 validates handler registration but visual notification to the user is not implemented | Phase 9 implementation | Future UX phase | P3 |
+| OI-40 | UX `policyEvent` handler not wired in `chat.js`/`SessionDirector.js` — WebSocket chirps `policyEvent` from server but no client-side handler displays it yet. UX test 81 validates handler registration but visual notification to the user is not implemented | Phase 9 implementation | Phase 10 (10a: shared StreamStateIndicator) | P3 |
+| OI-41 | `chatConfigModel.json` `analyzeModel` default was `dolphin-llama3` (stale), causing ChatAutotuner to use a non-deployed model. Fixed by removing the default — `analyzeModel` is now empty by default and falls back to `model`. Existing DB records with `analyzeModel=dolphin-llama3` may need migration | Phase 9 testing | Resolved (schema fix applied) | P4 |
 
 ---
 

@@ -479,18 +479,17 @@
         }
 
         // Test 65: Fetch composed prompts via config endpoint
-        // Note: REST endpoint /config/prompt/{name} searches ~/Chat only; test configs may live in ~/Tests
-        // Fall back to already-loaded config if REST returns 404
+        // Pass group=~/Tests since test configs are created there (not ~/Chat)
         let fullPromptCfg = null;
         try {
             fullPromptCfg = await m.request({
                 method: 'GET',
-                url: g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(promptCfg.name),
+                url: g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(promptCfg.name) + "?group=" + encodeURIComponent("~/Tests"),
                 withCredentials: true
             });
             log("prompt", "promptConfig fetched via REST", "pass");
         } catch (e) {
-            log("prompt", "REST fetch returned " + (e.code || "error") + " — config may be in ~/Tests (REST only searches ~/Chat). Using cached config.", "warn");
+            log("prompt", "REST fetch returned " + (e.code || "error") + " — first run or config not yet created. Using cached config.", "warn");
             fullPromptCfg = promptCfg;
         }
 
@@ -732,11 +731,10 @@
 
             if (bufReq) {
                 try {
-                    let resp = await am7chat.sendMessage(bufReq, "Say exactly: BUFFER_TEST_OK");
-                    if (resp && resp.messages && resp.messages.length > 0) {
-                        let lastMsg = resp.messages[resp.messages.length - 1];
-                        let content = lastMsg.content || lastMsg.displayContent || "";
-                        log("stream", "REST buffer response received (" + content.length + " chars)", content.length > 0 ? "pass" : "fail");
+                    let resp = await am7chat.chat(bufReq, "Say exactly: BUFFER_TEST_OK");
+                    let content = extractLastAssistantMessage(resp);
+                    log("stream", "REST buffer response received (" + (content ? content.length : 0) + " chars)", content ? "pass" : "fail");
+                    if (content) {
                         logData("stream", "Buffer response", content);
                     } else {
                         log("stream", "REST buffer returned empty response", "warn");
@@ -998,7 +996,7 @@
         try {
             let fullPromptCfg = await m.request({
                 method: 'GET',
-                url: g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(promptCfg.name),
+                url: g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(promptCfg.name) + "?group=" + encodeURIComponent("~/Tests"),
                 withCredentials: true
             });
             let allText = JSON.stringify(fullPromptCfg);

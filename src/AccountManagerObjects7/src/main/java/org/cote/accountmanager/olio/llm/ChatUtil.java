@@ -1045,8 +1045,11 @@ public class ChatUtil {
 	}
 
 	public static BaseRecord getConfig(BaseRecord user, String modelName, String objectId, String name) {
+		return getConfig(user, modelName, objectId, name, "~/Chat");
+	}
 
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+	public static BaseRecord getConfig(BaseRecord user, String modelName, String objectId, String name, String groupPath) {
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		BaseRecord cfg = null;
 		if(dir != null) {
 			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));

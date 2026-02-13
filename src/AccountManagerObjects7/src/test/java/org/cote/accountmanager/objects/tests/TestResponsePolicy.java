@@ -491,16 +491,6 @@ public class TestResponsePolicy extends BaseTest {
 		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, getLLMType(), getLLMType().toString() + " " + cfgName, testProperties);
 		assertNotNull("ChatConfig is null", cfg);
 
-		/// Set analyzeModel to a smaller model for faster analysis; increase timeout for model swap
-		try {
-			cfg.set("analyzeModel", "qwen3:8b");
-			cfg.set("requestTimeout", 300);
-			Queue.queueUpdate(cfg, new String[] {"analyzeModel", "requestTimeout"});
-			Queue.processQueue();
-		} catch (Exception e) {
-			logger.error("Failed to set analyzeModel", e);
-		}
-
 		/// Create a promptConfig
 		BaseRecord pcfg = OlioTestUtil.getObjectPromptConfig(testUser, "Autotune Prompt " + UUID.randomUUID().toString());
 		assertNotNull("PromptConfig is null", pcfg);
@@ -535,16 +525,6 @@ public class TestResponsePolicy extends BaseTest {
 		String cfgName = "Naming Test " + UUID.randomUUID().toString();
 		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, getLLMType(), getLLMType().toString() + " " + cfgName, testProperties);
 		assertNotNull("ChatConfig is null", cfg);
-
-		/// Set analyzeModel to a smaller model for faster analysis; increase timeout for model swap
-		try {
-			cfg.set("analyzeModel", "qwen3:8b");
-			cfg.set("requestTimeout", 300);
-			Queue.queueUpdate(cfg, new String[] {"analyzeModel", "requestTimeout"});
-			Queue.processQueue();
-		} catch (Exception e) {
-			logger.error("Failed to set analyzeModel", e);
-		}
 
 		/// Create a promptConfig with a known base name
 		String baseName = "Naming Test Prompt " + UUID.randomUUID().toString();

@@ -116,8 +116,7 @@
 		},
 		{
 			"name": "analyzeModel",
-			"type": "string",
-			"default": "dolphin-llama3"
+			"type": "string"
 		},
 		{
 			"name": "userPrompt",
