@@ -1,0 +1,212 @@
+package org.cote.accountmanager.olio.llm.policy;
+
+import java.util.List;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.OpenAIMessage;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.llm.OpenAIResponse;
+import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyViolation;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
+
+/// Phase 9: Analyzes policy violations and generates autotuned prompt suggestions.
+/// Uses a separate LLM call (analyzeModel) to analyze the violation and suggest prompt rewrites.
+/// Autotuned prompts are saved as new records (never overwrite original).
+public class ChatAutotuner {
+
+	public static final Logger logger = LogManager.getLogger(ChatAutotuner.class);
+
+	/// Analyze a policy violation and generate an autotuned prompt.
+	/// @param user The user who owns the prompt
+	/// @param chatConfig The chatConfig with LLM connection details
+	/// @param promptConfig The original promptConfig that produced the violation
+	/// @param violations The policy violations detected
+	/// @return AutotuneResult with the autotuned prompt name and analysis, or null on failure
+	public AutotuneResult autotune(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<PolicyViolation> violations) {
+		if (user == null || chatConfig == null || promptConfig == null || violations == null || violations.isEmpty()) {
+			logger.warn("ChatAutotuner: Missing required parameters");
+			return null;
+		}
+
+		try {
+			String analysisPrompt = buildAnalysisPrompt(promptConfig, chatConfig, violations);
+
+			/// Use analyzeModel for efficiency, fall back to main model
+			String model = chatConfig.get("analyzeModel");
+			if (model == null || model.isEmpty()) {
+				model = chatConfig.get("model");
+			}
+
+			/// Make the analysis LLM call
+			String analysisResponse = callAnalysisLLM(user, chatConfig, model, analysisPrompt);
+			if (analysisResponse == null || analysisResponse.trim().isEmpty()) {
+				logger.warn("ChatAutotuner: Analysis LLM returned empty response");
+				return new AutotuneResult(null, "Analysis LLM returned empty response", violations);
+			}
+
+			/// Generate the autotuned prompt name
+			String baseName = promptConfig.get(FieldNames.FIELD_NAME);
+			int count = countExistingAutotuned(user, baseName) + 1;
+			String autotunedName = baseName + " - autotuned - " + count;
+
+			return new AutotuneResult(autotunedName, analysisResponse, violations);
+
+		} catch (Exception e) {
+			logger.error("ChatAutotuner: Error during autotuning: " + e.getMessage());
+			return null;
+		}
+	}
+
+	/// Count existing autotuned variants of a prompt.
+	public int countExistingAutotuned(BaseRecord user, String baseName) {
+		try {
+			Query query = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_CONFIG);
+			query.field(FieldNames.FIELD_NAME, ComparatorEnumType.LIKE, baseName + " - autotuned - %");
+			query.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
+			query.setContextUser(user);
+			return IOSystem.getActiveContext().getSearch().count(query);
+		} catch (Exception e) {
+			logger.warn("ChatAutotuner: Error counting autotuned prompts: " + e.getMessage());
+			return 0;
+		}
+	}
+
+	/// Build the analysis prompt for the autotuning LLM call.
+	private String buildAnalysisPrompt(BaseRecord promptConfig, BaseRecord chatConfig, List<PolicyViolation> violations) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("You are a prompt engineering expert. A chat prompt produced a policy violation.").append(System.lineSeparator());
+		sb.append(System.lineSeparator());
+
+		/// Violation details
+		for (PolicyViolation v : violations) {
+			sb.append("VIOLATION TYPE: ").append(v.getRuleType()).append(System.lineSeparator());
+			sb.append("VIOLATION DETAILS: ").append(v.getDetails()).append(System.lineSeparator());
+		}
+		sb.append(System.lineSeparator());
+
+		/// System prompt preview
+		List<String> system = promptConfig.get("system");
+		if (system != null && !system.isEmpty()) {
+			sb.append("CURRENT SYSTEM PROMPT (first 3 lines of system[]):").append(System.lineSeparator());
+			int maxLines = Math.min(3, system.size());
+			for (int i = 0; i < maxLines; i++) {
+				sb.append(system.get(i)).append(System.lineSeparator());
+			}
+			sb.append(System.lineSeparator());
+		}
+
+		/// Chat config summary
+		sb.append("CURRENT CHAT CONFIGURATION:").append(System.lineSeparator());
+		sb.append("- Rating: ").append((Object) chatConfig.get("rating")).append(System.lineSeparator());
+		sb.append("- Model: ").append((String) chatConfig.get("model")).append(System.lineSeparator());
+		sb.append("- Service: ").append((Object) chatConfig.get("serviceType")).append(System.lineSeparator());
+
+		List<BaseRecord> episodes = chatConfig.get("episodes");
+		sb.append("- Has episodes: ").append(episodes != null && !episodes.isEmpty()).append(System.lineSeparator());
+		sb.append("- Has NLP: ").append((boolean) chatConfig.get("useNLP")).append(System.lineSeparator());
+		sb.append(System.lineSeparator());
+
+		/// Request
+		sb.append("FAILURE ANALYSIS REQUEST:").append(System.lineSeparator());
+		sb.append("1. Why did the LLM produce this violation?").append(System.lineSeparator());
+		sb.append("2. What specific changes to the system prompt would prevent it?").append(System.lineSeparator());
+		sb.append("3. Provide the rewritten system prompt sections as JSON.").append(System.lineSeparator());
+		sb.append(System.lineSeparator());
+		sb.append("Respond with JSON:").append(System.lineSeparator());
+		sb.append("{").append(System.lineSeparator());
+		sb.append("  \"analysis\": \"Brief explanation of the failure cause\",").append(System.lineSeparator());
+		sb.append("  \"changes\": [").append(System.lineSeparator());
+		sb.append("    {\"field\": \"system\", \"action\": \"append\", \"content\": \"New instruction text\"}").append(System.lineSeparator());
+		sb.append("  ],").append(System.lineSeparator());
+		sb.append("  \"confidence\": 0.0").append(System.lineSeparator());
+		sb.append("}").append(System.lineSeparator());
+
+		return sb.toString();
+	}
+
+	/// Make an LLM call for analysis using the chat infrastructure.
+	private String callAnalysisLLM(BaseRecord user, BaseRecord chatConfig, String model, String analysisPrompt) {
+		try {
+			Chat chat = new Chat(user, chatConfig, null);
+			chat.setPersistSession(false);
+			OpenAIRequest areq = new OpenAIRequest();
+			areq.setModel(model);
+			areq.setStream(false);
+
+			/// Apply conservative options for analysis
+			try {
+				areq.set("temperature", 0.4);
+				areq.set("top_p", 0.5);
+				String tokField = ChatUtil.getMaxTokenField(chatConfig);
+				if (tokField != null && !tokField.isEmpty()) {
+					areq.set(tokField, 4096);
+				}
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.warn("ChatAutotuner: Error setting analysis options: " + e.getMessage());
+			}
+
+			OpenAIMessage sysMsg = new OpenAIMessage();
+			sysMsg.setRole("system");
+			sysMsg.setContent("You are a prompt engineering expert. Analyze prompt failures and suggest corrections. Respond only in JSON format.");
+			areq.addMessage(sysMsg);
+
+			OpenAIMessage userMsg = new OpenAIMessage();
+			userMsg.setRole("user");
+			userMsg.setContent(analysisPrompt);
+			areq.addMessage(userMsg);
+
+			OpenAIResponse resp = chat.chat(areq);
+			if (resp == null) {
+				return null;
+			}
+
+			/// Extract response content
+			BaseRecord msg = resp.get("message");
+			if (msg != null) {
+				return msg.get("content");
+			}
+			List<BaseRecord> choices = resp.get("choices");
+			if (choices != null && !choices.isEmpty()) {
+				BaseRecord choice = choices.get(0);
+				BaseRecord message = choice.get("message");
+				if (message != null) {
+					return message.get("content");
+				}
+			}
+			return null;
+		} catch (Exception e) {
+			logger.error("ChatAutotuner: LLM call failed: " + e.getMessage());
+			return null;
+		}
+	}
+
+	/// Result container for autotuning.
+	public static class AutotuneResult {
+		private String autotunedPromptName;
+		private String analysisResponse;
+		private List<PolicyViolation> violations;
+
+		public AutotuneResult(String autotunedPromptName, String analysisResponse, List<PolicyViolation> violations) {
+			this.autotunedPromptName = autotunedPromptName;
+			this.analysisResponse = analysisResponse;
+			this.violations = violations;
+		}
+
+		public String getAutotunedPromptName() { return autotunedPromptName; }
+		public String getAnalysisResponse() { return analysisResponse; }
+		public List<PolicyViolation> getViolations() { return violations; }
+
+		public boolean isSuccess() { return autotunedPromptName != null; }
+	}
+}

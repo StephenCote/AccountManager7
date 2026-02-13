@@ -1,0 +1,36 @@
+{
+	"name": "Clinical Response Policy",
+	"description": "Response policy for clinical/therapeutic chat sessions. Strict refusal detection (single phrase match) and all standard checks.",
+	"operations": [
+		{
+			"name": "Timeout Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation",
+			"description": "Detects null/empty responses from LLM timeout or connection drop."
+		},
+		{
+			"name": "Recursive Loop Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation",
+			"description": "Detects repeated text blocks (50-char window, 3x threshold).",
+			"parameters": {
+				"windowSize": "50",
+				"repeatThreshold": "3"
+			}
+		},
+		{
+			"name": "Wrong Character Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation",
+			"description": "Detects LLM responding as the user character instead of the system character."
+		},
+		{
+			"name": "Refusal Detection - Strict",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation",
+			"description": "Strict refusal detection (1 phrase match triggers violation).",
+			"parameters": {
+				"minMatches": "1"
+			}
+		}
+	],
+	"condition": "ALL",
+	"ruleType": "PERMIT",
+	"autotuneOnViolation": true
+}

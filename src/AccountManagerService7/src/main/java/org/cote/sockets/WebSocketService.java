@@ -521,6 +521,14 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		chirpUser(user, new String[] {"chatStart", request.get(FieldNames.FIELD_OBJECT_ID), request.toFullString()});
 	}
 
+	/// Phase 9: Policy violation notification via WebSocket
+	@Override
+	public void onPolicyViolation(BaseRecord user, OpenAIRequest request, OpenAIResponse response, org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyEvaluationResult result) {
+		String oid = request.get(FieldNames.FIELD_OBJECT_ID);
+		String summary = result.getViolationSummary();
+		chirpUser(user, new String[] {"policyEvent", "violation", "{\"requestId\":\"" + oid + "\",\"details\":\"" + summary.replace("\"", "\\\"") + "\"}"});
+	}
+
 	// This method will handle forwarding audio to Python and receiving transcripts
 	public void handleAudioStream(Session clientSession, BaseRecord user, SocketMessage msg) {
 	    //asyncExecutor.submit(() -> {

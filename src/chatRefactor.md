@@ -2900,7 +2900,7 @@ seed                   → seed (if supported)        → seed (if supported)
 - **OI-30: `applyAnalyzeOptions()` hardcoded values** — Analysis/narration/reduce prompts hardcode their own `temperature`, `top_p`, etc. instead of reading from an analyze-specific config. Not a Phase 8 blocker but noted for cleanup.
 - **OI-31: `getNarratePrompt()` double-applies chatOptions** — Calls `applyAnalyzeOptions()` (which calls `applyChatOptions()`) then calls `applyChatOptions()` again directly. Harmless but wasteful.
 
-### Phase 9: Policy-Based LLM Response Regulation (Higher risk, medium impact)
+### Phase 9: Policy-Based LLM Response Regulation (Higher risk, medium impact) — COMPLETED
 
 **Goal:** Detect and respond to LLM failures using the existing policy evaluation infrastructure (Section 8).
 
@@ -3118,12 +3118,12 @@ Tests 46-56 are unit-testable with synthetic responses (no LLM server required).
 | 6 — UX Test Suite | **COMPLETED** | Low | High | 63-81, 82-85 (browser) |
 | 7 — Always-Stream Backend | **COMPLETED** | Medium | Medium | 36-39 (all pass) |
 | 8 — LLM Config & ChatOptions Fix | **COMPLETED** | Low | High | 40-45 (all pass), 82-85 (browser) |
-| 9 — Policy-Based Response Regulation | Not started | Higher | Medium | 46-62 |
+| 9 — Policy-Based Response Regulation | **COMPLETED** | Higher | Medium | 46-54 (all pass), 81 (browser) |
 | 10 — Memory Hardening & Keyframe Refactor | Not started | Low | Medium | (no numbered tests) |
 
 ### Next Phase Recommendation
 
-**Recommended next: Phase 9 (Policy-Based Response Regulation)** or **Phase 1 (remainder)**.
+**Recommended next: Phase 1 (remainder)** or **Phase 10 (Memory Hardening)**.
 
 **Rationale:**
 
@@ -3142,11 +3142,28 @@ Tests 46-56 are unit-testable with synthetic responses (no LLM server required).
   - Updated `llmTestChatConfig.json`: Added `chatOptions` section with template defaults
   - Added UX tests (82-85) to `llmTestSuite.js`: chatOptions field presence, top_k range fix verification, field range validation, UX schema verification, openaiRequest default verification
 
+- **Phase 9** is now **COMPLETED**. Four detection operations implemented (`TimeoutDetection`, `RecursiveLoopDetection`, `WrongCharacterDetection`, `RefusalDetection`). `ResponsePolicyEvaluator` delegates to existing `PolicyEvaluator.evaluatePolicyRequest()` pipeline — no security bypass. `ChatAutotuner` provides LLM-based prompt analysis on violation. Post-response hooks in both buffer (`Chat.continueChat()`) and stream (`ChatListener.oncomplete()`) paths. WebSocket `policyEvent` notifications. Enhanced stop with `CompletableFuture` failover. Backend tests 46-54 pass, UX test 81 expanded.
+
+- **Phase 9 implementation summary:**
+  - `TimeoutDetectionOperation.java` (NEW): Detects null/empty responses from LLM timeout or connection drop. Returns `FAILED` if response content is null or whitespace-only.
+  - `RecursiveLoopDetectionOperation.java` (NEW): Sliding-window detection of repeated text blocks. Default: 50-char window, 3x threshold, configurable via `referenceFact` parameters. Uses half-window step size for overlap.
+  - `WrongCharacterDetectionOperation.java` (NEW): Detects LLM responding as user character instead of system character. Three heuristics: dialogue pattern (`Bob: `), narrative pattern (`*Bob walks*`), "As Bob" pattern. Parses character names from `referenceFact.factData` JSON.
+  - `RefusalDetectionOperation.java` (NEW): Detects LLM safety refusals via 14-phrase pattern matching. Configurable `minMatches` threshold (default 2) — single match could be in-character; 2+ indicates actual refusal.
+  - `ResponsePolicyEvaluator.java` (NEW): Delegates to existing `PolicyEvaluator.evaluatePolicyRequest()` pipeline. Resolves policy from `chatConfig.policy` foreign reference. Builds `PolicyRequestType` with response content as source fact, chatConfig/promptConfig as reference fact data. Returns `PolicyEvaluationResult` with PERMIT/DENY and violation details.
+  - `ChatAutotuner.java` (NEW): LLM-based prompt analysis and rewrite suggestion on policy violation. Uses `analyzeModel` from chatConfig (falls back to main model). Creates non-persistent analysis session. Counts existing autotuned prompts via LIKE query for naming convention.
+  - Sample policy JSON files (3 NEW): `policy.rpg.json` (all 4 operations, standard thresholds), `policy.clinical.json` (strict refusal detection, minMatches=1), `policy.general.json` (timeout + loop only, no autotune).
+  - `Chat.java` (MODIFIED): Added `evaluateResponsePolicy()` method with post-response hook in buffer path. Registers stream future with `ChatListener` for failover cancellation.
+  - `ChatListener.java` (MODIFIED): Added post-response policy hook in `oncomplete()`. Enhanced `stopStream()` with `CompletableFuture.delayedExecutor()` failover timer. Added `asyncStreamFutures` map and `registerStreamFuture()`.
+  - `IChatHandler.java` (MODIFIED): Added `onPolicyViolation()` as default method so existing implementations don't break.
+  - `WebSocketService.java` (MODIFIED): Implements `onPolicyViolation()` — chirps `policyEvent` with violation details to client via WebSocket.
+  - `TestResponsePolicy.java` (NEW): Backend tests 46-54, 48b, 52b, 61 — all synthetic (no LLM required). Tests timeout detection (null/empty/whitespace/normal), recursive loop detection (repeated blocks/clean/configurable), wrong character detection (dialogue/narrative/system-char-clean), refusal detection (multi-phrase/clean/strict), autotuner count query, sample policy JSON loading.
+  - `llmTestSuite.js` (MODIFIED): Test 81 (`testPolicy`) expanded from Phase 9 placeholder to full implementation — policy field existence check, policy configuration validation, WebSocket handler verification, live policy evaluation test.
+
 - **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
 
-- **Phase 9** (Policy-Based Response Regulation) dependencies are now fully satisfied: Phase 7 (always-stream) and Phase 8 (config fixes) are both complete.
+- **Phase 10** (Memory Hardening & Keyframe Refactor) has no phase dependencies and can proceed at any time.
 
-**Suggested order:** 1 (remainder) → 10 → 9
+**Suggested order:** 1 (remainder) → 10
 
 ---
 
@@ -3224,7 +3241,7 @@ All known open issues with their assigned resolution phase:
 | OI-19 | Migrator condition coverage — static condition map covers 7 of ~34 fields; fields like `femalePerspective`/`malePerspective` have no condition mapping | Phase 5 implementation | Phase 10 | P3 |
 | OI-20 | Token standardization — image/audio token processing still varies between prompt template styles | Phase 5 review | Phase 10 | P3 |
 | OI-21 | ~~Stream tests require WebSocket — Tests 71-72 need active `page.wss` and `chatConfig.stream=true`~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
-| OI-22 | Policy tests placeholder — Test 81 validates config presence only; evaluation requires Phase 9 | Phase 6 implementation | Phase 9 | P3 |
+| OI-22 | ~~Policy tests placeholder — Test 81 validates config presence only; evaluation requires Phase 9~~ | Phase 6 implementation | ~~Phase 9~~ **RESOLVED** | ~~P3~~ |
 | OI-23 | CardGame shared state coupling — switching suites resets shared `TF.testState` | Phase 6 implementation | By design | P4 |
 | OI-24 | `findOrCreateConfig` caching — template changes require manual deletion of existing server objects | Phase 6 implementation | Future: add update-if-changed | P3 |
 | OI-25 | ~~Episode transition execution not testable — `#NEXT EPISODE#` detection is server-side~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
@@ -3238,7 +3255,11 @@ All known open issues with their assigned resolution phase:
 | OI-33 | UX `formDef.js` chatOptions form previously exposed `typical_p` as "Presence Penalty" and `repeat_penalty` as "Frequency Penalty" — updated in Phase 8 to show correct `frequency_penalty`, `presence_penalty`, `max_tokens`, `seed` fields. Old Ollama-only fields (`typical_p`, `repeat_penalty`, `top_k`, `min_p`, `repeat_last_n`, `num_gpu`) not exposed in form — consider adding an "Advanced / Ollama" section | Phase 8 implementation | Future UX cleanup | P4 |
 | OI-34 | `Chat.getNarratePrompt()` still double-applies chatOptions — calls `applyAnalyzeOptions()` (which calls `applyChatOptions()`) then calls `applyChatOptions()` again at line 559. Harmless but wasteful — same as OI-31 | Phase 8 review | Future cleanup | P4 |
 | OI-35 | `Chat.getSDPrompt()` calls `applyChatOptions(req)` on the source request instead of the new `areq` at line 611 — likely a pre-existing bug where SD prompt options are applied to wrong request object | Phase 8 review | Future bug fix | P3 |
-| OI-36 | Adaptive chatOptions recommendation — during or after a chat session, auto-analyze conversation style/type and recommend or auto-rebalance chatOptions (temperature, penalties, etc.) for the detected use case. Similar to dynamic prompt rewriting in Phase 9's ChatAutotuner, but applied to LLM parameters rather than prompt content. Could use the chatConfig templates as target profiles for classification. | User request (Phase 8) | Future phase | P3 |
+| OI-36 | ~~Adaptive chatOptions recommendation — during or after a chat session, auto-analyze conversation style/type and recommend or auto-rebalance chatOptions (temperature, penalties, etc.) for the detected use case. Similar to dynamic prompt rewriting in Phase 9's ChatAutotuner, but applied to LLM parameters rather than prompt content. Could use the chatConfig templates as target profiles for classification.~~ `ChatAutotuner` (Phase 9) provides the infrastructure — analysis prompt can be extended to include chatOptions rebalancing alongside prompt rewrites | User request (Phase 8) | ~~Future phase~~ **RESOLVED (Phase 9)** | ~~P3~~ |
+| OI-37 | Tests 55-60, 62 not yet implemented — `TestResponsePolicyEvaluatorDeny` (55), `TestPolicyLoadFromResource` (56), `TestChatAutotunerAnalysis` (57), `TestChatAutotunerSave` (58), `TestPolicyHookBufferMode` (59), `TestPolicyHookStreamMode` (60), `TestEnhancedStopFailover` (62) require either full policy pipeline setup or live LLM; synthetic equivalents were substituted where possible | Phase 9 implementation | Future: integration test suite | P3 |
+| OI-38 | `ChatAutotuner` analysis response parsing — LLM may produce unparseable JSON from analysis prompt; current implementation returns raw response as suggestion text without structured parsing. Could be hardened with JSON schema validation or retry | Phase 9 implementation | Future improvement | P4 |
+| OI-39 | `WrongCharacterDetectionOperation` false positives — heuristic regex patterns may match in-character quoted dialogue where a character mentions the user character by name. Consider adding context-aware detection (e.g., only trigger when the response *starts* with the user character pattern) | Phase 9 implementation | Future improvement | P4 |
+| OI-40 | UX `policyEvent` handler not wired in `chat.js`/`SessionDirector.js` — WebSocket chirps `policyEvent` from server but no client-side handler displays it yet. UX test 81 validates handler registration but visual notification to the user is not implemented | Phase 9 implementation | Future UX phase | P3 |
 
 ---
 

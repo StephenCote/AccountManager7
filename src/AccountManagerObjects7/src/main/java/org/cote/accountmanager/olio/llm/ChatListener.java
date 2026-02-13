@@ -2,8 +2,10 @@ package org.cote.accountmanager.olio.llm;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -12,6 +14,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.GameUtil;
+import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyEvaluationResult;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -22,6 +25,9 @@ public class ChatListener implements IChatListener {
 	private static Map<String, OpenAIRequest> asyncRequests = new ConcurrentHashMap<>();
 	private static Map<String, Integer> asyncRequestCount = new ConcurrentHashMap<>();
 	private static Map<String, Boolean> asyncRequestStop = new ConcurrentHashMap<>();
+	/// Phase 9: Track stream futures for forced cancellation failover
+	private static Map<String, CompletableFuture<?>> asyncStreamFutures = new ConcurrentHashMap<>();
+	private static final int FAILOVER_SECONDS = 5;
 	private boolean deferRemote = false;
 	private int maximumResponseTokens = -1;
 	private List<IChatHandler> handlers = new CopyOnWriteArrayList<>();
@@ -51,6 +57,14 @@ public class ChatListener implements IChatListener {
 		asyncRequestCount.remove(oid);
 		asyncRequestStop.remove(oid);
 		asyncChats.remove(oid);
+		asyncStreamFutures.remove(oid);
+	}
+
+	/// Phase 9: Register a stream future for failover cancellation
+	public void registerStreamFuture(String oid, CompletableFuture<?> future) {
+		if (oid != null && future != null) {
+			asyncStreamFutures.put(oid, future);
+		}
 	}
 
 
@@ -182,12 +196,25 @@ public class ChatListener implements IChatListener {
 		if(oid == null) {
 			return;
 		}
-		
+
 		if(!asyncRequests.containsKey(oid)) {
             logger.warn("OpenAIRequest object id not found in async requests: " + oid);
             return;
         }
+		/// Phase 1: Set graceful stop flag (existing behavior)
 		asyncRequestStop.put(oid, true);
+
+		/// Phase 9: Phase 2 — Schedule forced cancellation after failover window
+		CompletableFuture<?> streamFuture = asyncStreamFutures.get(oid);
+		if (streamFuture != null) {
+			CompletableFuture.delayedExecutor(FAILOVER_SECONDS, TimeUnit.SECONDS)
+				.execute(() -> {
+					if (!streamFuture.isDone()) {
+						logger.warn("Force-cancelling hung stream: " + oid);
+						streamFuture.cancel(true);
+					}
+				});
+		}
 	}
 	
 	private String getRequestId(OpenAIRequest request) {
@@ -250,7 +277,14 @@ public class ChatListener implements IChatListener {
 					lastMsg.setValue("content", lastMsg.get("content") + System.lineSeparator() + "[interrupted]");
 				}
 			}
-		}		
+		}
+
+		/// Phase 9: Post-response policy evaluation (streaming mode)
+		PolicyEvaluationResult policyResult = chat.evaluateResponsePolicy(request, response);
+		if (policyResult != null && !policyResult.isPermitted()) {
+			logger.warn("Policy violation in stream response: " + policyResult.getViolationSummary());
+			handlers.forEach(h -> h.onPolicyViolation(user, request, response, policyResult));
+		}
 
 		chat.saveSession(request);
 		logger.info("Chat session saved for request: " + oid);

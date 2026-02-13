@@ -1,0 +1,23 @@
+{
+	"name": "General Response Policy",
+	"description": "Lightweight response policy for general chat. Checks timeout and recursive loops only. No character or refusal detection.",
+	"operations": [
+		{
+			"name": "Timeout Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation",
+			"description": "Detects null/empty responses from LLM timeout or connection drop."
+		},
+		{
+			"name": "Recursive Loop Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation",
+			"description": "Detects repeated text blocks with relaxed threshold.",
+			"parameters": {
+				"windowSize": "50",
+				"repeatThreshold": "4"
+			}
+		}
+	],
+	"condition": "ALL",
+	"ruleType": "PERMIT",
+	"autotuneOnViolation": false
+}

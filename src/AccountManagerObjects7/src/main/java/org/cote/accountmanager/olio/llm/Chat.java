@@ -44,6 +44,8 @@ import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
+import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator;
+import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyEvaluationResult;
 
 public class Chat {
 
@@ -344,6 +346,8 @@ public class Chat {
 			} else {
 				logger.warn("Last rep is null");
 			}
+			/// Phase 9: Post-response policy evaluation (buffer mode)
+			evaluateResponsePolicy(req, lastRep);
 			saveSession(req);
 		}
 		else {
@@ -352,6 +356,44 @@ public class Chat {
 			chat(req);
 			
 		}
+	}
+
+	/// Phase 9: Evaluate the LLM response against the chatConfig's policy.
+	/// Uses the existing PolicyEvaluator pipeline via ResponsePolicyEvaluator.
+	/// Returns the evaluation result (or null if no policy configured).
+	public PolicyEvaluationResult evaluateResponsePolicy(OpenAIRequest req, OpenAIResponse resp) {
+		if (chatConfig == null || user == null) {
+			return null;
+		}
+		BaseRecord policyRef = chatConfig.get("policy");
+		if (policyRef == null) {
+			return null;
+		}
+
+		String responseContent = null;
+		if (resp != null) {
+			BaseRecord msg = resp.get("message");
+			if (msg != null) {
+				responseContent = msg.get("content");
+			}
+			if (responseContent == null) {
+				List<BaseRecord> choices = resp.get("choices");
+				if (choices != null && !choices.isEmpty()) {
+					BaseRecord choice = choices.get(0);
+					BaseRecord cmsg = choice.get("message");
+					if (cmsg != null) {
+						responseContent = cmsg.get("content");
+					}
+				}
+			}
+		}
+
+		ResponsePolicyEvaluator rpe = new ResponsePolicyEvaluator();
+		PolicyEvaluationResult result = rpe.evaluate(user, responseContent, chatConfig, promptConfig);
+		if (result != null && !result.isPermitted()) {
+			logger.warn("Policy violation detected: " + result.getViolationSummary());
+		}
+		return result;
 	}
 
 	public void saveSession(OpenAIRequest req) {
@@ -1334,6 +1376,14 @@ public class Chat {
 		/// Apply requestTimeout via orTimeout if configured
 		if (requestTimeout > 0) {
 			streamFuture = streamFuture.orTimeout(requestTimeout, TimeUnit.SECONDS);
+		}
+
+		/// Phase 9: Register stream future with listener for failover cancellation
+		if (forwardToClient && listener instanceof ChatListener) {
+			String oid = req.get(FieldNames.FIELD_OBJECT_ID);
+			if (oid != null) {
+				((ChatListener) listener).registerStreamFuture(oid, streamFuture);
+			}
 		}
 
 		streamFuture.thenAccept(response -> {
