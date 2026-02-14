@@ -205,14 +205,14 @@ public class TestChatPhase13 extends BaseTest {
 		}
 	}
 
-	/// P13-6: Create a memory with personId1=1, personId2=2.
-	/// Verify searchMemoriesByPersonPair(user, 1, 2, 10) returns it.
+	/// P13-6: Create a memory with unique personIds per run.
+	/// Verify searchMemoriesByPersonPair returns it.
 	@Test
 	public void testSearchMemoriesByPersonPair() {
 		try {
 			String conversationId = UUID.randomUUID().toString();
-			long personId1 = 1L;
-			long personId2 = 2L;
+			long personId1 = 30000L + (System.currentTimeMillis() % 10000);
+			long personId2 = personId1 + 1;
 
 			BaseRecord memory = MemoryUtil.createMemory(
 				testUser,
@@ -245,9 +245,9 @@ public class TestChatPhase13 extends BaseTest {
 	@Test
 	public void testMemoryCountByPersonPair() {
 		try {
-			// Use unique person IDs for this test to avoid interference
-			long personId1 = 1001L;
-			long personId2 = 1002L;
+			// Use unique person IDs per run to avoid stale data from prior test executions
+			long personId1 = 40000L + (System.currentTimeMillis() % 10000);
+			long personId2 = personId1 + 1;
 
 			BaseRecord mem1 = MemoryUtil.createMemory(
 				testUser,
@@ -335,9 +335,9 @@ public class TestChatPhase13 extends BaseTest {
 	@Test
 	public void testCrossConversationRecall() {
 		try {
-			// Use unique person IDs for this test
-			long personId1 = 2001L;
-			long personId2 = 2002L;
+			// Use unique person IDs per run to avoid stale data from prior test executions
+			long personId1 = 20000L + (System.currentTimeMillis() % 10000);
+			long personId2 = personId1 + 1;
 			String session1 = "session1-" + UUID.randomUUID().toString();
 			String session2 = "session2-" + UUID.randomUUID().toString();
 
@@ -386,6 +386,55 @@ public class TestChatPhase13 extends BaseTest {
 		} catch (Exception e) {
 			logger.error("P13-10 failed", e);
 			fail("P13-10 Exception: " + e.getMessage());
+		}
+	}
+
+	/// P13-14: Reproduce the chatHistory and getSessionContext server queries exactly.
+	/// chatHistory: simple find (no plan) then access session foreign ref.
+	/// getSessionContext: planMost(true, FULL_PLAN_FILTER) then access chatConfig foreign ref.
+	@SuppressWarnings("deprecation")
+	@Test
+	public void testChatRequestQueryPaths() {
+		try {
+			// Create a chatConfig + promptConfig + chatRequest (with session)
+			String suffix = UUID.randomUUID().toString().substring(0, 6);
+			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(testUser, "P14-cfg-" + suffix);
+			assertNotNull("ChatConfig should not be null", chatConfig);
+			BaseRecord promptConfig = ChatUtil.getCreatePromptConfig(testUser, "P14-pcfg-" + suffix);
+			assertNotNull("PromptConfig should not be null", promptConfig);
+			BaseRecord chatReq = ChatUtil.getCreateChatRequest(testUser, "P14-req-" + suffix, chatConfig, promptConfig);
+			assertNotNull("ChatRequest should not be null", chatReq);
+			String objectId = chatReq.get(FieldNames.FIELD_OBJECT_ID);
+			assertNotNull("ChatRequest objectId should not be null", objectId);
+			logger.info("P13-14: Created chatRequest objectId=" + objectId);
+
+			// --- PATH 1: Mimic ChatService.chatHistory (simple find, no planMost) ---
+			logger.info("P13-14 PATH 1: Simple find (chatHistory endpoint pattern)");
+			Query q1 = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, objectId);
+			q1.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			BaseRecord found1 = IOSystem.getActiveContext().getAccessPoint().find(testUser, q1);
+			assertNotNull("PATH 1: find() should return a record", found1);
+			BaseRecord session1 = found1.get("session");
+			logger.info("PATH 1: session = " + (session1 != null ? "present" : "NULL"));
+			BaseRecord fullSession1 = OlioUtil.getFullRecord(session1, false);
+			logger.info("PATH 1: fullSession = " + (fullSession1 != null ? "present" : "NULL"));
+
+			// --- PATH 2: Mimic ChatService.getSessionContext (planMost with FULL_PLAN_FILTER) ---
+			logger.info("P13-14 PATH 2: planMost find (getSessionContext endpoint pattern)");
+			Query q2 = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, objectId);
+			q2.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			q2.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+			BaseRecord found2 = IOSystem.getActiveContext().getAccessPoint().find(testUser, q2);
+			assertNotNull("PATH 2: planMost find() should return a record", found2);
+			BaseRecord cc2 = found2.get("chatConfig");
+			logger.info("PATH 2: chatConfig = " + (cc2 != null ? "present" : "NULL"));
+			BaseRecord fullCc2 = OlioUtil.getFullRecord(cc2);
+			logger.info("PATH 2: fullChatConfig = " + (fullCc2 != null ? "present" : "NULL"));
+
+			logger.info("P13-14 passed: both query paths completed");
+		} catch (Exception e) {
+			logger.error("P13-14 failed", e);
+			fail("P13-14 Exception: " + e.getMessage());
 		}
 	}
 

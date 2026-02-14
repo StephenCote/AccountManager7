@@ -29,7 +29,8 @@
 		{
 			"name": "systemNarrative",
 			"type": "model",
-			"baseModel": "olio.narrative"
+			"baseModel": "olio.narrative",
+			"followReference": false
 		},
 		{
 			"name": "userCharacter",
@@ -40,7 +41,8 @@
 		{
 			"name": "userNarrative",
 			"type": "model",
-			"baseModel": "olio.narrative"
+			"baseModel": "olio.narrative",
+			"followReference": false
 		},
 
 		{
@@ -149,7 +151,8 @@
 		{
 			"name": "chatOptions",
 			"type": "model",
-			"baseModel": "olio.llm.chatOptions"
+			"baseModel": "olio.llm.chatOptions",
+			"followReference": false
 		},
 		{
 			"name": "apiVersion",

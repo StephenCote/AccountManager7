@@ -150,9 +150,12 @@
                     if (patched) {
                         await page.patchObject(req);
                         // Reload history from server so local state matches
-                        let h = await getHistory();
-                        if (h) {
-                            chatCfg.history = h;
+                        // Skip during streaming — server reload would overwrite locally-building content
+                        if (!chatCfg.streaming) {
+                            let h = await getHistory();
+                            if (h) {
+                                chatCfg.history = h;
+                            }
                         }
                     }
                 }
@@ -166,6 +169,8 @@
     // Processes one token at a time, patching after each to keep positions and server state in sync
     async function resolveChatImages(msgIndex) {
         if (!window.am7imageTokens) return;
+        // Skip resolution during streaming — async patch/reload would overwrite streaming content
+        if (chatCfg.streaming) return;
         let maxIterations = 10;
         let iteration = 0;
 
@@ -287,7 +292,7 @@
       clearEditMode();
       chatCfg.pending = false;
       chatCfg.peek = false;
-      chatCfg.history = [];
+      chatCfg.history = { messages: [] };
       if(inst && inst.api.objectId()){
         let chatReq = {
           schema: inst.model.name,
@@ -332,8 +337,8 @@
         },
         onchatupdate: (id, msg) => {
           // console.log("Chat update: " + msg);
-          if (!chatCfg.history.messages.length) {
-            console.error("Unexpected chat history");
+          if (!chatCfg.history || !chatCfg.history.messages || !chatCfg.history.messages.length) {
+            console.error("Unexpected chat history — missing or empty");
             return;
           }
           let m1 = chatCfg.history.messages[chatCfg.history.messages.length - 1];
@@ -874,7 +879,7 @@
         let ectl = "";
         let ecls = "";
         let bectl = false;
-        let lastMsg = (midx == (chatCfg.history.messages.length - 1));
+        let lastMsg = (midx == (amsg.length - 1));
         /// Prefer server-side displayContent when available and hideThoughts is active
         let useServerDisplay = hideThoughts && !editMode && msg.displayContent;
         if (useServerDisplay) {
@@ -887,7 +892,7 @@
           bectl = (editMode && editIndex == midx);
 
           /// Only edit last message
-          if (midx == chatCfg.history.messages.length - 1) {
+          if (midx == amsg.length - 1) {
             ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
           }
           if (!useServerDisplay && hideThoughts && !editMode) {
