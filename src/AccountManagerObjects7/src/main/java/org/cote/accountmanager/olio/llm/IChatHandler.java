@@ -10,4 +10,6 @@ public interface IChatHandler {
 	public void onChatStart(BaseRecord user, ChatRequest chatRequest, OpenAIRequest request);
 	/// Phase 9: Called when a post-response policy violation is detected
 	public default void onPolicyViolation(BaseRecord user, OpenAIRequest request, OpenAIResponse response, PolicyEvaluationResult result) {}
+	/// Phase 13: Called when a chat title is auto-generated after first exchange
+	public default void onChatTitle(BaseRecord user, OpenAIRequest request, String title) {}
 }

@@ -383,4 +383,35 @@ public class TestChatPhase13 extends BaseTest {
 			fail("P13-10 Exception: " + e.getMessage());
 		}
 	}
+
+	/// P13-11: Verify autoTitle field can be set on a chatConfig and persists.
+	@SuppressWarnings("deprecation")
+	@Test
+	public void testAutoTitleConfigField() {
+		try {
+			String cfgName = "P13-11-AutoTitle-" + UUID.randomUUID().toString().substring(0, 6);
+			BaseRecord cfg = ChatUtil.getCreateChatConfig(testUser, cfgName);
+			assertNotNull("ChatConfig should not be null", cfg);
+
+			// Default should be false (boolean default)
+			boolean defaultVal = cfg.get("autoTitle");
+			assertTrue("autoTitle default should be false", !defaultVal);
+
+			// Set to true and persist
+			cfg.set("autoTitle", true);
+			boolean afterSet = cfg.get("autoTitle");
+			assertTrue("autoTitle should be true after setting", afterSet);
+
+			cfg = IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
+			assertNotNull("Updated config should not be null", cfg);
+
+			boolean persisted = cfg.get("autoTitle");
+			assertTrue("autoTitle should persist as true", persisted);
+
+			logger.info("P13-11 passed: autoTitle config field verified");
+		} catch (Exception e) {
+			logger.error("P13-11 failed", e);
+			fail("P13-11 Exception: " + e.getMessage());
+		}
+	}
 }

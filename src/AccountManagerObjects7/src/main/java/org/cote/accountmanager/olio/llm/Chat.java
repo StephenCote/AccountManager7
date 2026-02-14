@@ -26,6 +26,8 @@ import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -35,6 +37,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -362,6 +365,33 @@ public class Chat {
 			/// Phase 9: Post-response policy evaluation (buffer mode)
 			evaluateResponsePolicy(req, lastRep);
 			saveSession(req);
+
+			/// Phase 13: Auto-generate title after first real exchange (buffer mode)
+			boolean autoTitle = chatConfig != null && Boolean.TRUE.equals(chatConfig.get("autoTitle"));
+			int offset = getMessageOffset();
+			List<OpenAIMessage> allMsgs = req.getMessages();
+			int userMsgCount = 0;
+			for (int i = offset; i < allMsgs.size(); i++) {
+				if (userRole.equals(allMsgs.get(i).getRole())) userMsgCount++;
+			}
+			if (autoTitle && userMsgCount == 1) {
+				String title = generateChatTitle(req);
+				if (title != null) {
+					String oid = req.get(FieldNames.FIELD_OBJECT_ID);
+					if (oid != null) {
+						try {
+							Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
+							cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+							BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+							if (chatReqRec != null) {
+								setChatTitle(chatReqRec, title);
+							}
+						} catch (Exception e) {
+							logger.warn("Buffer mode title persist failed: " + e.getMessage());
+						}
+					}
+				}
+			}
 		}
 		else {
 
@@ -420,6 +450,70 @@ public class Chat {
 		createNarrativeVector(user, req);
 	}
 
+	/// Phase 13: Auto-generate a concise chat title from the first user+assistant exchange.
+	/// Returns the generated title string, or null on failure.
+	public String generateChatTitle(OpenAIRequest req) {
+		int offset = getMessageOffset();
+		List<OpenAIMessage> msgs = req.getMessages();
+		if (msgs.size() < offset + 2) return null;
+
+		String userMsg = msgs.get(offset).getContent();
+		String assistMsg = msgs.get(offset + 1).getContent();
+		if (userMsg == null || assistMsg == null) return null;
+
+		if (userMsg.length() > 200) userMsg = userMsg.substring(0, 200) + "...";
+		if (assistMsg.length() > 200) assistMsg = assistMsg.substring(0, 200) + "...";
+
+		OpenAIRequest titleReq = new OpenAIRequest();
+		titleReq.setModel(req.getModel());
+		titleReq.setStream(false);
+
+		OpenAIMessage sysMsg = new OpenAIMessage();
+		sysMsg.setRole(systemRole);
+		sysMsg.setContent("Generate a short chat title (5-8 words max). Return ONLY the title, nothing else.");
+		titleReq.getMessages().add(sysMsg);
+
+		OpenAIMessage userPrompt = new OpenAIMessage();
+		userPrompt.setRole(userRole);
+		userPrompt.setContent("User said: " + userMsg + "\nAssistant replied: " + assistMsg);
+		titleReq.getMessages().add(userPrompt);
+
+		try {
+			OpenAIResponse resp = chat(titleReq);
+			if (resp != null) {
+				String title = null;
+				BaseRecord msg = resp.get("message");
+				if (msg != null) title = msg.get("content");
+				if (title == null) {
+					List<BaseRecord> choices = resp.get("choices");
+					if (choices != null && !choices.isEmpty()) {
+						BaseRecord cmsg = choices.get(0).get("message");
+						if (cmsg != null) title = cmsg.get("content");
+					}
+				}
+				if (title != null) {
+					title = title.trim().replaceAll("^\"|\"$", "");
+					if (title.length() > 60) title = title.substring(0, 60);
+					return title;
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("Title generation failed: " + e.getMessage());
+		}
+		return null;
+	}
+
+	/// Phase 13: Set the chatTitle attribute on a chatRequest record and persist.
+	public void setChatTitle(BaseRecord chatRequest, String title) {
+		try {
+			AttributeUtil.addAttribute(chatRequest, "chatTitle", title);
+			IOSystem.getActiveContext().getAccessPoint().update(user, chatRequest);
+			logger.info("Chat title set: " + title);
+		} catch (Exception e) {
+			logger.warn("Failed to set chatTitle attribute: " + e.getMessage());
+		}
+	}
+
 	private String getNarrativeForVector(OpenAIMessage msg) {
 
 		if (chatConfig == null) {
@@ -445,7 +539,7 @@ public class Chat {
 
 	}
 
-	private int getMessageOffset() {
+	public int getMessageOffset() {
 		int idx = 1;
 		if (chatConfig != null) {
 			boolean useAssist = chatConfig.get("assist");

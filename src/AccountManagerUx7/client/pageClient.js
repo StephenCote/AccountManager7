@@ -487,6 +487,13 @@
                     LLMConnector.handleMemoryEvent({ type: msg.chirps[1], data: evtData });
                 }
             }
+            else if(c1 === "chatTitle"){
+                // Phase 13: Auto-generated chat title
+                if (window.ConversationManager && msg.chirps[1] && msg.chirps[2]) {
+                    ConversationManager.updateSessionTitle(msg.chirps[1], msg.chirps[2]);
+                }
+                m.redraw();
+            }
             else if(c1.match(/^game\.action\./)){
                 // Game action messages (start, progress, complete, error, interrupt, cancel)
                 if(page.gameStream || window.gameStream){

@@ -181,7 +181,7 @@
                 if (template) {
                     let cloneFields = ["model", "serverUrl", "serviceType", "apiVersion",
                         "rating", "setting", "assist", "stream", "prune", "useNLP",
-                        "messageTrim", "remindEvery", "keyframeEvery",
+                        "messageTrim", "remindEvery", "keyframeEvery", "autoTitle",
                         "extractMemories", "memoryBudget", "memoryExtractionEvery",
                         "requestTimeout", "terrain", "populationDescription",
                         "animalDescription", "universeName", "worldName"];

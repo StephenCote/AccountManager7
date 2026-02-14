@@ -12,7 +12,7 @@
         "${censorWarn}"
     ],
     "user": [
-        "${userConsent}"
+        "${user.consent}"
     ],
     "assistant": [
         "I'm ${system.firstName}, ready to assist with testing.",

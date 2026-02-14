@@ -1,0 +1,5 @@
+{
+	"description": "Chat title generation prompt - used by Chat.generateChatTitle() to auto-name sessions after first exchange",
+	"system": "Generate a short chat title (5-8 words max) for this conversation. Return ONLY the title, nothing else.",
+	"userTemplate": "User said: {user}\nAssistant replied: {assistant}"
+}

@@ -536,6 +536,12 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		chirpUser(user, new String[] {"policyEvent", "violation", "{\"requestId\":\"" + oid + "\",\"details\":\"" + summary.replace("\"", "\\\"") + "\"}"});
 	}
 
+	/// Phase 13: Auto-generated chat title notification via WebSocket
+	@Override
+	public void onChatTitle(BaseRecord user, OpenAIRequest request, String title) {
+		chirpUser(user, new String[] {"chatTitle", request.get(FieldNames.FIELD_OBJECT_ID), title});
+	}
+
 	// This method will handle forwarding audio to Python and receiving transcripts
 	public void handleAudioStream(Session clientSession, BaseRecord user, SocketMessage msg) {
 	    //asyncExecutor.submit(() -> {

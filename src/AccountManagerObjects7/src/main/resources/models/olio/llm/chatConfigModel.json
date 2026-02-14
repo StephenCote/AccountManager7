@@ -226,6 +226,11 @@
 			"type": "int",
 			"default": 0,
 			"description": "When extractMemories is true, the number of keyframes between automatic memory extraction from keyframe analysis text. 0 = extract on every keyframe. Typical values: 0 (every keyframe), 3 (every 3rd), 5 (every 5th)."
+		},
+		{
+			"name": "autoTitle",
+			"type": "boolean",
+			"description": "When true, auto-generate a descriptive chat title via LLM after the first user+assistant exchange."
 		}
 
 	]

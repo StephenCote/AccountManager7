@@ -277,6 +277,33 @@
         getSelectedId: function() { return selectedObjectId; },
 
         /**
+         * Phase 13: Update session title from WebSocket titleEvent.
+         * @param {string} objectId - chatRequest objectId
+         * @param {string} title - auto-generated title
+         */
+        updateSessionTitle: function(objectId, title) {
+            if (!sessions || !objectId || !title) return;
+            for (let i = 0; i < sessions.length; i++) {
+                if (sessions[i].objectId === objectId) {
+                    if (!sessions[i].attributes) sessions[i].attributes = [];
+                    let found = false;
+                    for (let j = 0; j < sessions[i].attributes.length; j++) {
+                        if (sessions[i].attributes[j].name === "chatTitle") {
+                            sessions[i].attributes[j].values = [title];
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        sessions[i].attributes.push({ name: "chatTitle", values: [title] });
+                    }
+                    m.redraw();
+                    return;
+                }
+            }
+        },
+
+        /**
          * Auto-select first session if none selected.
          * Returns the selected session or null.
          */
@@ -301,9 +328,18 @@
                 let onNew = vnode.attrs.onNew;
                 return m("div", { class: "flex flex-col flex-1 overflow-hidden" }, [
                     searchBarView(),
+                    onNew ? m("div", { class: "px-2 py-1 border-b border-gray-600" }, [
+                        m("button", {
+                            class: "flyout-button text-xs w-full",
+                            onclick: function() { onNew(); }
+                        }, [
+                            m("span", { class: "material-symbols-outlined material-icons-24" }, "add"),
+                            " New"
+                        ])
+                    ]) : "",
                     m("div", { class: "overflow-y-auto flex-1" }, sessionListView()),
                     m("div", { class: "border-t border-gray-600" }, [
-                        m("div", { class: "flex items-center justify-between px-2 py-1" }, [
+                        m("div", { class: "px-2 py-1" }, [
                             m("button", {
                                 class: "flyout-button text-xs",
                                 title: "Toggle details",
@@ -311,14 +347,7 @@
                             }, [
                                 m("span", { class: "material-symbols-outlined material-icons-24" }, "info"),
                                 " Details"
-                            ]),
-                            onNew ? m("button", {
-                                class: "flyout-button text-xs",
-                                onclick: function() { onNew(); }
-                            }, [
-                                m("span", { class: "material-symbols-outlined material-icons-24" }, "add"),
-                                " New"
-                            ]) : ""
+                            ])
                         ]),
                         metadataView()
                     ])

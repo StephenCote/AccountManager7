@@ -5070,6 +5070,11 @@
                 label: "Extract Every N Keyframes",
                 hint: "0=every keyframe, N=every Nth"
             },
+            // Phase 13: Auto-title generation
+            autoTitle: {
+                layout: "one",
+                label: "Auto-Generate Title"
+            },
 
         },
         forms: ["episodectl", "chatOptionsRef", "groupinfo", "attributes"]

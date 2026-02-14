@@ -312,6 +312,38 @@ public class ChatListener implements IChatListener {
 		chat.saveSession(request);
 		logger.info("Chat session saved for request: " + oid);
 
+		/// Phase 13: Auto-generate title after first real user+assistant exchange
+		boolean autoTitle = false;
+		BaseRecord titleChatCfg = chat.getChatConfig();
+		if (titleChatCfg != null) {
+			autoTitle = Boolean.TRUE.equals(titleChatCfg.get("autoTitle"));
+		}
+		int offset = chat.getMessageOffset();
+		List<BaseRecord> allMsgs = request.get("messages");
+		int userMsgCount = 0;
+		for (int i = offset; i < allMsgs.size(); i++) {
+			String role = allMsgs.get(i).get("role");
+			if ("user".equals(role)) userMsgCount++;
+		}
+		if (autoTitle && userMsgCount == 1) {
+			CompletableFuture.runAsync(() -> {
+				try {
+					String title = chat.generateChatTitle(request);
+					if (title != null) {
+						Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
+						cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+						BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+						if (chatReqRec != null) {
+							chat.setChatTitle(chatReqRec, title);
+						}
+						handlers.forEach(h -> h.onChatTitle(user, request, title));
+					}
+				} catch (Exception e) {
+					logger.warn("Async title generation failed: " + e.getMessage());
+				}
+			});
+		}
+
 		handlers.forEach(h -> h.onChatComplete(user, request, response));
 		clearCache(oid);
 	}
