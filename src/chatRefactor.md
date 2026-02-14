@@ -3272,6 +3272,59 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 **Files modified:** `MemoryUtil.java`, `Chat.java`, `ChatUtil.java`
 **Files relocated:** `TestMemoryUtil.java`, `TestMemoryPhase2.java`, `TestKeyframeMemory.java`, `TestMemoryDuel.java` → `AccountManagerObjects7/src/test/java/`
 
+### Phase 12: UX Polish & Remaining Cleanup (Low-Medium risk, High impact)
+
+**Goal:** Fix broken chat.js sidebar layout, complete ContextPanel UX, resolve all remaining P3/P4 open issues, and finish Phase 1 template cleanup.
+
+#### 12a — Chat Sidebar & Message Layout Fixes
+
+1. **Session list item layout** — `ConversationManager.sessionItemView()` wraps a delete button and session-name button in a `flex items-center` div, but the session-name button uses `w-full` which fights with the sibling. Result: delete icons float left with names truncated or invisible in narrow sidebars. Fix: replace the two-button row with a single flex row that allocates fixed space for the delete icon and fills remaining width for the name (with `truncate` / `text-ellipsis overflow-hidden`). Ensure the `flyout-button.active` highlight spans the entire row, not just the name.
+2. **Fallback inline session list** — `view/chat.js:665-679` pre-10b fallback has the same layout issue (delete button nested *inside* the session button via `[bDel, s.name]`). Either remove the fallback entirely (ConversationManager is now stable) or fix it to match the ConversationManager layout.
+3. **Setting text overflow** — `view/chat.js:994-996` renders `"Setting: " + setting` as full-width (`w-full`) with no truncation. Long settings (e.g., "Space-age lunar colony with domed habitats and lunar rovers, circa 2100 AD.") dominate the top of the chat area. Fix: add `truncate` class with a title tooltip for full text, or collapse to one line with expand-on-click.
+4. **ContextPanel collapsed state** — The collapsed "Context" toggle (`ContextPanel.PanelView`) shows no indication of what's bound. A session with chatConfig + 2 characters bound looks identical to one with no bindings. Fix: add a binding count badge (e.g., "Context (3)") or colored dot indicator next to the toggle when bindings exist.
+5. **ContextPanel expanded layout** — The expanded view is a flat list of `text-xs` rows. No visual grouping, no icons for object types, detach buttons are tiny `link_off` icons. Improve: add schema-type icons (gear for config, person for character, link for context), group rows by category, make detach buttons more discoverable.
+
+**Files:** `ConversationManager.js`, `ContextPanel.js`, `view/chat.js`
+
+#### 12b — Phase 1 Remainder (Template Cleanup)
+
+6. **Fix rule numbering** — Replace hardcoded rule numbers in `PromptUtil.buildEpisodeReplacements()` and related methods with dynamic assembly. Currently, adding or removing a rule shifts all subsequent numbers, creating maintenance burden.
+7. **Trim consent blocks** — Reduce consent/censor text from ~200 tokens to ~50 tokens. The current blocks consume significant context window for minimal behavioral impact.
+8. **Document variable dependencies** — Add comments to `PromptUtil` documenting the stage ordering and which variables must be populated before which replacement stages run. Currently implicit knowledge.
+
+**Files:** `PromptUtil.java`
+
+#### 12c — Remaining P3 Issues
+
+9. **Magic8 server-side wiring (OI-17)** — `SessionDirector.js` uses a client-side template for Magic8 prompts. Wire it to the server-side `prompt.magic8.json` template so the same structured template pipeline applies.
+10. **Ollama abort API (OI-27)** — `CompletableFuture` cancellation on client timeout doesn't reach the Ollama server — the request continues consuming GPU resources. Investigate Ollama's `/api/abort` or connection-close semantics for server-side cancellation.
+11. **Ollama native options object (OI-29)** — After Phase 8 mapping fix, Ollama-specific fields (`top_k`, `typical_p`, `repeat_penalty`, `min_p`, `repeat_last_n`) are no longer sent in the request. Add an `options` sub-object to the Ollama request builder that passes these through when `serviceType=OLLAMA`.
+
+**Files:** `SessionDirector.js`, `Chat.java`, `ChatUtil.java`
+
+#### 12d — Remaining P4 Issues
+
+12. **Remove client-side prune backward compat (OI-18)** — Phase 10a delegated prune functions to LLMConnector but kept old implementations as fallbacks. Once sessions have refreshed, remove dead code paths.
+13. **UX form Ollama section (OI-33)** — `formDef.js` chatOptions form only shows OpenAI-compatible fields. Add an "Advanced / Ollama" section exposing `typical_p`, `repeat_penalty`, `top_k`, `min_p`, `repeat_last_n`, `num_gpu`.
+14. **applyAnalyzeOptions hardcodes (OI-30)** — `Chat.applyAnalyzeOptions()` hardcodes `temperature=0.4`, `top_p=0.5` instead of reading from config. Refactor to read from chatConfig or a dedicated analyzeOptions sub-config.
+15. **getNarratePrompt double-apply (OI-31/OI-34)** — `Chat.getNarratePrompt()` calls `applyAnalyzeOptions()` (which internally calls `applyChatOptions()`) then calls `applyChatOptions()` again. Harmless but wasteful — remove the redundant call.
+16. **WrongCharacterDetection false positives (OI-39)** — Heuristic regex patterns match in-character quoted dialogue. Consider context-aware detection: only trigger when the response *starts* with the user character pattern, or exclude content within quotation marks.
+17. **Stale analyzeModel migration (OI-41)** — Existing DB records may still have `analyzeModel=dolphin-llama3` (old default removed in Phase 9). Add a one-time migration query or document the manual cleanup.
+18. **Test execution order sensitivity (OI-28)** — `TestStreamTimeoutTriggered` sets `requestTimeout=1` on a shared DB config; crash between set and restore leaks the value. Already mitigated by explicit resets; consider using a dedicated config per test.
+19. **CardGame shared state (OI-23)** — Switching test suites resets shared `TF.testState`. By design for now; document the limitation.
+
+**Files:** `view/chat.js`, `formDef.js`, `Chat.java`, `WrongCharacterDetectionOperation.java`, various test files
+
+#### New Open Issues (Phase 12)
+
+| # | Issue | Source | Sub-phase | Priority |
+|---|-------|--------|-----------|----------|
+| OI-51 | ConversationManager session item layout broken — delete button and name button competing for width in flex row, names truncated/invisible | Phase 12 UX audit | 12a (item 1) | P2 |
+| OI-52 | Pre-10b fallback session list still present in `view/chat.js:657-681` — nested delete button inside session button, same layout problems as OI-51 | Phase 12 UX audit | 12a (item 2) | P3 |
+| OI-53 | Setting text overflow — long setting descriptions render full-width with no truncation, pushing chat messages down | Phase 12 UX audit | 12a (item 3) | P3 |
+| OI-54 | ContextPanel collapsed state gives no indication of binding count — empty and fully-bound sessions look identical | Phase 12 UX audit | 12a (item 4) | P3 |
+| OI-55 | ContextPanel expanded view is flat text-only list with tiny detach icons — no type icons, no grouping, poor discoverability | Phase 12 UX audit | 12a (item 5) | P4 |
+
 ### Phase Progress Summary
 
 | Phase | Status | Risk | Impact | Tests |
@@ -3287,10 +3340,21 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 | 9 — Policy-Based Response Regulation | **COMPLETED** | Higher | Medium | 46-62 (backend, all pass); 63-85 (browser: 47 pass, 2 fail, 6 warn) |
 | 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | **COMPLETED** (10a+10b+10c) | Medium | High | 86-110 (UX browser), P10-1..P10-4 + P10c-1..P10c-4 (backend, all 8 pass) |
 | 11 — Memory Hardening & Keyframe Refactor | **COMPLETED** | Low | Medium | P11-1..P11-7 (8 tests, all pass) |
+| 12 — UX Polish & Remaining Cleanup | **NOT STARTED** | Low-Med | High | TBD |
 
 ### Next Phase Recommendation
 
-**Recommended next: Phase 1 (remainder — items 1, 2, 4: template cleanup)**.
+**Recommended next: Phase 12 (UX Polish & Remaining Cleanup)**.
+
+Phase 12 consolidates all remaining work into a single phase with 4 sub-phases:
+- **12a** — Chat sidebar & message layout fixes (OI-51..55). Highest priority — the chat view has broken session list layout, truncated names, unformatted setting text, and an incomplete ContextPanel. These are visible UX regressions from Phase 10.
+- **12b** — Phase 1 remainder (template cleanup items 1, 2, 4). Low risk, straightforward.
+- **12c** — Remaining P3 issues (OI-17 Magic8 wiring, OI-27 Ollama abort, OI-29 Ollama options).
+- **12d** — Remaining P4 issues (OI-18, OI-23, OI-28, OI-30, OI-31/34, OI-33, OI-39, OI-41). Lowest priority, can be deferred.
+
+**Suggested order:** 12a → 12b → 12c → 12d
+
+**Suggested implementation approach:** Start with 12a since the UX layout issues are visible and affect daily use. 12b is independent backend work. 12c requires research (Ollama abort API). 12d items are individually small and can be cherry-picked.
 
 **Rationale:**
 
@@ -3388,15 +3452,16 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 
 - **Phase 10** (UX Chat Refactor) is **COMPLETED**. Design audit identified and resolved 6 duplicated patterns, 5 missing API methods, 5 association mechanisms, and 8 new open issues.
 
-- **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
+- **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards. Now folded into Phase 12b.
 
-**Suggested order:** ~~10a~~ ~~10b~~ ~~10c~~ ~~11~~ → 1 (remainder)
+**Suggested order:** ~~10a~~ ~~10b~~ ~~10c~~ ~~11~~ ~~1 (remainder)~~ → **12a** → 12b → 12c → 12d
 
-**Phase 11 status:** ALL DONE. All 8 backend tests pass (P11-1, P11-1b, P11-2..P11-7). All 8 assigned open issues resolved. UX keyframe test updated.
+**Phase 11 status:** ALL DONE. All 8 backend tests pass (P11-1, P11-1b, P11-2..P11-7). All 8 assigned open issues resolved. UX keyframe test updated. Relocated test regression (missing `test.llm.serviceType` in Objects7 `resource.properties`) fixed.
 
 **Open issues remaining (by priority):**
-- **P3:** OI-17 (Magic8 wiring), OI-27 (Ollama abort), OI-29 (Ollama options)
-- **P4:** OI-18 (prune backward compat), OI-23 (shared state), OI-28 (test order), OI-30 (analyze hardcoded), OI-31/34 (double-apply), OI-33 (UX form Ollama section), OI-39 (wrong char false positives), OI-41 (stale analyzeModel in existing DB records)
+- **P2:** OI-51 (session list layout broken)
+- **P3:** OI-17 (Magic8 wiring), OI-27 (Ollama abort), OI-29 (Ollama options), OI-52 (pre-10b fallback), OI-53 (setting overflow), OI-54 (ContextPanel no binding indicator)
+- **P4:** OI-18 (prune backward compat), OI-23 (shared state), OI-28 (test order), OI-30 (analyze hardcoded), OI-31/34 (double-apply), OI-33 (UX form Ollama section), OI-39 (wrong char false positives), OI-41 (stale analyzeModel), OI-55 (ContextPanel expanded layout)
 
 ---
 
@@ -3457,7 +3522,7 @@ All known open issues with their assigned resolution phase:
 | OI-2 | ~~`MEMORY_RELATIONSHIP`, `MEMORY_FACTS`, `MEMORY_LAST_SESSION`, `MEMORY_COUNT` always empty/zero~~ | Phase 2-3 known issues | ~~Phase 4 (item 8)~~ **RESOLVED** | ~~P2~~ |
 | OI-15 | ~~`${nlp.command}` pipeline ordering: Stage 6 replaces before Stage 7 can reintroduce via dynamic rules~~ Fixed: `reapplyNlpCommand()` added as post-Stage-7 pass. `nlpCommand` stored in `PromptBuilderContext` by Stage 6, reapplied after `buildDynamicRulesReplacement()`. Test P11-5 validates | Phase 4 implementation | ~~Phase 11~~ **RESOLVED** | ~~P3~~ |
 | OI-16 | ~~StackOverflowError in deeply nested record authorization — RecordDeserializer debug `toString()` removed + PolicyUtil `getForeignPatterns` depth-limited + slim `copyRecord()` update pattern~~ | Phase 4 testing | ~~Phase 10~~ **RESOLVED** | ~~P3~~ |
-| OI-17 | Magic8 client-side template (`SessionDirector.js`) not yet wired to server-side `prompt.magic8.json` | Phase 4 implementation | Phase 6+ | P3 |
+| OI-17 | Magic8 client-side template (`SessionDirector.js`) not yet wired to server-side `prompt.magic8.json` | Phase 4 implementation | Phase 12c (item 9) | P3 |
 | OI-3 | ~~`extractMemoriesFromResponse()` does not pass person pair IDs~~ Fixed: new overload accepts `personId1`/`personId2`/`personModel` and passes them to `createMemory()`. Test P11-2 validates | Phase 2-3 known issues | ~~Phase 11 (item 2)~~ **RESOLVED** | ~~P2~~ |
 | OI-4 | ~~`openaiMessage` model missing `thinking` field — qwen3/CoT models produce error logs~~ | Phase 3 testing | ~~Phase 7 (item 4)~~ **RESOLVED** | ~~P2~~ |
 | OI-5 | ~~Low `keyframeEvery` values trigger expensive `analyze()` LLM calls~~ Fixed: `configureChat()` enforces `MIN_KEYFRAME_EVERY_WITH_EXTRACT=5` when `extractMemories=true`. Test P11-3 validates | Phase 3 known issues | ~~Phase 11 (item 5)~~ **RESOLVED** | ~~P3~~ |
@@ -3470,30 +3535,30 @@ All known open issues with their assigned resolution phase:
 | OI-12 | ~~Missing `seed` field on chatOptions~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P3~~ |
 | OI-13 | ~~Memory/keyframe tests in Agent7 have no Agent7 dependencies — should relocate to Objects7~~ Fixed: `TestMemoryUtil`, `TestMemoryPhase2`, `TestKeyframeMemory`, `TestMemoryDuel` copied to `AccountManagerObjects7/src/test/java/`. Same package, same BaseTest. Test P11-1..7 added alongside | Phase 3 testing | ~~Phase 11 (item 3)~~ **RESOLVED** | ~~P3~~ |
 | OI-14 | ~~Old `(KeyFrame:` text format still supported alongside MCP format — maintenance burden~~ Fixed: `pruneCount()`, `addKeyFrame()`, `newMessage()` use MCP-only detection via `isMcpKeyframe()`/`isMcpReminder()`/`countBackToMcp()`. Old `countBackTo()`/`isMcpEquivalent()` removed. `getFormattedChatHistory()` MCP-only. UX test 76 updated. Test P11-4/P11-7 validate | Phase 3 code review | ~~Phase 11 (item 4)~~ **RESOLVED** | ~~P3~~ |
-| OI-18 | Client-side prune functions retained for backward compatibility — can be removed once all active sessions refresh | Phase 5 implementation | Future cleanup | P4 |
+| OI-18 | Client-side prune functions retained for backward compatibility — can be removed once all active sessions refresh | Phase 5 implementation | Phase 12d (item 12) | P4 |
 | OI-19 | ~~Migrator condition coverage — static condition map covers 7 of ~34 fields; fields like `femalePerspective`/`malePerspective` have no condition mapping~~ Fixed: `CONDITION_MAP` expanded from 7 to 14 entries — added `userConsentRating` (rating>=M), `scene` (includeScene), `femalePerspective`/`malePerspective` (systemCharacter.gender), `systemSDPrompt` (useSDPrompt), `assistantReminder`/`userReminder` (assist). Test P11-6 validates | Phase 5 implementation | ~~Phase 11~~ **RESOLVED** | ~~P3~~ |
 | OI-20 | ~~Token standardization — image/audio token processing still varies between prompt template styles~~ Extracted to `ChatTokenRenderer.js` shared module; `view/chat.js` delegates to it | Phase 5 review | ~~Phase 10 (10a: extract to ChatTokenRenderer)~~ **RESOLVED** | ~~P3~~ |
 | OI-21 | ~~Stream tests require WebSocket — Tests 71-72 need active `page.wss` and `chatConfig.stream=true`~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
 | OI-22 | ~~Policy tests placeholder — Test 81 validates config presence only; evaluation requires Phase 9~~ | Phase 6 implementation | ~~Phase 9~~ **RESOLVED** | ~~P3~~ |
-| OI-23 | CardGame shared state coupling — switching suites resets shared `TF.testState` | Phase 6 implementation | By design | P4 |
+| OI-23 | CardGame shared state coupling — switching suites resets shared `TF.testState` | Phase 6 implementation | Phase 12d (item 19) / By design | P4 |
 | OI-24 | ~~`findOrCreateConfig` caching — template changes require manual deletion of existing server objects~~ `LLMConnector.ensureConfig()` and `ensurePrompt()` now compare key fields and patch if changed. UX test `findOrCreateConfig` updated with syncFields comparison | Phase 6 implementation | ~~Future: add update-if-changed~~ **RESOLVED** (Phase 10a) | ~~P3~~ |
 | OI-25 | ~~Episode transition execution not testable — `#NEXT EPISODE#` detection is server-side~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
 | OI-26 | ~~Keyframe detection heuristic — Test 76 pattern-matches `[MCP:KeyFrame` / `(KeyFrame:` text; fragile~~ Fixed: UX test 76 updated to MCP URI fragment detection (`<mcp:context` + `/keyframe/`). Backend test P11-7 validates both `isMcpKeyframe()` and `isMcpReminder()` methods | Phase 6 implementation | ~~Phase 11~~ **RESOLVED** | ~~P3~~ |
-| OI-27 | Ollama server-side request not cancelled on client timeout — `CompletableFuture` cancellation doesn't reach server | Phase 7 implementation | Future: Ollama abort API | P3 |
-| OI-28 | Test execution order sensitivity — Test 37 sets requestTimeout=1 on shared DB config; crash between set/restore leaks value | Phase 7 testing | Mitigated by explicit resets | P4 |
-| OI-29 | Ollama native `options` object not supported — `top_k`, `typical_p`, `repeat_penalty`, `min_p`, `repeat_last_n` not sent after Phase 8 mapping fix | Phase 8 prep | Future: add `options` model to request | P3 |
-| OI-30 | `applyAnalyzeOptions()` hardcodes `temperature=0.4`, `top_p=0.5`, etc. instead of reading from config | Phase 8 prep | Future cleanup | P4 |
-| OI-31 | `getNarratePrompt()` double-applies chatOptions — calls `applyAnalyzeOptions()` then `applyChatOptions()` again | Phase 8 prep | Future cleanup | P4 |
+| OI-27 | Ollama server-side request not cancelled on client timeout — `CompletableFuture` cancellation doesn't reach server | Phase 7 implementation | Phase 12c (item 10) | P3 |
+| OI-28 | Test execution order sensitivity — Test 37 sets requestTimeout=1 on shared DB config; crash between set/restore leaks value | Phase 7 testing | Phase 12d (item 18) | P4 |
+| OI-29 | Ollama native `options` object not supported — `top_k`, `typical_p`, `repeat_penalty`, `min_p`, `repeat_last_n` not sent after Phase 8 mapping fix | Phase 8 prep | Phase 12c (item 11) | P3 |
+| OI-30 | `applyAnalyzeOptions()` hardcodes `temperature=0.4`, `top_p=0.5`, etc. instead of reading from config | Phase 8 prep | Phase 12d (item 14) | P4 |
+| OI-31 | `getNarratePrompt()` double-applies chatOptions — calls `applyAnalyzeOptions()` then `applyChatOptions()` again | Phase 8 prep | Phase 12d (item 15) | P4 |
 | OI-32 | ~~`openaiRequestModel.json` defaults for `frequency_penalty` and `presence_penalty` are 1.3 — should be 0.0 to match OpenAI API defaults~~ | Phase 8 prep | ~~Phase 8~~ **RESOLVED** | ~~P2~~ |
-| OI-33 | UX `formDef.js` chatOptions form previously exposed `typical_p` as "Presence Penalty" and `repeat_penalty` as "Frequency Penalty" — updated in Phase 8 to show correct `frequency_penalty`, `presence_penalty`, `max_tokens`, `seed` fields. Old Ollama-only fields (`typical_p`, `repeat_penalty`, `top_k`, `min_p`, `repeat_last_n`, `num_gpu`) not exposed in form — consider adding an "Advanced / Ollama" section | Phase 8 implementation | Future UX cleanup | P4 |
-| OI-34 | `Chat.getNarratePrompt()` still double-applies chatOptions — calls `applyAnalyzeOptions()` (which calls `applyChatOptions()`) then calls `applyChatOptions()` again at line 559. Harmless but wasteful — same as OI-31 | Phase 8 review | Future cleanup | P4 |
+| OI-33 | UX `formDef.js` chatOptions form previously exposed `typical_p` as "Presence Penalty" and `repeat_penalty` as "Frequency Penalty" — updated in Phase 8 to show correct `frequency_penalty`, `presence_penalty`, `max_tokens`, `seed` fields. Old Ollama-only fields (`typical_p`, `repeat_penalty`, `top_k`, `min_p`, `repeat_last_n`, `num_gpu`) not exposed in form — consider adding an "Advanced / Ollama" section | Phase 8 implementation | Phase 12d (item 13) | P4 |
+| OI-34 | `Chat.getNarratePrompt()` still double-applies chatOptions — calls `applyAnalyzeOptions()` (which calls `applyChatOptions()`) then calls `applyChatOptions()` again at line 559. Harmless but wasteful — same as OI-31 | Phase 8 review | Phase 12d (item 15) | P4 |
 | OI-35 | ~~`Chat.getSDPrompt()` calls `applyChatOptions(req)` on the source request instead of the new `areq` at line 611~~ Fixed: changed to `applyChatOptions(areq)` so SD prompt options apply to the correct request object | Phase 8 review | ~~Future bug fix~~ **RESOLVED** (Phase 10b) | ~~P3~~ |
 | OI-36 | ~~Adaptive chatOptions recommendation — during or after a chat session, auto-analyze conversation style/type and recommend or auto-rebalance chatOptions (temperature, penalties, etc.) for the detected use case. Similar to dynamic prompt rewriting in Phase 9's ChatAutotuner, but applied to LLM parameters rather than prompt content. Could use the chatConfig templates as target profiles for classification.~~ `ChatAutotuner` (Phase 9) provides the infrastructure — analysis prompt can be extended to include chatOptions rebalancing alongside prompt rewrites | User request (Phase 8) | ~~Future phase~~ **RESOLVED (Phase 9)** | ~~P3~~ |
 | OI-37 | **RESOLVED** (Phase 9) — Tests 55-62 all implemented: pipeline DENY/PERMIT (55-56), ChatAutotuner analysis + naming (57-58), policy hook buffer/stream mode (59-60), enhanced stop failover (62). All 19 tests pass with live LLM (`qwen3:8b` for autotuner, `qwen3-coder:30b` for chat) | Phase 9 implementation | Resolved | — |
 | OI-38 | **RESOLVED** (Phase 9) — `ChatAutotuner.autotune()` was using `dolphin-llama3` for analysis due to two issues: (1) `analyzeModel` schema default was `dolphin-llama3` instead of empty, so the fallback to `model` field never triggered; (2) chatConfig records from `getAccessPoint().create()` didn't retain in-memory field values. Fixed by: removing the stale `analyzeModel` default from chatConfigModel.json, and calling `OlioUtil.getFullRecord(chatConfig)` to resolve persisted field values | Phase 9 implementation | Resolved | — |
-| OI-39 | `WrongCharacterDetectionOperation` false positives — heuristic regex patterns may match in-character quoted dialogue where a character mentions the user character by name. Consider adding context-aware detection (e.g., only trigger when the response *starts* with the user character pattern) | Phase 9 implementation | Future improvement | P4 |
+| OI-39 | `WrongCharacterDetectionOperation` false positives — heuristic regex patterns may match in-character quoted dialogue where a character mentions the user character by name. Consider adding context-aware detection (e.g., only trigger when the response *starts* with the user character pattern) | Phase 9 implementation | Phase 12d (item 16) | P4 |
 | OI-40 | ~~UX `policyEvent` handler not wired in `chat.js`/`SessionDirector.js`~~ `pageClient.js` chirp handler routes `policyEvent` to `LLMConnector.handlePolicyEvent()`. `view/chat.js` registers display handler via `LLMConnector.onPolicyEvent()` showing toast notification. UX test 109 validates wiring | Phase 9 implementation | ~~Phase 10 (10a: shared StreamStateIndicator)~~ **RESOLVED** (Phase 10a) | ~~P3~~ |
-| OI-41 | `chatConfigModel.json` `analyzeModel` default was `dolphin-llama3` (stale), causing ChatAutotuner to use a non-deployed model. Fixed by removing the default — `analyzeModel` is now empty by default and falls back to `model`. Existing DB records with `analyzeModel=dolphin-llama3` may need migration | Phase 9 testing | Resolved (schema fix applied) | P4 |
+| OI-41 | `chatConfigModel.json` `analyzeModel` default was `dolphin-llama3` (stale), causing ChatAutotuner to use a non-deployed model. Fixed by removing the default — `analyzeModel` is now empty by default and falls back to `model`. Existing DB records with `analyzeModel=dolphin-llama3` may need migration | Phase 9 testing | Phase 12d (item 17) | P4 |
 | OI-42 | ~~REST config endpoints only search by name~~ Fixed: group-agnostic search (Phase 9). Phase 10a added objectId-based endpoints: `GET /rest/chat/config/prompt/id/{objectId}` and `GET /rest/chat/config/chat/id/{objectId}`. UX test 108 validates. Backend test P10-1 validates `ChatUtil.getConfig()` objectId lookup | Phase 9 UX testing | **Resolved** (Phase 9 + Phase 10a) | ~~P2~~ |
 | OI-43 | ~~UX history test (73-74) intermittently finds only 2/3 sent messages~~ Root cause: rapid-fire sequential REST calls race against server-side persistence. Fixed: added 200ms delays between sequential sends in tests 73-74, matching pattern from test 106 and backend P10-3/P10-4 (which already pass). Backend logic is correct; timing issue is client-side | Phase 9 UX testing | ~~Phase 10 (10b: investigate)~~ **RESOLVED** (Phase 10b) | ~~P3~~ |
 | OI-44 | ~~`formDef.js` calls `am7sd.fetchModels()` at module load before authentication, causing 403 on `/rest/olio/sdModels` on the login screen~~ Fixed: added `page.authenticated()` guard | Phase 9 UX testing | **Resolved** (auth guard) | ~~P2~~ |
@@ -3503,6 +3568,11 @@ All known open issues with their assigned resolution phase:
 | OI-48 | ~~`cardGame/ai/chatManager.js` manually tracks `currentConversation[]` array client-side, diverging from server-side history~~ Fixed: `startConversation()` now seeds `currentConversation[]` from server history via `LLMConnector.getHistory()`. Local array kept as optimistic cache for immediate UI responsiveness | Phase 10 design audit | ~~Phase 10 (10b: unified history via `LLMConnector.getHistory()`)~~ **RESOLVED** (Phase 10b) | ~~P3~~ |
 | OI-49 | ~~No generic object association API~~ Fixed: `chatRequestModel.json` adds `contextType`/`context` ($flex foreign) fields for associating any model type with a conversation. MCP tools (`am7_session_attach`/`detach`/`context`) provide programmatic API. REST endpoints (`/rest/chat/context/attach`, `/detach`, `/{objectId}`) provide HTTP API. UX `ContextPanel.js` provides drag-and-drop and visual management | Phase 10 design audit | ~~Phase 10 (10c: MCP context binding)~~ **RESOLVED** (Phase 10c) | ~~P3~~ |
 | OI-50 | ~~`CacheDBSearch.find()` synchronized — serializes ALL database reads through a single lock. Under Tomcat concurrent load, one slow query blocks every other query (including makePath, DELETE, login), causing cascading thread pool exhaustion and complete server hang~~ Fixed: removed `synchronized` from `find()` and helpers; per-model `ConcurrentHashMap` instances provide thread safety. `getCacheMap()` uses `computeIfAbsent()` for atomic map creation | Phase 10b testing | **RESOLVED** (Phase 10b patch) | ~~P1~~ |
+| OI-51 | `ConversationManager.sessionItemView()` layout broken — delete button (`menu-button content-end mr-1`) and session name button (`flyout-button w-full`) in a `flex items-center` div compete for width. Names truncated/invisible in narrow sidebar. Active highlight only covers name button, not full row | Phase 12 UX audit | Phase 12a (item 1) | P2 |
+| OI-52 | Pre-10b fallback session list (`view/chat.js:657-681`) still present — nests delete button *inside* session button (`[bDel, s.name]`), causing same layout issues as OI-51. ConversationManager is stable; fallback can be removed or fixed | Phase 12 UX audit | Phase 12a (item 2) | P3 |
+| OI-53 | Setting text overflow — `view/chat.js:994-996` renders setting as full-width `w-full` block with no truncation or collapse. Long settings dominate the chat area top | Phase 12 UX audit | Phase 12a (item 3) | P3 |
+| OI-54 | ContextPanel collapsed state shows "Context" toggle with no indication of binding count — sessions with 0 bindings and 5 bindings look identical | Phase 12 UX audit | Phase 12a (item 4) | P3 |
+| OI-55 | ContextPanel expanded view is flat `text-xs` list — no type icons, no visual grouping, detach buttons are tiny `link_off` icons with poor discoverability | Phase 12 UX audit | Phase 12a (item 5) | P4 |
 
 ---
 
