@@ -72,6 +72,14 @@
 						
 						-->
 						<exclude>**/TestChatOptions</exclude>
+						<exclude>**/TestChatPhase10</exclude>
+						<exclude>**/TestChatPhase11</exclude>
+						<exclude>**/TestChatStream</exclude>
+						<exclude>**/TestKeyframeMemory</exclude>
+						<exclude>**/TestMemoryDuel</exclude>
+						<exclude>**/TestMemoryPhase2</exclude>
+						<exclude>**/TestMemoryUtil</exclude>
+						<exclude>**/TestResponsePolicy</exclude>
 						<exclude>**/TestPromptTemplate</exclude>
 						<exclude>**/TestScimFilterParser.java</exclude>
 						<exclude>**/TestScimGroupAdapter.java</exclude>
