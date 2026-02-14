@@ -1382,20 +1382,21 @@ public class ChatUtil {
 		for (int i = (full ? 0 : (pruneSkip + 2)); i < req.getMessages().size(); i++) {
 			OpenAIMessage msg = req.getMessages().get(i);
 			String cont = msg.getContent();
-			/// Skip MCP keyframe messages
+			/// OI-14: Skip keyframe messages (MCP format and legacy text format)
 			if (cont != null && cont.contains("<mcp:context") && cont.contains("/keyframe/")) {
 				continue;
 			}
-			/// Skip old-format keyframe messages (backward compat)
+			/// Legacy: skip old (KeyFrame: messages still present in existing histories
 			if (cont != null && cont.startsWith("(KeyFrame")) {
 				continue;
 			}
 			if(cont != null) {
-				/// Strip MCP blocks
+				/// Strip MCP blocks (reminders, keyframes, etc.)
 				cont = McpContextParser.stripAll(cont);
-				/// Strip old-format reminder text (backward compat)
-				if(cont.indexOf("(Reminder") > -1) {
-					cont = cont.substring(0, cont.indexOf("(Reminder")).trim();
+				/// Legacy: strip old (Reminder: text still present in existing histories
+				int remIdx = cont.indexOf("(Reminder");
+				if (remIdx > -1) {
+					cont = cont.substring(0, remIdx).trim();
 				}
 			}
 			String name = null;

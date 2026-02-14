@@ -42,12 +42,18 @@ public class MemoryUtil {
 
 	public static BaseRecord createMemory(BaseRecord user, String content, String summary,
 			MemoryTypeEnumType type, int importance, String sourceUri, String conversationId) {
-		return createMemory(user, content, summary, type, importance, sourceUri, conversationId, 0L, 0L);
+		return createMemory(user, content, summary, type, importance, sourceUri, conversationId, 0L, 0L, null);
 	}
 
 	public static BaseRecord createMemory(BaseRecord user, String content, String summary,
 			MemoryTypeEnumType type, int importance, String sourceUri, String conversationId,
 			long personId1, long personId2) {
+		return createMemory(user, content, summary, type, importance, sourceUri, conversationId, personId1, personId2, null);
+	}
+
+	public static BaseRecord createMemory(BaseRecord user, String content, String summary,
+			MemoryTypeEnumType type, int importance, String sourceUri, String conversationId,
+			long personId1, long personId2, String personModel) {
 
 		BaseRecord memory = null;
 		try {
@@ -70,6 +76,9 @@ public class MemoryUtil {
 				long[] canon = canonicalPersonIds(personId1, personId2);
 				memory.set("personId1", canon[0]);
 				memory.set("personId2", canon[1]);
+			}
+			if (personModel != null && !personModel.isEmpty()) {
+				memory.set("personModel", personModel);
 			}
 
 			memory = IOSystem.getActiveContext().getAccessPoint().create(user, memory);
@@ -279,6 +288,13 @@ public class MemoryUtil {
 
 	public static List<BaseRecord> extractMemoriesFromResponse(BaseRecord user, String llmResponse,
 			String sourceUri, String conversationId) {
+		return extractMemoriesFromResponse(user, llmResponse, sourceUri, conversationId, 0L, 0L, null);
+	}
+
+	/// OI-3: Overload with person pair IDs and person model so LLM-extracted memories
+	/// are tagged with the character pair for cross-conversation retrieval.
+	public static List<BaseRecord> extractMemoriesFromResponse(BaseRecord user, String llmResponse,
+			String sourceUri, String conversationId, long personId1, long personId2, String personModel) {
 
 		List<BaseRecord> memories = new ArrayList<>();
 		try {
@@ -309,7 +325,8 @@ public class MemoryUtil {
 					type = MemoryTypeEnumType.NOTE;
 				}
 
-				BaseRecord mem = createMemory(user, content, summary, type, importance, sourceUri, conversationId);
+				BaseRecord mem = createMemory(user, content, summary, type, importance, sourceUri, conversationId,
+					personId1, personId2, personModel);
 				if (mem != null) {
 					memories.add(mem);
 				}

@@ -44,13 +44,30 @@ public class PromptConfigMigrator {
 		ROLE_MAP.put("assistant", "assistant");
 		ROLE_MAP.put("user", "user");
 
+		/// OI-19: Expanded condition coverage (was 7 fields, now 14)
+		// NLP-gated fields
 		CONDITION_MAP.put("systemNlp", "useNLP");
 		CONDITION_MAP.put("assistantNlp", "useNLP");
 		CONDITION_MAP.put("userConsentNlp", "useNLP");
+		// Rating-gated censor warnings (only for AO/RC)
 		CONDITION_MAP.put("systemCensorWarning", "rating!=E");
 		CONDITION_MAP.put("assistantCensorWarning", "rating!=E");
+		// Rating-gated consent (M/AO/RC)
+		CONDITION_MAP.put("userConsentRating", "rating>=M");
+		// Episode-gated fields
 		CONDITION_MAP.put("episodeRule", "episodes.size>0");
+		// Jailbreak-gated
 		CONDITION_MAP.put("jailBreak", "useJailBreak");
+		// Scene-gated
+		CONDITION_MAP.put("scene", "includeScene");
+		// Gender-gated perspective fields
+		CONDITION_MAP.put("femalePerspective", "systemCharacter.gender=female");
+		CONDITION_MAP.put("malePerspective", "systemCharacter.gender=male");
+		// SD prompt (only used for image generation flows)
+		CONDITION_MAP.put("systemSDPrompt", "useSDPrompt");
+		// Reminder fields (only when assist mode and remindEvery > 0)
+		CONDITION_MAP.put("assistantReminder", "assist");
+		CONDITION_MAP.put("userReminder", "assist");
 	}
 
 	private PromptConfigMigrator() {}

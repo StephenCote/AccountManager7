@@ -170,6 +170,10 @@ public class Chat {
 		this.requestTimeout = requestTimeout;
 	}
 
+	/// Minimum keyframeEvery value when extractMemories is enabled.
+	/// Prevents excessive analyze() LLM calls which are expensive.
+	public static final int MIN_KEYFRAME_EVERY_WITH_EXTRACT = 5;
+
 	private void configureChat() {
 		if (chatConfig != null) {
 			setServerUrl(chatConfig.get("serverUrl"));
@@ -181,6 +185,15 @@ public class Chat {
 			keyFrameEvery = chatConfig.get("keyframeEvery");
 			messageTrim = chatConfig.get("messageTrim");
 			requestTimeout = chatConfig.get("requestTimeout");
+
+			/// OI-5: Enforce minimum keyframeEvery when extractMemories is enabled
+			/// to prevent expensive analyze() LLM calls at high frequency
+			boolean extractMemories = false;
+			try { extractMemories = chatConfig.get("extractMemories"); } catch (Exception e) { /* field may not be set */ }
+			if (extractMemories && keyFrameEvery > 0 && keyFrameEvery < MIN_KEYFRAME_EVERY_WITH_EXTRACT) {
+				logger.warn("keyframeEvery=" + keyFrameEvery + " too low with extractMemories=true, raising to " + MIN_KEYFRAME_EVERY_WITH_EXTRACT);
+				keyFrameEvery = MIN_KEYFRAME_EVERY_WITH_EXTRACT;
+			}
 		}
 	}
 
@@ -1040,24 +1053,13 @@ public class Chat {
 		/// Phase 3: Persist keyframe analysis as a durable memory
 		persistKeyframeAsMemory(analysisText, lab, cfgObjId, systemChar, userChar);
 
+		/// OI-14: MCP-only keyframe detection (old text format deprecated)
 		/// Filter out previous keyframes, keeping the last 2 (Phase 3: keep 2 instead of 1)
 		List<OpenAIMessage> keyframes = req.getMessages().stream()
-				.filter(m -> {
-					String c = m.getContent();
-					if(c == null) return false;
-					if(c.startsWith("(KeyFrame")) return true;
-					if(c.contains("<mcp:context") && c.contains("/keyframe/")) return true;
-					return false;
-				})
+				.filter(m -> isMcpKeyframe(m.getContent()))
 				.collect(Collectors.toList());
 		List<OpenAIMessage> nonKeyframes = req.getMessages().stream()
-				.filter(m -> {
-					String c = m.getContent();
-					if(c == null) return true;
-					if(c.startsWith("(KeyFrame")) return false;
-					if(c.contains("<mcp:context") && c.contains("/keyframe/")) return false;
-					return true;
-				})
+				.filter(m -> !isMcpKeyframe(m.getContent()))
 				.collect(Collectors.toList());
 
 		/// Keep the most recent keyframe (the second-to-last), discard older ones
@@ -1127,6 +1129,12 @@ public class Chat {
 			String sourceUri = "am7://keyframe/" + (cfgObjId != null ? cfgObjId : "default");
 			String conversationId = cfgObjId;
 
+			/// OI-1: Populate personModel from the character schema
+			String personModel = null;
+			if (systemChar.getSchema() != null) {
+				personModel = systemChar.getSchema();
+			}
+
 			BaseRecord memory = MemoryUtil.createMemory(
 				user,
 				analysisText,
@@ -1136,7 +1144,8 @@ public class Chat {
 				sourceUri,
 				conversationId,
 				sysId,
-				usrId
+				usrId,
+				personModel
 			);
 
 			if (memory != null) {
@@ -1220,14 +1229,14 @@ public class Chat {
 		}
 
 		/// Target count = system + pruneSkip
-		///
 		int idx = getMessageOffset();
 		int len = req.getMessages().size() - messageCount;
 		List<OpenAIMessage> kfs = new ArrayList<>();
 		for (int i = idx; i < len; i++) {
 			OpenAIMessage msg = req.getMessages().get(i);
 			msg.setPruned(true);
-			if (msg.getContent() != null && (msg.getContent().startsWith("(KeyFrame:") || (msg.getContent().contains("<mcp:context") && msg.getContent().contains("/keyframe/")))) {
+			/// OI-14: MCP-only keyframe detection (old text format deprecated)
+			if (msg.getContent() != null && isMcpKeyframe(msg.getContent())) {
 				kfs.add(msg);
 			}
 		}
@@ -1240,7 +1249,7 @@ public class Chat {
 			}
 		}
 		boolean useAssist = chatConfig.get("assist");
-		int qual = countBackTo(req, "(KeyFrame:");
+		int qual = countBackToMcp(req, "/keyframe/");
 		if (useAssist && keyFrameEvery > 0 && req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
@@ -1248,7 +1257,20 @@ public class Chat {
 
 	}
 
-	private int countBackTo(OpenAIRequest req, String pattern) {
+	/// OI-14: Unified MCP-only keyframe/reminder detection methods.
+	/// Old `(KeyFrame:` and `(Reminder:` text formats are deprecated.
+
+	private static boolean isMcpKeyframe(String content) {
+		return content != null && content.contains("<mcp:context") && content.contains("/keyframe/");
+	}
+
+	private static boolean isMcpReminder(String content) {
+		return content != null && content.contains("<mcp:context") && content.contains("/reminder/");
+	}
+
+	/// Count messages backwards from the end to the last MCP block matching the given URI fragment.
+	/// Replaces the old countBackTo() which checked both old text and MCP formats.
+	private int countBackToMcp(OpenAIRequest req, String uriFragment) {
 		int idx = getMessageOffset();
 		int eidx = req.getMessages().size() - 1;
 		int qual = 0;
@@ -1258,28 +1280,12 @@ public class Chat {
 				continue;
 			}
 			if(imsg.getContent() == null) continue;
-			/// Check old format
-			if(imsg.getContent().contains(pattern)) {
-				break;
-			}
-			/// Check MCP format
-			if(isMcpEquivalent(imsg.getContent(), pattern)) {
+			if(imsg.getContent().contains("<mcp:context") && imsg.getContent().contains(uriFragment)) {
 				break;
 			}
 			qual++;
 		}
 		return qual;
-	}
-
-	private boolean isMcpEquivalent(String content, String pattern) {
-		if(!content.contains("<mcp:context")) return false;
-		if("(Reminder:".equals(pattern)) {
-			return content.contains("/reminder/");
-		}
-		if("(KeyFrame:".equals(pattern)) {
-			return content.contains("/keyframe/");
-		}
-		return false;
 	}
 	
 	public OpenAIMessage newMessage(OpenAIRequest req, String message) {
@@ -1294,7 +1300,7 @@ public class Chat {
 		if (chatConfig != null && role.equals(userRole)) {
 			ESRBEnumType rating = chatConfig.getEnum("rating");
 			boolean useAssist = chatConfig.get("assist");
-			int qual = countBackTo(req, "(Reminder:");
+			int qual = countBackToMcp(req, "/reminder/");
 
 			if (useAssist && promptConfig != null && qual >= remind && remind > 0) {
 				if (req.getMessages().size() > 0) {

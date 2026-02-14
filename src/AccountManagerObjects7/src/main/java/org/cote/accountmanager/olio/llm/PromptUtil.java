@@ -219,6 +219,9 @@ public class PromptUtil {
 	    buildMemoryReplacements(ctx);
 	    buildRatingNlpConsentReplacements(ctx);
 	    buildDynamicRulesReplacement(ctx);
+	    /// OI-15: Re-apply ${nlp.command} after Stage 7 since buildDynamicRulesReplacement
+	    /// can reintroduce ${nlp.command} tokens via NLP rules from promptConfig.
+	    reapplyNlpCommand(ctx);
 	    buildPronounAgeTradeReplacements(ctx);
 	    buildRatingReplacements(ctx);
 	    buildCharacterDescriptionReplacements(ctx);
@@ -445,6 +448,16 @@ public class PromptUtil {
 		ctx.replace(TemplatePatternEnumType.DYNAMIC_RULES, sb.toString());
 	}
 
+	/// OI-15: Re-apply ${nlp.command} replacement after Stage 7 (buildDynamicRulesReplacement).
+	/// Stage 7 can reintroduce ${nlp.command} tokens via NLP rules from promptConfig
+	/// (e.g. systemNlp contains "${nlp.command}"). Stage 6 already replaced ${nlp.command}
+	/// in the main template, but Stage 7 output may contain new instances.
+	private static void reapplyNlpCommand(PromptBuilderContext ctx) {
+		if (ctx.nlpCommand != null && ctx.template.contains("${nlp.command}")) {
+			ctx.replace(TemplatePatternEnumType.NLP_COMMAND, ctx.nlpCommand);
+		}
+	}
+
 	private static void buildEpisodeReplacements(PromptBuilderContext ctx) {
 		BaseRecord episodeRec = getNextEpisode(ctx.chatConfig);
 		String episodicLabel = "";
@@ -551,6 +564,7 @@ public class PromptUtil {
 		}
 		ctx.replace(TemplatePatternEnumType.NLP_REMINDER, nlpReminderBlock);
 		ctx.replace(TemplatePatternEnumType.USER_CONSENT, ucons.length() > 0 ? uconpref + ucons + ".": "");
+		ctx.nlpCommand = nlpCommand;
 		ctx.replace(TemplatePatternEnumType.NLP_COMMAND, nlpCommand);
 		ctx.replace(TemplatePatternEnumType.CENSOR_WARN, sysCens);
 		ctx.replace(TemplatePatternEnumType.ASSISTANT_CENSOR_WARN, assistCens);

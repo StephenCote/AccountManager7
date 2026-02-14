@@ -433,18 +433,21 @@ public class ChatService {
 			sq.planMost(true);
 			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
 			if (chatReq == null) {
-				return Response.status(404).entity(null).build();
+				return Response.status(200).entity("{}").build();
 			}
 
-			/// Build a summary of all context bindings
+			/// Build a summary of all context bindings using comma-safe approach
 			StringBuilder sb = new StringBuilder();
 			sb.append("{");
+			boolean hasField = false;
 
 			BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
 			if (chatConfig != null) {
+				if (hasField) sb.append(",");
 				sb.append("\"chatConfig\":{\"name\":\"").append(escJson((String)chatConfig.get(FieldNames.FIELD_NAME)));
 				sb.append("\",\"objectId\":\"").append((String)chatConfig.get(FieldNames.FIELD_OBJECT_ID));
 				sb.append("\",\"model\":\"").append(escJson((String)chatConfig.get("model"))).append("\"}");
+				hasField = true;
 
 				BaseRecord sysCh = OlioUtil.getFullRecord(chatConfig.get("systemCharacter"));
 				if (sysCh != null) {
@@ -460,19 +463,23 @@ public class ChatService {
 
 			BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.get("promptConfig"));
 			if (promptConfig != null) {
-				sb.append(",\"promptConfig\":{\"name\":\"").append(escJson((String)promptConfig.get(FieldNames.FIELD_NAME)));
+				if (hasField) sb.append(",");
+				sb.append("\"promptConfig\":{\"name\":\"").append(escJson((String)promptConfig.get(FieldNames.FIELD_NAME)));
 				sb.append("\",\"objectId\":\"").append((String)promptConfig.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+				hasField = true;
 			}
 
 			String contextType = chatReq.get("contextType");
 			if (contextType != null && !contextType.isEmpty()) {
+				if (hasField) sb.append(",");
 				BaseRecord contextObj = OlioUtil.getFullRecord(chatReq.get("context"));
-				sb.append(",\"context\":{\"type\":\"").append(contextType).append("\"");
+				sb.append("\"context\":{\"type\":\"").append(contextType).append("\"");
 				if (contextObj != null) {
 					sb.append(",\"name\":\"").append(escJson((String)contextObj.get(FieldNames.FIELD_NAME)));
 					sb.append("\",\"objectId\":\"").append((String)contextObj.get(FieldNames.FIELD_OBJECT_ID)).append("\"");
 				}
 				sb.append("}");
+				hasField = true;
 			}
 
 			sb.append("}");

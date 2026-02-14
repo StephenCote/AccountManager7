@@ -30,9 +30,14 @@
             let resp = await m.request({
                 method: 'GET',
                 url: g_application_path + "/rest/chat/context/" + sessionId,
-                withCredentials: true
+                withCredentials: true,
+                extract: function(xhr) {
+                    if (xhr.status !== 200 || !xhr.responseText) return {};
+                    try { return JSON.parse(xhr.responseText); }
+                    catch(e) { return {}; }
+                }
             });
-            _contextData = resp;
+            _contextData = resp && Object.keys(resp).length > 0 ? resp : null;
         } catch (e) {
             console.warn("[ContextPanel] Failed to load context:", e);
             _contextData = null;

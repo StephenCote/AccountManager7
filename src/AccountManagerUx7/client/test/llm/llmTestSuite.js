@@ -896,12 +896,12 @@
     }
 
     // ── Tests 75-76: Prune & Keyframe ─────────────────────────────────
-    // PHASE DEP: Phase 10 (Memory System Hardening & Keyframe Refactor) — NOT STARTED
-    // Prune/trim works now; keyframe detection will change with Phase 10
+    // PHASE DEP: Phase 11 (Memory System Hardening & Keyframe Refactor) — COMPLETED
+    // Keyframe detection uses MCP-only format (OI-14/OI-26). keyframeEvery floor enforced (OI-5).
     async function testPrune(cats) {
         if (!cats.includes("prune")) return;
         TF.testState.currentTest = "Prune: message trimming & keyframes";
-        log("prune", "=== Prune Tests === [Phase 10 pending: Keyframe refactor]");
+        log("prune", "=== Prune Tests === [Phase 11: MCP-only keyframe detection]");
 
         let chatCfg = getVariant("streaming");
         let promptCfg = suiteState.promptConfig;
@@ -961,9 +961,10 @@
                 log("prune", "Message count (" + msgs.length + ") may exceed expected trim - check manually", "warn");
             }
 
-            // Test 76: Check for keyframe presence (MCP format)
+            // Test 76: Check for keyframe presence (MCP format only — OI-26/OI-14)
             let keyframes = msgs.filter(function(m) {
-                return (m.content || "").indexOf("[MCP:KeyFrame") !== -1 || (m.content || "").indexOf("(KeyFrame:") !== -1;
+                let c = m.content || "";
+                return c.indexOf("<mcp:context") !== -1 && c.indexOf("/keyframe/") !== -1;
             });
             if (keyframes.length > 0) {
                 log("prune", "Keyframe(s) found: " + keyframes.length, "pass");

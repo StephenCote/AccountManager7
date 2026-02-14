@@ -2436,7 +2436,7 @@ When a test fails:
 
 **Known issues:**
 - **OI-17: Client-side prune functions retained** — The `pruneTag`/`pruneToMark`/`pruneAll` functions are kept in chat.js for backward compatibility with sessions that predate the server-side display fields. They can be removed once all active sessions have been refreshed.
-- **OI-18: Migrator condition coverage** — The static condition map in `PromptConfigMigrator` covers the 7 most common conditional fields (`systemNlp`, `assistantNlp`, `userConsentNlp`, `systemCensorWarning`, `assistantCensorWarning`, `episodeRule`, `jailBreak`). Fields like `femalePerspective`/`malePerspective` have no condition mapping and will always be included. Adding conditions for these requires understanding the intended chatConfig gate fields.
+- **OI-18: Migrator condition coverage** — ~~The static condition map in `PromptConfigMigrator` covers the 7 most common conditional fields. Fields like `femalePerspective`/`malePerspective` have no condition mapping.~~ **RESOLVED in Phase 11** — `CONDITION_MAP` expanded from 7 to 14 entries (OI-19).
 - **OI-19: Token standardization** — Image and audio token processing still varies between prompt template styles. Phase 5 did not address item 4 from the original plan (standardize token processing) as it requires deeper changes to the image/audio pipeline in Chat.java.
 
 ### Phase 6: UX Test Suite (Low risk, high impact)
@@ -2695,7 +2695,7 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 - **OI-23: CardGame shared state coupling** — The refactored `testMode.js` shares `TF.testState` with other suites. Running CardGame tests via the shared test view clears LLM test results and vice versa. Each suite run resets the shared state. This is expected behavior for sequential suite execution.
 - **OI-24: findOrCreateConfig caching** — `findOrCreateConfig()` finds existing objects by name and skips creation. If templates change (e.g., new episodeRule, new image/audio tokens, new episode stages), existing server-side objects must be manually deleted before re-running the suite to pick up changes.
 - **OI-25: Episode transition execution not testable** — Test 78 validates `episodeRule` config presence on promptConfig but cannot test actual `#NEXT EPISODE#` / `#OUT OF EPISODE#` detection and handling, which is server-side. Full episode transition testing requires Phase 7 (Always-Stream) completion.
-- **OI-26: Keyframe detection heuristic** — Test 76 checks for `[MCP:KeyFrame` or `(KeyFrame:` text patterns in message history. False negatives possible if keyframe format changes. Will need update after Phase 11 (keyframe refactor).
+- **OI-26: Keyframe detection heuristic** — ~~Test 76 checks for `[MCP:KeyFrame` or `(KeyFrame:` text patterns in message history. False negatives possible if keyframe format changes.~~ **RESOLVED in Phase 11** — Updated to MCP URI fragment detection (`<mcp:context` + `/keyframe/`).
 
 **Skipped / deferred features:**
 - **Config picker UI** — Original spec called for chatConfig/promptConfig dropdown pickers. Replaced by auto-setup system that creates configs from templates. No manual selection needed.
@@ -3286,11 +3286,11 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 | 8 — LLM Config & ChatOptions Fix | **COMPLETED** | Low | High | 40-45 (all pass), 82-85 (browser) |
 | 9 — Policy-Based Response Regulation | **COMPLETED** | Higher | Medium | 46-62 (backend, all pass); 63-85 (browser: 47 pass, 2 fail, 6 warn) |
 | 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | **COMPLETED** (10a+10b+10c) | Medium | High | 86-110 (UX browser), P10-1..P10-4 + P10c-1..P10c-4 (backend, all 8 pass) |
-| 11 — Memory Hardening & Keyframe Refactor | Not started | Low | Medium | (no numbered tests) |
+| 11 — Memory Hardening & Keyframe Refactor | **COMPLETED** | Low | Medium | P11-1..P11-7 (8 tests, all pass) |
 
 ### Next Phase Recommendation
 
-**Recommended next: Phase 11 (Memory System Hardening & Keyframe Refactor)**.
+**Recommended next: Phase 1 (remainder — items 1, 2, 4: template cleanup)**.
 
 **Rationale:**
 
@@ -3368,39 +3368,35 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
   - **Resolved OIs:** OI-49 (generic object association API — chatRequest context/$flex foreign + MCP tools + REST endpoints + UX ContextPanel).
   - **Known limitation:** `planMost(true)` queries on chatRequest fail with PSQLException when the `context` $flex foreign field has null contextType. The `context` field is excluded from the query array to prevent this. Consumers should load context explicitly via `ContextPanel.load()` or `GET /rest/chat/context/{sessionId}` rather than relying on planMost to resolve it.
 
-- **Phase 10** (UX Chat Refactor) is the highest-impact remaining work. Design audit identified:
-  - **6 duplicated patterns** across `chat.js`, `SessionDirector.js` (1444 lines), and `llmBase.js`/`chatManager.js` — config template cloning, prompt create-or-find, response content extraction, JSON directive parsing, history retrieval, error tracking.
-  - **5 missing `chat.js` API methods** — `getHistory()`, `extractContent()`, `streamChat()`, `parseDirective()`, config clone helpers. Every consumer reimplements these (OI-46).
-  - **5 distinct object association mechanisms** — none generic, all type-specific. No "associate object with conversation" API exists (OI-49).
-  - **8 new open issues** (OI-42 through OI-49) identified during Phase 9 UX testing and design audit, of which 4 were resolved immediately (OI-42, OI-44, OI-45, and the `sendMessage` bug).
-  - **2 UX test failures** — history message loss (OI-43), needing investigation in 10b.
-  - **Recommended sub-phasing:** 10a (extract shared components + `LLMConnector`), 10b (conversation manager + REST API revision), 10c (MCP integration).
+- **Phase 11** is now **COMPLETED**. All 8 Phase 11 open issues resolved (OI-1, OI-3, OI-5, OI-13, OI-14, OI-15, OI-19, OI-26). 8 backend tests added, all pass.
 
-- **Phase 9 UX test results:** 47 pass, 2 fail (history ordering + content match), 6 warn (pre-Phase 8 config caching, episode stages, episodeRule missing), 0 skip. The 2 failures are tracked in OI-43.
+- **Phase 11 implementation summary:**
+  - `MemoryUtil.java` (MODIFIED): OI-1 — Added 3-arg overload chain for `createMemory()` accepting `personModel` parameter. Sets `personModel` field on memory record when non-null/non-empty. Backward-compatible: existing callers without `personModel` pass through to original overload. OI-3 — Added new `extractMemoriesFromResponse()` overload accepting `personId1`/`personId2`/`personModel`, passes them through to `createMemory()` for each extracted memory.
+  - `Chat.java` (MODIFIED): OI-1 — `persistKeyframeAsMemory()` extracts `personModel` from `systemChar.getSchema()` and passes to `createMemory()`. OI-5 — Added `MIN_KEYFRAME_EVERY_WITH_EXTRACT = 5` constant; `configureChat()` enforces minimum when `extractMemories=true` with warning log. OI-14 — Replaced all old keyframe/reminder detection with MCP-only methods: `isMcpKeyframe()` (checks `<mcp:context` + `/keyframe/`), `isMcpReminder()` (checks `<mcp:context` + `/reminder/`), `countBackToMcp(OpenAIRequest, String)` (scans backward for MCP URI fragment). Removed old `countBackTo()`/`isMcpEquivalent()` methods. Updated `pruneCount()`, `addKeyFrame()`, `newMessage()` to use new methods.
+  - `ChatUtil.java` (MODIFIED): OI-14 — `getFormattedChatHistory()` updated: primary detection is MCP-only (`<mcp:context` + `/keyframe/`). Legacy `(KeyFrame:` skip and `(Reminder:` strip retained for display of existing chat histories (backward-compatible display, not creation).
+  - `PromptUtil.java` (MODIFIED): OI-15 — Added `reapplyNlpCommand()` post-Stage-7 pass. Stored `nlpCommand` in `PromptBuilderContext` during Stage 6 (`buildRatingNlpConsentReplacements()`), reapplied after `buildDynamicRulesReplacement()` to fix `${nlp.command}` tokens reintroduced by Stage 7 dynamic rules.
+  - `PromptBuilderContext.java` (MODIFIED): OI-15 — Added `public String nlpCommand = null` field to carry NLP command across pipeline stages.
+  - `PromptConfigMigrator.java` (MODIFIED): OI-19 — Expanded `CONDITION_MAP` from 7 to 14 entries: added `userConsentRating` → `rating>=M`, `scene` → `includeScene`, `femalePerspective` → `systemCharacter.gender=female`, `malePerspective` → `systemCharacter.gender=male`, `systemSDPrompt` → `useSDPrompt`, `assistantReminder` → `assist`, `userReminder` → `assist`.
+  - `TestChatPhase11.java` (NEW): 8 backend tests — P11-1 (personModel field population), P11-1b (backward compat without personModel), P11-2 (extractMemoriesFromResponse with person pair IDs), P11-3 (keyframeEvery minimum floor enforcement), P11-4 (MCP-only keyframe detection in getFormattedChatHistory), P11-5 (nlp.command reapplication after Stage 7), P11-6 (migrator condition coverage — 9 fields with content detected), P11-7 (keyframe detection MCP URI fragment: isMcpKeyframe/isMcpReminder). All 8 pass.
+  - Test files relocated (OI-13): `TestMemoryUtil.java`, `TestMemoryPhase2.java`, `TestKeyframeMemory.java`, `TestMemoryDuel.java` copied from `AccountManagerAgent7/src/test/java/` to `AccountManagerObjects7/src/test/java/`. Same package, same `BaseTest` — zero Agent7 dependencies.
+  - `llmTestSuite.js` (MODIFIED): OI-26 — Test 76 keyframe detection updated from old `[MCP:KeyFrame` / `(KeyFrame:` patterns to MCP URI fragment detection (`<mcp:context` + `/keyframe/`).
+  - `ChatService.java` (MODIFIED): Fixed ContextPanel UX crash — 404 response changed from `entity(null)` to `entity("{}")` (mithril can't parse null). Fixed JSON comma bug in context endpoint when chatConfig is null.
+  - `ContextPanel.js` (MODIFIED): Fixed `loadContext()` with `extract` function for resilient response parsing — handles non-200 and empty/malformed responses gracefully.
+  - `TestPromptTemplate.java` (MODIFIED): Fixed `TestOpenChatLLMIntegration` and `TestRPGTemplateLLMIntegration` — `getRandmChatConfig()` creates configs with default `serviceType=OPENAI` (from chatConfigModel.json), but tests only updated `model` and `serverUrl` for Ollama. Added `serviceType=OLLAMA` to the slim copy update, fixing incorrect URL construction (`/openai/deployments/...` against Ollama server → 404 HTML → JSON parse failure → null content).
+  - **Resolved OIs:** OI-1 (personModel population), OI-3 (memory person pair IDs), OI-5 (keyframeEvery floor), OI-13 (test relocation), OI-14 (old keyframe format deprecation), OI-15 (nlp.command pipeline ordering), OI-19 (migrator condition coverage), OI-26 (keyframe detection heuristic).
+  - **Additional fixes:** TestPromptTemplate serviceType bug (pre-existing — tests 27/28 never worked against Ollama), ContextPanel UX crash (server returned null entity + JSON comma bug).
 
-- **Phase 10c UX test results:** 54 pass, 6 fail, 4 warn, 2 skip. 4 of the 6 failures were due to missing `<script>` tags in `index.html` for Phase 10 components (LLMConnector, ChatTokenRenderer, ConversationManager, ContextPanel) — components were in `build.js` (bundled mode) but not in `index.html` (dev mode). Fixed by adding 4 script tags. Remaining 2 failures are the persistent OI-43 history ordering issue (2/3 user messages found with assist=true + messageTrim interactions). OI-43 is deferred to Phase 11 for deeper investigation of server-side persistence timing under assist=true + messageTrim conditions.
+- **Phase 10** (UX Chat Refactor) is **COMPLETED**. Design audit identified and resolved 6 duplicated patterns, 5 missing API methods, 5 association mechanisms, and 8 new open issues.
 
 - **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
 
-- **Phase 11** (Memory Hardening & Keyframe Refactor) has no phase dependencies and can proceed at any time.
+**Suggested order:** ~~10a~~ ~~10b~~ ~~10c~~ ~~11~~ → 1 (remainder)
 
-**Suggested order:** ~~10a~~ ~~10b~~ ~~10c~~ → 1 (remainder) → 11
-
-**Phase 10 status:** ALL DONE (10a, 10b, 10c). All 8 backend tests pass (P10-1..4 + P10c-1..4). UX bundle builds clean. Next: Phase 11 (Memory/Keyframe Hardening) or Phase 1 (remainder).
-
-**Phase 11 scope** (can proceed independently):
-- OI-1: `personModel` field population in `MemoryUtil.createMemory()` / `Chat.persistKeyframeAsMemory()`
-- OI-3: `extractMemoriesFromResponse()` person pair IDs (P2 — highest priority)
-- OI-5: Minimum floor for `keyframeEvery` to prevent expensive `analyze()` spam
-- OI-15: `${nlp.command}` pipeline ordering (Stage 6/7 conflict)
-- OI-19: Migrator condition coverage gaps (7 of ~34 fields mapped)
-- OI-26: Keyframe detection heuristic fragility (pattern-matching)
-- OI-14: Deprecate old `(KeyFrame:` text format, require MCP format only
+**Phase 11 status:** ALL DONE. All 8 backend tests pass (P11-1, P11-1b, P11-2..P11-7). All 8 assigned open issues resolved. UX keyframe test updated.
 
 **Open issues remaining (by priority):**
-- **P2:** OI-3 (memory person pair IDs)
-- **P3:** OI-1 (personModel), OI-5 (keyframeEvery floor), OI-13 (test relocation), OI-15 (nlp pipeline), OI-17 (Magic8 wiring), OI-19 (migrator coverage), OI-26 (keyframe heuristic), OI-27 (Ollama abort), OI-29 (Ollama options)
-- **P4:** OI-14 (keyframe format), OI-18 (prune backward compat), OI-23 (shared state), OI-28 (test order), OI-30 (analyze hardcoded), OI-31/34 (double-apply), OI-33 (UX form Ollama section), OI-39 (wrong char false positives)
+- **P3:** OI-17 (Magic8 wiring), OI-27 (Ollama abort), OI-29 (Ollama options)
+- **P4:** OI-18 (prune backward compat), OI-23 (shared state), OI-28 (test order), OI-30 (analyze hardcoded), OI-31/34 (double-apply), OI-33 (UX form Ollama section), OI-39 (wrong char false positives), OI-41 (stale analyzeModel in existing DB records)
 
 ---
 
@@ -3457,14 +3453,14 @@ All known open issues with their assigned resolution phase:
 
 | # | Issue | Source | Assigned Phase | Priority |
 |---|-------|--------|---------------|----------|
-| OI-1 | `personModel` field not populated by `MemoryUtil.createMemory()` or `Chat.persistKeyframeAsMemory()` | Phase 2-3 known issues | Phase 11 (item 1) | P3 |
+| OI-1 | ~~`personModel` field not populated by `MemoryUtil.createMemory()` or `Chat.persistKeyframeAsMemory()`~~ Fixed: `createMemory()` accepts `personModel` parameter; `persistKeyframeAsMemory()` passes `systemChar.getSchema()`. Test P11-1 validates | Phase 2-3 known issues | ~~Phase 11 (item 1)~~ **RESOLVED** | ~~P3~~ |
 | OI-2 | ~~`MEMORY_RELATIONSHIP`, `MEMORY_FACTS`, `MEMORY_LAST_SESSION`, `MEMORY_COUNT` always empty/zero~~ | Phase 2-3 known issues | ~~Phase 4 (item 8)~~ **RESOLVED** | ~~P2~~ |
-| OI-15 | `${nlp.command}` pipeline ordering: Stage 6 replaces before Stage 7 can reintroduce via dynamic rules | Phase 4 implementation | Phase 11 | P3 |
+| OI-15 | ~~`${nlp.command}` pipeline ordering: Stage 6 replaces before Stage 7 can reintroduce via dynamic rules~~ Fixed: `reapplyNlpCommand()` added as post-Stage-7 pass. `nlpCommand` stored in `PromptBuilderContext` by Stage 6, reapplied after `buildDynamicRulesReplacement()`. Test P11-5 validates | Phase 4 implementation | ~~Phase 11~~ **RESOLVED** | ~~P3~~ |
 | OI-16 | ~~StackOverflowError in deeply nested record authorization — RecordDeserializer debug `toString()` removed + PolicyUtil `getForeignPatterns` depth-limited + slim `copyRecord()` update pattern~~ | Phase 4 testing | ~~Phase 10~~ **RESOLVED** | ~~P3~~ |
 | OI-17 | Magic8 client-side template (`SessionDirector.js`) not yet wired to server-side `prompt.magic8.json` | Phase 4 implementation | Phase 6+ | P3 |
-| OI-3 | `extractMemoriesFromResponse()` does not pass person pair IDs | Phase 2-3 known issues | Phase 11 (item 2) | P2 |
+| OI-3 | ~~`extractMemoriesFromResponse()` does not pass person pair IDs~~ Fixed: new overload accepts `personId1`/`personId2`/`personModel` and passes them to `createMemory()`. Test P11-2 validates | Phase 2-3 known issues | ~~Phase 11 (item 2)~~ **RESOLVED** | ~~P2~~ |
 | OI-4 | ~~`openaiMessage` model missing `thinking` field — qwen3/CoT models produce error logs~~ | Phase 3 testing | ~~Phase 7 (item 4)~~ **RESOLVED** | ~~P2~~ |
-| OI-5 | Low `keyframeEvery` values trigger expensive `analyze()` LLM calls | Phase 3 known issues | Phase 11 (item 5) | P3 |
+| OI-5 | ~~Low `keyframeEvery` values trigger expensive `analyze()` LLM calls~~ Fixed: `configureChat()` enforces `MIN_KEYFRAME_EVERY_WITH_EXTRACT=5` when `extractMemories=true`. Test P11-3 validates | Phase 3 known issues | ~~Phase 11 (item 5)~~ **RESOLVED** | ~~P3~~ |
 | OI-6 | ~~`top_k` maxValue=1 prevents valid values (should be 500)~~ | Section 6.1 | ~~Phase 8 (item 1)~~ **RESOLVED** | ~~P1~~ |
 | OI-7 | ~~`typical_p` incorrectly mapped to OpenAI `presence_penalty` in `applyChatOptions()`~~ | Section 6.1 | ~~Phase 8 (item 2)~~ **RESOLVED** | ~~P1~~ |
 | OI-8 | ~~`repeat_penalty` mapped to `frequency_penalty` with different semantics~~ | Section 6.1 | ~~Phase 8 (item 2)~~ **RESOLVED** | ~~P1~~ |
@@ -3472,17 +3468,17 @@ All known open issues with their assigned resolution phase:
 | OI-10 | ~~Missing `frequency_penalty` field on chatOptions (OpenAI-native)~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P2~~ |
 | OI-11 | ~~Missing `presence_penalty` field on chatOptions (OpenAI-native)~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P2~~ |
 | OI-12 | ~~Missing `seed` field on chatOptions~~ | Section 6.1 | ~~Phase 8 (item 3)~~ **RESOLVED** | ~~P3~~ |
-| OI-13 | Memory/keyframe tests in Agent7 have no Agent7 dependencies — should relocate to Objects7 | Phase 3 testing | Phase 11 (item 3) | P3 |
-| OI-14 | Old `(KeyFrame:` text format still supported alongside MCP format — maintenance burden | Phase 3 code review | Phase 11 (item 4) | P3 |
+| OI-13 | ~~Memory/keyframe tests in Agent7 have no Agent7 dependencies — should relocate to Objects7~~ Fixed: `TestMemoryUtil`, `TestMemoryPhase2`, `TestKeyframeMemory`, `TestMemoryDuel` copied to `AccountManagerObjects7/src/test/java/`. Same package, same BaseTest. Test P11-1..7 added alongside | Phase 3 testing | ~~Phase 11 (item 3)~~ **RESOLVED** | ~~P3~~ |
+| OI-14 | ~~Old `(KeyFrame:` text format still supported alongside MCP format — maintenance burden~~ Fixed: `pruneCount()`, `addKeyFrame()`, `newMessage()` use MCP-only detection via `isMcpKeyframe()`/`isMcpReminder()`/`countBackToMcp()`. Old `countBackTo()`/`isMcpEquivalent()` removed. `getFormattedChatHistory()` MCP-only. UX test 76 updated. Test P11-4/P11-7 validate | Phase 3 code review | ~~Phase 11 (item 4)~~ **RESOLVED** | ~~P3~~ |
 | OI-18 | Client-side prune functions retained for backward compatibility — can be removed once all active sessions refresh | Phase 5 implementation | Future cleanup | P4 |
-| OI-19 | Migrator condition coverage — static condition map covers 7 of ~34 fields; fields like `femalePerspective`/`malePerspective` have no condition mapping | Phase 5 implementation | Phase 11 | P3 |
+| OI-19 | ~~Migrator condition coverage — static condition map covers 7 of ~34 fields; fields like `femalePerspective`/`malePerspective` have no condition mapping~~ Fixed: `CONDITION_MAP` expanded from 7 to 14 entries — added `userConsentRating` (rating>=M), `scene` (includeScene), `femalePerspective`/`malePerspective` (systemCharacter.gender), `systemSDPrompt` (useSDPrompt), `assistantReminder`/`userReminder` (assist). Test P11-6 validates | Phase 5 implementation | ~~Phase 11~~ **RESOLVED** | ~~P3~~ |
 | OI-20 | ~~Token standardization — image/audio token processing still varies between prompt template styles~~ Extracted to `ChatTokenRenderer.js` shared module; `view/chat.js` delegates to it | Phase 5 review | ~~Phase 10 (10a: extract to ChatTokenRenderer)~~ **RESOLVED** | ~~P3~~ |
 | OI-21 | ~~Stream tests require WebSocket — Tests 71-72 need active `page.wss` and `chatConfig.stream=true`~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
 | OI-22 | ~~Policy tests placeholder — Test 81 validates config presence only; evaluation requires Phase 9~~ | Phase 6 implementation | ~~Phase 9~~ **RESOLVED** | ~~P3~~ |
 | OI-23 | CardGame shared state coupling — switching suites resets shared `TF.testState` | Phase 6 implementation | By design | P4 |
 | OI-24 | ~~`findOrCreateConfig` caching — template changes require manual deletion of existing server objects~~ `LLMConnector.ensureConfig()` and `ensurePrompt()` now compare key fields and patch if changed. UX test `findOrCreateConfig` updated with syncFields comparison | Phase 6 implementation | ~~Future: add update-if-changed~~ **RESOLVED** (Phase 10a) | ~~P3~~ |
 | OI-25 | ~~Episode transition execution not testable — `#NEXT EPISODE#` detection is server-side~~ | Phase 6 implementation | ~~Phase 7~~ **RESOLVED** | ~~P3~~ |
-| OI-26 | Keyframe detection heuristic — Test 76 pattern-matches `[MCP:KeyFrame` / `(KeyFrame:` text; fragile | Phase 6 implementation | Phase 11 | P3 |
+| OI-26 | ~~Keyframe detection heuristic — Test 76 pattern-matches `[MCP:KeyFrame` / `(KeyFrame:` text; fragile~~ Fixed: UX test 76 updated to MCP URI fragment detection (`<mcp:context` + `/keyframe/`). Backend test P11-7 validates both `isMcpKeyframe()` and `isMcpReminder()` methods | Phase 6 implementation | ~~Phase 11~~ **RESOLVED** | ~~P3~~ |
 | OI-27 | Ollama server-side request not cancelled on client timeout — `CompletableFuture` cancellation doesn't reach server | Phase 7 implementation | Future: Ollama abort API | P3 |
 | OI-28 | Test execution order sensitivity — Test 37 sets requestTimeout=1 on shared DB config; crash between set/restore leaks value | Phase 7 testing | Mitigated by explicit resets | P4 |
 | OI-29 | Ollama native `options` object not supported — `top_k`, `typical_p`, `repeat_penalty`, `min_p`, `repeat_last_n` not sent after Phase 8 mapping fix | Phase 8 prep | Future: add `options` model to request | P3 |

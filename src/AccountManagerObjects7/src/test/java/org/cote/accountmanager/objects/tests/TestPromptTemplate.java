@@ -17,6 +17,7 @@ import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.MigrationReport;
 import org.cote.accountmanager.olio.llm.MigrationResult;
 import org.cote.accountmanager.olio.llm.PromptConditionEvaluator;
@@ -339,7 +340,8 @@ public class TestPromptTemplate extends BaseTest {
 			String server = testProperties.getProperty("test.llm.ollama.server");
 			chatConfig.set("model", model);
 			chatConfig.set("serverUrl", server);
-			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "serverUrl"});
+			chatConfig.set("serviceType", LLMServiceEnumType.OLLAMA);
+			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "serverUrl", "serviceType"});
 			IOSystem.getActiveContext().getAccessPoint().update(testUser, updateCfg);
 
 			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, "PT LLM Open Chat " + UUID.randomUUID().toString());
@@ -417,8 +419,9 @@ public class TestPromptTemplate extends BaseTest {
 			String server = testProperties.getProperty("test.llm.ollama.server");
 			chatConfig.set("model", model);
 			chatConfig.set("serverUrl", server);
+			chatConfig.set("serviceType", LLMServiceEnumType.OLLAMA);
 			chatConfig.set("rating", ESRBEnumType.M);
-			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "serverUrl", "rating"});
+			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "serverUrl", "serviceType", "rating"});
 			IOSystem.getActiveContext().getAccessPoint().update(testUser, updateCfg);
 
 			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, "PT LLM RPG " + UUID.randomUUID().toString());
