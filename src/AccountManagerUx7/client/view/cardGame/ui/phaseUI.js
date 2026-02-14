@@ -187,7 +187,7 @@
 
     function canEquipToSlot(card, slotKey) {
         let EQUIP_SLOT_MAP = CardGame.Constants.EQUIP_SLOT_MAP;
-        let cardSlot = card.slot || (card.type === "apparel" ? "Body" : null);
+        let cardSlot = card.slot || (card.type === "apparel" || (card.type === "item" && card.subtype === "armor") ? "Body" : null);
         if (!cardSlot || !EQUIP_SLOT_MAP[cardSlot]) return false;
         let validSlots = EQUIP_SLOT_MAP[cardSlot];
         return validSlots.indexOf(slotKey) >= 0;
@@ -206,12 +206,14 @@
                 let equipped = player.equipped || {};
 
                 // Equippable cards from hand and cardStack
+                function isEquippable(c) {
+                    return (c.type === "item" && (c.subtype === "weapon" || c.subtype === "armor")) || c.type === "apparel";
+                }
                 let equippableHand = (player.hand || []).filter(function(c) {
-                    return (c.type === "item" && c.subtype === "weapon") || c.type === "apparel";
+                    return isEquippable(c);
                 });
                 let equippableStack = (player.cardStack || []).filter(function(c) {
-                    return ((c.type === "item" && c.subtype === "weapon") || c.type === "apparel") &&
-                        !Object.values(equipped).includes(c);
+                    return isEquippable(c) && !Object.values(equipped).includes(c);
                 });
                 let allEquippable = equippableHand.concat(equippableStack);
 

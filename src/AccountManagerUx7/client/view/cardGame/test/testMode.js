@@ -1672,7 +1672,7 @@
 
             // Helper: canEquipToSlot (mirrors phaseUI.js logic)
             function canEquipToSlot(card, slotKey) {
-                let cardSlot = card.slot || (card.type === "apparel" ? "Body" : null);
+                let cardSlot = card.slot || (card.type === "apparel" || (card.type === "item" && card.subtype === "armor") ? "Body" : null);
                 if (!cardSlot || !EQUIP_SLOT_MAP[cardSlot]) return false;
                 let validSlots = EQUIP_SLOT_MAP[cardSlot];
                 return validSlots.indexOf(slotKey) >= 0;
@@ -1706,6 +1706,8 @@
             let boots = { type: "apparel", name: "Leather Boots", slot: "Feet", atk: 0, def: 1, durability: 4 };
             let ring = { type: "apparel", name: "Ring of Power", slot: "Ring", atk: 1, def: 1, durability: null };
             let cape = { type: "apparel", name: "Enchanted Cape", slot: "Back", atk: 0, def: 2, durability: 5 };
+            let itemArmor = { type: "item", subtype: "armor", name: "Plate Mail", slot: "Body", atk: 0, def: 4, durability: 10 };
+            let itemArmorNoSlot = { type: "item", subtype: "armor", name: "Basic Vest", atk: 0, def: 2, durability: 6 };
             let skillCard = { type: "skill", name: "Swordsmanship", modifier: "+2 to Attack rolls" };
             let magicCard = { type: "magic", name: "Fireball", effect: "Deal 10 fire damage", energyCost: 3 };
             let consumable = { type: "item", subtype: "consumable", name: "Health Potion", effect: "Restore 10 HP" };
@@ -1830,6 +1832,32 @@
                 let noSlotApparel = { type: "apparel", name: "Robe" };
                 testLog("ux", "canEquipToSlot(apparel no slot, body)=" + canEquipToSlot(noSlotApparel, "body"),
                     canEquipToSlot(noSlotApparel, "body") === true ? "pass" : "fail");
+
+                // item/armor with slot
+                testLog("ux", "canEquipToSlot(item/armor with slot, body)=" + canEquipToSlot(itemArmor, "body"),
+                    canEquipToSlot(itemArmor, "body") === true ? "pass" : "fail");
+
+                // item/armor WITHOUT slot defaults to Body
+                testLog("ux", "canEquipToSlot(item/armor no slot, body)=" + canEquipToSlot(itemArmorNoSlot, "body"),
+                    canEquipToSlot(itemArmorNoSlot, "body") === true ? "pass" : "fail");
+            }
+
+            // A extra: equip item/armor type card
+            if (gameState.equipCard) {
+                let a = Object.assign({}, itemArmor);
+                let actor = makeTestActor([a]);
+                gameState.equipCard(actor, a, "body");
+                testLog("ux", "A-extra: equipCard(item/armor, body) -> equipped=" + (actor.equipped.body === a) + " hand=" + actor.hand.length,
+                    actor.equipped.body === a && actor.hand.length === 0 ? "pass" : "fail");
+            }
+
+            // A extra: equip item/armor without slot property
+            if (gameState.equipCard) {
+                let a = Object.assign({}, itemArmorNoSlot);
+                let actor = makeTestActor([a]);
+                gameState.equipCard(actor, a, "body");
+                testLog("ux", "A-extra: equipCard(item/armor no slot, body) -> equipped=" + (actor.equipped.body === a),
+                    actor.equipped.body === a && actor.hand.length === 0 ? "pass" : "fail");
             }
 
             // ── B. Auto-equip ──
@@ -1880,6 +1908,20 @@
                     let equippedCount = Object.values(actor.equipped).filter(v => v !== null).length;
                     testLog("ux", "B4: multi-slot auto-equip -> " + equippedCount + " slots filled",
                         equippedCount >= 4 ? "pass" : "fail");
+                }
+
+                // B5: item/armor type auto-equips correctly
+                {
+                    let ia = Object.assign({}, itemArmor);
+                    let w = Object.assign({}, sword1H);
+                    let actor = makeTestActor([], [w, ia]);
+                    if (gameState.autoEquipFromStack) {
+                        gameState.autoEquipFromStack(actor);
+                        testLog("ux", "B5: autoEquipFromStack with item/armor -> body=" + (actor.equipped.body !== null) + " handR=" + (actor.equipped.handR !== null),
+                            actor.equipped.body !== null && actor.equipped.handR !== null ? "pass" : "fail");
+                    } else {
+                        testLog("ux", "B5: autoEquipFromStack not exported", "skip");
+                    }
                 }
             } else {
                 testLog("ux", "aiAutoEquip not available on GameState", "fail");
@@ -2292,6 +2334,17 @@
                         atkBefore > 0 && atkAfter === 0 ? "pass" : "fail");
 
                     if (window.CardGame.ctx) window.CardGame.ctx.gameState = savedCtxGs;
+                }
+
+                // G9: item/armor type durability decrements
+                {
+                    let ia = Object.assign({}, itemArmor);
+                    ia.durability = 10;
+                    let actor = makeTestActor();
+                    actor.equipped.body = ia;
+                    engine.decrementApparelDurability(actor, false);
+                    testLog("ux", "G9: item/armor dur 10 normal hit -> " + ia.durability,
+                        ia.durability === 9 ? "pass" : "fail");
                 }
             } else {
                 testLog("ux", "decrementWeaponDurability/decrementApparelDurability not available", "fail");

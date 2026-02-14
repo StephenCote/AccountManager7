@@ -1106,9 +1106,13 @@
 
     // ── Equipment Management ──────────────────────────────────────────────
 
+    function isEquippable(card) {
+        return (card.type === "item" && (card.subtype === "weapon" || card.subtype === "armor")) || card.type === "apparel";
+    }
+
     function getSlotForCard(card) {
         let EQUIP_SLOT_MAP = C().EQUIP_SLOT_MAP;
-        let cardSlot = card.slot || (card.type === "apparel" ? "Body" : null);
+        let cardSlot = card.slot || (card.type === "apparel" || (card.type === "item" && card.subtype === "armor") ? "Body" : null);
         if (!cardSlot || !EQUIP_SLOT_MAP[cardSlot]) return null;
         return EQUIP_SLOT_MAP[cardSlot];
     }
@@ -1167,9 +1171,7 @@
 
     function autoEquipFromStack(actor) {
         if (!actor || !actor.cardStack) return;
-        let toEquip = actor.cardStack.filter(c =>
-            (c.type === "item" && c.subtype === "weapon") || c.type === "apparel"
-        );
+        let toEquip = actor.cardStack.filter(c => isEquippable(c));
         // Sort by value: highest atk+def first
         toEquip.sort((a, b) => ((b.atk || 0) + (b.def || 0)) - ((a.atk || 0) + (a.def || 0)));
         for (let card of toEquip) {
@@ -1187,8 +1189,7 @@
         if (!actor) return;
         // Collect all equippable cards from hand + cardStack
         let equippable = [...(actor.hand || []), ...(actor.cardStack || [])].filter(c =>
-            ((c.type === "item" && c.subtype === "weapon") || c.type === "apparel") &&
-            !Object.values(actor.equipped || {}).includes(c)
+            isEquippable(c) && !Object.values(actor.equipped || {}).includes(c)
         );
         // Sort by value: highest atk+def first
         equippable.sort((a, b) => ((b.atk || 0) + (b.def || 0)) - ((a.atk || 0) + (a.def || 0)));
@@ -2968,8 +2969,11 @@
         enterEndThreatPhase,
 
         // Equipment management
+        isEquippable,
+        getSlotForCard,
         equipCard,
         unequipCard,
+        autoEquipFromStack,
         aiAutoEquip,
 
         // Threat combat

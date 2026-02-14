@@ -487,7 +487,7 @@
             stack.push(shuffle([...armors])[0]);
         } else {
             stack.push({
-                type: "item", subtype: "armor", name: "Basic Armor",
+                type: "apparel", name: "Basic Armor",
                 slot: "Body", rarity: "COMMON", def: 2, effect: "+2 DEF"
             });
         }
