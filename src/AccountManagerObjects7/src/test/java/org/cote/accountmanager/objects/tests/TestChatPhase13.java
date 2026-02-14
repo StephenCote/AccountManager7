@@ -13,13 +13,23 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.FactType;
+import org.cote.accountmanager.objects.generated.OperationType;
+import org.cote.accountmanager.objects.generated.PatternType;
+import org.cote.accountmanager.objects.generated.PolicyType;
+import org.cote.accountmanager.objects.generated.RuleType;
 import org.cote.accountmanager.olio.OlioUtil;
-import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ConditionEnumType;
+import org.cote.accountmanager.schema.type.FactEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
+import org.cote.accountmanager.schema.type.OperationEnumType;
+import org.cote.accountmanager.schema.type.PatternEnumType;
+import org.cote.accountmanager.schema.type.RuleEnumType;
 import org.cote.accountmanager.util.MemoryUtil;
 import org.junit.Before;
 import org.junit.Test;
@@ -530,6 +540,110 @@ public class TestChatPhase13 extends BaseTest {
 		} catch (Exception e) {
 			logger.error("P13-11 failed", e);
 			fail("P13-11 Exception: " + e.getMessage());
+		}
+	}
+
+	/// P13-15: Build a complex policy.policy object with nested rules/patterns/operations/facts
+	/// using the applyNameGroupOwnership + createRecord + member pattern (matching TestChatPolicy).
+	/// Then assign to a chatConfig and verify FK persists.
+	@SuppressWarnings("deprecation")
+	@Test
+	public void testChatPolicyComplexSave() {
+		try {
+			String suffix = UUID.randomUUID().toString().substring(0, 6);
+			long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+			// Build and save operation
+			OperationType op = new OperationType();
+			op.set("type", OperationEnumType.INTERNAL);
+			op.set("operation", "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation");
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(
+				testUser, op, "Timeout Op " + suffix, "~/Operations", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(op);
+			assertNotNull("Operation id should be set", op.get(FieldNames.FIELD_ID));
+
+			// Build and save param fact
+			FactType paramFact = new FactType();
+			paramFact.set("type", FactEnumType.PARAMETER);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(
+				testUser, paramFact, "Timeout Param " + suffix, "~/Facts", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(paramFact);
+
+			// Build and save match fact (context fact)
+			FactType matchFact = new FactType();
+			matchFact.set("type", FactEnumType.STATIC);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(
+				testUser, matchFact, "Timeout Context " + suffix, "~/Facts", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(matchFact);
+
+			// Build and save pattern, linking operation + facts
+			PatternType pattern = new PatternType();
+			pattern.set("type", PatternEnumType.OPERATION);
+			pattern.set("operation", op);
+			pattern.set("fact", paramFact);
+			pattern.set("match", matchFact);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(
+				testUser, pattern, "Timeout Pattern " + suffix, "~/Patterns", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(pattern);
+
+			// Build and save rule
+			RuleType rule = new RuleType();
+			rule.set("type", RuleEnumType.PERMIT);
+			rule.set("condition", ConditionEnumType.ALL);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(
+				testUser, rule, "Test Rule " + suffix, "~/Rules", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(rule);
+
+			// Link pattern to rule via membership
+			IOSystem.getActiveContext().getMemberUtil().member(testUser, rule, pattern, null, true);
+
+			// Build and save policy
+			PolicyType policy = new PolicyType();
+			policy.set("enabled", true);
+			policy.set("condition", ConditionEnumType.ALL);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(
+				testUser, policy, "Test Policy " + suffix, "~/Policies", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(policy);
+
+			// Link rule to policy via membership
+			IOSystem.getActiveContext().getMemberUtil().member(testUser, policy, rule, null, true);
+
+			String objectId = policy.get(FieldNames.FIELD_OBJECT_ID);
+			assertNotNull("Policy objectId should not be null", objectId);
+			logger.info("P13-15: Created policy objectId=" + objectId);
+
+			// Re-query with planMost to verify nested records are populated
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_POLICY, FieldNames.FIELD_OBJECT_ID, objectId);
+			q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			q.planMost(true);
+			BaseRecord found = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+			assertNotNull("Re-queried policy should not be null", found);
+			List<BaseRecord> foundRules = found.get("rules");
+			assertNotNull("Rules should not be null", foundRules);
+			assertTrue("Should have at least 1 rule, found " + foundRules.size(), foundRules.size() >= 1);
+
+			// Verify patterns on the rule
+			BaseRecord foundRule = foundRules.get(0);
+			List<BaseRecord> foundPatterns = foundRule.get("patterns");
+			assertNotNull("Patterns should not be null", foundPatterns);
+			assertTrue("Should have at least 1 pattern, found " + foundPatterns.size(), foundPatterns.size() >= 1);
+
+			// Assign to a chatConfig and verify FK persists
+			String cfgName = "P13-15-cfg-" + suffix;
+			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(testUser, cfgName);
+			assertNotNull("ChatConfig should not be null", chatConfig);
+			chatConfig.set("policy", found);
+			chatConfig = IOSystem.getActiveContext().getAccessPoint().update(testUser, chatConfig);
+			assertNotNull("Updated chatConfig should not be null", chatConfig);
+
+			// Read back and verify policy FK
+			BaseRecord policyRef = chatConfig.get("policy");
+			assertNotNull("Policy reference on chatConfig should not be null", policyRef);
+
+			logger.info("P13-15 passed: complex policy save and chatConfig assignment verified");
+		} catch (Exception e) {
+			logger.error("P13-15 failed", e);
+			fail("P13-15 Exception: " + e.getMessage());
 		}
 	}
 }
