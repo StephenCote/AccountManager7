@@ -11,7 +11,12 @@ import java.util.UUID;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
@@ -381,6 +386,70 @@ public class TestChatPhase13 extends BaseTest {
 		} catch (Exception e) {
 			logger.error("P13-10 failed", e);
 			fail("P13-10 Exception: " + e.getMessage());
+		}
+	}
+
+	/// P13-12: Verify chatRequest query does NOT try to resolve foreign ref fields
+	/// (chatConfig, promptConfig, session) as query criteria on their own models.
+	/// Regression test for: "'chatConfig' field requested for olio.llm.chatConfig model"
+	@SuppressWarnings("deprecation")
+	@Test
+	public void testChatRequestQueryNoForeignFieldError() {
+		try {
+			// Create a chatRequest record to query against
+			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(testUser, "P13-12-cfg-" + UUID.randomUUID().toString().substring(0, 6));
+			assertNotNull("ChatConfig should not be null", chatConfig);
+
+			// Query chatRequest model by objectId — this should NOT throw an error
+			// about 'chatConfig' being requested as a field on the chatConfig sub-model
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, "nonexistent-test-id");
+			q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			BaseRecord result = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+			// result can be null (no match) — the important thing is no exception was thrown
+			logger.info("P13-12 passed: chatRequest query executed without foreign field errors (result=" + (result != null ? "found" : "null") + ")");
+		} catch (Exception e) {
+			logger.error("P13-12 failed", e);
+			fail("P13-12 Exception (likely foreign field in query): " + e.getMessage());
+		}
+	}
+
+	/// P13-13: Verify apiKey survives copyRecord without decryption errors.
+	/// Regression test for: encrypted apiKey fails decryption on copied/cloned chatConfig.
+	@SuppressWarnings("deprecation")
+	@Test
+	public void testApiKeyCopyRecord() {
+		try {
+			String cfgName = "P13-13-apikey-" + UUID.randomUUID().toString().substring(0, 6);
+			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(testUser, cfgName);
+			assertNotNull("ChatConfig should not be null", chatConfig);
+
+			// Set a test apiKey value and persist
+			String testKey = "sk-test-" + UUID.randomUUID().toString().substring(0, 12);
+			chatConfig.set("apiKey", testKey);
+			chatConfig = IOSystem.getActiveContext().getAccessPoint().update(testUser, chatConfig);
+			assertNotNull("Updated config should not be null", chatConfig);
+
+			// Read the config back fully (triggers EncryptFieldProvider decrypt via getFullRecord)
+			BaseRecord readBack = OlioUtil.getFullRecord(chatConfig);
+			assertNotNull("Read-back config should not be null", readBack);
+			String decryptedKey = readBack.get("apiKey");
+			assertEquals("Decrypted apiKey should match original", testKey, decryptedKey);
+
+			// Now copyRecord — this is the operation that previously failed
+			BaseRecord copy = readBack.copyRecord();
+			assertNotNull("Copy should not be null", copy);
+
+			// The fix in ChatUtil.getChat re-sets apiKey from the decrypted source.
+			// Simulate that pattern: read apiKey from source, set on copy
+			String plainKey = readBack.get("apiKey");
+			copy.set("apiKey", plainKey);
+			String copyKey = copy.get("apiKey");
+			assertEquals("ApiKey on copy (after re-set from source) should match", testKey, copyKey);
+
+			logger.info("P13-13 passed: apiKey copy/re-set pattern works correctly");
+		} catch (Exception e) {
+			logger.error("P13-13 failed", e);
+			fail("P13-13 Exception: " + e.getMessage());
 		}
 	}
 

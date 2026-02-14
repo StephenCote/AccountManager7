@@ -122,7 +122,7 @@
             // OI-24: Update-if-changed — sync key fields from template
             let needsPatch = false;
             let syncFields = schema === "olio.llm.chatConfig"
-                ? ["serverUrl", "serviceType", "model", "stream", "prune", "messageTrim"]
+                ? ["serverUrl", "serviceType", "model", "stream", "prune", "messageTrim", "chatOptions", "assist", "rating", "startMode", "remindEvery", "keyframeEvery", "autoTunePrompts", "autoTuneChatOptions"]
                 : ["system", "user", "assistant", "episodeRule"];
             for (let i = 0; i < syncFields.length; i++) {
                 let f = syncFields[i];

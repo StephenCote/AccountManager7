@@ -312,7 +312,11 @@ public class Chat {
 			if (message != null && message.length() > 0) {
 				newMessage(req, message);
 			}
-			BaseRecord task = OlioTaskAgent.createTaskRequest(req, chatConfig.copyRecord(new String[] { "apiVersion", "serviceType", "serverUrl", "apiKey", "model", "chatOptions" }));
+			/// Copy config for remote task, excluding apiKey (encrypted field loses vault metadata on copy).
+			/// Re-set apiKey from the already-decrypted in-memory source.
+			BaseRecord remoteCfg = chatConfig.copyRecord(new String[] { "apiVersion", "serviceType", "serverUrl", "model", "chatOptions" });
+			try { remoteCfg.set("apiKey", authorizationToken); } catch (Exception e) { logger.warn("Could not set apiKey on remote config"); }
+			BaseRecord task = OlioTaskAgent.createTaskRequest(req, remoteCfg);
 			BaseRecord rtask = OlioTaskAgent.executeTask(task);
 			if (rtask != null) {
 				BaseRecord resp = rtask.get("taskModel");
@@ -368,7 +372,7 @@ public class Chat {
 
 			/// Phase 13: Auto-generate title after first real exchange (buffer mode)
 			boolean autoTitle = chatConfig != null && Boolean.TRUE.equals(chatConfig.get("autoTitle"));
-			int offset = getMessageOffset();
+			int offset = getMessageOffset(req);
 			List<OpenAIMessage> allMsgs = req.getMessages();
 			int userMsgCount = 0;
 			for (int i = offset; i < allMsgs.size(); i++) {
@@ -453,7 +457,7 @@ public class Chat {
 	/// Phase 13: Auto-generate a concise chat title from the first user+assistant exchange.
 	/// Returns the generated title string, or null on failure.
 	public String generateChatTitle(OpenAIRequest req) {
-		int offset = getMessageOffset();
+		int offset = getMessageOffset(req);
 		List<OpenAIMessage> msgs = req.getMessages();
 		if (msgs.size() < offset + 2) return null;
 
@@ -548,12 +552,24 @@ public class Chat {
 		return idx;
 	}
 
+	/// Overload that checks the actual session messages to detect when the
+	/// user-consent template resolved to empty (e.g. rating "E" with assist=true).
+	/// In that case the session has only system + assistant-template = 2 base messages.
+	public int getMessageOffset(OpenAIRequest req) {
+		int idx = getMessageOffset();
+		if (idx == 3 && req != null && req.getMessages().size() > 1
+				&& assistantRole.equals(req.getMessages().get(1).getRole())) {
+			idx = 2;
+		}
+		return idx;
+	}
+
 	private List<BaseRecord> createNarrativeVector(BaseRecord user, OpenAIRequest req) {
 		List<BaseRecord> vect = new ArrayList<>();
 		int rmc = req.getMessages().size();
 
 		if (VectorUtil.isVectorSupported() && rmc > 2) {
-			int idx = getMessageOffset();
+			int idx = getMessageOffset(req);
 			List<String> buff = new ArrayList<>();
 			for (int i = idx; i < rmc; i++) {
 				buff.add(getNarrativeForVector(req.getMessages().get(i)));
@@ -1331,7 +1347,7 @@ public class Chat {
 		}
 
 		/// Target count = system + pruneSkip
-		int idx = getMessageOffset();
+		int idx = getMessageOffset(req);
 		int len = req.getMessages().size() - messageCount;
 		List<OpenAIMessage> kfs = new ArrayList<>();
 		for (int i = idx; i < len; i++) {
@@ -1373,7 +1389,7 @@ public class Chat {
 	/// Count messages backwards from the end to the last MCP block matching the given URI fragment.
 	/// Replaces the old countBackTo() which checked both old text and MCP formats.
 	private int countBackToMcp(OpenAIRequest req, String uriFragment) {
-		int idx = getMessageOffset();
+		int idx = getMessageOffset(req);
 		int eidx = req.getMessages().size() - 1;
 		int qual = 0;
 		for (int i = eidx; i >= idx; i--) {

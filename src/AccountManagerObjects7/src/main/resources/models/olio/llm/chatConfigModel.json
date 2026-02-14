@@ -231,6 +231,16 @@
 			"name": "autoTitle",
 			"type": "boolean",
 			"description": "When true, auto-generate a descriptive chat title via LLM after the first user+assistant exchange."
+		},
+		{
+			"name": "autoTunePrompts",
+			"type": "boolean",
+			"description": "When true, automatically analyze and suggest prompt revisions when policy violations are detected. Creates new prompt variants (never overwrites originals)."
+		},
+		{
+			"name": "autoTuneChatOptions",
+			"type": "boolean",
+			"description": "When true, automatically adjust chatOptions (temperature, top_p, penalties) when policy violations indicate quality issues. Requires a policy reference."
 		}
 
 	]

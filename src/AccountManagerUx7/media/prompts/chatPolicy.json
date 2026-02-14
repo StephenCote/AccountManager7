@@ -1,0 +1,71 @@
+{
+    "description": "Comprehensive chat response policy template. Includes all detection operations with standard thresholds. Load via the policy picker on chatConfig or dynamically via ensurePolicy.",
+    "name": "Chat Response Policy",
+    "operations": [
+        {
+            "name": "Timeout Detection",
+            "operationClass": "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation",
+            "description": "Detects null/empty responses from LLM timeout or connection drop."
+        },
+        {
+            "name": "Recursive Loop Detection",
+            "operationClass": "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation",
+            "description": "Detects repeated text blocks indicating model degeneration.",
+            "parameters": {
+                "windowSize": "50",
+                "repeatThreshold": "3"
+            }
+        },
+        {
+            "name": "Wrong Character Detection",
+            "operationClass": "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation",
+            "description": "Detects LLM responding as the user character instead of the system character."
+        },
+        {
+            "name": "Refusal Detection",
+            "operationClass": "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation",
+            "description": "Detects LLM safety refusals within configured rating context.",
+            "parameters": {
+                "minMatches": "2"
+            }
+        }
+    ],
+    "condition": "ALL",
+    "ruleType": "PERMIT",
+    "autotuneOnViolation": true,
+    "chatOptions": {
+        "description": "Reference chat options for auto-tuning. These are the standard defaults that the auto-tuner targets when adjusting options after violations.",
+        "defaults": {
+            "temperature": 1.0,
+            "top_p": 1.0,
+            "top_k": 50,
+            "frequency_penalty": 0.0,
+            "presence_penalty": 0.0,
+            "max_tokens": 4096,
+            "num_ctx": 8192
+        },
+        "autoTuneRanges": {
+            "temperature": { "min": 0.3, "max": 1.5, "step": 0.1 },
+            "top_p": { "min": 0.3, "max": 1.0, "step": 0.05 },
+            "frequency_penalty": { "min": 0.0, "max": 1.0, "step": 0.1 },
+            "presence_penalty": { "min": 0.0, "max": 1.0, "step": 0.1 }
+        },
+        "violationAdjustments": {
+            "recursiveLoop": {
+                "description": "When loops detected, increase penalties and lower temperature",
+                "temperature": -0.1,
+                "frequency_penalty": 0.2,
+                "presence_penalty": 0.1
+            },
+            "refusal": {
+                "description": "When refusals detected, slightly raise temperature for creativity",
+                "temperature": 0.1,
+                "top_p": 0.05
+            },
+            "timeout": {
+                "description": "When timeouts occur, reduce token budget",
+                "max_tokens": -512
+            }
+        }
+    }
+}

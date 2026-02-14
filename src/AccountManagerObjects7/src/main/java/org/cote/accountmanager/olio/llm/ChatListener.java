@@ -318,7 +318,7 @@ public class ChatListener implements IChatListener {
 		if (titleChatCfg != null) {
 			autoTitle = Boolean.TRUE.equals(titleChatCfg.get("autoTitle"));
 		}
-		int offset = chat.getMessageOffset();
+		int offset = chat.getMessageOffset(request);
 		List<BaseRecord> allMsgs = request.get("messages");
 		int userMsgCount = 0;
 		for (int i = offset; i < allMsgs.size(); i++) {

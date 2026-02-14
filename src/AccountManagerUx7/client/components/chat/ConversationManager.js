@@ -74,7 +74,9 @@
         let lower = filterText.toLowerCase();
         return sessions.filter(function(s) {
             let name = (s.name || "").toLowerCase();
-            return name.indexOf(lower) !== -1;
+            let title = (window.am7client && am7client.getAttributeValue
+                ? (am7client.getAttributeValue(s, "chatTitle", 0) || "") : "").toLowerCase();
+            return name.indexOf(lower) !== -1 || title.indexOf(lower) !== -1;
         });
     }
 
@@ -210,12 +212,19 @@
         rows.push(metaRow("Name", meta.name || "—"));
 
         if (meta.chatConfig) {
+            // Resolve full chatConfig from cached list (foreign ref on chatRequest is a stub)
             let cc = meta.chatConfig;
+            if (chatConfigs && cc.objectId) {
+                let full = chatConfigs.find(function(c) { return c.objectId === cc.objectId; });
+                if (full) cc = full;
+            }
             rows.push(objectLinkRow("Config", cc, "olio.llm.chatConfig"));
             if (cc.model) rows.push(metaRow("Model", cc.model));
             if (cc.messageTrim != null) rows.push(metaRow("Trim", cc.messageTrim));
             rows.push(metaRow("Stream", cc.stream ? "yes" : "no"));
             rows.push(metaRow("Prune", cc.prune !== false ? "yes" : "no"));
+            if (cc.autoTunePrompts) rows.push(metaRow("Auto-Tune Prompts", "yes"));
+            if (cc.autoTuneChatOptions) rows.push(metaRow("Auto-Tune Options", "yes"));
             if (cc.systemCharacter) {
                 rows.push(objectLinkRow("System", cc.systemCharacter, "olio.charPerson"));
             }
@@ -267,6 +276,23 @@
         refresh: refresh,
 
         /**
+         * Load sessions (alias for external callers).
+         */
+        load: loadSessions,
+
+        /**
+         * Clear all cached data (sessions, configs).
+         */
+        clear: function() {
+            sessions = null;
+            promptConfigs = null;
+            chatConfigs = null;
+            selectedObjectId = null;
+            filterText = "";
+            metadataExpanded = false;
+        },
+
+        /**
          * Set the selected session by objectId (for external sync).
          */
         setSelected: function(objectId) { selectedObjectId = objectId; },
@@ -275,6 +301,11 @@
          * Get the currently selected objectId.
          */
         getSelectedId: function() { return selectedObjectId; },
+
+        /**
+         * Get the full selected session object (not just objectId).
+         */
+        getSelectedSession: function() { return getSelectedMetadata(); },
 
         /**
          * Phase 13: Update session title from WebSocket titleEvent.

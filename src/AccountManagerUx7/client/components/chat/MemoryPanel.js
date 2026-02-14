@@ -287,11 +287,7 @@
 
     // ── Export ───────────────────────────────────────────────────────────
 
-    if (typeof module != "undefined") {
-        module.MemoryPanel = MemoryPanel;
-    } else {
-        window.MemoryPanel = MemoryPanel;
-    }
+    window.MemoryPanel = MemoryPanel;
 
     console.log("[MemoryPanel] loaded");
 }());

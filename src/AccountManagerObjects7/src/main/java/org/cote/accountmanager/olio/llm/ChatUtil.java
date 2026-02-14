@@ -1081,12 +1081,17 @@ public class ChatUtil {
 		ChatResponse rep = new ChatResponse();
 		rep.setUid(creq.getUid());
 		rep.setModel(chatConfig.get("model"));
-		/// Current template structure for chat and rpg defines prompt and initial user message
-		/// Skip prompt, and skip initial user comment
+		/// Skip template messages at the start of the session.
+		/// With assist, expect: system(0) + user-template(1) + assistant-template(2) = startIndex 3.
+		/// However, if the user-consent template resolved to empty (e.g. rating "E"),
+		/// the user-template is absent: system(0) + assistant-template(1) = startIndex 2.
 		int startIndex = 1;
-		/// With assist enabled, an initial assistant message is included, so skip that as well
 		if((boolean)chatConfig.get("assist")) {
 			startIndex = 3;
+			/// Detect missing user-template: if index 1 is assistant (not user), only 2 base messages exist
+			if(req.getMessages().size() > 1 && Chat.assistantRole.equals(req.getMessages().get(1).getRole())) {
+				startIndex = 2;
+			}
 		}
 
 		/// Extract MCP citations from user messages and attach to the following assistant response
@@ -1231,8 +1236,19 @@ public class ChatUtil {
 			if (req.get("setting") != null) {
 				cchatConfig.setValue("setting", req.get("setting"));
 			}
+			/// Strip encrypted apiKey from the copy — the Chat instance reads
+			/// the authorizationToken via configureChat() which calls get("apiKey").
+			/// On a copy the vault metadata (keyId, vaultId) is absent, so the
+			/// EncryptFieldProvider cannot decrypt.  Null it out and re-set from
+			/// the already-decrypted source record.
+			try {
+				String plainKey = chatConfig.get("apiKey");
+				cchatConfig.set("apiKey", plainKey);
+			} catch (Exception e) {
+				logger.warn("Could not propagate apiKey to chat copy: " + e.getMessage());
+				try { cchatConfig.set("apiKey", null); } catch (Exception ex) { /* ignore */ }
+			}
 
-			
 			chat = new Chat(user, cchatConfig, promptConfig);
 			chat.setDeferRemote(deferRemote);
 		}

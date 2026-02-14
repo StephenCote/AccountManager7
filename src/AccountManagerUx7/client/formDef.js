@@ -5075,6 +5075,16 @@
                 layout: "one",
                 label: "Auto-Generate Title"
             },
+            autoTunePrompts: {
+                layout: "one",
+                label: "Auto-Tune Prompts",
+                hint: "Analyze policy violations and suggest prompt rewrites"
+            },
+            autoTuneChatOptions: {
+                layout: "one",
+                label: "Auto-Tune Chat Options",
+                hint: "Adjust temperature/penalties on policy violations"
+            },
 
         },
         forms: ["episodectl", "chatOptionsRef", "groupinfo", "attributes"]

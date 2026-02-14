@@ -8156,16 +8156,16 @@ button.button-tab-active:hover:is(.dark *) {
   max-height: 15rem;
 }
 
+.max-h-64 {
+  max-height: 16rem;
+}
+
 .max-h-\[800px\] {
   max-height: 800px;
 }
 
 .max-h-full {
   max-height: 100%;
-}
-
-.max-h-64 {
-  max-height: 16rem;
 }
 
 .min-h-\[60px\] {
@@ -8585,16 +8585,25 @@ button.button-tab-active:hover:is(.dark *) {
   border-left-width: 2px;
 }
 
-.border-t {
-  border-top-width: 1px;
-}
-
 .border-l-4 {
   border-left-width: 4px;
 }
 
+.border-t {
+  border-top-width: 1px;
+}
+
 .border-dotted {
   border-style: dotted;
+}
+
+.border-amber-500 {
+  --tw-border-opacity: 1;
+  border-color: rgb(245 158 11 / var(--tw-border-opacity, 1));
+}
+
+.border-amber-500\/40 {
+  border-color: rgb(245 158 11 / 0.4);
 }
 
 .border-black {
@@ -8605,6 +8614,10 @@ button.button-tab-active:hover:is(.dark *) {
 .border-blue-500 {
   --tw-border-opacity: 1;
   border-color: rgb(59 130 246 / var(--tw-border-opacity, 1));
+}
+
+.border-blue-500\/40 {
+  border-color: rgb(59 130 246 / 0.4);
 }
 
 .border-cyan-400 {
@@ -8651,6 +8664,10 @@ button.button-tab-active:hover:is(.dark *) {
   border-color: rgb(17 24 39 / var(--tw-border-opacity, 1));
 }
 
+.border-green-500\/40 {
+  border-color: rgb(34 197 94 / 0.4);
+}
+
 .border-indigo-500\/30 {
   border-color: rgb(99 102 241 / 0.3);
 }
@@ -8660,34 +8677,21 @@ button.button-tab-active:hover:is(.dark *) {
   border-color: rgb(234 88 12 / var(--tw-border-opacity, 1));
 }
 
+.border-purple-500\/40 {
+  border-color: rgb(168 85 247 / 0.4);
+}
+
 .border-white {
   --tw-border-opacity: 1;
   border-color: rgb(255 255 255 / var(--tw-border-opacity, 1));
 }
 
-.border-amber-500\/40 {
-  border-color: rgb(245 158 11 / 0.4);
-}
-
-.border-blue-500\/40 {
-  border-color: rgb(59 130 246 / 0.4);
-}
-
-.border-green-500\/40 {
-  border-color: rgb(34 197 94 / 0.4);
-}
-
-.border-purple-500\/40 {
-  border-color: rgb(168 85 247 / 0.4);
-}
-
-.border-amber-500 {
-  --tw-border-opacity: 1;
-  border-color: rgb(245 158 11 / var(--tw-border-opacity, 1));
-}
-
 .border-t-transparent {
   border-top-color: transparent;
+}
+
+.bg-amber-500\/20 {
+  background-color: rgb(245 158 11 / 0.2);
 }
 
 .bg-amber-600\/80 {
@@ -8783,6 +8787,10 @@ button.button-tab-active:hover:is(.dark *) {
 .bg-gray-800 {
   --tw-bg-opacity: 1;
   background-color: rgb(31 41 55 / var(--tw-bg-opacity, 1));
+}
+
+.bg-gray-800\/50 {
+  background-color: rgb(31 41 55 / 0.5);
 }
 
 .bg-gray-800\/80 {
@@ -8949,14 +8957,6 @@ button.button-tab-active:hover:is(.dark *) {
   background-color: rgb(113 63 18 / var(--tw-bg-opacity, 1));
 }
 
-.bg-amber-500\/20 {
-  background-color: rgb(245 158 11 / 0.2);
-}
-
-.bg-gray-800\/50 {
-  background-color: rgb(31 41 55 / 0.5);
-}
-
 .bg-opacity-20 {
   --tw-bg-opacity: 0.2;
 }
@@ -9074,6 +9074,11 @@ button.button-tab-active:hover:is(.dark *) {
   padding: 2rem;
 }
 
+.px-1 {
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+
 .px-2 {
   padding-left: 0.5rem;
   padding-right: 0.5rem;
@@ -9127,11 +9132,6 @@ button.button-tab-active:hover:is(.dark *) {
 .py-3 {
   padding-top: 0.75rem;
   padding-bottom: 0.75rem;
-}
-
-.px-1 {
-  padding-left: 0.25rem;
-  padding-right: 0.25rem;
 }
 
 .pl-2 {
@@ -9190,6 +9190,14 @@ button.button-tab-active:hover:is(.dark *) {
   line-height: 1;
 }
 
+.text-\[10px\] {
+  font-size: 10px;
+}
+
+.text-\[11px\] {
+  font-size: 11px;
+}
+
 .text-base {
   font-size: 1rem;
   line-height: 1.5rem;
@@ -9213,14 +9221,6 @@ button.button-tab-active:hover:is(.dark *) {
 .text-xs {
   font-size: 0.75rem;
   line-height: 1rem;
-}
-
-.text-\[10px\] {
-  font-size: 10px;
-}
-
-.text-\[11px\] {
-  font-size: 11px;
 }
 
 .font-bold {
@@ -9255,6 +9255,11 @@ button.button-tab-active:hover:is(.dark *) {
   font-style: italic;
 }
 
+.text-amber-400 {
+  --tw-text-opacity: 1;
+  color: rgb(251 191 36 / var(--tw-text-opacity, 1));
+}
+
 .text-black {
   --tw-text-opacity: 1;
   color: rgb(0 0 0 / var(--tw-text-opacity, 1));
@@ -9268,6 +9273,11 @@ button.button-tab-active:hover:is(.dark *) {
 .text-blue-200 {
   --tw-text-opacity: 1;
   color: rgb(191 219 254 / var(--tw-text-opacity, 1));
+}
+
+.text-blue-400 {
+  --tw-text-opacity: 1;
+  color: rgb(96 165 250 / var(--tw-text-opacity, 1));
 }
 
 .text-blue-500 {
@@ -9428,16 +9438,6 @@ button.button-tab-active:hover:is(.dark *) {
 .text-yellow-800 {
   --tw-text-opacity: 1;
   color: rgb(133 77 14 / var(--tw-text-opacity, 1));
-}
-
-.text-amber-400 {
-  --tw-text-opacity: 1;
-  color: rgb(251 191 36 / var(--tw-text-opacity, 1));
-}
-
-.text-blue-400 {
-  --tw-text-opacity: 1;
-  color: rgb(96 165 250 / var(--tw-text-opacity, 1));
 }
 
 .opacity-0 {
@@ -9678,6 +9678,10 @@ button.button-tab-active:hover:is(.dark *) {
   background-color: rgb(55 65 81 / var(--tw-bg-opacity, 1));
 }
 
+.hover\:bg-gray-700\/30:hover {
+  background-color: rgb(55 65 81 / 0.3);
+}
+
 .hover\:bg-green-200:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(187 247 208 / var(--tw-bg-opacity, 1));
@@ -9727,18 +9731,14 @@ button.button-tab-active:hover:is(.dark *) {
   background-color: rgb(234 179 8 / var(--tw-bg-opacity, 1));
 }
 
-.hover\:bg-gray-700\/30:hover {
-  background-color: rgb(55 65 81 / 0.3);
+.hover\:text-blue-300:hover {
+  --tw-text-opacity: 1;
+  color: rgb(147 197 253 / var(--tw-text-opacity, 1));
 }
 
 .hover\:text-red-400:hover {
   --tw-text-opacity: 1;
   color: rgb(248 113 113 / var(--tw-text-opacity, 1));
-}
-
-.hover\:text-blue-300:hover {
-  --tw-text-opacity: 1;
-  color: rgb(147 197 253 / var(--tw-text-opacity, 1));
 }
 
 .focus\:ring-2:focus {

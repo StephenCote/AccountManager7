@@ -182,6 +182,7 @@
                     let cloneFields = ["model", "serverUrl", "serviceType", "apiVersion",
                         "rating", "setting", "assist", "stream", "prune", "useNLP",
                         "messageTrim", "remindEvery", "keyframeEvery", "autoTitle",
+                        "autoTunePrompts", "autoTuneChatOptions",
                         "extractMemories", "memoryBudget", "memoryExtractionEvery",
                         "requestTimeout", "terrain", "populationDescription",
                         "animalDescription", "universeName", "worldName"];

@@ -233,11 +233,7 @@
 
     // ── Export ───────────────────────────────────────────────────────────
 
-    if (typeof module != "undefined") {
-        module.ChatTokenRenderer = ChatTokenRenderer;
-    } else {
-        window.ChatTokenRenderer = ChatTokenRenderer;
-    }
+    window.ChatTokenRenderer = ChatTokenRenderer;
 
     console.log("[ChatTokenRenderer] loaded");
 }());

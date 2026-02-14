@@ -216,11 +216,7 @@
 
     // ── Export ───────────────────────────────────────────────────────────
 
-    if (typeof module != "undefined") {
-        module.AnalysisManager = AnalysisManager;
-    } else {
-        window.AnalysisManager = AnalysisManager;
-    }
+    window.AnalysisManager = AnalysisManager;
 
     console.log("[AnalysisManager] loaded");
 }());

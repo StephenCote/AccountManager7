@@ -912,14 +912,16 @@
         if (window.ChatTokenRenderer && ChatTokenRenderer.processMcpTokens) {
           cnt = ChatTokenRenderer.processMcpTokens(cnt, mcpDebug);
         }
-        if (!editMode && cnt.trim().length == 0) {
-          return "";
-        }
-
         if (typeof cnt == "string") {
-          // Process image and audio tokens before markdown parsing
+          // Process image and audio tokens before empty check — a message
+          // that is only an image/audio token should show the placeholder
           cnt = processImageTokensInContent(cnt, msg.role, midx);
           cnt = processAudioTokensInContent(cnt, msg.role, midx);
+        }
+        if (!editMode && typeof cnt == "string" && cnt.trim().length == 0) {
+          return "";
+        }
+        if (typeof cnt == "string") {
           //cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
           cnt = m.trust(marked.parse(cnt = page.components.emoji.markdownEmojis(cnt.replace(/\r/, ""))));
         }
