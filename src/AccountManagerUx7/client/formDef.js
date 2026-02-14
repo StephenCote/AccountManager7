@@ -5028,6 +5028,49 @@
                 label: "Command"
             },
 
+            // Phase 13e item 16: Missing chatConfig form fields (OI-74)
+            requestTimeout: {
+                layout: "one",
+                label: "Request Timeout (sec)",
+                hint: "Hard timeout for LLM connections. 0=no timeout."
+            },
+            terrain: {
+                layout: "third",
+                label: "Terrain"
+            },
+            populationDescription: {
+                layout: "third",
+                label: "Population"
+            },
+            animalDescription: {
+                layout: "third",
+                label: "Animals"
+            },
+            universeName: {
+                layout: "third",
+                label: "Universe Name"
+            },
+            worldName: {
+                layout: "third",
+                label: "World Name"
+            },
+
+            // Phase 13f item 22: Memory config fields (OI-68)
+            extractMemories: {
+                layout: "one",
+                label: "Extract Memories"
+            },
+            memoryBudget: {
+                layout: "one",
+                label: "Memory Budget",
+                hint: "Max tokens for memory context (0=disabled)"
+            },
+            memoryExtractionEvery: {
+                layout: "one",
+                label: "Extract Every N Keyframes",
+                hint: "0=every keyframe, N=every Nth"
+            },
+
         },
         forms: ["episodectl", "chatOptionsRef", "groupinfo", "attributes"]
 

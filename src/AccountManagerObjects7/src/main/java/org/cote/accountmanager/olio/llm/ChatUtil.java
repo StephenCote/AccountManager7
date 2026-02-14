@@ -321,7 +321,9 @@ public class ChatUtil {
 	}
 
 
-	/// TODO: DEPRECATE THIS
+	/// Phase 13c item 9: Deprecated (OI-60). Use loadChatConfigTemplate() + applyChatConfigTemplate()
+	/// or the REST endpoint POST /rest/chat/new for new chat configs.
+	@Deprecated
 	public static BaseRecord getCreateChatConfig(BaseRecord user, String name) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, name);
@@ -455,15 +457,15 @@ public class ChatUtil {
 	
 	public static BaseRecord getFilteredInteraction(BaseRecord inter) {
 		BaseRecord iinter = interactionQuery.plan().filterRecord(inter, true);
-		/// TODO: QueryPlan currently won't work with $flex field types, so the actor and interactor names need to be added back
-		///
+		/// Phase 13d item 13 (OI-63): QueryPlan does not support $flex field types.
+		/// The actor/interactor fields use $flex (polymorphic model reference) which
+		/// the plan filter cannot traverse. Manually copy the firstName as a workaround.
 		iinter.setValue("actor", ((BaseRecord)inter.get("actor")).copyRecord(new String[] {FieldNames.FIELD_FIRST_NAME}));
 		iinter.setValue("interactor", ((BaseRecord)inter.get("interactor")).copyRecord(new String[] {FieldNames.FIELD_FIRST_NAME}));
 		return iinter;
 	}
-	
-	/// TODO: QueryPlan currently won't work with $flex field types
-	///
+
+	/// QueryPlan $flex limitation: see getFilteredInteraction() above.
 	private static Query getInteractionExportQuery() {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_INTERACTION);
 		q.plan(false);

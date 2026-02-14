@@ -187,6 +187,50 @@
         }
     };
 
+    /**
+     * Phase 13f item 25: Process MCP context blocks for debug display (OI-70).
+     * In debug mode, MCP blocks are rendered as collapsible cards.
+     * In normal mode, MCP blocks are stripped.
+     *
+     * @param {string} content - message content
+     * @param {boolean} debugMode - whether to render or strip MCP blocks
+     * @returns {string} processed content
+     */
+    ChatTokenRenderer.processMcpTokens = function(content, debugMode) {
+        if (!content) return "";
+        if (!debugMode) {
+            return content.replace(/<mcp:context[^>]*>[\s\S]*?<\/mcp:context>/gi, "");
+        }
+
+        return content.replace(/<mcp:context([^>]*)>([\s\S]*?)<\/mcp:context>/gi, function(match, attrs, body) {
+            var typeMatch = attrs.match(/type="([^"]*)"/i);
+            var uriMatch = attrs.match(/uri="([^"]*)"/i);
+            var type = typeMatch ? typeMatch[1] : "context";
+            var uri = uriMatch ? uriMatch[1] : "";
+
+            var icon = "info";
+            var borderColor = "border-blue-500/40";
+            if (type.indexOf("memory") > -1 || uri.indexOf("memory") > -1) {
+                icon = "psychology";
+                borderColor = "border-purple-500/40";
+            } else if (type.indexOf("keyframe") > -1 || uri.indexOf("keyframe") > -1) {
+                icon = "bookmark";
+                borderColor = "border-amber-500/40";
+            } else if (type.indexOf("reminder") > -1 || uri.indexOf("reminder") > -1) {
+                icon = "notifications";
+                borderColor = "border-green-500/40";
+            }
+
+            var preview = body.trim().substring(0, 120);
+            if (body.trim().length > 120) preview += "...";
+
+            return '\n<div class="my-1 p-2 rounded border-l-4 ' + borderColor + ' bg-gray-800/50 text-xs text-gray-400">' +
+                '<span class="material-symbols-outlined align-middle mr-1" style="font-size:14px">' + icon + '</span>' +
+                '<strong>' + type + '</strong>' + (uri ? ' <span class="text-gray-500">(' + uri + ')</span>' : '') +
+                '<pre class="mt-1 whitespace-pre-wrap text-[11px]">' + preview + '</pre></div>\n';
+        });
+    };
+
     // ── Export ───────────────────────────────────────────────────────────
 
     if (typeof module != "undefined") {

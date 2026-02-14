@@ -265,8 +265,13 @@
             }
         }
         
+        // Phase 13a item 4: Use AnalysisManager instead of dialog.chatInto (OI-56, OI-57)
         async function chatInto(){
-            page.components.dialog.chatInto(inst.entity);
+            if (window.AnalysisManager) {
+                AnalysisManager.startAnalysis(inst.entity);
+            } else {
+                console.warn("AnalysisManager not loaded, analysis unavailable");
+            }
         }
 
         async function applyTags(){

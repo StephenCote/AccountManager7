@@ -48,7 +48,6 @@ import org.cote.accountmanager.schema.type.SpoolStatusEnumType;
 import org.cote.accountmanager.schema.type.ValueEnumType;
 import org.cote.accountmanager.security.AM7SigningKeyLocator;
 import org.cote.accountmanager.security.TokenService;
-import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.JSONUtil;
 
 import io.jsonwebtoken.Jwts;
@@ -176,7 +175,15 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 					logger.warn(msg.toFullString());
 				}
 				if(user == null) {
-					logger.error("Null user.  TODO: Add token auth support");
+					// Phase 13e item 18: Unauthenticated WS connection — close session (OI-76)
+					logger.warn("Unauthenticated WebSocket connection, closing session");
+					try {
+						session.close(new jakarta.websocket.CloseReason(
+							jakarta.websocket.CloseReason.CloseCodes.VIOLATED_POLICY,
+							"Authentication required"));
+					} catch (Exception ce) {
+						logger.error("Error closing unauthenticated session: " + ce.getMessage());
+					}
 					return;
 				}
 			}
@@ -539,9 +546,9 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 	            return;
 	        }
 
-	        // The audio data is base64 encoded, and the message was also base64 encoded
-	        // TODO: Fix the double encoding on the client side
-	        byte[] audioData = BinaryUtil.fromBase64((byte[]) smsg.get("data"));
+	        // Phase 13e item 19: Audio data is single base64 encoded (OI-77)
+	        // Client-side now sends single base64. Decode once.
+	        byte[] audioData = (byte[]) smsg.get("data");
 	        if (audioData == null || audioData.length == 0) {
 	            logger.error("Audio data is null or empty");
 	            return;

@@ -20,8 +20,10 @@
         props.class = "menu-button" + (sCls ? " " + sCls : "");
         return m("button", props, (sIco ? m("span", { class: (sLabel ? "mr-2 " : "") + "material-symbols-outlined" + (sAltIco ? " " + sAltIco : "") }, sIco) : ""), (sLabel || ""));
     }
+    // Phase 13e item 20: Use page.userProfilePath (resolved from identity.person)
+    // with fallback to v1-profile-path attribute (OI-78)
     function profileContextButton() {
-        let xProf = am7client.getAttributeValue(page.user, "v1-profile-path", 0);
+        let xProf = page.userProfilePath || am7client.getAttributeValue(page.user, "v1-profile-path", 0);
         let img;
         if (xProf) img = m("img", { class: "h-8 w-8 rounded-full", src: g_application_path + "/thumbnail/" + xProf + "/" + profileDimensions });
         else img = m("span", { class: "material-symbols-outlined" }, "account_circle");

@@ -181,7 +181,10 @@
                 if (template) {
                     let cloneFields = ["model", "serverUrl", "serviceType", "apiVersion",
                         "rating", "setting", "assist", "stream", "prune", "useNLP",
-                        "messageTrim", "remindEvery", "keyframeEvery"];
+                        "messageTrim", "remindEvery", "keyframeEvery",
+                        "extractMemories", "memoryBudget", "memoryExtractionEvery",
+                        "requestTimeout", "terrain", "populationDescription",
+                        "animalDescription", "universeName", "worldName"];
                     for (let i = 0; i < cloneFields.length; i++) {
                         let f = cloneFields[i];
                         if (template[f] !== undefined) newCfg[f] = template[f];
@@ -684,7 +687,21 @@
 
         // ── Error State ─────────────────────────────────────────────────
 
-        errorState: _errorState
+        errorState: _errorState,
+
+        // ── Phase 13f item 24: Memory event handling (OI-71, OI-72) ────
+
+        /** Last memory event received via WebSocket */
+        lastMemoryEvent: null,
+
+        /**
+         * Handle incoming memory events from WebSocket.
+         * @param {Object} data - { type: "recalled"|"extracted"|"keyframe", data: {...} }
+         */
+        handleMemoryEvent: function(data) {
+            LLMConnector.lastMemoryEvent = data;
+            if (typeof m !== "undefined") m.redraw();
+        }
     };
 
     // ── Export ───────────────────────────────────────────────────────────

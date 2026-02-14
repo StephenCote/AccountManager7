@@ -131,9 +131,15 @@
         );
     }
 
+    // Phase 13g item 29: Display chatTitle/chatIcon attributes when present (OI-80)
     function sessionItemView(session, isSelected) {
         let cls = "flyout-button flex items-center w-full group";
         if (isSelected) cls += " active";
+
+        let title = (window.am7client && am7client.getAttributeValue
+            ? am7client.getAttributeValue(session, "chatTitle", 0) : null) || session.name || "(unnamed)";
+        let icon = (window.am7client && am7client.getAttributeValue
+            ? am7client.getAttributeValue(session, "chatIcon", 0) : null);
 
         return m("button", {
             key: session.objectId,
@@ -148,7 +154,11 @@
                     deleteSession(session);
                 }
             }, "delete_outline"),
-            m("span", { class: "flex-1 truncate text-left" }, session.name || "(unnamed)")
+            icon ? m("span", {
+                class: "material-symbols-outlined flex-shrink-0 mr-1",
+                style: "font-size: 16px;"
+            }, icon) : "",
+            m("span", { class: "flex-1 truncate text-left" }, title)
         ]);
     }
 
@@ -167,6 +177,28 @@
         });
     }
 
+    // Phase 13g item 28: Object links in chat details (OI-79)
+    function objectLinkRow(label, obj, modelType) {
+        let name = obj.name || obj.objectId || "—";
+        return m("div", { class: "text-xs text-gray-400 flex items-center" }, [
+            m("span", label + ": "),
+            m("a", {
+                class: "text-blue-400 hover:text-blue-300 cursor-pointer truncate ml-1",
+                title: "Open " + name,
+                onclick: function(e) {
+                    e.preventDefault();
+                    if (window.page && page.rule) {
+                        page.rule.browseObject(modelType, obj.objectId);
+                    }
+                }
+            }, name)
+        ]);
+    }
+
+    function metaRow(label, value) {
+        return m("div", { class: "text-xs text-gray-400" }, label + ": " + value);
+    }
+
     function metadataView() {
         if (!metadataExpanded) return "";
         let meta = getSelectedMetadata();
@@ -175,18 +207,24 @@
         }
 
         let rows = [];
-        rows.push(m("div", { class: "text-xs text-gray-400" }, "Name: " + (meta.name || "—")));
+        rows.push(metaRow("Name", meta.name || "—"));
 
         if (meta.chatConfig) {
             let cc = meta.chatConfig;
-            rows.push(m("div", { class: "text-xs text-gray-400" }, "Config: " + (cc.name || cc.objectId || "—")));
-            if (cc.model) rows.push(m("div", { class: "text-xs text-gray-400" }, "Model: " + cc.model));
-            if (cc.messageTrim != null) rows.push(m("div", { class: "text-xs text-gray-400" }, "Trim: " + cc.messageTrim));
-            rows.push(m("div", { class: "text-xs text-gray-400" }, "Stream: " + (cc.stream ? "yes" : "no")));
-            rows.push(m("div", { class: "text-xs text-gray-400" }, "Prune: " + (cc.prune !== false ? "yes" : "no")));
+            rows.push(objectLinkRow("Config", cc, "olio.llm.chatConfig"));
+            if (cc.model) rows.push(metaRow("Model", cc.model));
+            if (cc.messageTrim != null) rows.push(metaRow("Trim", cc.messageTrim));
+            rows.push(metaRow("Stream", cc.stream ? "yes" : "no"));
+            rows.push(metaRow("Prune", cc.prune !== false ? "yes" : "no"));
+            if (cc.systemCharacter) {
+                rows.push(objectLinkRow("System", cc.systemCharacter, "olio.charPerson"));
+            }
+            if (cc.userCharacter) {
+                rows.push(objectLinkRow("User Char", cc.userCharacter, "olio.charPerson"));
+            }
         }
         if (meta.promptConfig) {
-            rows.push(m("div", { class: "text-xs text-gray-400" }, "Prompt: " + (meta.promptConfig.name || "—")));
+            rows.push(objectLinkRow("Prompt", meta.promptConfig, "olio.llm.promptConfig"));
         }
 
         return m("div", { class: "px-3 py-2 border-t border-gray-600 space-y-1" }, rows);

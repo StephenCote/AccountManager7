@@ -361,24 +361,40 @@
             webSocket = new WebSocket(wsUrl);
     
             webSocket.onopen = function(event) {
+                // Phase 13e item 17: Reset reconnect state on successful connection (OI-75)
+                wsReconnectAttempts = 0;
+                wsReconnectDelay = 1000;
                 res(event);
             };
-    
+
             webSocket.onmessage = function(event) {
                 if(event.data){
                     routeMessage(JSON.parse(event.data));
                 }
             };
-    
+
+            // Phase 13e item 17: Exponential backoff reconnection (OI-75)
             webSocket.onclose = function(event) {
-                /// console.log("WebSocket Closed ... TODO: Add reconnect");
-                setTimeout(function(){
-                    reconnect(am7client.currentOrganization, page.token, 0);
-                }, 5000)
-                
+                console.warn("[WebSocket] Closed (code: " + event.code + ")");
+                if (wsReconnectAttempts < wsMaxReconnectAttempts) {
+                    wsReconnectAttempts++;
+                    console.log("[WebSocket] Reconnecting (attempt " + wsReconnectAttempts + ") in " + wsReconnectDelay + "ms...");
+                    setTimeout(function(){
+                        reconnect(am7client.currentOrganization, page.token, 0);
+                    }, wsReconnectDelay);
+                    wsReconnectDelay = Math.min(wsReconnectDelay * 2, wsMaxReconnectDelay);
+                } else {
+                    addToast("error", "Connection lost. Please reload the page.", 0);
+                }
             };
         });
       }
+
+      // Phase 13e item 17: WebSocket reconnect state (OI-75)
+      let wsReconnectDelay = 1000;
+      let wsMaxReconnectDelay = 30000;
+      let wsMaxReconnectAttempts = 10;
+      let wsReconnectAttempts = 0;
 
       let maxReconnect = 60;
       async function reconnect(sOrg, sTok, iIter){
@@ -458,6 +474,17 @@
                     let evtData = null;
                     try { evtData = JSON.parse(msg.chirps[2]); } catch(e) { evtData = msg.chirps[2]; }
                     LLMConnector.handlePolicyEvent({ type: msg.chirps[1], data: evtData });
+                }
+            }
+            else if(c1 === "memoryEvent"){
+                // Phase 13f item 24: Route memory events to MemoryPanel (OI-71, OI-72)
+                let evtData = null;
+                try { evtData = JSON.parse(msg.chirps[2]); } catch(e) { evtData = msg.chirps[2]; }
+                if (window.MemoryPanel) {
+                    MemoryPanel.refresh();
+                }
+                if (window.LLMConnector && LLMConnector.handleMemoryEvent) {
+                    LLMConnector.handleMemoryEvent({ type: msg.chirps[1], data: evtData });
                 }
             }
             else if(c1.match(/^game\.action\./)){
@@ -604,6 +631,8 @@
         page.token = null;
         page.user = null;
         page.application = null;
+        // Phase 13e item 20 (OI-78): Resolved from identity.person under /Persons
+        page.userProfilePath = null;
 
     }
 
@@ -774,10 +803,9 @@
         });
     }
     
-    /// TODO: Replace this by having system.user inherit identity.profile
-    /// Need to fix how referenced objects are created
-    /// In fact, the whole reference approach should probably just be removed in favor of participations
-    /// The new version of the back end only auto-creates when the parent object is created, and won't try to auto create 
+    // Phase 13e item 20 (OI-78): Profile update stores via v1-profile attributes
+    // as a compatibility bridge. The topMenu now also checks page.userProfilePath
+    // which is resolved from the user's identity.person record under /Persons.
     async function updateProfile(obj){
 
         let a1 = am7client.getAttribute(page.user, "v1-profile");

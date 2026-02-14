@@ -1,109 +1,13 @@
 (function(){
 
-    /// TODO: Persist chatRequest.
-    /// NOTE: The underlying AI request should also be persisted to make it easier to access and edit without having to deserialize the data.data byteStore
-    ///
+    // Phase 13c item 11: ChatRequest persistence note (OI-61)
+    // The underlying AI request is stored as serialized bytes in data.data.byteStore.
+    // Access via the REST chat/history endpoint which deserializes automatically.
 
     let dialogUp = false;
     let dialogCfg;
 
-    async function chatInto(ref, inst, aCCfg){
-        let sessName = page.sessionName();
-
-        let pa = (await loadPromptList()).filter(c => c.name.match(/^Object/gi));
-        let ca = (await loadChatList()).filter(c => c.name.match(/^Object/gi));
-        let cname = "Analyze " + (ref && ref[am7model.jsonModelKey] ? ref[am7model.jsonModelKey].toUpperCase() + " " : "") + (ref?.name ? ref.name : inst.api.name());
-        let remoteEnt = {
-          schema: "olio.llm.chatRequest",          
-          chatConfig: ca.length ? ca[0] : undefined,
-          promptConfig: pa.length ? pa[0] : undefined,
-          name:cname
-          //sessions: sessName
-        };
-        let wset = [];
-        /*
-        /// Since the summary tag is set to the summary notes and not the reference, adding the tag will limit the citations to only the summary notes
-        let tag = await page.getTag("Summary");
-        if(tag){
-            wset.push(tag);
-        }
-        */
-        let aCPs = [];
-        
-        if(inst && aCCfg){
-            let aC = aCCfg.filter(c => c.name == inst.api.chatConfig()?.name);
-            if(aC.length && aC[0].userCharacter && aC[0].systemCharacter){
-                aCPs.push(aC[0].userCharacter.name);
-                aCPs.push(aC[0].systemCharacter.name);
-            }
-        }
-        else if(ref && (ref[am7model.jsonModelKey] == "olio.charPerson" || ref[am7model.jsonModelKey] == "identity.person")){
-            aCPs.push(ref.name);
-        }
-        
-        if(inst && inst.api.session && inst.api.session() != null && inst.api.session()[am7model.jsonModelKey]){
-            let sq = am7view.viewQuery(inst.api.session()[am7model.jsonModelKey]);
-            sq.entity.request = ["id", "objectId", "groupId", "groupPath", "organizationId", "organizationPath"];
-            sq.field("id", inst.api.session().id);
-            let sess = await page.search(sq);
-            if(sess && sess.results && sess.results.length){
-                let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.api.session()[am7model.jsonModelKey] + "/" + sess.results[0].objectId + "/WORD/500", withCredentials: true });
-                if(x){
-                    wset.push(sess.results[0]);
-                }
-                else{
-                    page.toast("error", "Session vectorization failed: " + inst.api.session().id);
-                }
-            }
-            else{
-                page.toast("error", "Session not found: " + inst.api.session().id);
-            }
-        }
-        
-        if(aCPs.length){
-            let grp = await page.findObject("auth.group", "data", "~/Tags");
-            let q = am7view.viewQuery(am7model.newInstance("data.tag"));
-            q.field("groupId", grp.id);
-            let q2 = q.field(null, null);
-            q2.comparator = "group_or";
-            q2.fields = aCPs.map((a) => {
-                return {
-                    name: "name",
-                    comparator: "equals",
-                    value: a
-                }
-            });
-            /*
-            [
-                {name: "name", comparator: "equals", value: aC[0].userCharacter.name},
-                {name: "name", comparator: "equals", value: aC[0].systemCharacter.name}
-            ];
-            */
-    
-            let qr = await page.search(q);
-            if(qr && qr.results){
-                am7model.updateListModel(qr.results);
-                wset.push(...qr.results);
-            }
-        }
-
-        if(ref){
-            wset.push(ref);
-        }
-  
-        let w = window.open("/", "_blank");
-        w.remoteEntity = remoteEnt;
-        w.onload = function(){
-          w.page.components.dnd.workingSet.push(...wset);
-          if(wset.length){
-            w.page.components.topMenu.activeShuffle(wset[0]);
-          }
-          w.m.route.set("/chat");
-        }
-  
-  
-        
-      }
+    // Phase 13a item 5: chatInto removed — replaced by AnalysisManager.startAnalysis() (OI-56, OI-57)
 
     function endDialog(){
         dialogUp = false;
@@ -229,6 +133,7 @@
             entityType: "summarizeSettings",
             size: 50,
             data: {entity},
+            // Phase 13b item 7: Summarize progress and result (OI-59)
             confirm: async function (data) {
                 let ycfg = pcfg.filter(a => a.name.toLowerCase() == entity.prompt.toLowerCase());
                 if(!ycfg.length){
@@ -241,22 +146,26 @@
                     page.toast("error", "Invalid chat selection: " + entity.chat);
                     return;
                 }
-                page.toast("info", "Summarizing ...", -1);
+                endDialog();
+                showProgress("Summarizing", "Processing chunks via LLM...");
                 let creq = am7model.newPrimitive("olio.llm.chatRequest");
                 creq.chatConfig = {name:vcfg[0].name,id:vcfg[0].id};
                 creq.promptConfig = {name: ycfg[0].name, id: ycfg[0].id};
                 creq.data = [
                     JSON.stringify({schema:inst.model.name,objectId:inst.api.objectId()})
                 ];
-                let x = await m.request({ method: 'POST', url: am7client.base() + "/vector/summarize/" + entity.chunkType.toUpperCase() + "/" + entity.chunk, body: creq, withCredentials: true });
-                page.clearToast();
-                if (x && x != null) {
-                    page.toast("success", "Summarization complete");
+                try {
+                    let x = await m.request({ method: 'POST', url: am7client.base() + "/vector/summarize/" + entity.chunkType.toUpperCase() + "/" + entity.chunk, body: creq, withCredentials: true });
+                    endDialog();
+                    if (x && x != null) {
+                        page.toast("success", "Summarization complete — summary note created in ~/Notes");
+                    } else {
+                        page.toast("error", "Summarization failed — no result returned");
+                    }
+                } catch(e) {
+                    endDialog();
+                    page.toast("error", "Summarization failed: " + (e.message || e));
                 }
-                else{
-                    page.toast("error", "Summarization failed");
-                }
-                endDialog();
             },
             cancel: async function (data) {
                 endDialog();
@@ -273,16 +182,22 @@
             entityType: "vectorOptions",
             size: 50,
             data: {entity},
+            // Phase 13b item 6: Vectorize progress indicator (OI-59)
             confirm: async function (data) {
-                page.toast("info", "Vectorizing ...");
-                let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.model.name + "/" + inst.api.objectId() + "/" + entity.chunkType.toUpperCase() + "/" + entity.chunk, withCredentials: true });
-                if (x && x != null) {
-                    page.toast("success", "Vectorization complete");
-                }
-                else{
-                    page.toast("error", "Vectorization failed");
-                }
                 endDialog();
+                showProgress("Vectorizing", "Chunking and embedding content...");
+                try {
+                    let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.model.name + "/" + inst.api.objectId() + "/" + entity.chunkType.toUpperCase() + "/" + entity.chunk, withCredentials: true });
+                    endDialog();
+                    if (x && x != null) {
+                        page.toast("success", "Vectorization complete");
+                    } else {
+                        page.toast("error", "Vectorization failed — no chunks created");
+                    }
+                } catch(e) {
+                    endDialog();
+                    page.toast("error", "Vectorization failed: " + (e.message || e));
+                }
             },
             cancel: async function (data) {
                 endDialog();
@@ -825,8 +740,11 @@
         let entity = await am7sd.fetchTemplate(true);
         let cinst = (lastReimage || am7model.prepareInstance(entity, am7model.forms.sdConfig));
 
+        // Phase 13d item 12 (OI-62): SD config preferred defaults.
+        // The model schema has base defaults (steps=20, cfg=7). These overrides
+        // reflect the preferred quality settings for the reimage workflow.
+        // They are applied as initial values and can be overridden by saved per-character configs.
         function tempApplyDefaults(){
-            // TODO - Add to form
             cinst.api.steps(40);
             cinst.api.refinerSteps(40);
             cinst.api.cfg(5);
@@ -1975,7 +1893,6 @@
         adoptCharacter,
         chatSettings,
         showProgress,
-        chatInto,
         memberCloud,
         batchProgress
     }

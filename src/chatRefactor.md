@@ -3376,9 +3376,19 @@ All 12 phases are now **COMPLETED**. Phase 12 was implemented in 4 sub-phases:
 
 ### Phase 13: chatInto Redesign, Memory UX & MCP Visibility
 
-**Status:** PLANNED
+**Status:** COMPLETED
 **Priority:** Medium | **Impact:** High
 **Goal:** Redesign the `chatInto` object analysis feature to integrate with Phase 10-12 shared infrastructure (LLMConnector, ConversationManager, ContextPanel), eliminate the `window.open` / `remoteEntity` cross-window pattern, unify vectorize/summarize dialogs, **add full UX visibility for the memory system and MCP context**, enable users to observe and exercise cross-conversation character memory, and resolve all remaining TODOs and deferred items.
+
+**Completion Notes:**
+- 13a: AnalysisManager.js replaces dialog.chatInto + remoteEntity pattern with in-page sessions
+- 13b: vectorize/summarize use showProgress dialog with try/catch error details
+- 13c: Stream interrupt via LLMConnector.stopStream(); ChatUtil.getCreateChatConfig deprecated; $flex documented
+- 13d: SD config defaults documented; dual view comment permanent; consent trimming deferred (OI-66)
+- 13e: 9 missing chatConfig fields added to formDef.js + cloneFields; WS exponential backoff reconnect; WS null user → VIOLATED_POLICY; audio single decode; page.userProfilePath
+- 13f: MemoryService.java (6 endpoints); MemoryPanel.js sidebar; memory config form fields; LLMConnector.handleMemoryEvent; ChatTokenRenderer.processMcpTokens (MCP inspector)
+- 13g: Object links (objectLinkRow/metaRow) in ConversationManager metadata; chatTitle/chatIcon display
+- Tests: TestChatPhase13.java (8 tests, all pass); llmTestSuite.js tests 129-146 (memory, analysis, MCP, infra)
 
 #### Background
 

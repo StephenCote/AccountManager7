@@ -25,8 +25,12 @@
       }
     }
   };
-  /// TODO: There are two different methods for constructing the object view: 1) the newer generic am7view, and 2) the legacy though still more complex object component view
-  /// So some form fields are not interoperable, like 'list' for am7view must be 'select' for the object component view.
+  /// Phase 13d item 15 (OI-65): Two view construction approaches exist:
+  /// 1) am7view (generic) — uses 'list' field type, simpler structure, preferred for new forms
+  /// 2) Object component view (legacy) — uses 'select' field type, supports complex nested forms
+  /// The chatRequest forms below use the object component view because the chatSettings dialog
+  /// requires picker fields and nested config resolution that am7view doesn't fully support.
+  /// New forms should prefer am7view unless picker/nested config features are needed.
   am7model.forms.newChatRequest = {
     label: "Chat Request",
     fields: {
@@ -87,6 +91,8 @@
     let audio = false;
 
     let hideThoughts = true;
+    // Phase 13f item 25: MCP debug toggle (OI-70)
+    let mcpDebug = false;
     let editIndex = -1;
     let editMode = false;
 
@@ -268,8 +274,13 @@
       });
     }
 
+    // Phase 13a item 3: Use AnalysisManager instead of dialog.chatInto (OI-56, OI-57)
     async function chatInto() {
-      page.components.dialog.chatInto(inst.entity, inst, aCCfg)
+      if (window.AnalysisManager) {
+        AnalysisManager.startAnalysis(inst.entity, inst, aCCfg);
+      } else {
+        console.warn("AnalysisManager not loaded, analysis unavailable");
+      }
     }
 
     async function doCancel() {
@@ -471,8 +482,18 @@
         console.warn("Chat is pending");
         return;
       }
+      // Phase 13c item 10: Stream interrupt — cancel-and-send (OI-64)
       if (chatCfg.streaming) {
-        console.warn("Chat is streaming - TODO - interrupt");
+        if (window.LLMConnector && typeof LLMConnector.stopStream === "function") {
+          LLMConnector.stopStream();
+          chatCfg.streaming = false;
+          chatCfg.pending = false;
+          m.redraw();
+          // Re-invoke doChat after stream cancellation
+          setTimeout(doChat, 100);
+        } else {
+          console.warn("Chat is streaming — no stop method available");
+        }
         return;
       }
       let msg = page.components.audio.recording() ? audioText : document.querySelector("[name='chatmessage']").value; ///e?.target?.value;
@@ -640,10 +661,14 @@
     // Phase 10b: Sidebar delegates to ConversationManager component
     // Phase 10c: ContextPanel added below ConversationManager
     // Phase 12: Removed pre-10b fallback session list (OI-52)
+    // Phase 13f item 23: MemoryPanel added between ConversationManager and ContextPanel
     function getSplitLeftContainerView() {
       let children = [];
       if (window.ConversationManager) {
         children.push(m(ConversationManager.SidebarView, { onNew: openChatSettings }));
+      }
+      if (window.MemoryPanel) {
+        children.push(m(MemoryPanel.PanelView));
       }
       if (window.ContextPanel) {
         children.push(m(ContextPanel.PanelView));
@@ -883,6 +908,10 @@
           cnt = LLMConnector.pruneToMark(cnt, "(Reminder");
           cnt = LLMConnector.pruneToMark(cnt, "(KeyFrame");
         }
+        // Phase 13f item 25: MCP debug display (OI-70)
+        if (window.ChatTokenRenderer && ChatTokenRenderer.processMcpTokens) {
+          cnt = ChatTokenRenderer.processMcpTokens(cnt, mcpDebug);
+        }
         if (!editMode && cnt.trim().length == 0) {
           return "";
         }
@@ -1039,7 +1068,8 @@
         chatIconBtn(audio ? "volume_up" : "volume_mute", toggleAudio, audio, "Audio"),
         chatIconBtn("counter_8", sendToMagic8, false, "Magic 8"),
         chatIconBtn("query_stats", chatInto, false, "Analyze"),
-        chatIconBtn("visibility" + (hideThoughts ? "" : "_off"), toggleThoughts, !hideThoughts, "Thoughts")
+        chatIconBtn("visibility" + (hideThoughts ? "" : "_off"), toggleThoughts, !hideThoughts, "Thoughts"),
+        chatIconBtn("bug_report", function() { mcpDebug = !mcpDebug; }, mcpDebug, "MCP Debug")
       ];
 
       // Input area — recording or text input or pending bar
@@ -1198,14 +1228,11 @@
     chat.view = {
       oninit: function (vnode) {
         let ctx = page.user.homeDirectory;
-        let bPopSet = false;
         origin = vnode.attrs.origin || ctx;
 
-        if (window.remoteEntity) {
-          inst = am7model.prepareInstance(remoteEntity, am7model.forms.chatSettings);
-          bPopSet = true;
-          delete window.remoteEntity;
-        }
+        // Phase 13a item 3: remoteEntity pattern removed (OI-57)
+        // Analysis sessions now use AnalysisManager which creates sessions
+        // server-side and selects via ConversationManager — no cross-window state.
 
         // Phase 10b: Wire ConversationManager callbacks
         if (window.ConversationManager) {
@@ -1218,10 +1245,6 @@
         }
 
         document.documentElement.addEventListener("keydown", navKey);
-
-        if (bPopSet) {
-          openChatSettings(inst);
-        }
 
 
       },
