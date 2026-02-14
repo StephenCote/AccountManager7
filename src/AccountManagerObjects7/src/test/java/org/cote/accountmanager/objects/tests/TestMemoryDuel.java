@@ -91,6 +91,7 @@ public class TestMemoryDuel extends BaseTest {
 
 	@Test(timeout = 600000)
 	public void testChatDuelWithMemories() {
+		logger.warn("[LLM-LIVE] testChatDuelWithMemories: Requires reachable LLM server and correct model/serviceType config");
 		try {
 			// --- Step 1: Get population and pick characters ---
 			List<BaseRecord> realms = octx.getRealms();

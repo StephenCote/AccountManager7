@@ -976,7 +976,7 @@ public class VaultService
 			throw new ModelException("Model " + obj.getSchema() + " field " + field.getName() + " is not configured to be encrypted");
 		}
 		if(FieldUtil.isNullOrEmpty(obj.getSchema(), field)) {
-			logger.warn("Do not vault null or empty value for " + obj.getSchema() + "." + field.getName());
+			// logger.warn("Do not vault null or empty value for " + obj.getSchema() + "." + field.getName());
 			return outBool;
 		}
 		
@@ -1063,7 +1063,7 @@ public class VaultService
 		List<String> unvaulted = obj.get(FieldNames.FIELD_UNVAULTED_FIELDS);
 		
 		if(FieldUtil.isNullOrEmpty(obj.getSchema(), field)) {
-			logger.warn("Marking null or empty field as being decrypted");
+			// logger.warn("Marking null or empty field as being decrypted");
 			vaulted.remove(field.getName());
 			unvaulted.add(field.getName());
 			return;

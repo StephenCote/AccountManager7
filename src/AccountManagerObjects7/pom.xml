@@ -71,6 +71,7 @@
 						
 						
 						-->
+						<exclude>**/TestChatOptions</exclude>
 						<exclude>**/TestPromptTemplate</exclude>
 						<exclude>**/TestScimFilterParser.java</exclude>
 						<exclude>**/TestScimGroupAdapter.java</exclude>

@@ -45,6 +45,7 @@ public class TestChatStream extends BaseTest {
 	/// Test 36: stream=false -> Chat.chat() returns complete response (not null)
 	@Test
 	public void TestStreamBufferMode() {
+		logger.warn("[LLM-LIVE] TestStreamBufferMode: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 36: Stream Buffer Mode - stream=false returns complete response");
 		BaseRecord testUser = getTestUser();
 		BaseRecord cfg = getCfg(testUser);
@@ -85,6 +86,7 @@ public class TestChatStream extends BaseTest {
 	/// Test 37: requestTimeout=1 -> TimeoutException caught, error reported
 	@Test
 	public void TestStreamTimeoutTriggered() {
+		logger.warn("[LLM-LIVE] TestStreamTimeoutTriggered: Deliberately sets requestTimeout=1 to test timeout handling -- timeout IS expected");
 		logger.info("Test 37: Stream Timeout - requestTimeout=1 triggers timeout");
 		BaseRecord testUser = getTestUser();
 		BaseRecord cfg = getCfg(testUser);
@@ -128,6 +130,7 @@ public class TestChatStream extends BaseTest {
 	/// Test 38: stopStream() works in buffered mode
 	@Test
 	public void TestStreamCancellation() {
+		logger.warn("[LLM-LIVE] TestStreamCancellation: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 38: Stream Cancellation - stopStream() in streaming mode");
 		BaseRecord testUser = getTestUser();
 		BaseRecord cfg = getCfg(testUser);
@@ -183,6 +186,7 @@ public class TestChatStream extends BaseTest {
 	/// Test 39: stream=true -> existing streaming behavior still works
 	@Test
 	public void TestStreamingModeUnchanged() {
+		logger.warn("[LLM-LIVE] TestStreamingModeUnchanged: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 39: Streaming Mode Unchanged - stream=true still works via listener");
 		BaseRecord testUser = getTestUser();
 		BaseRecord cfg = getCfg(testUser);

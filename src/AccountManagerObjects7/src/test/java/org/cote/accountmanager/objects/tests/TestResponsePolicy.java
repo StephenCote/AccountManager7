@@ -482,6 +482,7 @@ public class TestResponsePolicy extends BaseTest {
 	// ── Test 57: ChatAutotuner analysis with live LLM ────────────────────
 	@Test
 	public void TestAutotunerAnalysis() {
+		logger.warn("[LLM-LIVE] TestAutotunerAnalysis: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 57: ChatAutotunerAnalysis - live LLM analysis of policy violation");
 		BaseRecord testUser = getPipelineTestUser();
 		assertNotNull("Test user is null", testUser);
@@ -517,6 +518,7 @@ public class TestResponsePolicy extends BaseTest {
 	// ── Test 58: ChatAutotuner naming convention ─────────────────────────
 	@Test
 	public void TestAutotunerNaming() {
+		logger.warn("[LLM-LIVE] TestAutotunerNaming: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 58: ChatAutotunerNaming - verify autotuned prompt naming convention");
 		BaseRecord testUser = getPipelineTestUser();
 		assertNotNull("Test user is null", testUser);
@@ -552,6 +554,7 @@ public class TestResponsePolicy extends BaseTest {
 	// ── Test 59: Policy hook in buffer mode — live LLM chat with policy ──
 	@Test
 	public void TestPolicyHookBufferMode() {
+		logger.warn("[LLM-LIVE] TestPolicyHookBufferMode: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 59: PolicyHookBufferMode - stream=false, policy evaluated post-response");
 		BaseRecord testUser = getPipelineTestUser();
 		assertNotNull("Test user is null", testUser);
@@ -606,6 +609,7 @@ public class TestResponsePolicy extends BaseTest {
 	// ── Test 60: Policy hook in stream mode — verify ChatListener pipeline ──
 	@Test
 	public void TestPolicyHookStreamMode() {
+		logger.warn("[LLM-LIVE] TestPolicyHookStreamMode: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 60: PolicyHookStreamMode - stream=true, policy evaluated in oncomplete");
 		BaseRecord testUser = getPipelineTestUser();
 		assertNotNull("Test user is null", testUser);
@@ -661,6 +665,7 @@ public class TestResponsePolicy extends BaseTest {
 	// ── Test 62: Enhanced stop with failover timer registration ──────────
 	@Test
 	public void TestEnhancedStopFailover() {
+		logger.warn("[LLM-LIVE] TestEnhancedStopFailover: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 62: EnhancedStopFailover - verify stream future registration and cancellation");
 
 		/// This test verifies the failover mechanism infrastructure without requiring a hung LLM.

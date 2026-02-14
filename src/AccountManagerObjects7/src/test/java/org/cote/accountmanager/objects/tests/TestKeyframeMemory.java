@@ -79,6 +79,7 @@ public class TestKeyframeMemory extends BaseTest {
 	// extractMemories=true -> addKeyFrame() creates a tool.memory record with OUTCOME type
 	@Test(timeout = 600000)
 	public void testKeyframeMemoryPersistence() {
+		logger.warn("[LLM-LIVE] testKeyframeMemoryPersistence: Requires reachable LLM server and correct model/serviceType config");
 		try {
 			List<BaseRecord> pop = getPopulation(2);
 			BaseRecord sysChar = pop.get(0);
@@ -182,6 +183,7 @@ public class TestKeyframeMemory extends BaseTest {
 	// Two character pairs -> pair-scoped queries return correct memories
 	@Test(timeout = 600000)
 	public void testKeyframeMemoryScoping() {
+		logger.warn("[LLM-LIVE] testKeyframeMemoryScoping: Requires reachable LLM server and correct model/serviceType config");
 		try {
 			List<BaseRecord> pop = getPopulation(3);
 			BaseRecord charA = pop.get(0);
@@ -257,6 +259,7 @@ public class TestKeyframeMemory extends BaseTest {
 	// After multiple keyframes -> last 2 are kept in message history, older ones removed
 	@Test(timeout = 600000)
 	public void testKeyframePruneKeepsTwo() {
+		logger.warn("[LLM-LIVE] testKeyframePruneKeepsTwo: Requires reachable LLM server and correct model/serviceType config");
 		try {
 			List<BaseRecord> pop = getPopulation(2);
 			BaseRecord sysChar = pop.get(0);
@@ -357,6 +360,7 @@ public class TestKeyframeMemory extends BaseTest {
 	// Keyframe -> memory persist -> new session -> memory appears in prompt
 	@Test(timeout = 600000)
 	public void testKeyframeToMemoryToPromptRoundtrip() {
+		logger.warn("[LLM-LIVE] testKeyframeToMemoryToPromptRoundtrip: Requires reachable LLM server and correct model/serviceType config");
 		try {
 			List<BaseRecord> pop = getPopulation(2);
 			BaseRecord sysChar = pop.get(0);

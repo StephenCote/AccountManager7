@@ -306,6 +306,7 @@ public class TestPromptTemplate extends BaseTest {
 	// --- Test 27: Open Chat LLM Integration ---
 	@Test
 	public void TestOpenChatLLMIntegration() {
+		logger.warn("[LLM-LIVE] TestOpenChatLLMIntegration: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 27: Open Chat LLM Integration - compose and send to real LLM");
 		OrganizationContext testOrgContext = getTestOrganization("/Development/PromptTemplate");
 		Factory mf = ioContext.getFactory();
@@ -382,6 +383,7 @@ public class TestPromptTemplate extends BaseTest {
 	// --- Test 28: RPG Template LLM Integration ---
 	@Test
 	public void TestRPGTemplateLLMIntegration() {
+		logger.warn("[LLM-LIVE] TestRPGTemplateLLMIntegration: Requires reachable LLM server and correct model/serviceType config");
 		logger.info("Test 28: RPG Template LLM Integration - character-appropriate response");
 		OrganizationContext testOrgContext = getTestOrganization("/Development/PromptTemplate");
 		Factory mf = ioContext.getFactory();
