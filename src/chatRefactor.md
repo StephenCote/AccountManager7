@@ -3430,6 +3430,9 @@ Related features:
 | OI-76 | WebSocket token auth fallback — null user proceeds to anonymous state, security gap | WebSocketService.java:179 | P3 |
 | OI-77 | Audio double-encoding — client sends double-base64, server has workaround decode | WebSocketService.java:543 | P4 |
 | OI-78 | Logged-in user profile uses `v1-profile` attribute workaround instead of looking up `identity.person` under `/Persons`. Chat context should use `chatConfig.userCharacter` (charPerson) when set, fallback to user's person record when not | pageClient.js:777 | P3 |
+| OI-79 | Chat details metadata shows config/prompt/character names as plain text — no clickable links to open the objects in the editor | ConversationManager.js:170 | P3 |
+| OI-80 | Chat sessions use raw name in sidebar — no auto-generated title or topic icon after first exchange | ConversationManager.js:134 | P3 |
+| OI-81 | No UX indication when memories are recalled and applied to a chat prompt — users can't tell if memory is working | chat.js, Chat.java | P3 |
 
 ---
 
@@ -3711,11 +3714,19 @@ if (user == null) {
 **Architecture context:** In the chat system, model references (characters, configs) are provided on the chat request — they are not persisted on the user. Content for context injection is extracted from the vector store after the source objects have been vectorized and optionally summarized. The `olio.charPerson` models already have proper profile references for chat. The problem is only with how the **logged-in user's** portrait/profile is retrieved for the top menu bar and UX display.
 
 **Fix:**
+
+**A. UX top menu / logged-in user profile (non-chat context):**
 1. **Look up `identity.person` under `/Persons`** — For the logged-in user, query for their corresponding `identity.person` instance under the `/Persons` read-only system group in the org. The person record has a `profile` field (which references `identity.profile` with portrait, voice, etc.)
 2. **Replace `updateProfile()` in pageClient.js** — instead of patching `v1-profile` / `v1-profile-path` attributes, fetch the user's person record and read portrait from `person.profile.portrait`
 3. **Replace `topMenu.js:24`** — instead of `am7client.getAttributeValue(page.user, "v1-profile-path", 0)`, use the person record's profile portrait path
 4. **Add REST helper if needed** — if no existing endpoint returns the logged-in user's person record, add a lightweight endpoint (e.g., `GET /rest/user/person`) that looks up the `identity.person` for the authenticated user in `/Persons`
 5. **Remove the `v1-profile` and `v1-profile-path` attribute workarounds** after the new lookup is working
+
+**B. Chat context — identity resolution for `chatConfig.userCharacter` only:**
+1. If `chatConfig.userCharacter` is set (role play), the user's conversation identity is that `olio.charPerson` — use its profile for portrait, voice, etc. This is NOT a `system.user` model.
+2. If `chatConfig.userCharacter` is NOT set (plain chat), fall back to the logged-in user's `identity.person` under `/Persons`
+3. `chatConfig.systemCharacter` is always the LLM assistant persona (`olio.charPerson`) — no fallback needed. The term "system" here refers to the LLM/assistant side, NOT the `system.user` model.
+4. The chat view (chat.js) already reads `chatCfg.user.profile.portrait` for charPerson — this path works correctly for role play. The fix here only needs to handle the fallback case where no `userCharacter` is configured
 
 ---
 
@@ -3932,6 +3943,145 @@ The search results display includes the character pair names, conversation sourc
 
 ---
 
+#### Sub-phase 13g — Chat UX Polish
+
+**Goal:** Improve the chat sidebar and conversation experience with object navigation links, auto-generated titles/icons, and memory application visibility.
+
+##### Item 28: Object links in chat details (OI-79)
+**File:** `AccountManagerUx7/client/components/chat/ConversationManager.js` (lines 170-193, `metadataView()`)
+
+**Problem:** The metadata/details panel shows config and prompt names as plain text. Users cannot navigate from the chat sidebar to the underlying objects (chatConfig, promptConfig, system character, user character) to edit them.
+
+**Fix:** Replace plain text labels with clickable links that open the object in the editor:
+```javascript
+function metadataView() {
+    // ...existing code...
+    if (meta.chatConfig) {
+        let cc = meta.chatConfig;
+        rows.push(objectLinkRow("Config", cc, "olio.llm.chatConfig"));
+        if (cc.model) rows.push(metaRow("Model", cc.model));
+        // ...existing trim/stream/prune rows...
+        if (cc.systemCharacter) {
+            rows.push(objectLinkRow("System", cc.systemCharacter, "olio.charPerson"));
+        }
+        if (cc.userCharacter) {
+            rows.push(objectLinkRow("User Char", cc.userCharacter, "olio.charPerson"));
+        }
+    }
+    if (meta.promptConfig) {
+        rows.push(objectLinkRow("Prompt", meta.promptConfig, "olio.llm.promptConfig"));
+    }
+    // ...
+}
+
+function objectLinkRow(label, obj, modelType) {
+    let name = obj.name || obj.objectId || "—";
+    return m("div", { class: "text-xs text-gray-400 flex items-center" }, [
+        m("span", label + ": "),
+        m("a", {
+            class: "text-blue-400 hover:text-blue-300 cursor-pointer truncate ml-1",
+            title: "Open " + name,
+            onclick: function(e) {
+                e.preventDefault();
+                // Navigate to object editor — use page.navigateTo or am7client.openObject
+                if (window.page && page.navigateTo) {
+                    page.navigateTo(modelType, obj.objectId);
+                }
+            }
+        }, name)
+    ]);
+}
+
+function metaRow(label, value) {
+    return m("div", { class: "text-xs text-gray-400" }, label + ": " + value);
+}
+```
+
+**Note:** The `page.navigateTo()` call needs to match the existing navigation pattern in the app. Check how object.js and other views handle opening a specific object by type + objectId. May use `page.rule` or route-based navigation.
+
+##### Item 29: Auto-generated chat title and icon (OI-80)
+**Files:**
+- `AccountManagerUx7/media/prompts/chatTitlePrompt.json` (NEW)
+- `AccountManagerUx7/client/components/chat/ConversationManager.js` (sidebar display)
+- `AccountManagerUx7/client/view/chat.js` (trigger after first exchange)
+- Server-side: `Chat.java` or `ChatService.java` (LLM call for title generation)
+
+**Problem:** Chat sessions in the sidebar show the raw chatRequest name (e.g., "Chat 2025-01-15"). After an exchange, there's enough context to generate a meaningful title and pick an appropriate icon, but this doesn't happen automatically.
+
+**Design:**
+
+**A. Prompt template** — Store in `Ux7/media/prompts/chatTitlePrompt.json`:
+```json
+{
+    "system": [
+        "Given a conversation opening, generate a short title (max 40 chars) and pick one Material Symbols icon name that best represents the topic.",
+        "Respond ONLY with JSON: {\"title\": \"...\", \"icon\": \"...\"}",
+        "Icon examples: chat, psychology, sword, castle, restaurant, travel, code, music, heart, science, sports, school, work, pet"
+    ]
+}
+```
+
+**B. Trigger** — After the first actual exchange (user sends message + LLM responds), if the chatRequest has no `chatTitle` attribute:
+1. Send the first user message + first LLM response to a lightweight LLM call using the title prompt
+2. Parse the JSON response to get `title` and `icon`
+3. Store as attributes on the chatRequest: `am7client.setAttribute(chatRequest, "chatTitle", title)` and `am7client.setAttribute(chatRequest, "chatIcon", icon)`
+4. Save the chatRequest
+
+**C. Sidebar display** — In `sessionItemView()`, check for `chatTitle` / `chatIcon` attributes:
+```javascript
+function sessionItemView(session, isSelected) {
+    let title = am7client.getAttributeValue(session, "chatTitle", 0) || session.name || "(unnamed)";
+    let icon = am7client.getAttributeValue(session, "chatIcon", 0);
+    // ...
+    return m("button", { class: cls, onclick: ... }, [
+        // delete icon (existing)...
+        icon ? m("span", {
+            class: "material-symbols-outlined flex-shrink-0 mr-1",
+            style: "font-size: 16px;"
+        }, icon) : "",
+        m("span", { class: "flex-1 truncate text-left" }, title)
+    ]);
+}
+```
+
+**D. Server-side option** — The title generation could happen either:
+- **Client-side:** UX makes a lightweight LLM call via the existing chat endpoint with a special `purpose: "title"` flag. Simpler but adds a visible extra call.
+- **Server-side:** `Chat.java` auto-generates after first exchange as part of `chatComplete`. Cleaner UX but requires a backend change. The title prompt file would need to be loaded server-side or stored as a promptConfig.
+
+Prefer server-side — add a `generateChatTitle()` method to `Chat.java` that runs after the first exchange (check `messages.size() == 2`). Store results as attributes on the chatRequest via `AttributeUtil`. Send a chirp `chatTitleUpdate` so the sidebar refreshes.
+
+##### Item 30: Memory application indicator in chat (OI-81)
+**Files:** `view/chat.js`, `LLMConnector.js`, server-side `Chat.java` / `ChatService.java`
+
+**Problem:** When memories are recalled and injected into a chat prompt, there's no UX indication that this happened. Users can't tell whether memory is working, what memories were applied, or how many.
+
+**Design options (from most to least feasible):**
+
+**A. Response metadata badge (recommended):** The server already knows the memory count from `retrieveRelevantMemories()`. Include it in the chat response:
+- Server-side: After `retrieveRelevantMemories()` runs in `Chat.chat()`, store the count and optionally summaries on a response metadata field or as a WebSocket chirp
+- Add a new chirp type: `memoryRecall` with payload `{ count: N, summaries: ["...", "..."] }`
+- Client-side: When `memoryRecall` chirp is received, show a subtle indicator above the assistant's response:
+  ```
+  [brain icon] 3 memories recalled
+  ```
+  Clicking it expands to show the memory summaries
+
+**B. Inline annotation (lightweight alternative):** If chirps are too complex, the assistant's response could include an MCP context block with memory metadata that `ChatTokenRenderer` renders as a collapsible "memories applied" badge rather than stripping it.
+
+**C. Status bar approach (from existing item 24C):** The compact status area above the chat input already planned in item 24 would show memory count. This item extends it to be more specific about what memories were applied (summaries, not just count).
+
+**Integration with item 24:** Item 24 defines the WebSocket `memoryEvent` system. This item (30) focuses on the UX rendering of that data — specifically:
+- How the memory indicator looks in the message stream (not just sidebar)
+- Expandable summary list (not just a count)
+- Visual distinction between "recalled" memories (applied to prompt) vs "extracted" memories (saved from keyframe)
+
+**Minimal viable approach:**
+1. Add `memoryCount` to chat response attributes (server adds it after `retrieveRelevantMemories()`)
+2. In `chat.js` message rendering, if `memoryCount > 0`, show a small badge before the assistant response
+3. No new WebSocket events needed — piggyback on the response data
+
+---
+
 #### New Tests
 
 ##### Backend Tests (TestChatPhase13.java)
@@ -3981,6 +4131,10 @@ The search results display includes the character pair names, conversation sourc
 | 152 | infra | WebSocket reconnect: page.openSocket exists and is reconnectable |
 | 153 | memory | Prompt templates include memory.context conditional block |
 | 154 | memory | Prompt template prompt.memoryChat.json has all 4 memory variables |
+| 155 | sidebar | Chat details metadata rows have clickable object links (objectLinkRow function exists) |
+| 156 | sidebar | Session item displays chatTitle attribute when present instead of raw name |
+| 157 | sidebar | Session item displays chatIcon attribute as material icon when present |
+| 158 | memory | Memory recall badge rendered before assistant response when memoryCount > 0 |
 
 ---
 
@@ -4002,10 +4156,13 @@ The search results display includes the character pair names, conversation sourc
 | `formDef.js` | 13d, 13e, 13f | SD config defaults, purpose field, memory config fields, missing chatConfig fields (requestTimeout, terrain, etc.) |
 | `pageClient.js` | 13e | WebSocket auto-reconnect with exponential backoff |
 | `WebSocketService.java` | 13e | Token auth fallback, audio double-encoding fix |
-| `pageClient.js` | 13e | WebSocket reconnect, replace `v1-profile` attribute workaround with participation-based profile |
-| `topMenu.js` | 13e | Replace attribute-based portrait path with participation query |
+| `pageClient.js` | 13e | WebSocket reconnect, replace `v1-profile` attribute workaround with `identity.person` lookup under `/Persons` |
+| `topMenu.js` | 13e | Replace attribute-based portrait path with person record profile lookup |
+| `ConversationManager.js` | 13g | Object links in metadataView, chatTitle/chatIcon display in sessionItemView |
+| `chatTitlePrompt.json` | 13g | **NEW** — prompt template for auto-generating chat title + icon |
+| `Chat.java` | 13g | `generateChatTitle()` method, memory count on response, `chatTitleUpdate` chirp |
 | `TestChatPhase13.java` | NEW | 12 backend tests |
-| `llmTestSuite.js` | ALL | 26 UX tests (129-154) |
+| `llmTestSuite.js` | ALL | 30 UX tests (129-158) |
 | `chatRefactor.md` | ALL | Phase 13 status, new OI items |
 
 ---
@@ -4028,9 +4185,12 @@ The search results display includes the character pair names, conversation sourc
 14. **13f items 25-26** — Cross-conversation memory demo scenario + memory search
 15. **13e items 18-19** — WebSocket token auth, audio double-encoding fix
 16. **13e item 20** — User profile reference model refactor (model + UX)
-17. **13d items 12-15** — Remaining P4 items
-18. **Tests** — Backend TestChatPhase13 + UX test additions
-19. **chatRefactor.md** — Update all OI statuses, phase summary
+17. **13g item 28** — Object links in chat details (quick UX win)
+18. **13g item 29** — Auto-generated chat title and icon (server-side generateChatTitle + prompt + sidebar display)
+19. **13g item 30** — Memory application indicator (piggyback on item 24 memory events + response metadata)
+20. **13d items 12-15** — Remaining P4 items
+21. **Tests** — Backend TestChatPhase13 + UX test additions
+22. **chatRefactor.md** — Update all OI statuses, phase summary
 
 ---
 
@@ -4333,6 +4493,9 @@ All known open issues with their assigned resolution phase:
 | OI-76 | WebSocket token auth fallback — null user proceeds to anonymous state, security gap | WebSocketService.java:179 | Phase 13e (item 18) | P3 |
 | OI-77 | Audio double-encoding — client sends double-base64, server has workaround decode | WebSocketService.java:543 | Phase 13e (item 19) | P4 |
 | OI-78 | Logged-in user profile uses `v1-profile` attribute workaround instead of looking up `identity.person` under `/Persons`. Chat identity: use `chatConfig.userCharacter` when set, else user's person record | pageClient.js:777 | Phase 13e (item 20) | P3 |
+| OI-79 | Chat details metadata shows config/prompt/character names as plain text — no links to open objects | ConversationManager.js:170 | Phase 13g (item 28) | P3 |
+| OI-80 | Chat sessions use raw name in sidebar — no auto-generated title or topic icon after first exchange | ConversationManager.js:134 | Phase 13g (item 29) | P3 |
+| OI-81 | No UX indication when memories are recalled and applied to a chat prompt | chat.js, Chat.java | Phase 13g (item 30) | P3 |
 
 ---
 

@@ -978,10 +978,10 @@
 
     // Phase 13: Chat toolbar helper — material icon button with optional active/toggle state
     function chatIconBtn(icon, handler, active, title) {
-      let cls = "inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors";
+      let cls = "inline-flex items-center justify-center w-10 h-10 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors";
       if (active) cls += " bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white";
       return m("button", { class: cls, onclick: handler, title: title || "" },
-        m("span", { class: "material-symbols-outlined", style: "font-size:20px" }, icon)
+        m("span", { class: "material-symbols-outlined" }, icon)
       );
     }
 
