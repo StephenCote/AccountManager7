@@ -9,7 +9,7 @@
             };
             if (op.params) {
                 matchFact.parameters = Object.keys(op.params).map(function(k) {
-                    return { name: k, value: op.params[k] };
+                    return { schema: "policy.factParameter", name: k, valueType: "STRING", value: op.params[k] };
                 });
             }
             return {
@@ -4884,9 +4884,84 @@
     }
 
 
+    /// Options presets for the chatOptions balancer
+    let chatOptionsPresets = {
+        "Balanced (Default)": {
+            desc: "Model defaults — neutral baseline",
+            temperature: 1.0, top_p: 1.0, top_k: 50,
+            frequency_penalty: 0.0, presence_penalty: 0.0,
+            max_tokens: 4096, num_ctx: 8192,
+            typical_p: 0.85, repeat_penalty: 1.2, min_p: 0.1, repeat_last_n: 64, seed: 0
+        },
+        "Creative": {
+            desc: "Higher randomness for storytelling and RP",
+            temperature: 1.3, top_p: 0.95, top_k: 80,
+            frequency_penalty: 0.0, presence_penalty: 0.3,
+            max_tokens: 4096, num_ctx: 8192,
+            typical_p: 0.9, repeat_penalty: 1.1, min_p: 0.05, repeat_last_n: 64, seed: 0
+        },
+        "Precise": {
+            desc: "Lower randomness for factual and analytical tasks",
+            temperature: 0.5, top_p: 0.7, top_k: 30,
+            frequency_penalty: 0.3, presence_penalty: 0.0,
+            max_tokens: 4096, num_ctx: 8192,
+            typical_p: 0.8, repeat_penalty: 1.3, min_p: 0.15, repeat_last_n: 64, seed: 0
+        },
+        "Deterministic": {
+            desc: "Minimal randomness — reproducible outputs",
+            temperature: 0.1, top_p: 0.5, top_k: 10,
+            frequency_penalty: 0.5, presence_penalty: 0.3,
+            max_tokens: 4096, num_ctx: 8192,
+            typical_p: 0.7, repeat_penalty: 1.5, min_p: 0.2, repeat_last_n: 80, seed: 42
+        }
+    };
+
     forms.chatOptions = {
         label: "Options",
         fields: {
+            optionsPreset: {
+                format: "button",
+                layout: "one",
+                icon: 'tune',
+                field: {
+                    label: "Apply LLM Options Preset",
+                    command: function(objectPage, inst, fieldName) {
+                        let presetView = {
+                            view: function() {
+                                return m("div", { class: "p-2" }, Object.keys(chatOptionsPresets).map(function(name) {
+                                    let p = chatOptionsPresets[name];
+                                    return m("div", {
+                                        class: "p-3 mb-2 cursor-pointer rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700",
+                                        onclick: function() {
+                                            page.components.dialog.endDialog();
+                                            Object.keys(p).forEach(function(k) {
+                                                if (k !== "desc") {
+                                                    inst.entity[k] = p[k];
+                                                    inst.change(k);
+                                                }
+                                            });
+                                            page.toast("info", "Applied preset: " + name, 3000);
+                                            m.redraw();
+                                        }
+                                    }, [
+                                        m("div", { class: "font-medium" }, name),
+                                        m("div", { class: "text-xs text-gray-500" }, p.desc),
+                                        m("div", { class: "text-xs text-gray-400 mt-1" },
+                                            "temp=" + p.temperature + " top_p=" + p.top_p + " freq=" + p.frequency_penalty + " pres=" + p.presence_penalty)
+                                    ]);
+                                }));
+                            }
+                        };
+                        page.components.dialog.setDialog({
+                            label: "LLM Chat Options Presets",
+                            entityType: "chatOptionsPreset",
+                            size: 50,
+                            data: { entity: {}, view: presetView },
+                            cancel: function() { page.components.dialog.endDialog(); }
+                        });
+                    }
+                }
+            },
             temperature: {
                 label: "Temperature",
                 layout: 'third',

@@ -293,6 +293,12 @@
         },
 
         /**
+         * Select a session programmatically (triggers onSelect callback).
+         * @param {Object} session - session object with at least objectId
+         */
+        selectSession: selectSession,
+
+        /**
          * Set the selected session by objectId (for external sync).
          */
         setSelected: function(objectId) { selectedObjectId = objectId; },

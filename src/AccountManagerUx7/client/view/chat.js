@@ -314,7 +314,7 @@
 
         onchatcomplete: (id) => {
           console.log("Chat completed: " + id);
-          if (page.chatStream && !page.chatStream.streamId == id) {
+          if (page.chatStream && page.chatStream.streamId !== id) {
             console.warn("Mismatched stream identifiers");
           }
           clearChat();
@@ -885,7 +885,7 @@
         if (useServerDisplay) {
           cnt = msg.displayContent;
         }
-        if (!useServerDisplay && hideThoughts && !editMode) {
+        if (!useServerDisplay && hideThoughts && !editMode && window.LLMConnector) {
           cnt = LLMConnector.pruneOut(cnt, "--- CITATION", "END CITATIONS ---")
         }
         if (msg.role == "assistant") {
@@ -895,7 +895,7 @@
           if (midx == amsg.length - 1) {
             ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
           }
-          if (!useServerDisplay && hideThoughts && !editMode) {
+          if (!useServerDisplay && hideThoughts && !editMode && window.LLMConnector) {
             cnt = LLMConnector.pruneToMark(cnt, "<|reserved_special_token");
             cnt = LLMConnector.pruneTag(cnt, "think");
             cnt = LLMConnector.pruneTag(cnt, "thought");
@@ -908,13 +908,13 @@
           }
 
         }
-        if (!useServerDisplay && !bectl && hideThoughts) {
+        if (!useServerDisplay && !bectl && hideThoughts && window.LLMConnector) {
           cnt = LLMConnector.pruneToMark(cnt, "(Metrics");
           cnt = LLMConnector.pruneToMark(cnt, "(Reminder");
           cnt = LLMConnector.pruneToMark(cnt, "(KeyFrame");
         }
         // Phase 13f item 25: MCP debug display (OI-70)
-        if (window.ChatTokenRenderer && ChatTokenRenderer.processMcpTokens) {
+        if (!bectl && window.ChatTokenRenderer && ChatTokenRenderer.processMcpTokens) {
           cnt = ChatTokenRenderer.processMcpTokens(cnt, mcpDebug);
         }
         if (typeof cnt == "string") {
@@ -942,7 +942,7 @@
           }
 
           // Generate stable name based on chat objectId, role, and content hash
-          let contentForHash = LLMConnector.pruneAll(msg.content);
+          let contentForHash = window.LLMConnector ? LLMConnector.pruneAll(msg.content) : (msg.content || "");
           let contentHash = page.components.audioComponents.simpleHash(contentForHash);
           let name = inst.api.objectId() + "-" + msg.role + "-" + contentHash;
 
@@ -1166,6 +1166,9 @@
         if (aPCfg.length && inst && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
         if (aCCfg.length && inst && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
         if (!inst) ConversationManager.autoSelectFirst();
+      } else {
+        aPCfg = [];
+        aCCfg = [];
       }
     }
 
@@ -1173,7 +1176,7 @@
 
       if (aPCfg == undefined && aCCfg == undefined) {
         loadConfigList().then(() => {
-          if (aCCfg.length > 0) {
+          if (aCCfg && aCCfg.length > 0) {
             doPeek().catch(function(e) {
               console.warn("Failed to peek on load", e);
             });

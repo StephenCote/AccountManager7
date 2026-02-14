@@ -176,19 +176,22 @@
 
             // Attach reference to context panel
             if (window.ContextPanel && ref && ref.objectId) {
-                ContextPanel.attach(obj.objectId, ref);
+                let schema = ref[am7model.jsonModelKey] || ref.schema || "";
+                ContextPanel.attach("context", ref.objectId, schema);
             }
 
             // Populate working set
-            page.components.dnd.workingSet.push(...wset);
-            if (wset.length) {
+            if (page.components.dnd && page.components.dnd.workingSet) {
+                page.components.dnd.workingSet.push(...wset);
+            }
+            if (wset.length && page.components.topMenu && typeof page.components.topMenu.activeShuffle === "function") {
                 page.components.topMenu.activeShuffle(wset[0]);
             }
 
             // Refresh conversation manager to show new session
             if (window.ConversationManager) {
                 await ConversationManager.refresh();
-                ConversationManager.select(obj);
+                ConversationManager.selectSession(obj);
             }
 
             // Navigate to chat if not already there
