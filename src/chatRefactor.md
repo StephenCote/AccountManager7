@@ -3341,6 +3341,7 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 | 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | **COMPLETED** (10a+10b+10c) | Medium | High | 86-110 (UX browser), P10-1..P10-4 + P10c-1..P10c-4 (backend, all 8 pass) |
 | 11 — Memory Hardening & Keyframe Refactor | **COMPLETED** | Low | Medium | P11-1..P11-7 (8 tests, all pass) |
 | 12 — UX Polish & Remaining Cleanup | **COMPLETED** | Low-Med | High | P12-1..P12-5 (backend, all 5 pass); 111-115, 103b-104g (UX browser) |
+| 13 — chatInto Redesign, Memory UX & MCP Visibility | **PLANNED** | Medium | High | — |
 
 ### Phase 12 Implementation Summary
 
@@ -3373,9 +3374,716 @@ All 12 phases are now **COMPLETED**. Phase 12 was implemented in 4 sub-phases:
 
 **Tests:** `TestChatPhase12.java` (5 backend tests, all pass), `llmTestSuite.js` (tests 111-115 layout/context, 103b-104g comprehensive token processing)
 
-### All Phases Complete
+### Phase 13: chatInto Redesign, Memory UX & MCP Visibility
 
-All 12 phases of the chat redesign are now implemented and tested. The system provides:
+**Status:** PLANNED
+**Priority:** Medium | **Impact:** High
+**Goal:** Redesign the `chatInto` object analysis feature to integrate with Phase 10-12 shared infrastructure (LLMConnector, ConversationManager, ContextPanel), eliminate the `window.open` / `remoteEntity` cross-window pattern, unify vectorize/summarize dialogs, **add full UX visibility for the memory system and MCP context**, enable users to observe and exercise cross-conversation character memory, and resolve all remaining TODOs and deferred items.
+
+#### Background
+
+The `chatInto` feature allows users to open an LLM-powered analysis chat for any object (character, document, chat session). It was implemented pre-Phase-10 and uses patterns that bypass all shared infrastructure:
+
+- **`window.open("/", "_blank")`** — opens a separate browser window
+- **`window.remoteEntity`** — passes chat config via window property
+- **`dnd.workingSet`** — injects vectorized session + character tags into the new window
+- **Name-based config filtering** (`/^Object/gi`) — fragile convention to find "analysis" configs
+- **No ContextPanel integration** — pre-bound chatConfig/promptConfig aren't reflected in context bindings
+- **No ConversationManager integration** — new analysis session won't appear in session list until reload
+
+Current callers:
+- `view/chat.js:271,1040` — "query_stats" button in chat toolbar
+- `view/object.js:268,1061` — "query_stats" button in object view toolbar
+- `dialog.js:10-106` — core implementation
+
+Related features:
+- `dialog.js:269-292` — standalone `vectorize()` dialog
+- `dialog.js:216-267` — standalone `summarize()` dialog
+- `VectorService.java` — REST endpoints for vectorize/summarize/reference
+- `ChatUtil.createSummary()` — server-side vectorize→chunk→LLM→summarize pipeline
+- `Chat.createNarrativeVector()` — auto-vectorize after message send
+
+#### Open Issues Carried Forward
+
+| # | Issue | Source | Priority |
+|---|-------|--------|----------|
+| OI-56 | `chatInto` bypasses LLMConnector, ConversationManager, ContextPanel — analysis sessions are invisible to shared infrastructure | Phase 12 analysis | P2 |
+| OI-57 | `chatInto` uses `window.open` + `remoteEntity` cross-window pattern — fragile, no error recovery, no state sync | Phase 12 analysis | P2 |
+| OI-58 | Config filtering by name prefix (`/^Object/gi`) — fragile convention, no configs may match, no fallback | Phase 12 analysis | P3 |
+| OI-59 | `vectorize()` and `summarize()` dialogs don't surface progress or results — fire-and-forget with toast only | Phase 12 analysis | P3 |
+| OI-60 | `ChatUtil.getCreateChatConfig()` marked `TODO: DEPRECATE THIS` — still used by tests and internal code | ChatUtil.java:324 | P4 |
+| OI-61 | `dialog.js:3` TODO — "Persist chatRequest / underlying AI request should also be persisted" | dialog.js:3 | P3 |
+| OI-62 | `dialog.js:829` TODO — SD config defaults not in form ("TODO - Add to form") | dialog.js:829 | P4 |
+| OI-63 | `ChatUtil.java:458,465` TODO — QueryPlan `$flex` field type workaround for interaction actor/interactor | ChatUtil.java:458 | P4 |
+| OI-64 | `chat.js:475` TODO — "Chat is streaming - TODO - interrupt" — no cancel-and-send support during stream | chat.js:475 | P3 |
+| OI-65 | `chat.js:28` TODO — dual object view construction methods (generic `am7view` vs legacy `object component`) | chat.js:28 | P4 |
+| OI-66 | Phase 12b item 7 deferred — consent block trimming needs content review | Phase 12b | P4 |
+| OI-67 | No REST endpoints for memory — `MemoryUtil` has search/query methods but no service layer exposes them to the UX | Phase 13 analysis | P2 |
+| OI-68 | Memory config fields (`extractMemories`, `memoryBudget`, `memoryExtractionEvery`) not in formDef.js — users can't enable/configure memory from the UI | Phase 13 analysis | P2 |
+| OI-69 | No UX memory browser — users cannot view, search, or manage memories for character pairs | Phase 13 analysis | P2 |
+| OI-70 | MCP context blocks invisible — stripped for display, no inspect/debug mode to see what context the LLM actually receives | Phase 13 analysis | P3 |
+| OI-71 | Cross-conversation memory not demonstrable — no indicator when memories are loaded, no way to see memory count or content during chat | Phase 13 analysis | P2 |
+| OI-72 | Keyframe events not surfaced in UX — no visual indicator when keyframes fire or memories are extracted during conversation | Phase 13 analysis | P3 |
+| OI-73 | Memory search not exposed — `MemoryUtil.searchMemories()` (semantic vector search) has no client-side equivalent | Phase 13 analysis | P3 |
+| OI-74 | 6 chatConfig model fields not in formDef.js — `requestTimeout`, `terrain`, `populationDescription`, `animalDescription`, `universeName`, `worldName` | Phase 13 gap audit | P3 |
+| OI-75 | WebSocket auto-reconnect missing — WS close during stream silently breaks chat, no recovery | pageClient.js:374 | P2 |
+| OI-76 | WebSocket token auth fallback — null user proceeds to anonymous state, security gap | WebSocketService.java:179 | P3 |
+| OI-77 | Audio double-encoding — client sends double-base64, server has workaround decode | WebSocketService.java:543 | P4 |
+| OI-78 | Logged-in user profile uses `v1-profile` attribute workaround instead of looking up `identity.person` under `/Persons`. Chat context should use `chatConfig.userCharacter` (charPerson) when set, fallback to user's person record when not | pageClient.js:777 | P3 |
+
+---
+
+#### Sub-phase 13a — chatInto In-Page Redesign
+
+**Goal:** Replace the `window.open` pattern with an in-page analysis session that integrates with all Phase 10-12 components.
+
+##### Item 1: New `AnalysisManager` module (OI-56, OI-57)
+**New file:** `AccountManagerUx7/client/components/chat/AnalysisManager.js`
+
+Create a lightweight analysis coordinator that replaces the cross-window pattern:
+
+```
+window.AnalysisManager = {
+    startAnalysis(ref, sourceInst, sourceCCfg)  // replaces dialog.chatInto()
+    getActiveAnalysis()                          // returns current analysis context or null
+    clearAnalysis()                              // detach and return to normal chat
+}
+```
+
+**Flow:**
+1. `startAnalysis()` receives the reference object, optional source session instance, optional chat configs
+2. Resolves analysis chatConfig and promptConfig (see Item 2)
+3. Vectorizes the source session if present (reuses existing `/vector/vectorize/` endpoint)
+4. Calls `POST /rest/chat/new` to create the analysis chatRequest server-side (same as `openChatSettings`)
+5. Uses `ContextPanel.attach()` to bind the reference object to the new session
+6. Uses `ConversationManager.refresh()` to surface the new session in the sidebar
+7. Selects the new session via `ConversationManager.select()` — triggers `pickSession()` in chat.js
+8. Populates `dnd.workingSet` with vectorized session + character tags (same data as before)
+9. Chat view renders the analysis session in-page — no new window needed
+
+**Key architectural decision:** The user stays in the same tab. The analysis session appears in the ConversationManager sidebar alongside regular sessions, distinguished by a name prefix ("Analyze TYPE NAME") and optionally a visual indicator (icon or badge). The user can switch back to their original session at any time.
+
+##### Item 2: Replace name-based config filtering (OI-58)
+**Files:** `dialog.js`, `AnalysisManager.js`, `chatConfigModel.json` (optional)
+
+Replace `name.match(/^Object/gi)` with a purpose-based approach:
+
+**Option A (minimal):** Use a config naming convention but with a fallback chain:
+1. Look for configs with name starting with "Analyze" or "Object"
+2. If none found, use the first available config
+3. Let the user pick from chatSettings dialog as before
+
+**Option B (structural — preferred):** Add a `purpose` enum field to `chatConfigModel.json`:
+```json
+{
+    "name": "purpose",
+    "type": "string",
+    "default": "chat",
+    "description": "Config purpose: chat, analysis, magic8, rpg"
+}
+```
+Then filter by `purpose === "analysis"` instead of name prefix. Existing configs default to "chat". Analysis configs explicitly set `purpose: "analysis"`. This also benefits Magic8 (which currently has similar name-based filtering in SessionDirector).
+
+##### Item 3: Update chat.js to consume AnalysisManager (OI-57)
+**File:** `AccountManagerUx7/client/view/chat.js`
+
+- Remove the `remoteEntity` consumption in `oninit` (lines 1174-1178, 1192-1194)
+- Remove the local `chatInto()` wrapper (line 271-273)
+- Replace the "query_stats" button handler (line 1040) to call `AnalysisManager.startAnalysis()`
+- `AnalysisManager.startAnalysis()` creates the session server-side and selects it via ConversationManager — no page navigation needed
+
+##### Item 4: Update object.js to use AnalysisManager
+**File:** `AccountManagerUx7/client/view/object.js`
+
+- Replace `page.components.dialog.chatInto(inst.entity)` (line 269) with `AnalysisManager.startAnalysis(inst.entity)`
+- The analysis session opens in the chat view via `m.route.set("/chat")` with no `remoteEntity` — AnalysisManager stores pending analysis state in module scope
+
+##### Item 5: Remove dialog.chatInto (dead code cleanup)
+**File:** `AccountManagerUx7/client/components/dialog.js`
+
+- Remove `chatInto()` function (lines 10-106)
+- Remove `chatInto` from the exports object (line 1978)
+- Keep `loadChatList()`, `loadPromptList()`, `chatSettings()` — still used by summarize and other dialogs
+
+---
+
+#### Sub-phase 13b — Vectorize & Summarize UX Improvements
+
+**Goal:** Improve the vectorize/summarize dialog UX with progress feedback and result surfacing.
+
+##### Item 6: Vectorize progress indicator (OI-59)
+**File:** `AccountManagerUx7/client/components/dialog.js` (vectorize function, lines 269-292)
+
+Replace fire-and-forget toast with `dialog.showProgress()`:
+1. Show progress dialog with spinner during vectorization
+2. On success, show chunk count in the success toast
+3. On failure, show error details (not just "Vectorization failed")
+
+##### Item 7: Summarize progress and result navigation (OI-59)
+**File:** `AccountManagerUx7/client/components/dialog.js` (summarize function, lines 216-267)
+
+1. Show progress dialog during summarization (which can be long — involves LLM calls per chunk)
+2. On success, offer to navigate to the generated summary note (`~/Notes` path)
+3. Surface the summary note in `dnd.workingSet` so it's available as context for chatInto analysis
+
+##### Item 8: Wire summarize into AnalysisManager pipeline
+**File:** `AccountManagerUx7/client/components/chat/AnalysisManager.js`
+
+Add optional pre-analysis summarization:
+- When `startAnalysis()` receives a large object (e.g., full chat session), offer to summarize first
+- The summarized note becomes the primary reference in the analysis session's workingSet
+- This replaces the current manual two-step flow (user must manually vectorize, then manually summarize, then manually chatInto)
+
+---
+
+#### Sub-phase 13c — Backend Cleanup
+
+##### Item 9: Deprecate `ChatUtil.getCreateChatConfig()` (OI-60)
+**File:** `AccountManagerObjects7/.../ChatUtil.java` (line 324)
+
+This method is marked `TODO: DEPRECATE THIS`. Audit all callers:
+- If only used by tests: update tests to use `LLMConnector.ensureConfig()` equivalent or the REST endpoint
+- If used by production code: refactor callers to use the config template pipeline (`loadChatConfigTemplate` + `applyChatConfigTemplate`)
+- Add `@Deprecated` annotation with migration note
+
+##### Item 10: Stream interruption support (OI-64)
+**File:** `AccountManagerUx7/client/view/chat.js` (line 475)
+
+Currently when a user types a message while streaming, the message is silently discarded with `console.warn("Chat is streaming - TODO - interrupt")`.
+
+Fix: Implement cancel-and-send:
+1. When user sends during active stream, call `LLMConnector.stopStream()` (already implemented via Phase 12c Ollama abort)
+2. Wait for stream cancellation acknowledgment
+3. Then send the new message via `doChat()`
+
+Alternative (simpler): Queue the message and send after stream completes. Display "(queued)" indicator on the input bar.
+
+##### Item 11: ChatRequest persistence improvement (OI-61)
+**File:** `AccountManagerObjects7/.../ChatUtil.java`, `ChatService.java`
+
+The TODO at `dialog.js:3` notes that chat requests should persist their underlying AI request for easier access. Currently `data.data.byteStore` requires deserialization.
+
+Fix: Add a server-side endpoint or field that returns the last OpenAI request object as part of the chatRequest response, or store it as a linked record rather than serialized bytes. This enables:
+- Analysis sessions to inspect what was actually sent to the LLM
+- Debugging and replay of specific requests
+- ContextPanel to show request details
+
+---
+
+#### Sub-phase 13d — Remaining P4 Items
+
+##### Item 12: SD config form defaults (OI-62)
+**File:** `AccountManagerUx7/client/components/dialog.js` (line 829), `formDef.js`
+
+The `tempApplyDefaults()` function hardcodes SD config defaults (steps=40, cfg=5, model name). Move these to the `sdConfig` form definition in `formDef.js` as proper default values so the dialog form renders them without the workaround function.
+
+##### Item 13: QueryPlan $flex field workaround documentation (OI-63)
+**File:** `AccountManagerObjects7/.../ChatUtil.java` (lines 458, 465)
+
+The `$flex` field type workaround for interaction actor/interactor is a known framework limitation. Two options:
+- **Fix:** Extend QueryPlan to support `$flex` field types in plan filtering
+- **Document:** If the fix is out of scope for Phase 13, document the limitation clearly and remove the TODO comments in favor of a permanent explanatory comment referencing a framework issue tracker item
+
+##### Item 14: Consent block trimming (OI-66, deferred from Phase 12b)
+**Action:** Review consent block template content in promptConfig data records (`userConsentPrefix`, `userConsentRating`, `userConsentNlp`). Trim verbose or redundant text that inflates prompt token count. This is a content change, not a code change — requires domain-specific review.
+
+##### Item 15: Dual object view construction TODO (OI-65)
+**File:** `AccountManagerUx7/client/view/chat.js` (line 28)
+
+Document the two view construction approaches (generic `am7view` vs legacy object component) and their respective use cases. If the legacy approach is only used in chat.js, evaluate migrating to the generic approach. If both are needed, add a comment explaining when to use each.
+
+---
+
+#### Sub-phase 13e — Missing chatConfig Form Fields & Infrastructure
+
+**Goal:** Expose all chatConfig model fields in the form editor and fix critical chat infrastructure gaps.
+
+##### Item 16: Missing chatConfig form fields (OI-74)
+**File:** `AccountManagerUx7/client/formDef.js` (chatConfig form, ~line 5031)
+
+The following fields exist in `chatConfigModel.json` but are NOT in `formDef.js`, meaning users cannot configure them from the UI:
+
+```javascript
+// Add to forms.chatConfig.fields after existing fields:
+requestTimeout: {
+    layout: "one",
+    label: "Request Timeout (sec)",
+    hint: "Hard timeout for LLM connections. 0=no timeout."
+},
+terrain: {
+    layout: "third",
+    label: "Terrain"
+},
+populationDescription: {
+    layout: "third",
+    label: "Population"
+},
+animalDescription: {
+    layout: "third",
+    label: "Animals"
+},
+universeName: {
+    layout: "third",
+    label: "Universe Name"
+},
+worldName: {
+    layout: "third",
+    label: "World Name"
+},
+```
+
+These are used by the prompt template system (e.g., `${setting.terrain}`, `${setting.population}`) for world-building context. Without form exposure, users must edit raw records to set them.
+
+##### Item 17: WebSocket auto-reconnect (OI-75)
+**File:** `AccountManagerUx7/client/pageClient.js` (line 374)
+
+**Problem:** When the WebSocket connection closes (network blip, server restart, timeout), the client has no reconnect logic. Chat streaming events (`chatStart`, `chatUpdate`, `chatComplete`, `chatError`) and policy events come over WS — losing the connection silently breaks chat.
+
+**Fix:** Add exponential backoff reconnection:
+```javascript
+// In the WebSocket onclose handler (pageClient.js ~line 370):
+let reconnectDelay = 1000;
+const MAX_RECONNECT_DELAY = 30000;
+const MAX_RECONNECT_ATTEMPTS = 10;
+let reconnectAttempts = 0;
+
+webSocket.onclose = function(event) {
+    console.warn("[WebSocket] Closed (code: " + event.code + ")");
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+        setTimeout(function() {
+            console.log("[WebSocket] Reconnecting (attempt " + reconnectAttempts + ")...");
+            page.openSocket(); // existing connection method
+        }, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+    } else {
+        page.toast("error", "Connection lost. Please reload.", 0);
+    }
+};
+// Reset on successful connection:
+webSocket.onopen = function() {
+    reconnectAttempts = 0;
+    reconnectDelay = 1000;
+};
+```
+
+##### Item 18: WebSocket token auth fallback (OI-76)
+**File:** `AccountManagerService7/.../WebSocketService.java` (line 179)
+
+**Problem:** `TODO: Add token auth support` — when principal is null, WebSocket connection proceeds with anonymous state. Chat stream events may be sent to unauthenticated sessions.
+
+**Fix:** If principal is null, attempt to authenticate via token from the WebSocket query parameter or first message payload. If no valid token, close the session:
+```java
+if (user == null) {
+    // Try token from query parameter
+    String token = session.getRequestParameterMap().getOrDefault("token", List.of("")).get(0);
+    if (token != null && !token.isEmpty()) {
+        user = resolveUserFromToken(token);
+    }
+    if (user == null) {
+        logger.warn("Unauthenticated WebSocket connection, closing");
+        session.close(new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, "Authentication required"));
+        return;
+    }
+}
+```
+
+##### Item 19: Audio double-encoding fix (OI-77)
+**File:** `AccountManagerService7/.../WebSocketService.java` (line 543)
+
+**Problem:** `TODO: Fix the double encoding on the client side` — audio data arrives double-base64-encoded, requiring extra decode. Wastes bandwidth and processing.
+
+**Fix:** Fix the client-side encoding to single base64, then remove the server-side double-decode workaround.
+
+##### Item 20: User profile reference model cleanup (OI-78)
+**Files:**
+- `AccountManagerUx7/client/pageClient.js` (lines 777-800) — `updateProfile()` workaround
+- `AccountManagerUx7/client/components/topMenu.js` (line 24) — portrait path retrieval
+
+**Problem:** The logged-in user's profile portrait and voice are stored via attribute workarounds (`v1-profile`, `v1-profile-path`) instead of looking up the user's corresponding `identity.person` record. The TODO (pageClient.js:777-779) notes this should be cleaned up.
+
+**Important terminology distinction:**
+- **Logged-in user** = `system.user` model — the authenticated account. Do NOT modify `system.userModel.json`.
+- **Chat "system" character** = `olio.charPerson` from `chatConfig.systemCharacter` — this is NOT a `system.user` model. The name is confusing but they are completely separate models.
+- **Chat "user" character** = `olio.charPerson` from `chatConfig.userCharacter` — also NOT a `system.user` model.
+- **User's person record** = `identity.person` (not `olio.charPerson`) — found under `/Persons` (read-only system group for the org). This has a `profile` field referencing `identity.profile` with portrait, voice, album, etc.
+
+**Architecture context:** In the chat system, model references (characters, configs) are provided on the chat request — they are not persisted on the user. Content for context injection is extracted from the vector store after the source objects have been vectorized and optionally summarized. The `olio.charPerson` models already have proper profile references for chat. The problem is only with how the **logged-in user's** portrait/profile is retrieved for the top menu bar and UX display.
+
+**Fix:**
+1. **Look up `identity.person` under `/Persons`** — For the logged-in user, query for their corresponding `identity.person` instance under the `/Persons` read-only system group in the org. The person record has a `profile` field (which references `identity.profile` with portrait, voice, etc.)
+2. **Replace `updateProfile()` in pageClient.js** — instead of patching `v1-profile` / `v1-profile-path` attributes, fetch the user's person record and read portrait from `person.profile.portrait`
+3. **Replace `topMenu.js:24`** — instead of `am7client.getAttributeValue(page.user, "v1-profile-path", 0)`, use the person record's profile portrait path
+4. **Add REST helper if needed** — if no existing endpoint returns the logged-in user's person record, add a lightweight endpoint (e.g., `GET /rest/user/person`) that looks up the `identity.person` for the authenticated user in `/Persons`
+5. **Remove the `v1-profile` and `v1-profile-path` attribute workarounds** after the new lookup is working
+
+---
+
+#### Sub-phase 13f — Memory UX & MCP Visibility
+
+**Goal:** Make the memory system fully visible and exercisable from the UX. Users should be able to see memories being created, browse existing memories for character pairs, observe memory injection into prompts, and verify cross-conversation memory recall during character chats.
+
+**Current state of memory system:**
+- **Backend complete:** `MemoryUtil.java` provides create/search/format methods. `Chat.java` has `retrieveRelevantMemories()` (person-pair query, categorization into relationship/facts/lastSession, MCP formatting) and `persistKeyframeAsMemory()` (auto-extract on keyframe). `PromptUtil.java` processes `{{memory.context}}`, `{{memory.relationship}}`, `{{memory.facts}}`, `{{memory.lastSession}}` template placeholders.
+- **Backend config exists:** `chatConfigModel` has `extractMemories` (boolean), `memoryBudget` (int, controls max memories per prompt), `memoryExtractionEvery` (int, 0=every keyframe). `Chat.java` enforces `MIN_KEYFRAME_EVERY_WITH_EXTRACT=5`.
+- **No REST endpoints:** `MemoryUtil` methods are not exposed via any REST service — UX cannot query memories.
+- **No UX form fields:** `extractMemories`, `memoryBudget`, `memoryExtractionEvery` are not in `formDef.js` — users cannot enable memory from the config editor.
+- **No memory browser:** No way to view, search, or manage memories for character pairs.
+- **No visibility during chat:** No indicator when keyframes create memories, no display of memory count, no way to see what MCP context the LLM receives.
+
+##### Item 21: Memory REST Service (OI-67)
+**New file:** `AccountManagerService7/.../MemoryService.java`
+
+Create a REST service exposing memory operations to the UX:
+
+```
+@Path("/memory")
+public class MemoryService {
+
+    GET  /memory/conversation/{configObjectId}
+         → MemoryUtil.getConversationMemories(user, configObjectId)
+         Returns all memories for a chat config (conversation)
+
+    GET  /memory/person/{personObjectId}/{limit}
+         → MemoryUtil.searchMemoriesByPerson(user, personId, limit)
+         Returns memories involving a specific character
+
+    GET  /memory/pair/{person1ObjectId}/{person2ObjectId}/{limit}
+         → MemoryUtil.searchMemoriesByPersonPair(user, p1Id, p2Id, limit)
+         Returns memories for a specific character pair
+
+    POST /memory/search/{limit}/{threshold}
+         Body: query text
+         → MemoryUtil.searchMemories(user, query, limit, threshold)
+         Semantic vector search across all memories
+
+    GET  /memory/count/{person1ObjectId}/{person2ObjectId}
+         → Returns count only (lightweight for badge display)
+
+    DELETE /memory/{objectId}
+         → Delete a specific memory record
+}
+```
+
+Note: The person endpoints need to resolve objectId→id internally since the UX works with objectIds, not internal long IDs. Add a helper method `resolvePersonId(user, objectId)` that looks up the character record and returns its internal ID.
+
+##### Item 22: Memory config form fields (OI-68)
+**File:** `AccountManagerUx7/client/formDef.js` (chatConfig form, ~line 5031)
+
+Add memory configuration fields to the chatConfig form, grouped after the existing keyframe/prune section:
+
+```javascript
+// After the existing prune/keyframeEvery/messageTrim block:
+extractMemories: {
+    layout: "one",
+    label: "Extract Memories"
+},
+memoryBudget: {
+    layout: "one",
+    label: "Memory Budget",
+    hint: "Max tokens for memory context (0=disabled)"
+},
+memoryExtractionEvery: {
+    layout: "one",
+    label: "Extract Every N Keyframes",
+    hint: "0=every keyframe, N=every Nth"
+},
+```
+
+Also add these fields to `LLMConnector.js` cloneFields array (~line 184) so they're preserved during config cloning:
+```javascript
+"extractMemories", "memoryBudget", "memoryExtractionEvery"
+```
+
+##### Item 23: MemoryPanel sidebar component (OI-69)
+**New file:** `AccountManagerUx7/client/components/chat/MemoryPanel.js`
+
+Create a collapsible panel (similar to ContextPanel) for the chat sidebar that shows memory state:
+
+```
+window.MemoryPanel = {
+    PanelView: {
+        // Collapsible header: "Memories (N)" or "Memories" when 0
+        // Expanded: lists memories for current character pair
+        // Each memory row shows: type icon, summary (truncated), importance badge
+        // Click to expand full content
+        // Delete button (calls DELETE /memory/{objectId})
+        // Search input for semantic search across memories
+    },
+
+    loadForSession(chatConfig)     // Load memories for current session's character pair
+    getMemoryCount()               // Returns count for badge display
+    refresh()                      // Force reload
+}
+```
+
+**Memory type icons** (Material Symbols):
+- OUTCOME → `flag`
+- RELATIONSHIP → `favorite`
+- FACT/NOTE → `notes`
+- INSIGHT → `lightbulb`
+- DECISION → `gavel`
+- DISCOVERY → `explore`
+- BEHAVIOR → `psychology`
+- ERROR_LESSON → `warning`
+
+**Integration into chat sidebar:** Add `MemoryPanel.PanelView` to `getSplitLeftContainerView()` between ConversationManager and ContextPanel:
+```javascript
+function getSplitLeftContainerView() {
+    let children = [];
+    if (window.ConversationManager) {
+        children.push(m(ConversationManager.SidebarView, { onNew: openChatSettings }));
+    }
+    if (window.MemoryPanel) {
+        children.push(m(MemoryPanel.PanelView));
+    }
+    if (window.ContextPanel) {
+        children.push(m(ContextPanel.PanelView));
+    }
+    return m("div", { class: "splitleftcontainer flex flex-col" }, children);
+}
+```
+
+##### Item 24: Live memory indicators during chat (OI-71, OI-72)
+**Files:** `view/chat.js`, `LLMConnector.js`
+
+Add real-time memory visibility during character chats:
+
+**A. Memory injection indicator:** When `retrieveRelevantMemories()` finds memories on the backend, the response should include a `memoryCount` field. Display this in the chat UI:
+- Add `memoryCount` to the chat response metadata (server-side: `ChatService.java` text endpoint response, or via WebSocket event)
+- In the message display area, show a subtle indicator: `"🧠 3 memories recalled"` before the assistant's first response in a session
+- After each keyframe, show: `"📌 Keyframe created"` and if memory was extracted: `"🧠 Memory saved"`
+
+**B. WebSocket memory events:** Extend the existing WebSocket event system (which already has `policyEvent`) to include:
+- `memoryEvent: { type: "recalled", count: N }` — when memories are loaded for a prompt
+- `memoryEvent: { type: "extracted", summary: "..." }` — when a keyframe produces a new memory
+- `memoryEvent: { type: "keyframe" }` — when a keyframe fires (even without memory extraction)
+
+**C. Chat status bar:** Add a compact status area above the input bar showing:
+- Memory status: "3 memories" or "No memories" for current pair
+- Keyframe countdown: "Next keyframe in 5 messages" (based on `keyframeEvery` - current message count)
+- Extract status: enabled/disabled
+
+##### Item 25: MCP context inspector (OI-70)
+**Files:** `view/chat.js`, `ChatTokenRenderer.js`
+
+Add a developer/debug mode to inspect MCP context blocks that are normally stripped from display:
+
+**A. Toggle in chat toolbar:** Add a "debug" icon button (`bug_report`) to the chat toolbar. When active:
+- MCP blocks are shown inline (collapsible) instead of stripped
+- Keyframe blocks shown with a distinctive border (e.g., amber left border)
+- Memory blocks shown with brain icon and content preview
+- Reminder blocks shown with bell icon
+
+**B. Message metadata tooltip:** When hovering over a message, show:
+- MCP blocks count
+- Memory injection count (from `PromptUtil.memoryCount`)
+- Whether the message triggered a keyframe
+
+**C. ChatTokenRenderer extension:**
+```javascript
+ChatTokenRenderer.processMcpTokens = function(content, debugMode) {
+    if (!debugMode) return LLMConnector.stripMcpBlocks(content);
+    // Parse <mcp:context> blocks and render as collapsible cards
+    // with type-specific icons and formatted JSON content
+};
+```
+
+##### Item 26: Cross-conversation memory demonstration scenario
+**Goal:** Enable users to see memory working across conversations with the same character pair.
+
+**Scenario flow:**
+1. User opens chat with Character A (e.g., "Aria") — config has `extractMemories: true`, `memoryBudget: 500`, `keyframeEvery: 5`
+2. User chats for several messages — keyframe fires, memory extracted
+3. MemoryPanel shows "Memories (1)" with the extracted memory
+4. User creates a **new session** with the same character pair (via ConversationManager "New" button)
+5. On first message in new session, `retrieveRelevantMemories()` loads the memory from session 1
+6. Memory injection indicator shows "1 memory recalled"
+7. The LLM's response references/builds on the previous conversation
+8. MemoryPanel shows the same memory (loaded from pair query, not conversation-specific)
+
+**Required wiring for this scenario:**
+- Item 17 ensures `extractMemories` and `memoryBudget` are configurable
+- Item 16 ensures memories are queryable
+- Item 18 shows them in the sidebar
+- Item 19 shows real-time feedback during chat
+- No new backend code needed — `Chat.retrieveRelevantMemories()` already does this
+
+**Manual test checklist:**
+- [ ] Enable `extractMemories` + set `memoryBudget > 0` on a chatConfig
+- [ ] Chat until keyframe fires (observe keyframe indicator)
+- [ ] Verify memory appears in MemoryPanel
+- [ ] Start new session with same characters + same chatConfig
+- [ ] Send first message — verify memory count indicator
+- [ ] Verify LLM response shows awareness of prior conversation
+- [ ] Open MemoryPanel in new session — verify same memories visible
+- [ ] Search memories using the semantic search input
+- [ ] Delete a memory — verify it's removed from next session's recall
+
+##### Item 27: Memory search in chat (OI-73)
+**File:** `AccountManagerUx7/client/components/chat/MemoryPanel.js`
+
+The MemoryPanel search input uses the `POST /memory/search/{limit}/{threshold}` endpoint for semantic vector search. This allows users to:
+- Search across all memories by content similarity
+- Find memories from different character pairs
+- Verify that the vector embedding + search pipeline is working
+
+The search results display includes the character pair names, conversation source, and importance score.
+
+---
+
+#### New Tests
+
+##### Backend Tests (TestChatPhase13.java)
+
+| Test ID | Category | Validates |
+|---------|----------|-----------|
+| P13-1 | backend | Config purpose field — new chatConfig with `purpose="analysis"` can be created and queried |
+| P13-2 | backend | `ChatUtil.getCreateChatConfig()` deprecation — verify replacement path works |
+| P13-3 | backend | createSummary pipeline — vectorize + summarize produces valid note with Summary tag |
+| P13-4 | backend | chatRequest context attachment — verify `/rest/chat/context/attach` works for analysis reference objects |
+| P13-5 | backend | Memory REST: GET /memory/conversation returns memories for a config |
+| P13-6 | backend | Memory REST: GET /memory/pair returns memories for a character pair |
+| P13-7 | backend | Memory REST: POST /memory/search performs semantic vector search |
+| P13-8 | backend | Memory REST: GET /memory/count returns correct count for pair |
+| P13-9 | backend | Memory REST: DELETE removes memory and its vectors |
+| P13-10 | backend | Cross-conversation recall: memory created in session 1 is retrieved in session 2 with same characters |
+| P13-11 | backend | WebSocket token auth: null principal with valid token resolves user |
+| P13-12 | backend | WebSocket token auth: null principal with no token closes session |
+
+##### UX Tests (llmTestSuite.js additions)
+
+| Test # | Category | Validates |
+|--------|----------|-----------|
+| 129 | dialog | AnalysisManager.startAnalysis() exists and is a function |
+| 130 | dialog | AnalysisManager creates session via ConversationManager (no window.open) |
+| 131 | dialog | AnalysisManager attaches reference to ContextPanel |
+| 132 | dialog | AnalysisManager populates workingSet with vectorized context |
+| 133 | dialog | Config purpose-based filtering (no name prefix dependency) |
+| 134 | dialog | Vectorize progress dialog shown during operation |
+| 135 | dialog | Summarize progress dialog shown during operation |
+| 136 | dialog | dialog.chatInto removed from exports (dead code cleanup verified) |
+| 137 | dialog | remoteEntity pattern removed from chat.js oninit |
+| 138 | dialog | Stream interrupt: message sent during stream triggers cancel-and-send or queue |
+| 139 | memory | MemoryPanel.PanelView exists as Mithril component |
+| 140 | memory | MemoryPanel shows memory count badge when memories exist |
+| 141 | memory | Memory config fields (extractMemories, memoryBudget, memoryExtractionEvery) in formDef |
+| 142 | memory | Memory REST endpoint /memory/conversation accessible |
+| 143 | memory | Memory REST endpoint /memory/pair accessible |
+| 144 | memory | Memory REST endpoint /memory/search accessible |
+| 145 | memory | MCP debug toggle in chat toolbar |
+| 146 | memory | ChatTokenRenderer.processMcpTokens exists |
+| 147 | memory | LLMConnector cloneFields includes memory config fields |
+| 148 | memory | MemoryPanel semantic search input present |
+| 149 | config | chatConfig form has requestTimeout field |
+| 150 | config | chatConfig form has terrain, populationDescription, animalDescription fields |
+| 151 | config | chatConfig form has universeName, worldName fields |
+| 152 | infra | WebSocket reconnect: page.openSocket exists and is reconnectable |
+| 153 | memory | Prompt templates include memory.context conditional block |
+| 154 | memory | Prompt template prompt.memoryChat.json has all 4 memory variables |
+
+---
+
+#### Files Modified Summary
+
+| File | Sub-phase | Changes |
+|------|-----------|---------|
+| `AnalysisManager.js` | 13a | **NEW** — in-page analysis coordinator |
+| `dialog.js` | 13a, 13b | Remove `chatInto()`, improve vectorize/summarize progress |
+| `view/chat.js` | 13a, 13c, 13f | Remove remoteEntity pattern, use AnalysisManager, stream interrupt, memory indicators, MCP debug toggle |
+| `view/object.js` | 13a | Replace `dialog.chatInto` with `AnalysisManager.startAnalysis` |
+| `chatConfigModel.json` | 13a | Add `purpose` field (optional — depends on approach chosen) |
+| `ChatUtil.java` | 13c, 13d | Deprecate `getCreateChatConfig()`, document $flex workaround |
+| `ChatService.java` | 13c, 13f | chatRequest persistence, memory count in response metadata |
+| `MemoryService.java` | 13f | **NEW** — REST endpoints for memory CRUD and search |
+| `MemoryPanel.js` | 13f | **NEW** — sidebar memory browser + search component |
+| `ChatTokenRenderer.js` | 13f | Add `processMcpTokens()` for MCP debug display |
+| `LLMConnector.js` | 13f | Add memory config fields to cloneFields |
+| `formDef.js` | 13d, 13e, 13f | SD config defaults, purpose field, memory config fields, missing chatConfig fields (requestTimeout, terrain, etc.) |
+| `pageClient.js` | 13e | WebSocket auto-reconnect with exponential backoff |
+| `WebSocketService.java` | 13e | Token auth fallback, audio double-encoding fix |
+| `pageClient.js` | 13e | WebSocket reconnect, replace `v1-profile` attribute workaround with participation-based profile |
+| `topMenu.js` | 13e | Replace attribute-based portrait path with participation query |
+| `TestChatPhase13.java` | NEW | 12 backend tests |
+| `llmTestSuite.js` | ALL | 26 UX tests (129-154) |
+| `chatRefactor.md` | ALL | Phase 13 status, new OI items |
+
+---
+
+#### Implementation Order
+
+1. **13e item 16** — Missing chatConfig form fields (quick win — requestTimeout, terrain, world-building)
+2. **13f item 21** — Memory config form fields (extractMemories, memoryBudget — unlocks memory for users)
+3. **13f item 20** — Memory REST service (required for all memory UX features)
+4. **13f item 22** — MemoryPanel sidebar component
+5. **13f item 23** — Live memory indicators during chat
+6. **13e item 17** — WebSocket auto-reconnect (critical infrastructure reliability)
+7. **13a items 1-2** — AnalysisManager module + config purpose resolution (core chatInto redesign)
+8. **13a items 3-4** — Wire chat.js and object.js to AnalysisManager
+9. **13a item 5** — Remove dialog.chatInto dead code
+10. **13b items 6-8** — Vectorize/summarize UX improvements
+11. **13c item 10** — Stream interrupt (high UX impact)
+12. **13c items 9,11** — Backend cleanup (deprecation, persistence)
+13. **13f item 24** — MCP context inspector (debug tool)
+14. **13f items 25-26** — Cross-conversation memory demo scenario + memory search
+15. **13e items 18-19** — WebSocket token auth, audio double-encoding fix
+16. **13e item 20** — User profile reference model refactor (model + UX)
+17. **13d items 12-15** — Remaining P4 items
+18. **Tests** — Backend TestChatPhase13 + UX test additions
+19. **chatRefactor.md** — Update all OI statuses, phase summary
+
+---
+
+#### Deferred Beyond Phase 13
+
+These items were identified in the gap audit but are out of scope for Phase 13:
+
+| Item | Reason |
+|------|--------|
+| Chain execution endpoints (ChatService /chain, /chain/status) | Requires Agent7 module integration — separate feature |
+| GameStreamHandler action cancellation (line 66) | Game stream infrastructure, not chat-specific |
+| formDef.js promptRaceConfig migration (line 4623) | Long-running model migration, not blocking |
+| ColorUtil hash replacement (line 37) | Cosmetic, no user impact |
+| NarrativeUtil config model migration (line 943) | Low priority, not chat-blocking |
+| OlioUtil/CharacterUtil deprecations | Framework cleanup, not chat-specific |
+| Auto1111Util model configurability (line 54) | SD-specific, not chat-specific |
+
+---
+
+#### Verification
+
+1. **Backend tests:** `mvn test -Dtest=TestChatPhase13` in AccountManagerObjects7
+2. **Regression tests:** Run TestChatPhase12, TestChatPhase11, TestResponsePolicy, TestPromptTemplate
+3. **UX tests:** Open browser test suite, run categories: `dialog`, `context`, `connector`, `convmgr`, `memory`, `config`, `infra`
+4. **Manual verification — Analysis pipeline:**
+   - From chat view: click "query_stats" → analysis session created in same tab, visible in sidebar
+   - From object view: click "query_stats" → routes to chat, analysis session appears
+   - Switch between analysis and regular sessions via ConversationManager
+   - ContextPanel shows the reference object as a binding
+   - Vectorize/summarize dialogs show progress indicator
+5. **Manual verification — Memory system (cross-conversation scenario):**
+   - Enable `extractMemories` + set `memoryBudget > 0` on a chatConfig via form editor
+   - Chat with a character pair until keyframe fires (observe keyframe indicator in status bar)
+   - Verify memory appears in MemoryPanel sidebar with type icon and summary
+   - Start NEW session with same character pair
+   - Send first message — verify "N memories recalled" indicator
+   - Verify LLM response shows awareness of prior conversation
+   - Open MemoryPanel — verify same memories visible (loaded by pair, not by session)
+   - Use semantic search in MemoryPanel to find memories across all pairs
+   - Delete a memory — verify it no longer appears in next session's recall
+   - Toggle MCP debug mode — verify keyframe/memory MCP blocks visible inline
+6. **Manual verification — Infrastructure:**
+   - Set `requestTimeout` via form editor — verify it persists and is used
+   - Set terrain/populationDescription/universeName via form editor — verify template substitution
+   - Close WebSocket (network disconnect) — verify auto-reconnect with exponential backoff
+   - Verify WS reconnects and streaming resumes after reconnection
+7. **Build:** Run `node build.js` in AccountManagerUx7
+
+---
+
+### Phases 1-12 Complete Summary
+
+All 12 prior phases of the chat redesign are implemented and tested. The system provides:
 - Structured 12-stage prompt template pipeline with dynamic rules and variable replacement
 - Memory retrieval and keyframe-to-memory pipeline with MCP-only format
 - Policy-based LLM response regulation with autotuning
@@ -3383,7 +4091,7 @@ All 12 phases of the chat redesign are now implemented and tested. The system pr
 - Dual-service (OpenAI + Ollama) support with native options
 - Shared UX components (LLMConnector, ConversationManager, ContextPanel, ChatTokenRenderer)
 - MCP context bindings for generic object association
-- Comprehensive test coverage: 62+ backend tests, 115+ browser tests
+- Comprehensive test coverage: 62+ backend tests, 128+ browser tests
 
 **Rationale:**
 
@@ -3602,6 +4310,29 @@ All known open issues with their assigned resolution phase:
 | OI-53 | ~~Setting text overflow~~ Fixed: Added `truncate` class, `text-sm`, `title` tooltip. Removed nested `m("p",...)` wrapping. UX test 113 validates | Phase 12 UX audit | ~~Phase 12a (item 3)~~ **RESOLVED** | ~~P3~~ |
 | OI-54 | ~~ContextPanel collapsed state shows no binding count~~ Fixed: Added `getBindingCount()` helper. Collapsed header shows "Context (3)" when bindings exist. UX test 114 validates | Phase 12 UX audit | ~~Phase 12a (item 4)~~ **RESOLVED** | ~~P3~~ |
 | OI-55 | ~~ContextPanel expanded view flat text-only list~~ Fixed: Added `schemaIcon()` mapping (settings/description/person/link). `contextRowView()` includes Material icon, `flex-1 min-w-0` truncation, improved detach button. UX test 115 validates | Phase 12 UX audit | ~~Phase 12a (item 5)~~ **RESOLVED** | ~~P4~~ |
+| OI-56 | `chatInto` bypasses LLMConnector, ConversationManager, ContextPanel — analysis sessions invisible to shared infrastructure | Phase 12 analysis | Phase 13a (item 1) | P2 |
+| OI-57 | `chatInto` uses `window.open` + `remoteEntity` cross-window pattern — fragile, no error recovery, no state sync | Phase 12 analysis | Phase 13a (items 1,3) | P2 |
+| OI-58 | Config filtering by name prefix (`/^Object/gi`) — fragile, no fallback if no configs match | Phase 12 analysis | Phase 13a (item 2) | P3 |
+| OI-59 | `vectorize()` and `summarize()` dialogs fire-and-forget with toast only — no progress or result surfacing | Phase 12 analysis | Phase 13b (items 6,7) | P3 |
+| OI-60 | `ChatUtil.getCreateChatConfig()` marked `TODO: DEPRECATE THIS` (ChatUtil.java:324) | Code review | Phase 13c (item 9) | P4 |
+| OI-61 | ChatRequest persistence: underlying AI request stored as serialized bytes, should be easily accessible (dialog.js:3 TODO) | Code review | Phase 13c (item 11) | P3 |
+| OI-62 | SD config defaults hardcoded in `tempApplyDefaults()` instead of form definition (dialog.js:829 TODO) | Code review | Phase 13d (item 12) | P4 |
+| OI-63 | QueryPlan `$flex` field type workaround for interaction actor/interactor (ChatUtil.java:458,465 TODO) | Code review | Phase 13d (item 13) | P4 |
+| OI-64 | No cancel-and-send or message queuing during active stream (chat.js:475 TODO) | Code review | Phase 13c (item 10) | P3 |
+| OI-65 | Dual object view construction methods undocumented — generic `am7view` vs legacy object component (chat.js:28 TODO) | Code review | Phase 13d (item 15) | P4 |
+| OI-66 | Consent block trimming deferred from Phase 12b — needs content review to reduce token count | Phase 12b deferral | Phase 13d (item 14) | P4 |
+| OI-67 | No REST endpoints for memory — `MemoryUtil` has search/query methods but no service layer exposes them to the UX | Phase 13 analysis | Phase 13f (item 21) | P2 |
+| OI-68 | Memory config fields (`extractMemories`, `memoryBudget`, `memoryExtractionEvery`) not in formDef.js — users can't enable/configure memory from the UI | Phase 13 analysis | Phase 13f (item 22) | P2 |
+| OI-69 | No UX memory browser — users cannot view, search, or manage memories for character pairs | Phase 13 analysis | Phase 13f (item 23) | P2 |
+| OI-70 | MCP context blocks invisible — stripped for display, no inspect/debug mode to see what context the LLM actually receives | Phase 13 analysis | Phase 13f (item 25) | P3 |
+| OI-71 | Cross-conversation memory not demonstrable — no indicator when memories are loaded, no way to see memory count during chat | Phase 13 analysis | Phase 13f (item 24) | P2 |
+| OI-72 | Keyframe events not surfaced in UX — no visual indicator when keyframes fire or memories are extracted | Phase 13 analysis | Phase 13f (item 24) | P3 |
+| OI-73 | Memory search not exposed — `MemoryUtil.searchMemories()` (semantic vector search) has no client-side equivalent | Phase 13 analysis | Phase 13f (item 27) | P3 |
+| OI-74 | 6 chatConfig model fields not in formDef.js — `requestTimeout`, `terrain`, `populationDescription`, `animalDescription`, `universeName`, `worldName` | Phase 13 gap audit | Phase 13e (item 16) | P3 |
+| OI-75 | WebSocket auto-reconnect missing — WS close during stream silently breaks chat, no recovery | pageClient.js:374 | Phase 13e (item 17) | P2 |
+| OI-76 | WebSocket token auth fallback — null user proceeds to anonymous state, security gap | WebSocketService.java:179 | Phase 13e (item 18) | P3 |
+| OI-77 | Audio double-encoding — client sends double-base64, server has workaround decode | WebSocketService.java:543 | Phase 13e (item 19) | P4 |
+| OI-78 | Logged-in user profile uses `v1-profile` attribute workaround instead of looking up `identity.person` under `/Persons`. Chat identity: use `chatConfig.userCharacter` when set, else user's person record | pageClient.js:777 | Phase 13e (item 20) | P3 |
 
 ---
 

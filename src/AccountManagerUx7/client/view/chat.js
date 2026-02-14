@@ -976,12 +976,20 @@
 
     // Phase 12: Prune wrapper functions removed (OI-18) — callers use LLMConnector.* directly
 
-    function getChatBottomMenuView() {
-      // if(!showFooter) return "";
+    // Phase 13: Chat toolbar helper — material icon button with optional active/toggle state
+    function chatIconBtn(icon, handler, active, title) {
+      let cls = "inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors";
+      if (active) cls += " bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white";
+      return m("button", { class: cls, onclick: handler, title: title || "" },
+        m("span", { class: "material-symbols-outlined", style: "font-size:20px" }, icon)
+      );
+    }
 
-      let pendBar = m("div", { class: "w-[80%] p-4 flex flex-col" },
-        m("div", { class: "relative bg-gray-200 rounded" },
-          m("div", { class: "absolute top-0 h-4 w-full rounded pending-blue" })
+    function getChatBottomMenuView() {
+
+      let pendBar = m("div", { class: "flex-1 px-2" },
+        m("div", { class: "relative bg-gray-200 dark:bg-gray-700 rounded h-3" },
+          m("div", { class: "absolute top-0 h-3 w-full rounded pending-blue" })
         )
       );
 
@@ -992,13 +1000,13 @@
       else if (chatCfg.pending) {
         placeText = "Waiting ...";
       }
-      let msgProps = { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } };
+      let msgProps = { type: "text", name: "chatmessage", class: "text-field flex-1 min-w-0 text-sm", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } };
       let input = m("input[" + (!inst || chatCfg.pending ? "disabled='true'" : "") + "]", msgProps);
 
       // Tag selector row (shown when image button toggled)
       let tagSelectorRow = "";
       if (showTagSelector && window.am7imageTokens) {
-          tagSelectorRow = m("div", { class: "px-3 py-2 border-b border-gray-600 flex flex-wrap gap-1 items-center max-h-24 overflow-y-auto" }, [
+          tagSelectorRow = m("div", { class: "px-3 py-1.5 border-b border-gray-300 dark:border-gray-600 flex flex-wrap gap-1 items-center max-h-20 overflow-y-auto" }, [
               window.am7imageTokens.tags.map(function(tag) {
                   let isSelected = selectedImageTags.indexOf(tag) > -1;
                   return m("button", {
@@ -1017,37 +1025,59 @@
           ]);
       }
 
-      return m("div", { class: "result-nav-outer" },
-        m("div", { class: "results-fixed" }, [
-          tagSelectorRow,
-          m("div", { class: "splitcontainer" }, [
-            m("div", { class: "splitleftcontainer" },
-              m("button", { class: "flyout-button", onclick: openChatSettings },
-                [m("span", { class: "material-symbols-outlined material-icons-24" }, "add"), "New Chat"]
-              )
-            ),
-            m("div", { class: "splitrightcontainer result-nav-inner" },
+      // Toolbar icons — left group (view controls)
+      let leftTools = [
+        chatIconBtn(fullMode ? "close_fullscreen" : "open_in_new", toggleFullMode, false, fullMode ? "Exit fullscreen" : "Fullscreen"),
+        chatIconBtn("cancel", doCancel, false, "Clear/Cancel")
+      ];
 
-              m("div", { class: "tab-container result-nav w-full" }, [
-                page.iconButton("button",  (fullMode ? "close_fullscreen" : "open_in_new"), "", toggleFullMode),
-                page.iconButton("button",  "cancel", "", doCancel),
-                // (camera ? " animate-pulse" : "")
-                page.iconButton("button",  (camera ? "photo_camera" : "no_photography"), "", toggleCamera),
-                page.iconButton("button",  (showTagSelector ? "image" : "add_photo_alternate"), "", function() { showTagSelector = !showTagSelector; if (!showTagSelector) selectedImageTags = []; }),
-                page.iconButton("button",  (profile ? "account_circle" : "account_circle_off"), "", toggleProfile),
-                page.iconButton("button",  (audio ? "volume_up" : "volume_mute"), "", toggleAudio),
-                page.iconButton("button",  "counter_8", "", sendToMagic8),
-                page.iconButton("button",  "query_stats", "", chatInto),
-                page.iconButton("button",  "visibility" + (hideThoughts ? "" : "_off"), "", toggleThoughts),
-                page.components.audio.recordButton(),
-                (page.components.audio.recording() ? page.components.audio.recordWithVisualizer(true, function (text) { audioText += text; console.log(text); }, function (contentType, b64) { handleAudioSave(contentType, b64); }) : (chatCfg.pending ? pendBar : input)),
-                page.iconButton("button",  "stop", "", doStop),
-                page.iconButton("button",  "chat", "", doChat)
-              ])
-            )
-          ]),
+      // Toolbar icons — center-left group (media & features)
+      let featureTools = [
+        chatIconBtn(camera ? "photo_camera" : "no_photography", toggleCamera, camera, "Camera"),
+        chatIconBtn(showTagSelector ? "image" : "add_photo_alternate", function() { showTagSelector = !showTagSelector; if (!showTagSelector) selectedImageTags = []; }, showTagSelector, "Image tags"),
+        chatIconBtn(profile ? "account_circle" : "account_circle_off", toggleProfile, profile, "Profile"),
+        chatIconBtn(audio ? "volume_up" : "volume_mute", toggleAudio, audio, "Audio"),
+        chatIconBtn("counter_8", sendToMagic8, false, "Magic 8"),
+        chatIconBtn("query_stats", chatInto, false, "Analyze"),
+        chatIconBtn("visibility" + (hideThoughts ? "" : "_off"), toggleThoughts, !hideThoughts, "Thoughts")
+      ];
+
+      // Input area — recording or text input or pending bar
+      let inputArea;
+      if (page.components.audio.recording()) {
+        inputArea = m("div", { class: "flex-1 min-w-0 flex items-center" }, [
+          page.components.audio.recordWithVisualizer(true, function (text) { audioText += text; console.log(text); }, function (contentType, b64) { handleAudioSave(contentType, b64); })
+        ]);
+      } else if (chatCfg.pending) {
+        inputArea = pendBar;
+      } else {
+        inputArea = input;
+      }
+
+      // Send controls — right group
+      let sendTools = [
+        page.components.audio.recordButton(),
+        chatIconBtn("stop", doStop, false, "Stop"),
+        chatIconBtn("chat", doChat, false, "Send")
+      ];
+
+      return m("div", { class: "border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-black" }, [
+        tagSelectorRow,
+        // Toolbar row
+        m("div", { class: "flex items-center gap-0.5 px-2 py-1" }, [
+          // Left tools
+          m("div", { class: "flex items-center gap-0.5 flex-shrink-0" }, leftTools),
+          m("div", { class: "w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1 flex-shrink-0" }),
+          // Feature tools
+          m("div", { class: "flex items-center gap-0.5 flex-shrink-0" }, featureTools),
+          m("div", { class: "w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1 flex-shrink-0" }),
+          // Input area — takes remaining space
+          inputArea,
+          m("div", { class: "w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1 flex-shrink-0" }),
+          // Send controls
+          m("div", { class: "flex items-center gap-0.5 flex-shrink-0" }, sendTools)
         ])
-      );
+      ]);
     }
     
     async function handleAudioSave(mimeType, base64) {

@@ -261,7 +261,7 @@
             },
             view: function(vnode) {
                 let onNew = vnode.attrs.onNew;
-                return m("div", { class: "splitleftcontainer" }, [
+                return m("div", { class: "flex flex-col flex-1 overflow-hidden" }, [
                     searchBarView(),
                     m("div", { class: "overflow-y-auto flex-1" }, sessionListView()),
                     m("div", { class: "border-t border-gray-600" }, [
