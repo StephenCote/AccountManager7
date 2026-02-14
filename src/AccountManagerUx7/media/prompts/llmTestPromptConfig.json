@@ -11,6 +11,9 @@
         "${perspective}",
         "${censorWarn}"
     ],
+    "user": [
+        "${userConsent}"
+    ],
     "assistant": [
         "I'm ${system.firstName}, ready to assist with testing.",
         "${assistCensorWarn}"

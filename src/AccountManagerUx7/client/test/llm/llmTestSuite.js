@@ -117,7 +117,7 @@
             let needsPatch = false;
             let syncFields = schema === "olio.llm.chatConfig"
                 ? ["serverUrl", "serviceType", "model", "stream", "prune", "messageTrim"]
-                : ["system"];
+                : ["system", "user", "assistant", "episodeRule"];
             for (let i = 0; i < syncFields.length; i++) {
                 let f = syncFields[i];
                 if (template[f] !== undefined && JSON.stringify(existing[f]) !== JSON.stringify(template[f])) {
