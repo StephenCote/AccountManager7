@@ -27,6 +27,8 @@ public class ChatListener implements IChatListener {
 	private static Map<String, Boolean> asyncRequestStop = new ConcurrentHashMap<>();
 	/// Phase 9: Track stream futures for forced cancellation failover
 	private static Map<String, CompletableFuture<?>> asyncStreamFutures = new ConcurrentHashMap<>();
+	/// Phase 12: OI-27 — Track response body streams for server-side abort on cancel
+	private static Map<String, java.net.http.HttpResponse<?>> asyncHttpResponses = new ConcurrentHashMap<>();
 	private static final int FAILOVER_SECONDS = 5;
 	private boolean deferRemote = false;
 	private int maximumResponseTokens = -1;
@@ -58,12 +60,20 @@ public class ChatListener implements IChatListener {
 		asyncRequestStop.remove(oid);
 		asyncChats.remove(oid);
 		asyncStreamFutures.remove(oid);
+		asyncHttpResponses.remove(oid);
 	}
 
 	/// Phase 9: Register a stream future for failover cancellation
 	public void registerStreamFuture(String oid, CompletableFuture<?> future) {
 		if (oid != null && future != null) {
 			asyncStreamFutures.put(oid, future);
+		}
+	}
+
+	/// Phase 12: OI-27 — Register HTTP response for server-side abort on cancel
+	public void registerHttpResponse(String oid, java.net.http.HttpResponse<?> response) {
+		if (oid != null && response != null) {
+			asyncHttpResponses.put(oid, response);
 		}
 	}
 
@@ -203,6 +213,19 @@ public class ChatListener implements IChatListener {
         }
 		/// Phase 1: Set graceful stop flag (existing behavior)
 		asyncRequestStop.put(oid, true);
+
+		/// Phase 12: OI-27 — Close HTTP response body to signal server-side abort
+		/// Closing the response body stream closes the TCP connection, which tells
+		/// Ollama to stop generation (best-effort — no /api/abort endpoint exists)
+		java.net.http.HttpResponse<?> httpResponse = asyncHttpResponses.get(oid);
+		if (httpResponse != null && httpResponse.body() instanceof java.util.stream.BaseStream) {
+			try {
+				((java.util.stream.BaseStream<?, ?>) httpResponse.body()).close();
+				logger.info("Closed HTTP response body stream for server-side abort: " + oid);
+			} catch (Exception e) {
+				logger.warn("Error closing HTTP response body: " + e.getMessage());
+			}
+		}
 
 		/// Phase 9: Phase 2 — Schedule forced cancellation after failover window
 		CompletableFuture<?> streamFuture = asyncStreamFutures.get(oid);

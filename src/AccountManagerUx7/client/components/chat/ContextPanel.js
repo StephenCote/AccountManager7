@@ -127,20 +127,41 @@
 
     // ── Mithril Views ──────────────────────────────────────────────────
 
+    // Phase 12: OI-54 — binding count for collapsed header badge
+    function getBindingCount() {
+        if (!_contextData) return 0;
+        let count = 0;
+        if (_contextData.chatConfig) count++;
+        if (_contextData.promptConfig) count++;
+        if (_contextData.systemCharacter) count++;
+        if (_contextData.userCharacter) count++;
+        if (_contextData.context) count++;
+        return count;
+    }
+
+    // Phase 12: OI-55 — schema-type icon mapping
+    function schemaIcon(label) {
+        if (label === "Config") return "settings";
+        if (label === "Prompt") return "description";
+        if (label.indexOf("Char") !== -1) return "person";
+        return "link";
+    }
+
     function contextRowView(label, data, detachType) {
         if (!data) return "";
         return m("div", { class: "flex items-center justify-between text-xs py-0.5" }, [
-            m("span", { class: "text-gray-400 truncate", title: data.objectId || "" },
-                label + ": " + (data.name || data.objectId || "—")
-            ),
+            m("span", { class: "flex items-center text-gray-400 truncate flex-1 min-w-0", title: data.name || data.objectId || "" }, [
+                m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 14px;" }, schemaIcon(label)),
+                label + ": " + (data.name || data.objectId || "\u2014")
+            ]),
             detachType ? m("button", {
-                class: "menu-button ml-1",
+                class: "menu-button ml-1 flex-shrink-0",
                 title: "Detach " + label,
                 onclick: function(e) {
                     e.stopPropagation();
                     detach(detachType);
                 }
-            }, m("span", { class: "material-symbols-outlined", style: "font-size: 14px;" }, "link_off")) : ""
+            }, m("span", { class: "material-symbols-outlined", style: "font-size: 16px;" }, "link_off")) : ""
         ]);
     }
 
@@ -249,6 +270,8 @@
          */
         PanelView: {
             view: function() {
+                let count = getBindingCount();
+                let label = "Context" + (count > 0 ? " (" + count + ")" : "");
                 return m("div", {
                     class: "border-t border-gray-600",
                     ondragover: function(e) { e.preventDefault(); },
@@ -260,7 +283,7 @@
                     }, [
                         m("span", { class: "flex items-center" }, [
                             m("span", { class: "material-symbols-outlined material-icons-24 mr-1" }, "link"),
-                            "Context"
+                            label
                         ]),
                         m("span", { class: "material-symbols-outlined", style: "font-size: 16px;" },
                             _expanded ? "expand_less" : "expand_more"

@@ -55,6 +55,13 @@ public class WrongCharacterDetectionOperation extends Operation {
 		}
 
 		String trimmed = responseContent.trim();
+
+		/// Phase 12: OI-39 — Skip false positives where response starts with quotation marks
+		/// (in-character quoting, e.g., Aria quoting Bob in dialogue)
+		if (trimmed.startsWith("\"") || trimmed.startsWith("\u201c")) {
+			return OperationResponseEnumType.SUCCEEDED;
+		}
+
 		String quotedName = Pattern.quote(userCharName);
 
 		// Heuristic 1: Response starts with user character's name followed by dialogue marker

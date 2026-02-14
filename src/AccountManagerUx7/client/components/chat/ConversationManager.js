@@ -132,22 +132,23 @@
     }
 
     function sessionItemView(session, isSelected) {
-        let cls = "flyout-button flex justify-between items-center w-full";
+        let cls = "flyout-button flex items-center w-full group";
         if (isSelected) cls += " active";
 
-        return m("div", { key: session.objectId, class: "flex items-center" }, [
-            m("button", {
-                class: "menu-button content-end mr-1",
+        return m("button", {
+            key: session.objectId,
+            class: cls,
+            onclick: function() { selectSession(session); }
+        }, [
+            m("span", {
+                class: "material-symbols-outlined material-icons-24 flex-shrink-0 mr-1 opacity-0 group-hover:opacity-100",
                 title: "Delete session",
                 onclick: function(e) {
                     e.stopPropagation();
                     deleteSession(session);
                 }
-            }, m("span", { class: "material-symbols-outlined material-icons-24" }, "delete_outline")),
-            m("button", {
-                class: cls,
-                onclick: function() { selectSession(session); }
-            }, session.name || "(unnamed)")
+            }, "delete_outline"),
+            m("span", { class: "flex-1 truncate text-left" }, session.name || "(unnamed)")
         ]);
     }
 

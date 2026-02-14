@@ -99,32 +99,35 @@ public class TestChatStream extends BaseTest {
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, pcfg);
 
 		cfg.setValue("stream", false);
-		/// Set an impossibly short timeout to trigger the timeout
-		cfg.setValue("requestTimeout", 1);
-		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
+		/// Phase 12: OI-28 — try-finally ensures timeout is always restored even if test fails
+		try {
+			/// Set an impossibly short timeout to trigger the timeout
+			cfg.setValue("requestTimeout", 1);
+			IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 
-		String chatName = "Timeout Test " + UUID.randomUUID().toString();
-		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser, chatName, cfg, pcfg);
-		assertNotNull("Chat request is null", creq);
+			String chatName = "Timeout Test " + UUID.randomUUID().toString();
+			BaseRecord creq = ChatUtil.getCreateChatRequest(testUser, chatName, cfg, pcfg);
+			assertNotNull("Chat request is null", creq);
 
-		Chat chat = new Chat(testUser, cfg, pcfg);
-		chat.setRequestTimeout(1);
-		OpenAIRequest req = chat.getChatPrompt();
-		assertNotNull("OpenAI request is null", req);
-		req.setStream(false);
+			Chat chat = new Chat(testUser, cfg, pcfg);
+			chat.setRequestTimeout(1);
+			OpenAIRequest req = chat.getChatPrompt();
+			assertNotNull("OpenAI request is null", req);
+			req.setStream(false);
 
-		/// A simple prompt that still takes >1s due to model thinking/loading
-		chat.newMessage(req, "Tell me a short joke.");
+			/// A simple prompt that still takes >1s due to model thinking/loading
+			chat.newMessage(req, "Tell me a short joke.");
 
-		/// With a 1-second timeout, the chat should return null (timeout error)
-		OpenAIResponse resp = chat.chat(req);
+			/// With a 1-second timeout, the chat should return null (timeout error)
+			OpenAIResponse resp = chat.chat(req);
 
-		/// The response should be null because the timeout fires before completion
-		logger.info("Timeout test result: " + (resp == null ? "null (timeout triggered as expected)" : "response received (LLM was fast)"));
-
-		/// Restore default timeout so subsequent tests are not affected
-		cfg.setValue("requestTimeout", TEST_TIMEOUT);
-		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
+			/// The response should be null because the timeout fires before completion
+			logger.info("Timeout test result: " + (resp == null ? "null (timeout triggered as expected)" : "response received (LLM was fast)"));
+		} finally {
+			/// Restore default timeout so subsequent tests are not affected
+			cfg.setValue("requestTimeout", TEST_TIMEOUT);
+			IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
+		}
 	}
 
 	/// Test 38: stopStream() works in buffered mode

@@ -4858,6 +4858,31 @@
                 label: "Seed",
                 layout: 'third',
                 format: "range"
+            },
+            top_k: {
+                label: "Top K (Ollama)",
+                layout: 'third',
+                format: "range"
+            },
+            typical_p: {
+                label: "Typical P (Ollama)",
+                layout: 'third',
+                format: "range"
+            },
+            repeat_penalty: {
+                label: "Repeat Penalty (Ollama)",
+                layout: 'third',
+                format: "range"
+            },
+            min_p: {
+                label: "Min P (Ollama)",
+                layout: 'third',
+                format: "range"
+            },
+            repeat_last_n: {
+                label: "Repeat Last N (Ollama)",
+                layout: 'third',
+                format: "range"
             }
 
         }

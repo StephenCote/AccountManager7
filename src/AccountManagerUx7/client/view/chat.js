@@ -79,7 +79,7 @@
     let altView;
     let aPCfg;
     let aCCfg;
-    let aSess;
+    // Phase 12: aSess removed — ConversationManager owns session list
     let audioText = "";
     let chatCfg = newChatConfig();
 
@@ -515,14 +515,7 @@
       }
     }
 
-    async function deleteChat(s) {
-      am7chat.deleteChat(s, false, async function () {
-        doClear();
-        aSess = undefined;
-        await loadConfigList();
-        m.redraw();
-      });
-    }
+    // Phase 12: deleteChat removed — ConversationManager handles session deletion (OI-52)
 
     /// Note: Chatmessage isn't defined in its own model, and should be to avoid all the goofy checks
     function pushHistory() {
@@ -646,38 +639,16 @@
 
     // Phase 10b: Sidebar delegates to ConversationManager component
     // Phase 10c: ContextPanel added below ConversationManager
+    // Phase 12: Removed pre-10b fallback session list (OI-52)
     function getSplitLeftContainerView() {
+      let children = [];
       if (window.ConversationManager) {
-        let children = [m(ConversationManager.SidebarView, { onNew: openChatSettings })];
-        if (window.ContextPanel) {
-          children.push(m(ContextPanel.PanelView));
-        }
-        return m("div", { class: "splitleftcontainer flex flex-col" }, children);
+        children.push(m(ConversationManager.SidebarView, { onNew: openChatSettings }));
       }
-      // Fallback: inline session list (pre-10b compat)
-      let vsess = aSess || [];
-      return m("div", {
-        class: "splitleftcontainer",
-        ondragover: function (e) {
-          e.preventDefault();
-        }
-      }, [
-        vsess.map((s, i) => {
-          let bNew = s.objectId == undefined;
-          let bDel = "";
-          if (bNew) {
-            bDel = m("button", { class: "menu-button content-end mr-2", onclick: openChatSettings }, m("span", { class: "material-symbols-outlined material-icons-24" }, "add"));
-          }
-          else {
-            bDel = m("button", { class: "menu-button content-end mr-2", onclick: function (e) { e.preventDefault(); deleteChat(s); return false; } }, m("span", { class: "material-symbols-outlined material-icons-24" }, "delete_outline"));
-          }
-          return m("button", {
-            class: "flyout-button" + (inst && s.name == inst.api.name() ? " active" : ""), onclick: function () {
-              pickSession(s);
-            }
-          }, [bDel, s.name]);
-        })
-      ]);
+      if (window.ContextPanel) {
+        children.push(m(ContextPanel.PanelView));
+      }
+      return m("div", { class: "splitleftcontainer flex flex-col" }, children);
     }
 
 
@@ -696,7 +667,6 @@
         let obj = await m.request({ method: 'POST', url: g_application_path + "/rest/chat/new", withCredentials: true, body: chatReq });
         inst = am7model.prepareInstance(obj);
         window.dbgInst = inst;
-        aSess = undefined;
         doClear();
         await am7client.clearCache();
         await loadConfigList();
@@ -886,8 +856,7 @@
           cnt = msg.displayContent;
         }
         if (!useServerDisplay && hideThoughts && !editMode) {
-          cnt = pruneOut(cnt, "--- CITATION", "END CITATIONS ---")
-          // cnt = pruneTag(cnt, "citation");
+          cnt = LLMConnector.pruneOut(cnt, "--- CITATION", "END CITATIONS ---")
         }
         if (msg.role == "assistant") {
           bectl = (editMode && editIndex == midx);
@@ -897,10 +866,10 @@
             ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
           }
           if (!useServerDisplay && hideThoughts && !editMode) {
-            cnt = pruneToMark(cnt, "<|reserved_special_token");
-            cnt = pruneTag(cnt, "think");
-            cnt = pruneTag(cnt, "thought");
-            cnt = pruneOther(cnt);
+            cnt = LLMConnector.pruneToMark(cnt, "<|reserved_special_token");
+            cnt = LLMConnector.pruneTag(cnt, "think");
+            cnt = LLMConnector.pruneTag(cnt, "thought");
+            cnt = LLMConnector.pruneOther(cnt);
           }
 
           if (bectl) {
@@ -910,9 +879,9 @@
 
         }
         if (!useServerDisplay && !bectl && hideThoughts) {
-          cnt = pruneToMark(cnt, "(Metrics");
-          cnt = pruneToMark(cnt, "(Reminder");
-          cnt = pruneToMark(cnt, "(KeyFrame");
+          cnt = LLMConnector.pruneToMark(cnt, "(Metrics");
+          cnt = LLMConnector.pruneToMark(cnt, "(Reminder");
+          cnt = LLMConnector.pruneToMark(cnt, "(KeyFrame");
         }
         if (!editMode && cnt.trim().length == 0) {
           return "";
@@ -937,7 +906,7 @@
           }
 
           // Generate stable name based on chat objectId, role, and content hash
-          let contentForHash = pruneAll(msg.content);
+          let contentForHash = LLMConnector.pruneAll(msg.content);
           let contentHash = page.components.audioComponents.simpleHash(contentForHash);
           let name = inst.api.objectId() + "-" + msg.role + "-" + contentHash;
 
@@ -970,7 +939,7 @@
           aidx++;
         }
         return m("div", { class: "relative receive-chat flex " + align },
-          [ectl, m("div", { class: ecls + "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light" },
+          [ectl, m("div", { class: ecls + "px-3 mb-1 " + txt + " py-1.5 text-sm max-w-[85%] border rounded-md font-light" },
             (audio ? aud : m("p", cnt))
             //,aud
           )]
@@ -979,11 +948,10 @@
       let flds = [m("div", { class: "flex justify-between" }, [
         m("div", { class: "flex items-center" }, [
           c1i,
-          m("span", { class: "text-gray-400 text-base pl-4" }, c1l)
+          m("span", { class: "text-gray-400 text-sm pl-2" }, c1l)
         ]),
         m("div", { class: "flex items-center" }, [
-
-          m("span", { class: "text-gray-400 text-base pl-4" }, c2l),
+          m("span", { class: "text-gray-400 text-sm pl-2" }, c2l),
           c2i
         ])
       ])
@@ -991,15 +959,14 @@
       let setting = inst.api.setting();
       let setLbl = "";
       if (setting) {
-        setLbl = m("div", { class: "relative receive-chat flex justify-start"},
-          setLbl = m("div", { class:  "px-5 mb-2 bg-gray-200 dark:bg-gray-900 dark:text-white text-black py-2 text-base w-full border rounded-md font-light" },
-             m("p", "Setting: " + setting)
-
+        setLbl = m("div", { class: "relative receive-chat flex justify-start" },
+          m("div", { class: "px-5 mb-2 bg-gray-200 dark:bg-gray-900 dark:text-white text-black py-2 text-sm w-full border rounded-md font-light truncate", title: setting },
+            "Setting: " + setting
           )
         );
       }
       
-      let ret = [(profile ? m("div", { class: "bg-white dark:bg-black user-info-header px-5 py-3" }, flds) : ""), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
+      let ret = [(profile ? m("div", { class: "bg-white dark:bg-black user-info-header px-3 py-1.5" }, flds) : ""), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
         setLbl,
         msgs
       ])];
@@ -1007,12 +974,7 @@
       return ret;
     }
 
-    // Phase 10: Prune functions delegate to LLMConnector shared implementations
-    function pruneAll(cnt) { return LLMConnector.pruneAll(cnt); }
-    function pruneOther(cnt) { return LLMConnector.pruneOther(cnt); }
-    function pruneToMark(cnt, mark) { return LLMConnector.pruneToMark(cnt, mark); }
-    function pruneOut(cnt, start, end) { return LLMConnector.pruneOut(cnt, start, end); }
-    function pruneTag(cnt, tag) { return LLMConnector.pruneTag(cnt, tag); }
+    // Phase 12: Prune wrapper functions removed (OI-18) — callers use LLMConnector.* directly
 
     function getChatBottomMenuView() {
       // if(!showFooter) return "";
@@ -1128,32 +1090,15 @@
 
 
     // Phase 10b: loadConfigList delegates to ConversationManager
+    // Phase 12: Removed fallback path and aSess tracking (OI-52)
     async function loadConfigList() {
       if (window.ConversationManager) {
         await ConversationManager.refresh();
         aPCfg = ConversationManager.getPromptConfigs() || [];
         aCCfg = ConversationManager.getChatConfigs() || [];
-        aSess = ConversationManager.getSessions() || [];
         if (aPCfg.length && inst && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
         if (aCCfg.length && inst && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
         if (!inst) ConversationManager.autoSelectFirst();
-      } else {
-        // Fallback: direct load (pre-10b compat)
-        await am7client.clearCache(undefined, true);
-        let dir = await page.findObject("auth.group", "DATA", "~/Chat");
-        if (aPCfg == undefined) {
-          aPCfg = await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0);
-          if (aPCfg && aPCfg.length && inst && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
-        }
-        if (aCCfg == undefined) {
-          aCCfg = await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
-          if (aCCfg && aCCfg.length && inst && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
-        }
-        let dir2 = await page.findObject("auth.group", "DATA", "~/ChatRequests");
-        if (aSess == undefined) {
-          aSess = await am7client.list("olio.llm.chatRequest", dir2.objectId, null, 0, 0);
-          if (aSess && aSess.length && !inst) pickSession(aSess[0]);
-        }
       }
     }
 
@@ -1239,7 +1184,6 @@
           });
           ConversationManager.onDelete(function() {
             doClear();
-            aSess = undefined;
           });
         }
 

@@ -1356,6 +1356,25 @@ public class ChatUtil {
 				req.set(tokField, tokValue);
 			}
 
+			/// Phase 12: OI-29 — Send Ollama-specific options via the request's options sub-object (chatOptions model)
+			if(serviceType == LLMServiceEnumType.OLLAMA && opts != null) {
+				BaseRecord reqOpts = req.get("options");
+				if(reqOpts == null) {
+					reqOpts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
+					req.set("options", reqOpts);
+				}
+				int top_k = opts.get("top_k");
+				if(top_k > 0) reqOpts.set("top_k", top_k);
+				double repeat_penalty = opts.get("repeat_penalty");
+				if(repeat_penalty > 0.0) reqOpts.set("repeat_penalty", repeat_penalty);
+				double typical_p = opts.get("typical_p");
+				if(typical_p > 0.0) reqOpts.set("typical_p", typical_p);
+				double min_p = opts.get("min_p");
+				if(min_p > 0.0) reqOpts.set("min_p", min_p);
+				int repeat_last_n = opts.get("repeat_last_n");
+				if(repeat_last_n > 0) reqOpts.set("repeat_last_n", repeat_last_n);
+			}
+
 		}
 		catch (ModelNotFoundException | FieldException | ValueException ex) {
 			logger.error("Error applying chat options: " + ex.getMessage());

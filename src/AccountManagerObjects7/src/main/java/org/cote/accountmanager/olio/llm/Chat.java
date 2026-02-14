@@ -561,6 +561,14 @@ public class Chat {
 		return areq;
 	}
 
+	/// Phase 12: OI-30 — Analyze operations intentionally use conservative settings for
+	/// deterministic output (summaries, keyframes, narration). These override chatOptions values.
+	public static final double ANALYZE_TEMPERATURE = 0.4;
+	public static final double ANALYZE_TOP_P = 0.5;
+	public static final double ANALYZE_FREQUENCY_PENALTY = 0.0;
+	public static final double ANALYZE_PRESENCE_PENALTY = 0.0;
+	public static final int ANALYZE_NUM_CTX = 8192;
+
 	private void applyAnalyzeOptions(OpenAIRequest req, OpenAIRequest areq) {
 		String amodel = chatConfig.get("analyzeModel");
 		if (amodel == null) {
@@ -568,11 +576,11 @@ public class Chat {
 		}
 		areq.setModel(amodel);
 		applyChatOptions(areq);
-		double temperature = 0.4;
-		double top_p = 0.5;
-		double frequency_penalty = 0.0;
-		double presence_penalty = 0.0;
-		int num_ctx = 8192;
+		double temperature = ANALYZE_TEMPERATURE;
+		double top_p = ANALYZE_TOP_P;
+		double frequency_penalty = ANALYZE_FREQUENCY_PENALTY;
+		double presence_penalty = ANALYZE_PRESENCE_PENALTY;
+		int num_ctx = ANALYZE_NUM_CTX;
 		try {
 			areq.set("temperature", temperature);
 			areq.set("top_p", top_p);
@@ -614,7 +622,7 @@ public class Chat {
 
 		OpenAIRequest areq = new OpenAIRequest();
 		applyAnalyzeOptions(req, areq);
-		applyChatOptions(areq);
+		/// Phase 12: Removed redundant applyChatOptions(areq) — applyAnalyzeOptions already calls it (OI-31/OI-34)
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
@@ -1396,6 +1404,13 @@ public class Chat {
 			if (response == null || response.body() == null) {
 				logger.warn("Null response from streaming chat");
 				return;
+			}
+			/// Phase 12: OI-27 — Register HTTP response for server-side abort on cancel
+			if (forwardToClient && listener instanceof ChatListener) {
+				String oid2 = req.get(FieldNames.FIELD_OBJECT_ID);
+				if (oid2 != null) {
+					((ChatListener) listener).registerHttpResponse(oid2, response);
+				}
 			}
 			boolean hasListener = listener != null;
 			response.body()

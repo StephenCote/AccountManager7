@@ -121,6 +121,36 @@
          */
         async _loadPromptTemplate() {
             if (SessionDirector._cachedTemplate) return SessionDirector._cachedTemplate;
+
+            /// Phase 12: OI-17 — Try server-side prompt template first via REST endpoint
+            try {
+                const serverResp = await m.request({
+                    method: 'GET',
+                    url: g_application_path + '/rest/chat/config/prompt/prompt.magic8',
+                    withCredentials: true,
+                    extract: function(xhr) {
+                        if (xhr.status !== 200 || !xhr.responseText) return null;
+                        try { return JSON.parse(xhr.responseText); }
+                        catch(e) { return null; }
+                    }
+                });
+                if (serverResp && Array.isArray(serverResp.system)) {
+                    /// Server-side promptConfig uses 'system' array (structured template schema)
+                    /// Convert to the client-side format: { lines: [...], imageTagsAppendix: [...] }
+                    let template = {
+                        lines: serverResp.system,
+                        imageTagsAppendix: serverResp.imageTagsAppendix || [],
+                        version: serverResp.name || 'server'
+                    };
+                    SessionDirector._cachedTemplate = template;
+                    console.log('SessionDirector: Loaded server-side prompt template: ' + template.version);
+                    return template;
+                }
+            } catch (err) {
+                console.log('SessionDirector: Server-side template not available, trying local file');
+            }
+
+            /// Fallback to client-side JSON file
             try {
                 const resp = await m.request({
                     method: 'GET',
@@ -128,7 +158,7 @@
                 });
                 if (resp && Array.isArray(resp.lines)) {
                     SessionDirector._cachedTemplate = resp;
-                    console.log('SessionDirector: Loaded prompt template v' + (resp.version || '?'));
+                    console.log('SessionDirector: Loaded local prompt template v' + (resp.version || '?'));
                     return resp;
                 }
             } catch (err) {
