@@ -6,6 +6,7 @@
     "allowUntrustedCerts": true,
     "directories" : [
         "/client/components",
+        "/client/components/chat",
         "/client/test",
         "/client/test/llm",
         "/client/view",
