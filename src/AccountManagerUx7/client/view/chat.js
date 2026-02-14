@@ -327,6 +327,7 @@
         },
         onchatstart: (id, req) => {
           // console.log("Start chat...");
+          cfg.streamId = id;
           if (!chatCfg) {
             console.warn("Invalid chat configuration");
             return;
@@ -1036,7 +1037,7 @@
       else if (chatCfg.pending) {
         placeText = "Waiting ...";
       }
-      let msgProps = { type: "text", name: "chatmessage", class: "text-field flex-1 min-w-0 text-sm", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } };
+      let msgProps = { type: "text", name: "chatmessage", class: "text-field flex-1 min-w-0", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } };
       let input = m("input[" + (!inst || chatCfg.pending ? "disabled='true'" : "") + "]", msgProps);
 
       // Tag selector row (shown when image button toggled)

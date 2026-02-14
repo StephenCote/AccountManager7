@@ -251,7 +251,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			logger.error("Chat request message is null");
 			return;
 		}
-		String chatReqStr = new String((byte[])smsg.get("data"));
+		String chatReqStr = new String((byte[])smsg.get("data"), StandardCharsets.UTF_8);
 		// logger.info(chatReqStr);
 		ChatRequest chatReq = ChatRequest.importRecord(chatReqStr);
 		if(chatReq == null) {
@@ -267,7 +267,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			logger.error("Game request message is null");
 			return;
 		}
-		String gameReqStr = new String((byte[])smsg.get("data"));
+		String gameReqStr = new String((byte[])smsg.get("data"), StandardCharsets.UTF_8);
 		BaseRecord gameReq = JSONUtil.importObject(gameReqStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		if(gameReq == null) {
 			logger.error("Game request is null");
@@ -282,7 +282,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			logger.error("Chain request message is null");
 			return;
 		}
-		String chainReqStr = new String((byte[])smsg.get("data"));
+		String chainReqStr = new String((byte[])smsg.get("data"), StandardCharsets.UTF_8);
 		BaseRecord chainReq = JSONUtil.importObject(chainReqStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		if (chainReq == null) {
 			logger.error("Chain request is null");
