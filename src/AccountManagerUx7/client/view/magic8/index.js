@@ -38,8 +38,14 @@
      * @param {Object} chatContext.instanceId - Chat instance ID
      */
     Magic8.launchFromChat = function(chatContext) {
+        // Phase 10c: Pass sessionId as route param for server-side context lookup.
+        // sessionStorage kept as fallback for complex objects (history, characters).
         sessionStorage.setItem('magic8Context', JSON.stringify(chatContext));
-        m.route.set('/magic8');
+        let routeParams = { context: 'chat' };
+        if (chatContext && chatContext.instanceId) {
+            routeParams.sessionId = chatContext.instanceId;
+        }
+        m.route.set('/magic8', routeParams);
     };
 
     /**

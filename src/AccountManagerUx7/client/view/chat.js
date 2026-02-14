@@ -252,12 +252,17 @@
       clearEditMode();
       inst = undefined;
       chatCfg = newChatConfig();
+      if (window.ContextPanel) ContextPanel.clear();
     }
 
     function pickSession(obj) {
       doClear();
       inst = am7model.prepareInstance(obj);
       window.dbgInst = inst;
+      // Phase 10c: Load context panel for selected session
+      if (window.ContextPanel && obj && obj.objectId) {
+        ContextPanel.load(obj.objectId);
+      }
       doPeek().catch(function(e) {
         console.warn("Failed to peek session", e);
       });
@@ -640,9 +645,14 @@
     };
 
     // Phase 10b: Sidebar delegates to ConversationManager component
+    // Phase 10c: ContextPanel added below ConversationManager
     function getSplitLeftContainerView() {
       if (window.ConversationManager) {
-        return m(ConversationManager.SidebarView, { onNew: openChatSettings });
+        let children = [m(ConversationManager.SidebarView, { onNew: openChatSettings })];
+        if (window.ContextPanel) {
+          children.push(m(ContextPanel.PanelView));
+        }
+        return m("div", { class: "splitleftcontainer flex flex-col" }, children);
       }
       // Fallback: inline session list (pre-10b compat)
       let vsess = aSess || [];
@@ -713,8 +723,15 @@
         userCharacter: chatCfg?.user,
         instanceId: inst?.api?.objectId()
       };
+      // Phase 10c: Pass sessionId as route param; Magic8 can load context from server.
+      // Keep sessionStorage as fallback for complex objects (history, characters)
+      // that aren't in the REST context endpoint.
       sessionStorage.setItem('magic8Context', JSON.stringify(magic8Context));
-      m.route.set('/magic8', { context: 'chat' });
+      let routeParams = { context: 'chat' };
+      if (inst && inst.api.objectId()) {
+        routeParams.sessionId = inst.api.objectId();
+      }
+      m.route.set('/magic8', routeParams);
     }
     
     let faceProfile;

@@ -12,6 +12,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -56,6 +57,24 @@ public class Am7ToolProvider implements IToolProvider {
 			buildChatHistorySchema()
 		));
 
+		tools.add(new McpJsonRpc.Tool(
+			"am7_session_attach",
+			"Attach a context object (character, document, config) to a chat session",
+			buildSessionAttachSchema()
+		));
+
+		tools.add(new McpJsonRpc.Tool(
+			"am7_session_detach",
+			"Detach the context object from a chat session",
+			buildSessionDetachSchema()
+		));
+
+		tools.add(new McpJsonRpc.Tool(
+			"am7_session_context",
+			"List current context bindings for a chat session (chatConfig, promptConfig, characters, context object)",
+			buildSessionContextSchema()
+		));
+
 		return tools;
 	}
 
@@ -71,6 +90,12 @@ public class Am7ToolProvider implements IToolProvider {
 					return documentRead(session, arguments);
 				case "am7_chat_history":
 					return chatHistory(session, arguments);
+				case "am7_session_attach":
+					return sessionAttach(session, arguments);
+				case "am7_session_detach":
+					return sessionDetach(session, arguments);
+				case "am7_session_context":
+					return sessionContext(session, arguments);
 				default:
 					return McpJsonRpc.ToolResult.error("Unknown tool: " + toolName);
 			}
@@ -287,6 +312,224 @@ public class Am7ToolProvider implements IToolProvider {
 		}
 	}
 
+	private McpJsonRpc.ToolResult sessionAttach(McpSession session, Map<String, Object> arguments) {
+		String sessionId = (String) arguments.get("sessionId");
+		String attachType = (String) arguments.get("attachType");
+		String objectId = (String) arguments.get("objectId");
+
+		if (sessionId == null || sessionId.isEmpty()) {
+			return McpJsonRpc.ToolResult.error("'sessionId' parameter is required");
+		}
+		if (attachType == null || attachType.isEmpty()) {
+			return McpJsonRpc.ToolResult.error("'attachType' parameter is required (chatConfig, promptConfig, systemCharacter, userCharacter, context)");
+		}
+		if (objectId == null || objectId.isEmpty()) {
+			return McpJsonRpc.ToolResult.error("'objectId' parameter is required");
+		}
+
+		BaseRecord user = session.getUser();
+
+		try {
+			/// Find the chat request (session)
+			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
+			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			sq.planMost(true);
+			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+			if (chatReq == null) {
+				return McpJsonRpc.ToolResult.error("Chat session not found: " + sessionId);
+			}
+
+			switch (attachType) {
+				case "chatConfig": {
+					BaseRecord cfg = findByObjectId(user, OlioModelNames.MODEL_CHAT_CONFIG, objectId);
+					if (cfg == null) return McpJsonRpc.ToolResult.error("Chat config not found: " + objectId);
+					chatReq.set("chatConfig", cfg);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
+					return McpJsonRpc.ToolResult.success("Attached chatConfig '" + cfg.get(FieldNames.FIELD_NAME) + "' to session");
+				}
+				case "promptConfig": {
+					BaseRecord cfg = findByObjectId(user, OlioModelNames.MODEL_PROMPT_CONFIG, objectId);
+					if (cfg == null) return McpJsonRpc.ToolResult.error("Prompt config not found: " + objectId);
+					chatReq.set("promptConfig", cfg);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
+					return McpJsonRpc.ToolResult.success("Attached promptConfig '" + cfg.get(FieldNames.FIELD_NAME) + "' to session");
+				}
+				case "systemCharacter":
+				case "userCharacter": {
+					/// Characters are on the chatConfig, not the chatRequest
+					BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
+					if (chatConfig == null) return McpJsonRpc.ToolResult.error("Session has no chatConfig");
+					BaseRecord character = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, objectId);
+					if (character == null) return McpJsonRpc.ToolResult.error("Character not found: " + objectId);
+					chatConfig.set(attachType, character);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig);
+					return McpJsonRpc.ToolResult.success("Attached " + attachType + " '" + character.get(FieldNames.FIELD_NAME) + "' to chatConfig");
+				}
+				case "context": {
+					/// Generic context: resolve objectType to find the object, then set contextType + context
+					String objectType = (String) arguments.get("objectType");
+					if (objectType == null || objectType.isEmpty()) {
+						return McpJsonRpc.ToolResult.error("'objectType' is required when attachType is 'context' (e.g. 'data.data', 'olio.charPerson')");
+					}
+					BaseRecord contextObj = findByObjectId(user, objectType, objectId);
+					if (contextObj == null) return McpJsonRpc.ToolResult.error(objectType + " not found: " + objectId);
+					chatReq.set("contextType", objectType);
+					chatReq.set("context", contextObj);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
+					return McpJsonRpc.ToolResult.success("Attached context " + objectType + " '" + contextObj.get(FieldNames.FIELD_NAME) + "' to session");
+				}
+				default:
+					return McpJsonRpc.ToolResult.error("Unknown attachType: " + attachType + ". Valid: chatConfig, promptConfig, systemCharacter, userCharacter, context");
+			}
+		}
+		catch (Exception e) {
+			logger.error("Error attaching to session: " + sessionId, e);
+			return McpJsonRpc.ToolResult.error("Failed to attach: " + e.getMessage());
+		}
+	}
+
+	private McpJsonRpc.ToolResult sessionDetach(McpSession session, Map<String, Object> arguments) {
+		String sessionId = (String) arguments.get("sessionId");
+		String detachType = (String) arguments.get("detachType");
+
+		if (sessionId == null || sessionId.isEmpty()) {
+			return McpJsonRpc.ToolResult.error("'sessionId' parameter is required");
+		}
+		if (detachType == null || detachType.isEmpty()) {
+			return McpJsonRpc.ToolResult.error("'detachType' parameter is required (systemCharacter, userCharacter, context)");
+		}
+
+		BaseRecord user = session.getUser();
+
+		try {
+			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
+			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			sq.planMost(true);
+			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+			if (chatReq == null) {
+				return McpJsonRpc.ToolResult.error("Chat session not found: " + sessionId);
+			}
+
+			switch (detachType) {
+				case "systemCharacter":
+				case "userCharacter": {
+					BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
+					if (chatConfig == null) return McpJsonRpc.ToolResult.error("Session has no chatConfig");
+					chatConfig.set(detachType, null);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig);
+					return McpJsonRpc.ToolResult.success("Detached " + detachType + " from chatConfig");
+				}
+				case "context": {
+					chatReq.set("contextType", null);
+					chatReq.set("context", null);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
+					return McpJsonRpc.ToolResult.success("Detached context from session");
+				}
+				default:
+					return McpJsonRpc.ToolResult.error("Cannot detach " + detachType + ". Only systemCharacter, userCharacter, and context can be detached.");
+			}
+		}
+		catch (Exception e) {
+			logger.error("Error detaching from session: " + sessionId, e);
+			return McpJsonRpc.ToolResult.error("Failed to detach: " + e.getMessage());
+		}
+	}
+
+	private McpJsonRpc.ToolResult sessionContext(McpSession session, Map<String, Object> arguments) {
+		String sessionId = (String) arguments.get("sessionId");
+		if (sessionId == null || sessionId.isEmpty()) {
+			return McpJsonRpc.ToolResult.error("'sessionId' parameter is required");
+		}
+
+		BaseRecord user = session.getUser();
+
+		try {
+			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
+			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			sq.planMost(true);
+			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+			if (chatReq == null) {
+				return McpJsonRpc.ToolResult.error("Chat session not found: " + sessionId);
+			}
+
+			StringBuilder sb = new StringBuilder();
+			sb.append("Session: ").append((String) chatReq.get(FieldNames.FIELD_NAME)).append("\n");
+			sb.append("ObjectId: ").append(sessionId).append("\n\n");
+
+			/// ChatConfig
+			BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
+			if (chatConfig != null) {
+				sb.append("ChatConfig: ").append((String) chatConfig.get(FieldNames.FIELD_NAME));
+				sb.append(" (").append((String) chatConfig.get(FieldNames.FIELD_OBJECT_ID)).append(")\n");
+				sb.append("  Model: ").append((String) chatConfig.get("model")).append("\n");
+				sb.append("  Stream: ").append(String.valueOf(chatConfig.get("stream"))).append("\n");
+				sb.append("  Prune: ").append(String.valueOf(chatConfig.get("prune"))).append("\n");
+
+				BaseRecord sysCh = chatConfig.get("systemCharacter");
+				if (sysCh != null) {
+					sysCh = OlioUtil.getFullRecord(sysCh);
+					if (sysCh != null) {
+						sb.append("  SystemCharacter: ").append((String) sysCh.get(FieldNames.FIELD_NAME));
+						sb.append(" (").append((String) sysCh.get(FieldNames.FIELD_OBJECT_ID)).append(")\n");
+					}
+				}
+				BaseRecord usrCh = chatConfig.get("userCharacter");
+				if (usrCh != null) {
+					usrCh = OlioUtil.getFullRecord(usrCh);
+					if (usrCh != null) {
+						sb.append("  UserCharacter: ").append((String) usrCh.get(FieldNames.FIELD_NAME));
+						sb.append(" (").append((String) usrCh.get(FieldNames.FIELD_OBJECT_ID)).append(")\n");
+					}
+				}
+			} else {
+				sb.append("ChatConfig: (none)\n");
+			}
+
+			/// PromptConfig
+			BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.get("promptConfig"));
+			if (promptConfig != null) {
+				sb.append("PromptConfig: ").append((String) promptConfig.get(FieldNames.FIELD_NAME));
+				sb.append(" (").append((String) promptConfig.get(FieldNames.FIELD_OBJECT_ID)).append(")\n");
+			} else {
+				sb.append("PromptConfig: (none)\n");
+			}
+
+			/// Generic context
+			String contextType = chatReq.get("contextType");
+			if (contextType != null && !contextType.isEmpty()) {
+				BaseRecord contextObj = OlioUtil.getFullRecord(chatReq.get("context"));
+				if (contextObj != null) {
+					sb.append("Context: ").append(contextType).append(" '").append((String) contextObj.get(FieldNames.FIELD_NAME));
+					sb.append("' (").append((String) contextObj.get(FieldNames.FIELD_OBJECT_ID)).append(")\n");
+				} else {
+					sb.append("Context: ").append(contextType).append(" (reference not resolved)\n");
+				}
+			} else {
+				sb.append("Context: (none)\n");
+			}
+
+			return McpJsonRpc.ToolResult.success(sb.toString());
+		}
+		catch (Exception e) {
+			logger.error("Error reading session context: " + sessionId, e);
+			return McpJsonRpc.ToolResult.error("Failed to read session context: " + e.getMessage());
+		}
+	}
+
+	/// Find a record by objectId within the user's organization.
+	private BaseRecord findByObjectId(BaseRecord user, String modelName, String objectId) {
+		try {
+			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_OBJECT_ID, objectId);
+			q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			q.planMost(true);
+			return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		}
+		catch (Exception e) {
+			logger.warn("Failed to find " + modelName + " by objectId: " + objectId, e);
+			return null;
+		}
+	}
+
 	// =========================================================================
 	// JSON Schema builders for tool inputSchema
 	// =========================================================================
@@ -344,6 +587,46 @@ public class Am7ToolProvider implements IToolProvider {
 
 		schema.put("properties", props);
 		schema.put("required", List.of("chatName"));
+		return schema;
+	}
+
+	private Map<String, Object> buildSessionAttachSchema() {
+		Map<String, Object> schema = new HashMap<>();
+		schema.put("type", "object");
+
+		Map<String, Object> props = new HashMap<>();
+		props.put("sessionId", Map.of("type", "string", "description", "objectId of the chat session (chatRequest)"));
+		props.put("attachType", Map.of("type", "string", "description", "What to attach: chatConfig, promptConfig, systemCharacter, userCharacter, or context"));
+		props.put("objectId", Map.of("type", "string", "description", "objectId of the object to attach"));
+		props.put("objectType", Map.of("type", "string", "description", "Model type of the context object (required when attachType is 'context', e.g. 'data.data', 'olio.charPerson')"));
+
+		schema.put("properties", props);
+		schema.put("required", List.of("sessionId", "attachType", "objectId"));
+		return schema;
+	}
+
+	private Map<String, Object> buildSessionDetachSchema() {
+		Map<String, Object> schema = new HashMap<>();
+		schema.put("type", "object");
+
+		Map<String, Object> props = new HashMap<>();
+		props.put("sessionId", Map.of("type", "string", "description", "objectId of the chat session (chatRequest)"));
+		props.put("detachType", Map.of("type", "string", "description", "What to detach: systemCharacter, userCharacter, or context"));
+
+		schema.put("properties", props);
+		schema.put("required", List.of("sessionId", "detachType"));
+		return schema;
+	}
+
+	private Map<String, Object> buildSessionContextSchema() {
+		Map<String, Object> schema = new HashMap<>();
+		schema.put("type", "object");
+
+		Map<String, Object> props = new HashMap<>();
+		props.put("sessionId", Map.of("type", "string", "description", "objectId of the chat session (chatRequest)"));
+
+		schema.put("properties", props);
+		schema.put("required", List.of("sessionId"));
 		return schema;
 	}
 

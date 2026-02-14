@@ -3285,12 +3285,12 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 | 7 — Always-Stream Backend | **COMPLETED** | Medium | Medium | 36-39 (all pass) |
 | 8 — LLM Config & ChatOptions Fix | **COMPLETED** | Low | High | 40-45 (all pass), 82-85 (browser) |
 | 9 — Policy-Based Response Regulation | **COMPLETED** | Higher | Medium | 46-62 (backend, all pass); 63-85 (browser: 47 pass, 2 fail, 6 warn) |
-| 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | **10a+10b COMPLETED** | Medium | High | 86-110 (UX browser), P10-1 to P10-4 (backend, all pass) |
+| 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | **COMPLETED** (10a+10b+10c) | Medium | High | 86-110 (UX browser), P10-1..P10-4 + P10c-1..P10c-4 (backend, all 8 pass) |
 | 11 — Memory Hardening & Keyframe Refactor | Not started | Low | Medium | (no numbered tests) |
 
 ### Next Phase Recommendation
 
-**Recommended next: Phase 10 (UX Chat Refactor)**.
+**Recommended next: Phase 11 (Memory System Hardening & Keyframe Refactor)**.
 
 **Rationale:**
 
@@ -3355,6 +3355,18 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
   - `CacheDBSearch.java` (MODIFIED): Removed `synchronized` from `find()` and all private helper methods (`checkCache`, `getCacheMap`, `getCache`, `addToCache`, `clearCache(BaseRecord)`). Replaced `getCacheMap()` check-then-put with `ConcurrentHashMap.computeIfAbsent()`. The per-model `ConcurrentHashMap` instances provide thread safety for individual operations without requiring a global lock on every query. The previous `synchronized find()` serialized ALL database reads through a single lock — under Tomcat load, this caused cascading thread pool exhaustion when any one query was slow (e.g., during a DELETE or makePath), blocking all subsequent requests including login. (Resolves OI-50.)
   - `TestChatStream.java` (MODIFIED): Reduced `requestTimeout` from 120s to 30s across all 4 tests (36-39). Removed `STREAM_TEST_MODEL` override — tests now use whatever model is configured in `resource.properties`. All 4 tests pass in 17 seconds total (previously could hang for 2+ minutes per test due to excessive timeouts masking connectivity issues).
   - **Resolved OIs:** OI-50 (CacheDBSearch.find() synchronized bottleneck).
+- **Phase 10c implementation summary:**
+  - `chatRequestModel.json` (MODIFIED): Added `contextType` (string, maxLength 64) and `context` ($flex foreign, foreignType=contextType) fields. `contextType` added to query array; `context` excluded from query array to avoid `planMost(true)` $flex resolution failures when contextType is null (the existing `session` $flex field predates this issue because its DB column was created at model initialization).
+  - `Am7ToolProvider.java` (MODIFIED): Added 3 MCP tools — `am7_session_attach` (attach chatConfig/promptConfig/systemCharacter/userCharacter/context to session), `am7_session_detach` (detach systemCharacter/userCharacter/context), `am7_session_context` (list all bindings as text summary with model/stream/prune metadata). Characters attach to chatConfig (not chatRequest) since systemCharacter/userCharacter are chatConfig fields. Added `findByObjectId()`, `sessionAttach()`, `sessionDetach()`, `sessionContext()`, and 3 schema builder methods.
+  - `ChatService.java` (MODIFIED): Added 3 REST context endpoints — `POST /rest/chat/context/attach` (JSON body: sessionId, attachType, objectId, optional objectType), `POST /rest/chat/context/detach` (JSON body: sessionId, detachType), `GET /rest/chat/context/{objectId}` (returns JSON with chatConfig/promptConfig/systemCharacter/userCharacter/context bindings). Added `findByObjectId()` and `escJson()` helpers.
+  - `ContextPanel.js` (NEW): Mithril.js IIFE component for session context binding display and management. Loads context from `GET /rest/chat/context/{sessionId}`. Supports attach/detach via REST. Drag-and-drop from `dnd.workingSet` auto-detects schema type (chatConfig→attachChatConfig, promptConfig→attachPromptConfig, charPerson→attachSystemCharacter, other→attachContext). Collapsible `PanelView` with expand/collapse toggle. Public API: `load()`, `refresh()`, `getData()`, `onContextChange()`, `attach()`, `detach()`, `toggle()`, `clear()`. Exposes `window.ContextPanel`.
+  - `view/chat.js` (MODIFIED): Integrated ContextPanel below ConversationManager in sidebar. `pickSession()` calls `ContextPanel.load(objectId)`. `doClear()` calls `ContextPanel.clear()`. `sendToMagic8()` passes `sessionId` as route param alongside sessionStorage fallback.
+  - `magic8/index.js` (MODIFIED): `launchFromChat()` includes `sessionId` in route params from `chatContext.instanceId`.
+  - `magic8/Magic8App.js` (MODIFIED): `oninit()` reads `sessionId` from route attrs, stores as `this.chatSessionId` for server-side context loading.
+  - `build.js` (MODIFIED): Added `ContextPanel.js` after `ConversationManager.js`.
+  - `TestChatPhase10.java` (MODIFIED): Added 4 backend tests — P10c-1 (contextType field persistence: set/update/re-fetch), P10c-2 (context attach/detach round-trip: create data.data object with ParameterList, attach as context, verify contextType persistence, detach, verify removal), P10c-3 (chatConfig switch: create 2 configs, switch via set()+update(), re-fetch and verify), P10c-4 (MCP tool provider lists 7+ tools including am7_session_attach/detach/context). All 8 tests (P10-1..4 + P10c-1..4) pass.
+  - **Resolved OIs:** OI-49 (generic object association API — chatRequest context/$flex foreign + MCP tools + REST endpoints + UX ContextPanel).
+  - **Known limitation:** `planMost(true)` queries on chatRequest fail with PSQLException when the `context` $flex foreign field has null contextType. The `context` field is excluded from the query array to prevent this. Consumers should load context explicitly via `ContextPanel.load()` or `GET /rest/chat/context/{sessionId}` rather than relying on planMost to resolve it.
 
 - **Phase 10** (UX Chat Refactor) is the highest-impact remaining work. Design audit identified:
   - **6 duplicated patterns** across `chat.js`, `SessionDirector.js` (1444 lines), and `llmBase.js`/`chatManager.js` — config template cloning, prompt create-or-find, response content extraction, JSON directive parsing, history retrieval, error tracking.
@@ -3366,20 +3378,15 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 
 - **Phase 9 UX test results:** 47 pass, 2 fail (history ordering + content match), 6 warn (pre-Phase 8 config caching, episode stages, episodeRule missing), 0 skip. The 2 failures are tracked in OI-43.
 
+- **Phase 10c UX test results:** 54 pass, 6 fail, 4 warn, 2 skip. 4 of the 6 failures were due to missing `<script>` tags in `index.html` for Phase 10 components (LLMConnector, ChatTokenRenderer, ConversationManager, ContextPanel) — components were in `build.js` (bundled mode) but not in `index.html` (dev mode). Fixed by adding 4 script tags. Remaining 2 failures are the persistent OI-43 history ordering issue (2/3 user messages found with assist=true + messageTrim interactions). OI-43 is deferred to Phase 11 for deeper investigation of server-side persistence timing under assist=true + messageTrim conditions.
+
 - **Phase 1** (items 1, 2, 4) could be done anytime as a low-risk cleanup pass. Item 3 (condition checks) is largely superseded by Phase 4's `PromptConditionEvaluator` for new templates, but the legacy flat pipeline still benefits from `if` guards.
 
 - **Phase 11** (Memory Hardening & Keyframe Refactor) has no phase dependencies and can proceed at any time.
 
-**Suggested order:** ~~10a~~ ~~10b~~ → 10c → 1 (remainder) → 11
+**Suggested order:** ~~10a~~ ~~10b~~ ~~10c~~ → 1 (remainder) → 11
 
-**Phase 10 status:** 10a DONE, 10b DONE. Next: 10c (MCP context binding) or Phase 11 (Memory/Keyframe Hardening).
-
-**Phase 10c scope** (deferred — plan when ready):
-- MCP tool schema for object association: `attachChatConfig`, `attachPromptConfig`, `attachCharacter`, `listAttachments`, `detach`
-- Server-side MCP tool handlers
-- UX `ContextPanel.js` component with drag-and-drop object association
-- Replace `sessionStorage` cross-view handoffs with conversation ID references
-- OI-49 resolution (generic object association API)
+**Phase 10 status:** ALL DONE (10a, 10b, 10c). All 8 backend tests pass (P10-1..4 + P10c-1..4). UX bundle builds clean. Next: Phase 11 (Memory/Keyframe Hardening) or Phase 1 (remainder).
 
 **Phase 11 scope** (can proceed independently):
 - OI-1: `personModel` field population in `MemoryUtil.createMemory()` / `Chat.persistKeyframeAsMemory()`
@@ -3392,7 +3399,7 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 
 **Open issues remaining (by priority):**
 - **P2:** OI-3 (memory person pair IDs)
-- **P3:** OI-1 (personModel), OI-5 (keyframeEvery floor), OI-15 (nlp pipeline), OI-17 (Magic8 wiring), OI-19 (migrator coverage), OI-26 (keyframe heuristic), OI-27 (Ollama abort), OI-29 (Ollama options), OI-49 (object association API)
+- **P3:** OI-1 (personModel), OI-5 (keyframeEvery floor), OI-13 (test relocation), OI-15 (nlp pipeline), OI-17 (Magic8 wiring), OI-19 (migrator coverage), OI-26 (keyframe heuristic), OI-27 (Ollama abort), OI-29 (Ollama options)
 - **P4:** OI-14 (keyframe format), OI-18 (prune backward compat), OI-23 (shared state), OI-28 (test order), OI-30 (analyze hardcoded), OI-31/34 (double-apply), OI-33 (UX form Ollama section), OI-39 (wrong char false positives)
 
 ---
@@ -3498,7 +3505,7 @@ All known open issues with their assigned resolution phase:
 | OI-46 | ~~`chat.js` exports only 5 methods~~ `am7chat` now exports 10 methods: 5 original + `getHistory()`, `extractContent()`, `streamChat()`, `parseDirective()`, `cloneConfig()` — all delegating to `LLMConnector`. UX test 100 validates | Phase 10 design audit | ~~Phase 10 (10a: `LLMConnector`)~~ **RESOLVED** | ~~P2~~ |
 | OI-47 | ~~`SessionDirector.js` reimplements config management, response extraction, JSON directive parsing + repair~~ `initialize()` delegates to `LLMConnector.findChatDir()`, `getOpenChatTemplate()`, `ensurePrompt()`, `ensureConfig()`, `createSession()`. `_extractContent()` delegates to `LLMConnector.extractContent()`. `_parseDirective()` delegates JSON parsing to `LLMConnector.parseDirective()`, keeps domain-specific directive validation. `_repairTruncatedJson()` removed. Diagnostics use LLMConnector. ~200 lines removed | Phase 10 design audit | ~~Phase 10 (10a: extract to `LLMConnector`)~~ **RESOLVED** | ~~P2~~ |
 | OI-48 | ~~`cardGame/ai/chatManager.js` manually tracks `currentConversation[]` array client-side, diverging from server-side history~~ Fixed: `startConversation()` now seeds `currentConversation[]` from server history via `LLMConnector.getHistory()`. Local array kept as optimistic cache for immediate UI responsiveness | Phase 10 design audit | ~~Phase 10 (10b: unified history via `LLMConnector.getHistory()`)~~ **RESOLVED** (Phase 10b) | ~~P3~~ |
-| OI-49 | No generic object association API — `dnd.js` blender hardcodes type-specific association logic (role membership, group membership, tag membership, chatConfig context routing). No programmatic API for associating arbitrary objects with conversations | Phase 10 design audit | Phase 10 (10c: MCP context binding) | P3 |
+| OI-49 | ~~No generic object association API~~ Fixed: `chatRequestModel.json` adds `contextType`/`context` ($flex foreign) fields for associating any model type with a conversation. MCP tools (`am7_session_attach`/`detach`/`context`) provide programmatic API. REST endpoints (`/rest/chat/context/attach`, `/detach`, `/{objectId}`) provide HTTP API. UX `ContextPanel.js` provides drag-and-drop and visual management | Phase 10 design audit | ~~Phase 10 (10c: MCP context binding)~~ **RESOLVED** (Phase 10c) | ~~P3~~ |
 | OI-50 | ~~`CacheDBSearch.find()` synchronized — serializes ALL database reads through a single lock. Under Tomcat concurrent load, one slow query blocks every other query (including makePath, DELETE, login), causing cascading thread pool exhaustion and complete server hang~~ Fixed: removed `synchronized` from `find()` and helpers; per-model `ConcurrentHashMap` instances provide thread safety. `getCacheMap()` uses `computeIfAbsent()` for atomic map creation | Phase 10b testing | **RESOLVED** (Phase 10b patch) | ~~P1~~ |
 
 ---

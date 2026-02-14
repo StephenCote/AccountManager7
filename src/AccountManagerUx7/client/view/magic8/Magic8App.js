@@ -93,7 +93,13 @@
         async oninit(vnode) {
             const sessionConfigId = vnode.attrs.sessionConfigId;
 
-            // Check for chat context handoff
+            // Phase 10c: Check for sessionId route param for server-side context lookup
+            const sessionId = vnode.attrs.sessionId;
+            if (sessionId) {
+                this.chatSessionId = sessionId;
+            }
+
+            // Check for chat context handoff (sessionStorage fallback)
             const contextJson = sessionStorage.getItem('magic8Context');
             if (contextJson) {
                 try {

@@ -291,6 +291,219 @@ public class ChatService {
 
 	@RolesAllowed({"admin","user"})
 	@POST
+	@Path("/context/attach")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response attachContext(String json, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord body = JSONUtil.importObject(json, org.cote.accountmanager.record.LooseRecord.class, org.cote.accountmanager.record.RecordDeserializerConfig.getUnfilteredModule());
+		if (body == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String sessionId = body.get("sessionId");
+		String attachType = body.get("attachType");
+		String objectId = body.get("objectId");
+		String objectType = body.get("objectType");
+
+		if (sessionId == null || attachType == null || objectId == null) {
+			return Response.status(400).entity("{\"error\":\"sessionId, attachType, and objectId are required\"}").build();
+		}
+
+		try {
+			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
+			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			sq.planMost(true);
+			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+			if (chatReq == null) {
+				return Response.status(404).entity("{\"error\":\"Session not found\"}").build();
+			}
+
+			switch (attachType) {
+				case "chatConfig": {
+					BaseRecord cfg = findByObjectId(user, OlioModelNames.MODEL_CHAT_CONFIG, objectId);
+					if (cfg == null) return Response.status(404).entity("{\"error\":\"Chat config not found\"}").build();
+					chatReq.set("chatConfig", cfg);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
+					break;
+				}
+				case "promptConfig": {
+					BaseRecord cfg = findByObjectId(user, OlioModelNames.MODEL_PROMPT_CONFIG, objectId);
+					if (cfg == null) return Response.status(404).entity("{\"error\":\"Prompt config not found\"}").build();
+					chatReq.set("promptConfig", cfg);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
+					break;
+				}
+				case "systemCharacter":
+				case "userCharacter": {
+					BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
+					if (chatConfig == null) return Response.status(404).entity("{\"error\":\"Session has no chatConfig\"}").build();
+					BaseRecord character = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, objectId);
+					if (character == null) return Response.status(404).entity("{\"error\":\"Character not found\"}").build();
+					chatConfig.set(attachType, character);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig);
+					break;
+				}
+				case "context": {
+					if (objectType == null || objectType.isEmpty()) {
+						return Response.status(400).entity("{\"error\":\"objectType required for context attach\"}").build();
+					}
+					BaseRecord contextObj = findByObjectId(user, objectType, objectId);
+					if (contextObj == null) return Response.status(404).entity("{\"error\":\"Context object not found\"}").build();
+					chatReq.set("contextType", objectType);
+					chatReq.set("context", contextObj);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
+					break;
+				}
+				default:
+					return Response.status(400).entity("{\"error\":\"Invalid attachType: " + attachType + "\"}").build();
+			}
+
+			return Response.status(200).entity("{\"attached\":true,\"attachType\":\"" + attachType + "\"}").build();
+		}
+		catch (Exception e) {
+			logger.error("Error attaching context", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/context/detach")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response detachContext(String json, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord body = JSONUtil.importObject(json, org.cote.accountmanager.record.LooseRecord.class, org.cote.accountmanager.record.RecordDeserializerConfig.getUnfilteredModule());
+		if (body == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+
+		String sessionId = body.get("sessionId");
+		String detachType = body.get("detachType");
+
+		if (sessionId == null || detachType == null) {
+			return Response.status(400).entity("{\"error\":\"sessionId and detachType are required\"}").build();
+		}
+
+		try {
+			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
+			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			sq.planMost(true);
+			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+			if (chatReq == null) {
+				return Response.status(404).entity("{\"error\":\"Session not found\"}").build();
+			}
+
+			switch (detachType) {
+				case "systemCharacter":
+				case "userCharacter": {
+					BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
+					if (chatConfig == null) return Response.status(404).entity("{\"error\":\"Session has no chatConfig\"}").build();
+					chatConfig.set(detachType, null);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig);
+					break;
+				}
+				case "context": {
+					chatReq.set("contextType", null);
+					chatReq.set("context", null);
+					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
+					break;
+				}
+				default:
+					return Response.status(400).entity("{\"error\":\"Cannot detach " + detachType + "\"}").build();
+			}
+
+			return Response.status(200).entity("{\"detached\":true,\"detachType\":\"" + detachType + "\"}").build();
+		}
+		catch (Exception e) {
+			logger.error("Error detaching context", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/context/{objectId:[A-Fa-f0-9\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getSessionContext(@PathParam("objectId") String sessionId, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		try {
+			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
+			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			sq.planMost(true);
+			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+			if (chatReq == null) {
+				return Response.status(404).entity(null).build();
+			}
+
+			/// Build a summary of all context bindings
+			StringBuilder sb = new StringBuilder();
+			sb.append("{");
+
+			BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
+			if (chatConfig != null) {
+				sb.append("\"chatConfig\":{\"name\":\"").append(escJson((String)chatConfig.get(FieldNames.FIELD_NAME)));
+				sb.append("\",\"objectId\":\"").append((String)chatConfig.get(FieldNames.FIELD_OBJECT_ID));
+				sb.append("\",\"model\":\"").append(escJson((String)chatConfig.get("model"))).append("\"}");
+
+				BaseRecord sysCh = OlioUtil.getFullRecord(chatConfig.get("systemCharacter"));
+				if (sysCh != null) {
+					sb.append(",\"systemCharacter\":{\"name\":\"").append(escJson((String)sysCh.get(FieldNames.FIELD_NAME)));
+					sb.append("\",\"objectId\":\"").append((String)sysCh.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+				}
+				BaseRecord usrCh = OlioUtil.getFullRecord(chatConfig.get("userCharacter"));
+				if (usrCh != null) {
+					sb.append(",\"userCharacter\":{\"name\":\"").append(escJson((String)usrCh.get(FieldNames.FIELD_NAME)));
+					sb.append("\",\"objectId\":\"").append((String)usrCh.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+				}
+			}
+
+			BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.get("promptConfig"));
+			if (promptConfig != null) {
+				sb.append(",\"promptConfig\":{\"name\":\"").append(escJson((String)promptConfig.get(FieldNames.FIELD_NAME)));
+				sb.append("\",\"objectId\":\"").append((String)promptConfig.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+			}
+
+			String contextType = chatReq.get("contextType");
+			if (contextType != null && !contextType.isEmpty()) {
+				BaseRecord contextObj = OlioUtil.getFullRecord(chatReq.get("context"));
+				sb.append(",\"context\":{\"type\":\"").append(contextType).append("\"");
+				if (contextObj != null) {
+					sb.append(",\"name\":\"").append(escJson((String)contextObj.get(FieldNames.FIELD_NAME)));
+					sb.append("\",\"objectId\":\"").append((String)contextObj.get(FieldNames.FIELD_OBJECT_ID)).append("\"");
+				}
+				sb.append("}");
+			}
+
+			sb.append("}");
+			return Response.status(200).entity(sb.toString()).build();
+		}
+		catch (Exception e) {
+			logger.error("Error reading session context", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	private BaseRecord findByObjectId(BaseRecord user, String modelName, String objectId) {
+		try {
+			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_OBJECT_ID, objectId);
+			q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			q.planMost(true);
+			return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		}
+		catch (Exception e) {
+			logger.warn("Failed to find " + modelName + " by objectId: " + objectId, e);
+			return null;
+		}
+	}
+
+	private static String escJson(String s) {
+		if (s == null) return "";
+		return s.replace("\\", "\\\\").replace("\"", "\\\"");
+	}
+
+	@RolesAllowed({"admin","user"})
+	@POST
 	@Path("/chain")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response chain(String json, @Context HttpServletRequest request){

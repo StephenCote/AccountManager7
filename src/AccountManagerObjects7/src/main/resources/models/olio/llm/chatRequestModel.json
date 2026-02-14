@@ -6,7 +6,7 @@
 	"group": "ChatRequests",
 	"icon": "chat",
 	"label": "Requests",
-	"query": ["id", "groupId", "chatConfig", "promptConfig", "session", "sessionType", "setting"],
+	"query": ["id", "groupId", "chatConfig", "promptConfig", "session", "sessionType", "setting", "contextType"],
 	"description": "Used for proxying chat requests",
 	"fields": [
 		{
@@ -53,6 +53,20 @@
 		{
 			"name": "setting",
 			"type": "string"
+		},
+		{
+			"name": "contextType",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Model type of the associated context object (e.g. olio.charPerson, data.data)"
+		},
+		{
+			"name": "context",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "contextType",
+			"description": "Generic context object associated with this chat session. Type determined by contextType field."
 		}
 	]
 }
