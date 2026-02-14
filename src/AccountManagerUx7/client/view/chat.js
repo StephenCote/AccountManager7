@@ -207,37 +207,13 @@
         m.redraw();
     }
 
-    // Process content string: replace image tokens with HTML for resolved images or placeholders
+    // Phase 10b: Delegate image token processing to ChatTokenRenderer
     function processImageTokensInContent(content, msgRole, msgIndex) {
-        if (!content || !window.am7imageTokens) return content;
-        let tokens = window.am7imageTokens.parse(content);
-        if (!tokens.length) return content;
-
-        // Trigger resolution for unresolved/uncached tokens
-        if (!resolvingImages[msgIndex]) {
-            let needsResolution = tokens.some(t => !t.id || !window.am7imageTokens.cache[t.id]);
-            if (needsResolution) {
-                resolvingImages[msgIndex] = true;
-                resolveChatImages(msgIndex).then(function() {
-                    resolvingImages[msgIndex] = false;
-                });
-            }
-        }
-
-        // Replace tokens with HTML
-        let result = content;
-        for (let i = tokens.length - 1; i >= 0; i--) {
-            let token = tokens[i];
-            let html;
-            if (token.id && window.am7imageTokens.cache[token.id]) {
-                let cached = window.am7imageTokens.cache[token.id];
-                html = '<img src="' + cached.url + '" class="max-w-[256px] rounded-lg my-2 cursor-pointer" onclick="page.imageView(window.am7imageTokens.cache[\'' + token.id + '\'].image)" />';
-            } else {
-                html = '<span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-500/30 text-xs my-1"><span class="material-symbols-outlined text-xs">photo_camera</span>' + token.tags.join(", ") + '...</span>';
-            }
-            result = result.substring(0, token.start) + html + result.substring(token.end);
-        }
-        return result;
+        if (!window.ChatTokenRenderer) return content;
+        let characters = { system: chatCfg.system, user: chatCfg.user };
+        return ChatTokenRenderer.processImageTokens(content, msgRole, msgIndex, characters, { resolvingImages: resolvingImages }, function(idx) {
+            return resolveChatImages(idx);
+        });
     }
 
     function toggleImageTag(tag) {
@@ -264,60 +240,12 @@
     // Audio token inline processing
     // ==========================================
 
-    function escapeHtmlAttr(str) {
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
-
-    // Process content string: replace ${audio.text} tokens with inline audio players
+    // Phase 10b: Delegate audio token processing to ChatTokenRenderer
     function processAudioTokensInContent(content, msgRole, msgIndex) {
-        if (!content || !window.am7audioTokens) return content;
-        let tokens = window.am7audioTokens.parse(content);
-        if (!tokens.length) return content;
-
-        let profileId;
-        if (msgRole === "assistant") {
-            profileId = chatCfg?.system?.profile?.objectId;
-        } else {
-            profileId = chatCfg?.user?.profile?.objectId;
-        }
-
-        // Build stable names following TTS convention: sessionId-role-audio-msgIndex-tokenIndex-hash
+        if (!window.ChatTokenRenderer) return content;
+        let characters = { system: chatCfg.system, user: chatCfg.user };
         let sessionId = inst ? inst.api.objectId() : 'nosess';
-
-        let result = content;
-        for (let i = tokens.length - 1; i >= 0; i--) {
-            let token = tokens[i];
-            let textHash = page.components.audioComponents.simpleHash(token.text);
-            let name = sessionId + '-' + msgRole + '-audio-' + msgIndex + '-' + i + '-' + textHash;
-            window.am7audioTokens.register(name, token.text, profileId);
-            let state = window.am7audioTokens.state(name);
-
-            let icon, iconClass;
-            switch (state) {
-                case 'loading':
-                    icon = 'hourglass_top';
-                    iconClass = ' animate-pulse';
-                    break;
-                case 'playing':
-                    icon = 'pause_circle';
-                    iconClass = '';
-                    break;
-                default:
-                    icon = 'play_circle';
-                    iconClass = '';
-                    break;
-            }
-
-            let btn = '<button class="inline-flex items-center p-1 rounded-full bg-indigo-500/20 hover:bg-indigo-500/40 border border-indigo-500/30 align-middle cursor-pointer select-none" ' +
-                'onclick="window.am7audioTokens.play(\'' + name + '\'); return false;" ' +
-                'title="' + escapeHtmlAttr(token.text) + '">' +
-                '<span class="material-symbols-outlined text-lg text-indigo-400' + iconClass + '">' + icon + '</span></button>';
-            // Button is the HTML5 control; the rest is markdown (italic quote) for marked to render
-            let html = btn + ' *"' + token.text + '"*';
-
-            result = result.substring(0, token.start) + html + result.substring(token.end);
-        }
-        return result;
+        return ChatTokenRenderer.processAudioTokens(content, msgRole, msgIndex, characters, sessionId);
     }
 
     function doClear() {
@@ -634,16 +562,22 @@
       let c1 = inst.api.promptConfig();
       let c2 = inst.api.chatConfig();
       let p;
-      if (c1 && c2 && c1.name && c2.name) {
-        /// Looking up the prompt and chat config to get the full objects
-        ///
+      if (c1 && c2 && (c1.name || c1.objectId) && (c2.name || c2.objectId)) {
+        // Phase 10b: Prefer objectId-based lookup (10a endpoints), fall back to name
+        let promptUrl = c1.objectId
+            ? g_application_path + "/rest/chat/config/prompt/id/" + c1.objectId
+            : g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(c1.name);
+        let chatUrl = c2.objectId
+            ? g_application_path + "/rest/chat/config/chat/id/" + c2.objectId
+            : g_application_path + "/rest/chat/config/chat/" + encodeURIComponent(c2.name);
+
         chatCfg.peek = true;
         p = new Promise((res, rej) => {
-          m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(c1.name), withCredentials: true })
+          m.request({ method: 'GET', url: promptUrl, withCredentials: true })
             .then((c) => {
               chatCfg.prompt = c;
 
-              m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/chat/" + encodeURIComponent(c2.name), withCredentials: true }).then((c3) => {
+              m.request({ method: 'GET', url: chatUrl, withCredentials: true }).then((c3) => {
                 chatCfg.chat = c3;
                 chatCfg.system = c3.systemCharacter;
                 chatCfg.user = c3.userCharacter;
@@ -705,28 +639,24 @@
 
     };
 
+    // Phase 10b: Sidebar delegates to ConversationManager component
     function getSplitLeftContainerView() {
-      /*
-      inst.formField("prompt").hide = sess;
-      inst.formField("chat").hide = sess;
-      inst.formField("session").hide = sess;
-      */
+      if (window.ConversationManager) {
+        return m(ConversationManager.SidebarView, { onNew: openChatSettings });
+      }
+      // Fallback: inline session list (pre-10b compat)
       let vsess = aSess || [];
-
       return m("div", {
         class: "splitleftcontainer",
         ondragover: function (e) {
           e.preventDefault();
         }
       }, [
-        // am7view.form(inst),
-        //         m("button", { class: "flyout-button", onclick: openChatSettings }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "add"), "New Chat"]),
         vsess.map((s, i) => {
           let bNew = s.objectId == undefined;
           let bDel = "";
           if (bNew) {
             bDel = m("button", { class: "menu-button content-end mr-2", onclick: openChatSettings }, m("span", { class: "material-symbols-outlined material-icons-24" }, "add"));
-            //m("button", {class: "menu-button material-symbols-outlined material-icons-24 mr-2"},"add");
           }
           else {
             bDel = m("button", { class: "menu-button content-end mr-2", onclick: function (e) { e.preventDefault(); deleteChat(s); return false; } }, m("span", { class: "material-symbols-outlined material-icons-24" }, "delete_outline"));
@@ -737,7 +667,6 @@
             }
           }, [bDel, s.name]);
         })
-
       ]);
     }
 
@@ -1181,24 +1110,34 @@
 
 
 
+    // Phase 10b: loadConfigList delegates to ConversationManager
     async function loadConfigList() {
-      await am7client.clearCache(undefined, true);
-      let dir = await page.findObject("auth.group", "DATA", "~/Chat");
-      if (aPCfg == undefined) {
-        aPCfg = await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0);
-        if (aPCfg && aPCfg.length && inst && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
+      if (window.ConversationManager) {
+        await ConversationManager.refresh();
+        aPCfg = ConversationManager.getPromptConfigs() || [];
+        aCCfg = ConversationManager.getChatConfigs() || [];
+        aSess = ConversationManager.getSessions() || [];
+        if (aPCfg.length && inst && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
+        if (aCCfg.length && inst && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
+        if (!inst) ConversationManager.autoSelectFirst();
+      } else {
+        // Fallback: direct load (pre-10b compat)
+        await am7client.clearCache(undefined, true);
+        let dir = await page.findObject("auth.group", "DATA", "~/Chat");
+        if (aPCfg == undefined) {
+          aPCfg = await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0);
+          if (aPCfg && aPCfg.length && inst && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
+        }
+        if (aCCfg == undefined) {
+          aCCfg = await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
+          if (aCCfg && aCCfg.length && inst && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
+        }
+        let dir2 = await page.findObject("auth.group", "DATA", "~/ChatRequests");
+        if (aSess == undefined) {
+          aSess = await am7client.list("olio.llm.chatRequest", dir2.objectId, null, 0, 0);
+          if (aSess && aSess.length && !inst) pickSession(aSess[0]);
+        }
       }
-      if (aCCfg == undefined) {
-        aCCfg = await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
-        if (aCCfg && aCCfg.length && inst && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
-
-      }
-      let dir2 = await page.findObject("auth.group", "DATA", "~/ChatRequests");
-      if (aSess == undefined) {
-        aSess = await am7client.list("olio.llm.chatRequest", dir2.objectId, null, 0, 0);
-        if (aSess && aSess.length && !inst) pickSession(aSess[0]);
-      }
-
     }
 
     function getChatView(vnode) {
@@ -1274,6 +1213,17 @@
           inst = am7model.prepareInstance(remoteEntity, am7model.forms.chatSettings);
           bPopSet = true;
           delete window.remoteEntity;
+        }
+
+        // Phase 10b: Wire ConversationManager callbacks
+        if (window.ConversationManager) {
+          ConversationManager.onSelect(function(session) {
+            pickSession(session);
+          });
+          ConversationManager.onDelete(function() {
+            doClear();
+            aSess = undefined;
+          });
         }
 
         document.documentElement.addEventListener("keydown", navKey);

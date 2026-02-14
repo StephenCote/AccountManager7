@@ -137,6 +137,29 @@ Respond naturally in character. No game mechanics or meta-commentary, just dialo
         async startConversation() {
             this.chatActive = true;
             this.currentConversation = [];
+
+            // OI-48: Seed local conversation from server history if session exists
+            if (this.chatRequest && this.chatRequest.objectId && typeof LLMConnector !== "undefined") {
+                try {
+                    let hist = await LLMConnector.getHistory(this.chatRequest);
+                    if (hist && hist.messages) {
+                        for (let i = 0; i < hist.messages.length; i++) {
+                            let msg = hist.messages[i];
+                            if (msg.role === "user") {
+                                this.currentConversation.push({ role: "player", text: msg.content || "" });
+                            } else if (msg.role === "assistant") {
+                                this.currentConversation.push({ role: "npc", text: msg.content || "" });
+                            }
+                        }
+                        if (this.currentConversation.length > 0) {
+                            console.log("[CardGameChatManager] Seeded", this.currentConversation.length, "messages from server history");
+                        }
+                    }
+                } catch (e) {
+                    console.warn("[CardGameChatManager] Could not seed from server history:", e);
+                }
+            }
+
             console.log("[CardGameChatManager] Conversation started with:", this.npcName);
             return true;
         }

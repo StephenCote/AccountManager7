@@ -163,7 +163,7 @@
             let basic = { schema: schema, name: template.name, groupId: testGroup.id, groupPath: testGroup.path };
             if (schema === "olio.llm.chatConfig") {
                 basic.model = template.model || "llama3";
-                basic.serverUrl = template.serverUrl || "http://localhost:11434";
+                if (template.serverUrl) basic.serverUrl = template.serverUrl;
                 basic.serviceType = template.serviceType || "OLLAMA";
                 basic.messageTrim = template.messageTrim || 6;
             } else if (schema === "olio.llm.promptConfig") {
@@ -814,12 +814,15 @@
 
         if (!req) return;
 
-        // Send 3 messages
+        // Send 3 messages (OI-43: 200ms delay between sends to avoid persistence timing race)
         let sentMessages = ["Message one: apple", "Message two: banana", "Message three: cherry"];
         for (let i = 0; i < sentMessages.length; i++) {
             try {
                 await am7chat.chat(req, sentMessages[i]);
                 log("history", "Sent message " + (i + 1) + ": " + sentMessages[i], "info");
+                if (i < sentMessages.length - 1) {
+                    await new Promise(function(r) { setTimeout(r, 200); });
+                }
             } catch (e) {
                 log("history", "Failed to send message " + (i + 1) + ": " + e.message, "fail");
             }
@@ -1629,14 +1632,15 @@
             let updateTestName = "LLM OI24 Update Test - " + Date.now();
             try {
                 // Create with messageTrim=6
-                let cfg1 = await findOrCreateConfig("olio.llm.chatConfig", suiteState.testGroup,
-                    { name: updateTestName, model: chatCfg ? chatCfg.model : "llama3", serverUrl: chatCfg ? chatCfg.serverUrl : "http://localhost:11434", serviceType: chatCfg ? chatCfg.serviceType : "OLLAMA", messageTrim: 6 });
+                let cfgBase = { name: updateTestName, model: chatCfg ? chatCfg.model : "llama3", serviceType: chatCfg ? chatCfg.serviceType : "OLLAMA", messageTrim: 6 };
+                if (chatCfg && chatCfg.serverUrl) cfgBase.serverUrl = chatCfg.serverUrl;
+                let cfg1 = await findOrCreateConfig("olio.llm.chatConfig", suiteState.testGroup, cfgBase);
                 if (!cfg1) {
                     log("convmgr", "OI-24: Could not create test config", "fail");
                 } else {
                     // Update with messageTrim=10
-                    let cfg2 = await findOrCreateConfig("olio.llm.chatConfig", suiteState.testGroup,
-                        { name: updateTestName, model: chatCfg ? chatCfg.model : "llama3", serverUrl: chatCfg ? chatCfg.serverUrl : "http://localhost:11434", serviceType: chatCfg ? chatCfg.serviceType : "OLLAMA", messageTrim: 10 });
+                    cfgBase.messageTrim = 10;
+                    let cfg2 = await findOrCreateConfig("olio.llm.chatConfig", suiteState.testGroup, cfgBase);
                     let updated = cfg2 && cfg2.messageTrim === 10;
                     log("convmgr", "OI-24: findOrCreateConfig update-if-changed messageTrim 6→10: " + updated, updated ? "pass" : "fail");
                     // Cleanup

@@ -8015,6 +8015,10 @@ button.button-tab-active:hover:is(.dark *) {
   margin-right: 0px;
 }
 
+.mr-1 {
+  margin-right: 0.25rem;
+}
+
 .mr-2 {
   margin-right: 0.5rem;
 }
@@ -8552,6 +8556,10 @@ button.button-tab-active:hover:is(.dark *) {
 
 .border-l-2 {
   border-left-width: 2px;
+}
+
+.border-t {
+  border-top-width: 1px;
 }
 
 .border-dotted {

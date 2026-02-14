@@ -21,7 +21,8 @@ import org.cote.accountmanager.util.RecordUtil;
 public class CacheDBSearch extends DBSearch implements ICache {
 	
 	/// 2023/06/29 - There was a concurrency problem with the cache under load where mapped values became transposed.
-	/// Fixed by synchronizing find() to make the check-fetch-store cycle atomic.
+	/// Per-model ConcurrentHashMaps now isolate each model type, preventing cross-type transposition.
+	/// Individual operations (get/put/remove) are thread-safe via ConcurrentHashMap; no global synchronized needed on find().
 
 	//private Map<String, QueryResult> cache = new ConcurrentHashMap<>();
 	private Map<String,  Map<String, QueryResult>> cacheMap = new ConcurrentHashMap<>();
@@ -51,7 +52,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		CacheUtil.removeProvider(this);
 	}
 	
-	private synchronized void checkCache() {
+	private void checkCache() {
 		long now = System.currentTimeMillis();
 		if( (now - cacheRefreshed) > maximumCacheAgeMS
 		//	|| cache.size() > maximumCacheSize
@@ -67,14 +68,11 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		
 	}
 	
-	private synchronized Map<String, QueryResult> getCacheMap(String model) {
-		if(!cacheMap.containsKey(model)) {
-			cacheMap.put(model, new ConcurrentHashMap<>());
-		}
-		return cacheMap.get(model);
+	private Map<String, QueryResult> getCacheMap(String model) {
+		return cacheMap.computeIfAbsent(model, k -> new ConcurrentHashMap<>());
 	}
 	
-	private synchronized QueryResult getCache(Map<String, QueryResult> cache, final Query query, String hash) {
+	private QueryResult getCache(Map<String, QueryResult> cache, final Query query, String hash) {
 		
 		QueryResult qr = null;
 		if(query.isCache() && cache.containsKey(hash)) {
@@ -97,7 +95,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		return qr;
 	}
 	
-	private synchronized void addToCache(Map<String, QueryResult> cache, final Query query, QueryResult qr, String hash) throws ReaderException {
+	private void addToCache(Map<String, QueryResult> cache, final Query query, QueryResult qr, String hash) throws ReaderException {
 		if(query.isCache() && qr != null && qr.getCount() > 0) {
 			String qt = query.get(FieldNames.FIELD_TYPE);
 			String qrt = qr.get(FieldNames.FIELD_TYPE);
@@ -119,7 +117,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	}
 	
 	@Override
-	public synchronized QueryResult find(final Query query) throws ReaderException {
+	public QueryResult find(final Query query) throws ReaderException {
 
 		if(query.key() == null) {
 			throw new ReaderException("Null query key");
@@ -144,7 +142,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	}
 
 	@Override
-	public synchronized void clearCache(BaseRecord rec) {
+	public void clearCache(BaseRecord rec) {
 		// logger.info("TODO: Clear cache by record");
 		cacheMap.values().forEach(m ->{
 			m.entrySet().removeIf(entry ->{

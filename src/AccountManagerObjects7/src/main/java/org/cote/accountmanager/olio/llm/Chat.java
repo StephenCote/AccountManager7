@@ -653,7 +653,7 @@ public class Chat {
 		}
 		areq.setModel(amodel);
 
-		applyChatOptions(req);
+		applyChatOptions(areq);
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);

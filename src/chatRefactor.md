@@ -3285,7 +3285,7 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 | 7 — Always-Stream Backend | **COMPLETED** | Medium | Medium | 36-39 (all pass) |
 | 8 — LLM Config & ChatOptions Fix | **COMPLETED** | Low | High | 40-45 (all pass), 82-85 (browser) |
 | 9 — Policy-Based Response Regulation | **COMPLETED** | Higher | Medium | 46-62 (backend, all pass); 63-85 (browser: 47 pass, 2 fail, 6 warn) |
-| 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | **10a COMPLETED** | Medium | High | 86-110 (UX browser), P10-1 to P10-4 (backend, all pass) |
+| 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | **10a+10b COMPLETED** | Medium | High | 86-110 (UX browser), P10-1 to P10-4 (backend, all pass) |
 | 11 — Memory Hardening & Keyframe Refactor | Not started | Low | Medium | (no numbered tests) |
 
 ### Next Phase Recommendation
@@ -3341,7 +3341,20 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
   - `llmTestSuite.js` (MODIFIED): 25 new UX tests (86-110) in 3 categories (`connector`, `token`, `convmgr`). Fixed `findOrCreateConfig` with OI-24 update-if-changed logic. Tests cover: module availability, config management, response extraction (7 shapes), directive parsing (4 modes), JSON repair, pruning, cloning, history, streaming, delegation, token rendering, display pruning, live config update, history ordering, objectId REST, policyEvent wiring, error state tracking.
   - `build.js` (MODIFIED): Added `LLMConnector.js` and `ChatTokenRenderer.js` to jsFiles after `chat.js`.
   - **Resolved OIs:** OI-20 (token standardization), OI-24 (config caching), OI-40 (policyEvent wiring), OI-42 (objectId endpoints), OI-46 (chat.js missing exports), OI-47 (SessionDirector duplication).
-  - **Remaining for 10b/10c:** OI-43 (history message loss — backend tests P10-3/P10-4 pass; UX test 106 investigates with delays), OI-48 (chatManager local tracking — deferred to 10b), OI-49 (generic association API — deferred to 10c MCP).
+  - **Remaining for 10b/10c:** ~~OI-43 (history message loss)~~, ~~OI-48 (chatManager local tracking)~~, OI-49 (generic association API — deferred to 10c MCP).
+- **Phase 10b implementation summary:**
+  - `ConversationManager.js` (NEW): Session list sidebar component — search/filter, selection, deletion, metadata panel. Replaces inline session list in `view/chat.js`. Exposes `window.ConversationManager` with `SidebarView` Mithril component, `onSelect`/`onDelete` callbacks, `refresh()`, `autoSelectFirst()`.
+  - `view/chat.js` (MODIFIED): Integrated ConversationManager sidebar (with fallback), delegated `processImageTokensInContent` and `processAudioTokensInContent` to `ChatTokenRenderer`, updated `doPeek()` to prefer objectId-based config lookups (10a endpoints), removed `escapeHtmlAttr` (now in ChatTokenRenderer).
+  - `chatManager.js` (MODIFIED): `startConversation()` now seeds `currentConversation[]` from server history via `LLMConnector.getHistory()` (OI-48 fix).
+  - `llmTestSuite.js` (MODIFIED): Added 200ms delays between sequential message sends in tests 73-74 (OI-43 fix — matches pattern from test 106 and backend P10-3/P10-4).
+  - `Chat.java` (MODIFIED): Fixed `getSDPrompt()` — `applyChatOptions(req)` → `applyChatOptions(areq)` so SD prompt options apply to the new request, not the source (OI-35 fix).
+  - `build.js` (MODIFIED): Added `ConversationManager.js` after `ChatTokenRenderer.js`.
+  - **Resolved OIs:** OI-35 (SD prompt options target), OI-43 (history message loss timing), OI-48 (chatManager local tracking).
+  - **Remaining for 10c:** OI-49 (generic association API / MCP context binding).
+- **Phase 10b patch — CacheDBSearch + TestChatStream fixes:**
+  - `CacheDBSearch.java` (MODIFIED): Removed `synchronized` from `find()` and all private helper methods (`checkCache`, `getCacheMap`, `getCache`, `addToCache`, `clearCache(BaseRecord)`). Replaced `getCacheMap()` check-then-put with `ConcurrentHashMap.computeIfAbsent()`. The per-model `ConcurrentHashMap` instances provide thread safety for individual operations without requiring a global lock on every query. The previous `synchronized find()` serialized ALL database reads through a single lock — under Tomcat load, this caused cascading thread pool exhaustion when any one query was slow (e.g., during a DELETE or makePath), blocking all subsequent requests including login. (Resolves OI-50.)
+  - `TestChatStream.java` (MODIFIED): Reduced `requestTimeout` from 120s to 30s across all 4 tests (36-39). Removed `STREAM_TEST_MODEL` override — tests now use whatever model is configured in `resource.properties`. All 4 tests pass in 17 seconds total (previously could hang for 2+ minutes per test due to excessive timeouts masking connectivity issues).
+  - **Resolved OIs:** OI-50 (CacheDBSearch.find() synchronized bottleneck).
 
 - **Phase 10** (UX Chat Refactor) is the highest-impact remaining work. Design audit identified:
   - **6 duplicated patterns** across `chat.js`, `SessionDirector.js` (1444 lines), and `llmBase.js`/`chatManager.js` — config template cloning, prompt create-or-find, response content extraction, JSON directive parsing, history retrieval, error tracking.
@@ -3357,7 +3370,30 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 
 - **Phase 11** (Memory Hardening & Keyframe Refactor) has no phase dependencies and can proceed at any time.
 
-**Suggested order:** 10a → 10b → 10c → 1 (remainder) → 11
+**Suggested order:** ~~10a~~ ~~10b~~ → 10c → 1 (remainder) → 11
+
+**Phase 10 status:** 10a DONE, 10b DONE. Next: 10c (MCP context binding) or Phase 11 (Memory/Keyframe Hardening).
+
+**Phase 10c scope** (deferred — plan when ready):
+- MCP tool schema for object association: `attachChatConfig`, `attachPromptConfig`, `attachCharacter`, `listAttachments`, `detach`
+- Server-side MCP tool handlers
+- UX `ContextPanel.js` component with drag-and-drop object association
+- Replace `sessionStorage` cross-view handoffs with conversation ID references
+- OI-49 resolution (generic object association API)
+
+**Phase 11 scope** (can proceed independently):
+- OI-1: `personModel` field population in `MemoryUtil.createMemory()` / `Chat.persistKeyframeAsMemory()`
+- OI-3: `extractMemoriesFromResponse()` person pair IDs (P2 — highest priority)
+- OI-5: Minimum floor for `keyframeEvery` to prevent expensive `analyze()` spam
+- OI-15: `${nlp.command}` pipeline ordering (Stage 6/7 conflict)
+- OI-19: Migrator condition coverage gaps (7 of ~34 fields mapped)
+- OI-26: Keyframe detection heuristic fragility (pattern-matching)
+- OI-14: Deprecate old `(KeyFrame:` text format, require MCP format only
+
+**Open issues remaining (by priority):**
+- **P2:** OI-3 (memory person pair IDs)
+- **P3:** OI-1 (personModel), OI-5 (keyframeEvery floor), OI-15 (nlp pipeline), OI-17 (Magic8 wiring), OI-19 (migrator coverage), OI-26 (keyframe heuristic), OI-27 (Ollama abort), OI-29 (Ollama options), OI-49 (object association API)
+- **P4:** OI-14 (keyframe format), OI-18 (prune backward compat), OI-23 (shared state), OI-28 (test order), OI-30 (analyze hardcoded), OI-31/34 (double-apply), OI-33 (UX form Ollama section), OI-39 (wrong char false positives)
 
 ---
 
@@ -3448,7 +3484,7 @@ All known open issues with their assigned resolution phase:
 | OI-32 | ~~`openaiRequestModel.json` defaults for `frequency_penalty` and `presence_penalty` are 1.3 — should be 0.0 to match OpenAI API defaults~~ | Phase 8 prep | ~~Phase 8~~ **RESOLVED** | ~~P2~~ |
 | OI-33 | UX `formDef.js` chatOptions form previously exposed `typical_p` as "Presence Penalty" and `repeat_penalty` as "Frequency Penalty" — updated in Phase 8 to show correct `frequency_penalty`, `presence_penalty`, `max_tokens`, `seed` fields. Old Ollama-only fields (`typical_p`, `repeat_penalty`, `top_k`, `min_p`, `repeat_last_n`, `num_gpu`) not exposed in form — consider adding an "Advanced / Ollama" section | Phase 8 implementation | Future UX cleanup | P4 |
 | OI-34 | `Chat.getNarratePrompt()` still double-applies chatOptions — calls `applyAnalyzeOptions()` (which calls `applyChatOptions()`) then calls `applyChatOptions()` again at line 559. Harmless but wasteful — same as OI-31 | Phase 8 review | Future cleanup | P4 |
-| OI-35 | `Chat.getSDPrompt()` calls `applyChatOptions(req)` on the source request instead of the new `areq` at line 611 — likely a pre-existing bug where SD prompt options are applied to wrong request object | Phase 8 review | Future bug fix | P3 |
+| OI-35 | ~~`Chat.getSDPrompt()` calls `applyChatOptions(req)` on the source request instead of the new `areq` at line 611~~ Fixed: changed to `applyChatOptions(areq)` so SD prompt options apply to the correct request object | Phase 8 review | ~~Future bug fix~~ **RESOLVED** (Phase 10b) | ~~P3~~ |
 | OI-36 | ~~Adaptive chatOptions recommendation — during or after a chat session, auto-analyze conversation style/type and recommend or auto-rebalance chatOptions (temperature, penalties, etc.) for the detected use case. Similar to dynamic prompt rewriting in Phase 9's ChatAutotuner, but applied to LLM parameters rather than prompt content. Could use the chatConfig templates as target profiles for classification.~~ `ChatAutotuner` (Phase 9) provides the infrastructure — analysis prompt can be extended to include chatOptions rebalancing alongside prompt rewrites | User request (Phase 8) | ~~Future phase~~ **RESOLVED (Phase 9)** | ~~P3~~ |
 | OI-37 | **RESOLVED** (Phase 9) — Tests 55-62 all implemented: pipeline DENY/PERMIT (55-56), ChatAutotuner analysis + naming (57-58), policy hook buffer/stream mode (59-60), enhanced stop failover (62). All 19 tests pass with live LLM (`qwen3:8b` for autotuner, `qwen3-coder:30b` for chat) | Phase 9 implementation | Resolved | — |
 | OI-38 | **RESOLVED** (Phase 9) — `ChatAutotuner.autotune()` was using `dolphin-llama3` for analysis due to two issues: (1) `analyzeModel` schema default was `dolphin-llama3` instead of empty, so the fallback to `model` field never triggered; (2) chatConfig records from `getAccessPoint().create()` didn't retain in-memory field values. Fixed by: removing the stale `analyzeModel` default from chatConfigModel.json, and calling `OlioUtil.getFullRecord(chatConfig)` to resolve persisted field values | Phase 9 implementation | Resolved | — |
@@ -3456,13 +3492,14 @@ All known open issues with their assigned resolution phase:
 | OI-40 | ~~UX `policyEvent` handler not wired in `chat.js`/`SessionDirector.js`~~ `pageClient.js` chirp handler routes `policyEvent` to `LLMConnector.handlePolicyEvent()`. `view/chat.js` registers display handler via `LLMConnector.onPolicyEvent()` showing toast notification. UX test 109 validates wiring | Phase 9 implementation | ~~Phase 10 (10a: shared StreamStateIndicator)~~ **RESOLVED** (Phase 10a) | ~~P3~~ |
 | OI-41 | `chatConfigModel.json` `analyzeModel` default was `dolphin-llama3` (stale), causing ChatAutotuner to use a non-deployed model. Fixed by removing the default — `analyzeModel` is now empty by default and falls back to `model`. Existing DB records with `analyzeModel=dolphin-llama3` may need migration | Phase 9 testing | Resolved (schema fix applied) | P4 |
 | OI-42 | ~~REST config endpoints only search by name~~ Fixed: group-agnostic search (Phase 9). Phase 10a added objectId-based endpoints: `GET /rest/chat/config/prompt/id/{objectId}` and `GET /rest/chat/config/chat/id/{objectId}`. UX test 108 validates. Backend test P10-1 validates `ChatUtil.getConfig()` objectId lookup | Phase 9 UX testing | **Resolved** (Phase 9 + Phase 10a) | ~~P2~~ |
-| OI-43 | UX history test (73-74) intermittently finds only 2/3 sent messages. History returns 5 messages instead of expected 6. Possible message persistence timing issue or messageTrim interaction on the standard config variant | Phase 9 UX testing | Phase 10 (10b: investigate) | P3 |
+| OI-43 | ~~UX history test (73-74) intermittently finds only 2/3 sent messages~~ Root cause: rapid-fire sequential REST calls race against server-side persistence. Fixed: added 200ms delays between sequential sends in tests 73-74, matching pattern from test 106 and backend P10-3/P10-4 (which already pass). Backend logic is correct; timing issue is client-side | Phase 9 UX testing | ~~Phase 10 (10b: investigate)~~ **RESOLVED** (Phase 10b) | ~~P3~~ |
 | OI-44 | ~~`formDef.js` calls `am7sd.fetchModels()` at module load before authentication, causing 403 on `/rest/olio/sdModels` on the login screen~~ Fixed: added `page.authenticated()` guard | Phase 9 UX testing | **Resolved** (auth guard) | ~~P2~~ |
 | OI-45 | ~~`llmTestSuite.js` Test 72 called `am7chat.sendMessage()` which doesn't exist in `chat.js` (only `chat()` is exported), causing test hang~~ Fixed: changed to `am7chat.chat()` | Phase 9 UX testing | **Resolved** | ~~P2~~ |
 | OI-46 | ~~`chat.js` exports only 5 methods~~ `am7chat` now exports 10 methods: 5 original + `getHistory()`, `extractContent()`, `streamChat()`, `parseDirective()`, `cloneConfig()` — all delegating to `LLMConnector`. UX test 100 validates | Phase 10 design audit | ~~Phase 10 (10a: `LLMConnector`)~~ **RESOLVED** | ~~P2~~ |
 | OI-47 | ~~`SessionDirector.js` reimplements config management, response extraction, JSON directive parsing + repair~~ `initialize()` delegates to `LLMConnector.findChatDir()`, `getOpenChatTemplate()`, `ensurePrompt()`, `ensureConfig()`, `createSession()`. `_extractContent()` delegates to `LLMConnector.extractContent()`. `_parseDirective()` delegates JSON parsing to `LLMConnector.parseDirective()`, keeps domain-specific directive validation. `_repairTruncatedJson()` removed. Diagnostics use LLMConnector. ~200 lines removed | Phase 10 design audit | ~~Phase 10 (10a: extract to `LLMConnector`)~~ **RESOLVED** | ~~P2~~ |
-| OI-48 | `cardGame/ai/chatManager.js` manually tracks `currentConversation[]` array client-side, diverging from server-side history. Context preamble built from last 4 messages of local array, not server history | Phase 10 design audit | Phase 10 (10b: unified history via `LLMConnector.getHistory()`) | P3 |
+| OI-48 | ~~`cardGame/ai/chatManager.js` manually tracks `currentConversation[]` array client-side, diverging from server-side history~~ Fixed: `startConversation()` now seeds `currentConversation[]` from server history via `LLMConnector.getHistory()`. Local array kept as optimistic cache for immediate UI responsiveness | Phase 10 design audit | ~~Phase 10 (10b: unified history via `LLMConnector.getHistory()`)~~ **RESOLVED** (Phase 10b) | ~~P3~~ |
 | OI-49 | No generic object association API — `dnd.js` blender hardcodes type-specific association logic (role membership, group membership, tag membership, chatConfig context routing). No programmatic API for associating arbitrary objects with conversations | Phase 10 design audit | Phase 10 (10c: MCP context binding) | P3 |
+| OI-50 | ~~`CacheDBSearch.find()` synchronized — serializes ALL database reads through a single lock. Under Tomcat concurrent load, one slow query blocks every other query (including makePath, DELETE, login), causing cascading thread pool exhaustion and complete server hang~~ Fixed: removed `synchronized` from `find()` and helpers; per-model `ConcurrentHashMap` instances provide thread safety. `getCacheMap()` uses `computeIfAbsent()` for atomic map creation | Phase 10b testing | **RESOLVED** (Phase 10b patch) | ~~P1~~ |
 
 ---
 

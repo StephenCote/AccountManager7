@@ -25,23 +25,20 @@ public class TestChatStream extends BaseTest {
 
 	private static final String ORG_PATH = "/Development/Olio LLM Stream Tests";
 
+	/// Timeout for tests that make LLM calls (seconds).
+	/// 30s is generous — most responses arrive in < 10s.
+	private static final int TEST_TIMEOUT = 30;
+
 	private BaseRecord getTestUser() {
 		OrganizationContext testOrgContext = getTestOrganization(ORG_PATH);
 		Factory mf = ioContext.getFactory();
 		return mf.getCreateUser(testOrgContext.getAdminUser(), "streamTestUser1", testOrgContext.getOrganizationId());
 	}
 
-	/// Use a smaller model for stream tests to avoid server contention
-	private static final String STREAM_TEST_MODEL = "qwen3:8b";
-
 	private BaseRecord getCfg(BaseRecord testUser) {
 		LLMServiceEnumType llmType = LLMServiceEnumType.valueOf(testProperties.getProperty("test.llm.type").toUpperCase());
 		String cfgName = llmType.toString() + " Stream Test.chat";
 		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, llmType, cfgName, testProperties);
-		if (cfg != null && llmType == LLMServiceEnumType.OLLAMA) {
-			cfg.setValue("model", STREAM_TEST_MODEL);
-			IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
-		}
 		return cfg;
 	}
 
@@ -61,6 +58,7 @@ public class TestChatStream extends BaseTest {
 
 		/// Ensure stream=false on the config
 		cfg.setValue("stream", false);
+		cfg.setValue("requestTimeout", TEST_TIMEOUT);
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 
 		String chatName = "Buffer Mode Test " + UUID.randomUUID().toString();
@@ -68,6 +66,7 @@ public class TestChatStream extends BaseTest {
 		assertNotNull("Chat request is null", creq);
 
 		Chat chat = new Chat(testUser, cfg, pcfg);
+		chat.setRequestTimeout(TEST_TIMEOUT);
 		OpenAIRequest req = chat.getChatPrompt();
 		assertNotNull("OpenAI request is null", req);
 		req.setStream(false);
@@ -119,12 +118,10 @@ public class TestChatStream extends BaseTest {
 		OpenAIResponse resp = chat.chat(req);
 
 		/// The response should be null because the timeout fires before completion
-		/// Note: If the LLM responds within 1 second (unlikely for a long story), the test may pass with a response.
-		/// The key assertion is that no exception escapes - the timeout is handled gracefully.
 		logger.info("Timeout test result: " + (resp == null ? "null (timeout triggered as expected)" : "response received (LLM was fast)"));
 
 		/// Restore default timeout so subsequent tests are not affected
-		cfg.setValue("requestTimeout", 120);
+		cfg.setValue("requestTimeout", TEST_TIMEOUT);
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 	}
 
@@ -143,7 +140,7 @@ public class TestChatStream extends BaseTest {
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, pcfg);
 
 		cfg.setValue("stream", true);
-		cfg.setValue("requestTimeout", 120);
+		cfg.setValue("requestTimeout", TEST_TIMEOUT);
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 
 		String chatName = "Cancel Test " + UUID.randomUUID().toString();
@@ -167,9 +164,10 @@ public class TestChatStream extends BaseTest {
 		mockWebSocket.stopStream(req);
 		logger.info("Stop issued for stream cancellation test");
 
-		/// Wait for completion
+		/// Wait for completion with a reasonable timeout
 		int waited = 0;
-		while (mockWebSocket.isRequesting(req) && waited < 15000) {
+		int maxWait = TEST_TIMEOUT * 1000;
+		while (mockWebSocket.isRequesting(req) && waited < maxWait) {
 			try {
 				Thread.sleep(200);
 				waited += 200;
@@ -179,7 +177,7 @@ public class TestChatStream extends BaseTest {
 		}
 
 		logger.info("Stream cancellation test completed after " + waited + "ms (requesting=" + mockWebSocket.isRequesting(req) + ")");
-		assertTrue("Stream should have stopped within timeout", !mockWebSocket.isRequesting(req) || waited < 15000);
+		assertTrue("Stream should have stopped within timeout", !mockWebSocket.isRequesting(req));
 	}
 
 	/// Test 39: stream=true -> existing streaming behavior still works
@@ -197,7 +195,7 @@ public class TestChatStream extends BaseTest {
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, pcfg);
 
 		cfg.setValue("stream", true);
-		cfg.setValue("requestTimeout", 120);
+		cfg.setValue("requestTimeout", TEST_TIMEOUT);
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 
 		String chatName = "Streaming Test " + UUID.randomUUID().toString();
@@ -210,9 +208,9 @@ public class TestChatStream extends BaseTest {
 		OpenAIRequest req = mockWebSocket.sendMessageToServer(new ChatRequest(creq));
 		assertNotNull("Chat request is null", req);
 
-		/// Wait for completion — allow up to 120s for LLM response (qwen3-coder thinking can be slow)
+		/// Wait for completion with a reasonable timeout
 		int waited = 0;
-		int maxWait = 120000;
+		int maxWait = TEST_TIMEOUT * 1000;
 		while (mockWebSocket.isRequesting(req) && waited < maxWait) {
 			try {
 				Thread.sleep(200);
@@ -224,6 +222,6 @@ public class TestChatStream extends BaseTest {
 
 		boolean completed = !mockWebSocket.isRequesting(req);
 		logger.info("Streaming mode test completed=" + completed + " after " + waited + "ms");
-		assertTrue("Streaming should complete within " + (maxWait / 1000) + "s timeout", completed);
+		assertTrue("Streaming should complete within " + TEST_TIMEOUT + "s timeout", completed);
 	}
 }

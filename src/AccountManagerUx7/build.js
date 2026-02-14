@@ -34,6 +34,7 @@ const jsFiles = [
     // Shared Chat Components (Phase 10)
     'client/components/chat/LLMConnector.js',
     'client/components/chat/ChatTokenRenderer.js',
+    'client/components/chat/ConversationManager.js',
 
     // Shared Test Framework (Phase 6)
     'client/test/testFramework.js',
