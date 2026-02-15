@@ -542,6 +542,19 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		chirpUser(user, new String[] {"chatTitle", request.get(FieldNames.FIELD_OBJECT_ID), title});
 	}
 
+	/// Phase 13g: Auto-generated chat icon notification via WebSocket
+	@Override
+	public void onChatIcon(BaseRecord user, OpenAIRequest request, String icon) {
+		chirpUser(user, new String[] {"chatIcon", request.get(FieldNames.FIELD_OBJECT_ID), icon});
+	}
+
+	/// Phase 13g: Autotune event notification via WebSocket
+	@Override
+	public void onAutotuneEvent(BaseRecord user, OpenAIRequest request, String type, String data) {
+		String oid = request != null ? request.get(FieldNames.FIELD_OBJECT_ID) : "";
+		chirpUser(user, new String[] {"autotuneEvent", type, "{\"requestId\":\"" + oid + "\",\"data\":\"" + (data != null ? data.replace("\"", "\\\"") : "") + "\"}"});
+	}
+
 	/// Phase 13f: Memory event notification via WebSocket (OI-71, OI-72)
 	@Override
 	public void onMemoryEvent(BaseRecord user, OpenAIRequest request, String type, String data) {

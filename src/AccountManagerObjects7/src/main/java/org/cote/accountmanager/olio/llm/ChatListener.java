@@ -307,12 +307,14 @@ public class ChatListener implements IChatListener {
 		if (policyResult != null && !policyResult.isPermitted()) {
 			logger.warn("Policy violation in stream response: " + policyResult.getViolationSummary());
 			handlers.forEach(h -> h.onPolicyViolation(user, request, response, policyResult));
+			/// Phase 13g: Auto-tune after policy violation (streaming mode)
+			chat.handleAutotuning(request, policyResult);
 		}
 
 		chat.saveSession(request);
 		logger.info("Chat session saved for request: " + oid);
 
-		/// Phase 13: Auto-generate title after first real user+assistant exchange
+		/// Phase 13g: Auto-generate title and icon after first real user+assistant exchange
 		boolean autoTitle = false;
 		BaseRecord titleChatCfg = chat.getChatConfig();
 		if (titleChatCfg != null) {
@@ -328,18 +330,28 @@ public class ChatListener implements IChatListener {
 		if (autoTitle && userMsgCount == 1) {
 			CompletableFuture.runAsync(() -> {
 				try {
-					String title = chat.generateChatTitle(request);
-					if (title != null) {
-						Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
-						cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-						BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-						if (chatReqRec != null) {
+					String[] titleAndIcon = chat.generateChatTitleAndIcon(request);
+					String title = titleAndIcon[0];
+					String icon = titleAndIcon[1];
+					Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
+					cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+					BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+					if (chatReqRec != null) {
+						if (title != null) {
 							chat.setChatTitle(chatReqRec, title);
 						}
+						if (icon != null) {
+							chat.setChatIcon(chatReqRec, icon);
+						}
+					}
+					if (title != null) {
 						handlers.forEach(h -> h.onChatTitle(user, request, title));
 					}
+					if (icon != null) {
+						handlers.forEach(h -> h.onChatIcon(user, request, icon));
+					}
 				} catch (Exception e) {
-					logger.warn("Async title generation failed: " + e.getMessage());
+					logger.warn("Async title/icon generation failed: " + e.getMessage());
 				}
 			});
 		}
@@ -383,6 +395,24 @@ public class ChatListener implements IChatListener {
 		handlers.forEach(h -> h.onChatError(user, request, response, msg));
 		clearCache(oid);
 
+	}
+
+	/// Phase 13g: Forward title events to handlers (buffer-mode path)
+	@Override
+	public void onChatTitle(BaseRecord user, OpenAIRequest request, String title) {
+		handlers.forEach(h -> h.onChatTitle(user, request, title));
+	}
+
+	/// Phase 13g: Forward icon events to handlers
+	@Override
+	public void onChatIcon(BaseRecord user, OpenAIRequest request, String icon) {
+		handlers.forEach(h -> h.onChatIcon(user, request, icon));
+	}
+
+	/// Phase 13g: Forward autotune events to handlers
+	@Override
+	public void onAutotuneEvent(BaseRecord user, OpenAIRequest request, String type, String data) {
+		handlers.forEach(h -> h.onAutotuneEvent(user, request, type, data));
 	}
 
 	/// Phase 13f: Forward memory events to handlers (OI-71, OI-72)

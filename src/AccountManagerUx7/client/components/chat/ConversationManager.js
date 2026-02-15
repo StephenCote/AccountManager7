@@ -342,6 +342,33 @@
         },
 
         /**
+         * Phase 13g: Update session icon from WebSocket iconEvent.
+         * @param {string} objectId - chatRequest objectId
+         * @param {string} icon - Material Symbols icon name
+         */
+        updateSessionIcon: function(objectId, icon) {
+            if (!sessions || !objectId || !icon) return;
+            for (let i = 0; i < sessions.length; i++) {
+                if (sessions[i].objectId === objectId) {
+                    if (!sessions[i].attributes) sessions[i].attributes = [];
+                    let found = false;
+                    for (let j = 0; j < sessions[i].attributes.length; j++) {
+                        if (sessions[i].attributes[j].name === "chatIcon") {
+                            sessions[i].attributes[j].values = [icon];
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        sessions[i].attributes.push({ name: "chatIcon", values: [icon] });
+                    }
+                    m.redraw();
+                    return;
+                }
+            }
+        },
+
+        /**
          * Auto-select first session if none selected.
          * Returns the selected session or null.
          */

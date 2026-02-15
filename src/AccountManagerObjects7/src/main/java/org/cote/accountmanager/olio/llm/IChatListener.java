@@ -12,6 +12,12 @@ public interface IChatListener {
 	public void stopStream(OpenAIRequest request);
 	public boolean isRequesting(OpenAIRequest request);
 	public void addChatHandler(IChatHandler handler);
+	/// Phase 13g: Title event notification for buffer-mode path
+	public default void onChatTitle(BaseRecord user, OpenAIRequest request, String title) {}
+	/// Phase 13g: Icon event notification
+	public default void onChatIcon(BaseRecord user, OpenAIRequest request, String icon) {}
+	/// Phase 13g: Autotune event notification (prompt suggestion or options rebalance)
+	public default void onAutotuneEvent(BaseRecord user, OpenAIRequest request, String type, String data) {}
 	/// Phase 13f: Memory event notification (OI-71, OI-72)
 	public default void onMemoryEvent(BaseRecord user, OpenAIRequest request, String type, String data) {}
 }

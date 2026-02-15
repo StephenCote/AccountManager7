@@ -233,6 +233,7 @@
 		{
 			"name": "autoTitle",
 			"type": "boolean",
+			"default": true,
 			"description": "When true, auto-generate a descriptive chat title via LLM after the first user+assistant exchange."
 		},
 		{
@@ -244,6 +245,17 @@
 			"name": "autoTuneChatOptions",
 			"type": "boolean",
 			"description": "When true, automatically adjust chatOptions (temperature, top_p, penalties) when policy violations indicate quality issues. Requires a policy reference."
+		},
+		{
+			"name": "complianceCheck",
+			"type": "boolean",
+			"description": "When true, run LLM-based response compliance evaluation checking: (1) not responding as user, (2) gendered voice, (3) profile comparison adherence, (4) age guidance adherence, (5) no racial/orientation bias."
+		},
+		{
+			"name": "complianceCheckEvery",
+			"type": "int",
+			"default": 3,
+			"description": "When complianceCheck is true, evaluate every Nth response. 1 = every response (expensive), 3 = every 3rd (recommended). 0 = disabled."
 		}
 
 	]

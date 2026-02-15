@@ -495,6 +495,29 @@
                 }
                 m.redraw();
             }
+            else if(c1 === "chatIcon"){
+                // Phase 13g: Auto-generated chat icon
+                if (window.ConversationManager && msg.chirps[1] && msg.chirps[2]) {
+                    ConversationManager.updateSessionIcon(msg.chirps[1], msg.chirps[2]);
+                }
+                m.redraw();
+            }
+            else if(c1 === "autotuneEvent"){
+                // Phase 13g: Autotune event (prompt suggestion or options rebalance)
+                let atType = msg.chirps[1] || "";
+                let atData = msg.chirps[2] || "";
+                if (atType === "promptSuggestion") {
+                    page.toast("info", "Autotune: Prompt revision suggested after policy violation", 5000);
+                    console.log("[Autotune] Prompt suggestion:", atData);
+                } else if (atType === "optionsRebalance") {
+                    page.toast("info", "Autotune: Chat options rebalanced — " + atData, 5000);
+                    console.log("[Autotune] Options rebalanced:", atData);
+                }
+                if (window.LLMConnector) {
+                    LLMConnector.lastAutotuneEvent = { type: atType, data: atData };
+                }
+                m.redraw();
+            }
             else if(c1.match(/^game\.action\./)){
                 // Game action messages (start, progress, complete, error, interrupt, cancel)
                 if(page.gameStream || window.gameStream){

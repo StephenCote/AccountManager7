@@ -75,7 +75,7 @@
 		}
 	],
 	"scene": [
-		"Scene: ${profile.ageCompat} ${profile.romanceCompat} ${profile.raceCompat} ${profile.leader} ${interaction.description}"
+		"Scene: ${profile.ageCompat} ${profile.romanceCompat} ${profile.raceCompat} ${profile.leader} ${profile.comparison} ${ageGuidance} ${interaction.description}"
 	],
 	"setting": [
 		"Setting: In this land, people generally ${event.alignment}. ${system.firstName} and ${user.firstName} are currently located in ${location.terrains}. ${population.people} ${population.animals}"

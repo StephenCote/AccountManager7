@@ -12,6 +12,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.Rules;
@@ -327,7 +328,47 @@ public class PromptUtil {
 			leadDesc += " " + contest + " may challenge who is leading.";
 		}
 		ctx.replace(TemplatePatternEnumType.PROFILE_LEADER, leadDesc);
-		
+
+		/// Phase 13g: ${profileComparison} — relative measurements from system character's POV
+		/// Includes stat diffs, racial/romance/age compatibility as statistical guidelines
+		String uname = ctx.userChar.get(FieldNames.FIELD_FIRST_NAME);
+		StringBuilder comp = new StringBuilder();
+		int strDiff = ctx.profComp.getPhysicalStrengthDiff();
+		int intDiff = ctx.profComp.getIntelligenceDiff();
+		int chrDiff = ctx.profComp.getCharismaDiff();
+		int wisDiff = ctx.profComp.getWisdomDiff();
+		comp.append("You are ").append(relativeLabel(strDiff, "stronger than", "weaker than", "about as strong as")).append(" ").append(uname).append(". ");
+		comp.append("You are ").append(relativeLabel(intDiff, "smarter than", "less intelligent than", "about as intelligent as")).append(" ").append(uname).append(". ");
+		comp.append("You are ").append(relativeLabel(chrDiff, "more attractive than", "less attractive than", "about as attractive as")).append(" ").append(uname).append(". ");
+		comp.append("You are ").append(relativeLabel(wisDiff, "wiser than", "less wise than", "about as wise as")).append(" ").append(uname).append(". ");
+		double wealth1 = ItemUtil.countMoney(ctx.sysProf.getRecord());
+		double wealth2 = ItemUtil.countMoney(ctx.usrProf.getRecord());
+		if (wealth1 > 0 || wealth2 > 0) {
+			double wDiff = wealth1 - wealth2;
+			comp.append("You are ").append(relativeLabel((int)Math.signum(wDiff) * (int)Math.ceil(Math.abs(wDiff) / Math.max(1, Math.max(wealth1, wealth2)) * 5), "wealthier than", "poorer than", "about as wealthy as")).append(" ").append(uname).append(". ");
+		}
+		/// Racial compatibility as statistical guideline
+		CompatibilityEnumType raceComp = ctx.profComp.getRacialCompatibility();
+		comp.append("Racial compatibility with ").append(uname).append(": ").append(raceComp.toString().toLowerCase().replace('_', ' ')).append(". ");
+		/// Romance compatibility as statistical guideline
+		CompatibilityEnumType romComp = ctx.profComp.getRomanticCompatibility();
+		comp.append("Romantic compatibility: ").append(romComp.toString().toLowerCase().replace('_', ' ')).append(". ");
+		/// Age boundary
+		if (ctx.profComp.doesAgeCrossBoundary()) {
+			comp.append("There is an age disparity between you and ").append(uname).append(".");
+		} else {
+			comp.append("You and ").append(uname).append(" are in a similar age range.");
+		}
+		ctx.replace(TemplatePatternEnumType.PROFILE_COMPARISON, comp.toString().trim());
+	}
+
+	/// Phase 13g: Helper — converts a stat diff to a relative descriptor
+	private static String relativeLabel(int diff, String higher, String lower, String equal) {
+		if (diff > 3) return "much " + higher;
+		if (diff > 0) return higher;
+		if (diff < -3) return "much " + lower;
+		if (diff < 0) return lower;
+		return equal;
 	}
 	
 	private static void buildRaceReplacements(PromptBuilderContext ctx) {
@@ -654,7 +695,69 @@ public class PromptUtil {
 		
 		ctx.replace(TemplatePatternEnumType.SYSTEM_TRADE, (sjobDesc.length() > 0 ? sjobDesc : "unemployed"));
 		ctx.replace(TemplatePatternEnumType.USER_TRADE, (ujobDesc.length() > 0 ? ujobDesc : "unemployed"));
-		
+
+		/// Phase 13g: ${ageGuidance} — explicit age-appropriate behavior guidance for system character
+		String sname = ctx.systemChar.get(FieldNames.FIELD_FIRST_NAME);
+		ctx.replace(TemplatePatternEnumType.AGE_GUIDANCE, buildAgeGuidance(sage, sname, sgen));
+	}
+
+	/// Phase 13g: Generate age-appropriate behavior guidance for the system character.
+	/// Ensures the LLM portrays the character at their actual age level.
+	private static String buildAgeGuidance(int age, String name, String gender) {
+		String pro = "male".equals(gender) ? "he" : "she";
+		String pos = "male".equals(gender) ? "his" : "her";
+		if (age <= 5) {
+			return "AGE GUIDANCE: " + name + " is " + age + " years old — a small child. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " speaks in simple, short sentences with limited vocabulary. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is curious, impulsive, and easily distracted. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " does NOT understand abstract concepts, sarcasm, or adult topics. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may mispronounce words, ask naive questions, and express emotions directly. "
+				+ "DO NOT give " + name + " adult-level reasoning, vocabulary, or emotional maturity.";
+		}
+		else if (age <= 9) {
+			return "AGE GUIDANCE: " + name + " is " + age + " years old — a child. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " uses everyday language appropriate for a grade-schooler. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is playful, imaginative, and still learning about the world. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " has limited life experience and knowledge. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may be competitive, emotional, or silly. "
+				+ "DO NOT give " + name + " adult reasoning, philosophical depth, or sophisticated vocabulary.";
+		}
+		else if (age <= 12) {
+			return "AGE GUIDANCE: " + name + " is " + age + " years old — a preteen. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is beginning to develop " + pos + " own opinions but still thinks concretely. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " uses age-appropriate slang and vocabulary. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may be awkward, self-conscious, or eager to appear older. "
+				+ "DO NOT give " + name + " mature adult reasoning, professional expertise, or world-weary perspectives.";
+		}
+		else if (age <= 15) {
+			return "AGE GUIDANCE: " + name + " is " + age + " years old — a young teenager. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is emotional, identity-seeking, and sometimes rebellious. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " has strong opinions but limited life experience to back them up. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may be moody, dramatic, or intensely focused on social standing. "
+				+ "Portray age-appropriate awkwardness, inexperience, and developing maturity.";
+		}
+		else if (age <= 17) {
+			return "AGE GUIDANCE: " + name + " is " + age + " years old — an older teenager. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is gaining independence and forming " + pos + " worldview. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may act confident but still lacks real adult experience. "
+				+ "Portray a mix of emerging maturity and youthful impulsiveness.";
+		}
+		else if (age <= 25) {
+			return "AGE GUIDANCE: " + name + " is " + age + " — a young adult still gaining life experience. "
+				+ "Portray youthful energy and confidence, possibly with some naivety about how the world works.";
+		}
+		else if (age >= 70) {
+			return "AGE GUIDANCE: " + name + " is " + age + " years old — elderly. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " has decades of life experience and speaks with the wisdom (or stubbornness) that comes from it. "
+				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may be physically slower, forgetful, or nostalgic. "
+				+ "Reflect " + pos + " age in speech patterns, priorities, and physical limitations.";
+		}
+		else if (age >= 55) {
+			return "AGE GUIDANCE: " + name + " is " + age + " — middle-aged to older. "
+				+ "Portray settled experience, possible weariness, and practical wisdom from decades of life.";
+		}
+		// Adults 26-54: no special guidance needed
+		return "";
 	}
 	
 	private static void buildRatingReplacements(PromptBuilderContext ctx) {

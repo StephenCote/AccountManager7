@@ -12,6 +12,10 @@ public interface IChatHandler {
 	public default void onPolicyViolation(BaseRecord user, OpenAIRequest request, OpenAIResponse response, PolicyEvaluationResult result) {}
 	/// Phase 13: Called when a chat title is auto-generated after first exchange
 	public default void onChatTitle(BaseRecord user, OpenAIRequest request, String title) {}
+	/// Phase 13g: Called when a chat icon is auto-generated after first exchange
+	public default void onChatIcon(BaseRecord user, OpenAIRequest request, String icon) {}
+	/// Phase 13g: Called when autotune suggests prompt changes or rebalances options
+	public default void onAutotuneEvent(BaseRecord user, OpenAIRequest request, String type, String data) {}
 	/// Phase 13f: Called when a memory-related event occurs (keyframe, extracted, recalled)
 	public default void onMemoryEvent(BaseRecord user, OpenAIRequest request, String type, String data) {}
 }

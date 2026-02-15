@@ -12,6 +12,7 @@
 	"extractMemories": true,
 	"memoryBudget": 500,
 	"memoryExtractionEvery": 0,
+	"autoTitle": true,
 	"chatOptions": {
 		"schema": "olio.llm.chatOptions",
 		"temperature": 0.8,

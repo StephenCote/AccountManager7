@@ -47,8 +47,12 @@ import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
+import org.cote.accountmanager.olio.llm.policy.ChatAutotuner;
+import org.cote.accountmanager.olio.llm.policy.ChatAutotuner.AutotuneResult;
+import org.cote.accountmanager.olio.llm.policy.ResponseComplianceEvaluator;
 import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator;
 import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyEvaluationResult;
+import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyViolation;
 
 public class Chat {
 
@@ -90,6 +94,7 @@ public class Chat {
 	private boolean enableKeyFrame = true;
 	private IChatListener listener = null;
 	private int requestTimeout = 120;
+	private int responseCount = 0;
 	
 	private String llmSystemPrompt = """
 			You play the role of an assistant named Siren.
@@ -367,10 +372,15 @@ public class Chat {
 				logger.warn("Last rep is null");
 			}
 			/// Phase 9: Post-response policy evaluation (buffer mode)
-			evaluateResponsePolicy(req, lastRep);
+			PolicyEvaluationResult policyResult = evaluateResponsePolicy(req, lastRep);
 			saveSession(req);
 
-			/// Phase 13: Auto-generate title after first real exchange (buffer mode)
+			/// Phase 13g: Auto-tune after policy violation (buffer mode)
+			if (policyResult != null && !policyResult.isPermitted()) {
+				handleAutotuning(req, policyResult);
+			}
+
+			/// Phase 13g: Auto-generate title and icon after first real exchange (buffer mode)
 			boolean autoTitle = chatConfig != null && Boolean.TRUE.equals(chatConfig.get("autoTitle"));
 			int offset = getMessageOffset(req);
 			List<OpenAIMessage> allMsgs = req.getMessages();
@@ -379,21 +389,31 @@ public class Chat {
 				if (userRole.equals(allMsgs.get(i).getRole())) userMsgCount++;
 			}
 			if (autoTitle && userMsgCount == 1) {
-				String title = generateChatTitle(req);
-				if (title != null) {
-					String oid = req.get(FieldNames.FIELD_OBJECT_ID);
-					if (oid != null) {
-						try {
-							Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
-							cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-							BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-							if (chatReqRec != null) {
+				String[] titleAndIcon = generateChatTitleAndIcon(req);
+				String title = titleAndIcon[0];
+				String icon = titleAndIcon[1];
+				String oid = req.get(FieldNames.FIELD_OBJECT_ID);
+				if (oid != null) {
+					try {
+						Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
+						cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+						BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+						if (chatReqRec != null) {
+							if (title != null) {
 								setChatTitle(chatReqRec, title);
 							}
-						} catch (Exception e) {
-							logger.warn("Buffer mode title persist failed: " + e.getMessage());
+							if (icon != null) {
+								setChatIcon(chatReqRec, icon);
+							}
 						}
+					} catch (Exception e) {
+						logger.warn("Buffer mode title/icon persist failed: " + e.getMessage());
 					}
+				}
+				/// Notify listener for real-time client update
+				if (listener != null) {
+					if (title != null) listener.onChatTitle(user, req, title);
+					if (icon != null) listener.onChatIcon(user, req, icon);
 				}
 			}
 		}
@@ -407,13 +427,10 @@ public class Chat {
 
 	/// Phase 9: Evaluate the LLM response against the chatConfig's policy.
 	/// Uses the existing PolicyEvaluator pipeline via ResponsePolicyEvaluator.
+	/// Also runs LLM-based compliance check when complianceCheck is enabled.
 	/// Returns the evaluation result (or null if no policy configured).
 	public PolicyEvaluationResult evaluateResponsePolicy(OpenAIRequest req, OpenAIResponse resp) {
 		if (chatConfig == null || user == null) {
-			return null;
-		}
-		BaseRecord policyRef = chatConfig.get("policy");
-		if (policyRef == null) {
 			return null;
 		}
 
@@ -435,12 +452,159 @@ public class Chat {
 			}
 		}
 
-		ResponsePolicyEvaluator rpe = new ResponsePolicyEvaluator();
-		PolicyEvaluationResult result = rpe.evaluate(user, responseContent, chatConfig, promptConfig);
-		if (result != null && !result.isPermitted()) {
-			logger.warn("Policy violation detected: " + result.getViolationSummary());
+		responseCount++;
+
+		/// Heuristic policy evaluation (fast)
+		PolicyEvaluationResult result = null;
+		BaseRecord policyRef = chatConfig.get("policy");
+		if (policyRef != null) {
+			ResponsePolicyEvaluator rpe = new ResponsePolicyEvaluator();
+			result = rpe.evaluate(user, responseContent, chatConfig, promptConfig);
+			if (result != null && !result.isPermitted()) {
+				logger.warn("Policy violation detected: " + result.getViolationSummary());
+			}
 		}
+
+		/// LLM-based compliance evaluation (async, runs every Nth response)
+		boolean complianceEnabled = Boolean.TRUE.equals(chatConfig.get("complianceCheck"));
+		int complianceEvery = chatConfig.get("complianceCheckEvery");
+		if (complianceEnabled && complianceEvery > 0 && responseCount % complianceEvery == 0 && responseContent != null) {
+			final String content = responseContent;
+			final PolicyEvaluationResult heuristicResult = result;
+			CompletableFuture.runAsync(() -> {
+				try {
+					ResponseComplianceEvaluator rce = new ResponseComplianceEvaluator();
+					List<PolicyViolation> complianceViolations = rce.evaluate(user, content, chatConfig);
+					if (!complianceViolations.isEmpty()) {
+						logger.warn("Compliance violations: " + complianceViolations.size());
+						/// Merge into heuristic result if available, or create new result
+						if (heuristicResult != null) {
+							complianceViolations.forEach(v -> heuristicResult.addViolation(v.getRuleType(), v.getDetails()));
+						}
+						/// Notify listener of compliance violations
+						if (listener != null) {
+							StringBuilder summary = new StringBuilder();
+							for (PolicyViolation v : complianceViolations) {
+								if (summary.length() > 0) summary.append("; ");
+								summary.append(v.getRuleType()).append(": ").append(v.getDetails());
+							}
+							listener.onAutotuneEvent(user, req, "complianceViolation", summary.toString());
+						}
+					}
+				} catch (Exception e) {
+					logger.warn("Compliance evaluation failed: " + e.getMessage());
+				}
+			});
+		}
+
 		return result;
+	}
+
+	/// Phase 13g: Handle auto-tuning after a policy violation.
+	/// Runs prompt analysis (autoTunePrompts) and/or options rebalancing (autoTuneChatOptions).
+	/// Prompt analysis saves a NEW promptConfig variant — never overwrites the original.
+	/// Options rebalancing updates the chatConfig chatOptions in place.
+	public void handleAutotuning(OpenAIRequest req, PolicyEvaluationResult policyResult) {
+		if (chatConfig == null || policyResult == null || policyResult.isPermitted()) {
+			return;
+		}
+		List<PolicyViolation> violations = policyResult.getViolations();
+		if (violations == null || violations.isEmpty()) {
+			return;
+		}
+
+		boolean tunePrompts = Boolean.TRUE.equals(chatConfig.get("autoTunePrompts"));
+		boolean tuneOptions = Boolean.TRUE.equals(chatConfig.get("autoTuneChatOptions"));
+
+		if (tunePrompts && promptConfig != null) {
+			CompletableFuture.runAsync(() -> {
+				try {
+					ChatAutotuner autotuner = new ChatAutotuner();
+					AutotuneResult atResult = autotuner.autotune(user, chatConfig, promptConfig, violations);
+					if (atResult.isSuccess()) {
+						logger.info("Autotune prompt analysis complete: " + atResult.getAutotunedPromptName());
+						if (listener != null) {
+							listener.onAutotuneEvent(user, req, "promptSuggestion", atResult.getAnalysisResponse());
+						}
+					}
+				} catch (Exception e) {
+					logger.warn("Autotune prompt analysis failed: " + e.getMessage());
+				}
+			});
+		}
+
+		if (tuneOptions) {
+			CompletableFuture.runAsync(() -> {
+				try {
+					rebalanceChatOptions(req, violations);
+				} catch (Exception e) {
+					logger.warn("Options rebalance failed: " + e.getMessage());
+				}
+			});
+		}
+	}
+
+	/// Phase 13g: Rebalance chatOptions based on violation types.
+	/// Applies adjustments directly to the chatConfig and persists.
+	private void rebalanceChatOptions(OpenAIRequest req, List<PolicyViolation> violations) {
+		BaseRecord opts = chatConfig.get("chatOptions");
+		if (opts == null) {
+			logger.warn("No chatOptions found on chatConfig for rebalancing");
+			return;
+		}
+
+		boolean changed = false;
+		StringBuilder adjustments = new StringBuilder();
+
+		for (PolicyViolation v : violations) {
+			String type = v.getRuleType();
+			if (type == null) continue;
+
+			if (type.contains("REFUSAL") || type.contains("refusal")) {
+				double temp = opts.get("temperature");
+				double topP = opts.get("top_p");
+				if (temp > 0.3) {
+					double newTemp = Math.round((temp - 0.1) * 100.0) / 100.0;
+					opts.setValue("temperature", newTemp);
+					adjustments.append("temperature: ").append(temp).append(" -> ").append(newTemp).append("; ");
+					changed = true;
+				}
+				if (topP > 0.7) {
+					double newTopP = Math.round((topP - 0.05) * 100.0) / 100.0;
+					opts.setValue("top_p", newTopP);
+					adjustments.append("top_p: ").append(topP).append(" -> ").append(newTopP).append("; ");
+					changed = true;
+				}
+			}
+			else if (type.contains("RECURSIVE") || type.contains("recursive") || type.contains("LOOP") || type.contains("loop")) {
+				double freqPen = opts.get("frequency_penalty");
+				double presPen = opts.get("presence_penalty");
+				if (freqPen < 1.5) {
+					double newFreq = Math.round((freqPen + 0.2) * 100.0) / 100.0;
+					opts.setValue("frequency_penalty", newFreq);
+					adjustments.append("frequency_penalty: ").append(freqPen).append(" -> ").append(newFreq).append("; ");
+					changed = true;
+				}
+				if (presPen < 1.0) {
+					double newPres = Math.round((presPen + 0.1) * 100.0) / 100.0;
+					opts.setValue("presence_penalty", newPres);
+					adjustments.append("presence_penalty: ").append(presPen).append(" -> ").append(newPres).append("; ");
+					changed = true;
+				}
+			}
+		}
+
+		if (changed) {
+			try {
+				IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig);
+				logger.info("Chat options rebalanced: " + adjustments.toString());
+				if (listener != null) {
+					listener.onAutotuneEvent(user, req, "optionsRebalance", adjustments.toString());
+				}
+			} catch (Exception e) {
+				logger.warn("Failed to persist rebalanced chatOptions: " + e.getMessage());
+			}
+		}
 	}
 
 	public void saveSession(OpenAIRequest req) {
@@ -454,16 +618,16 @@ public class Chat {
 		createNarrativeVector(user, req);
 	}
 
-	/// Phase 13: Auto-generate a concise chat title from the first user+assistant exchange.
-	/// Returns the generated title string, or null on failure.
-	public String generateChatTitle(OpenAIRequest req) {
+	/// Phase 13g: Auto-generate a concise chat title and Material Symbols icon from the first exchange.
+	/// Returns a String[] with [0]=title, [1]=icon. Either may be null on failure.
+	public String[] generateChatTitleAndIcon(OpenAIRequest req) {
 		int offset = getMessageOffset(req);
 		List<OpenAIMessage> msgs = req.getMessages();
-		if (msgs.size() < offset + 2) return null;
+		if (msgs.size() < offset + 2) return new String[] { null, null };
 
 		String userMsg = msgs.get(offset).getContent();
 		String assistMsg = msgs.get(offset + 1).getContent();
-		if (userMsg == null || assistMsg == null) return null;
+		if (userMsg == null || assistMsg == null) return new String[] { null, null };
 
 		if (userMsg.length() > 200) userMsg = userMsg.substring(0, 200) + "...";
 		if (assistMsg.length() > 200) assistMsg = assistMsg.substring(0, 200) + "...";
@@ -474,7 +638,15 @@ public class Chat {
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
-		sysMsg.setContent("Generate a short chat title (5-8 words max). Return ONLY the title, nothing else.");
+		sysMsg.setContent("Given a conversation, generate two things:" + System.lineSeparator()
+			+ "1. A short chat title (5-8 words max)" + System.lineSeparator()
+			+ "2. A single Google Material Symbols icon name that represents the conversation topic" + System.lineSeparator()
+			+ System.lineSeparator()
+			+ "Return your answer as exactly two lines:" + System.lineSeparator()
+			+ "Line 1: the title" + System.lineSeparator()
+			+ "Line 2: the icon name (lowercase, underscored, e.g. psychology, hiking, code, science, travel_explore, palette)" + System.lineSeparator()
+			+ System.lineSeparator()
+			+ "Return ONLY these two lines, nothing else.");
 		titleReq.getMessages().add(sysMsg);
 
 		OpenAIMessage userPrompt = new OpenAIMessage();
@@ -482,29 +654,43 @@ public class Chat {
 		userPrompt.setContent("User said: " + userMsg + "\nAssistant replied: " + assistMsg);
 		titleReq.getMessages().add(userPrompt);
 
+		String title = null;
+		String icon = null;
 		try {
 			OpenAIResponse resp = chat(titleReq);
 			if (resp != null) {
-				String title = null;
+				String content = null;
 				BaseRecord msg = resp.get("message");
-				if (msg != null) title = msg.get("content");
-				if (title == null) {
+				if (msg != null) content = msg.get("content");
+				if (content == null) {
 					List<BaseRecord> choices = resp.get("choices");
 					if (choices != null && !choices.isEmpty()) {
 						BaseRecord cmsg = choices.get(0).get("message");
-						if (cmsg != null) title = cmsg.get("content");
+						if (cmsg != null) content = cmsg.get("content");
 					}
 				}
-				if (title != null) {
-					title = title.trim().replaceAll("^\"|\"$", "");
-					if (title.length() > 60) title = title.substring(0, 60);
-					return title;
+				if (content != null) {
+					content = content.trim();
+					String[] lines = content.split("\\r?\\n");
+					if (lines.length >= 1) {
+						title = lines[0].trim().replaceAll("^\"|\"$", "");
+						if (title.length() > 60) title = title.substring(0, 60);
+					}
+					if (lines.length >= 2) {
+						icon = lines[1].trim().toLowerCase().replaceAll("[^a-z0-9_]", "");
+						if (icon.isEmpty()) icon = null;
+					}
 				}
 			}
 		} catch (Exception e) {
-			logger.warn("Title generation failed: " + e.getMessage());
+			logger.warn("Title/icon generation failed: " + e.getMessage());
 		}
-		return null;
+		return new String[] { title, icon };
+	}
+
+	/// Phase 13: Backward-compatible wrapper — returns only the title.
+	public String generateChatTitle(OpenAIRequest req) {
+		return generateChatTitleAndIcon(req)[0];
 	}
 
 	/// Phase 13: Set the chatTitle attribute on a chatRequest record and persist.
@@ -515,6 +701,17 @@ public class Chat {
 			logger.info("Chat title set: " + title);
 		} catch (Exception e) {
 			logger.warn("Failed to set chatTitle attribute: " + e.getMessage());
+		}
+	}
+
+	/// Phase 13g: Set the chatIcon attribute on a chatRequest record and persist.
+	public void setChatIcon(BaseRecord chatRequest, String icon) {
+		try {
+			AttributeUtil.addAttribute(chatRequest, "chatIcon", icon);
+			IOSystem.getActiveContext().getAccessPoint().update(user, chatRequest);
+			logger.info("Chat icon set: " + icon);
+		} catch (Exception e) {
+			logger.warn("Failed to set chatIcon attribute: " + e.getMessage());
 		}
 	}
 
