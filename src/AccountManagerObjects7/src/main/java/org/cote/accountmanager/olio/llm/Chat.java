@@ -439,6 +439,7 @@ public class Chat {
 	/// Returns the evaluation result (or null if no policy configured).
 	public PolicyEvaluationResult evaluateResponsePolicy(OpenAIRequest req, OpenAIResponse resp) {
 		if (chatConfig == null || user == null) {
+			logger.warn("evaluateResponsePolicy: chatConfig=" + (chatConfig != null) + " user=" + (user != null) + " — skipping");
 			return null;
 		}
 
@@ -465,6 +466,10 @@ public class Chat {
 		/// Heuristic policy evaluation (fast)
 		PolicyEvaluationResult result = null;
 		BaseRecord policyRef = chatConfig.get("policy");
+		logger.info("evaluateResponsePolicy: responseCount=" + responseCount
+			+ " policyRef=" + (policyRef != null ? "loaded" : "NULL")
+			+ " responseLen=" + (responseContent != null ? responseContent.length() : 0)
+			+ " listener=" + (listener != null));
 		if (policyRef != null) {
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "policy", "Evaluating response policy: timeout, recursive loop, wrong character, refusal");
@@ -1664,6 +1669,9 @@ public class Chat {
 		}
 		boolean useAssist = chatConfig.get("assist");
 		int qual = countBackToMcp(req, "/keyframe/");
+		logger.info("Keyframe check: assist=" + useAssist + " keyFrameEvery=" + keyFrameEvery
+			+ " msgSize=" + req.getMessages().size() + " pruneSkip=" + pruneSkip
+			+ " threshold=" + (pruneSkip + keyFrameEvery) + " sinceLastKF=" + qual);
 		if (useAssist && keyFrameEvery > 0 && req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);

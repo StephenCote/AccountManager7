@@ -8148,6 +8148,10 @@ button.button-tab-active:hover:is(.dark *) {
   height: 100vh;
 }
 
+.h-1 {
+  height: 0.25rem;
+}
+
 .max-h-20 {
   max-height: 5rem;
 }

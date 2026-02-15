@@ -362,11 +362,27 @@
             console.warn("Mismatched stream identifiers");
           }
           clearChat();
+          // If user interrupted with a message, re-send it now that the stream is stopped
+          if (chatCfg.interruptMsg) {
+            let msg = chatCfg.interruptMsg;
+            chatCfg.interruptMsg = null;
+            let inputEl = document.querySelector("[name='chatmessage']");
+            if (inputEl) inputEl.value = msg;
+            setTimeout(() => doChat(), 50);
+          }
           m.redraw();
         },
         onchaterror: (id, msg) => {
           page.toast("error", "Chat error: " + msg, 5000);
           clearChat();
+          // If interrupted, still re-send the user's message
+          if (chatCfg.interruptMsg) {
+            let imsg = chatCfg.interruptMsg;
+            chatCfg.interruptMsg = null;
+            let inputEl = document.querySelector("[name='chatmessage']");
+            if (inputEl) inputEl.value = imsg;
+            setTimeout(() => doChat(), 50);
+          }
           m.redraw();
         },
         onchatstart: (id, req) => {
@@ -528,22 +544,21 @@
 
     function doChat() {
       clearEditMode();
-      if (chatCfg.pending) {
-        console.warn("Chat is pending");
+      // Stream interrupt: user typed during streaming — stop stream, then re-send with prefix
+      if (chatCfg.streaming) {
+        let inputEl = document.querySelector("[name='chatmessage']");
+        let interruptMsg = inputEl ? inputEl.value.trim() : "";
+        if (!interruptMsg) {
+          doStop();
+          return;
+        }
+        chatCfg.interruptMsg = "[interrupting] " + interruptMsg;
+        if (inputEl) inputEl.value = "";
+        doStop();
         return;
       }
-      // Phase 13c item 10: Stream interrupt — cancel-and-send (OI-64)
-      if (chatCfg.streaming) {
-        if (window.LLMConnector && typeof LLMConnector.stopStream === "function") {
-          LLMConnector.stopStream();
-          chatCfg.streaming = false;
-          chatCfg.pending = false;
-          m.redraw();
-          // Re-invoke doChat after stream cancellation
-          setTimeout(doChat, 100);
-        } else {
-          console.warn("Chat is streaming — no stop method available");
-        }
+      if (chatCfg.pending) {
+        console.warn("Chat is pending");
         return;
       }
       let msg = page.components.audio.recording() ? audioText : document.querySelector("[name='chatmessage']").value; ///e?.target?.value;
@@ -1090,11 +1105,14 @@
       if (!inst) {
         placeText = "Select or create a chat to begin...";
       }
+      else if (chatCfg.streaming) {
+        placeText = "Type to interrupt...";
+      }
       else if (chatCfg.pending) {
         placeText = "Waiting ...";
       }
       let msgProps = { type: "text", name: "chatmessage", class: "text-field flex-1 min-w-0", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } };
-      let input = m("input[" + (!inst || chatCfg.pending ? "disabled='true'" : "") + "]", msgProps);
+      let input = m("input[" + (!inst || (chatCfg.pending && !chatCfg.streaming) ? "disabled='true'" : "") + "]", msgProps);
 
       // Tag selector row (shown when image button toggled)
       let tagSelectorRow = "";
@@ -1141,6 +1159,14 @@
       if (page.components.audio.recording()) {
         inputArea = m("div", { class: "flex-1 min-w-0 flex items-center" }, [
           page.components.audio.recordWithVisualizer(true, function (text) { audioText += text; console.log(text); }, function (contentType, b64) { handleAudioSave(contentType, b64); })
+        ]);
+      } else if (chatCfg.streaming) {
+        // During streaming: show input with a thin progress bar above so user can interrupt
+        inputArea = m("div", { class: "flex-1 min-w-0 flex flex-col" }, [
+          m("div", { class: "relative bg-gray-200 dark:bg-gray-700 rounded h-1 mb-1" },
+            m("div", { class: "absolute top-0 h-1 w-full rounded pending-blue" })
+          ),
+          input
         ]);
       } else if (chatCfg.pending) {
         inputArea = pendBar;

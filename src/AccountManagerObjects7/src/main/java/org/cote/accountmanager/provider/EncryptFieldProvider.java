@@ -79,6 +79,13 @@ public class EncryptFieldProvider implements IProvider {
 			VaultService.getInstance().unvaultField(vault, model, field);
 			List<String> unvaulted = model.get(FieldNames.FIELD_UNVAULTED_FIELDS);
 			if(!unvaulted.contains(field.getName())) {
+				/// Clear the encrypted value so callers get null instead of encrypted garbage.
+				/// Without this, the encrypted base64 value silently propagates as if it were plaintext
+				/// (e.g., used as an API auth token), causing hard-to-diagnose failures downstream.
+				logger.error("Decrypt failed for " + model.getSchema() + "." + field.getName()
+					+ " — vault ID mismatch or corrupted data. Clearing field to prevent silent misuse."
+					+ " Re-save the record to re-encrypt with the current vault.");
+				field.setValue(null);
 				throw new FieldException("Field " + field.getName() + " value was not unvaulted.");
 			}
 		}

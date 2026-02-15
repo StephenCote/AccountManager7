@@ -303,7 +303,16 @@ public class ChatListener implements IChatListener {
 		}
 
 		/// Phase 9: Post-response policy evaluation (streaming mode)
-		PolicyEvaluationResult policyResult = chat.evaluateResponsePolicy(request, response);
+		/// If a mid-stream violation already stopped the stream, use that result;
+		/// otherwise run the full post-stream evaluation (heuristic + compliance).
+		PolicyEvaluationResult midViolation = chat.getMidStreamViolation();
+		PolicyEvaluationResult policyResult;
+		if (midViolation != null) {
+			logger.info("Using mid-stream policy violation result: " + midViolation.getViolationSummary());
+			policyResult = midViolation;
+		} else {
+			policyResult = chat.evaluateResponsePolicy(request, response);
+		}
 		if (policyResult != null && !policyResult.isPermitted()) {
 			logger.warn("Policy violation in stream response: " + policyResult.getViolationSummary());
 			handlers.forEach(h -> h.onPolicyViolation(user, request, response, policyResult));
