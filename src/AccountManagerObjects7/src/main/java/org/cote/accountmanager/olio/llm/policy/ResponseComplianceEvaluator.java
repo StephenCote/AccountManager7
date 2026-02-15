@@ -17,30 +17,26 @@ import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
+import org.cote.accountmanager.olio.llm.PromptResourceUtil;
 import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyViolation;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.JSONUtil;
 
 /// LLM-based response compliance evaluator.
-/// Uses a secondary LLM call to evaluate whether the response follows 5 guidance areas:
-/// 1. Not responding as the user character
-/// 2. Using appropriate gendered voice for the system character
-/// 3. Behaving per the profile comparison (stat diffs, compatibility)
-/// 4. Behaving per age guidance (acting at the character's actual age level)
-/// 5. Not exhibiting racial or orientation bias (no preference of any race or orientation over another)
-///
-/// This is separate from the heuristic policy operations (Timeout, RecursiveLoop, etc.)
-/// because it requires an LLM call and richer context (ProfileComparison, age, gender, race).
+/// Uses a secondary LLM call to evaluate whether the response follows 6 guidance areas.
+/// Prompt text is loaded from olio/llm/prompts/compliance.json.
 public class ResponseComplianceEvaluator {
 
 	public static final Logger logger = LogManager.getLogger(ResponseComplianceEvaluator.class);
 
+	private static final String RESOURCE = "compliance";
+	private static final String[] CHECK_NAMES = {
+		"CHARACTER_IDENTITY", "GENDERED_VOICE", "PROFILE_ADHERENCE",
+		"AGE_ADHERENCE", "EQUAL_TREATMENT", "PERSONALITY_CONSISTENCY"
+	};
+
 	/// Evaluate the LLM response for compliance with character and content guidelines.
-	/// @param user The context user
-	/// @param responseContent The LLM response text to evaluate
-	/// @param chatConfig The chatConfig with character references and LLM connection details
-	/// @return List of compliance violations (empty if fully compliant)
 	public List<PolicyViolation> evaluate(BaseRecord user, String responseContent, BaseRecord chatConfig) {
 		List<PolicyViolation> violations = new ArrayList<>();
 
@@ -60,7 +56,6 @@ public class ResponseComplianceEvaluator {
 			return violations;
 		}
 
-		/// Populate character fields
 		IOSystem.getActiveContext().getReader().populate(sysChar);
 		IOSystem.getActiveContext().getReader().populate(usrChar);
 
@@ -76,8 +71,10 @@ public class ResponseComplianceEvaluator {
 	}
 
 	/// Build the compliance evaluation prompt with full character and profile context.
+	/// Instructional text is loaded from compliance.json; dynamic data (stats, response) is assembled here.
 	private String buildCompliancePrompt(String responseContent, BaseRecord chatConfig, BaseRecord sysChar, BaseRecord usrChar) {
 		StringBuilder sb = new StringBuilder();
+		Map<String, Object> res = PromptResourceUtil.load(RESOURCE);
 
 		String sysName = sysChar.get(FieldNames.FIELD_FIRST_NAME);
 		String usrName = usrChar.get(FieldNames.FIELD_FIRST_NAME);
@@ -86,19 +83,54 @@ public class ResponseComplianceEvaluator {
 		int sysAge = sysChar.get(FieldNames.FIELD_AGE);
 		int usrAge = usrChar.get(FieldNames.FIELD_AGE);
 
-		sb.append("You are a response compliance evaluator. Analyze the following LLM chat response for compliance with character and content guidelines.").append(System.lineSeparator());
-		sb.append(System.lineSeparator());
+		/// Header
+		sb.append(replaceCharTokens(getStr(res, "promptHeader"), sysName, usrName, sysGender, usrGender, sysAge, usrAge));
+		sb.append(System.lineSeparator()).append(System.lineSeparator());
 
 		/// Character context
-		sb.append("CHARACTER CONTEXT:").append(System.lineSeparator());
-		sb.append("- System character (who the LLM should be roleplaying as): ").append(sysName);
-		sb.append(" (").append(sysGender).append(", age ").append(sysAge).append(")").append(System.lineSeparator());
-		sb.append("- User character (who the human is playing): ").append(usrName);
-		sb.append(" (").append(usrGender).append(", age ").append(usrAge).append(")").append(System.lineSeparator());
+		appendLines(sb, res, "characterContext", sysName, usrName, sysGender, usrGender, sysAge, usrAge);
 		sb.append(System.lineSeparator());
 
-		/// Profile comparison context — statistical guidelines from ProfileComparison
-		sb.append("PROFILE COMPARISON (statistical guidelines for system character behavior):").append(System.lineSeparator());
+		/// Profile comparison context — dynamic data built in Java
+		sb.append(getStr(res, "profileHeader")).append(System.lineSeparator());
+		appendProfileStats(sb, sysChar, usrChar);
+		sb.append(System.lineSeparator());
+
+		/// Age guidance context
+		sb.append(getStr(res, "ageGuidanceHeader")).append(System.lineSeparator());
+		sb.append("- ").append(sysName).append(" is ").append(sysAge).append(" years old.");
+		String ageSummary = getAgeSummary(res, sysAge);
+		if (ageSummary != null) {
+			sb.append(" ").append(ageSummary);
+		}
+		sb.append(System.lineSeparator()).append(System.lineSeparator());
+
+		/// The response to evaluate
+		sb.append(getStr(res, "responseHeader")).append(System.lineSeparator());
+		String truncated = responseContent.length() > 2000 ? responseContent.substring(0, 2000) + "..." : responseContent;
+		sb.append(truncated).append(System.lineSeparator()).append(System.lineSeparator());
+
+		/// Evaluation criteria from resource
+		sb.append(getStr(res, "evaluateHeader")).append(System.lineSeparator()).append(System.lineSeparator());
+		int checkNum = 1;
+		for (String check : CHECK_NAMES) {
+			String desc = PromptResourceUtil.getMapValue(RESOURCE, "checks", check);
+			if (desc != null) {
+				desc = replaceCharTokens(desc, sysName, usrName, sysGender, usrGender, sysAge, usrAge);
+				sb.append(checkNum).append(". ").append(check).append(": ").append(desc);
+				sb.append(System.lineSeparator()).append(System.lineSeparator());
+			}
+			checkNum++;
+		}
+
+		/// Response format from resource
+		appendLines(sb, res, "responseFormat", sysName, usrName, sysGender, usrGender, sysAge, usrAge);
+
+		return sb.toString();
+	}
+
+	/// Append profile comparison stats (dynamic data — stays in Java).
+	private void appendProfileStats(StringBuilder sb, BaseRecord sysChar, BaseRecord usrChar) {
 		try {
 			PersonalityProfile sysProf = ProfileUtil.getProfile(null, sysChar);
 			PersonalityProfile usrProf = ProfileUtil.getProfile(null, usrChar);
@@ -114,14 +146,8 @@ public class ResponseComplianceEvaluator {
 				double sysWealth = ItemUtil.countMoney(sysProf.getRecord());
 				double usrWealth = ItemUtil.countMoney(usrProf.getRecord());
 				sb.append("- Wealth: system=").append(sysWealth).append(", user=").append(usrWealth).append(System.lineSeparator());
-
-				/// Race lists
-				List<String> sysRace = sysProf.getRace();
-				List<String> usrRace = usrProf.getRace();
-				sb.append("- System character race codes: ").append(sysRace).append(System.lineSeparator());
-				sb.append("- User character race codes: ").append(usrRace).append(System.lineSeparator());
-
-				/// Dark triad personality scores for system character (0.0 = none, 1.0 = extreme)
+				sb.append("- System character race codes: ").append(sysProf.getRace()).append(System.lineSeparator());
+				sb.append("- User character race codes: ").append(usrProf.getRace()).append(System.lineSeparator());
 				sb.append("- System character dark triad (machiavellianism): ").append(sysProf.getMachiavellian()).append(System.lineSeparator());
 				sb.append("- System character dark triad (narcissism): ").append(sysProf.getNarcissist()).append(System.lineSeparator());
 				sb.append("- System character dark triad (psychopathy): ").append(sysProf.getPsychopath()).append(System.lineSeparator());
@@ -129,77 +155,31 @@ public class ResponseComplianceEvaluator {
 		} catch (Exception e) {
 			sb.append("- (Profile comparison unavailable: ").append(e.getMessage()).append(")").append(System.lineSeparator());
 		}
-		sb.append(System.lineSeparator());
+	}
 
-		/// Age guidance context
-		sb.append("AGE GUIDANCE:").append(System.lineSeparator());
-		sb.append("- ").append(sysName).append(" is ").append(sysAge).append(" years old.");
-		if (sysAge <= 5) sb.append(" Small child — simple speech, limited vocabulary, no abstract reasoning.");
-		else if (sysAge <= 9) sb.append(" Child — everyday language, playful, limited life experience.");
-		else if (sysAge <= 12) sb.append(" Preteen — developing opinions, age-appropriate slang, concrete thinking.");
-		else if (sysAge <= 15) sb.append(" Young teen — emotional, identity-seeking, limited life experience.");
-		else if (sysAge <= 17) sb.append(" Older teen — gaining independence, emerging maturity mixed with impulsiveness.");
-		else if (sysAge <= 25) sb.append(" Young adult — energetic, confident, possibly naive.");
-		else if (sysAge >= 70) sb.append(" Elderly — decades of experience, possibly slower, nostalgic.");
-		else if (sysAge >= 55) sb.append(" Middle-aged to older — settled, practical wisdom.");
-		sb.append(System.lineSeparator());
-		sb.append(System.lineSeparator());
-
-		/// The response to evaluate
-		sb.append("RESPONSE TO EVALUATE:").append(System.lineSeparator());
-		/// Limit response length to avoid token explosion
-		String truncated = responseContent.length() > 2000 ? responseContent.substring(0, 2000) + "..." : responseContent;
-		sb.append(truncated).append(System.lineSeparator());
-		sb.append(System.lineSeparator());
-
-		/// Evaluation criteria
-		sb.append("EVALUATE the response for compliance in these 6 areas:").append(System.lineSeparator());
-		sb.append(System.lineSeparator());
-		sb.append("1. CHARACTER_IDENTITY: Is the response written AS ").append(sysName).append(" (the system character)?");
-		sb.append(" It must NOT be written as ").append(usrName).append(" (the user character).").append(System.lineSeparator());
-		sb.append(System.lineSeparator());
-		sb.append("2. GENDERED_VOICE: Does the response use the appropriate gendered voice for ").append(sysName);
-		sb.append(" who is ").append(sysGender).append("? The speech patterns, self-references, and mannerisms should match this gender.").append(System.lineSeparator());
-		sb.append(System.lineSeparator());
-		sb.append("3. PROFILE_ADHERENCE: Does the response reflect the statistical profile comparison above?");
-		sb.append(" A weaker character shouldn't casually overpower a stronger one. A less intelligent character shouldn't outthink a smarter one.");
-		sb.append(" Racial and romantic compatibility should influence but not dictate interactions — these are statistical tendencies, not absolute rules.").append(System.lineSeparator());
-		sb.append(System.lineSeparator());
-		sb.append("4. AGE_ADHERENCE: Does the response portray ").append(sysName).append(" at the correct age level (").append(sysAge).append(")?");
-		sb.append(" A child should act like a child. A teenager should act like a teenager.");
-		sb.append(" The character should NOT exhibit vocabulary, reasoning, or maturity beyond their age.").append(System.lineSeparator());
-		sb.append(System.lineSeparator());
-		sb.append("5. EQUAL_TREATMENT: Does the response treat all races and orientations equally?");
-		sb.append(" There should be no preferential treatment of any race over another (including white/caucasian),");
-		sb.append(" and no preference for any sexual orientation over another (including heterosexual).");
-		sb.append(" All characters should be portrayed with equal dignity regardless of their race or orientation codes.").append(System.lineSeparator());
-		sb.append(System.lineSeparator());
-		sb.append("6. PERSONALITY_CONSISTENCY: Does the response stay consistent with the character's dark triad personality scores?");
-		sb.append(" A character with LOW machiavellianism/narcissism/psychopathy scores should NOT exhibit manipulative, grandiose, or callous behavior.");
-		sb.append(" Conversely, a character with HIGH dark triad scores SHOULD exhibit those tendencies proportionally.");
-		sb.append(" The character should not suddenly become psychotic, erratic, or unhinged unless their personality scores support it.");
-		sb.append(" Flag if the character is behaving in a way that contradicts their established personality profile.").append(System.lineSeparator());
-		sb.append(System.lineSeparator());
-
-		/// Response format
-		sb.append("Respond with ONLY a JSON object:").append(System.lineSeparator());
-		sb.append("{").append(System.lineSeparator());
-		sb.append("  \"CHARACTER_IDENTITY\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"},").append(System.lineSeparator());
-		sb.append("  \"GENDERED_VOICE\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"},").append(System.lineSeparator());
-		sb.append("  \"PROFILE_ADHERENCE\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"},").append(System.lineSeparator());
-		sb.append("  \"AGE_ADHERENCE\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"},").append(System.lineSeparator());
-		sb.append("  \"EQUAL_TREATMENT\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"},").append(System.lineSeparator());
-		sb.append("  \"PERSONALITY_CONSISTENCY\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"}").append(System.lineSeparator());
-		sb.append("}").append(System.lineSeparator());
-
-		return sb.toString();
+	/// Look up the age summary for the compliance evaluator's abbreviated age guidance.
+	@SuppressWarnings("unchecked")
+	private String getAgeSummary(Map<String, Object> res, int age) {
+		Object summaryObj = res != null ? res.get("ageGuidanceSummary") : null;
+		if (!(summaryObj instanceof Map)) return null;
+		Map<String, String> summaries = (Map<String, String>) summaryObj;
+		String bracket;
+		if (age <= 5) bracket = "child_0_5";
+		else if (age <= 9) bracket = "child_6_9";
+		else if (age <= 12) bracket = "preteen_10_12";
+		else if (age <= 15) bracket = "teen_13_15";
+		else if (age <= 17) bracket = "teen_16_17";
+		else if (age <= 25) bracket = "youngAdult_18_25";
+		else if (age >= 70) bracket = "elderly_70_plus";
+		else if (age >= 55) bracket = "middleAged_55_69";
+		else return null;
+		return summaries.get(bracket);
 	}
 
 	/// Parse the LLM compliance response JSON into violations.
 	private List<PolicyViolation> parseComplianceResponse(String response) {
 		List<PolicyViolation> violations = new ArrayList<>();
 
-		/// Extract JSON from response (handle markdown code blocks)
 		String json = response.trim();
 		if (json.startsWith("```")) {
 			int start = json.indexOf('{');
@@ -216,8 +196,7 @@ public class ResponseComplianceEvaluator {
 				return violations;
 			}
 
-			String[] checkNames = {"CHARACTER_IDENTITY", "GENDERED_VOICE", "PROFILE_ADHERENCE", "AGE_ADHERENCE", "EQUAL_TREATMENT", "PERSONALITY_CONSISTENCY"};
-			for (String check : checkNames) {
+			for (String check : CHECK_NAMES) {
 				Object entry = result.get(check);
 				if (entry instanceof Map) {
 					Map<?, ?> checkResult = (Map<?, ?>) entry;
@@ -239,7 +218,7 @@ public class ResponseComplianceEvaluator {
 		return violations;
 	}
 
-	/// Make an LLM call for compliance evaluation using the analyzeModel (or main model as fallback).
+	/// Make an LLM call for compliance evaluation.
 	private String callComplianceLLM(BaseRecord user, BaseRecord chatConfig, String compliancePrompt) {
 		try {
 			BaseRecord resolvedConfig = OlioUtil.getFullRecord(chatConfig);
@@ -271,7 +250,8 @@ public class ResponseComplianceEvaluator {
 
 			OpenAIMessage sysMsg = new OpenAIMessage();
 			sysMsg.setRole("system");
-			sysMsg.setContent("You are a response compliance evaluator for a character chat system. Evaluate responses strictly against the provided criteria. Respond only in JSON format.");
+			String sysContent = PromptResourceUtil.getString(RESOURCE, "system");
+			sysMsg.setContent(sysContent != null ? sysContent : "Evaluate the response for compliance. Respond only in JSON format.");
 			areq.addMessage(sysMsg);
 
 			OpenAIMessage userMsg = new OpenAIMessage();
@@ -302,6 +282,40 @@ public class ResponseComplianceEvaluator {
 		} catch (Exception e) {
 			logger.error("ResponseComplianceEvaluator: LLM call failed: " + e.getMessage());
 			return null;
+		}
+	}
+
+	/// Replace character-specific tokens in a template string.
+	private String replaceCharTokens(String template, String sysName, String usrName,
+			String sysGender, String usrGender, int sysAge, int usrAge) {
+		if (template == null) return "";
+		template = PromptResourceUtil.replaceToken(template, "sysName", sysName);
+		template = PromptResourceUtil.replaceToken(template, "usrName", usrName);
+		template = PromptResourceUtil.replaceToken(template, "sysGender", sysGender);
+		template = PromptResourceUtil.replaceToken(template, "usrGender", usrGender);
+		template = PromptResourceUtil.replaceToken(template, "sysAge", String.valueOf(sysAge));
+		template = PromptResourceUtil.replaceToken(template, "usrAge", String.valueOf(usrAge));
+		return template;
+	}
+
+	/// Get a string value from a resource map, or empty string.
+	private String getStr(Map<String, Object> res, String key) {
+		if (res == null) return "";
+		Object val = res.get(key);
+		return val instanceof String ? (String) val : "";
+	}
+
+	/// Append a lines array from a resource map, applying character token replacement.
+	@SuppressWarnings("unchecked")
+	private void appendLines(StringBuilder sb, Map<String, Object> res, String key,
+			String sysName, String usrName, String sysGender, String usrGender, int sysAge, int usrAge) {
+		if (res == null) return;
+		Object val = res.get(key);
+		if (val instanceof List) {
+			for (String line : (List<String>) val) {
+				sb.append(replaceCharTokens(line, sysName, usrName, sysGender, usrGender, sysAge, usrAge));
+				sb.append(System.lineSeparator());
+			}
 		}
 	}
 }

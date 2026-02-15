@@ -1,0 +1,24 @@
+{
+	"system": "You are a prompt engineering expert. Analyze prompt failures and suggest corrections. Respond only in JSON format.",
+	"header": "You are a prompt engineering expert. A chat prompt produced a policy violation.",
+	"violationPrefix": "VIOLATION TYPE: ",
+	"violationDetailPrefix": "VIOLATION DETAILS: ",
+	"promptPreviewHeader": "CURRENT SYSTEM PROMPT (first 3 lines of system[]):",
+	"configHeader": "CURRENT CHAT CONFIGURATION:",
+	"failureRequest": [
+		"FAILURE ANALYSIS REQUEST:",
+		"1. Why did the LLM produce this violation?",
+		"2. What specific changes to the system prompt would prevent it?",
+		"3. Provide the rewritten system prompt sections as JSON."
+	],
+	"responseFormat": [
+		"Respond with JSON:",
+		"{",
+		"  \"analysis\": \"Brief explanation of the failure cause\",",
+		"  \"changes\": [",
+		"    {\"field\": \"system\", \"action\": \"append\", \"content\": \"New instruction text\"}",
+		"  ],",
+		"  \"confidence\": 0.0",
+		"}"
+	]
+}

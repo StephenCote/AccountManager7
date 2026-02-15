@@ -15,6 +15,7 @@ import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
+import org.cote.accountmanager.olio.llm.PromptResourceUtil;
 import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyViolation;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -87,23 +88,31 @@ public class ChatAutotuner {
 		}
 	}
 
+	private static final String RESOURCE = "autotune";
+
 	/// Build the analysis prompt for the autotuning LLM call.
 	private String buildAnalysisPrompt(BaseRecord promptConfig, BaseRecord chatConfig, List<PolicyViolation> violations) {
 		StringBuilder sb = new StringBuilder();
-		sb.append("You are a prompt engineering expert. A chat prompt produced a policy violation.").append(System.lineSeparator());
-		sb.append(System.lineSeparator());
 
-		/// Violation details
+		/// Header from resource
+		String header = PromptResourceUtil.getString(RESOURCE, "header");
+		sb.append(header != null ? header : "You are a prompt engineering expert. A chat prompt produced a policy violation.");
+		sb.append(System.lineSeparator()).append(System.lineSeparator());
+
+		/// Violation details (dynamic, using prefixes from resource)
+		String violPrefix = PromptResourceUtil.getString(RESOURCE, "violationPrefix");
+		String violDetailPrefix = PromptResourceUtil.getString(RESOURCE, "violationDetailPrefix");
 		for (PolicyViolation v : violations) {
-			sb.append("VIOLATION TYPE: ").append(v.getRuleType()).append(System.lineSeparator());
-			sb.append("VIOLATION DETAILS: ").append(v.getDetails()).append(System.lineSeparator());
+			sb.append(violPrefix != null ? violPrefix : "VIOLATION TYPE: ").append(v.getRuleType()).append(System.lineSeparator());
+			sb.append(violDetailPrefix != null ? violDetailPrefix : "VIOLATION DETAILS: ").append(v.getDetails()).append(System.lineSeparator());
 		}
 		sb.append(System.lineSeparator());
 
 		/// System prompt preview
 		List<String> system = promptConfig.get("system");
 		if (system != null && !system.isEmpty()) {
-			sb.append("CURRENT SYSTEM PROMPT (first 3 lines of system[]):").append(System.lineSeparator());
+			String previewHeader = PromptResourceUtil.getString(RESOURCE, "promptPreviewHeader");
+			sb.append(previewHeader != null ? previewHeader : "CURRENT SYSTEM PROMPT (first 3 lines of system[]):").append(System.lineSeparator());
 			int maxLines = Math.min(3, system.size());
 			for (int i = 0; i < maxLines; i++) {
 				sb.append(system.get(i)).append(System.lineSeparator());
@@ -111,31 +120,27 @@ public class ChatAutotuner {
 			sb.append(System.lineSeparator());
 		}
 
-		/// Chat config summary
-		sb.append("CURRENT CHAT CONFIGURATION:").append(System.lineSeparator());
+		/// Chat config summary (dynamic values, header from resource)
+		String configHeader = PromptResourceUtil.getString(RESOURCE, "configHeader");
+		sb.append(configHeader != null ? configHeader : "CURRENT CHAT CONFIGURATION:").append(System.lineSeparator());
 		sb.append("- Rating: ").append((Object) chatConfig.get("rating")).append(System.lineSeparator());
 		sb.append("- Model: ").append((String) chatConfig.get("model")).append(System.lineSeparator());
 		sb.append("- Service: ").append((Object) chatConfig.get("serviceType")).append(System.lineSeparator());
-
 		List<BaseRecord> episodes = chatConfig.get("episodes");
 		sb.append("- Has episodes: ").append(episodes != null && !episodes.isEmpty()).append(System.lineSeparator());
 		sb.append("- Has NLP: ").append((boolean) chatConfig.get("useNLP")).append(System.lineSeparator());
 		sb.append(System.lineSeparator());
 
-		/// Request
-		sb.append("FAILURE ANALYSIS REQUEST:").append(System.lineSeparator());
-		sb.append("1. Why did the LLM produce this violation?").append(System.lineSeparator());
-		sb.append("2. What specific changes to the system prompt would prevent it?").append(System.lineSeparator());
-		sb.append("3. Provide the rewritten system prompt sections as JSON.").append(System.lineSeparator());
+		/// Failure request + response format from resource
+		String failureReq = PromptResourceUtil.getLines(RESOURCE, "failureRequest");
+		if (failureReq != null) {
+			sb.append(failureReq).append(System.lineSeparator());
+		}
 		sb.append(System.lineSeparator());
-		sb.append("Respond with JSON:").append(System.lineSeparator());
-		sb.append("{").append(System.lineSeparator());
-		sb.append("  \"analysis\": \"Brief explanation of the failure cause\",").append(System.lineSeparator());
-		sb.append("  \"changes\": [").append(System.lineSeparator());
-		sb.append("    {\"field\": \"system\", \"action\": \"append\", \"content\": \"New instruction text\"}").append(System.lineSeparator());
-		sb.append("  ],").append(System.lineSeparator());
-		sb.append("  \"confidence\": 0.0").append(System.lineSeparator());
-		sb.append("}").append(System.lineSeparator());
+		String respFormat = PromptResourceUtil.getLines(RESOURCE, "responseFormat");
+		if (respFormat != null) {
+			sb.append(respFormat).append(System.lineSeparator());
+		}
 
 		return sb.toString();
 	}
@@ -163,7 +168,8 @@ public class ChatAutotuner {
 
 			OpenAIMessage sysMsg = new OpenAIMessage();
 			sysMsg.setRole("system");
-			sysMsg.setContent("You are a prompt engineering expert. Analyze prompt failures and suggest corrections. Respond only in JSON format.");
+			String sysContent = PromptResourceUtil.getString(RESOURCE, "system");
+			sysMsg.setContent(sysContent != null ? sysContent : "You are a prompt engineering expert. Analyze prompt failures and suggest corrections. Respond only in JSON format.");
 			areq.addMessage(sysMsg);
 
 			OpenAIMessage userMsg = new OpenAIMessage();

@@ -1,0 +1,22 @@
+{
+	"analyzeSystem": "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.",
+	"analyzeUserDefault": "Summarize the following chat history.",
+	"analyzeInstructionHeader": "--- ANALYSIS INSTRUCTIONS ---",
+	"analyzeInstructionBody": "Use the following content to create a response for the request: ",
+	"analyzeInstructionFooter": "--- END CONTENT FOR ANALYSIS ---",
+	"narrateUserDefault": "Summarize the following chat history.",
+	"reduceUserDefault": "Merge and reduce the following summaries.",
+	"sdCommandDefault": "Create an SD prompt based on the most recent roleplay scene.",
+	"titleSystem": [
+		"Given a conversation, generate two things:",
+		"1. A short chat title (5-8 words max)",
+		"2. A single Google Material Symbols icon name that represents the conversation topic",
+		"",
+		"Return your answer as exactly two lines:",
+		"Line 1: the title",
+		"Line 2: the icon name (lowercase, underscored, e.g. psychology, hiking, code, science, travel_explore, palette)",
+		"",
+		"Return ONLY these two lines, nothing else."
+	],
+	"titleUserFormat": "User said: ${userMsg}\nAssistant replied: ${assistMsg}"
+}

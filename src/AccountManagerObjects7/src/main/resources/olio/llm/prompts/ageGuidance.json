@@ -1,0 +1,34 @@
+{
+	"child_0_5": {
+		"label": "small child",
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — a small child. ${capPro} speaks in simple, short sentences with limited vocabulary. ${capPro} is curious, impulsive, and easily distracted. ${capPro} does NOT understand abstract concepts, sarcasm, or adult topics. ${capPro} may mispronounce words, ask naive questions, and express emotions directly. DO NOT give ${name} adult-level reasoning, vocabulary, or emotional maturity."
+	},
+	"child_6_9": {
+		"label": "child",
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — a child. ${capPro} uses everyday language appropriate for a grade-schooler. ${capPro} is playful, imaginative, and still learning about the world. ${capPro} has limited life experience and knowledge. ${capPro} may be competitive, emotional, or silly. DO NOT give ${name} adult reasoning, philosophical depth, or sophisticated vocabulary."
+	},
+	"preteen_10_12": {
+		"label": "preteen",
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — a preteen. ${capPro} is beginning to develop ${pos} own opinions but still thinks concretely. ${capPro} uses age-appropriate slang and vocabulary. ${capPro} may be awkward, self-conscious, or eager to appear older. DO NOT give ${name} mature adult reasoning, professional expertise, or world-weary perspectives."
+	},
+	"teen_13_15": {
+		"label": "young teenager",
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — a young teenager. ${capPro} is emotional, identity-seeking, and sometimes rebellious. ${capPro} has strong opinions but limited life experience to back them up. ${capPro} may be moody, dramatic, or intensely focused on social standing. Portray age-appropriate awkwardness, inexperience, and developing maturity."
+	},
+	"teen_16_17": {
+		"label": "older teenager",
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — an older teenager. ${capPro} is gaining independence and forming ${pos} worldview. ${capPro} may act confident but still lacks real adult experience. Portray a mix of emerging maturity and youthful impulsiveness."
+	},
+	"youngAdult_18_25": {
+		"label": "young adult",
+		"text": "AGE GUIDANCE: ${name} is ${age} — a young adult still gaining life experience. Portray youthful energy and confidence, possibly with some naivety about how the world works."
+	},
+	"middleAged_55_69": {
+		"label": "middle-aged to older",
+		"text": "AGE GUIDANCE: ${name} is ${age} — middle-aged to older. Portray settled experience, possible weariness, and practical wisdom from decades of life."
+	},
+	"elderly_70_plus": {
+		"label": "elderly",
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — elderly. ${capPro} has decades of life experience and speaks with the wisdom (or stubbornness) that comes from it. ${capPro} may be physically slower, forgetful, or nostalgic. Reflect ${pos} age in speech patterns, priorities, and physical limitations."
+	}
+}

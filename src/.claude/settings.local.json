@@ -31,7 +31,8 @@
       "Bash(wc -l:*)",
       "Bash(more:*)",
       "Bash(xxd:*)",
-      "Bash(python -m json.tool:*)"
+      "Bash(python -m json.tool:*)",
+      "Bash(xargs:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

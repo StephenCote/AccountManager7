@@ -705,59 +705,29 @@ public class PromptUtil {
 	/// Ensures the LLM portrays the character at their actual age level.
 	private static String buildAgeGuidance(int age, String name, String gender) {
 		String pro = "male".equals(gender) ? "he" : "she";
+		String capPro = pro.substring(0, 1).toUpperCase() + pro.substring(1);
 		String pos = "male".equals(gender) ? "his" : "her";
-		if (age <= 5) {
-			return "AGE GUIDANCE: " + name + " is " + age + " years old — a small child. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " speaks in simple, short sentences with limited vocabulary. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is curious, impulsive, and easily distracted. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " does NOT understand abstract concepts, sarcasm, or adult topics. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may mispronounce words, ask naive questions, and express emotions directly. "
-				+ "DO NOT give " + name + " adult-level reasoning, vocabulary, or emotional maturity.";
-		}
-		else if (age <= 9) {
-			return "AGE GUIDANCE: " + name + " is " + age + " years old — a child. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " uses everyday language appropriate for a grade-schooler. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is playful, imaginative, and still learning about the world. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " has limited life experience and knowledge. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may be competitive, emotional, or silly. "
-				+ "DO NOT give " + name + " adult reasoning, philosophical depth, or sophisticated vocabulary.";
-		}
-		else if (age <= 12) {
-			return "AGE GUIDANCE: " + name + " is " + age + " years old — a preteen. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is beginning to develop " + pos + " own opinions but still thinks concretely. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " uses age-appropriate slang and vocabulary. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may be awkward, self-conscious, or eager to appear older. "
-				+ "DO NOT give " + name + " mature adult reasoning, professional expertise, or world-weary perspectives.";
-		}
-		else if (age <= 15) {
-			return "AGE GUIDANCE: " + name + " is " + age + " years old — a young teenager. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is emotional, identity-seeking, and sometimes rebellious. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " has strong opinions but limited life experience to back them up. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may be moody, dramatic, or intensely focused on social standing. "
-				+ "Portray age-appropriate awkwardness, inexperience, and developing maturity.";
-		}
-		else if (age <= 17) {
-			return "AGE GUIDANCE: " + name + " is " + age + " years old — an older teenager. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " is gaining independence and forming " + pos + " worldview. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may act confident but still lacks real adult experience. "
-				+ "Portray a mix of emerging maturity and youthful impulsiveness.";
-		}
-		else if (age <= 25) {
-			return "AGE GUIDANCE: " + name + " is " + age + " — a young adult still gaining life experience. "
-				+ "Portray youthful energy and confidence, possibly with some naivety about how the world works.";
-		}
-		else if (age >= 70) {
-			return "AGE GUIDANCE: " + name + " is " + age + " years old — elderly. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " has decades of life experience and speaks with the wisdom (or stubbornness) that comes from it. "
-				+ pro.substring(0, 1).toUpperCase() + pro.substring(1) + " may be physically slower, forgetful, or nostalgic. "
-				+ "Reflect " + pos + " age in speech patterns, priorities, and physical limitations.";
-		}
-		else if (age >= 55) {
-			return "AGE GUIDANCE: " + name + " is " + age + " — middle-aged to older. "
-				+ "Portray settled experience, possible weariness, and practical wisdom from decades of life.";
-		}
-		// Adults 26-54: no special guidance needed
-		return "";
+
+		String bracket;
+		if (age <= 5) bracket = "child_0_5";
+		else if (age <= 9) bracket = "child_6_9";
+		else if (age <= 12) bracket = "preteen_10_12";
+		else if (age <= 15) bracket = "teen_13_15";
+		else if (age <= 17) bracket = "teen_16_17";
+		else if (age <= 25) bracket = "youngAdult_18_25";
+		else if (age >= 70) bracket = "elderly_70_plus";
+		else if (age >= 55) bracket = "middleAged_55_69";
+		else return "";
+
+		String template = PromptResourceUtil.getEntry("ageGuidance", bracket, "text");
+		if (template == null) return "";
+
+		template = PromptResourceUtil.replaceToken(template, "name", name);
+		template = PromptResourceUtil.replaceToken(template, "age", String.valueOf(age));
+		template = PromptResourceUtil.replaceToken(template, "pro", pro);
+		template = PromptResourceUtil.replaceToken(template, "capPro", capPro);
+		template = PromptResourceUtil.replaceToken(template, "pos", pos);
+		return template;
 	}
 	
 	private static void buildRatingReplacements(PromptBuilderContext ctx) {

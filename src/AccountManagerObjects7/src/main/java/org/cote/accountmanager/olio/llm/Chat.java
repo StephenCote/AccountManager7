@@ -47,6 +47,7 @@ import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
+import org.cote.accountmanager.olio.llm.PromptResourceUtil;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner.AutotuneResult;
 import org.cote.accountmanager.olio.llm.policy.InteractionEvaluator;
@@ -60,6 +61,7 @@ public class Chat {
 	public static final String userRole = "user";
 	public static final String assistantRole = "assistant";
 	public static final String systemRole = "system";
+	private static final String CHAT_OPS_RESOURCE = "chatOperations";
 	
 	protected IOContext ioContext = null;
 	public static final Logger logger = LogManager.getLogger(Chat.class);
@@ -654,20 +656,20 @@ public class Chat {
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
-		sysMsg.setContent("Given a conversation, generate two things:" + System.lineSeparator()
-			+ "1. A short chat title (5-8 words max)" + System.lineSeparator()
-			+ "2. A single Google Material Symbols icon name that represents the conversation topic" + System.lineSeparator()
-			+ System.lineSeparator()
-			+ "Return your answer as exactly two lines:" + System.lineSeparator()
-			+ "Line 1: the title" + System.lineSeparator()
-			+ "Line 2: the icon name (lowercase, underscored, e.g. psychology, hiking, code, science, travel_explore, palette)" + System.lineSeparator()
-			+ System.lineSeparator()
-			+ "Return ONLY these two lines, nothing else.");
+		String titleSys = PromptResourceUtil.getLines(CHAT_OPS_RESOURCE, "titleSystem");
+		sysMsg.setContent(titleSys != null ? titleSys : "Given a conversation, generate a short chat title (5-8 words max) and a Google Material Symbols icon name. Return exactly two lines.");
 		titleReq.getMessages().add(sysMsg);
 
 		OpenAIMessage userPrompt = new OpenAIMessage();
 		userPrompt.setRole(userRole);
-		userPrompt.setContent("User said: " + userMsg + "\nAssistant replied: " + assistMsg);
+		String titleFmt = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "titleUserFormat");
+		if (titleFmt != null) {
+			titleFmt = PromptResourceUtil.replaceToken(titleFmt, "userMsg", userMsg);
+			titleFmt = PromptResourceUtil.replaceToken(titleFmt, "assistMsg", assistMsg);
+			userPrompt.setContent(titleFmt);
+		} else {
+			userPrompt.setContent("User said: " + userMsg + "\nAssistant replied: " + assistMsg);
+		}
 		titleReq.getMessages().add(userPrompt);
 
 		String title = null;
@@ -834,7 +836,8 @@ public class Chat {
 			if (userAnalyze != null && userAnalyze.length() > 0) {
 				command = userAnalyze;
 			} else {
-				command = "Summarize the following chat history.";
+				String defaultCmd = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "analyzeUserDefault");
+				command = defaultCmd != null ? defaultCmd : "Summarize the following chat history.";
 			}
 		}
 
@@ -843,7 +846,10 @@ public class Chat {
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
-		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
+		String sys = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "analyzeSystem");
+		if (sys == null) {
+			sys = "You are an objective and introspective analyst. You create succinct, accurate and objective plot and text summaries.";
+		}
 		if (systemAnalyze != null && systemAnalyze.length() > 0) {
 			sys = systemAnalyze;
 		}
@@ -859,13 +865,16 @@ public class Chat {
 		}
 
 		StringBuilder msg = new StringBuilder();
-		
-		msg.append("--- ANALYSIS INSTRUCTIONS ---" + System.lineSeparator());
-		msg.append("Use the following content to create a response for the request: " + command);
-		
+
+		String instrHeader = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "analyzeInstructionHeader");
+		String instrBody = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "analyzeInstructionBody");
+		String instrFooter = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "analyzeInstructionFooter");
+		msg.append(instrHeader != null ? instrHeader : "--- ANALYSIS INSTRUCTIONS ---").append(System.lineSeparator());
+		msg.append(instrBody != null ? instrBody : "Use the following content to create a response for the request: ").append(command);
+
 		msg.append(lines.subList(offset, max).stream().collect(Collectors.joining(System.lineSeparator()))
 				+ System.lineSeparator());
-		msg.append("--- END CONTENT FOR ANALYSIS ---" + System.lineSeparator());
+		msg.append(instrFooter != null ? instrFooter : "--- END CONTENT FOR ANALYSIS ---").append(System.lineSeparator());
 		msg.append(command);
 		String cont = msg.toString();
 		boolean useJB = chatConfig.get("useJailBreak");
@@ -939,7 +948,8 @@ public class Chat {
 			if (userNarrate != null && userNarrate.length() > 0) {
 				command = userNarrate;
 			} else {
-				command = "Summarize the following chat history.";
+				String defaultCmd = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "narrateUserDefault");
+				command = defaultCmd != null ? defaultCmd : "Summarize the following chat history.";
 			}
 		}
 
@@ -949,7 +959,10 @@ public class Chat {
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
-		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
+		String sys = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "analyzeSystem");
+		if (sys == null) {
+			sys = "You are an objective and introspective analyst. You create succinct, accurate and objective plot and text summaries.";
+		}
 		if (systemNarrate != null && systemNarrate.length() > 0) {
 			sys = systemNarrate;
 		}
@@ -988,7 +1001,8 @@ public class Chat {
 		List<String> lines = ChatUtil.getFormattedChatHistory(req, chatConfig, pruneSkip, full);
 
 		String systemSD = PromptUtil.getSystemSDTemplate(promptConfig, chatConfig);
-		command = "Create an SD prompt based on the most recent roleplay scene.";
+		String defaultSD = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "sdCommandDefault");
+		command = defaultSD != null ? defaultSD : "Create an SD prompt based on the most recent roleplay scene.";
 
 		OpenAIRequest areq = new OpenAIRequest();
 		String amodel = chatConfig.get("analyzeModel");
@@ -1082,7 +1096,8 @@ public class Chat {
 		String assistantAnalyze = PromptUtil.getAssistantAnalyzeTemplate(promptConfig, chatConfig);
 		String userAnalyze = PromptUtil.getUserReduceTemplate(promptConfig, chatConfig);
 		if (userAnalyze == null) {
-			userAnalyze = "Merge and reduce the following summaries.";
+			String defaultCmd = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "reduceUserDefault");
+			userAnalyze = defaultCmd != null ? defaultCmd : "Merge and reduce the following summaries.";
 		}
 		OpenAIRequest areq = new OpenAIRequest();
 		areq.setModel(req.getModel());
@@ -1091,7 +1106,10 @@ public class Chat {
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
-		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
+		String sys = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "analyzeSystem");
+		if (sys == null) {
+			sys = "You are an objective and introspective analyst. You create succinct, accurate and objective plot and text summaries.";
+		}
 		if (systemAnalyze != null && systemAnalyze.length() > 0) {
 			sys = systemAnalyze;
 		}

@@ -11,6 +11,7 @@ import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
+import org.cote.accountmanager.olio.llm.PromptResourceUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
@@ -67,6 +68,8 @@ public class InteractionEvaluator {
 		return callEvalLLM(user, chatConfig, evalPrompt);
 	}
 
+	private static final String RESOURCE = "interaction";
+
 	private String buildEvalPrompt(String sysName, int sysAge, String sysGender,
 			String usrName, int usrAge, String usrGender, String setting, List<OpenAIMessage> messages) {
 
@@ -76,15 +79,36 @@ public class InteractionEvaluator {
 			.collect(java.util.stream.Collectors.toList());
 
 		StringBuilder sb = new StringBuilder();
-		sb.append("CHARACTERS:").append(System.lineSeparator());
-		sb.append("- ").append(sysName).append(" (").append(sysAge).append(" year old ").append(sysGender).append(") — played by the AI").append(System.lineSeparator());
-		sb.append("- ").append(usrName).append(" (").append(usrAge).append(" year old ").append(usrGender).append(") — played by the human").append(System.lineSeparator());
+
+		/// Character block from resource
+		String charBlock = PromptResourceUtil.getLines(RESOURCE, "characterBlock");
+		if (charBlock != null) {
+			charBlock = replaceCharTokens(charBlock, sysName, sysAge, sysGender, usrName, usrAge, usrGender);
+			sb.append(charBlock).append(System.lineSeparator());
+		}
+
+		/// Setting line
 		if (setting != null && !setting.isEmpty()) {
-			sb.append("SETTING: ").append(setting).append(System.lineSeparator());
+			String settingLine = PromptResourceUtil.getString(RESOURCE, "settingLine");
+			if (settingLine != null) {
+				sb.append(PromptResourceUtil.replaceToken(settingLine, "setting", setting));
+			} else {
+				sb.append("SETTING: ").append(setting);
+			}
+			sb.append(System.lineSeparator());
 		}
 		sb.append(System.lineSeparator());
 
-		sb.append("RECENT CONVERSATION (last ").append(chatMsgs.size()).append(" messages):").append(System.lineSeparator());
+		/// Conversation header from resource
+		String convHeader = PromptResourceUtil.getString(RESOURCE, "conversationHeader");
+		if (convHeader != null) {
+			sb.append(PromptResourceUtil.replaceToken(convHeader, "msgCount", String.valueOf(chatMsgs.size())));
+		} else {
+			sb.append("RECENT CONVERSATION (last ").append(chatMsgs.size()).append(" messages):");
+		}
+		sb.append(System.lineSeparator());
+
+		/// Conversation messages (dynamic)
 		int limit = Math.min(chatMsgs.size(), 20);
 		int start = chatMsgs.size() - limit;
 		for (int i = start; i < chatMsgs.size(); i++) {
@@ -92,7 +116,6 @@ public class InteractionEvaluator {
 			String role = msg.getRole();
 			String content = msg.getContent();
 			String speaker = "assistant".equals(role) ? sysName : usrName;
-			/// Truncate very long messages
 			if (content != null && content.length() > 300) {
 				content = content.substring(0, 300) + "...";
 			}
@@ -100,17 +123,28 @@ public class InteractionEvaluator {
 		}
 		sb.append(System.lineSeparator());
 
-		sb.append("Classify the current state of this conversation. Respond with ONLY JSON:").append(System.lineSeparator());
-		sb.append("{").append(System.lineSeparator());
-		sb.append("  \"interactionType\": \"SOCIALIZE|NEGOTIATE|CONFLICT|ROMANCE|COOPERATE|COMPETE|COMMERCE|MENTOR|INVESTIGATE|HELP|THREATEN|ENTERTAIN\",").append(System.lineSeparator());
-		sb.append("  \"outcome\": \"POSITIVE|NEGATIVE|NEUTRAL|MIXED\",").append(System.lineSeparator());
-		sb.append("  \"actorOutcome\": \"FAVORABLE|UNFAVORABLE|EQUILIBRIUM\",").append(System.lineSeparator());
-		sb.append("  \"targetOutcome\": \"FAVORABLE|UNFAVORABLE|EQUILIBRIUM\",").append(System.lineSeparator());
-		sb.append("  \"relationshipDirection\": \"IMPROVING|WORSENING|STABLE\",").append(System.lineSeparator());
-		sb.append("  \"summary\": \"One sentence describing the current interaction status\"").append(System.lineSeparator());
-		sb.append("}").append(System.lineSeparator());
+		/// Classification request + response format from resource
+		String classifyReq = PromptResourceUtil.getString(RESOURCE, "classifyRequest");
+		if (classifyReq != null) {
+			sb.append(classifyReq).append(System.lineSeparator());
+		}
+		String respFormat = PromptResourceUtil.getLines(RESOURCE, "responseFormat");
+		if (respFormat != null) {
+			sb.append(respFormat).append(System.lineSeparator());
+		}
 
 		return sb.toString();
+	}
+
+	private String replaceCharTokens(String template, String sysName, int sysAge, String sysGender,
+			String usrName, int usrAge, String usrGender) {
+		template = PromptResourceUtil.replaceToken(template, "sysName", sysName);
+		template = PromptResourceUtil.replaceToken(template, "sysAge", String.valueOf(sysAge));
+		template = PromptResourceUtil.replaceToken(template, "sysGender", sysGender);
+		template = PromptResourceUtil.replaceToken(template, "usrName", usrName);
+		template = PromptResourceUtil.replaceToken(template, "usrAge", String.valueOf(usrAge));
+		template = PromptResourceUtil.replaceToken(template, "usrGender", usrGender);
+		return template;
 	}
 
 	private String callEvalLLM(BaseRecord user, BaseRecord chatConfig, String evalPrompt) {
@@ -140,7 +174,8 @@ public class InteractionEvaluator {
 
 			OpenAIMessage sysMsg = new OpenAIMessage();
 			sysMsg.setRole("system");
-			sysMsg.setContent("You are a conversation analyst. Classify the current state of an ongoing interaction between two characters. Respond only in JSON format.");
+			String sysContent = PromptResourceUtil.getString(RESOURCE, "system");
+			sysMsg.setContent(sysContent != null ? sysContent : "You are a conversation analyst. Classify the current state of an ongoing interaction between two characters. Respond only in JSON format.");
 			areq.addMessage(sysMsg);
 
 			OpenAIMessage userMsg = new OpenAIMessage();

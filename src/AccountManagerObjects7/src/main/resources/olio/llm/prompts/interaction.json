@@ -1,0 +1,21 @@
+{
+	"system": "You are a conversation analyst. Classify the current state of an ongoing interaction between two characters. Respond only in JSON format.",
+	"characterBlock": [
+		"CHARACTERS:",
+		"- ${sysName} (${sysAge} year old ${sysGender}) — played by the AI",
+		"- ${usrName} (${usrAge} year old ${usrGender}) — played by the human"
+	],
+	"settingLine": "SETTING: ${setting}",
+	"conversationHeader": "RECENT CONVERSATION (last ${msgCount} messages):",
+	"classifyRequest": "Classify the current state of this conversation. Respond with ONLY JSON:",
+	"responseFormat": [
+		"{",
+		"  \"interactionType\": \"SOCIALIZE|NEGOTIATE|CONFLICT|ROMANCE|COOPERATE|COMPETE|COMMERCE|MENTOR|INVESTIGATE|HELP|THREATEN|ENTERTAIN\",",
+		"  \"outcome\": \"POSITIVE|NEGATIVE|NEUTRAL|MIXED\",",
+		"  \"actorOutcome\": \"FAVORABLE|UNFAVORABLE|EQUILIBRIUM\",",
+		"  \"targetOutcome\": \"FAVORABLE|UNFAVORABLE|EQUILIBRIUM\",",
+		"  \"relationshipDirection\": \"IMPROVING|WORSENING|STABLE\",",
+		"  \"summary\": \"One sentence describing the current interaction status\"",
+		"}"
+	]
+}
