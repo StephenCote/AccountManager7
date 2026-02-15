@@ -4509,6 +4509,79 @@ All known open issues with their assigned resolution phase:
 
 ---
 
+## 12. Automated Operation Trigger Reference
+
+This section documents when each automated operation fires during chat processing. These replace the manual vectorize/summarize buttons that were removed in Phase 13f.
+
+### 12.1 Policy Evaluation
+
+**When:** After every LLM response (both buffer and streaming modes)
+**Condition:** `chatConfig.policy` foreign reference is non-null
+**Location:** `Chat.evaluateResponsePolicy()` -> `ResponsePolicyEvaluator.evaluate()`
+**Client notification:** `policyEvent` WebSocket chirp -> toast in chat view
+
+### 12.2 Chat History Vectorization
+
+**When:** After every `saveSession()` call (runs after each message exchange)
+**Condition:** `VectorUtil.isVectorSupported()` AND message count > 2
+**Location:** `Chat.createNarrativeVector()` called from `Chat.saveSession()`
+**What it creates:** `MODEL_VECTOR_CHAT_HISTORY` chunks (WORD/1000)
+**Note:** This replaces the manual "Vectorize" button on chat sessions
+
+### 12.3 Keyframe Creation
+
+**When:** During `pruneCount()` which runs when a user message is added via `newMessage()`
+**Conditions (ALL must be true):**
+1. `chatConfig.assist = true`
+2. `chatConfig.keyframeEvery > 0`
+3. `messages.size() > (pruneSkip + keyframeEvery)`
+4. Messages since last keyframe >= `keyframeEvery`
+
+**What happens:** Calls `analyze()` (LLM call) to summarize conversation, inserts MCP keyframe block into message history, keeps last 2 keyframes
+**Client notification:** `memoryEvent` type `keyframe` via WebSocket
+
+### 12.4 Memory Creation (from Keyframes)
+
+**When:** Inside `addKeyFrame()` -> `persistKeyframeAsMemory()`
+**Conditions (ALL must be true, in addition to keyframe conditions above):**
+1. `chatConfig.extractMemories = true`
+2. `analyze()` returned non-empty text
+3. If `memoryExtractionEvery > 0`: existing OUTCOME memory count % `memoryExtractionEvery == 0`
+4. If `memoryExtractionEvery == 0`: memory created at every keyframe
+
+**What it creates:** `tool.memory` record (type OUTCOME, importance 7) in `~/Memories`, plus `tool.vectorMemory` chunks (WORD/500) for semantic search
+**Client notification:** `memoryEvent` type `extracted` via WebSocket -> toast in chat view
+**Server log:** `"Persisted keyframe as memory for [character names]"`
+
+**Minimum keyframeEvery enforcement:** When `extractMemories=true` AND `keyframeEvery < 5`, the system raises `keyframeEvery` to 5 to prevent excessive LLM analyze calls.
+
+### 12.5 Memory Retrieval (Cross-Session)
+
+**When:** At the start of every chat prompt composition in `getChatPrompt()`
+**Condition:** `chatConfig.memoryBudget > 0` AND both `systemCharacter` and `userCharacter` are set
+**What happens:** Queries `~/Memories` for pair-specific memories (canonical person ID ordering), formats as MCP context, sets PromptUtil thread-locals for template variable substitution
+**Max memories loaded:** `memoryBudget / 100`
+**Client notification:** `memoryEvent` type `recalled` via WebSocket
+**Server log:** `"Recalled N memories for id1/id2"`
+
+### 12.6 Summarization
+
+**Status:** Manual only — no automatic trigger during chat
+**Previous access:** Via "Summarize" button on object forms (removed in Phase 13f)
+**Programmatic access:** `POST /vector/summarize/{chunkType}/{chunkCount}` REST endpoint
+**Used by:** `AnalysisManager.js` for object analysis sessions
+
+### 12.7 Features Deprecated by MCP + Memory
+
+| Feature | Status | Replacement |
+|---------|--------|-------------|
+| Manual "Vectorize" button (data, note, charPerson, openaiRequest forms) | **Removed** | Chat history auto-vectorized on `saveSession()`; memories auto-vectorized on creation |
+| Manual "Summarize" button (data, charPerson, openaiRequest forms) | **Removed** | Keyframe analysis provides running summaries; memory extraction stores durable summaries |
+| Keyframe-only context (no persistence) | **Superseded** | Keyframes now persist as OUTCOME memories with vector embeddings for cross-session retrieval |
+| `dialog.chatInto()` / `window.open` + `remoteEntity` | **Removed** (Phase 13a) | `AnalysisManager.startAnalysis()` — in-page analysis sessions |
+
+---
+
 ## Appendix A: Current Template Variable Reference
 
 | Variable | Stage | Source |

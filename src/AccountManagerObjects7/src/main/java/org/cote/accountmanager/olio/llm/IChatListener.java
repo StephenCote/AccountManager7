@@ -12,4 +12,6 @@ public interface IChatListener {
 	public void stopStream(OpenAIRequest request);
 	public boolean isRequesting(OpenAIRequest request);
 	public void addChatHandler(IChatHandler handler);
+	/// Phase 13f: Memory event notification (OI-71, OI-72)
+	public default void onMemoryEvent(BaseRecord user, OpenAIRequest request, String type, String data) {}
 }

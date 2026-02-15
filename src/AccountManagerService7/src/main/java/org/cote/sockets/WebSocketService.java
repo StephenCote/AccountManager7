@@ -542,6 +542,13 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		chirpUser(user, new String[] {"chatTitle", request.get(FieldNames.FIELD_OBJECT_ID), title});
 	}
 
+	/// Phase 13f: Memory event notification via WebSocket (OI-71, OI-72)
+	@Override
+	public void onMemoryEvent(BaseRecord user, OpenAIRequest request, String type, String data) {
+		String oid = request != null ? request.get(FieldNames.FIELD_OBJECT_ID) : "";
+		chirpUser(user, new String[] {"memoryEvent", type, "{\"requestId\":\"" + oid + "\",\"data\":\"" + (data != null ? data.replace("\"", "\\\"") : "") + "\"}"});
+	}
+
 	// This method will handle forwarding audio to Python and receiving transcripts
 	public void handleAudioStream(Session clientSession, BaseRecord user, SocketMessage msg) {
 	    //asyncExecutor.submit(() -> {

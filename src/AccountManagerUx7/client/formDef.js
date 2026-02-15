@@ -686,26 +686,7 @@
             contentType: {
                 layout: "one"
             },
-            vectorize: {
-                format: "button",
-                layout: "one",
-                icon: 'polyline',
-                requiredAttributes: ["objectId"],
-                field: {
-                    label: "Vectorize",
-                    command: page.components.dialog.vectorize
-                }
-            },
-            summarize: {
-                format: "button",
-                layout: "one",
-                icon: 'summarize',
-                requiredAttributes: ["objectId"],
-                field: {
-                    label: "Summarize",
-                    command: page.components.dialog.summarize
-                }
-            },
+            // Phase 13f: vectorize/summarize buttons removed — MCP + memory handles automatically
 
             /*
             compressionType: {
@@ -2059,16 +2040,7 @@
             modifiedDate: {
                 layout: "third"
             },
-            vectorize: {
-                format: "button",
-                layout: "third",
-                icon: 'polyline',
-                requiredAttributes: ["objectId"],
-                field: {
-                    label: "Vectorize",
-                    command: page.components.dialog.vectorize
-                }
-            },
+            // Phase 13f: vectorize button removed — MCP + memory handles automatically
             text: {
                 layout: "full",
                 format: "textarea"
@@ -3932,47 +3904,7 @@
                     command: narrate
                 }
             },
-            vectorize: {
-                format: "button",
-                layout: "one",
-                icon: 'polyline',
-                requiredAttributes: ["objectId"],
-                field: {
-                    label: "Vectorize",
-                    command: page.components.dialog.vectorize
-                }
-            },
-            blank: {
-                layout: "one",
-                format: "blank",
-                field: {
-                    label: "",
-                    readOnly: true
-                }
-            },
-
-            /*
-            roll: {
-                format: "button",
-                layout: "one",
-                icon: 'run_circle',
-                requiredAttributes: ["!objectId"],
-                field: {
-                    label: "Roll",
-                    command: rollCharacter
-                }
-            },
-            */
-            summarize: {
-                format: "button",
-                layout: "one",
-                icon: 'summarize',
-                requiredAttributes: ["objectId"],
-                field: {
-                    label: "Summarize",
-                    command: page.components.dialog.summarize
-                }
-            },
+            // Phase 13f: vectorize/summarize buttons removed — MCP + memory handles automatically
             description: {
                 layout: "full",
             },
@@ -5404,28 +5336,8 @@
             model: {
                 layout: 'one'
             },
-            vectorize: {
-                format: "button",
-                layout: "one",
-                icon: 'polyline',
-                requiredAttributes: ["objectId"],
-                field: {
-                    label: "Vectorize",
-                    command: page.components.dialog.vectorize
-                }
-            },
-            summarize: {
-                format: "button",
-                layout: "one",
-                icon: 'summarize',
-                requiredAttributes: ["objectId"],
-                field: {
-                    label: "Summarize",
-                    command: page.components.dialog.summarize
-                }
-            }
+            // Phase 13f: vectorize/summarize buttons removed — MCP + memory handles automatically
             /*
-            ,
             messages: {
                 format: "table",
                 form: forms.openaiMessages

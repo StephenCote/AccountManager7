@@ -382,7 +382,13 @@ public class ChatListener implements IChatListener {
 		}
 		handlers.forEach(h -> h.onChatError(user, request, response, msg));
 		clearCache(oid);
-		
+
+	}
+
+	/// Phase 13f: Forward memory events to handlers (OI-71, OI-72)
+	@Override
+	public void onMemoryEvent(BaseRecord user, OpenAIRequest request, String type, String data) {
+		handlers.forEach(h -> h.onMemoryEvent(user, request, type, data));
 	}
 
 }

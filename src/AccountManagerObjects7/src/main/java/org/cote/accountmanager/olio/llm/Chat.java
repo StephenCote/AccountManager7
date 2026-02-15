@@ -1169,7 +1169,12 @@ public class Chat {
 		msg.setContent(builder.build());
 
 		/// Phase 3: Persist keyframe analysis as a durable memory
-		persistKeyframeAsMemory(analysisText, lab, cfgObjId, systemChar, userChar);
+		persistKeyframeAsMemory(req, analysisText, lab, cfgObjId, systemChar, userChar);
+
+		/// Phase 13f: Emit keyframe event (OI-72)
+		if (listener != null) {
+			listener.onMemoryEvent(user, req, "keyframe", lab);
+		}
 
 		/// OI-14: MCP-only keyframe detection (old text format deprecated)
 		/// Filter out previous keyframes, keeping the last 2 (Phase 3: keep 2 instead of 1)
@@ -1196,7 +1201,7 @@ public class Chat {
 
 	/// Phase 3: Persist the keyframe analysis text as a durable OUTCOME memory
 	/// tagged with both character IDs in canonical order for cross-conversation retrieval.
-	private void persistKeyframeAsMemory(String analysisText, String characterLabel,
+	private void persistKeyframeAsMemory(OpenAIRequest req, String analysisText, String characterLabel,
 			String cfgObjId, BaseRecord systemChar, BaseRecord userChar) {
 
 		if (analysisText == null || analysisText.trim().isEmpty()) {
@@ -1268,6 +1273,10 @@ public class Chat {
 
 			if (memory != null) {
 				logger.info("Persisted keyframe as memory for " + characterLabel);
+				/// Phase 13f: Emit extracted event (OI-71)
+				if (listener != null) {
+					listener.onMemoryEvent(user, req, "extracted", summary);
+				}
 			} else {
 				logger.warn("Failed to persist keyframe as memory for " + characterLabel);
 			}
@@ -1766,6 +1775,12 @@ public class Chat {
 			PromptUtil.setMemoryFacts(String.join("; ", factSummaries));
 			PromptUtil.setMemoryLastSession(lastSessionText);
 			PromptUtil.setMemoryCount(recs.length);
+
+			/// Phase 13f: Emit recalled event (OI-71)
+			logger.info("Recalled " + recs.length + " memories for " + id1 + "/" + id2);
+			if (listener != null) {
+				listener.onMemoryEvent(user, null, "recalled", String.valueOf(recs.length));
+			}
 
 			return ctxBuilder.build();
 		} catch (Exception e) {

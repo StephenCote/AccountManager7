@@ -112,6 +112,39 @@
         });
     }
 
+    // Phase 13f (OI-71, OI-72): Register memoryEvent display handler
+    if (window.LLMConnector) {
+        LLMConnector.onPolicyEvent; // already registered above
+        let _memHandler = function(evt) {
+            if (!evt) return;
+            let detail = "";
+            if (evt.data) {
+                try {
+                    let parsed = typeof evt.data === "string" ? JSON.parse(evt.data) : evt.data;
+                    detail = parsed.data || "";
+                } catch(e) { detail = evt.data; }
+            }
+            if (evt.type === "extracted") {
+                page.toast("info", "Memory created: " + detail, 3000);
+            } else if (evt.type === "recalled") {
+                console.log("[Chat] Recalled " + detail + " memories");
+            } else if (evt.type === "keyframe") {
+                console.log("[Chat] Keyframe created: " + detail);
+            }
+            // Refresh MemoryPanel when memories change
+            if (window.MemoryPanel && chatCfg.chat) {
+                MemoryPanel.refresh();
+            }
+        };
+        // Wire to LLMConnector's existing handleMemoryEvent dispatch
+        LLMConnector._chatMemoryHandler = _memHandler;
+        let _origHandler = LLMConnector.handleMemoryEvent;
+        LLMConnector.handleMemoryEvent = function(data) {
+            _origHandler.call(LLMConnector, data);
+            _memHandler(data);
+        };
+    }
+
     // Image token state
     let resolvingImages = {};
     let showTagSelector = false;
@@ -274,7 +307,12 @@
       if (window.ContextPanel && obj && obj.objectId) {
         ContextPanel.load(obj.objectId);
       }
-      doPeek().catch(function(e) {
+      doPeek().then(function() {
+        // Phase 13f: Load memories for the character pair (OI-69)
+        if (window.MemoryPanel && chatCfg.chat) {
+          MemoryPanel.loadForSession(chatCfg.chat);
+        }
+      }).catch(function(e) {
         console.warn("Failed to peek session", e);
       });
     }
@@ -296,6 +334,7 @@
     async function doCancel() {
       clearEditMode();
       chatCfg.pending = false;
+      chatCfg.streaming = false;
       chatCfg.peek = false;
       chatCfg.history = { messages: [] };
       if(inst && inst.api.objectId()){
@@ -577,9 +616,21 @@
 
     function newChatConfig() {
       return {
-        peek: false,
-        history: undefined,
-        pending: false
+        // UI state
+        peek: false,          // true once configs + history have been fetched via doPeek
+        pending: false,       // true while waiting for LLM response
+        streaming: false,     // true during WebSocket streaming
+
+        // Server-side objects (populated by doPeek)
+        chat: null,           // olio.llm.chatConfig — full server chatConfig
+        prompt: null,         // olio.llm.promptConfig — full server promptConfig
+
+        // Characters (extracted from chatConfig for convenience)
+        system: null,         // systemCharacter from chatConfig
+        user: null,           // userCharacter from chatConfig
+
+        // Message state
+        history: null         // {messages: [...]} — conversation history from server
       };
     }
 
