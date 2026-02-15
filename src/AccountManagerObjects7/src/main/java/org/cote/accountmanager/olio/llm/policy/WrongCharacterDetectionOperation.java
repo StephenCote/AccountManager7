@@ -91,6 +91,20 @@ public class WrongCharacterDetectionOperation extends Operation {
 			return OperationResponseEnumType.FAILED;
 		}
 
+		/// Heuristic 4: User character name appears as a speaker mid-response
+		/// Detects LLM playing both characters, e.g., "...\nStephen: No thanks"
+		/// or "...\nStephen Cote No, no thank you"
+		Pattern midDialoguePattern = Pattern.compile(
+			"(?:^|\\n)\\s*" + quotedName + "\\s*[:>\\-]?\\s+\\w",
+			Pattern.CASE_INSENSITIVE | Pattern.MULTILINE
+		);
+		/// Only flag if the user name appears as a distinct speaker after the first line
+		String afterFirstLine = trimmed.contains("\n") ? trimmed.substring(trimmed.indexOf('\n') + 1) : "";
+		if (!afterFirstLine.isEmpty() && midDialoguePattern.matcher(afterFirstLine).find()) {
+			logger.info("WrongCharacterDetection: LLM playing both characters — user character '" + userCharName + "' speaks mid-response");
+			return OperationResponseEnumType.FAILED;
+		}
+
 		return OperationResponseEnumType.SUCCEEDED;
 	}
 }

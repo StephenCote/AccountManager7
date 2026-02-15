@@ -98,7 +98,12 @@ public class Chat {
 	private IChatListener listener = null;
 	private int requestTimeout = 120;
 	private int responseCount = 0;
-	
+
+	/// Mid-stream policy evaluation tracking
+	private static final int MID_STREAM_CHECK_INTERVAL = 200;
+	private int lastMidStreamCheckLength = 0;
+	private PolicyEvaluationResult midStreamViolation = null;
+
 	private String llmSystemPrompt = """
 			You play the role of an assistant named Siren.
 			Begin conversationally.
@@ -516,6 +521,37 @@ public class Chat {
 		}
 
 		return result;
+	}
+
+	/// Mid-stream policy evaluation — runs heuristic-only policy checks on partial response content.
+	/// Called periodically from accumulateChunk() during streaming. Does NOT run LLM-based compliance.
+	/// Returns the evaluation result if a violation is found, null if content passes or no policy configured.
+	private PolicyEvaluationResult evaluateMidStreamPolicy(OpenAIRequest req, OpenAIResponse resp) {
+		if (chatConfig == null || user == null) {
+			return null;
+		}
+		BaseRecord policyRef = chatConfig.get("policy");
+		if (policyRef == null) {
+			return null;
+		}
+
+		String responseContent = null;
+		BaseRecord msg = resp.get("message");
+		if (msg != null) {
+			responseContent = msg.get("content");
+		}
+		if (responseContent == null || responseContent.isEmpty()) {
+			return null;
+		}
+
+		ResponsePolicyEvaluator rpe = new ResponsePolicyEvaluator();
+		PolicyEvaluationResult result = rpe.evaluate(user, responseContent, chatConfig, promptConfig);
+		return (result != null && !result.isPermitted()) ? result : null;
+	}
+
+	/// Accessor for mid-stream violation result — used by oncomplete to report pre-detected violations.
+	public PolicyEvaluationResult getMidStreamViolation() {
+		return midStreamViolation;
 	}
 
 	/// Phase 13g: Handle auto-tuning after a policy violation.
@@ -1736,6 +1772,10 @@ public class Chat {
 			return null;
 		}
 
+		/// Reset mid-stream policy tracking for this request
+		lastMidStreamCheckLength = 0;
+		midStreamViolation = null;
+
 		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);
 		String tokField = ChatUtil.getMaxTokenField(chatConfig);
 		ignoreFields.addAll(Arrays.asList(new String[] {"num_ctx", "max_tokens", "max_completion_tokens"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));
@@ -1901,6 +1941,7 @@ public class Chat {
 	}
 
 	/// Accumulate a content chunk into the response and optionally forward to listener.
+	/// Includes periodic mid-stream policy evaluation to detect violations early and stop generation.
 	private void accumulateChunk(OpenAIResponse aresp, BaseRecord delta, String contentChunk, boolean forwardToClient, OpenAIRequest req) {
 		BaseRecord amsg = aresp.get("message");
 		if (amsg == null) {
@@ -1913,6 +1954,28 @@ public class Chat {
 		}
 		if (forwardToClient && listener != null) {
 			listener.onupdate(user, req, aresp, contentChunk);
+		}
+
+		/// Mid-stream policy evaluation: check accumulated content at intervals
+		/// Only runs in streaming mode (forwardToClient) and only if no violation already found
+		if (forwardToClient && midStreamViolation == null) {
+			BaseRecord msg = aresp.get("message");
+			if (msg != null) {
+				String accumulated = msg.get("content");
+				int len = accumulated != null ? accumulated.length() : 0;
+				if (len - lastMidStreamCheckLength >= MID_STREAM_CHECK_INTERVAL) {
+					lastMidStreamCheckLength = len;
+					PolicyEvaluationResult result = evaluateMidStreamPolicy(req, aresp);
+					if (result != null) {
+						midStreamViolation = result;
+						logger.warn("Mid-stream policy violation at " + len + " chars: " + result.getViolationSummary());
+						if (listener != null) {
+							listener.onEvalProgress(user, req, "midStreamViolation", result.getViolationSummary());
+							listener.stopStream(req);
+						}
+					}
+				}
+			}
 		}
 	}
 

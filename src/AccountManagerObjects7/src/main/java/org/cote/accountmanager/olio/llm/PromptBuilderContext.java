@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.llm;
 
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileComparison;
 import org.cote.accountmanager.olio.ProfileUtil;
@@ -33,9 +34,11 @@ public class PromptBuilderContext {
 		this.userChar = chatConfig.get("userCharacter");
 		this.systemChar = chatConfig.get("systemCharacter");
 		if(systemChar != null) {
+			IOSystem.getActiveContext().getReader().populate(this.systemChar);
 			this.sysProf = ProfileUtil.getProfile(null, this.systemChar);
 		}
 		if(userChar != null) {
+			IOSystem.getActiveContext().getReader().populate(this.userChar);
 			this.usrProf = ProfileUtil.getProfile(null, this.userChar);
 		}
 		if(sysProf != null && usrProf != null) {

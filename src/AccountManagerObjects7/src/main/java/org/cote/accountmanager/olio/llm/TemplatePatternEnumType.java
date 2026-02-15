@@ -39,7 +39,7 @@ public enum TemplatePatternEnumType {
 	POPULATION_PEOPLE("population.people"),
 	PERSPECTIVE("perspective"),
 	PROFILE_AGE_COMPATIBILITY("profile.ageCompat"),
-	PROFILE_COMPARISON("profile.comparison"),
+	PROFILE_COMPARISON("profileComparison"),
 	PROFILE_LEADER("profile.leader"),
 	PROFILE_RACE_COMPATIBILITY("profile.raceCompat"),
 	PROFILE_ROMANCE_COMPATIBILITY("profile.romanceCompat"),
