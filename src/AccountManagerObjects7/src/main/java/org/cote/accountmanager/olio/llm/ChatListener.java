@@ -421,4 +421,16 @@ public class ChatListener implements IChatListener {
 		handlers.forEach(h -> h.onMemoryEvent(user, request, type, data));
 	}
 
+	/// Forward interaction evaluation events to handlers
+	@Override
+	public void onInteractionEvent(BaseRecord user, OpenAIRequest request, String data) {
+		handlers.forEach(h -> h.onInteractionEvent(user, request, data));
+	}
+
+	/// Forward evaluation progress events to handlers
+	@Override
+	public void onEvalProgress(BaseRecord user, OpenAIRequest request, String phase, String detail) {
+		handlers.forEach(h -> h.onEvalProgress(user, request, phase, detail));
+	}
+
 }

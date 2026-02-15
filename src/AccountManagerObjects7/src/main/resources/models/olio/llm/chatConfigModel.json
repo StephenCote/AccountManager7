@@ -249,7 +249,7 @@
 		{
 			"name": "complianceCheck",
 			"type": "boolean",
-			"description": "When true, run LLM-based response compliance evaluation checking: (1) not responding as user, (2) gendered voice, (3) profile comparison adherence, (4) age guidance adherence, (5) no racial/orientation bias."
+			"description": "When true, run LLM-based response compliance evaluation checking: (1) not responding as user, (2) gendered voice, (3) profile comparison adherence, (4) age guidance adherence, (5) no racial/orientation bias, (6) personality consistency vs dark triad scores."
 		},
 		{
 			"name": "complianceCheckEvery",

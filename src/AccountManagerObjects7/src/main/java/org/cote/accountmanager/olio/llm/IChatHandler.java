@@ -18,4 +18,8 @@ public interface IChatHandler {
 	public default void onAutotuneEvent(BaseRecord user, OpenAIRequest request, String type, String data) {}
 	/// Phase 13f: Called when a memory-related event occurs (keyframe, extracted, recalled)
 	public default void onMemoryEvent(BaseRecord user, OpenAIRequest request, String type, String data) {}
+	/// Called when mid-chat interaction evaluation produces a status update
+	public default void onInteractionEvent(BaseRecord user, OpenAIRequest request, String data) {}
+	/// Called when an evaluation phase starts or completes, so UX can show progress
+	public default void onEvalProgress(BaseRecord user, OpenAIRequest request, String phase, String detail) {}
 }

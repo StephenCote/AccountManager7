@@ -49,6 +49,7 @@ import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner.AutotuneResult;
+import org.cote.accountmanager.olio.llm.policy.InteractionEvaluator;
 import org.cote.accountmanager.olio.llm.policy.ResponseComplianceEvaluator;
 import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator;
 import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyEvaluationResult;
@@ -458,8 +459,14 @@ public class Chat {
 		PolicyEvaluationResult result = null;
 		BaseRecord policyRef = chatConfig.get("policy");
 		if (policyRef != null) {
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "policy", "Evaluating response policy: timeout, recursive loop, wrong character, refusal");
+			}
 			ResponsePolicyEvaluator rpe = new ResponsePolicyEvaluator();
 			result = rpe.evaluate(user, responseContent, chatConfig, promptConfig);
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "policyDone", result != null && !result.isPermitted() ? result.getViolationSummary() : "passed");
+			}
 			if (result != null && !result.isPermitted()) {
 				logger.warn("Policy violation detected: " + result.getViolationSummary());
 			}
@@ -469,6 +476,9 @@ public class Chat {
 		boolean complianceEnabled = Boolean.TRUE.equals(chatConfig.get("complianceCheck"));
 		int complianceEvery = chatConfig.get("complianceCheckEvery");
 		if (complianceEnabled && complianceEvery > 0 && responseCount % complianceEvery == 0 && responseContent != null) {
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "compliance", "Running compliance check: character identity, gendered voice, profile adherence, age adherence, equal treatment, personality consistency");
+			}
 			final String content = responseContent;
 			final PolicyEvaluationResult heuristicResult = result;
 			CompletableFuture.runAsync(() -> {
@@ -491,8 +501,14 @@ public class Chat {
 							listener.onAutotuneEvent(user, req, "complianceViolation", summary.toString());
 						}
 					}
+					if (listener != null) {
+						listener.onEvalProgress(user, req, "complianceDone", complianceViolations.isEmpty() ? "passed" : complianceViolations.size() + " violation(s)");
+					}
 				} catch (Exception e) {
 					logger.warn("Compliance evaluation failed: " + e.getMessage());
+					if (listener != null) {
+						listener.onEvalProgress(user, req, "complianceDone", "error");
+					}
 				}
 			});
 		}
@@ -1371,6 +1387,26 @@ public class Chat {
 		/// Phase 13f: Emit keyframe event (OI-72)
 		if (listener != null) {
 			listener.onMemoryEvent(user, req, "keyframe", lab);
+		}
+
+		/// Interaction evaluation — piggybacks on keyframe cadence
+		/// Runs async so it doesn't block the keyframe insertion
+		if (listener != null) {
+			listener.onEvalProgress(user, req, "interaction", "Evaluating interaction: type, outcome, relationship direction");
+			final OpenAIRequest evalReq = req;
+			CompletableFuture.runAsync(() -> {
+				try {
+					InteractionEvaluator ie = new InteractionEvaluator();
+					String result = ie.evaluate(user, chatConfig, evalReq.getMessages());
+					if (result != null && !result.isEmpty()) {
+						listener.onInteractionEvent(user, evalReq, result);
+					}
+					listener.onEvalProgress(user, evalReq, "interactionDone", result != null ? "complete" : "no result");
+				} catch (Exception e) {
+					logger.warn("Interaction evaluation failed: " + e.getMessage());
+					listener.onEvalProgress(user, evalReq, "interactionDone", "error");
+				}
+			});
 		}
 
 		/// OI-14: MCP-only keyframe detection (old text format deprecated)

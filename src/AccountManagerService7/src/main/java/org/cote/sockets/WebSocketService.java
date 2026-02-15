@@ -151,6 +151,16 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 
 	@OnMessage
 	public void onMessage(String txt, Session session) throws IOException {
+		/// WebSocket keepalive — respond to ping with pong immediately
+		if (txt != null && txt.contains("\"ping\"")) {
+			try {
+				session.getBasicRemote().sendText("{\"pong\":true}");
+			} catch (Exception e) {
+				// session may be closing
+			}
+			return;
+		}
+
 		// logger.info("Received message from " + session.getId() + ": " + txt);
 		BaseRecord user = getRegisterUser(session);
 
@@ -560,6 +570,18 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 	public void onMemoryEvent(BaseRecord user, OpenAIRequest request, String type, String data) {
 		String oid = request != null ? request.get(FieldNames.FIELD_OBJECT_ID) : "";
 		chirpUser(user, new String[] {"memoryEvent", type, "{\"requestId\":\"" + oid + "\",\"data\":\"" + (data != null ? data.replace("\"", "\\\"") : "") + "\"}"});
+	}
+
+	/// Interaction evaluation event — mid-chat interaction/outcome status
+	@Override
+	public void onInteractionEvent(BaseRecord user, OpenAIRequest request, String data) {
+		chirpUser(user, new String[] {"interactionEvent", data != null ? data : "{}"});
+	}
+
+	/// Evaluation progress notification — tells UX which evaluation phase is active
+	@Override
+	public void onEvalProgress(BaseRecord user, OpenAIRequest request, String phase, String detail) {
+		chirpUser(user, new String[] {"evalProgress", phase != null ? phase : "", detail != null ? detail : ""});
 	}
 
 	// This method will handle forwarding audio to Python and receiving transcripts

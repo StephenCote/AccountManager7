@@ -20,4 +20,8 @@ public interface IChatListener {
 	public default void onAutotuneEvent(BaseRecord user, OpenAIRequest request, String type, String data) {}
 	/// Phase 13f: Memory event notification (OI-71, OI-72)
 	public default void onMemoryEvent(BaseRecord user, OpenAIRequest request, String type, String data) {}
+	/// Interaction evaluation event — mid-chat interaction/outcome status update
+	public default void onInteractionEvent(BaseRecord user, OpenAIRequest request, String data) {}
+	/// Evaluation progress notification — informs the UX which evaluation phase is running
+	public default void onEvalProgress(BaseRecord user, OpenAIRequest request, String phase, String detail) {}
 }

@@ -365,18 +365,24 @@
                 // Phase 13e item 17: Reset reconnect state on successful connection (OI-75)
                 wsReconnectAttempts = 0;
                 wsReconnectDelay = 1000;
+                startKeepAlive();
                 res(event);
             };
 
             webSocket.onmessage = function(event) {
+                wsLastPong = Date.now();
                 if(event.data){
-                    routeMessage(JSON.parse(event.data));
+                    let parsed = JSON.parse(event.data);
+                    // Pong responses from keepalive — don't route as regular messages
+                    if (parsed && parsed.pong) return;
+                    routeMessage(parsed);
                 }
             };
 
             // Phase 13e item 17: Exponential backoff reconnection (OI-75)
             webSocket.onclose = function(event) {
                 console.warn("[WebSocket] Closed (code: " + event.code + ")");
+                stopKeepAlive();
                 if (wsReconnectAttempts < wsMaxReconnectAttempts) {
                     wsReconnectAttempts++;
                     console.log("[WebSocket] Reconnecting (attempt " + wsReconnectAttempts + ") in " + wsReconnectDelay + "ms...");
@@ -388,6 +394,11 @@
                     addToast("error", "Connection lost. Please reload the page.", 0);
                 }
             };
+
+            webSocket.onerror = function(event) {
+                console.error("[WebSocket] Error", event);
+                stopKeepAlive();
+            };
         });
       }
 
@@ -396,6 +407,47 @@
       let wsMaxReconnectDelay = 30000;
       let wsMaxReconnectAttempts = 10;
       let wsReconnectAttempts = 0;
+
+      // WebSocket keepalive — sends ping via WS, expects pong back.
+      // Detects stale connections on mobile (iOS/Brave) where WS can
+      // silently die without firing onclose.
+      let keepAliveInterval = null;
+      let wsLastPong = Date.now();
+      let keepAliveMs = 25000;
+      let wsStaleThresholdMs = 60000;
+
+      function startKeepAlive() {
+          stopKeepAlive();
+          wsLastPong = Date.now();
+          keepAliveInterval = setInterval(function() {
+              if (!webSocket || webSocket.readyState !== WebSocket.OPEN) {
+                  stopKeepAlive();
+                  return;
+              }
+              // Check staleness
+              let elapsed = Date.now() - wsLastPong;
+              if (elapsed > wsStaleThresholdMs) {
+                  console.warn("[KeepAlive] WebSocket stale (" + Math.round(elapsed / 1000) + "s since last pong). Forcing reconnect.");
+                  stopKeepAlive();
+                  try { webSocket.close(); } catch(e) { /* ignore */ }
+                  return;
+              }
+              // Send WS ping — server responds with {"pong":true}
+              try {
+                  webSocket.send(JSON.stringify({ping: true}));
+              } catch(e) {
+                  console.warn("[KeepAlive] WS ping send failed:", e);
+                  stopKeepAlive();
+              }
+          }, keepAliveMs);
+      }
+
+      function stopKeepAlive() {
+          if (keepAliveInterval) {
+              clearInterval(keepAliveInterval);
+              keepAliveInterval = null;
+          }
+      }
 
       let maxReconnect = 60;
       async function reconnect(sOrg, sTok, iIter){
@@ -512,9 +564,56 @@
                 } else if (atType === "optionsRebalance") {
                     page.toast("info", "Autotune: Chat options rebalanced — " + atData, 5000);
                     console.log("[Autotune] Options rebalanced:", atData);
+                } else if (atType === "complianceViolation") {
+                    page.toast("warn", "Compliance: " + atData, 6000);
+                    console.warn("[Compliance] Violation:", atData);
                 }
                 if (window.LLMConnector) {
                     LLMConnector.lastAutotuneEvent = { type: atType, data: atData };
+                }
+                m.redraw();
+            }
+            else if(c1 === "evalProgress"){
+                // Evaluation progress — shows which evaluation phase is active
+                let phase = msg.chirps[1] || "";
+                let detail = msg.chirps[2] || "";
+                if (phase === "policy") {
+                    page.toast("info", "Evaluating: " + detail, 3000);
+                } else if (phase === "policyDone") {
+                    // Policy done — only toast if there was a problem
+                    if (detail !== "passed") {
+                        page.toast("warn", "Policy result: " + detail, 4000);
+                    }
+                } else if (phase === "compliance") {
+                    page.toast("info", "Evaluating: " + detail, 4000);
+                } else if (phase === "complianceDone") {
+                    if (detail !== "passed") {
+                        page.toast("info", "Compliance check: " + detail, 3000);
+                    }
+                } else if (phase === "interaction") {
+                    page.toast("info", "Evaluating: " + detail, 3000);
+                } else if (phase === "interactionDone") {
+                    // Interaction done — silent unless error
+                    if (detail === "error") {
+                        page.toast("warn", "Interaction evaluation failed", 3000);
+                    }
+                }
+                console.log("[EvalProgress]", phase, detail);
+                m.redraw();
+            }
+            else if(c1 === "interactionEvent"){
+                // Mid-chat interaction/outcome evaluation result
+                let iData = null;
+                try { iData = JSON.parse(msg.chirps[1]); } catch(e) { iData = msg.chirps[1]; }
+                if (iData && iData.interactionType) {
+                    let summary = iData.summary || "";
+                    let dir = iData.relationshipDirection || "";
+                    let icon = dir === "IMPROVING" ? "trending_up" : (dir === "WORSENING" ? "trending_down" : "trending_flat");
+                    page.toast("info", iData.interactionType.toLowerCase() + " — " + summary, 5000);
+                    console.log("[Interaction]", iData);
+                }
+                if (window.LLMConnector) {
+                    LLMConnector.lastInteractionEvent = iData;
                 }
                 m.redraw();
             }

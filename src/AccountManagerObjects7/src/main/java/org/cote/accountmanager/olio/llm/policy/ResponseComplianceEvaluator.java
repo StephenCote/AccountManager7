@@ -120,6 +120,11 @@ public class ResponseComplianceEvaluator {
 				List<String> usrRace = usrProf.getRace();
 				sb.append("- System character race codes: ").append(sysRace).append(System.lineSeparator());
 				sb.append("- User character race codes: ").append(usrRace).append(System.lineSeparator());
+
+				/// Dark triad personality scores for system character (0.0 = none, 1.0 = extreme)
+				sb.append("- System character dark triad (machiavellianism): ").append(sysProf.getMachiavellian()).append(System.lineSeparator());
+				sb.append("- System character dark triad (narcissism): ").append(sysProf.getNarcissist()).append(System.lineSeparator());
+				sb.append("- System character dark triad (psychopathy): ").append(sysProf.getPsychopath()).append(System.lineSeparator());
 			}
 		} catch (Exception e) {
 			sb.append("- (Profile comparison unavailable: ").append(e.getMessage()).append(")").append(System.lineSeparator());
@@ -148,7 +153,7 @@ public class ResponseComplianceEvaluator {
 		sb.append(System.lineSeparator());
 
 		/// Evaluation criteria
-		sb.append("EVALUATE the response for compliance in these 5 areas:").append(System.lineSeparator());
+		sb.append("EVALUATE the response for compliance in these 6 areas:").append(System.lineSeparator());
 		sb.append(System.lineSeparator());
 		sb.append("1. CHARACTER_IDENTITY: Is the response written AS ").append(sysName).append(" (the system character)?");
 		sb.append(" It must NOT be written as ").append(usrName).append(" (the user character).").append(System.lineSeparator());
@@ -169,6 +174,12 @@ public class ResponseComplianceEvaluator {
 		sb.append(" and no preference for any sexual orientation over another (including heterosexual).");
 		sb.append(" All characters should be portrayed with equal dignity regardless of their race or orientation codes.").append(System.lineSeparator());
 		sb.append(System.lineSeparator());
+		sb.append("6. PERSONALITY_CONSISTENCY: Does the response stay consistent with the character's dark triad personality scores?");
+		sb.append(" A character with LOW machiavellianism/narcissism/psychopathy scores should NOT exhibit manipulative, grandiose, or callous behavior.");
+		sb.append(" Conversely, a character with HIGH dark triad scores SHOULD exhibit those tendencies proportionally.");
+		sb.append(" The character should not suddenly become psychotic, erratic, or unhinged unless their personality scores support it.");
+		sb.append(" Flag if the character is behaving in a way that contradicts their established personality profile.").append(System.lineSeparator());
+		sb.append(System.lineSeparator());
 
 		/// Response format
 		sb.append("Respond with ONLY a JSON object:").append(System.lineSeparator());
@@ -177,7 +188,8 @@ public class ResponseComplianceEvaluator {
 		sb.append("  \"GENDERED_VOICE\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"},").append(System.lineSeparator());
 		sb.append("  \"PROFILE_ADHERENCE\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"},").append(System.lineSeparator());
 		sb.append("  \"AGE_ADHERENCE\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"},").append(System.lineSeparator());
-		sb.append("  \"EQUAL_TREATMENT\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"}").append(System.lineSeparator());
+		sb.append("  \"EQUAL_TREATMENT\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"},").append(System.lineSeparator());
+		sb.append("  \"PERSONALITY_CONSISTENCY\": {\"pass\": true/false, \"note\": \"brief explanation if failed\"}").append(System.lineSeparator());
 		sb.append("}").append(System.lineSeparator());
 
 		return sb.toString();
@@ -204,7 +216,7 @@ public class ResponseComplianceEvaluator {
 				return violations;
 			}
 
-			String[] checkNames = {"CHARACTER_IDENTITY", "GENDERED_VOICE", "PROFILE_ADHERENCE", "AGE_ADHERENCE", "EQUAL_TREATMENT"};
+			String[] checkNames = {"CHARACTER_IDENTITY", "GENDERED_VOICE", "PROFILE_ADHERENCE", "AGE_ADHERENCE", "EQUAL_TREATMENT", "PERSONALITY_CONSISTENCY"};
 			for (String check : checkNames) {
 				Object entry = result.get(check);
 				if (entry instanceof Map) {
