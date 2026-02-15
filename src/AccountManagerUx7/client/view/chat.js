@@ -280,9 +280,14 @@
     }
 
     // Phase 13a item 3: Use AnalysisManager instead of dialog.chatInto (OI-56, OI-57)
+    // When already on /chat, startAnalysis stores pending state then we immediately execute it
     async function chatInto() {
       if (window.AnalysisManager) {
-        AnalysisManager.startAnalysis(inst.entity, inst, aCCfg);
+        await AnalysisManager.startAnalysis(inst.entity, inst, aCCfg);
+        // Already on /chat — oninit won't re-fire, so execute pending immediately
+        if (AnalysisManager.getActiveAnalysis()) {
+          await AnalysisManager.executePending();
+        }
       } else {
         console.warn("AnalysisManager not loaded, analysis unavailable");
       }
@@ -1241,9 +1246,12 @@
         let ctx = page.user.homeDirectory;
         origin = vnode.attrs.origin || ctx;
 
-        // Phase 13a item 3: remoteEntity pattern removed (OI-57)
-        // Analysis sessions now use AnalysisManager which creates sessions
-        // server-side and selects via ConversationManager — no cross-window state.
+        // Phase 13a: Execute pending analysis if AnalysisManager has queued one
+        if (window.AnalysisManager && AnalysisManager.getActiveAnalysis()) {
+          AnalysisManager.executePending().catch(function(e) {
+            console.warn("Failed to execute pending analysis", e);
+          });
+        }
 
         // Phase 10b: Wire ConversationManager callbacks
         if (window.ConversationManager) {

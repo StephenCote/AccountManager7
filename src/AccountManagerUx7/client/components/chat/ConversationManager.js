@@ -149,8 +149,9 @@
             onclick: function() { selectSession(session); }
         }, [
             m("span", {
-                class: "material-symbols-outlined material-icons-24 flex-shrink-0 mr-1 opacity-0 group-hover:opacity-100",
+                class: "material-symbols-outlined material-icons-24 flex-shrink-0 mr-1 opacity-30 group-hover:opacity-100 transition-opacity",
                 title: "Delete session",
+                style: "font-size: 18px;",
                 onclick: function(e) {
                     e.stopPropagation();
                     deleteSession(session);

@@ -5,6 +5,10 @@
  *
  * Resolves: OI-56, OI-57, OI-58
  *
+ * Pattern: startAnalysis() stores pending analysis context and navigates to /chat.
+ * The chat view calls executePending() on init to create the server session.
+ * This avoids inline session creation and side-effect-heavy startAnalysis calls.
+ *
  * Exposes: window.AnalysisManager
  */
 (function() {
@@ -105,6 +109,9 @@
          * Start an in-page analysis session for a reference object.
          * Replaces dialog.chatInto() — no window.open, no remoteEntity.
          *
+         * Stores analysis context in pendingAnalysis and navigates to /chat.
+         * The chat view calls executePending() to create the server session.
+         *
          * @param {Object} ref - the reference object to analyze
          * @param {Object} [sourceInst] - optional source chat instance (for session vectorization)
          * @param {Object} [sourceCCfg] - optional source chat config list
@@ -121,10 +128,7 @@
                 (ref && ref[am7model.jsonModelKey] ? ref[am7model.jsonModelKey].toUpperCase() + " " : "") +
                 (ref && ref.name ? ref.name : "Object");
 
-            // Build working set
-            let wset = [];
-
-            // Gather character tags from source config
+            // Determine character names for tag gathering
             let charNames = [];
             if (sourceInst && sourceCCfg) {
                 let aC = sourceCCfg.filter(function(c) {
@@ -138,27 +142,60 @@
                 charNames.push(ref.name);
             }
 
+            // Store pending analysis context — chat view will execute via executePending()
+            pendingAnalysis = {
+                ref: ref,
+                configs: configs,
+                sessionName: cname,
+                charNames: charNames,
+                sourceInst: sourceInst,
+                sourceCCfg: sourceCCfg
+            };
+
+            // Navigate to chat if not already there
+            if (m.route.get() !== "/chat") {
+                m.route.set("/chat");
+            }
+
+            m.redraw();
+        },
+
+        /**
+         * Execute the pending analysis — creates the server session, populates
+         * working set, and wires up ConversationManager.
+         * Called by the chat view on init when pending analysis exists.
+         *
+         * @returns {Object|null} the created chat request object, or null
+         */
+        executePending: async function() {
+            if (!pendingAnalysis) return null;
+            let pa = pendingAnalysis;
+            pendingAnalysis = null;
+
+            // Build working set
+            let wset = [];
+
             // Vectorize source session if present
-            if (sourceInst && sourceInst.api.session && sourceInst.api.session() != null) {
-                let vecRec = await vectorizeSession(sourceInst.api.session());
+            if (pa.sourceInst && pa.sourceInst.api.session && pa.sourceInst.api.session() != null) {
+                let vecRec = await vectorizeSession(pa.sourceInst.api.session());
                 if (vecRec) wset.push(vecRec);
             }
 
             // Gather character tags
-            if (charNames.length) {
-                let tags = await gatherCharacterTags(charNames);
+            if (pa.charNames && pa.charNames.length) {
+                let tags = await gatherCharacterTags(pa.charNames);
                 wset.push(...tags);
             }
 
             // Add the reference object itself
-            if (ref) wset.push(ref);
+            if (pa.ref) wset.push(pa.ref);
 
             // Create server-side chat request via POST /rest/chat/new
             let chatReq = {
                 schema: "olio.llm.chatRequest",
-                name: cname,
-                chatConfig: { objectId: configs.chatConfig.objectId },
-                promptConfig: { objectId: configs.promptConfig.objectId },
+                name: pa.sessionName,
+                chatConfig: { objectId: pa.configs.chatConfig.objectId },
+                promptConfig: { objectId: pa.configs.promptConfig.objectId },
                 uid: page.uid()
             };
 
@@ -171,13 +208,13 @@
 
             if (!obj) {
                 page.toast("error", "Failed to create analysis session");
-                return;
+                return null;
             }
 
             // Attach reference to context panel
-            if (window.ContextPanel && ref && ref.objectId) {
-                let schema = ref[am7model.jsonModelKey] || ref.schema || "";
-                ContextPanel.attach("context", ref.objectId, schema);
+            if (window.ContextPanel && pa.ref && pa.ref.objectId) {
+                let schema = pa.ref[am7model.jsonModelKey] || pa.ref.schema || "";
+                ContextPanel.attach("context", pa.ref.objectId, schema);
             }
 
             // Populate working set
@@ -194,12 +231,8 @@
                 ConversationManager.selectSession(obj);
             }
 
-            // Navigate to chat if not already there
-            if (m.route.get() !== "/chat") {
-                m.route.set("/chat");
-            }
-
             m.redraw();
+            return obj;
         },
 
         /**

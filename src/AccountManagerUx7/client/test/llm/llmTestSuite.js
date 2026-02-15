@@ -123,7 +123,7 @@
             // OI-24: Update-if-changed — sync key fields from template
             let needsPatch = false;
             let syncFields = schema === "olio.llm.chatConfig"
-                ? ["serverUrl", "serviceType", "model", "stream", "prune", "messageTrim", "chatOptions", "assist", "rating", "startMode", "remindEvery", "keyframeEvery", "autoTunePrompts", "autoTuneChatOptions"]
+                ? ["serverUrl", "serviceType", "model", "stream", "prune", "messageTrim", "chatOptions", "assist", "rating", "startMode", "remindEvery", "keyframeEvery", "autoTunePrompts", "autoTuneChatOptions", "requestTimeout", "extractMemories", "memoryBudget", "memoryExtractionEvery", "autoTitle"]
                 : ["system", "user", "assistant", "episodeRule"];
             for (let i = 0; i < syncFields.length; i++) {
                 let f = syncFields[i];
@@ -282,6 +282,16 @@
         standardTemplate.stream = false;
         standardTemplate.prune = false;
         let standardCfg = await findOrCreateConfig("olio.llm.chatConfig", testGroup, standardTemplate, charExtras);
+
+        // Reload with getFull to ensure nested foreign models (chatOptions) have all fields
+        if (streamingCfg && streamingCfg.objectId) {
+            let full = await am7client.getFull("olio.llm.chatConfig", streamingCfg.objectId);
+            if (full) streamingCfg = full;
+        }
+        if (standardCfg && standardCfg.objectId) {
+            let full = await am7client.getFull("olio.llm.chatConfig", standardCfg.objectId);
+            if (full) standardCfg = full;
+        }
 
         // Store variants
         suiteState.chatConfigs.streaming = streamingCfg;
@@ -1335,7 +1345,7 @@
         let methods = ["findChatDir", "getOpenChatTemplate", "ensurePrompt", "ensureConfig",
             "createSession", "chat", "streamChat", "cancelStream", "getHistory",
             "extractContent", "parseDirective", "repairJson", "deleteSession",
-            "cloneConfig", "pruneTag", "pruneToMark", "pruneOther", "pruneOut", "pruneAll",
+            "cloneConfig", "pruneTag", "pruneToMark", "pruneOther", "pruneOut", "pruneAll", "pruneCode",
             "onPolicyEvent", "handlePolicyEvent", "removePolicyEventHandler"];
         let missing = methods.filter(function(m) { return typeof LLMConnector[m] !== "function"; });
         if (missing.length === 0) {
@@ -2060,7 +2070,7 @@
 
         // 120: AnalysisManager API completeness
         if (window.AnalysisManager) {
-            let amMethods = ["startAnalysis", "getActiveAnalysis", "clearAnalysis"];
+            let amMethods = ["startAnalysis", "executePending", "getActiveAnalysis", "clearAnalysis"];
             let amMissing = amMethods.filter(function(m) { return typeof AnalysisManager[m] !== "function"; });
             log("dialog", "120: AnalysisManager API complete (" + amMethods.length + " methods)", amMissing.length === 0 ? "pass" : "fail");
             if (amMissing.length > 0) log("dialog", "120: Missing: " + amMissing.join(", "), "fail");
@@ -2207,7 +2217,7 @@
         log("analysis", "135: AnalysisManager loaded", "pass");
 
         // Test 135b: API methods
-        let amMethods = ["startAnalysis", "getActiveAnalysis", "clearAnalysis"];
+        let amMethods = ["startAnalysis", "executePending", "getActiveAnalysis", "clearAnalysis"];
         let amMissing = amMethods.filter(function(m) { return typeof AnalysisManager[m] !== "function"; });
         if (amMissing.length === 0) {
             log("analysis", "135b: All " + amMethods.length + " methods present", "pass");
@@ -2220,15 +2230,29 @@
         let active = AnalysisManager.getActiveAnalysis();
         log("analysis", "136: getActiveAnalysis returns null after clear: " + (active === null), active === null ? "pass" : "fail");
 
-        // Test 137: startAnalysis requires configs — graceful error when no Object/Analyze configs exist
-        // We test with a mock object to verify it does not throw
-        let mockRef = { name: "TestWidget" };
-        mockRef[am7model.jsonModelKey] = "data.data";
+        // Test 137: startAnalysis stores pending analysis — no server session, no navigation
+        // startAnalysis now stores context in pendingAnalysis; executePending creates the session
+        let mockRef = { name: "TestCharacter" };
+        mockRef[am7model.jsonModelKey] = "olio.charPerson";
+        let savedRoute = m.route.get();
         try {
-            // startAnalysis will toast an error if no analysis configs exist, which is fine
-            // The key is it should not throw an unhandled exception
             await AnalysisManager.startAnalysis(mockRef);
-            log("analysis", "137: startAnalysis with mock ref did not throw", "pass");
+            let pending = AnalysisManager.getActiveAnalysis();
+            if (pending) {
+                // Verify pending state was stored correctly
+                let nameOk = pending.sessionName && pending.sessionName.indexOf("Analyze") === 0;
+                log("analysis", "137: startAnalysis stored pending analysis: " + nameOk, nameOk ? "pass" : "fail");
+                log("analysis", "137b: executePending method available: " + (typeof AnalysisManager.executePending === "function"), typeof AnalysisManager.executePending === "function" ? "pass" : "fail");
+                // Clean up — clear pending so it doesn't execute on next /chat visit
+                AnalysisManager.clearAnalysis();
+                // Restore route if startAnalysis changed it
+                if (m.route.get() !== savedRoute) {
+                    m.route.set(savedRoute);
+                }
+            } else {
+                // No configs found — startAnalysis toasted error and returned, which is fine
+                log("analysis", "137: startAnalysis with mock ref did not throw (no analysis configs)", "pass");
+            }
         } catch (e) {
             log("analysis", "137: startAnalysis threw: " + e.message, "fail");
         }

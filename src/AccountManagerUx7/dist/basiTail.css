@@ -9452,6 +9452,10 @@ button.button-tab-active:hover:is(.dark *) {
   opacity: 0.2;
 }
 
+.opacity-30 {
+  opacity: 0.3;
+}
+
 .opacity-50 {
   opacity: 0.5;
 }

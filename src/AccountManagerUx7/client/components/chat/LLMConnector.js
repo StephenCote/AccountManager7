@@ -615,6 +615,17 @@
             return cnt;
         },
 
+        /**
+         * Remove fenced code blocks (```...```) from content.
+         * Useful for stripping code artifacts from LLM responses.
+         * @param {string} cnt - content string
+         * @returns {string}
+         */
+        pruneCode: function(cnt) {
+            if (!cnt) return cnt || "";
+            return cnt.replace(/```[\s\S]*?```/g, "").trim();
+        },
+
         // ── Config Cloning ──────────────────────────────────────────────
 
         /**

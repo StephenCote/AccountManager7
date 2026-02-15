@@ -183,7 +183,8 @@
             return tags;
         },
         testMode: (new URLSearchParams(window.location.search)).get("testMode") === "true",
-        productionMode: (new URLSearchParams(window.location.search)).get("productionMode") === "true"
+        productionMode: (new URLSearchParams(window.location.search)).get("productionMode") === "true",
+        formDef: am7model
 
     };
 

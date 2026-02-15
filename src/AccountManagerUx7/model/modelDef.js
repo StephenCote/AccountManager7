@@ -8910,6 +8910,44 @@
           "type": "model",
           "baseModel": "policy.policy",
           "foreign": true
+        },
+        {
+          "name": "autoTitle",
+          "type": "boolean",
+          "description": "Automatically generate a title for chat sessions"
+        },
+        {
+          "name": "autoTunePrompts",
+          "type": "boolean",
+          "description": "Automatically tune prompts based on conversation context"
+        },
+        {
+          "name": "autoTuneChatOptions",
+          "type": "boolean",
+          "description": "Automatically tune chat options based on conversation context"
+        },
+        {
+          "name": "requestTimeout",
+          "type": "int",
+          "default": 120000,
+          "description": "Timeout in milliseconds for chat requests"
+        },
+        {
+          "name": "extractMemories",
+          "type": "boolean",
+          "description": "Extract and store memories from conversations"
+        },
+        {
+          "name": "memoryBudget",
+          "type": "int",
+          "default": 10,
+          "description": "Maximum number of memories to include in context"
+        },
+        {
+          "name": "memoryExtractionEvery",
+          "type": "int",
+          "default": 5,
+          "description": "Extract memories every N messages"
         }
       ]
     },
