@@ -8929,8 +8929,8 @@
         {
           "name": "requestTimeout",
           "type": "int",
-          "default": 120000,
-          "description": "Timeout in milliseconds for chat requests"
+          "default": 120,
+          "description": "Timeout in seconds for chat requests"
         },
         {
           "name": "extractMemories",

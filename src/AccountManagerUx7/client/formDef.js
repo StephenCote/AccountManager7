@@ -5238,26 +5238,6 @@
                 label: "Request Timeout (sec)",
                 hint: "Hard timeout for LLM connections. 0=no timeout."
             },
-            terrain: {
-                layout: "third",
-                label: "Terrain"
-            },
-            populationDescription: {
-                layout: "third",
-                label: "Population"
-            },
-            animalDescription: {
-                layout: "third",
-                label: "Animals"
-            },
-            universeName: {
-                layout: "third",
-                label: "Universe Name"
-            },
-            worldName: {
-                layout: "third",
-                label: "World Name"
-            },
 
             // Phase 13f item 22: Memory config fields (OI-68)
             extractMemories: {
