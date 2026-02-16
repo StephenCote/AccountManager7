@@ -21,7 +21,6 @@ import org.cote.accountmanager.policy.OperationUtil;
 import org.cote.accountmanager.policy.PolicyEvaluator;
 import org.cote.accountmanager.policy.operation.IOperation;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
@@ -51,8 +50,14 @@ public class ResponsePolicyEvaluator {
 	/// @param responseContent The LLM response text (may be null for timeout)
 	/// @param chatConfig The chatConfig record with policyTemplate or policy reference
 	/// @param promptConfig The promptConfig record
+	/// @param requestId The OpenAIRequest objectId for logging context (may be null)
 	/// @return PolicyEvaluationResult with PERMIT/DENY status and violation details
 	public PolicyEvaluationResult evaluate(BaseRecord user, String responseContent, BaseRecord chatConfig, BaseRecord promptConfig) {
+		return evaluate(user, responseContent, chatConfig, promptConfig, null);
+	}
+
+	/// Evaluate with request tracking ID for log correlation.
+	public PolicyEvaluationResult evaluate(BaseRecord user, String responseContent, BaseRecord chatConfig, BaseRecord promptConfig, String requestId) {
 		PolicyEvaluationResult result = new PolicyEvaluationResult();
 
 		if (chatConfig == null) {
@@ -113,12 +118,12 @@ public class ResponsePolicyEvaluator {
 			}
 
 			/// Build sourceFact with response content
-			FactType sourceFact = buildSourceFact(responseContent);
+			FactType sourceFact = buildSourceFact(user, responseContent);
 
 			/// Build referenceFact with merged parameters + character context
 			@SuppressWarnings("unchecked")
 			Map<String, Object> params = (Map<String, Object>) opDef.get("parameters");
-			FactType referenceFact = buildReferenceFact(params, charJson, biasCharJson);
+			FactType referenceFact = buildReferenceFact(user, params, charJson, biasCharJson);
 
 			/// Execute the operation
 			try {
@@ -136,7 +141,8 @@ public class ResponsePolicyEvaluator {
 		}
 
 		result.setPermitted(allPassed);
-		logger.info("ResponsePolicyEvaluator: " + result.getViolationSummary());
+		String reqCtx = requestId != null ? " [req=" + requestId + "]" : "";
+		logger.info("ResponsePolicyEvaluator:" + reqCtx + " " + result.getViolationSummary());
 		return result;
 	}
 
@@ -283,10 +289,12 @@ public class ResponsePolicyEvaluator {
 	}
 
 	/// Build a source fact carrying the response content for operations to evaluate.
-	private FactType buildSourceFact(String responseContent) {
+	/// Follows the standard AM7 pattern: applyNameGroupOwnership with ~/Facts group path.
+	private FactType buildSourceFact(BaseRecord user, String responseContent) {
 		try {
-			FactType fact = new FactType(RecordFactory.model(ModelNames.MODEL_FACT).newInstance());
-			fact.setName("responseContent");
+			FactType fact = new FactType();
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(
+				user, fact, "responseContent", "~/Facts", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			fact.setFactData(responseContent);
 			return fact;
 		} catch (Exception e) {
@@ -296,10 +304,12 @@ public class ResponsePolicyEvaluator {
 	}
 
 	/// Build a reference fact carrying merged parameters + character context.
-	private FactType buildReferenceFact(Map<String, Object> params, String charJson, String biasCharJson) {
+	/// Follows the standard AM7 pattern: applyNameGroupOwnership with ~/Facts group path.
+	private FactType buildReferenceFact(BaseRecord user, Map<String, Object> params, String charJson, String biasCharJson) {
 		try {
-			FactType fact = new FactType(RecordFactory.model(ModelNames.MODEL_FACT).newInstance());
-			fact.setName("operationConfig");
+			FactType fact = new FactType();
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(
+				user, fact, "operationConfig", "~/Facts", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 
 			/// Merge all context into a single JSON map
 			Map<String, String> merged = new HashMap<>();

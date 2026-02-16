@@ -1,67 +1,5 @@
 (function () {
 
-    /// Build a policy.policy complex object from a template and save via model service
-    async function createAndAssignChatPolicy(tmpl, inst) {
-        let patterns = tmpl.operations.map(function(op) {
-            let matchFact = {
-                schema: "policy.fact", name: op.name + " Context",
-                groupPath: "~/Facts", type: "STATIC"
-            };
-            if (op.params) {
-                matchFact.parameters = Object.keys(op.params).map(function(k) {
-                    return { schema: "policy.factParameter", name: k, valueType: "STRING", value: op.params[k] };
-                });
-            }
-            return {
-                schema: "policy.pattern",
-                name: op.name,
-                groupPath: "~/Patterns",
-                type: "OPERATION",
-                operation: {
-                    schema: "policy.operation",
-                    name: op.name + " Op",
-                    groupPath: "~/Operations",
-                    type: "INTERNAL",
-                    operation: op.cls
-                },
-                fact: {
-                    schema: "policy.fact", name: op.name + " Param",
-                    groupPath: "~/Facts", type: "PARAMETER"
-                },
-                match: matchFact
-            };
-        });
-
-        let policyObj = {
-            schema: "policy.policy",
-            name: tmpl.name,
-            groupPath: "~/Policies",
-            enabled: true,
-            condition: tmpl.condition,
-            rules: [{
-                schema: "policy.rule",
-                name: tmpl.name + " Rules",
-                groupPath: "~/Rules",
-                type: tmpl.ruleType,
-                condition: tmpl.condition,
-                patterns: patterns
-            }]
-        };
-
-        try {
-            let created = await page.createObject(policyObj);
-            if (created && created.objectId) {
-                inst.api.policy({ objectId: created.objectId });
-                page.toast("info", "Policy created: " + tmpl.name, 3000);
-            } else {
-                page.toast("error", "Failed to create policy", 3000);
-            }
-        } catch (e) {
-            page.toast("error", "Policy creation error: " + (e.message || e), 5000);
-        }
-        m.redraw();
-    }
-
     /// TODO: Currently out of date
     let forms = {
         access: {},
@@ -5011,72 +4949,6 @@
                     label: "Policy"
                 }
             },
-            loadPolicy: {
-                format: "button",
-                layout: "one",
-                icon: 'shield',
-                field: {
-                    label: "Load Policy Template",
-                    command: function(objectPage, inst, fieldName) {
-                        let templates = [
-                            {
-                                name: "RPG Response Policy",
-                                desc: "Full detection: timeout, loops, wrong character, refusal (2+ matches)",
-                                condition: "ALL", ruleType: "PERMIT",
-                                operations: [
-                                    { name: "Timeout Detection", cls: "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation" },
-                                    { name: "Recursive Loop Detection", cls: "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation", params: { windowSize: "50", repeatThreshold: "3" } },
-                                    { name: "Wrong Character Detection", cls: "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation" },
-                                    { name: "Refusal Detection", cls: "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation", params: { minMatches: "2" } }
-                                ]
-                            },
-                            {
-                                name: "General Response Policy",
-                                desc: "Lightweight: timeout + loop detection only",
-                                condition: "ALL", ruleType: "PERMIT",
-                                operations: [
-                                    { name: "Timeout Detection", cls: "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation" },
-                                    { name: "Recursive Loop Detection", cls: "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation", params: { windowSize: "50", repeatThreshold: "4" } }
-                                ]
-                            },
-                            {
-                                name: "Clinical Response Policy",
-                                desc: "Strict: all 4 detections, single-match refusal trigger",
-                                condition: "ALL", ruleType: "PERMIT",
-                                operations: [
-                                    { name: "Timeout Detection", cls: "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation" },
-                                    { name: "Recursive Loop Detection", cls: "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation", params: { windowSize: "50", repeatThreshold: "3" } },
-                                    { name: "Wrong Character Detection", cls: "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation" },
-                                    { name: "Refusal Detection - Strict", cls: "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation", params: { minMatches: "1" } }
-                                ]
-                            }
-                        ];
-                        let selView = {
-                            view: function() {
-                                return m("div", { class: "p-2" }, templates.map(function(t) {
-                                    return m("div", {
-                                        class: "p-3 mb-2 cursor-pointer rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700",
-                                        onclick: async function() {
-                                            page.components.dialog.endDialog();
-                                            await createAndAssignChatPolicy(t, inst);
-                                        }
-                                    }, [
-                                        m("div", { class: "font-medium" }, t.name),
-                                        m("div", { class: "text-xs text-gray-500" }, t.desc)
-                                    ]);
-                                }));
-                            }
-                        };
-                        page.components.dialog.setDialog({
-                            label: "Select Policy Template",
-                            entityType: "policyTemplate",
-                            size: 50,
-                            data: { entity: {}, view: selView },
-                            cancel: function() { page.components.dialog.endDialog(); }
-                        });
-                    }
-                }
-            },
             serverUrl:{
                 layout: "third"
             },
@@ -5501,6 +5373,66 @@
         narrate
     };
     am7model.forms = forms;
+
+    am7model.policyTemplates = [
+        {
+            name: "RPG Response Policy",
+            desc: "Full detection: timeout, loops, wrong character, refusal (2+ matches)",
+            condition: "ALL", ruleType: "PERMIT",
+            operations: [
+                { name: "Timeout Detection", cls: "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation" },
+                { name: "Recursive Loop Detection", cls: "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation", params: { windowSize: "50", repeatThreshold: "3" } },
+                { name: "Wrong Character Detection", cls: "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation" },
+                { name: "Refusal Detection", cls: "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation", params: { minMatches: "2" } }
+            ]
+        },
+        {
+            name: "General Response Policy",
+            desc: "Lightweight: timeout + loop detection only",
+            condition: "ALL", ruleType: "PERMIT",
+            operations: [
+                { name: "Timeout Detection", cls: "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation" },
+                { name: "Recursive Loop Detection", cls: "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation", params: { windowSize: "50", repeatThreshold: "4" } }
+            ]
+        },
+        {
+            name: "Clinical Response Policy",
+            desc: "Strict: all 4 detections, single-match refusal trigger",
+            condition: "ALL", ruleType: "PERMIT",
+            operations: [
+                { name: "Timeout Detection", cls: "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation" },
+                { name: "Recursive Loop Detection", cls: "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation", params: { windowSize: "50", repeatThreshold: "3" } },
+                { name: "Wrong Character Detection", cls: "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation" },
+                { name: "Refusal Detection - Strict", cls: "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation", params: { minMatches: "1" } }
+            ]
+        },
+        {
+            name: "Bias Detection Policy",
+            desc: "ISO 42001 bias overcorrection detection: pattern, masculine softening, ideology, age-up",
+            condition: "ALL", ruleType: "PERMIT",
+            operations: [
+                { name: "Bias Pattern Detection", cls: "org.cote.accountmanager.olio.llm.policy.BiasPatternDetectionOperation", params: { minMatches: "2" } },
+                { name: "Masculine Softening Detection", cls: "org.cote.accountmanager.olio.llm.policy.MasculineSofteningDetectionOperation", params: { minMatches: "2" } },
+                { name: "Ideology Injection Detection", cls: "org.cote.accountmanager.olio.llm.policy.IdeologyInjectionDetectionOperation", params: { minMatches: "2" } },
+                { name: "Age Up Detection", cls: "org.cote.accountmanager.olio.llm.policy.AgeUpDetectionOperation", params: { ageThreshold: "16", minMatches: "2" } }
+            ]
+        },
+        {
+            name: "RPG + Bias Policy",
+            desc: "Combined RPG response + bias overcorrection detection",
+            condition: "ALL", ruleType: "PERMIT",
+            operations: [
+                { name: "Timeout Detection", cls: "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation" },
+                { name: "Recursive Loop Detection", cls: "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation", params: { windowSize: "50", repeatThreshold: "3" } },
+                { name: "Wrong Character Detection", cls: "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation" },
+                { name: "Refusal Detection", cls: "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation", params: { minMatches: "2" } },
+                { name: "Bias Pattern Detection", cls: "org.cote.accountmanager.olio.llm.policy.BiasPatternDetectionOperation", params: { minMatches: "2" } },
+                { name: "Masculine Softening Detection", cls: "org.cote.accountmanager.olio.llm.policy.MasculineSofteningDetectionOperation", params: { minMatches: "2" } },
+                { name: "Ideology Injection Detection", cls: "org.cote.accountmanager.olio.llm.policy.IdeologyInjectionDetectionOperation", params: { minMatches: "2" } },
+                { name: "Age Up Detection", cls: "org.cote.accountmanager.olio.llm.policy.AgeUpDetectionOperation", params: { ageThreshold: "16", minMatches: "2" } }
+            ]
+        }
+    ];
 
     // Dynamically update SD model field limits from the server (defer until authenticated)
     if (typeof am7sd !== "undefined" && am7sd.fetchModels && typeof page !== "undefined" && page.authenticated()) {

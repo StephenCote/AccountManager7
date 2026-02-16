@@ -1878,6 +1878,107 @@
         setDialog(cfg);
     }
 
+    async function createPolicyFromTemplate(tmpl, onCreated) {
+        let types = ["policy.policy", "policy.rule", "policy.pattern", "policy.operation", "policy.fact"];
+        let groups = {};
+        for (let t of types) {
+            let gp = am7view.path(t);
+            let grp = await page.makePath("auth.group", "DATA", gp);
+            if (!grp) {
+                page.toast("error", "Failed to resolve group for " + t, 3000);
+                return;
+            }
+            groups[t] = { path: grp.path, id: grp.id };
+        }
+
+        let patterns = tmpl.operations.map(function(op) {
+            let matchFact = {
+                schema: "policy.fact", name: op.name + " Context",
+                groupPath: groups["policy.fact"].path, groupId: groups["policy.fact"].id,
+                type: "STATIC"
+            };
+            if (op.params) {
+                matchFact.parameters = Object.keys(op.params).map(function(k) {
+                    return { schema: "policy.factParameter", name: k, valueType: "STRING", value: op.params[k] };
+                });
+            }
+            return {
+                schema: "policy.pattern",
+                name: op.name,
+                groupPath: groups["policy.pattern"].path, groupId: groups["policy.pattern"].id,
+                type: "OPERATION",
+                operation: {
+                    schema: "policy.operation",
+                    name: op.name + " Op",
+                    groupPath: groups["policy.operation"].path, groupId: groups["policy.operation"].id,
+                    type: "INTERNAL",
+                    operation: op.cls
+                },
+                fact: {
+                    schema: "policy.fact", name: op.name + " Param",
+                    groupPath: groups["policy.fact"].path, groupId: groups["policy.fact"].id,
+                    type: "PARAMETER"
+                },
+                match: matchFact
+            };
+        });
+
+        let policyObj = {
+            schema: "policy.policy",
+            name: tmpl.name,
+            groupPath: groups["policy.policy"].path, groupId: groups["policy.policy"].id,
+            enabled: true,
+            condition: tmpl.condition,
+            rules: [{
+                schema: "policy.rule",
+                name: tmpl.name + " Rules",
+                groupPath: groups["policy.rule"].path, groupId: groups["policy.rule"].id,
+                type: tmpl.ruleType,
+                condition: tmpl.condition,
+                patterns: patterns
+            }]
+        };
+
+        try {
+            let created = await page.createObject(policyObj);
+            if (created && created.objectId) {
+                page.toast("info", "Policy created: " + tmpl.name, 3000);
+                if (onCreated) onCreated(created);
+            } else {
+                page.toast("error", "Failed to create policy", 3000);
+            }
+        } catch (e) {
+            page.toast("error", "Policy creation error: " + (e.message || e), 5000);
+        }
+    }
+
+    function loadPolicyTemplate(onCreated) {
+        let templates = am7model.policyTemplates || [];
+        let selView = {
+            view: function() {
+                return m("div", { class: "p-2" }, templates.map(function(t) {
+                    return m("div", {
+                        class: "p-3 mb-2 cursor-pointer rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700",
+                        onclick: async function() {
+                            endDialog();
+                            await createPolicyFromTemplate(t, onCreated);
+                        }
+                    }, [
+                        m("div", { class: "font-medium" }, t.name),
+                        m("div", { class: "text-xs text-gray-500" }, t.desc)
+                    ]);
+                }));
+            }
+        };
+        setDialog({
+            label: "Select Policy Template",
+            entityType: "policyTemplate",
+            size: 50,
+            data: { entity: {}, view: selView },
+            cancel: function() { endDialog(); }
+        });
+    }
+
     let dialog = {
         endDialog,
         setDialog,
@@ -1894,7 +1995,8 @@
         chatSettings,
         showProgress,
         memberCloud,
-        batchProgress
+        batchProgress,
+        loadPolicyTemplate
     }
     page.components.dialog = dialog;
 }())

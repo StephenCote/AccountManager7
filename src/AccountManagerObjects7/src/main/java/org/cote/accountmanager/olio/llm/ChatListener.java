@@ -173,7 +173,8 @@ public class ChatListener implements IChatListener {
 			}
 		}
 
-		chat.continueChat(req, interactionCtx + citDesc + vChatReq.getMessage());
+		String userMessage = vChatReq.getMessage();
+		chat.continueChat(req, interactionCtx + citDesc + (userMessage != null ? userMessage : ""));
 		
 		handlers.forEach(h -> h.onChatStart(user, chatReq, req));
 		

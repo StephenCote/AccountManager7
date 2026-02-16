@@ -247,22 +247,13 @@
         }).map(k => k);
         if (form.query) a.push(...form.query);
 
-        if (am7model.inherits(model, "system.organizationExt")) {
-            a.push("organizationPath");
-            a.push("organizationId");
-        }
+        /// Include query hints from model and all inherited models
+        a.push(...am7model.queryFields(model));
+
         if (am7model.inherits(model, "system.primaryKey")) {
             a.push("id");
         }
 
-        if (am7model.isParent(model)) {
-            if (am7model.hasField(model, "path")) a.push("path");
-            a.push("parentId");
-        }
-        if (am7model.isGroup(model) && model != 'auth.group') {
-            a.push("groupPath");
-            a.push("groupId");
-        }
         if (form.forms) {
             form.forms.forEach(f => {
                 a.push(...getFormFieldNames(model, am7model.forms[f]));

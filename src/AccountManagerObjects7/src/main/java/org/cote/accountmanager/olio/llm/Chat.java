@@ -85,6 +85,7 @@ public class Chat {
 	private boolean formatOutput = false;
 	private boolean includeScene = false;
 	private boolean forceJailbreak = false;
+	private boolean streamMode = false;
 	private int remind = 6;
 	private int messageTrim = 20;
 	private int keyFrameEvery = 20;
@@ -201,6 +202,7 @@ public class Chat {
 			keyFrameEvery = chatConfig.get("keyframeEvery");
 			messageTrim = chatConfig.get("messageTrim");
 			requestTimeout = chatConfig.get("requestTimeout");
+			try { streamMode = chatConfig.get("stream"); } catch (Exception e) { /* field may not be set */ }
 
 			/// OI-5: Enforce minimum keyframeEvery when extractMemories is enabled
 			/// to prevent expensive analyze() LLM calls at high frequency
@@ -466,16 +468,20 @@ public class Chat {
 		/// Heuristic policy evaluation (fast)
 		PolicyEvaluationResult result = null;
 		BaseRecord policyRef = chatConfig.get("policy");
+		String policyTemplate = chatConfig.hasField("policyTemplate") ? chatConfig.get("policyTemplate") : null;
+		boolean hasPolicyConfig = policyRef != null || (policyTemplate != null && !policyTemplate.isEmpty());
 		logger.info("evaluateResponsePolicy: responseCount=" + responseCount
 			+ " policyRef=" + (policyRef != null ? "loaded" : "NULL")
+			+ " policyTemplate=" + (policyTemplate != null ? policyTemplate : "NULL")
 			+ " responseLen=" + (responseContent != null ? responseContent.length() : 0)
 			+ " listener=" + (listener != null));
-		if (policyRef != null) {
+		if (hasPolicyConfig) {
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "policy", "Evaluating response policy: timeout, recursive loop, wrong character, refusal");
 			}
+			String reqOid = req != null ? req.get(FieldNames.FIELD_OBJECT_ID) : null;
 			ResponsePolicyEvaluator rpe = new ResponsePolicyEvaluator();
-			result = rpe.evaluate(user, responseContent, chatConfig, promptConfig);
+			result = rpe.evaluate(user, responseContent, chatConfig, promptConfig, reqOid);
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "policyDone", result != null && !result.isPermitted() ? result.getViolationSummary() : "passed");
 			}
@@ -536,7 +542,8 @@ public class Chat {
 			return null;
 		}
 		BaseRecord policyRef = chatConfig.get("policy");
-		if (policyRef == null) {
+		String policyTmpl = chatConfig.hasField("policyTemplate") ? chatConfig.get("policyTemplate") : null;
+		if (policyRef == null && (policyTmpl == null || policyTmpl.isEmpty())) {
 			return null;
 		}
 
@@ -549,8 +556,9 @@ public class Chat {
 			return null;
 		}
 
+		String reqOid = req != null ? req.get(FieldNames.FIELD_OBJECT_ID) : null;
 		ResponsePolicyEvaluator rpe = new ResponsePolicyEvaluator();
-		PolicyEvaluationResult result = rpe.evaluate(user, responseContent, chatConfig, promptConfig);
+		PolicyEvaluationResult result = rpe.evaluate(user, responseContent, chatConfig, promptConfig, reqOid);
 		return (result != null && !result.isPermitted()) ? result : null;
 	}
 
@@ -1628,7 +1636,7 @@ public class Chat {
 	public OpenAIRequest newRequest(String model) {
 		OpenAIRequest req = new OpenAIRequest();
 		req.setModel(model);
-		req.setStream(false);
+		req.setStream(streamMode);
 		applyChatOptions(req);
 		if (llmSystemPrompt != null) {
 			OpenAIMessage msg = new OpenAIMessage();

@@ -481,6 +481,14 @@
         if (cnt && cnt.path.match(/^\/Library/gi)) favSel = " bg-orange-200 active";
         buttons.push(pagination.button("button mr-4" + (systemList ? " active" + favSel : ""), "admin_panel_settings", "", openSystemLibrary));
       }
+      if (type.match(/^policy\.policy/)) {
+        buttons.push(pagination.button("button", "shield", "", function() {
+          page.components.dialog.loadPolicyTemplate(function() {
+            pagination.new();
+            m.redraw();
+          });
+        }));
+      }
       return buttons;
     }
 

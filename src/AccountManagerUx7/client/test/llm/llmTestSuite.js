@@ -2499,8 +2499,8 @@
                 if (hasPolicy && cfgForm.fields.policy.format === "picker") {
                     log("coverage", "155b: policy field is picker format", "pass");
                 }
-                let hasLoadPolicy = !!cfgForm.fields.loadPolicy;
-                log("coverage", "155c: chatConfig form has loadPolicy button: " + hasLoadPolicy, hasLoadPolicy ? "pass" : "fail");
+                let hasPolicyTemplates = !!(am7model.policyTemplates && am7model.policyTemplates.length > 0);
+                log("coverage", "155c: am7model.policyTemplates defined: " + hasPolicyTemplates, hasPolicyTemplates ? "pass" : "fail");
             } else {
                 log("coverage", "155: chatConfig form not found", "warn");
             }

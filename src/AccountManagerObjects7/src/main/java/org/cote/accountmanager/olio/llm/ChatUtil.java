@@ -392,7 +392,7 @@ public class ChatUtil {
 		try {
 			String[] boolFields = {"prune", "assist", "stream", "includeScene", "extractMemories"};
 			String[] intFields = {"messageTrim", "keyframeEvery", "remindEvery", "requestTimeout", "memoryBudget", "memoryExtractionEvery"};
-			String[] stringFields = {"rating"};
+			String[] stringFields = {"rating", "policyTemplate"};
 
 			for(String f : boolFields) {
 				if(template.hasField(f)) chatConfig.set(f, (boolean) template.get(f));
