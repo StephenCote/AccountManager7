@@ -43,7 +43,7 @@
                 chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0) || [];
             }
             if (reqDir) {
-                sessions = await am7client.list("olio.llm.chatRequest", reqDir.objectId, null, 0, 0) || [];
+                sessions = await am7client.list("olio.llm.chatRequest", reqDir.objectId, "name,objectId,attributes,chatConfig,promptConfig,session,sessionType,setting,contextType", 0, 0) || [];
             } else {
                 sessions = [];
             }
@@ -327,13 +327,13 @@
                     let found = false;
                     for (let j = 0; j < sessions[i].attributes.length; j++) {
                         if (sessions[i].attributes[j].name === "chatTitle") {
-                            sessions[i].attributes[j].values = [title];
+                            sessions[i].attributes[j].value = title;
                             found = true;
                             break;
                         }
                     }
                     if (!found) {
-                        sessions[i].attributes.push({ name: "chatTitle", values: [title] });
+                        sessions[i].attributes.push({ name: "chatTitle", value: title });
                     }
                     m.redraw();
                     return;
@@ -354,13 +354,13 @@
                     let found = false;
                     for (let j = 0; j < sessions[i].attributes.length; j++) {
                         if (sessions[i].attributes[j].name === "chatIcon") {
-                            sessions[i].attributes[j].values = [icon];
+                            sessions[i].attributes[j].value = icon;
                             found = true;
                             break;
                         }
                     }
                     if (!found) {
-                        sessions[i].attributes.push({ name: "chatIcon", values: [icon] });
+                        sessions[i].attributes.push({ name: "chatIcon", value: icon });
                     }
                     m.redraw();
                     return;

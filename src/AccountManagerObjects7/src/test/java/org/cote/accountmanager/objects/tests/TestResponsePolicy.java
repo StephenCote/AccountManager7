@@ -25,12 +25,14 @@ import org.cote.accountmanager.objects.generated.PatternType;
 import org.cote.accountmanager.objects.generated.PolicyType;
 import org.cote.accountmanager.objects.generated.RuleType;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner.AutotuneResult;
 import org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation;
@@ -720,5 +722,155 @@ public class TestResponsePolicy extends BaseTest {
 		/// The real failover test is that the infrastructure doesn't throw.
 		/// Forced cancellation of a truly hung stream is tracked in OI-27.
 		logger.info("Enhanced stop failover infrastructure verified (no exceptions)");
+	}
+
+	// ── Test 63: policyTemplate-based evaluation (no policy FK) ──────────
+	@Test
+	public void TestPolicyTemplateEvaluation() {
+		logger.info("Test 63: PolicyTemplateEvaluation - chatConfig.policyTemplate='rpg' triggers direct evaluation");
+		BaseRecord testUser = getPipelineTestUser();
+		assertNotNull("Test user is null", testUser);
+
+		/// Create chatConfig with policyTemplate (no policy FK)
+		String cfgName = "Template Eval Test " + UUID.randomUUID().toString();
+		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, getLLMType(), getLLMType().toString() + " " + cfgName, testProperties);
+		assertNotNull("ChatConfig is null", cfg);
+
+		/// Set policyTemplate to "rpg" — should load olio/llm/policy.rpg.json
+		try {
+			cfg.set("policyTemplate", "rpg");
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		Queue.queueUpdate(cfg, new String[] {"policyTemplate"});
+		Queue.processQueue();
+
+		/// Verify policyTemplate was persisted
+		BaseRecord reloaded = OlioUtil.getFullRecord(cfg);
+		assertNotNull("Reloaded chatConfig is null", reloaded);
+		String tmpl = reloaded.get("policyTemplate");
+		assertTrue("policyTemplate should be 'rpg' but was: " + tmpl, "rpg".equals(tmpl));
+
+		/// Null response should trigger timeout detection → DENY
+		ResponsePolicyEvaluator rpe = new ResponsePolicyEvaluator();
+		PolicyEvaluationResult result = rpe.evaluate(testUser, null, reloaded, null);
+		assertNotNull("Evaluation result should not be null", result);
+		assertFalse("Null response should be DENIED via policyTemplate", result.isPermitted());
+		logger.info("Template null eval: " + result.getViolationSummary());
+
+		/// Normal response should PERMIT
+		PolicyEvaluationResult result2 = rpe.evaluate(testUser, "The knight raised his shield and charged forward.", reloaded, null);
+		assertNotNull("Evaluation result should not be null", result2);
+		assertTrue("Normal response should be PERMITTED via policyTemplate", result2.isPermitted());
+		logger.info("Template normal eval: " + result2.getViolationSummary());
+	}
+
+	// ── Test 64: Chat.evaluateResponsePolicy with policyTemplate ─────────
+	@Test
+	public void TestChatPolicyTemplateHook() {
+		logger.warn("[LLM-LIVE] TestChatPolicyTemplateHook: Requires reachable LLM server");
+		logger.info("Test 64: ChatPolicyTemplateHook - Chat.evaluateResponsePolicy fires with policyTemplate only (no policy FK)");
+		BaseRecord testUser = getPipelineTestUser();
+		assertNotNull("Test user is null", testUser);
+
+		/// Create chatConfig with policyTemplate
+		String cfgName = "Template Hook Test " + UUID.randomUUID().toString();
+		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, getLLMType(), getLLMType().toString() + " " + cfgName, testProperties);
+		assertNotNull("ChatConfig is null", cfg);
+		try {
+			cfg.set("policyTemplate", "rpg");
+			cfg.set("stream", false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		Queue.queueUpdate(cfg, new String[] {"policyTemplate", "stream"});
+		Queue.processQueue();
+
+		/// Create promptConfig
+		BaseRecord pcfg = OlioTestUtil.getObjectPromptConfig(testUser, "Template Hook Prompt " + UUID.randomUUID().toString());
+		assertNotNull("PromptConfig is null", pcfg);
+		List<String> system = pcfg.get("system");
+		system.clear();
+		system.add("You are a friendly assistant. Respond briefly.");
+		IOSystem.getActiveContext().getAccessPoint().update(testUser, pcfg);
+
+		/// Create chatRequest and verify it can be read back via AccessPoint
+		String chatName = "Template Hook Chat " + UUID.randomUUID().toString();
+		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser, chatName, cfg, pcfg);
+		assertNotNull("Chat request is null", creq);
+		String creqOid = creq.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Chat request objectId is null", creqOid);
+
+		/// Verify the chatRequest can be found via AccessPoint (this is what ChatListener does)
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, creqOid);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord found = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+		assertNotNull("Chat request should be findable via AccessPoint (AUDIT check)", found);
+		logger.info("ChatRequest found via AccessPoint: " + found.get(FieldNames.FIELD_OBJECT_ID));
+
+		/// Get the OpenAI session request
+		OpenAIRequest req = ChatUtil.getChatSession(testUser, chatName, cfg, pcfg);
+		assertNotNull("OpenAI request is null", req);
+		String reqOid = req.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("OpenAI request objectId should not be null", reqOid);
+		logger.info("OpenAI request objectId: " + reqOid);
+
+		/// Create Chat and send a message
+		Chat chat = new Chat(testUser, cfg, pcfg);
+		addMessage(req, "user", "What is 2 + 2?");
+		OpenAIResponse resp = chat.chat(req);
+		assertNotNull("Response should not be null (LLM must be reachable)", resp);
+
+		/// Verify evaluateResponsePolicy fires with policyTemplate (no policy FK)
+		PolicyEvaluationResult policyResult = chat.evaluateResponsePolicy(req, resp);
+		assertNotNull("Policy result should not be null (policyTemplate should trigger evaluation)", policyResult);
+		logger.info("Template hook result: " + policyResult.getViolationSummary());
+		assertTrue("Normal response should be PERMITTED", policyResult.isPermitted());
+	}
+
+	// ── Test 65: ChatRequest authZ — read after create ───────────────────
+	@Test
+	public void TestChatRequestAuthZ() {
+		logger.info("Test 65: ChatRequestAuthZ - verify chatRequest read authorization after creation");
+		BaseRecord testUser = getPipelineTestUser();
+		assertNotNull("Test user is null", testUser);
+
+		/// Create chatConfig
+		String cfgName = "AuthZ Test " + UUID.randomUUID().toString();
+		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, getLLMType(), getLLMType().toString() + " " + cfgName, testProperties);
+		assertNotNull("ChatConfig is null", cfg);
+
+		/// Create promptConfig
+		BaseRecord pcfg = OlioTestUtil.getObjectPromptConfig(testUser, "AuthZ Prompt " + UUID.randomUUID().toString());
+		assertNotNull("PromptConfig is null", pcfg);
+
+		/// Create chatRequest
+		String chatName = "AuthZ Chat " + UUID.randomUUID().toString();
+		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser, chatName, cfg, pcfg);
+		assertNotNull("Chat request is null", creq);
+
+		/// Verify key fields are set
+		String oid = creq.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("objectId should not be null", oid);
+		long gid = creq.get(FieldNames.FIELD_GROUP_ID);
+		assertTrue("groupId should be > 0, was: " + gid, gid > 0);
+		long ownerId = creq.get(FieldNames.FIELD_OWNER_ID);
+		assertTrue("ownerId should be > 0, was: " + ownerId, ownerId > 0);
+
+		/// Read back via AccessPoint.find (same as ChatListener line 96)
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord found = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+		assertNotNull("AccessPoint.find should return the chatRequest", found);
+		logger.info("ChatRequest authZ verified: oid=" + oid + " groupId=" + gid + " ownerId=" + ownerId);
+
+		/// Verify the session object also has proper fields
+		BaseRecord session = creq.get("session");
+		assertNotNull("Session should not be null", session);
+		BaseRecord fullSession = OlioUtil.getFullRecord(session, false);
+		assertNotNull("Full session should not be null", fullSession);
+		String sessionOid = fullSession.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Session objectId should not be null", sessionOid);
+		logger.info("Session objectId verified: " + sessionOid);
 	}
 }
