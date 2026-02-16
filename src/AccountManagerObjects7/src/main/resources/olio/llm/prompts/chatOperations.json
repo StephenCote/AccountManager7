@@ -4,6 +4,8 @@
 	"analyzeInstructionHeader": "--- ANALYSIS INSTRUCTIONS ---",
 	"analyzeInstructionBody": "Use the following content to create a response for the request: ",
 	"analyzeInstructionFooter": "--- END CONTENT FOR ANALYSIS ---",
+	"keyframeSystem": "You produce brief, factual conversation summaries. Output ONLY the summary — no preamble, no commentary, no meta-discussion. Limit to 150 words.",
+	"keyframeUser": "Summarize this conversation segment: who is talking, what happened, key emotional beats, and unresolved tensions. Be specific about names and events. Do not editorialize.",
 	"narrateUserDefault": "Summarize the following chat history.",
 	"reduceUserDefault": "Merge and reduce the following summaries.",
 	"sdCommandDefault": "Create an SD prompt based on the most recent roleplay scene.",

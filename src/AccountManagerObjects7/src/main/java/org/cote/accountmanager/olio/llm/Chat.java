@@ -101,6 +101,8 @@ public class Chat {
 	private int analyzeTimeout = 120;
 	/// Thread-local override so background analyze/extract threads don't mutate the shared requestTimeout field.
 	private ThreadLocal<Integer> analyzeTimeoutOverride = new ThreadLocal<>();
+	/// Guard against duplicate async keyframe generation when messages arrive faster than analysis completes.
+	private volatile boolean asyncKeyframeInProgress = false;
 	private int responseCount = 0;
 
 	/// Mid-stream policy evaluation tracking
@@ -1444,6 +1446,49 @@ public class Chat {
 		}
 	}
 
+	/// Keyframe-specific max tokens — much lower than generic analyze (8192).
+	/// Keyframes only need ~150 words / ~300 tokens.
+	public static final int KEYFRAME_MAX_TOKENS = 1024;
+
+	/// Build a focused keyframe analysis request with condensed prompts and low token cap.
+	private OpenAIRequest buildKeyframeRequest(OpenAIRequest snapshotReq) {
+		List<String> lines = ChatUtil.getFormattedChatHistory(snapshotReq, chatConfig, pruneSkip, false);
+		if (lines.isEmpty()) return null;
+
+		String sys = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "keyframeSystem");
+		if (sys == null) sys = "You produce brief, factual conversation summaries. Limit to 150 words.";
+		String cmd = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "keyframeUser");
+		if (cmd == null) cmd = "Summarize this conversation segment: who, what happened, key emotional beats, unresolved tensions.";
+
+		OpenAIRequest kfReq = new OpenAIRequest();
+		applyAnalyzeOptions(snapshotReq, kfReq);
+
+		OpenAIMessage sysMsg = new OpenAIMessage();
+		sysMsg.setRole(systemRole);
+		sysMsg.setContent(sys);
+		kfReq.addMessage(sysMsg);
+
+		StringBuilder body = new StringBuilder();
+		body.append(cmd).append(System.lineSeparator());
+		body.append(lines.stream().collect(Collectors.joining(System.lineSeparator())));
+		OpenAIMessage userMsg = new OpenAIMessage();
+		userMsg.setRole(userRole);
+		userMsg.setContent(body.toString());
+		kfReq.addMessage(userMsg);
+
+		/// Override max tokens to keyframe cap
+		try {
+			String tokField = ChatUtil.getMaxTokenField(chatConfig);
+			if (tokField != null && !tokField.isEmpty()) {
+				kfReq.set(tokField, KEYFRAME_MAX_TOKENS);
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to set keyframe max tokens", e);
+		}
+
+		return kfReq;
+	}
+
 	/// Phase 14: Async keyframe pipeline (OI-86, OI-87).
 	/// Runs on a background thread. Uses the snapshot for analysis to avoid
 	/// concurrent modification, then synchronizes on the original request
@@ -1462,13 +1507,26 @@ public class Chat {
 		snapshotReq.setMessages(new ArrayList<>(snapshot));
 		applyChatOptions(snapshotReq);
 
-		/// Step 1a: Use analyzeTimeout for analysis via thread-local override (thread-safe)
-		analyzeTimeoutOverride.set(analyzeTimeout);
-		String analysisText;
-		try {
-			analysisText = analyze(snapshotReq, null, false, false, false);
-		} finally {
-			analyzeTimeoutOverride.remove();
+		/// Step 1a: Build focused keyframe request and call with analyzeTimeout
+		OpenAIRequest kfReq = buildKeyframeRequest(snapshotReq);
+		String analysisText = null;
+		if (kfReq != null) {
+			analyzeTimeoutOverride.set(analyzeTimeout);
+			try {
+				OpenAIResponse kfResp = chat(kfReq);
+				if (kfResp != null && kfResp.getMessage() != null) {
+					analysisText = kfResp.getMessage().getContent();
+				}
+			} catch (Exception e) {
+				logger.warn("Keyframe analysis failed: " + e.getMessage());
+			} finally {
+				analyzeTimeoutOverride.remove();
+			}
+		}
+
+		boolean analysisOk = analysisText != null && !analysisText.isBlank();
+		if (!analysisOk) {
+			logger.warn("Keyframe analysis returned empty — will skip memory extraction");
 		}
 
 		/// Step 2: Build MCP keyframe and inject into original request (synchronized)
@@ -1509,7 +1567,9 @@ public class Chat {
 		}
 
 		/// Step 3: Persist keyframe analysis as a durable memory
-		persistKeyframeAsMemory(req, analysisText, lab, cfgObjId, systemChar, userChar);
+		if (analysisOk) {
+			persistKeyframeAsMemory(req, analysisText, lab, cfgObjId, systemChar, userChar);
+		}
 
 		/// Phase 13f: Emit keyframe event (OI-72)
 		if (listener != null) {
@@ -1517,7 +1577,10 @@ public class Chat {
 		}
 
 		/// Step 4: Extract discrete memories via dedicated prompt (Phase 14b)
-		extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar);
+		/// Skip if keyframe analysis failed — avoid double timeout
+		if (analysisOk) {
+			extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar);
+		}
 
 		/// Step 5: Interaction evaluation — runs inline since we're already async
 		if (listener != null) {
@@ -1853,7 +1916,13 @@ public class Chat {
 			+ " msgSize=" + req.getMessages().size() + " pruneSkip=" + pruneSkip
 			+ " threshold=" + (pruneSkip + keyFrameEvery) + " sinceLastKF=" + qual);
 		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
+			/// Guard: skip if a previous async keyframe is still in progress
+			if (asyncKeyframeInProgress) {
+				logger.info("Skipping keyframe — async keyframe already in progress");
+				return;
+			}
 			logger.info("(Adding key frame — async)");
+			asyncKeyframeInProgress = true;
 
 			/// Phase 14: Notify client that background processing is starting
 			if (listener != null) {
@@ -1870,6 +1939,8 @@ public class Chat {
 					addKeyFrameAsync(req, snapshot);
 				} catch (Exception e) {
 					logger.warn("Async keyframe generation failed: " + e.getMessage());
+				} finally {
+					asyncKeyframeInProgress = false;
 				}
 				if (listener != null) {
 					listener.onEvalProgress(user, req, "keyframeDone", "Keyframe complete");

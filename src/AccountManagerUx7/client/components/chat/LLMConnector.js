@@ -721,9 +721,22 @@
          * @type {null|{icon: string, label: string}}
          */
         bgActivity: null,
+        _bgActivityTimer: null,
 
         setBgActivity: function(icon, label) {
+            if (LLMConnector._bgActivityTimer) {
+                clearTimeout(LLMConnector._bgActivityTimer);
+                LLMConnector._bgActivityTimer = null;
+            }
             LLMConnector.bgActivity = icon && label ? { icon: icon, label: label } : null;
+            // Safety auto-clear after 90s in case the "done" event is lost
+            if (LLMConnector.bgActivity) {
+                LLMConnector._bgActivityTimer = setTimeout(function() {
+                    LLMConnector.bgActivity = null;
+                    LLMConnector._bgActivityTimer = null;
+                    if (typeof m !== "undefined") m.redraw();
+                }, 90000);
+            }
             if (typeof m !== "undefined") m.redraw();
         }
     };

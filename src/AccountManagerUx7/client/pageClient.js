@@ -599,7 +599,7 @@
                     }
                 } else if (phase === "keyframe") {
                     // Phase 14: Async keyframe generation started — persistent indicator
-                    if (window.LLMConnector) LLMConnector.setBgActivity("psychology", "Analyzing conversation\u2026");
+                    if (window.LLMConnector) LLMConnector.setBgActivity("psychology", "Memorizing conversation\u2026");
                 } else if (phase === "keyframeDone") {
                     // Phase 14: Keyframe done — clear indicator (memory extract may set its own)
                     if (window.LLMConnector && LLMConnector.bgActivity && LLMConnector.bgActivity.label.indexOf("Analyz") === 0) {
