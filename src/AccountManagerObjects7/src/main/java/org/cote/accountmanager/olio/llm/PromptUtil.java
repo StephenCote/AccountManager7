@@ -35,6 +35,8 @@ public class PromptUtil {
 	private static final ThreadLocal<String> pendingMemoryContext = new ThreadLocal<>();
 	private static final ThreadLocal<String> pendingMemoryRelationship = new ThreadLocal<>();
 	private static final ThreadLocal<String> pendingMemoryFacts = new ThreadLocal<>();
+	private static final ThreadLocal<String> pendingMemoryDecisions = new ThreadLocal<>();
+	private static final ThreadLocal<String> pendingMemoryEmotions = new ThreadLocal<>();
 	private static final ThreadLocal<String> pendingMemoryLastSession = new ThreadLocal<>();
 	private static final ThreadLocal<Integer> pendingMemoryCount = new ThreadLocal<>();
 
@@ -52,6 +54,14 @@ public class PromptUtil {
 
 	public static void setMemoryFacts(String value) {
 		pendingMemoryFacts.set(value);
+	}
+
+	public static void setMemoryDecisions(String value) {
+		pendingMemoryDecisions.set(value);
+	}
+
+	public static void setMemoryEmotions(String value) {
+		pendingMemoryEmotions.set(value);
 	}
 
 	public static void setMemoryLastSession(String value) {
@@ -243,17 +253,23 @@ public class PromptUtil {
 		// Consume categorized memory thread-locals
 		String relationship = pendingMemoryRelationship.get();
 		String facts = pendingMemoryFacts.get();
+		String decisions = pendingMemoryDecisions.get();
+		String emotions = pendingMemoryEmotions.get();
 		String lastSession = pendingMemoryLastSession.get();
 		Integer count = pendingMemoryCount.get();
 
 		pendingMemoryRelationship.remove();
 		pendingMemoryFacts.remove();
+		pendingMemoryDecisions.remove();
+		pendingMemoryEmotions.remove();
 		pendingMemoryLastSession.remove();
 		pendingMemoryCount.remove();
 
 		ctx.replace(TemplatePatternEnumType.MEMORY_CONTEXT, ctx.memoryContext != null ? ctx.memoryContext : "");
 		ctx.replace(TemplatePatternEnumType.MEMORY_RELATIONSHIP, relationship != null ? relationship : "");
 		ctx.replace(TemplatePatternEnumType.MEMORY_FACTS, facts != null ? facts : "");
+		ctx.replace(TemplatePatternEnumType.MEMORY_DECISIONS, decisions != null ? decisions : "");
+		ctx.replace(TemplatePatternEnumType.MEMORY_EMOTIONS, emotions != null ? emotions : "");
 		ctx.replace(TemplatePatternEnumType.MEMORY_LAST_SESSION, lastSession != null ? lastSession : "");
 		ctx.replace(TemplatePatternEnumType.MEMORY_COUNT, count != null ? String.valueOf(count) : "0");
 	}

@@ -8948,6 +8948,17 @@
           "type": "int",
           "default": 5,
           "description": "Extract memories every N messages"
+        },
+        {
+          "name": "analyzeTimeout",
+          "type": "int",
+          "default": 120,
+          "description": "Timeout for background analyze/memory extraction calls (seconds)"
+        },
+        {
+          "name": "memoryExtractionPrompt",
+          "type": "string",
+          "description": "Custom memory extraction prompt resource name"
         }
       ]
     },

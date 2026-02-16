@@ -262,6 +262,18 @@
 			"type": "int",
 			"default": 3,
 			"description": "When complianceCheck is true, evaluate every Nth response. 1 = every response (expensive), 3 = every 3rd (recommended). 0 = disabled."
+		},
+		{
+			"name": "analyzeTimeout",
+			"type": "int",
+			"default": 120,
+			"description": "Timeout in seconds for internal analyze/memory extraction LLM calls. Separate from requestTimeout to allow longer processing for background operations."
+		},
+		{
+			"name": "memoryExtractionPrompt",
+			"type": "string",
+			"maxLength": 128,
+			"description": "Custom memory extraction prompt resource name. Null uses default memoryExtraction.json."
 		}
 
 	]

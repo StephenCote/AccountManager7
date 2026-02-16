@@ -14,7 +14,10 @@ public enum MemoryTypeEnumType {
     NOTE,
     INSIGHT,
     DECISION,
-    ERROR_LESSON
+    ERROR_LESSON,
+    FACT,
+    RELATIONSHIP,
+    EMOTION
     ;
 
     public String value() {

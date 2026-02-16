@@ -597,6 +597,27 @@
                     if (detail === "error") {
                         page.toast("warn", "Interaction evaluation failed", 3000);
                     }
+                } else if (phase === "keyframe") {
+                    // Phase 14: Async keyframe generation started
+                    page.toast("info", detail, 2000);
+                } else if (phase === "keyframeDone") {
+                    // Phase 14: Keyframe generation complete — silent
+                    console.log("[Keyframe] Complete:", detail);
+                } else if (phase === "memoryExtract") {
+                    // Phase 14: Memory extraction started
+                    page.toast("info", detail, 2000);
+                } else if (phase === "memoryExtractDone") {
+                    // Phase 14: Memory extraction complete — show count
+                    if (detail && detail !== "error") {
+                        page.toast("info", detail, 3000);
+                    } else if (detail === "error") {
+                        page.toast("warn", "Memory extraction failed", 3000);
+                    }
+                    if (window.MemoryPanel) {
+                        MemoryPanel.refresh();
+                    }
+                } else if (phase === "midStreamViolation") {
+                    page.toast("warn", "Policy: " + detail, 5000);
                 }
                 console.log("[EvalProgress]", phase, detail);
                 m.redraw();

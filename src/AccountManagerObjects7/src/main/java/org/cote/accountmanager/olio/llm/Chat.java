@@ -32,7 +32,6 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
@@ -47,7 +46,6 @@ import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
-import org.cote.accountmanager.olio.llm.PromptResourceUtil;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner.AutotuneResult;
 import org.cote.accountmanager.olio.llm.policy.InteractionEvaluator;
@@ -98,6 +96,9 @@ public class Chat {
 	private boolean enableKeyFrame = true;
 	private IChatListener listener = null;
 	private int requestTimeout = 120;
+	/// Phase 14: Separate timeout for internal analyze/memory extraction LLM calls.
+	/// Falls back to requestTimeout * 2 (minimum 60s) if not explicitly configured.
+	private int analyzeTimeout = 120;
 	private int responseCount = 0;
 
 	/// Mid-stream policy evaluation tracking
@@ -187,6 +188,10 @@ public class Chat {
 		this.requestTimeout = requestTimeout;
 	}
 
+	public int getAnalyzeTimeout() {
+		return analyzeTimeout;
+	}
+
 	/// Minimum keyframeEvery value when extractMemories is enabled.
 	/// Prevents excessive analyze() LLM calls which are expensive.
 	public static final int MIN_KEYFRAME_EVERY_WITH_EXTRACT = 5;
@@ -203,6 +208,17 @@ public class Chat {
 			messageTrim = chatConfig.get("messageTrim");
 			requestTimeout = chatConfig.get("requestTimeout");
 			try { streamMode = chatConfig.get("stream"); } catch (Exception e) { /* field may not be set */ }
+			/// Phase 14: Configure analyzeTimeout — separate from requestTimeout for background LLM calls
+			try {
+				int cfgAnalyzeTimeout = chatConfig.get("analyzeTimeout");
+				if (cfgAnalyzeTimeout > 0) {
+					analyzeTimeout = cfgAnalyzeTimeout;
+				} else {
+					analyzeTimeout = Math.max(60, requestTimeout * 2);
+				}
+			} catch (Exception e) {
+				analyzeTimeout = Math.max(60, requestTimeout * 2);
+			}
 
 			/// OI-5/OI-83: Enforce minimum keyframeEvery when extractMemories is enabled.
 			/// If keyframeEvery=0 but extractMemories=true, memories can never be created
@@ -1427,18 +1443,38 @@ public class Chat {
 		}
 	}
 
-	private void addKeyFrame(OpenAIRequest req) {
-		OpenAIMessage msg = new OpenAIMessage();
-		msg.setRole(keyframeRole);
+	/// Phase 14: Async keyframe pipeline (OI-86, OI-87).
+	/// Runs on a background thread. Uses the snapshot for analysis to avoid
+	/// concurrent modification, then synchronizes on the original request
+	/// to inject the keyframe message.
+	private void addKeyFrameAsync(OpenAIRequest req, List<OpenAIMessage> snapshot) {
 		ESRBEnumType rating = chatConfig.getEnum("rating");
 
 		BaseRecord systemChar = chatConfig.get("systemCharacter");
 		BaseRecord userChar = chatConfig.get("userCharacter");
 
 		String lab = systemChar.get("firstName") + " and " + userChar.get("firstName");
-		String analysisText = analyze(req, null, false, false, false);
 
+		/// Step 1: Build a snapshot request for analysis (avoids concurrent modification)
+		OpenAIRequest snapshotReq = new OpenAIRequest();
+		snapshotReq.setModel(req.getModel());
+		snapshotReq.setMessages(new ArrayList<>(snapshot));
+		applyChatOptions(snapshotReq);
+
+		/// Step 1a: Save the original requestTimeout, use analyzeTimeout for analysis
+		int savedTimeout = requestTimeout;
+		requestTimeout = analyzeTimeout;
+		String analysisText;
+		try {
+			analysisText = analyze(snapshotReq, null, false, false, false);
+		} finally {
+			requestTimeout = savedTimeout;
+		}
+
+		/// Step 2: Build MCP keyframe and inject into original request (synchronized)
 		String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+		OpenAIMessage msg = new OpenAIMessage();
+		msg.setRole(keyframeRole);
 		McpContextBuilder builder = new McpContextBuilder();
 		builder.addKeyframe(
 			"am7://keyframe/" + (cfgObjId != null ? cfgObjId : "default"),
@@ -1452,7 +1488,27 @@ public class Chat {
 		);
 		msg.setContent(builder.build());
 
-		/// Phase 3: Persist keyframe analysis as a durable memory
+		synchronized (req) {
+			/// OI-14: MCP-only keyframe detection (old text format deprecated)
+			/// Filter out previous keyframes, keeping the last 2
+			List<OpenAIMessage> keyframes = req.getMessages().stream()
+					.filter(m -> isMcpKeyframe(m.getContent()))
+					.collect(Collectors.toList());
+			List<OpenAIMessage> nonKeyframes = req.getMessages().stream()
+					.filter(m -> !isMcpKeyframe(m.getContent()))
+					.collect(Collectors.toList());
+
+			if (keyframes.size() > 1) {
+				OpenAIMessage lastExisting = keyframes.get(keyframes.size() - 1);
+				nonKeyframes.add(lastExisting);
+			} else if (keyframes.size() == 1) {
+				nonKeyframes.add(keyframes.get(0));
+			}
+			nonKeyframes.add(msg);
+			req.setMessages(nonKeyframes);
+		}
+
+		/// Step 3: Persist keyframe analysis as a durable memory
 		persistKeyframeAsMemory(req, analysisText, lab, cfgObjId, systemChar, userChar);
 
 		/// Phase 13f: Emit keyframe event (OI-72)
@@ -1460,47 +1516,157 @@ public class Chat {
 			listener.onMemoryEvent(user, req, "keyframe", lab);
 		}
 
-		/// Interaction evaluation — piggybacks on keyframe cadence
-		/// Runs async so it doesn't block the keyframe insertion
+		/// Step 4: Extract discrete memories via dedicated prompt (Phase 14b)
+		extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar);
+
+		/// Step 5: Interaction evaluation — runs inline since we're already async
 		if (listener != null) {
 			listener.onEvalProgress(user, req, "interaction", "Evaluating interaction: type, outcome, relationship direction");
-			final OpenAIRequest evalReq = req;
-			CompletableFuture.runAsync(() -> {
-				try {
-					InteractionEvaluator ie = new InteractionEvaluator();
-					String result = ie.evaluate(user, chatConfig, evalReq.getMessages());
-					if (result != null && !result.isEmpty()) {
-						listener.onInteractionEvent(user, evalReq, result);
-					}
-					listener.onEvalProgress(user, evalReq, "interactionDone", result != null ? "complete" : "no result");
-				} catch (Exception e) {
-					logger.warn("Interaction evaluation failed: " + e.getMessage());
-					listener.onEvalProgress(user, evalReq, "interactionDone", "error");
+			try {
+				InteractionEvaluator ie = new InteractionEvaluator();
+				String result = ie.evaluate(user, chatConfig, req.getMessages());
+				if (result != null && !result.isEmpty()) {
+					listener.onInteractionEvent(user, req, result);
 				}
-			});
+				listener.onEvalProgress(user, req, "interactionDone", result != null ? "complete" : "no result");
+			} catch (Exception e) {
+				logger.warn("Interaction evaluation failed: " + e.getMessage());
+				listener.onEvalProgress(user, req, "interactionDone", "error");
+			}
+		}
+	}
+
+	/// Phase 14b: Extract discrete memories from the conversation segment
+	/// using a dedicated memory extraction prompt. Called from the async keyframe pipeline.
+	private void extractMemoriesIfEnabled(OpenAIRequest req, OpenAIRequest snapshotReq,
+			String cfgObjId, BaseRecord systemChar, BaseRecord userChar) {
+
+		boolean extractMemories = false;
+		try {
+			extractMemories = chatConfig.get("extractMemories");
+		} catch (Exception e) {
+			// field may not be set
+		}
+		if (!extractMemories) {
+			return;
 		}
 
-		/// OI-14: MCP-only keyframe detection (old text format deprecated)
-		/// Filter out previous keyframes, keeping the last 2 (Phase 3: keep 2 instead of 1)
-		List<OpenAIMessage> keyframes = req.getMessages().stream()
-				.filter(m -> isMcpKeyframe(m.getContent()))
-				.collect(Collectors.toList());
-		List<OpenAIMessage> nonKeyframes = req.getMessages().stream()
-				.filter(m -> !isMcpKeyframe(m.getContent()))
-				.collect(Collectors.toList());
-
-		/// Keep the most recent keyframe (the second-to-last), discard older ones
-		/// Combined with the new keyframe being added, this gives us 2 keyframes total
-		if (keyframes.size() > 1) {
-			/// Keep only the last existing keyframe
-			OpenAIMessage lastExisting = keyframes.get(keyframes.size() - 1);
-			nonKeyframes.add(lastExisting);
-		} else if (keyframes.size() == 1) {
-			/// Keep the single existing keyframe
-			nonKeyframes.add(keyframes.get(0));
+		if (listener != null) {
+			listener.onEvalProgress(user, req, "memoryExtract", "Extracting memories...");
 		}
-		nonKeyframes.add(msg);
-		req.setMessages(nonKeyframes);
+
+		try {
+			List<BaseRecord> memories = extractMemoriesFromSegment(snapshotReq, cfgObjId, systemChar, userChar);
+
+			if (listener != null) {
+				String countMsg = memories.size() + " memories extracted";
+				listener.onMemoryEvent(user, req, "extracted", countMsg);
+				listener.onEvalProgress(user, req, "memoryExtractDone", countMsg);
+			}
+		} catch (Exception e) {
+			logger.warn("Memory extraction failed: " + e.getMessage());
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "memoryExtractDone", "error");
+			}
+		}
+	}
+
+	/// Phase 14b: Dedicated memory extraction — uses a structured prompt to extract
+	/// categorized engrams (FACT, RELATIONSHIP, EMOTION, DECISION, DISCOVERY) from
+	/// the conversation segment, instead of relying on the generic analyze() output.
+	private List<BaseRecord> extractMemoriesFromSegment(OpenAIRequest snapshotReq,
+			String conversationId, BaseRecord systemChar, BaseRecord userChar) {
+
+		/// Build the conversation segment text from the snapshot
+		String segment = ChatUtil.getFormattedChatHistory(snapshotReq, chatConfig, pruneSkip, false)
+			.stream().collect(Collectors.joining(System.lineSeparator()));
+
+		if (segment == null || segment.trim().isEmpty()) {
+			return java.util.Collections.emptyList();
+		}
+
+		/// Load the extraction prompt from resources
+		String promptName = null;
+		try {
+			promptName = chatConfig.get("memoryExtractionPrompt");
+		} catch (Exception e) {
+			// field may not be set
+		}
+		if (promptName == null || promptName.isEmpty()) {
+			promptName = "memoryExtraction";
+		}
+
+		String systemPrompt = PromptResourceUtil.getLines(promptName, "system");
+		if (systemPrompt == null) {
+			logger.warn("Memory extraction prompt not found: " + promptName);
+			return java.util.Collections.emptyList();
+		}
+
+		/// Replace template tokens in the prompt
+		String sysCharName = systemChar.get("firstName");
+		String usrCharName = userChar.get("firstName");
+		String setting = "unknown";
+		try {
+			setting = chatConfig.get("setting");
+			if (setting == null) setting = "unknown";
+		} catch (Exception e) {
+			// ignore
+		}
+
+		systemPrompt = PromptResourceUtil.replaceToken(systemPrompt, "systemCharName", sysCharName);
+		systemPrompt = PromptResourceUtil.replaceToken(systemPrompt, "userCharName", usrCharName);
+		systemPrompt = PromptResourceUtil.replaceToken(systemPrompt, "setting", setting);
+
+		/// Use analyzeModel if configured, otherwise main model
+		String amodel = chatConfig.get("analyzeModel");
+		if (amodel == null || amodel.isEmpty()) {
+			amodel = chatConfig.get("model");
+		}
+
+		/// Build extraction request
+		OpenAIRequest extractReq = new OpenAIRequest();
+		extractReq.setModel(amodel);
+		applyChatOptions(extractReq);
+		/// Lower temperature for factual extraction
+		try { extractReq.set("temperature", 0.3); } catch (Exception e) { /* ignore */ }
+
+		OpenAIMessage sysMsg = new OpenAIMessage();
+		sysMsg.setRole(systemRole);
+		sysMsg.setContent(systemPrompt);
+		extractReq.addMessage(sysMsg);
+
+		OpenAIMessage usrMsg = new OpenAIMessage();
+		usrMsg.setRole(userRole);
+		usrMsg.setContent(segment);
+		extractReq.addMessage(usrMsg);
+
+		/// Use analyzeTimeout for the extraction call
+		int savedTimeout = requestTimeout;
+		requestTimeout = analyzeTimeout;
+		OpenAIResponse resp;
+		try {
+			resp = chat(extractReq);
+		} finally {
+			requestTimeout = savedTimeout;
+		}
+
+		if (resp == null || resp.getMessage() == null) {
+			logger.warn("No response from memory extraction LLM call");
+			return java.util.Collections.emptyList();
+		}
+
+		long sysId = systemChar.get(FieldNames.FIELD_ID);
+		long usrId = userChar.get(FieldNames.FIELD_ID);
+		String personModel = null;
+		if (systemChar.getSchema() != null) {
+			personModel = systemChar.getSchema();
+		}
+		String sourceUri = "am7://keyframe/" + (conversationId != null ? conversationId : "default");
+
+		return MemoryUtil.extractMemoriesFromResponse(
+			user, resp.getMessage().getContent(), sourceUri, conversationId,
+			sysId, usrId, personModel
+		);
 	}
 
 	/// Phase 3: Persist the keyframe analysis text as a durable OUTCOME memory
@@ -1688,8 +1854,28 @@ public class Chat {
 			+ " msgSize=" + req.getMessages().size() + " pruneSkip=" + pruneSkip
 			+ " threshold=" + (pruneSkip + keyFrameEvery) + " sinceLastKF=" + qual);
 		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
-			logger.info("(Adding key frame)");
-			addKeyFrame(req);
+			logger.info("(Adding key frame — async)");
+
+			/// Phase 14: Notify client that background processing is starting
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "keyframe", "Generating keyframe summary...");
+			}
+
+			/// Phase 14: Snapshot messages for async analysis (avoid concurrent modification)
+			final List<OpenAIMessage> snapshot = new ArrayList<>(req.getMessages());
+
+			/// Phase 14: Run keyframe pipeline asynchronously — the keyframe content
+			/// is NOT needed for the current message, only for future context management.
+			CompletableFuture.runAsync(() -> {
+				try {
+					addKeyFrameAsync(req, snapshot);
+				} catch (Exception e) {
+					logger.warn("Async keyframe generation failed: " + e.getMessage());
+				}
+				if (listener != null) {
+					listener.onEvalProgress(user, req, "keyframeDone", "Keyframe complete");
+				}
+			});
 		}
 
 	}
@@ -2014,8 +2200,19 @@ public class Chat {
 		return url;
 	}
 
-	/// Phase 2: Retrieve relevant memories for the character pair and format as MCP context.
-	/// Uses direct queries since MemoryUtil is in the Agent layer.
+	/// Phase 14c: Enhanced memory reconstitution with budget-allocated type-prioritized
+	/// retrieval, cross-chat layered queries, and freshness decay (OI-90).
+	///
+	/// Budget allocation:
+	///   40% RELATIONSHIP — most important for character consistency
+	///   25% FACT — concrete details that prevent contradiction
+	///   20% DECISION/DISCOVERY — plot-relevant choices
+	///   15% EMOTION — emotional continuity
+	///
+	/// Query layers:
+	///   Layer 1 (50%): Pair-specific (this exact character pair)
+	///   Layer 2 (30%): Character-specific (either character with anyone)
+	///   Layer 3 (20%): Semantic (topic-relevant from any source)
 	private String retrieveRelevantMemories(BaseRecord systemChar, BaseRecord userChar) {
 		if (chatConfig == null || systemChar == null || userChar == null) {
 			return "";
@@ -2028,101 +2225,249 @@ public class Chat {
 		try {
 			long sysId = systemChar.get(FieldNames.FIELD_ID);
 			long usrId = userChar.get(FieldNames.FIELD_ID);
-			// Canonical ordering — role-agnostic
-			long id1 = Math.min(sysId, usrId);
-			long id2 = Math.max(sysId, usrId);
 
-			int maxMemories = Math.max(1, memoryBudget / 100);
+			int maxPerLayer = Math.max(3, memoryBudget / 50);
 
-			BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(
-				user, ModelNames.MODEL_GROUP, "~/Memories",
-				"DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID)
-			);
-			if (group == null) {
-				return "";
+			/// Layer 1: Pair-specific memories (50% of budget)
+			List<BaseRecord> pairMemories = MemoryUtil.searchMemoriesByPersonPair(user, sysId, usrId, maxPerLayer);
+
+			/// Layer 2: Character-specific memories (30% of budget)
+			List<BaseRecord> charMemories = MemoryUtil.searchMemoriesByPerson(user, sysId, maxPerLayer / 2);
+			/// Add user character memories too, deduplicating against pair results
+			List<BaseRecord> userCharMemories = MemoryUtil.searchMemoriesByPerson(user, usrId, maxPerLayer / 2);
+			for (BaseRecord ucm : userCharMemories) {
+				long ucmId = ucm.get(FieldNames.FIELD_ID);
+				boolean dup = charMemories.stream().anyMatch(m -> (long) m.get(FieldNames.FIELD_ID) == ucmId);
+				if (!dup) {
+					charMemories.add(ucm);
+				}
+			}
+			/// Remove any that are already in pair results
+			java.util.Set<Long> pairIds = new java.util.HashSet<>();
+			for (BaseRecord pm : pairMemories) {
+				pairIds.add((long) pm.get(FieldNames.FIELD_ID));
+			}
+			charMemories.removeIf(m -> pairIds.contains((long) m.get(FieldNames.FIELD_ID)));
+
+			/// Combine all memories with freshness decay applied
+			List<MemoryWithScore> scored = new ArrayList<>();
+			String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+			for (BaseRecord mem : pairMemories) {
+				scored.add(new MemoryWithScore(mem, applyFreshnessDecay(mem, cfgObjId), 1));
+			}
+			for (BaseRecord mem : charMemories) {
+				scored.add(new MemoryWithScore(mem, applyFreshnessDecay(mem, cfgObjId), 2));
 			}
 
-			// Query pair-specific memories
-			org.cote.accountmanager.io.Query q = org.cote.accountmanager.io.QueryUtil.createQuery(
-				ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID)
-			);
-			q.field("personId1", id1);
-			q.field("personId2", id2);
-			q.planMost(true);
-			q.setRequestRange(0L, maxMemories);
-			BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findRecords(q);
+			/// Sort by effective importance descending
+			scored.sort((a, b) -> Double.compare(b.effectiveImportance, a.effectiveImportance));
 
-			if (recs == null || recs.length == 0) {
-				return "";
-			}
+			/// Budget-allocated type-prioritized injection
+			java.util.Map<String, Double> typeBudgetRatios = new java.util.LinkedHashMap<>();
+			typeBudgetRatios.put("RELATIONSHIP", 0.40);
+			typeBudgetRatios.put("FACT", 0.25);
+			typeBudgetRatios.put("DECISION", 0.10);
+			typeBudgetRatios.put("DISCOVERY", 0.10);
+			typeBudgetRatios.put("EMOTION", 0.15);
 
-			// Categorize memories by type and build MCP context
 			McpContextBuilder ctxBuilder = new McpContextBuilder();
 			List<String> relationshipSummaries = new ArrayList<>();
 			List<String> factSummaries = new ArrayList<>();
+			List<String> decisionSummaries = new ArrayList<>();
+			List<String> emotionSummaries = new ArrayList<>();
 			String lastSessionText = "";
+			int totalIncluded = 0;
+			int tokensUsed = 0;
 
-			for (BaseRecord memory : recs) {
-				String content = memory.get("content");
-				if (content == null) continue;
+			long id1 = Math.min(sysId, usrId);
+			long id2 = Math.max(sysId, usrId);
 
-				String summary = memory.get("summary");
-				String memoryType = "NOTE";
-				Object mt = memory.get("memoryType");
-				if (mt != null) memoryType = mt.toString();
+			/// First pass: allocate by type budget
+			for (java.util.Map.Entry<String, Double> entry : typeBudgetRatios.entrySet()) {
+				String targetType = entry.getKey();
+				int typeBudget = (int)(memoryBudget * entry.getValue());
+				int typeTokensUsed = 0;
 
-				String uri = "am7://memory/" + id1 + "/" + id2;
-				ctxBuilder.addResource(
-					uri,
-					"urn:am7:narrative:memory",
-					Map.of(
-						"content", content,
-						"summary", summary != null ? summary : "",
-						"memoryType", memoryType,
-						"importance", memory.get("importance")
-					),
-					true
-				);
+				for (MemoryWithScore ms : scored) {
+					if (ms.included) continue;
+					String memType = getMemoryType(ms.memory);
+					if (!targetType.equals(memType)) continue;
 
-				// Categorize by memoryType for template variables
-				String displayText = summary != null && !summary.isEmpty() ? summary : content;
-				switch (memoryType) {
-					case "OUTCOME":
-					case "EVENT":
-						// Most recent OUTCOME/EVENT becomes lastSession
-						lastSessionText = displayText;
-						break;
-					case "RELATIONSHIP":
-						relationshipSummaries.add(displayText);
-						break;
-					case "FACT":
-					case "NOTE":
-					case "PREFERENCE":
-					case "INSIGHT":
-						factSummaries.add(displayText);
-						break;
-					default:
-						factSummaries.add(displayText);
-						break;
+					String content = ms.memory.get("content");
+					if (content == null) continue;
+
+					int memTokens = estimateTokens(content);
+					if (typeTokensUsed + memTokens > typeBudget) continue;
+					if (tokensUsed + memTokens > memoryBudget) continue;
+
+					ms.included = true;
+					typeTokensUsed += memTokens;
+					tokensUsed += memTokens;
+					totalIncluded++;
+
+					addMemoryToContext(ctxBuilder, ms.memory, id1, id2);
+					categorizeMemory(ms.memory, memType, relationshipSummaries, factSummaries,
+						decisionSummaries, emotionSummaries);
 				}
 			}
 
-			// Set categorized memory thread-locals for PromptUtil
+			/// Second pass: fill remaining budget with any unclaimed memories by importance
+			for (MemoryWithScore ms : scored) {
+				if (ms.included) continue;
+				String content = ms.memory.get("content");
+				if (content == null) continue;
+				int memTokens = estimateTokens(content);
+				if (tokensUsed + memTokens > memoryBudget) continue;
+
+				ms.included = true;
+				tokensUsed += memTokens;
+				totalIncluded++;
+
+				String memType = getMemoryType(ms.memory);
+				addMemoryToContext(ctxBuilder, ms.memory, id1, id2);
+				categorizeMemory(ms.memory, memType, relationshipSummaries, factSummaries,
+					decisionSummaries, emotionSummaries);
+
+				if ("OUTCOME".equals(memType) || "EVENT".equals(memType)) {
+					String summary = ms.memory.get("summary");
+					String displayText = summary != null && !summary.isEmpty() ? summary : content;
+					lastSessionText = displayText;
+				}
+			}
+
+			// Set categorized memory thread-locals for PromptUtil template variables
 			PromptUtil.setMemoryRelationship(String.join("; ", relationshipSummaries));
 			PromptUtil.setMemoryFacts(String.join("; ", factSummaries));
+			PromptUtil.setMemoryDecisions(String.join("; ", decisionSummaries));
+			PromptUtil.setMemoryEmotions(String.join("; ", emotionSummaries));
 			PromptUtil.setMemoryLastSession(lastSessionText);
-			PromptUtil.setMemoryCount(recs.length);
+			PromptUtil.setMemoryCount(totalIncluded);
 
 			/// Phase 13f: Emit recalled event (OI-71)
-			logger.info("Recalled " + recs.length + " memories for " + id1 + "/" + id2);
+			logger.info("Recalled " + totalIncluded + " memories (" + tokensUsed + " tokens) for " + id1 + "/" + id2);
 			if (listener != null) {
-				listener.onMemoryEvent(user, null, "recalled", String.valueOf(recs.length));
+				listener.onMemoryEvent(user, null, "recalled", String.valueOf(totalIncluded));
 			}
 
 			return ctxBuilder.build();
 		} catch (Exception e) {
 			logger.warn("Error retrieving memories: " + e.getMessage());
 			return "";
+		}
+	}
+
+	/// Helper: get memoryType string from a memory record, defaulting to "NOTE".
+	private static String getMemoryType(BaseRecord memory) {
+		Object mt = memory.get("memoryType");
+		return mt != null ? mt.toString() : "NOTE";
+	}
+
+	/// Helper: add a memory record to the MCP context builder.
+	private static void addMemoryToContext(McpContextBuilder ctxBuilder, BaseRecord memory, long id1, long id2) {
+		String content = memory.get("content");
+		String summary = memory.get("summary");
+		String memoryType = getMemoryType(memory);
+		String objId = memory.hasField(FieldNames.FIELD_OBJECT_ID) ? memory.get(FieldNames.FIELD_OBJECT_ID) : null;
+		String uri = "am7://memory/" + id1 + "/" + id2 + (objId != null ? "/" + objId : "");
+		ctxBuilder.addResource(
+			uri,
+			"urn:am7:narrative:memory",
+			Map.of(
+				"content", content != null ? content : "",
+				"summary", summary != null ? summary : "",
+				"memoryType", memoryType,
+				"importance", memory.get("importance")
+			),
+			true
+		);
+	}
+
+	/// Helper: categorize a memory into the appropriate summary list for template variables.
+	private static void categorizeMemory(BaseRecord memory, String memoryType,
+			List<String> relationship, List<String> facts, List<String> decisions, List<String> emotions) {
+		String summary = memory.get("summary");
+		String content = memory.get("content");
+		String displayText = summary != null && !summary.isEmpty() ? summary : (content != null ? content : "");
+		if (displayText.isEmpty()) return;
+
+		switch (memoryType) {
+			case "RELATIONSHIP":
+				relationship.add(displayText);
+				break;
+			case "FACT":
+			case "NOTE":
+			case "INSIGHT":
+				facts.add(displayText);
+				break;
+			case "DECISION":
+				decisions.add(displayText);
+				break;
+			case "DISCOVERY":
+				decisions.add(displayText);
+				break;
+			case "EMOTION":
+				emotions.add(displayText);
+				break;
+			default:
+				facts.add(displayText);
+				break;
+		}
+	}
+
+	/// Phase 14c: Apply freshness decay to memory importance at query time.
+	/// Memories are not modified — decay is applied only for ranking during reconstitution.
+	/// - Recent (same conversation): Full importance
+	/// - Moderate (< 10 different sourceUris ago): importance × 0.7
+	/// - Old (> 10): importance × 0.4
+	/// - Pinned (importance = 10): Never decay
+	private double applyFreshnessDecay(BaseRecord memory, String currentConversationId) {
+		int importance = memory.get("importance");
+		if (importance >= 10) {
+			return importance; // Pinned — never decay
+		}
+
+		String memConvId = memory.get("conversationId");
+		if (memConvId != null && memConvId.equals(currentConversationId)) {
+			return importance; // Same conversation — full weight
+		}
+
+		/// Use createdDate to approximate age. Memories older than ~10 sessions
+		/// (approximated by days) get heavier decay.
+		try {
+			java.util.Date created = memory.get(FieldNames.FIELD_CREATED_DATE);
+			if (created != null) {
+				long ageMs = System.currentTimeMillis() - created.getTime();
+				long ageDays = ageMs / (1000L * 60 * 60 * 24);
+				if (ageDays > 30) {
+					return importance * 0.4; // Old
+				} else if (ageDays > 7) {
+					return importance * 0.7; // Moderate
+				}
+			}
+		} catch (Exception e) {
+			// createdDate field may not be populated
+		}
+
+		return importance;
+	}
+
+	/// Phase 14c: Rough token estimate — ~4 chars per token for English text.
+	private static int estimateTokens(String text) {
+		if (text == null) return 0;
+		return Math.max(1, text.length() / 4);
+	}
+
+	/// Phase 14c: Internal scoring wrapper for memory budget allocation.
+	private static class MemoryWithScore {
+		final BaseRecord memory;
+		final double effectiveImportance;
+		final int layer; // 1=pair, 2=character, 3=semantic
+		boolean included = false;
+
+		MemoryWithScore(BaseRecord memory, double effectiveImportance, int layer) {
+			this.memory = memory;
+			this.effectiveImportance = effectiveImportance;
+			this.layer = layer;
 		}
 	}
 

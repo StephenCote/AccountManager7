@@ -187,4 +187,62 @@ public class AM7AgentTool {
     	return MemoryUtil.formatMemoriesAsContext(results);
     }
 
+    /// Phase 14e: Search memories by person pair IDs. Returns formatted MCP context
+    /// of all memories associated with the specific character pair.
+    @AgentTool(
+		description = "Search memories by character person pair IDs. Returns all memories for the specific character pair, ordered by importance.",
+		returnName = "pairMemories",
+		returnType = FieldEnumType.STRING
+	)
+    public String searchMemoriesByPair(
+    	@AgentToolParameter(name = "personId1", type = FieldEnumType.LONG) long personId1,
+    	@AgentToolParameter(name = "personId2", type = FieldEnumType.LONG) long personId2,
+    	@AgentToolParameter(name = "limit", type = FieldEnumType.INT) int limit
+    ) {
+    	if (limit <= 0) limit = 20;
+    	List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(toolUser, personId1, personId2, limit);
+    	if (results.isEmpty()) {
+    		return "No memories found for person pair " + personId1 + "/" + personId2;
+    	}
+    	return MemoryUtil.formatMemoriesAsContext(results);
+    }
+
+    /// Phase 14e: Extract and store memories from LLM-generated text.
+    /// Parses a JSON array of memory objects and persists them with person pair tagging.
+    @AgentTool(
+		description = "Extract and store memories from a JSON array of memory objects. Each object should have: content, summary, memoryType (FACT/RELATIONSHIP/EMOTION/DECISION/DISCOVERY), importance (1-10).",
+		returnName = "extractedCount",
+		returnType = FieldEnumType.INT
+	)
+    public int extractMemories(
+    	@AgentToolParameter(name = "text", type = FieldEnumType.STRING) String text,
+    	@AgentToolParameter(name = "conversationId", type = FieldEnumType.STRING) String conversationId,
+    	@AgentToolParameter(name = "personId1", type = FieldEnumType.LONG) long personId1,
+    	@AgentToolParameter(name = "personId2", type = FieldEnumType.LONG) long personId2
+    ) {
+    	String sourceUri = "am7://agent/memory-extraction/" + (conversationId != null ? conversationId : "unknown");
+    	List<BaseRecord> extracted = MemoryUtil.extractMemoriesFromResponse(
+    		toolUser, text, sourceUri, conversationId, personId1, personId2, null
+    	);
+    	return extracted.size();
+    }
+
+    /// Phase 14e: Search memories for a single person across all their conversations.
+    @AgentTool(
+		description = "Search all memories involving a specific person (as either character in a pair). Returns memories ordered by importance.",
+		returnName = "personMemories",
+		returnType = FieldEnumType.STRING
+	)
+    public String searchMemoriesByPerson(
+    	@AgentToolParameter(name = "personId", type = FieldEnumType.LONG) long personId,
+    	@AgentToolParameter(name = "limit", type = FieldEnumType.INT) int limit
+    ) {
+    	if (limit <= 0) limit = 20;
+    	List<BaseRecord> results = MemoryUtil.searchMemoriesByPerson(toolUser, personId, limit);
+    	if (results.isEmpty()) {
+    		return "No memories found for person " + personId;
+    	}
+    	return MemoryUtil.formatMemoriesAsContext(results);
+    }
+
 }

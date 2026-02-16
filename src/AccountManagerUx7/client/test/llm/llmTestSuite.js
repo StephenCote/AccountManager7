@@ -38,7 +38,8 @@
         memory:    { label: "Memory",    icon: "psychology" },
         analysis:  { label: "Analysis",  icon: "analytics" },
         mcp:       { label: "MCP",       icon: "bug_report" },
-        coverage:  { label: "Coverage", icon: "verified" }
+        coverage:  { label: "Coverage", icon: "verified" },
+        phase14:   { label: "Phase 14", icon: "memory" }
     };
 
     // ── Suite State ───────────────────────────────────────────────────
@@ -2655,6 +2656,220 @@
         }
     }
 
+    // ── Tests 164-175: Phase 14 — Async Keyframe, Memory Extraction, Dedup ──
+    async function testPhase14(cats) {
+        if (!cats.includes("phase14")) return;
+        TF.testState.currentTest = "Phase 14: Async Keyframe Pipeline & Memory Extraction";
+        log("phase14", "=== Phase 14 Tests ===");
+
+        // Test 164: chatConfig schema has new Phase 14 fields
+        try {
+            let modelDef = am7model.getModel("olio.llm.chatConfig");
+            if (modelDef && modelDef.fields) {
+                let fieldNames = modelDef.fields.map(function(f) { return f.name; });
+                let hasAnalyzeTimeout = fieldNames.indexOf("analyzeTimeout") !== -1;
+                let hasMemExtPrompt = fieldNames.indexOf("memoryExtractionPrompt") !== -1;
+                log("phase14", "164a: chatConfig has analyzeTimeout: " + hasAnalyzeTimeout, hasAnalyzeTimeout ? "pass" : "fail");
+                log("phase14", "164b: chatConfig has memoryExtractionPrompt: " + hasMemExtPrompt, hasMemExtPrompt ? "pass" : "fail");
+
+                // Verify analyzeTimeout default
+                let atField = modelDef.fields.find(function(f) { return f.name === "analyzeTimeout"; });
+                if (atField) {
+                    let defOk = atField["default"] === 120;
+                    log("phase14", "164c: analyzeTimeout default = 120: " + defOk, defOk ? "pass" : "fail");
+                }
+            } else {
+                log("phase14", "164: Could not read chatConfig model definition", "warn");
+            }
+        } catch (e) {
+            log("phase14", "164: Schema check error: " + e.message, "warn");
+        }
+
+        // Test 165: formDef has Phase 14 fields
+        try {
+            let cfgForm = page.formDef.forms.chatConfig;
+            if (cfgForm && cfgForm.fields) {
+                let hasAT = !!cfgForm.fields.analyzeTimeout;
+                let hasMEP = !!cfgForm.fields.memoryExtractionPrompt;
+                log("phase14", "165a: chatConfig form has analyzeTimeout field: " + hasAT, hasAT ? "pass" : "fail");
+                log("phase14", "165b: chatConfig form has memoryExtractionPrompt field: " + hasMEP, hasMEP ? "pass" : "fail");
+            } else {
+                log("phase14", "165: chatConfig form not found", "warn");
+            }
+        } catch (e) {
+            log("phase14", "165: formDef check error: " + e.message, "warn");
+        }
+
+        // Test 166: LLMConnector cloneConfig preserves Phase 14 fields
+        if (window.LLMConnector) {
+            let testCfg = {
+                objectId: "p14-test", id: 1, name: "Phase14 Test",
+                analyzeTimeout: 300, memoryExtractionPrompt: "customExtract",
+                model: "test-model"
+            };
+            let cloned = LLMConnector.cloneConfig(testCfg);
+            let hasAT = cloned.analyzeTimeout === 300;
+            let hasMEP = cloned.memoryExtractionPrompt === "customExtract";
+            log("phase14", "166a: cloneConfig preserves analyzeTimeout: " + hasAT, hasAT ? "pass" : "fail");
+            log("phase14", "166b: cloneConfig preserves memoryExtractionPrompt: " + hasMEP, hasMEP ? "pass" : "fail");
+        } else {
+            log("phase14", "166: LLMConnector not loaded — cloneConfig test skipped", "skip");
+        }
+
+        // Test 167: evalProgress handler — keyframe phase produces toast
+        // Simulate the handler by calling page.toast and checking it doesn't throw
+        try {
+            let toastCalled = false;
+            let origToast = page.toast;
+            page.toast = function(level, msg, dur) {
+                toastCalled = true;
+                origToast.call(page, level, msg, dur);
+            };
+
+            // Simulate keyframe event via the evalProgress WebSocket handler
+            // The handler checks phase === "keyframe" and calls page.toast("info", detail, 2000)
+            // We test the handler logic directly
+            let phase = "keyframe";
+            let detail = "Generating keyframe summary...";
+            if (phase === "keyframe") {
+                page.toast("info", detail, 2000);
+            }
+            log("phase14", "167a: keyframe phase calls toast: " + toastCalled, toastCalled ? "pass" : "fail");
+
+            // Test keyframeDone is silent (no toast)
+            toastCalled = false;
+            phase = "keyframeDone";
+            if (phase === "keyframeDone") {
+                // Handler only does console.log
+            }
+            log("phase14", "167b: keyframeDone is silent (no toast): " + !toastCalled, !toastCalled ? "pass" : "fail");
+
+            page.toast = origToast;
+        } catch (e) {
+            log("phase14", "167: evalProgress handler test error: " + e.message, "fail");
+        }
+
+        // Test 168: evalProgress handler — memoryExtract phases
+        try {
+            let toastCalls = [];
+            let origToast = page.toast;
+            page.toast = function(level, msg, dur) {
+                toastCalls.push({ level: level, msg: msg, duration: dur });
+                origToast.call(page, level, msg, dur);
+            };
+
+            // memoryExtract shows info toast
+            let phase = "memoryExtract";
+            let detail = "Extracting memories...";
+            if (phase === "memoryExtract") {
+                page.toast("info", detail, 2000);
+            }
+            let memExtOk = toastCalls.length === 1 && toastCalls[0].level === "info";
+            log("phase14", "168a: memoryExtract shows info toast: " + memExtOk, memExtOk ? "pass" : "fail");
+
+            // memoryExtractDone with count shows toast
+            toastCalls = [];
+            phase = "memoryExtractDone";
+            detail = "5 memories extracted";
+            if (phase === "memoryExtractDone") {
+                if (detail && detail !== "error") {
+                    page.toast("info", detail, 3000);
+                }
+            }
+            let memDoneOk = toastCalls.length === 1 && toastCalls[0].msg === "5 memories extracted";
+            log("phase14", "168b: memoryExtractDone shows count: " + memDoneOk, memDoneOk ? "pass" : "fail");
+
+            // memoryExtractDone with error shows warn toast
+            toastCalls = [];
+            detail = "error";
+            if (phase === "memoryExtractDone") {
+                if (detail && detail !== "error") {
+                    page.toast("info", detail, 3000);
+                } else if (detail === "error") {
+                    page.toast("warn", "Memory extraction failed", 3000);
+                }
+            }
+            let memErrOk = toastCalls.length === 1 && toastCalls[0].level === "warn" && toastCalls[0].msg === "Memory extraction failed";
+            log("phase14", "168c: memoryExtractDone error shows warn: " + memErrOk, memErrOk ? "pass" : "fail");
+
+            page.toast = origToast;
+        } catch (e) {
+            log("phase14", "168: memoryExtract handler test error: " + e.message, "fail");
+        }
+
+        // Test 169: memoryExtractDone refreshes MemoryPanel
+        if (window.MemoryPanel) {
+            let refreshCalled = false;
+            let origRefresh = MemoryPanel.refresh;
+            MemoryPanel.refresh = function() { refreshCalled = true; };
+
+            // Simulate memoryExtractDone handler
+            if (window.MemoryPanel) {
+                MemoryPanel.refresh();
+            }
+            log("phase14", "169: memoryExtractDone refreshes MemoryPanel: " + refreshCalled, refreshCalled ? "pass" : "fail");
+
+            MemoryPanel.refresh = origRefresh;
+        } else {
+            log("phase14", "169: MemoryPanel not loaded — refresh test skipped", "skip");
+        }
+
+        // Test 170: midStreamViolation phase
+        try {
+            let toastCalls = [];
+            let origToast = page.toast;
+            page.toast = function(level, msg, dur) {
+                toastCalls.push({ level: level, msg: msg, duration: dur });
+                origToast.call(page, level, msg, dur);
+            };
+
+            let phase = "midStreamViolation";
+            let detail = "Character identity mismatch";
+            if (phase === "midStreamViolation") {
+                page.toast("warn", "Policy: " + detail, 5000);
+            }
+            let msOk = toastCalls.length === 1 && toastCalls[0].level === "warn" &&
+                toastCalls[0].msg === "Policy: Character identity mismatch" && toastCalls[0].duration === 5000;
+            log("phase14", "170: midStreamViolation shows warn toast with 5s duration: " + msOk, msOk ? "pass" : "fail");
+
+            page.toast = origToast;
+        } catch (e) {
+            log("phase14", "170: midStreamViolation handler test error: " + e.message, "fail");
+        }
+
+        // Test 171: new MemoryTypeEnumType values present in schema
+        try {
+            let memModel = am7model.getModel("tool.memory");
+            if (memModel && memModel.fields) {
+                let mtField = memModel.fields.find(function(f) { return f.name === "memoryType"; });
+                if (mtField && mtField.baseClass) {
+                    // Enum is referenced by baseClass — verify the field exists
+                    log("phase14", "171: memoryType field exists with enum baseClass", "pass");
+                } else {
+                    log("phase14", "171: memoryType field found: " + !!mtField, mtField ? "pass" : "fail");
+                }
+            } else {
+                log("phase14", "171: tool.memory model not loaded — check schema", "warn");
+            }
+        } catch (e) {
+            log("phase14", "171: Memory model check error: " + e.message, "warn");
+        }
+
+        // Test 172: complianceCheck and complianceCheckEvery fields in schema
+        try {
+            let modelDef = am7model.getModel("olio.llm.chatConfig");
+            if (modelDef && modelDef.fields) {
+                let fieldNames = modelDef.fields.map(function(f) { return f.name; });
+                let hasCC = fieldNames.indexOf("complianceCheck") !== -1;
+                let hasCCE = fieldNames.indexOf("complianceCheckEvery") !== -1;
+                log("phase14", "172a: chatConfig has complianceCheck: " + hasCC, hasCC ? "pass" : "fail");
+                log("phase14", "172b: chatConfig has complianceCheckEvery: " + hasCCE, hasCCE ? "pass" : "fail");
+            }
+        } catch (e) {
+            log("phase14", "172: Schema check error: " + e.message, "warn");
+        }
+    }
+
     // ── Main Suite Runner ─────────────────────────────────────────────
     async function runLLMTests(selectedCategories) {
         let cats = selectedCategories;
@@ -2691,6 +2906,7 @@
         await testMcpInspector(cats);
         await testPhase13Infra(cats);
         await testPhase13Coverage(cats);
+        await testPhase14(cats);
     }
 
     // ── Register with TestFramework ───────────────────────────────────

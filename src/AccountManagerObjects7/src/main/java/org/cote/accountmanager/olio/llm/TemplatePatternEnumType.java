@@ -28,6 +28,8 @@ public enum TemplatePatternEnumType {
 	LOCATION_TERRAINS("location.terrains"),
 	MEMORY_CONTEXT("memory.context"),
 	MEMORY_COUNT("memory.count"),
+	MEMORY_DECISIONS("memory.decisions"),
+	MEMORY_EMOTIONS("memory.emotions"),
 	MEMORY_FACTS("memory.facts"),
 	MEMORY_LAST_SESSION("memory.lastSession"),
 	MEMORY_RELATIONSHIP("memory.relationship"),

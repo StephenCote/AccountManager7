@@ -1,0 +1,86 @@
+{
+	"schema": "tool.plan",
+	"name": "MemoryExtractionChain",
+	"planQuery": "Extract discrete memories from a conversation segment, deduplicate against existing memories, and persist new engrams",
+	"planPromptConfigName": "MemoryExtraction Prompt",
+	"planChatName": "MemoryExtraction Chat",
+	"maxSteps": 10,
+	"chainMode": true,
+	"executed": false,
+	"totalExecutedSteps": 0,
+	"steps": [
+		{
+			"step": 1,
+			"stepType": "TOOL",
+			"stepStatus": "PENDING",
+			"toolName": "searchMemoriesByPair",
+			"dynamic": false,
+			"parentStep": -1,
+			"summaryText": "Retrieve existing memories for the character pair to enable deduplication. Output stored as 'pairMemories'.",
+			"inputs": [
+				{
+					"name": "personId1",
+					"valueType": "long",
+					"value": "{{personId1}}"
+				},
+				{
+					"name": "personId2",
+					"valueType": "long",
+					"value": "{{personId2}}"
+				},
+				{
+					"name": "limit",
+					"valueType": "int",
+					"value": "50"
+				}
+			]
+		},
+		{
+			"step": 2,
+			"stepType": "LLM",
+			"stepStatus": "PENDING",
+			"promptConfigName": "MemoryExtraction Prompt",
+			"dynamic": false,
+			"parentStep": -1,
+			"summaryText": "LLM call to extract discrete memories from the conversation segment. Uses the memory extraction prompt with character names and setting. The conversation segment is injected via {{conversationSegment}}. Existing memories from step 1 are available as {{pairMemories}} for dedup context.",
+			"inputs": [
+				{
+					"name": "extractMemories",
+					"valueType": "string",
+					"value": "Extract discrete, specific memories from the following conversation segment between {{systemCharName}} and {{userCharName}} in {{setting}}.\n\nExisting memories (DO NOT duplicate these):\n{{pairMemories}}\n\nConversation segment:\n{{conversationSegment}}"
+				}
+			]
+		},
+		{
+			"step": 3,
+			"stepType": "TOOL",
+			"stepStatus": "PENDING",
+			"toolName": "extractMemories",
+			"dynamic": false,
+			"parentStep": -1,
+			"summaryText": "Persist the LLM-extracted memories with deduplication. Takes the JSON array output from step 2 and stores each memory with person pair tagging.",
+			"inputs": [
+				{
+					"name": "text",
+					"valueType": "string",
+					"value": "{{extractMemories_result}}"
+				},
+				{
+					"name": "conversationId",
+					"valueType": "string",
+					"value": "{{conversationId}}"
+				},
+				{
+					"name": "personId1",
+					"valueType": "long",
+					"value": "{{personId1}}"
+				},
+				{
+					"name": "personId2",
+					"valueType": "long",
+					"value": "{{personId2}}"
+				}
+			]
+		}
+	]
+}

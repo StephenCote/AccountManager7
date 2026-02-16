@@ -293,6 +293,8 @@ public class MemoryUtil {
 
 	/// OI-3: Overload with person pair IDs and person model so LLM-extracted memories
 	/// are tagged with the character pair for cross-conversation retrieval.
+	/// Phase 14d: Includes deduplication — checks for semantically similar existing
+	/// memories and merges instead of creating duplicates.
 	public static List<BaseRecord> extractMemoriesFromResponse(BaseRecord user, String llmResponse,
 			String sourceUri, String conversationId, long personId1, long personId2, String personModel) {
 
@@ -308,6 +310,12 @@ public class MemoryUtil {
 
 			String jsonStr = llmResponse.substring(jsonStart, jsonEnd + 1);
 			org.json.JSONArray arr = new org.json.JSONArray(jsonStr);
+
+			/// Phase 14d: Pre-fetch existing memories for the person pair to enable dedup
+			List<BaseRecord> existingMemories = null;
+			if (personId1 > 0L && personId2 > 0L) {
+				existingMemories = searchMemoriesByPersonPair(user, personId1, personId2, 50);
+			}
 
 			for (int i = 0; i < arr.length(); i++) {
 				org.json.JSONObject obj = arr.getJSONObject(i);
@@ -325,15 +333,135 @@ public class MemoryUtil {
 					type = MemoryTypeEnumType.NOTE;
 				}
 
+				/// Phase 14d: Check for semantic duplicate before creating
+				BaseRecord duplicate = findSemanticDuplicate(user, content, existingMemories);
+				if (duplicate != null) {
+					/// Merge: keep the higher importance, combine sourceUris
+					BaseRecord merged = mergeMemory(user, duplicate, content, summary, type, importance, sourceUri);
+					if (merged != null) {
+						memories.add(merged);
+						logger.info("Merged duplicate memory (id=" + duplicate.get(FieldNames.FIELD_ID) + ")");
+					}
+					continue;
+				}
+
 				BaseRecord mem = createMemory(user, content, summary, type, importance, sourceUri, conversationId,
 					personId1, personId2, personModel);
 				if (mem != null) {
 					memories.add(mem);
+					/// Add newly created to existing list so subsequent items in this batch can dedup against it
+					if (existingMemories != null) {
+						existingMemories.add(mem);
+					}
 				}
 			}
 		} catch (Exception e) {
 			logger.error("Error parsing memory extraction response: " + e.getMessage());
 		}
 		return memories;
+	}
+
+	/// Phase 14d: Find a semantically duplicate memory from the existing list.
+	/// Uses vector similarity search if available, falls back to text-based Jaccard similarity.
+	/// Threshold: 0.92 cosine similarity (vector) or 0.85 Jaccard (text fallback).
+	public static BaseRecord findSemanticDuplicate(BaseRecord user, String newContent, List<BaseRecord> existingMemories) {
+		if (existingMemories == null || existingMemories.isEmpty() || newContent == null) {
+			return null;
+		}
+
+		/// Try vector-based similarity first
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		if (vu != null && VectorUtil.isVectorSupported()) {
+			try {
+				List<BaseRecord> similar = vu.find(user, "tool.vectorMemory", newContent, 1, 0.92, true);
+				if (similar != null && !similar.isEmpty()) {
+					/// Verify the match is in our existing memory set (same person pair)
+					BaseRecord match = similar.get(0);
+					BaseRecord vectorRef = match.hasField(FieldNames.FIELD_VECTOR_REFERENCE) ? match.get(FieldNames.FIELD_VECTOR_REFERENCE) : null;
+					if (vectorRef != null) {
+						long refId = vectorRef.get(FieldNames.FIELD_ID);
+						for (BaseRecord existing : existingMemories) {
+							if ((long) existing.get(FieldNames.FIELD_ID) == refId) {
+								return existing;
+							}
+						}
+					}
+				}
+			} catch (Exception e) {
+				logger.debug("Vector dedup check failed, falling back to text: " + e.getMessage());
+			}
+		}
+
+		/// Fallback: text-based Jaccard similarity on word sets
+		java.util.Set<String> newWords = tokenize(newContent);
+		for (BaseRecord existing : existingMemories) {
+			String existingContent = existing.get("content");
+			if (existingContent == null) continue;
+			java.util.Set<String> existingWords = tokenize(existingContent);
+			double jaccard = jaccardSimilarity(newWords, existingWords);
+			if (jaccard >= 0.85) {
+				return existing;
+			}
+		}
+
+		return null;
+	}
+
+	/// Phase 14d: Merge a new memory into an existing duplicate.
+	/// Keeps the higher importance value and appends the new sourceUri.
+	private static BaseRecord mergeMemory(BaseRecord user, BaseRecord existing, String newContent,
+			String newSummary, MemoryTypeEnumType newType, int newImportance, String newSourceUri) {
+		try {
+			int existingImportance = existing.get("importance");
+			if (newImportance > existingImportance) {
+				existing.set("importance", newImportance);
+			}
+
+			/// Combine sourceUris (append new if different)
+			String existingUri = existing.get("sourceUri");
+			if (newSourceUri != null && (existingUri == null || !existingUri.contains(newSourceUri))) {
+				String combined = (existingUri != null ? existingUri + "; " : "") + newSourceUri;
+				/// Cap at 512 chars to avoid field overflow
+				if (combined.length() > 512) {
+					combined = combined.substring(0, 512);
+				}
+				existing.set("sourceUri", combined);
+			}
+
+			/// If the new summary is longer/more specific, use it
+			String existingSummary = existing.get("summary");
+			if (newSummary != null && (existingSummary == null || newSummary.length() > existingSummary.length())) {
+				existing.set("summary", newSummary);
+			}
+
+			IOSystem.getActiveContext().getAccessPoint().update(user, existing);
+			return existing;
+		} catch (Exception e) {
+			logger.error("Error merging memory: " + e.getMessage());
+			return null;
+		}
+	}
+
+	/// Tokenize text into a set of lowercased words for Jaccard similarity.
+	public static java.util.Set<String> tokenize(String text) {
+		java.util.Set<String> words = new java.util.HashSet<>();
+		if (text == null) return words;
+		for (String w : text.toLowerCase().split("\\W+")) {
+			if (w.length() > 2) {
+				words.add(w);
+			}
+		}
+		return words;
+	}
+
+	/// Jaccard similarity between two word sets: |intersection| / |union|.
+	public static double jaccardSimilarity(java.util.Set<String> a, java.util.Set<String> b) {
+		if (a.isEmpty() && b.isEmpty()) return 1.0;
+		if (a.isEmpty() || b.isEmpty()) return 0.0;
+		java.util.Set<String> intersection = new java.util.HashSet<>(a);
+		intersection.retainAll(b);
+		java.util.Set<String> union = new java.util.HashSet<>(a);
+		union.addAll(b);
+		return (double) intersection.size() / union.size();
 	}
 }

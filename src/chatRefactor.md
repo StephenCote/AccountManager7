@@ -4707,3 +4707,451 @@ This section documents when each automated operation fires during chat processin
 | `userCharacter` | FK | - | Player character reference |
 | `serverUrl` | String | - | LLM API endpoint |
 | `apiKey` | String | - | Encrypted API key |
+
+---
+
+## Phase 14: Dedicated Memory Extractor, Async Keyframe Pipeline & Agent7 Integration
+
+**Status:** PLANNED
+**Risk:** Medium | **Impact:** High
+**Dependencies:** Phase 3 (keyframe-to-memory pipeline), Phase 11 (memory hardening), Agent7 module
+
+### 14.0 Motivation
+
+The current memory system has three fundamental problems:
+
+1. **Wrong summarizer** — Memories are created by piping the generic keyframe analysis text (`analyze()`) into `persistKeyframeAsMemory()`. The analyze prompt is designed for plot summarization, not memory extraction. It produces narrative summaries when what we need are discrete, categorized engrams (facts, relationship shifts, emotional beats, decisions).
+
+2. **Blocking pipeline** — `addKeyFrame()` calls `analyze()` synchronously inside `newMessage()`, which blocks the entire request thread. The analyze call makes a full LLM round-trip using the chat model with the full conversation context. On slower endpoints or large contexts, this hits `requestTimeout` and fails entirely — the user sees the server "hang" after the assistant's response completes, with no indication of what's happening.
+
+3. **One-way memory flow** — Memories are extracted and stored but reconstitution is limited to a flat list injected via `${memory.context}`. There's no semantic ranking, no budget allocation by type, no cross-conversation discovery, and no within-conversation accumulation.
+
+### 14.1 Architecture Overview
+
+```
+CURRENT (Phase 3):
+  pruneCount() → addKeyFrame() → analyze() [BLOCKS] → persistKeyframeAsMemory()
+                                      ↓
+                         Generic plot summary → OUTCOME memory (importance=7)
+
+PROPOSED (Phase 14):
+  pruneCount() → addKeyFrame() [ASYNC, with progress events]
+                      ↓
+            CompletableFuture.runAsync:
+              1. analyze() → keyframe summary (for context window)
+              2. extractMemories() → dedicated LLM call with memory extraction prompt
+                      ↓
+                 Categorized engrams: FACT, RELATIONSHIP, EMOTION, DECISION, DISCOVERY
+                      ↓
+                 MemoryUtil.createMemory() per engram (vectorized)
+                      ↓
+                 listener.onMemoryEvent() → WebSocket notification to client
+```
+
+### 14.2 Async Keyframe Pipeline
+
+**Problem:** `addKeyFrame(req)` is called synchronously from `newMessage()` at Chat.java:1781 via `pruneCount()`. The analyze LLM call blocks the request thread. On slow endpoints, this hits `requestTimeout` and fails with "Buffer mode timed out waiting for stream completion".
+
+**Fix:** Run the entire keyframe pipeline asynchronously. The keyframe content is NOT needed for the current message — it's injected into the message list for future context window management. We can defer it.
+
+#### 14.2.1 Changes to `pruneCount()` (Chat.java)
+
+```java
+// BEFORE: synchronous, blocks request thread
+if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
+    addKeyFrame(req);  // BLOCKS — makes LLM call
+}
+
+// AFTER: async with progress notification
+if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
+    // Snapshot messages for async analysis (avoid concurrent modification)
+    final List<OpenAIMessage> snapshot = new ArrayList<>(req.getMessages());
+    final OpenAIRequest snapshotReq = cloneRequestForAnalysis(req, snapshot);
+
+    // Notify client that background processing is starting
+    if (listener != null) {
+        listener.onEvalProgress(user, req, "keyframe", "Generating keyframe summary...");
+    }
+
+    CompletableFuture.runAsync(() -> {
+        try {
+            addKeyFrameAsync(req, snapshotReq);
+        } catch (Exception e) {
+            logger.warn("Async keyframe generation failed: " + e.getMessage());
+        }
+        if (listener != null) {
+            listener.onEvalProgress(user, req, "keyframeDone", "Keyframe complete");
+        }
+    });
+}
+```
+
+#### 14.2.2 Separate analyze timeout
+
+The `requestTimeout` on chatConfig applies to the main user chat. The analyze call should use a separate, longer timeout since it processes more context:
+
+- New chatConfig field: `analyzeTimeout` (int, default 120) — seconds for internal analyze/memory calls
+- Falls back to `requestTimeout * 2` if not set, minimum 60 seconds
+- Applied in `analyze()` via a per-call timeout override
+
+#### 14.2.3 Progress events
+
+The client already handles `evalProgress` events. New event types:
+
+| Event Type | Data | UX Treatment |
+|-----------|------|-------------|
+| `keyframe` | "Generating keyframe summary..." | Subtle spinner/badge on chat |
+| `keyframeDone` | "Keyframe complete" | Clear spinner |
+| `memoryExtract` | "Extracting memories..." | Subtle spinner/badge |
+| `memoryExtractDone` | "{count} memories extracted" | Toast or badge |
+
+### 14.3 Dedicated Memory Extractor
+
+**Problem:** Current pipeline feeds the generic `analyze()` output (a plot summary) into `persistKeyframeAsMemory()`, which stores it as a single OUTCOME memory with importance=7. This produces vague, narrative memories instead of specific, retrievable engrams.
+
+**Solution:** A dedicated memory extraction prompt that returns structured JSON with categorized, importance-ranked discrete memories.
+
+#### 14.3.1 Memory Extraction Prompt
+
+New prompt resource: `olio/llm/prompts/memoryExtraction.txt`
+
+```
+You are a memory extraction system. Analyze the following conversation segment
+and extract discrete, specific memories. Each memory should be a single fact,
+observation, decision, or relationship development — NOT a narrative summary.
+
+Categories:
+- FACT: Concrete information revealed (names, places, abilities, preferences)
+- RELATIONSHIP: Changes in how characters relate (trust, conflict, attraction, betrayal)
+- EMOTION: Significant emotional moments or shifts
+- DECISION: Choices made that affect future interactions
+- DISCOVERY: New information or realizations
+
+For each memory, provide:
+- content: The specific memory (1-3 sentences, factual, third-person)
+- summary: One-line summary (max 100 chars)
+- memoryType: One of FACT, RELATIONSHIP, EMOTION, DECISION, DISCOVERY
+- importance: 1-10 (10 = life-changing, 7 = significant, 4 = notable, 1 = trivial)
+
+Respond with a JSON array. Extract 2-8 memories per segment.
+Do NOT summarize the plot. Extract discrete, specific, retrievable facts.
+
+Characters: {systemCharName} and {userCharName}
+Setting: {setting}
+
+Conversation segment:
+{segment}
+```
+
+#### 14.3.2 Memory Extraction Flow
+
+```java
+// New method in Chat.java — called from async keyframe pipeline
+private List<BaseRecord> extractMemoriesFromSegment(OpenAIRequest req) {
+    String prompt = PromptResourceUtil.getMemoryExtractionPrompt(chatConfig);
+    String segment = ChatUtil.getFormattedChatHistory(req, chatConfig, pruneSkip, false)
+        .stream().collect(Collectors.joining("\n"));
+
+    // Use analyzeModel if configured, otherwise main model
+    String model = chatConfig.get("analyzeModel");
+    if (model == null) model = chatConfig.get("model");
+
+    OpenAIRequest extractReq = new OpenAIRequest();
+    extractReq.setModel(model);
+    // Lower temperature for factual extraction
+    extractReq.set("temperature", 0.3);
+    extractReq.set("max_tokens", 2048);
+
+    // System + user message with extraction prompt
+    extractReq.addMessage(systemMsg(prompt));
+    extractReq.addMessage(userMsg(segment));
+
+    OpenAIResponse resp = chat(extractReq);  // internal, non-streaming
+    if (resp == null || resp.getMessage() == null) return Collections.emptyList();
+
+    // Parse JSON array and create memory records
+    return MemoryUtil.extractMemoriesFromResponse(
+        user, resp.getMessage().getContent(), sourceUri, conversationId,
+        systemCharId, userCharId, personModel
+    );
+}
+```
+
+#### 14.3.3 Integration with addKeyFrame
+
+```java
+private void addKeyFrameAsync(OpenAIRequest originalReq, OpenAIRequest snapshotReq) {
+    // Step 1: Generate keyframe summary (existing analyze path)
+    String analysisText = analyze(snapshotReq, null, false, false, false);
+
+    // Step 2: Build MCP keyframe and inject into original request
+    // (synchronized on req to avoid concurrent modification)
+    synchronized (originalReq) {
+        injectKeyframeMessage(originalReq, analysisText);
+    }
+
+    // Step 3: Extract discrete memories (NEW — dedicated prompt)
+    boolean extractMemories = (boolean) chatConfig.get("extractMemories");
+    if (extractMemories && analysisText != null) {
+        if (listener != null) {
+            listener.onEvalProgress(user, originalReq, "memoryExtract", "Extracting memories...");
+        }
+
+        List<BaseRecord> memories = extractMemoriesFromSegment(snapshotReq);
+
+        if (listener != null) {
+            listener.onMemoryEvent(user, originalReq, "extracted",
+                memories.size() + " memories extracted");
+            listener.onEvalProgress(user, originalReq, "memoryExtractDone",
+                memories.size() + " memories");
+        }
+    }
+
+    // Step 4: Interaction evaluation (existing, already async)
+    evaluateInteraction(originalReq);
+}
+```
+
+### 14.4 Memory Reconstitution
+
+Memory reconstitution = how stored memories are loaded back into active conversation context. Two dimensions: **within-chat** (same session) and **cross-chat** (different sessions, same or different character pairs).
+
+#### 14.4.1 Within-Chat Reconstitution (Same Session)
+
+**Current:** `retrieveRelevantMemories()` in `getChatPrompt()` queries by person pair IDs, formats as MCP context block, injects via `PromptUtil.setMemoryContext()`.
+
+**Enhanced:** Budget-allocated, type-prioritized injection.
+
+```
+Memory Budget Allocation (memoryBudget tokens):
+├── 40% — RELATIONSHIP memories (most important for character consistency)
+├── 25% — FACT memories (concrete details that prevent contradiction)
+├── 20% — DECISION/DISCOVERY memories (plot-relevant choices)
+└── 15% — EMOTION memories (emotional continuity)
+```
+
+**Implementation in `retrieveRelevantMemories()`:**
+
+```java
+private String retrieveRelevantMemories(BaseRecord systemChar, BaseRecord userChar) {
+    int budget = chatConfig.get("memoryBudget");
+    if (budget <= 0) return "";
+
+    long sysId = systemChar.get(FieldNames.FIELD_ID);
+    long usrId = userChar.get(FieldNames.FIELD_ID);
+
+    // Query all memories for this pair, ordered by importance desc
+    List<BaseRecord> allMemories = MemoryUtil.searchMemoriesByPersonPair(user, sysId, usrId, 50);
+
+    // Allocate by type with budget proportions
+    Map<String, Double> budgetRatios = Map.of(
+        "RELATIONSHIP", 0.40,
+        "FACT", 0.25,
+        "DECISION", 0.20, "DISCOVERY", 0.20,
+        "EMOTION", 0.15
+    );
+
+    McpContextBuilder builder = new McpContextBuilder();
+    int tokensUsed = 0;
+
+    for (Map.Entry<String, Double> entry : budgetRatios.entrySet()) {
+        int typeBudget = (int)(budget * entry.getValue());
+        List<BaseRecord> typed = allMemories.stream()
+            .filter(m -> entry.getKey().equals(m.get("memoryType").toString()))
+            .collect(Collectors.toList());
+
+        for (BaseRecord mem : typed) {
+            int memTokens = estimateTokens(mem.get("content"));
+            if (tokensUsed + memTokens > budget) break;
+            builder.addMemory(mem);
+            tokensUsed += memTokens;
+        }
+    }
+
+    return builder.build();
+}
+```
+
+**Within-chat accumulation:** As the conversation progresses and new keyframes fire, newly extracted memories become immediately available for the next `getChatPrompt()` call. The memory context grows organically within a session.
+
+#### 14.4.2 Cross-Chat Reconstitution (Different Sessions)
+
+Cross-chat memory enables characters to "remember" events from previous conversations. This works because memories are tagged with canonical person pair IDs, not session/conversation IDs.
+
+**Scenario:** Player had a conversation with NPC "Elena" last week where Elena revealed she's afraid of water. Today, player starts a new chat session with Elena. The FACT memory "Elena revealed she is afraid of water" is retrieved by person pair match and injected into the new session's system prompt.
+
+**Query strategy (layered):**
+
+```
+Layer 1: Pair-specific (this exact character pair)
+  MemoryUtil.searchMemoriesByPersonPair(sysId, usrId, limit)
+  → Highest relevance — direct relationship history
+
+Layer 2: Character-specific (either character with anyone)
+  MemoryUtil.searchMemoriesByPerson(sysId, limit)
+  → Character facts that transcend specific relationships
+  → e.g., "Elena is afraid of water" applies regardless of who she's talking to
+
+Layer 3: Semantic search (vector similarity to current context)
+  MemoryUtil.searchMemories(user, currentTopic, limit, threshold)
+  → Topic-relevant memories from any source
+  → e.g., if current chat mentions "the river," retrieve water-related memories
+```
+
+**Budget allocation across layers:**
+
+```
+Cross-chat budget (from memoryBudget):
+├── 50% — Layer 1: Pair-specific (direct history)
+├── 30% — Layer 2: Character-specific (individual knowledge)
+└── 20% — Layer 3: Semantic (topic-relevant from any source)
+```
+
+#### 14.4.3 Memory Freshness and Decay
+
+Memories have natural relevance decay:
+
+- **Recent memories** (< 3 sessions ago): Full importance weight
+- **Moderate memories** (3-10 sessions ago): importance × 0.7
+- **Old memories** (> 10 sessions ago): importance × 0.4 (only high-importance survive the budget cut)
+- **Pinned memories** (importance = 10): Never decay — life-defining events
+
+Decay is applied at query time, not stored. The raw importance is preserved.
+
+#### 14.4.4 Memory Deduplication
+
+When the same fact is extracted multiple times across keyframes (e.g., "Elena is afraid of water" mentioned in 3 sessions), deduplication prevents redundant context injection:
+
+- On extraction: Semantic similarity check against existing memories for the same person pair
+- Threshold: 0.92 cosine similarity → merge (keep higher importance, combine sourceUris)
+- Below threshold: Store as separate memory (nuance may differ)
+
+### 14.5 Agent7 Integration
+
+#### 14.5.1 ChainExecutor for Memory Extraction
+
+The memory extraction pipeline maps naturally to Agent7's ChainExecutor step types:
+
+```json
+{
+  "name": "MemoryExtractionChain",
+  "steps": [
+    {
+      "type": "LLM",
+      "name": "extractMemories",
+      "prompt": "memoryExtraction",
+      "input": "{{conversationSegment}}",
+      "output": "rawMemories"
+    },
+    {
+      "type": "TOOL",
+      "name": "deduplicateMemories",
+      "tool": "memoryDedup",
+      "input": "{{rawMemories}}",
+      "output": "uniqueMemories"
+    },
+    {
+      "type": "TOOL",
+      "name": "persistMemories",
+      "tool": "memoryPersist",
+      "input": "{{uniqueMemories}}",
+      "output": "storedMemories"
+    }
+  ]
+}
+```
+
+**When to use ChainExecutor vs direct calls:**
+
+- **Simple extraction** (Phase 14 MVP): Direct call from Chat.java — no Agent7 dependency. The extraction prompt + MemoryUtil.createMemory() is sufficient.
+- **Advanced extraction** (Phase 14+): ChainExecutor for multi-step chains that include deduplication, semantic search for related memories, importance calibration against existing memories, and cross-character knowledge propagation.
+
+#### 14.5.2 Agent7 Tool Registration
+
+New agent tools for memory operations:
+
+```java
+@AgentTool(description = "Search memories by person pair")
+public List<BaseRecord> searchMemories(
+    @AgentToolParameter(name = "personId1") long personId1,
+    @AgentToolParameter(name = "personId2") long personId2,
+    @AgentToolParameter(name = "limit") int limit
+) {
+    return MemoryUtil.searchMemoriesByPersonPair(user, personId1, personId2, limit);
+}
+
+@AgentTool(description = "Extract and store memories from text")
+public List<BaseRecord> extractMemories(
+    @AgentToolParameter(name = "text") String text,
+    @AgentToolParameter(name = "conversationId") String conversationId
+) {
+    return MemoryUtil.extractMemoriesFromResponse(user, text, sourceUri, conversationId);
+}
+```
+
+This allows the LLM planner to include memory operations in agent-generated plans.
+
+#### 14.5.3 Objects7 vs Agent7 Boundary
+
+| Component | Module | Rationale |
+|-----------|--------|-----------|
+| MemoryUtil (persistence, query, format) | Objects7 | Core data operations, no agent dependency |
+| Memory extraction prompt + LLM call | Objects7 (Chat.java) | Part of chat pipeline, needs Chat instance |
+| Memory reconstitution (retrieval + injection) | Objects7 (Chat.java) | Part of getChatPrompt(), no agent dependency |
+| ChainExecutor memory chains | Agent7 | Advanced multi-step extraction, optional |
+| Agent tools for memory ops | Agent7 | Plan-driven memory operations, optional |
+| Memory deduplication (semantic) | Objects7 (MemoryUtil) | Core utility, vector comparison |
+
+**Principle:** Phase 14 MVP has zero Agent7 dependency. All core memory extraction and reconstitution lives in Objects7. Agent7 integration is additive — it enables plan-driven memory operations but isn't required for the basic pipeline.
+
+### 14.6 New/Modified chatConfig Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `analyzeTimeout` | int | 120 | Timeout (seconds) for internal analyze/memory LLM calls. Separate from `requestTimeout`. |
+| `memoryExtractionPrompt` | string | null | Custom memory extraction prompt name (null = default `memoryExtraction.txt`) |
+
+Existing fields used: `extractMemories`, `memoryBudget`, `memoryExtractionEvery`, `analyzeModel`
+
+### 14.7 Open Issues
+
+| ID | Description | Priority | Status |
+|----|-------------|----------|--------|
+| OI-86 | Keyframe analyze blocks request thread — needs async pipeline | P1 | PLANNED |
+| OI-87 | Analyze hits requestTimeout on slow endpoints — needs separate analyzeTimeout | P1 | PLANNED |
+| OI-88 | Internal analyze OpenAIRequest missing objectId — expected for non-client LLM calls, deduplicated to single WARN | P3 | MITIGATED |
+| OI-89 | Memory extraction uses generic plot summarizer instead of dedicated prompt | P2 | PLANNED |
+| OI-90 | Cross-chat memory reconstitution limited to flat list, no type budgeting | P2 | PLANNED |
+| OI-91 | No memory deduplication across keyframes | P3 | PLANNED |
+
+### 14.8 Implementation Order
+
+```
+Phase 14a: Async keyframe pipeline (OI-86, OI-87)
+  - Move addKeyFrame into CompletableFuture.runAsync
+  - Add analyzeTimeout field and apply to analyze() calls
+  - Add progress events (keyframe, keyframeDone)
+  - Fix: extractMemories try-catch → (boolean) cast
+
+Phase 14b: Dedicated memory extraction prompt (OI-89)
+  - Create memoryExtraction.txt prompt resource
+  - Add extractMemoriesFromSegment() to Chat.java
+  - Wire into addKeyFrameAsync after analyze()
+  - Add memoryExtract/memoryExtractDone progress events
+
+Phase 14c: Enhanced reconstitution (OI-90)
+  - Budget-allocated type-prioritized retrieval in retrieveRelevantMemories()
+  - Cross-chat layered query (pair → character → semantic)
+  - Memory freshness decay at query time
+  - Template variables: ${memory.relationship}, ${memory.facts}, ${memory.decisions}
+
+Phase 14d: Memory deduplication (OI-91)
+  - Semantic similarity check on extraction
+  - Merge threshold 0.92 cosine similarity
+  - Importance aggregation on merge
+
+Phase 14e: Agent7 integration (optional)
+  - Register memory agent tools
+  - Create MemoryExtractionChain template
+  - Wire ChainExecutor for advanced extraction flows
+```
