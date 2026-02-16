@@ -5080,11 +5080,6 @@
                 label: "Analyze Timeout (sec)",
                 hint: "Timeout for background analyze/memory calls. 0=use 2x requestTimeout."
             },
-            memoryExtractionPrompt: {
-                layout: "one",
-                label: "Memory Extraction Prompt",
-                hint: "Resource name for custom extraction prompt (blank=default)"
-            },
 
         },
         forms: ["episodectl", "chatOptionsRef", "groupinfo", "attributes"]

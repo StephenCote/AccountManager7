@@ -2462,5 +2462,118 @@
         }
       }
 
+      /* ==========================================
+         Memory Panel (Phase 14)
+         ========================================== */
+
+      .memory-panel {
+        @apply border-b border-gray-200 dark:border-gray-600;
+      }
+      .memory-header {
+        @apply flex items-center;
+      }
+      .memory-header-btn {
+        @apply flex-1;
+      }
+      .memory-add-btn {
+        @apply px-2 py-2 text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400 cursor-pointer;
+        background: none;
+        border: none;
+      }
+      .memory-body {
+        @apply max-h-80 overflow-y-auto;
+      }
+      .memory-item {
+        @apply border-b border-gray-100 dark:border-gray-700 py-1 px-2 text-xs;
+      }
+      .memory-item-row {
+        @apply flex items-center gap-1 cursor-pointer rounded px-1 py-0.5;
+        @apply hover:bg-gray-100 dark:hover:bg-gray-700;
+      }
+      .memory-type-icon {
+        @apply flex-shrink-0 text-blue-500 dark:text-blue-400;
+        font-size: 14px;
+      }
+      .memory-summary {
+        @apply flex-1 truncate text-gray-700 dark:text-gray-200;
+      }
+      .memory-importance {
+        @apply flex-shrink-0 px-1 rounded text-[10px] font-bold;
+        @apply bg-amber-100 text-amber-700 dark:bg-amber-500/30 dark:text-amber-300;
+      }
+      .memory-delete {
+        @apply flex-shrink-0 opacity-0 cursor-pointer;
+        @apply text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400;
+        font-size: 14px;
+      }
+      .group:hover .memory-delete {
+        @apply opacity-100;
+      }
+      .memory-detail {
+        @apply mt-1 p-2 rounded text-[11px] whitespace-pre-wrap;
+        @apply bg-gray-50 text-gray-700 dark:bg-gray-900 dark:text-gray-200;
+      }
+      .memory-detail-type {
+        @apply text-[10px] font-semibold uppercase mb-1;
+        @apply text-blue-600 dark:text-blue-400;
+      }
+      .memory-detail-content {
+        @apply leading-relaxed;
+      }
+      .memory-empty {
+        @apply px-3 py-2 text-xs text-gray-500 dark:text-gray-400;
+      }
+      .memory-search {
+        @apply px-2 py-1;
+      }
+      .memory-search-input {
+        @apply w-full text-xs px-2 py-1 rounded border;
+        @apply border-gray-300 bg-white text-gray-700;
+        @apply dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200;
+        @apply placeholder-gray-400 dark:placeholder-gray-500;
+      }
+
+      /* Create memory form */
+      .memory-create-form {
+        @apply px-2 py-2 border-b;
+        @apply border-gray-200 bg-gray-50;
+        @apply dark:border-gray-600 dark:bg-gray-900;
+      }
+      .memory-create-textarea {
+        @apply w-full text-xs px-2 py-1 rounded border resize-none mb-1;
+        @apply border-gray-300 bg-white text-gray-700;
+        @apply dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200;
+        @apply placeholder-gray-400 dark:placeholder-gray-500;
+      }
+      .memory-create-input {
+        @apply w-full text-xs px-2 py-1 rounded border mb-1;
+        @apply border-gray-300 bg-white text-gray-700;
+        @apply dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200;
+        @apply placeholder-gray-400 dark:placeholder-gray-500;
+      }
+      .memory-create-row {
+        @apply flex items-center gap-1;
+      }
+      .memory-create-select {
+        @apply text-[11px] px-1 py-0.5 rounded border flex-1;
+        @apply border-gray-300 bg-white text-gray-700;
+        @apply dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200;
+      }
+      .memory-create-importance {
+        @apply text-[11px] px-1 py-0.5 rounded border w-10 text-center;
+        @apply border-gray-300 bg-white text-gray-700;
+        @apply dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200;
+      }
+      .memory-create-btn {
+        @apply text-[11px] px-2 py-0.5 rounded font-medium;
+        @apply bg-blue-500 text-white hover:bg-blue-600;
+        @apply dark:bg-blue-600 dark:hover:bg-blue-500;
+      }
+      .memory-cancel-btn {
+        @apply text-[11px] px-2 py-0.5 rounded;
+        @apply text-gray-500 hover:text-gray-700 hover:bg-gray-200;
+        @apply dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700;
+      }
+
  }
 

@@ -97,8 +97,10 @@ public class Chat {
 	private IChatListener listener = null;
 	private int requestTimeout = 120;
 	/// Phase 14: Separate timeout for internal analyze/memory extraction LLM calls.
-	/// Falls back to requestTimeout * 2 (minimum 60s) if not explicitly configured.
+	/// Default 120s. Legacy configs without the field keep this default.
 	private int analyzeTimeout = 120;
+	/// Thread-local override so background analyze/extract threads don't mutate the shared requestTimeout field.
+	private ThreadLocal<Integer> analyzeTimeoutOverride = new ThreadLocal<>();
 	private int responseCount = 0;
 
 	/// Mid-stream policy evaluation tracking
@@ -208,16 +210,15 @@ public class Chat {
 			messageTrim = chatConfig.get("messageTrim");
 			requestTimeout = chatConfig.get("requestTimeout");
 			try { streamMode = chatConfig.get("stream"); } catch (Exception e) { /* field may not be set */ }
-			/// Phase 14: Configure analyzeTimeout — separate from requestTimeout for background LLM calls
+			/// Phase 14: Configure analyzeTimeout — separate from requestTimeout for background LLM calls.
+			/// Legacy configs without the field will have cfgAnalyzeTimeout=0; keep field default (120s).
 			try {
 				int cfgAnalyzeTimeout = chatConfig.get("analyzeTimeout");
 				if (cfgAnalyzeTimeout > 0) {
 					analyzeTimeout = cfgAnalyzeTimeout;
-				} else {
-					analyzeTimeout = Math.max(60, requestTimeout * 2);
 				}
 			} catch (Exception e) {
-				analyzeTimeout = Math.max(60, requestTimeout * 2);
+				// keep field default
 			}
 
 			/// OI-5/OI-83: Enforce minimum keyframeEvery when extractMemories is enabled.
@@ -1461,14 +1462,13 @@ public class Chat {
 		snapshotReq.setMessages(new ArrayList<>(snapshot));
 		applyChatOptions(snapshotReq);
 
-		/// Step 1a: Save the original requestTimeout, use analyzeTimeout for analysis
-		int savedTimeout = requestTimeout;
-		requestTimeout = analyzeTimeout;
+		/// Step 1a: Use analyzeTimeout for analysis via thread-local override (thread-safe)
+		analyzeTimeoutOverride.set(analyzeTimeout);
 		String analysisText;
 		try {
 			analysisText = analyze(snapshotReq, null, false, false, false);
 		} finally {
-			requestTimeout = savedTimeout;
+			analyzeTimeoutOverride.remove();
 		}
 
 		/// Step 2: Build MCP keyframe and inject into original request (synchronized)
@@ -1640,14 +1640,13 @@ public class Chat {
 		usrMsg.setContent(segment);
 		extractReq.addMessage(usrMsg);
 
-		/// Use analyzeTimeout for the extraction call
-		int savedTimeout = requestTimeout;
-		requestTimeout = analyzeTimeout;
+		/// Use analyzeTimeout for the extraction call via thread-local override (thread-safe)
+		analyzeTimeoutOverride.set(analyzeTimeout);
 		OpenAIResponse resp;
 		try {
 			resp = chat(extractReq);
 		} finally {
-			requestTimeout = savedTimeout;
+			analyzeTimeoutOverride.remove();
 		}
 
 		if (resp == null || resp.getMessage() == null) {
@@ -2006,9 +2005,10 @@ public class Chat {
 
 		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = ClientUtil.postToRecordAndStream(getServiceUrl(req), authorizationToken, ser);
 
-		/// Apply requestTimeout via orTimeout if configured
-		if (requestTimeout > 0) {
-			streamFuture = streamFuture.orTimeout(requestTimeout, TimeUnit.SECONDS);
+		/// Apply effective timeout: thread-local override (background analyze/extract) or requestTimeout (normal calls)
+		final int effectiveTimeout = analyzeTimeoutOverride.get() != null ? analyzeTimeoutOverride.get() : requestTimeout;
+		if (effectiveTimeout > 0) {
+			streamFuture = streamFuture.orTimeout(effectiveTimeout, TimeUnit.SECONDS);
 		}
 
 		/// Phase 9: Register stream future with listener for failover cancellation
@@ -2041,7 +2041,7 @@ public class Chat {
 			if (error != null) {
 				String errMsg;
 				if (error instanceof TimeoutException || (error.getCause() != null && error.getCause() instanceof TimeoutException)) {
-					errMsg = "Request timed out after " + requestTimeout + " seconds";
+					errMsg = "Request timed out after " + effectiveTimeout + " seconds";
 				} else {
 					errMsg = "Error during streaming chat response: " + error.getMessage();
 				}
@@ -2066,7 +2066,7 @@ public class Chat {
 		if (!forwardToClient) {
 			/// Buffer mode: block until streaming completes
 			try {
-				int waitSeconds = requestTimeout > 0 ? requestTimeout + 5 : 300;
+				int waitSeconds = effectiveTimeout > 0 ? effectiveTimeout + 5 : 300;
 				if (!latch.await(waitSeconds, TimeUnit.SECONDS)) {
 					logger.error("Buffer mode timed out waiting for stream completion");
 					return null;

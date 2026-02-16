@@ -76,6 +76,7 @@
 						<exclude>**/TestChatPhase11</exclude>
 						<exclude>**/TestChatPhase12</exclude>
 						<exclude>**/TestChatPhase13</exclude>
+						<exclude>**/TestPhase14Memory</exclude>
 						<exclude>**/TestChatStream</exclude>
 						<exclude>**/TestKeyframeMemory</exclude>
 						<exclude>**/TestMemoryDuel</exclude>

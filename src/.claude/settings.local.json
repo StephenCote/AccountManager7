@@ -33,7 +33,8 @@
       "Bash(xxd:*)",
       "Bash(python -m json.tool:*)",
       "Bash(xargs:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(npx tailwindcss:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

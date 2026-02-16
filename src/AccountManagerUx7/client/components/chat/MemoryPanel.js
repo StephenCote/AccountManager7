@@ -1,6 +1,7 @@
 /**
- * MemoryPanel — Sidebar component for memory browsing and search
+ * MemoryPanel — Sidebar component for memory browsing, search, and creation
  * Phase 13f item 23: Collapsible panel showing memory state for current character pair.
+ * Phase 14: Manual memory creation, CSS readability fixes.
  *
  * Resolves: OI-69, OI-73
  *
@@ -19,6 +20,8 @@
     let searchResults = null;
     let expandedMemoryId = null;
     let currentConfig = null;
+    let showCreateForm = false;
+    let createForm = { content: "", summary: "", memoryType: "NOTE", importance: 5 };
 
     // ── Memory type icons (Material Symbols) ─────────────────────────────
 
@@ -31,8 +34,11 @@
         "DECISION":      "gavel",
         "DISCOVERY":     "explore",
         "BEHAVIOR":      "psychology",
+        "EMOTION":       "mood",
         "ERROR_LESSON":  "warning"
     };
+
+    let typeOptions = ["NOTE", "FACT", "RELATIONSHIP", "EMOTION", "DECISION", "DISCOVERY", "INSIGHT", "OUTCOME"];
 
     function getTypeIcon(memoryType) {
         return typeIcons[memoryType] || "notes";
@@ -134,37 +140,81 @@
         m.redraw();
     }
 
+    async function createMemoryFromForm() {
+        if (!createForm.content || createForm.content.trim().length < 3) {
+            page.toast("warn", "Memory content is required");
+            return;
+        }
+        if (!currentConfig) {
+            page.toast("warn", "No active chat session");
+            return;
+        }
+        let sys = currentConfig.systemCharacter;
+        let usr = currentConfig.userCharacter;
+        if (!sys || !usr || !sys.objectId || !usr.objectId) {
+            page.toast("warn", "Character pair not available");
+            return;
+        }
+
+        loading = true;
+        m.redraw();
+        try {
+            let body = {
+                content: createForm.content.trim(),
+                summary: createForm.summary.trim() || null,
+                memoryType: createForm.memoryType,
+                importance: createForm.importance,
+                person1ObjectId: sys.objectId,
+                person2ObjectId: usr.objectId,
+                conversationId: currentConfig.objectId || null
+            };
+            await m.request({
+                method: 'POST',
+                url: am7client.base() + "/memory/create",
+                withCredentials: true,
+                body: body
+            });
+            page.toast("success", "Memory created");
+            createForm = { content: "", summary: "", memoryType: "NOTE", importance: 5 };
+            showCreateForm = false;
+            // Reload memories
+            if (sys.objectId && usr.objectId) {
+                await loadForPair(sys.objectId, usr.objectId);
+            }
+        } catch(e) {
+            page.toast("error", "Failed to create memory");
+        }
+        loading = false;
+        m.redraw();
+    }
+
     // ── Views ────────────────────────────────────────────────────────────
 
     function memoryItemView(mem) {
         let isExpanded = expandedMemoryId === mem.objectId;
         let memType = mem.memoryType || "NOTE";
         let icon = getTypeIcon(memType);
-        let summary = mem.summary || (mem.content ? mem.content.substring(0, 60) + "..." : "—");
+        let summary = mem.summary || (mem.content ? mem.content.substring(0, 60) + "..." : "\u2014");
         let importance = mem.importance || 0;
 
         return m("div", {
             key: mem.objectId,
-            class: "border-b border-gray-700 py-1 px-2 text-xs"
+            class: "memory-item"
         }, [
             m("div", {
-                class: "flex items-center gap-1 cursor-pointer hover:bg-gray-700/30 rounded px-1 py-0.5",
+                class: "memory-item-row group",
                 onclick: function() {
                     expandedMemoryId = isExpanded ? null : mem.objectId;
                 }
             }, [
                 m("span", {
-                    class: "material-symbols-outlined flex-shrink-0",
-                    style: "font-size: 14px;",
+                    class: "material-symbols-outlined memory-type-icon",
                     title: memType
                 }, icon),
-                m("span", { class: "flex-1 truncate text-gray-300" }, summary),
-                importance > 0 ? m("span", {
-                    class: "flex-shrink-0 px-1 rounded text-[10px] bg-amber-500/20 text-amber-400"
-                }, importance) : "",
+                m("span", { class: "memory-summary" }, summary),
+                importance > 0 ? m("span", { class: "memory-importance" }, importance) : "",
                 m("span", {
-                    class: "material-symbols-outlined flex-shrink-0 opacity-0 group-hover:opacity-100 hover:text-red-400",
-                    style: "font-size: 14px;",
+                    class: "material-symbols-outlined memory-delete",
                     title: "Delete",
                     onclick: function(e) {
                         e.stopPropagation();
@@ -172,17 +222,18 @@
                     }
                 }, "delete_outline")
             ]),
-            isExpanded ? m("div", {
-                class: "mt-1 p-2 bg-gray-800/50 rounded text-gray-400 text-[11px] whitespace-pre-wrap"
-            }, mem.content || "—") : ""
+            isExpanded ? m("div", { class: "memory-detail" }, [
+                m("div", { class: "memory-detail-type" }, memType),
+                m("div", { class: "memory-detail-content" }, mem.content || "\u2014")
+            ]) : ""
         ]);
     }
 
     function searchInputView() {
-        return m("div", { class: "px-2 py-1" }, [
+        return m("div", { class: "memory-search" }, [
             m("input", {
                 type: "text",
-                class: "text-field w-full text-xs",
+                class: "memory-search-input",
                 placeholder: "Search memories...",
                 value: searchQuery,
                 oninput: function(e) { searchQuery = e.target.value; },
@@ -191,13 +242,58 @@
         ]);
     }
 
+    function createFormView() {
+        if (!showCreateForm) return "";
+        return m("div", { class: "memory-create-form" }, [
+            m("textarea", {
+                class: "memory-create-textarea",
+                placeholder: "Memory content...",
+                rows: 3,
+                value: createForm.content,
+                oninput: function(e) { createForm.content = e.target.value; }
+            }),
+            m("input", {
+                type: "text",
+                class: "memory-create-input",
+                placeholder: "Summary (optional, auto-generated if blank)",
+                value: createForm.summary,
+                oninput: function(e) { createForm.summary = e.target.value; }
+            }),
+            m("div", { class: "memory-create-row" }, [
+                m("select", {
+                    class: "memory-create-select",
+                    value: createForm.memoryType,
+                    onchange: function(e) { createForm.memoryType = e.target.value; }
+                }, typeOptions.map(function(t) {
+                    return m("option", { value: t }, t);
+                })),
+                m("input", {
+                    type: "number",
+                    class: "memory-create-importance",
+                    min: 1, max: 10,
+                    value: createForm.importance,
+                    oninput: function(e) { createForm.importance = parseInt(e.target.value) || 5; }
+                }),
+                m("button", {
+                    class: "memory-create-btn",
+                    onclick: createMemoryFromForm,
+                    disabled: loading
+                }, "Save"),
+                m("button", {
+                    class: "memory-cancel-btn",
+                    onclick: function() { showCreateForm = false; }
+                }, "Cancel")
+            ])
+        ]);
+    }
+
     function memoryListView() {
         let list = searchResults !== null ? searchResults : memories;
         if (loading) {
-            return m("div", { class: "px-3 py-2 text-gray-400 text-xs" }, "Loading...");
+            return m("div", { class: "memory-empty" }, "Loading...");
         }
         if (!list || list.length === 0) {
-            return m("div", { class: "px-3 py-2 text-gray-400 text-xs" },
+            return m("div", { class: "memory-empty" },
                 searchResults !== null ? "No search results" : "No memories"
             );
         }
@@ -209,24 +305,37 @@
     let PanelView = {
         view: function() {
             let badge = memoryCount > 0 ? " (" + memoryCount + ")" : "";
-            return m("div", { class: "border-b border-gray-700" }, [
+            return m("div", { class: "memory-panel" }, [
                 // Header
-                m("button", {
-                    class: "flyout-button flex items-center w-full px-3 py-2 text-sm font-medium text-gray-300",
-                    onclick: function() { expanded = !expanded; }
-                }, [
-                    m("span", {
-                        class: "material-symbols-outlined mr-2",
-                        style: "font-size: 16px;"
-                    }, "psychology"),
-                    m("span", { class: "flex-1 text-left" }, "Memories" + badge),
-                    m("span", {
-                        class: "material-symbols-outlined",
-                        style: "font-size: 16px;"
-                    }, expanded ? "expand_less" : "expand_more")
+                m("div", { class: "memory-header" }, [
+                    m("button", {
+                        class: "flyout-button memory-header-btn",
+                        onclick: function() { expanded = !expanded; }
+                    }, [
+                        m("span", {
+                            class: "material-symbols-outlined mr-2",
+                            style: "font-size: 16px;"
+                        }, "psychology"),
+                        m("span", { class: "flex-1 text-left" }, "Memories" + badge),
+                        m("span", {
+                            class: "material-symbols-outlined",
+                            style: "font-size: 16px;"
+                        }, expanded ? "expand_less" : "expand_more")
+                    ]),
+                    expanded ? m("button", {
+                        class: "memory-add-btn",
+                        title: "Create memory",
+                        onclick: function() { showCreateForm = !showCreateForm; }
+                    }, [
+                        m("span", {
+                            class: "material-symbols-outlined",
+                            style: "font-size: 16px;"
+                        }, "add_circle")
+                    ]) : ""
                 ]),
                 // Expanded content
-                expanded ? m("div", { class: "max-h-64 overflow-y-auto" }, [
+                expanded ? m("div", { class: "memory-body" }, [
+                    createFormView(),
                     searchInputView(),
                     memoryListView()
                 ]) : ""
@@ -240,10 +349,6 @@
 
         PanelView: PanelView,
 
-        /**
-         * Load memories for the current session's character pair.
-         * @param {Object} chatConfig - the chat config with systemCharacter/userCharacter
-         */
         loadForSession: function(chatConfig) {
             currentConfig = chatConfig;
             if (!chatConfig) {
@@ -257,27 +362,16 @@
             if (sys && usr && sys.objectId && usr.objectId) {
                 loadForPair(sys.objectId, usr.objectId);
             } else {
-                // Try count endpoint only
-                if (sys && usr && sys.objectId && usr.objectId) {
-                    loadCount(sys.objectId, usr.objectId);
-                } else {
-                    memories = [];
-                    memoryCount = 0;
-                    m.redraw();
-                }
+                memories = [];
+                memoryCount = 0;
+                m.redraw();
             }
         },
 
-        /**
-         * Returns current memory count for badge display.
-         */
         getMemoryCount: function() {
             return memoryCount;
         },
 
-        /**
-         * Force reload from server.
-         */
         refresh: function() {
             if (currentConfig) {
                 MemoryPanel.loadForSession(currentConfig);

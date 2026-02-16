@@ -92,9 +92,9 @@ public class NarrativeUtil {
 	
 	public static String getDarkTetradDescription(PersonalityProfile prof) {
 		StringBuilder desc = new StringBuilder();
-		
+
 		StringBuilder desc2 = new StringBuilder();
-		
+
 		String gender = prof.getGender();
 		String pro = ("male".equals(gender) ? "He" : "She");
 		if(prof.isAggressive()) {
@@ -104,7 +104,7 @@ public class NarrativeUtil {
 			if(desc.length() > 0) desc.append(", ");
 			desc.append("may be manipulative, calculating, or be motivated by self-interest");
 		}
-		
+
 		if(prof.isNarcissist()) {
 			if(desc.length() > 0) desc.append(", ");
 			desc.append("may show arrogance, entitlement, self-importance, or superiority");
@@ -117,8 +117,10 @@ public class NarrativeUtil {
 			if(desc.length() > 0) desc.append(", and ");
 			desc.append("may enjoy cruelty, and be reactive or petty");
 		}
-		desc2.append(pro + " is " + DarkTetradUtil.getDarkTetradName(prof.getDarkTetradKey()));
-		desc2.append(".");
+		String tetradName = DarkTetradUtil.getDarkTetradName(prof.getDarkTetradKey());
+		if(tetradName != null) {
+			desc2.append(pro + " is " + tetradName + ".");
+		}
 		if(desc.length() > 0) {
 			desc2.append(" " + pro + " " + desc.toString() + ".");
 		}
