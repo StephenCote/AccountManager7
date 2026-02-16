@@ -320,14 +320,18 @@
     // Phase 13a item 3: Use AnalysisManager instead of dialog.chatInto (OI-56, OI-57)
     // When already on /chat, startAnalysis stores pending state then we immediately execute it
     async function chatInto() {
-      if (window.AnalysisManager) {
-        await AnalysisManager.startAnalysis(inst.entity, inst, aCCfg);
-        // Already on /chat — oninit won't re-fire, so execute pending immediately
-        if (AnalysisManager.getActiveAnalysis()) {
-          await AnalysisManager.executePending();
-        }
-      } else {
+      if (!inst) {
+        page.toast("warn", "Select or create a chat session before analyzing");
+        return;
+      }
+      if (!window.AnalysisManager) {
         console.warn("AnalysisManager not loaded, analysis unavailable");
+        return;
+      }
+      await AnalysisManager.startAnalysis(inst.entity, inst, aCCfg || []);
+      // Already on /chat — oninit won't re-fire, so execute pending immediately
+      if (AnalysisManager.getActiveAnalysis()) {
+        await AnalysisManager.executePending();
       }
     }
 

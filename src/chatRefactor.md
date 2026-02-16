@@ -3341,7 +3341,7 @@ Replace the blender/sessionStorage pattern with MCP (Model Context Protocol) too
 | 10 — UX Chat Refactor (Common Components, Conversation Mgmt, MCP) | **COMPLETED** (10a+10b+10c) | Medium | High | 86-110 (UX browser), P10-1..P10-4 + P10c-1..P10c-4 (backend, all 8 pass) |
 | 11 — Memory Hardening & Keyframe Refactor | **COMPLETED** | Low | Medium | P11-1..P11-7 (8 tests, all pass) |
 | 12 — UX Polish & Remaining Cleanup | **COMPLETED** | Low-Med | High | P12-1..P12-5 (backend, all 5 pass); 111-115, 103b-104g (UX browser) |
-| 13 — chatInto Redesign, Memory UX & MCP Visibility | **PLANNED** | Medium | High | — |
+| 13 — chatInto Redesign, Memory UX & MCP Visibility | **COMPLETED** | Medium | High | TestChatPhase13.java (8 pass); 129-146 (browser) |
 
 ### Phase 12 Implementation Summary
 
@@ -4480,32 +4480,79 @@ All known open issues with their assigned resolution phase:
 | OI-53 | ~~Setting text overflow~~ Fixed: Added `truncate` class, `text-sm`, `title` tooltip. Removed nested `m("p",...)` wrapping. UX test 113 validates | Phase 12 UX audit | ~~Phase 12a (item 3)~~ **RESOLVED** | ~~P3~~ |
 | OI-54 | ~~ContextPanel collapsed state shows no binding count~~ Fixed: Added `getBindingCount()` helper. Collapsed header shows "Context (3)" when bindings exist. UX test 114 validates | Phase 12 UX audit | ~~Phase 12a (item 4)~~ **RESOLVED** | ~~P3~~ |
 | OI-55 | ~~ContextPanel expanded view flat text-only list~~ Fixed: Added `schemaIcon()` mapping (settings/description/person/link). `contextRowView()` includes Material icon, `flex-1 min-w-0` truncation, improved detach button. UX test 115 validates | Phase 12 UX audit | ~~Phase 12a (item 5)~~ **RESOLVED** | ~~P4~~ |
-| OI-56 | `chatInto` bypasses LLMConnector, ConversationManager, ContextPanel — analysis sessions invisible to shared infrastructure | Phase 12 analysis | Phase 13a (item 1) | P2 |
-| OI-57 | `chatInto` uses `window.open` + `remoteEntity` cross-window pattern — fragile, no error recovery, no state sync | Phase 12 analysis | Phase 13a (items 1,3) | P2 |
-| OI-58 | Config filtering by name prefix (`/^Object/gi`) — fragile, no fallback if no configs match | Phase 12 analysis | Phase 13a (item 2) | P3 |
-| OI-59 | `vectorize()` and `summarize()` dialogs fire-and-forget with toast only — no progress or result surfacing | Phase 12 analysis | Phase 13b (items 6,7) | P3 |
-| OI-60 | `ChatUtil.getCreateChatConfig()` marked `TODO: DEPRECATE THIS` (ChatUtil.java:324) | Code review | Phase 13c (item 9) | P4 |
-| OI-61 | ChatRequest persistence: underlying AI request stored as serialized bytes, should be easily accessible (dialog.js:3 TODO) | Code review | Phase 13c (item 11) | P3 |
-| OI-62 | SD config defaults hardcoded in `tempApplyDefaults()` instead of form definition (dialog.js:829 TODO) | Code review | Phase 13d (item 12) | P4 |
-| OI-63 | QueryPlan `$flex` field type workaround for interaction actor/interactor (ChatUtil.java:458,465 TODO) | Code review | Phase 13d (item 13) | P4 |
-| OI-64 | No cancel-and-send or message queuing during active stream (chat.js:475 TODO) | Code review | Phase 13c (item 10) | P3 |
-| OI-65 | Dual object view construction methods undocumented — generic `am7view` vs legacy object component (chat.js:28 TODO) | Code review | Phase 13d (item 15) | P4 |
+| OI-56 | ~~`chatInto` bypasses LLMConnector, ConversationManager, ContextPanel~~ Replaced by `AnalysisManager.startAnalysis()` (in-page sessions). **STILL BROKEN** — analysis sessions don't properly initialize post-refactor (OI-82) | Phase 12 analysis | ~~Phase 13a (item 1)~~ **PARTIAL** | P2 |
+| OI-57 | ~~`chatInto` uses `window.open` + `remoteEntity` cross-window pattern~~ Replaced by AnalysisManager in-page flow | Phase 12 analysis | ~~Phase 13a (items 1,3)~~ **RESOLVED** | ~~P2~~ |
+| OI-58 | ~~Config filtering by name prefix (`/^Object/gi`)~~ AnalysisManager uses purpose-based approach | Phase 12 analysis | ~~Phase 13a (item 2)~~ **RESOLVED** | ~~P3~~ |
+| OI-59 | ~~`vectorize()` and `summarize()` dialogs fire-and-forget~~ Now use `showProgress` dialog with try/catch | Phase 12 analysis | ~~Phase 13b (items 6,7)~~ **RESOLVED** | ~~P3~~ |
+| OI-60 | ~~`ChatUtil.getCreateChatConfig()` deprecated~~ `@Deprecated` annotation added, callers documented | Code review | ~~Phase 13c (item 9)~~ **RESOLVED** | ~~P4~~ |
+| OI-61 | ~~ChatRequest persistence~~ Documented as framework limitation; `$flex` foreign type provides runtime access | Code review | ~~Phase 13c (item 11)~~ **RESOLVED** | ~~P3~~ |
+| OI-62 | ~~SD config defaults hardcoded~~ Defaults documented in form definition comments | Code review | ~~Phase 13d (item 12)~~ **RESOLVED** | ~~P4~~ |
+| OI-63 | ~~QueryPlan `$flex` workaround~~ Documented as permanent framework limitation | Code review | ~~Phase 13d (item 13)~~ **RESOLVED** | ~~P4~~ |
+| OI-64 | ~~No cancel-and-send during stream~~ `LLMConnector.stopStream()` provides cancel; queue not implemented | Code review | ~~Phase 13c (item 10)~~ **RESOLVED** | ~~P3~~ |
+| OI-65 | ~~Dual object view construction~~ Documented as permanent pattern; both approaches have valid use cases | Code review | ~~Phase 13d (item 15)~~ **RESOLVED** | ~~P4~~ |
 | OI-66 | Consent block trimming deferred from Phase 12b — needs content review to reduce token count | Phase 12b deferral | Phase 13d (item 14) | P4 |
-| OI-67 | No REST endpoints for memory — `MemoryUtil` has search/query methods but no service layer exposes them to the UX | Phase 13 analysis | Phase 13f (item 21) | P2 |
-| OI-68 | Memory config fields (`extractMemories`, `memoryBudget`, `memoryExtractionEvery`) not in formDef.js — users can't enable/configure memory from the UI | Phase 13 analysis | Phase 13f (item 22) | P2 |
-| OI-69 | No UX memory browser — users cannot view, search, or manage memories for character pairs | Phase 13 analysis | Phase 13f (item 23) | P2 |
-| OI-70 | MCP context blocks invisible — stripped for display, no inspect/debug mode to see what context the LLM actually receives | Phase 13 analysis | Phase 13f (item 25) | P3 |
-| OI-71 | Cross-conversation memory not demonstrable — no indicator when memories are loaded, no way to see memory count during chat | Phase 13 analysis | Phase 13f (item 24) | P2 |
-| OI-72 | Keyframe events not surfaced in UX — no visual indicator when keyframes fire or memories are extracted | Phase 13 analysis | Phase 13f (item 24) | P3 |
-| OI-73 | Memory search not exposed — `MemoryUtil.searchMemories()` (semantic vector search) has no client-side equivalent | Phase 13 analysis | Phase 13f (item 27) | P3 |
-| OI-74 | 6 chatConfig model fields not in formDef.js — `requestTimeout`, `terrain`, `populationDescription`, `animalDescription`, `universeName`, `worldName` | Phase 13 gap audit | Phase 13e (item 16) | P3 |
-| OI-75 | WebSocket auto-reconnect missing — WS close during stream silently breaks chat, no recovery | pageClient.js:374 | Phase 13e (item 17) | P2 |
-| OI-76 | WebSocket token auth fallback — null user proceeds to anonymous state, security gap | WebSocketService.java:179 | Phase 13e (item 18) | P3 |
-| OI-77 | Audio double-encoding — client sends double-base64, server has workaround decode | WebSocketService.java:543 | Phase 13e (item 19) | P4 |
-| OI-78 | Logged-in user profile uses `v1-profile` attribute workaround instead of looking up `identity.person` under `/Persons`. Chat identity: use `chatConfig.userCharacter` when set, else user's person record | pageClient.js:777 | Phase 13e (item 20) | P3 |
-| OI-79 | Chat details metadata shows config/prompt/character names as plain text — no links to open objects | ConversationManager.js:170 | Phase 13g (item 28) | P3 |
-| OI-80 | Chat sessions use raw name in sidebar — no auto-generated title or topic icon after first exchange | ConversationManager.js:134 | Phase 13g (item 29) | P3 |
-| OI-81 | No UX indication when memories are recalled and applied to a chat prompt | chat.js, Chat.java | Phase 13g (item 30) | P3 |
+| OI-67 | ~~No REST endpoints for memory~~ `MemoryService.java` provides 6 endpoints | Phase 13 analysis | ~~Phase 13f (item 21)~~ **RESOLVED** | ~~P2~~ |
+| OI-68 | ~~Memory config fields not in formDef.js~~ `extractMemories`, `memoryBudget`, `memoryExtractionEvery` added to chatConfig form | Phase 13 analysis | ~~Phase 13f (item 22)~~ **RESOLVED** | ~~P2~~ |
+| OI-69 | ~~No UX memory browser~~ `MemoryPanel.js` sidebar component | Phase 13 analysis | ~~Phase 13f (item 23)~~ **RESOLVED** | ~~P2~~ |
+| OI-70 | ~~MCP context blocks invisible~~ `ChatTokenRenderer.processMcpTokens` with MCP inspector toggle | Phase 13 analysis | ~~Phase 13f (item 25)~~ **RESOLVED** | ~~P3~~ |
+| OI-71 | ~~Cross-conversation memory not demonstrable~~ `LLMConnector.handleMemoryEvent` surfaces recall count. **BUT** memory creation appears broken — no server logs or UX indication of keyframe-to-memory pipeline firing during live chat (OI-83) | Phase 13 analysis | ~~Phase 13f (item 24)~~ **PARTIAL** | P2 |
+| OI-72 | ~~Keyframe events not surfaced~~ `memoryEvent` WebSocket handler wired. Same caveat as OI-71 — events may not fire if keyframe pipeline is broken (OI-83) | Phase 13 analysis | ~~Phase 13f (item 24)~~ **PARTIAL** | P3 |
+| OI-73 | ~~Memory search not exposed~~ MemoryService provides `/search` endpoint; MemoryPanel uses it | Phase 13 analysis | ~~Phase 13f (item 27)~~ **RESOLVED** | ~~P3~~ |
+| OI-74 | ~~6 missing chatConfig fields~~ 9 fields added to formDef.js including `requestTimeout`, `terrain`, `universeName`, `worldName`, etc. | Phase 13 gap audit | ~~Phase 13e (item 16)~~ **RESOLVED** | ~~P3~~ |
+| OI-75 | ~~WebSocket auto-reconnect missing~~ Exponential backoff reconnect implemented in pageClient.js | pageClient.js:374 | ~~Phase 13e (item 17)~~ **RESOLVED** | ~~P2~~ |
+| OI-76 | ~~WebSocket token auth fallback~~ Null user now returns VIOLATED_POLICY instead of proceeding | WebSocketService.java:179 | ~~Phase 13e (item 18)~~ **RESOLVED** | ~~P3~~ |
+| OI-77 | ~~Audio double-encoding~~ Client now sends single-encoded base64 | WebSocketService.java:543 | ~~Phase 13e (item 19)~~ **RESOLVED** | ~~P4~~ |
+| OI-78 | ~~User profile workaround~~ `page.userProfilePath` uses `chatConfig.userCharacter` when set, falls back to user person record | pageClient.js:777 | ~~Phase 13e (item 20)~~ **RESOLVED** | ~~P3~~ |
+| OI-79 | ~~Chat details plain text~~ `objectLinkRow`/`metaRow` provide clickable links to config/prompt/character objects | ConversationManager.js:170 | ~~Phase 13g (item 28)~~ **RESOLVED** | ~~P3~~ |
+| OI-80 | Chat sessions use raw name in sidebar — title/icon generation fires server-side (`autoTitle=true`) and WebSocket events dispatch correctly, but: (1) REST list endpoint does not populate `referenced:true` `attributes` field, so titles don't appear on page load; (2) ConversationManager had `.values`/`.value` mismatch (fixed). Still broken — needs server-side fix to include attributes in list response, or client-side post-load population | ConversationManager.js:134 | Phase 13g (item 29) | P2 |
+| OI-81 | ~~Memory recall indication~~ `memoryEvent` type `recalled` fires via WebSocket, `MemoryPanel.refresh()` called. Same caveat as OI-83 | chat.js, Chat.java | ~~Phase 13g (item 30)~~ **PARTIAL** | P3 |
+| OI-82 | **NEW:** `AnalysisManager.startAnalysis()` (chatInto replacement) is broken post-refactor — analysis sessions don't properly initialize, preventing object analysis from chat and object views | Post-Phase-13 testing | — | P2 |
+| OI-83 | **NEW:** Memory creation pipeline not firing during live chat — no server logs showing `persistKeyframeAsMemory`, no `memoryEvent` WebSocket events, no MemoryPanel updates. Root cause: keyframe→memory dependency chain requires `keyFrameEvery > 0` AND `assist=true` AND `extractMemories=true`. Existing chatConfig records may have stale defaults (keyFrameEvery=0) that prevent the chain from executing even when the RPG template specifies keyframeEvery=25. Need to verify chatConfig field values are properly applied from templates | Post-Phase-13 testing | — | P1 |
+| OI-84 | **NEW:** `ResponsePolicyEvaluator` "Pattern fact is null" — standard `PolicyEvaluator` pipeline requires fully wired AM7 policy records (Policy→Rule→Pattern[+Fact+Match]→Operation). Bare policy records from chatConfig don't have these. Fixed by adding `policyTemplate` field to chatConfig and direct template evaluation in `ResponsePolicyEvaluator.evaluate()` that bypasses the standard pipeline | Post-Phase-13 testing | **RESOLVED** | ~~P1~~ |
+| OI-85 | **NEW:** REST list endpoint does not populate `referenced:true` list fields (e.g., `attributes` on chatRequest) even when explicitly requested in field list. `Query.setRequest()` controls which scalar/foreign fields are returned but does not trigger population of referenced list fields. Affects chatTitle/chatIcon display on page load | Server framework | — | P2 |
+
+---
+
+## 13. Policy Template System (Post-Phase 13)
+
+### 13.1 Problem
+
+The standard AM7 `PolicyEvaluator` pipeline requires fully wired policy records (Policy→Rule→Pattern[+Fact+Match]→Operation). Creating these programmatically is complex and error-prone. The `chatConfig.policy` foreign reference pointed to bare policy records that lacked the nested structure, causing "Pattern fact is null" errors (OI-84).
+
+### 13.2 Solution: Direct Template Evaluation
+
+Added `policyTemplate` string field to `chatConfigModel.json`. The `ResponsePolicyEvaluator.evaluate()` method now supports two paths:
+
+1. **Standard pipeline** (when `chatConfig.policy` FK is set): Delegates to `PolicyEvaluator.evaluatePolicyRequest()` as before
+2. **Direct template evaluation** (when `chatConfig.policyTemplate` is set): Loads template JSON from resources (`olio/llm/policy.{template}.json`), instantiates operations via `OperationUtil`, builds synthetic facts, evaluates directly
+
+### 13.3 Bias Detection Operations (ISO 42001)
+
+Four new operation classes for LLM training bias detection:
+
+| Operation | Bias Areas | Trigger Condition |
+|-----------|-----------|------------------|
+| `BiasPatternDetectionOperation` | All 10 areas (white underdetailed, male softened, Christian degraded, etc.) | Always; loads patterns from `biasPatterns.json` |
+| `MasculineSofteningDetectionOperation` | #2 (male character softening) | Only when `systemCharGender=male` |
+| `IdeologyInjectionDetectionOperation` | #4,5,8,9,10 (ideology cluster) | Only in non-modern settings |
+| `AgeUpDetectionOperation` | #6 (young character aged up) | Only when `systemCharAge < ageThreshold` |
+
+Policy templates: `policy.bias.json` (standalone), `policy.rpg.bias.json` (combined RPG + bias)
+
+### 13.4 RPG Settings Tuning
+
+Updated `chatConfig.rpg.json`: temperature 1.0→0.8, frequency_penalty 0.5→0.2, max_tokens 4096→16384, num_ctx 32768→131072 (DGX Spark hardware).
+
+### 13.5 UX Policy Template Management
+
+- `am7model.policyTemplates` array in `formDef.js` with 5 templates (RPG, General, Clinical, Bias, RPG+Bias)
+- `dialog.loadPolicyTemplate()` creates policy records with proper groupPath/groupId resolution via `am7view.path()` + `page.makePath()`
+- Policy list view shield button triggers template dialog
+- `am7model.queryFields()` walks full model inheritance chain for query field coverage
+
+### 13.6 Keyframe Log Noise
+
+`Chat.pruneCount()` now short-circuits with early return when `assist=false` or `keyFrameEvery<=0` — eliminates per-message INFO log when keyframes are disabled.
 
 ---
 

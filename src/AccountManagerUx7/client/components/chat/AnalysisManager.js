@@ -123,17 +123,20 @@
                 return;
             }
 
-            // Build analysis session name
+            // Build analysis session name — append timestamp to avoid server name collision
             let cname = "Analyze " +
                 (ref && ref[am7model.jsonModelKey] ? ref[am7model.jsonModelKey].toUpperCase() + " " : "") +
-                (ref && ref.name ? ref.name : "Object");
+                (ref && ref.name ? ref.name : "Object") +
+                " " + Date.now();
 
             // Determine character names for tag gathering
             let charNames = [];
-            if (sourceInst && sourceCCfg) {
-                let aC = sourceCCfg.filter(function(c) {
-                    return sourceInst.api.chatConfig && c.name === sourceInst.api.chatConfig().name;
-                });
+            if (sourceInst && Array.isArray(sourceCCfg) && sourceCCfg.length) {
+                let ccRef = sourceInst.api && sourceInst.api.chatConfig ? sourceInst.api.chatConfig() : null;
+                let ccId = ccRef ? ccRef.objectId : null;
+                let aC = ccId ? sourceCCfg.filter(function(c) {
+                    return c.objectId === ccId;
+                }) : [];
                 if (aC.length && aC[0].userCharacter && aC[0].systemCharacter) {
                     charNames.push(aC[0].userCharacter.name);
                     charNames.push(aC[0].systemCharacter.name);
@@ -176,15 +179,23 @@
             let wset = [];
 
             // Vectorize source session if present
-            if (pa.sourceInst && pa.sourceInst.api.session && pa.sourceInst.api.session() != null) {
-                let vecRec = await vectorizeSession(pa.sourceInst.api.session());
-                if (vecRec) wset.push(vecRec);
+            try {
+                if (pa.sourceInst && pa.sourceInst.api && pa.sourceInst.api.session && pa.sourceInst.api.session() != null) {
+                    let vecRec = await vectorizeSession(pa.sourceInst.api.session());
+                    if (vecRec) wset.push(vecRec);
+                }
+            } catch (e) {
+                console.warn("[AnalysisManager] vectorization failed, continuing without:", e);
             }
 
             // Gather character tags
             if (pa.charNames && pa.charNames.length) {
-                let tags = await gatherCharacterTags(pa.charNames);
-                wset.push(...tags);
+                try {
+                    let tags = await gatherCharacterTags(pa.charNames);
+                    wset.push(...tags);
+                } catch (e) {
+                    console.warn("[AnalysisManager] tag gathering failed, continuing without:", e);
+                }
             }
 
             // Add the reference object itself
@@ -199,12 +210,19 @@
                 uid: page.uid()
             };
 
-            let obj = await m.request({
-                method: 'POST',
-                url: g_application_path + "/rest/chat/new",
-                withCredentials: true,
-                body: chatReq
-            });
+            let obj;
+            try {
+                obj = await m.request({
+                    method: 'POST',
+                    url: g_application_path + "/rest/chat/new",
+                    withCredentials: true,
+                    body: chatReq
+                });
+            } catch (e) {
+                console.error("[AnalysisManager] POST /rest/chat/new failed:", e);
+                page.toast("error", "Failed to create analysis session");
+                return null;
+            }
 
             if (!obj) {
                 page.toast("error", "Failed to create analysis session");

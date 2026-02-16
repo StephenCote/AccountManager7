@@ -204,11 +204,15 @@ public class Chat {
 			requestTimeout = chatConfig.get("requestTimeout");
 			try { streamMode = chatConfig.get("stream"); } catch (Exception e) { /* field may not be set */ }
 
-			/// OI-5: Enforce minimum keyframeEvery when extractMemories is enabled
-			/// to prevent expensive analyze() LLM calls at high frequency
-			boolean extractMemories = false;
-			try { extractMemories = chatConfig.get("extractMemories"); } catch (Exception e) { /* field may not be set */ }
-			if (extractMemories && keyFrameEvery > 0 && keyFrameEvery < MIN_KEYFRAME_EVERY_WITH_EXTRACT) {
+			/// OI-5/OI-83: Enforce minimum keyframeEvery when extractMemories is enabled.
+			/// If keyframeEvery=0 but extractMemories=true, memories can never be created
+			/// because the keyframe→memory pipeline requires keyframes to fire.
+			boolean extractMemories = (boolean) chatConfig.get("extractMemories");
+			if (extractMemories && keyFrameEvery <= 0) {
+				logger.warn("extractMemories=true but keyframeEvery=0 — setting keyframeEvery to " + MIN_KEYFRAME_EVERY_WITH_EXTRACT + " to enable memory creation");
+				keyFrameEvery = MIN_KEYFRAME_EVERY_WITH_EXTRACT;
+			}
+			else if (extractMemories && keyFrameEvery < MIN_KEYFRAME_EVERY_WITH_EXTRACT) {
 				logger.warn("keyframeEvery=" + keyFrameEvery + " too low with extractMemories=true, raising to " + MIN_KEYFRAME_EVERY_WITH_EXTRACT);
 				keyFrameEvery = MIN_KEYFRAME_EVERY_WITH_EXTRACT;
 			}
@@ -391,7 +395,7 @@ public class Chat {
 			}
 
 			/// Phase 13g: Auto-generate title and icon after first real exchange (buffer mode)
-			boolean autoTitle = chatConfig != null && Boolean.TRUE.equals(chatConfig.get("autoTitle"));
+			boolean autoTitle = chatConfig != null && (boolean) chatConfig.get("autoTitle");
 			int offset = getMessageOffset(req);
 			List<OpenAIMessage> allMsgs = req.getMessages();
 			int userMsgCount = 0;
@@ -491,7 +495,7 @@ public class Chat {
 		}
 
 		/// LLM-based compliance evaluation (async, runs every Nth response)
-		boolean complianceEnabled = Boolean.TRUE.equals(chatConfig.get("complianceCheck"));
+		boolean complianceEnabled = (boolean) chatConfig.get("complianceCheck");
 		int complianceEvery = chatConfig.get("complianceCheckEvery");
 		if (complianceEnabled && complianceEvery > 0 && responseCount % complianceEvery == 0 && responseContent != null) {
 			if (listener != null) {
@@ -580,8 +584,8 @@ public class Chat {
 			return;
 		}
 
-		boolean tunePrompts = Boolean.TRUE.equals(chatConfig.get("autoTunePrompts"));
-		boolean tuneOptions = Boolean.TRUE.equals(chatConfig.get("autoTuneChatOptions"));
+		boolean tunePrompts = (boolean) chatConfig.get("autoTunePrompts");
+		boolean tuneOptions = (boolean) chatConfig.get("autoTuneChatOptions");
 
 		if (tunePrompts && promptConfig != null) {
 			CompletableFuture.runAsync(() -> {

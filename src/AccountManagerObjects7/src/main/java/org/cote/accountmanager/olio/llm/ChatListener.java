@@ -328,7 +328,7 @@ public class ChatListener implements IChatListener {
 		boolean autoTitle = false;
 		BaseRecord titleChatCfg = chat.getChatConfig();
 		if (titleChatCfg != null) {
-			autoTitle = Boolean.TRUE.equals(titleChatCfg.get("autoTitle"));
+			autoTitle = (boolean) titleChatCfg.get("autoTitle");
 		}
 		int offset = chat.getMessageOffset(request);
 		List<BaseRecord> allMsgs = request.get("messages");
