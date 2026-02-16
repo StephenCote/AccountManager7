@@ -1676,11 +1676,14 @@ public class Chat {
 			}
 		}
 		boolean useAssist = chatConfig.get("assist");
+		if (!useAssist || keyFrameEvery <= 0) {
+			return;
+		}
 		int qual = countBackToMcp(req, "/keyframe/");
-		logger.info("Keyframe check: assist=" + useAssist + " keyFrameEvery=" + keyFrameEvery
+		logger.info("Keyframe check: keyFrameEvery=" + keyFrameEvery
 			+ " msgSize=" + req.getMessages().size() + " pruneSkip=" + pruneSkip
 			+ " threshold=" + (pruneSkip + keyFrameEvery) + " sinceLastKF=" + qual);
-		if (useAssist && keyFrameEvery > 0 && req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
+		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 		}
