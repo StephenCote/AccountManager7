@@ -1,19 +1,19 @@
 {
 	"child_0_5": {
 		"label": "small child",
-		"text": "AGE GUIDANCE: ${name} is ${age} years old — a small child. ${capPro} speaks in simple, short sentences with limited vocabulary. ${capPro} is curious, impulsive, and easily distracted. ${capPro} does NOT understand abstract concepts, sarcasm, or adult topics. ${capPro} may mispronounce words, ask naive questions, and express emotions directly. DO NOT give ${name} adult-level reasoning, vocabulary, or emotional maturity."
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — a small child. ${capPro} speaks in simple, short sentences with limited vocabulary. ${capPro} is curious, impulsive, and easily distracted. ${capPro} does NOT understand abstract concepts, sarcasm, or adult topics. ${capPro} may mispronounce words, ask naive questions, and express emotions directly. DO NOT give ${name} adult-level reasoning, vocabulary, or emotional maturity. ${capPro} is completely dependent on adults for everything. NEVER write ${name} as a miniature adult."
 	},
 	"child_6_9": {
 		"label": "child",
-		"text": "AGE GUIDANCE: ${name} is ${age} years old — a child. ${capPro} uses everyday language appropriate for a grade-schooler. ${capPro} is playful, imaginative, and still learning about the world. ${capPro} has limited life experience and knowledge. ${capPro} may be competitive, emotional, or silly. DO NOT give ${name} adult reasoning, philosophical depth, or sophisticated vocabulary."
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — a child. ${capPro} uses everyday language appropriate for a grade-schooler. ${capPro} is playful, imaginative, and still learning about the world. ${capPro} has limited life experience and knowledge. ${capPro} may be competitive, emotional, or silly. DO NOT give ${name} adult reasoning, philosophical depth, or sophisticated vocabulary. ${capPro} does NOT have adult independence, jobs, or responsibilities beyond chores. NEVER write ${name} as a miniature adult."
 	},
 	"preteen_10_12": {
 		"label": "preteen",
-		"text": "AGE GUIDANCE: ${name} is ${age} years old — a preteen. ${capPro} is beginning to develop ${pos} own opinions but still thinks concretely. ${capPro} uses age-appropriate slang and vocabulary. ${capPro} may be awkward, self-conscious, or eager to appear older. DO NOT give ${name} mature adult reasoning, professional expertise, or world-weary perspectives."
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — a preteen. ${capPro} is beginning to develop ${pos} own opinions but still thinks concretely. ${capPro} uses age-appropriate slang and vocabulary. ${capPro} may be awkward, self-conscious, or eager to appear older. DO NOT give ${name} mature adult reasoning, professional expertise, or world-weary perspectives. ${capPro} does NOT pay bills, hold jobs, drive, have adult independence, or speak with adult authority. ${capPro} is a CHILD — dependent on adults, with a child's concerns: school, friends, play, chores, getting in trouble. NEVER write ${name} as a miniature adult."
 	},
 	"teen_13_15": {
 		"label": "young teenager",
-		"text": "AGE GUIDANCE: ${name} is ${age} years old — a young teenager. ${capPro} is emotional, identity-seeking, and sometimes rebellious. ${capPro} has strong opinions but limited life experience to back them up. ${capPro} may be moody, dramatic, or intensely focused on social standing. Portray age-appropriate awkwardness, inexperience, and developing maturity."
+		"text": "AGE GUIDANCE: ${name} is ${age} years old — a young teenager. ${capPro} is emotional, identity-seeking, and sometimes rebellious. ${capPro} has strong opinions but limited life experience to back them up. ${capPro} may be moody, dramatic, or intensely focused on social standing. Portray age-appropriate awkwardness, inexperience, and developing maturity. ${capPro} does NOT have adult authority, professional experience, or financial independence. NEVER write ${name} with adult-level composure, wisdom, or self-sufficiency."
 	},
 	"teen_16_17": {
 		"label": "older teenager",

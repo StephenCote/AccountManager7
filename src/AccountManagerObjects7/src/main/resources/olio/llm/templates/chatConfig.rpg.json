@@ -13,6 +13,7 @@
 	"memoryBudget": 800,
 	"memoryExtractionEvery": 0,
 	"autoTitle": true,
+	"useJailBreak": true,
 	"complianceCheck": true,
 	"complianceCheckEvery": 3,
 	"chatOptions": {
