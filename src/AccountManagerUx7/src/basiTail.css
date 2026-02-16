@@ -2463,6 +2463,28 @@
       }
 
       /* ==========================================
+         Chat Background Activity Indicator
+         ========================================== */
+
+      .chat-bg-activity {
+        @apply flex items-center gap-1.5 px-3 py-1 text-xs
+               text-blue-600 dark:text-blue-400
+               bg-blue-50 dark:bg-blue-900/20
+               border-t border-blue-200 dark:border-blue-800;
+      }
+      .chat-bg-activity-icon {
+        font-size: 14px;
+        animation: bg-activity-pulse 1.5s ease-in-out infinite;
+      }
+      .chat-bg-activity-label {
+        @apply font-medium;
+      }
+      @keyframes bg-activity-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+
+      /* ==========================================
          Memory Panel (Phase 14)
          ========================================== */
 

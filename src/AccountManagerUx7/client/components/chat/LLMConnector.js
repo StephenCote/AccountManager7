@@ -713,6 +713,18 @@
         handleMemoryEvent: function(data) {
             LLMConnector.lastMemoryEvent = data;
             if (typeof m !== "undefined") m.redraw();
+        },
+
+        /**
+         * Background activity indicator for async keyframe/memory operations.
+         * Set by evalProgress WebSocket handler, read by chat view.
+         * @type {null|{icon: string, label: string}}
+         */
+        bgActivity: null,
+
+        setBgActivity: function(icon, label) {
+            LLMConnector.bgActivity = icon && label ? { icon: icon, label: label } : null;
+            if (typeof m !== "undefined") m.redraw();
         }
     };
 

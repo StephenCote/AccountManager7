@@ -649,7 +649,10 @@
         user: null,           // userCharacter from chatConfig
 
         // Message state
-        history: null         // {messages: [...]} — conversation history from server
+        history: null,        // {messages: [...]} — conversation history from server
+
+        // Background activity indicator (set via evalProgress WebSocket events)
+        bgActivity: null      // null | { icon, label } — shown as subtle status while keyframe/memory ops run
       };
     }
 
@@ -1097,6 +1100,15 @@
       );
     }
 
+    function getBgActivityView() {
+      let act = window.LLMConnector ? LLMConnector.bgActivity : null;
+      if (!act) return "";
+      return m("div", { class: "chat-bg-activity" }, [
+        m("span", { class: "material-symbols-outlined chat-bg-activity-icon" }, act.icon),
+        m("span", { class: "chat-bg-activity-label" }, act.label)
+      ]);
+    }
+
     function getChatBottomMenuView() {
 
       let pendBar = m("div", { class: "flex-1 px-2" },
@@ -1281,6 +1293,7 @@
               (camera ? page.components.camera.videoView() : ""),
               getChatTopMenuView(),
               getSplitContainerView(),
+              getBgActivityView(),
               getChatBottomMenuView()
             ])
           )

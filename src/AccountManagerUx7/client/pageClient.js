@@ -598,16 +598,19 @@
                         page.toast("warn", "Interaction evaluation failed", 3000);
                     }
                 } else if (phase === "keyframe") {
-                    // Phase 14: Async keyframe generation started
-                    page.toast("info", detail, 2000);
+                    // Phase 14: Async keyframe generation started — persistent indicator
+                    if (window.LLMConnector) LLMConnector.setBgActivity("psychology", "Analyzing conversation\u2026");
                 } else if (phase === "keyframeDone") {
-                    // Phase 14: Keyframe generation complete — silent
-                    console.log("[Keyframe] Complete:", detail);
+                    // Phase 14: Keyframe done — clear indicator (memory extract may set its own)
+                    if (window.LLMConnector && LLMConnector.bgActivity && LLMConnector.bgActivity.label.indexOf("Analyz") === 0) {
+                        LLMConnector.setBgActivity(null, null);
+                    }
                 } else if (phase === "memoryExtract") {
-                    // Phase 14: Memory extraction started
-                    page.toast("info", detail, 2000);
+                    // Phase 14: Memory extraction started — persistent indicator
+                    if (window.LLMConnector) LLMConnector.setBgActivity("neurology", "Forming memories\u2026");
                 } else if (phase === "memoryExtractDone") {
-                    // Phase 14: Memory extraction complete — show count
+                    // Phase 14: Memory extraction complete — clear indicator, show result toast
+                    if (window.LLMConnector) LLMConnector.setBgActivity(null, null);
                     if (detail && detail !== "error") {
                         page.toast("info", detail, 3000);
                     } else if (detail === "error") {
