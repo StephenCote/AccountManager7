@@ -1,7 +1,10 @@
 package org.cote.accountmanager.olio.llm;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -241,15 +244,19 @@ public class ChatListener implements IChatListener {
 		}
 	}
 	
+	private Set<Integer> warnedRequests = Collections.synchronizedSet(new HashSet<>());
 	private String getRequestId(OpenAIRequest request) {
 		if (request == null) {
 			logger.warn("OpenAIRequest is null");
 			return null;
 		}
-		
+
 		String oid = request.get(FieldNames.FIELD_OBJECT_ID);
 		if(oid == null) {
-			logger.warn("OpenAIRequest does not have an object id");
+			int reqHash = System.identityHashCode(request);
+			if (warnedRequests.add(reqHash)) {
+				logger.warn("OpenAIRequest does not have an object id");
+			}
 			return null;
 		}
 		return oid;

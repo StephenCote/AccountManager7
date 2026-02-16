@@ -1212,6 +1212,13 @@ public class ChatUtil {
 				if (alwaysApplyChatOptions) {
 					applyChatOptions(req, chatConfig);
 				}
+				/// Propagate stream from chatConfig — stored sessions may have been
+				/// saved with stream=false but the chatConfig determines the intent
+				try {
+					req.set("stream", (boolean) chatConfig.get("stream"));
+				} catch (Exception e) {
+					// ignore — stream field will default
+				}
 			}
 			if(req == null) {
 				if (creq.get("setting") != null) {
@@ -1342,9 +1349,6 @@ public class ChatUtil {
 			}
 		}
 		try {
-			if(cfg != null) {
-				req.set("stream", (boolean) cfg.get("stream"));
-			}
 			req.setModel(modelName);
 			double temperature = 0.9;
 			double top_p = 0.5;
