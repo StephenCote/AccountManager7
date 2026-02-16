@@ -1,12 +1,15 @@
 package org.cote.accountmanager.olio.llm.policy;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
+import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
@@ -14,26 +17,39 @@ import org.cote.accountmanager.objects.generated.FactType;
 import org.cote.accountmanager.objects.generated.PolicyRequestType;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.objects.generated.PolicyType;
+import org.cote.accountmanager.policy.OperationUtil;
 import org.cote.accountmanager.policy.PolicyEvaluator;
+import org.cote.accountmanager.policy.operation.IOperation;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 
-/// Phase 9: Evaluates LLM responses through the existing policy evaluation pipeline.
-/// Reads the policy from chatConfig.policy, builds a PolicyRequestType with response data
-/// as fact parameters, and delegates to the standard PolicyEvaluator infrastructure.
-/// The detection operations (Timeout, RecursiveLoop, WrongCharacter, Refusal) are wired as
-/// IOperation implementations referenced by the policy's patterns.
+/// Evaluates LLM responses through policy template operations.
+/// Bypasses the standard PolicyEvaluator pipeline (which requires fully wired AM7 policy records
+/// with Rule/Pattern/Fact/Operation linkages) and instead evaluates operations directly from
+/// the policy template JSON (policy.rpg.json, policy.bias.json, etc.).
+///
+/// Resolution order for policy template:
+/// 1. chatConfig.policyTemplate field (e.g., "rpg" → loads "olio/llm/policy.rpg.json")
+/// 2. chatConfig.policy foreign ref → resolve name → static POLICY_TEMPLATES map
+/// 3. If neither found, skip evaluation (PERMIT)
 public class ResponsePolicyEvaluator {
 
 	public static final Logger logger = LogManager.getLogger(ResponsePolicyEvaluator.class);
 
-	/// Evaluate a completed LLM response against the chatConfig's policy.
-	/// Uses the existing PolicyEvaluator pipeline — operations are defined in the policy record.
-	/// @param user The context user for policy evaluation
+	private static final String TEMPLATE_RESOURCE_PREFIX = "olio/llm/policy.";
+	private static final String TEMPLATE_RESOURCE_SUFFIX = ".json";
+
+	/// Evaluate a completed LLM response against the chatConfig's policy template.
+	/// Loads the template JSON, instantiates each operation, and evaluates directly.
+	/// @param user The context user
 	/// @param responseContent The LLM response text (may be null for timeout)
-	/// @param chatConfig The chatConfig record with policy reference
+	/// @param chatConfig The chatConfig record with policyTemplate or policy reference
 	/// @param promptConfig The promptConfig record
 	/// @return PolicyEvaluationResult with PERMIT/DENY status and violation details
 	public PolicyEvaluationResult evaluate(BaseRecord user, String responseContent, BaseRecord chatConfig, BaseRecord promptConfig) {
@@ -45,7 +61,90 @@ public class ResponsePolicyEvaluator {
 			return result;
 		}
 
-		/// Resolve the policy from chatConfig.policy foreign reference
+		/// Resolve the policy template JSON
+		String templateJson = resolveTemplateJson(chatConfig);
+		if (templateJson == null) {
+			/// No template found — fall back to standard PolicyEvaluator pipeline
+			/// for real AM7 policy records with proper Rule/Pattern/Fact linkages
+			return evaluateViaStandardPipeline(user, responseContent, chatConfig, result);
+		}
+
+		/// Parse the template
+		Map<String, Object> template = JSONUtil.getMap(templateJson.getBytes(), String.class, Object.class);
+		if (template == null) {
+			logger.warn("ResponsePolicyEvaluator: Failed to parse policy template JSON");
+			result.setPermitted(true);
+			return result;
+		}
+
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> operations = (List<Map<String, Object>>) template.get("operations");
+		if (operations == null || operations.isEmpty()) {
+			logger.warn("ResponsePolicyEvaluator: No operations in policy template");
+			result.setPermitted(true);
+			return result;
+		}
+
+		/// Build character context JSON for operations that need it
+		String charJson = buildCharacterJson(chatConfig);
+		String biasCharJson = buildBiasCharacterJson(chatConfig);
+
+		/// Get reader/search for operation instantiation
+		IReader reader = IOSystem.getActiveContext().getReader();
+		ISearch search = IOSystem.getActiveContext().getSearch();
+
+		/// Evaluate each operation
+		boolean allPassed = true;
+		for (Map<String, Object> opDef : operations) {
+			String opName = (String) opDef.get("name");
+			String opClass = (String) opDef.get("operationClass");
+
+			if (opClass == null || opClass.isEmpty()) {
+				logger.warn("ResponsePolicyEvaluator: Operation '" + opName + "' has no operationClass, skipping");
+				continue;
+			}
+
+			IOperation oper = OperationUtil.getOperationInstance(opClass, reader, search);
+			if (oper == null) {
+				logger.error("ResponsePolicyEvaluator: Could not instantiate operation: " + opClass);
+				result.addViolation(opName != null ? opName : opClass, "Operation class not found: " + opClass);
+				allPassed = false;
+				continue;
+			}
+
+			/// Build sourceFact with response content
+			FactType sourceFact = buildSourceFact(responseContent);
+
+			/// Build referenceFact with merged parameters + character context
+			@SuppressWarnings("unchecked")
+			Map<String, Object> params = (Map<String, Object>) opDef.get("parameters");
+			FactType referenceFact = buildReferenceFact(params, charJson, biasCharJson);
+
+			/// Execute the operation
+			try {
+				OperationResponseEnumType opResult = oper.operate(null, null, null, sourceFact, referenceFact);
+				if (opResult == OperationResponseEnumType.FAILED) {
+					allPassed = false;
+					result.addViolation(opName != null ? opName : opClass, "Operation detected violation");
+					logger.info("ResponsePolicyEvaluator: FAILED — " + opName);
+				} else if (opResult == OperationResponseEnumType.ERROR) {
+					logger.warn("ResponsePolicyEvaluator: ERROR from operation " + opName);
+				}
+			} catch (Exception e) {
+				logger.error("ResponsePolicyEvaluator: Operation " + opName + " threw: " + e.getMessage());
+			}
+		}
+
+		result.setPermitted(allPassed);
+		logger.info("ResponsePolicyEvaluator: " + result.getViolationSummary());
+		return result;
+	}
+
+	/// Fallback: Evaluate via the standard PolicyEvaluator pipeline for real AM7 policy records.
+	/// Used when no policy template JSON is found but a policy foreign reference exists.
+	private PolicyEvaluationResult evaluateViaStandardPipeline(BaseRecord user, String responseContent,
+			BaseRecord chatConfig, PolicyEvaluationResult result) {
+
 		BaseRecord policyRef = chatConfig.get("policy");
 		if (policyRef == null) {
 			result.setPermitted(true);
@@ -59,7 +158,6 @@ public class ResponsePolicyEvaluator {
 			return result;
 		}
 
-		/// Build PolicyRequestType through the standard PolicyUtil pipeline
 		PolicyRequestType prt = IOSystem.getActiveContext().getPolicyUtil().getPolicyRequest(policy, user);
 		if (prt == null) {
 			logger.error("ResponsePolicyEvaluator: Failed to build policy request");
@@ -67,22 +165,11 @@ public class ResponsePolicyEvaluator {
 			return result;
 		}
 
-		/// Populate fact data: set response content on parameter facts, and chatConfig/promptConfig on match facts
 		List<FactType> facts = prt.getFacts();
 		for (FactType fact : facts) {
-			/// Parameter facts carry the response content for operations to evaluate
 			fact.setFactData(responseContent);
-
-			/// Populate chatConfig/promptConfig on facts that support them
-			if (fact.hasField("chatConfig")) {
-				fact.setValue("chatConfig", chatConfig);
-			}
-			if (fact.hasField("promptConfig")) {
-				fact.setValue("promptConfig", promptConfig);
-			}
 		}
 
-		/// Evaluate through the standard PolicyEvaluator
 		try {
 			PolicyEvaluator pe = IOSystem.getActiveContext().getPolicyEvaluator();
 			PolicyResponseType prr = pe.evaluatePolicyRequest(prt, policy).toConcrete();
@@ -95,7 +182,6 @@ public class ResponsePolicyEvaluator {
 			result.setPermitted(prr.getType() == PolicyResponseEnumType.PERMIT);
 			result.setPolicyResponse(prr);
 
-			/// Extract violation details from the rule/pattern chain and messages
 			if (!result.isPermitted()) {
 				List<String> messages = prr.getMessages();
 				List<String> ruleChain = prr.get("ruleChain");
@@ -107,11 +193,11 @@ public class ResponsePolicyEvaluator {
 				result.addViolation("POLICY_DENY", details);
 			}
 
-			logger.info("ResponsePolicyEvaluator: " + result.getViolationSummary());
+			logger.info("ResponsePolicyEvaluator (standard pipeline): " + result.getViolationSummary());
 			return result;
 
 		} catch (Exception e) {
-			logger.error("ResponsePolicyEvaluator: Policy evaluation failed: " + e.getMessage());
+			logger.error("ResponsePolicyEvaluator: Standard pipeline evaluation failed: " + e.getMessage());
 			result.setPermitted(true);
 			return result;
 		}
@@ -143,6 +229,110 @@ public class ResponsePolicyEvaluator {
 		return null;
 	}
 
+	/// Resolve the policy template JSON from chatConfig.
+	/// Tries policyTemplate field first, then falls back to policy name lookup.
+	private String resolveTemplateJson(BaseRecord chatConfig) {
+		/// Try policyTemplate string field first
+		String templateName = null;
+		if (chatConfig.hasField("policyTemplate")) {
+			templateName = chatConfig.get("policyTemplate");
+		}
+
+		if (templateName != null && !templateName.isEmpty()) {
+			String resource = ResourceUtil.getInstance().getResource(TEMPLATE_RESOURCE_PREFIX + templateName + TEMPLATE_RESOURCE_SUFFIX);
+			if (resource != null) {
+				return resource;
+			}
+			logger.warn("ResponsePolicyEvaluator: Policy template not found: " + templateName);
+		}
+
+		/// Fall back to policy foreign ref name
+		BaseRecord policyRef = chatConfig.get("policy");
+		if (policyRef != null) {
+			IReader reader = IOSystem.getActiveContext().getReader();
+			if (reader != null) {
+				reader.populate(policyRef, new String[] { FieldNames.FIELD_NAME });
+			}
+			String policyName = policyRef.get(FieldNames.FIELD_NAME);
+			if (policyName != null) {
+				/// Try to derive template name from policy name
+				/// e.g., "RPG Response Policy" → "rpg"
+				String derived = deriveTemplateName(policyName);
+				if (derived != null) {
+					String resource = ResourceUtil.getInstance().getResource(TEMPLATE_RESOURCE_PREFIX + derived + TEMPLATE_RESOURCE_SUFFIX);
+					if (resource != null) {
+						return resource;
+					}
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/// Derive a template resource name from a policy record name.
+	private static String deriveTemplateName(String policyName) {
+		if (policyName == null) return null;
+		String lower = policyName.toLowerCase();
+		if (lower.contains("rpg") && lower.contains("bias")) return "rpg.bias";
+		if (lower.contains("rpg")) return "rpg";
+		if (lower.contains("bias")) return "bias";
+		if (lower.contains("clinical")) return "clinical";
+		if (lower.contains("general")) return "general";
+		return null;
+	}
+
+	/// Build a source fact carrying the response content for operations to evaluate.
+	private FactType buildSourceFact(String responseContent) {
+		try {
+			FactType fact = new FactType(RecordFactory.model(ModelNames.MODEL_FACT).newInstance());
+			fact.setName("responseContent");
+			fact.setFactData(responseContent);
+			return fact;
+		} catch (Exception e) {
+			logger.error("ResponsePolicyEvaluator: Failed to build source fact: " + e.getMessage());
+			return null;
+		}
+	}
+
+	/// Build a reference fact carrying merged parameters + character context.
+	private FactType buildReferenceFact(Map<String, Object> params, String charJson, String biasCharJson) {
+		try {
+			FactType fact = new FactType(RecordFactory.model(ModelNames.MODEL_FACT).newInstance());
+			fact.setName("operationConfig");
+
+			/// Merge all context into a single JSON map
+			Map<String, String> merged = new HashMap<>();
+			if (params != null) {
+				for (Map.Entry<String, Object> entry : params.entrySet()) {
+					merged.put(entry.getKey(), String.valueOf(entry.getValue()));
+				}
+			}
+
+			/// Merge character context from charJson
+			if (charJson != null) {
+				try {
+					Map<String, String> charMap = JSONUtil.getMap(charJson.getBytes(), String.class, String.class);
+					if (charMap != null) merged.putAll(charMap);
+				} catch (Exception e) { /* skip */ }
+			}
+
+			/// Merge bias character context
+			if (biasCharJson != null) {
+				try {
+					Map<String, String> biasMap = JSONUtil.getMap(biasCharJson.getBytes(), String.class, String.class);
+					if (biasMap != null) merged.putAll(biasMap);
+				} catch (Exception e) { /* skip */ }
+			}
+
+			fact.setFactData(JSONUtil.exportObject(merged));
+			return fact;
+		} catch (Exception e) {
+			logger.error("ResponsePolicyEvaluator: Failed to build reference fact: " + e.getMessage());
+			return null;
+		}
+	}
+
 	/// Build JSON string with character names from chatConfig for WrongCharacterDetection.
 	public static String buildCharacterJson(BaseRecord chatConfig) {
 		BaseRecord sysChar = chatConfig.get("systemCharacter");
@@ -161,6 +351,56 @@ public class ResponsePolicyEvaluator {
 			return null;
 		}
 		return "{\"systemCharName\":\"" + sysName + "\",\"userCharName\":\"" + userName + "\"}";
+	}
+
+	/// Build JSON string with character demographics for bias detection operations.
+	/// Extracts gender, age, race from systemCharacter for context-dependent bias checks.
+	public static String buildBiasCharacterJson(BaseRecord chatConfig) {
+		BaseRecord sysChar = chatConfig.get("systemCharacter");
+		if (sysChar == null) {
+			return null;
+		}
+		IReader reader = IOSystem.getActiveContext().getReader();
+		if (reader != null) {
+			reader.populate(sysChar, new String[] { FieldNames.FIELD_GENDER, FieldNames.FIELD_AGE, "race" });
+		}
+
+		String gender = sysChar.get(FieldNames.FIELD_GENDER);
+		int age = 0;
+		try {
+			Object ageObj = sysChar.get(FieldNames.FIELD_AGE);
+			if (ageObj instanceof Number) {
+				age = ((Number) ageObj).intValue();
+			}
+		} catch (Exception e) { /* use default 0 */ }
+
+		String race = "";
+		try {
+			Object raceObj = sysChar.get("race");
+			if (raceObj instanceof List) {
+				@SuppressWarnings("unchecked")
+				List<String> raceList = (List<String>) raceObj;
+				if (!raceList.isEmpty()) {
+					race = raceList.get(0);
+				}
+			} else if (raceObj instanceof String) {
+				race = (String) raceObj;
+			}
+		} catch (Exception e) { /* use default empty */ }
+
+		/// Get setting from chatConfig if available
+		String setting = "";
+		if (chatConfig.hasField("setting")) {
+			Object settingObj = chatConfig.get("setting");
+			if (settingObj instanceof String) {
+				setting = (String) settingObj;
+			}
+		}
+
+		return "{\"systemCharGender\":\"" + (gender != null ? gender : "") + "\""
+			+ ",\"systemCharAge\":\"" + age + "\""
+			+ ",\"systemCharRace\":\"" + race + "\""
+			+ ",\"setting\":\"" + setting + "\"}";
 	}
 
 	/// Result container for policy evaluation.

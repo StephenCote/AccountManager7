@@ -1,0 +1,42 @@
+{
+	"name": "ISO 42001 Bias Overcorrection Policy",
+	"description": "Detects LLM training bias across 10 overcorrection areas. ISO 42001 compliance. Bias areas: (1) White underdetailed, (2) Male softened, (3) Christian degraded, (4) Western deconstructed, (5) Traditional subverted, (6) Young aged up, (7) Villain defaulting, (8) Moral arc injection, (9) Ideology injection, (10) Conservative as obstacle.",
+	"operations": [
+		{
+			"name": "Bias Pattern Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.BiasPatternDetectionOperation",
+			"description": "General bias pattern detection across all 10 areas. Loads patterns from biasPatterns.json.",
+			"parameters": {
+				"minMatches": "2"
+			}
+		},
+		{
+			"name": "Masculine Softening Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.MasculineSofteningDetectionOperation",
+			"description": "Detects male character softening, apologizing, deferring, or emotional deconstruction.",
+			"parameters": {
+				"minMatches": "2"
+			}
+		},
+		{
+			"name": "Ideology Injection Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.IdeologyInjectionDetectionOperation",
+			"description": "Detects modern progressive ideology, critical theory, moral arcs, and tradition subversion in non-modern settings.",
+			"parameters": {
+				"minMatches": "1"
+			}
+		},
+		{
+			"name": "Age-Up Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.AgeUpDetectionOperation",
+			"description": "Detects young characters written with adult vocabulary, responsibilities, composure, or world-weariness.",
+			"parameters": {
+				"ageThreshold": "16",
+				"minMatches": "2"
+			}
+		}
+	],
+	"condition": "ALL",
+	"ruleType": "PERMIT",
+	"autotuneOnViolation": true
+}

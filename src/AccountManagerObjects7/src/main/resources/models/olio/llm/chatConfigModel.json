@@ -214,6 +214,12 @@
 			"description": "Development: Using a policy to route conversation requests through conditional rules and logic."
 		},
 		{
+			"name": "policyTemplate",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Resource name of the policy template JSON (e.g., 'rpg', 'bias', 'rpg.bias'). Loaded from olio/llm/policy.{name}.json by ResponsePolicyEvaluator for direct operation evaluation."
+		},
+		{
 			"name": "extractMemories",
 			"type": "boolean",
 			"description": "When true, the agent layer will automatically extract discrete memories (engrams) from chat sessions after save."

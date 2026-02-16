@@ -1,0 +1,69 @@
+{
+	"name": "RPG + Bias Response Policy",
+	"description": "Combined RPG response policy with ISO 42001 bias detection. Includes all 4 RPG operations (timeout, recursive loop, wrong character, refusal) plus all 4 bias detection operations (general bias, masculine softening, ideology injection, age-up).",
+	"operations": [
+		{
+			"name": "Timeout Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.TimeoutDetectionOperation",
+			"description": "Detects null/empty responses from LLM timeout or connection drop."
+		},
+		{
+			"name": "Recursive Loop Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.RecursiveLoopDetectionOperation",
+			"description": "Detects repeated text blocks (50-char window, 3x threshold).",
+			"parameters": {
+				"windowSize": "50",
+				"repeatThreshold": "3"
+			}
+		},
+		{
+			"name": "Wrong Character Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.WrongCharacterDetectionOperation",
+			"description": "Detects LLM responding as the user character instead of the system character."
+		},
+		{
+			"name": "Refusal Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.RefusalDetectionOperation",
+			"description": "Detects LLM safety refusals within configured rating (2+ phrase matches).",
+			"parameters": {
+				"minMatches": "2"
+			}
+		},
+		{
+			"name": "Bias Pattern Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.BiasPatternDetectionOperation",
+			"description": "General bias pattern detection across all 10 ISO 42001 areas.",
+			"parameters": {
+				"minMatches": "2"
+			}
+		},
+		{
+			"name": "Masculine Softening Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.MasculineSofteningDetectionOperation",
+			"description": "Detects male character softening, apologizing, deferring, or emotional deconstruction.",
+			"parameters": {
+				"minMatches": "2"
+			}
+		},
+		{
+			"name": "Ideology Injection Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.IdeologyInjectionDetectionOperation",
+			"description": "Detects modern ideology in non-modern settings.",
+			"parameters": {
+				"minMatches": "1"
+			}
+		},
+		{
+			"name": "Age-Up Detection",
+			"operationClass": "org.cote.accountmanager.olio.llm.policy.AgeUpDetectionOperation",
+			"description": "Detects young characters written as adults.",
+			"parameters": {
+				"ageThreshold": "16",
+				"minMatches": "2"
+			}
+		}
+	],
+	"condition": "ALL",
+	"ruleType": "PERMIT",
+	"autotuneOnViolation": true
+}
