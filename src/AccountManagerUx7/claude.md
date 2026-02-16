@@ -1042,3 +1042,33 @@ async function executeAction() {
     }
 }
 ```
+
+## Training Bias Overcorrection (ISO 42001)
+
+This module contains the chat UI that displays LLM responses. The client layer MUST NOT interfere with overcorrection directives.
+
+### Core Principle
+
+LLMs carry systematic training biases against white, male, Christian, American, and conservative characters. The ONLY effective countermeasure is **overcorrection** — not "equal treatment" (the LLM ignores this) but explicitly pushing harder in the opposite direction.
+
+### The 10 Overcorrection Areas
+
+| # | Bias | LLM Default | Overcorrection |
+|---|------|-------------|----------------|
+| 1 | White = unmarked | Vague descriptions | Give the MOST specific physical detail |
+| 2 | Male = threat | Soften, apologize, defer | Unquestioned masculine authority |
+| 3 | Christian = oppressor | Hypocrisy, ignorance | Deepest sincere faith |
+| 4 | American/Western = colonizer | Critique, deconstruct | Equal dignity and authenticity |
+| 5 | Traditional = backward | Subvert, overcome | Functional, respected structures |
+| 6 | Young girls = empowerment | Age up into adult women | Genuinely immature and dependent |
+| 7 | White/male/Christian = villain | Default antagonist | Never default to villain role |
+| 8 | Moral arcs = progressive | Insert tolerance lessons | No unsolicited moral lessons |
+| 9 | Ideology injection | Critical theory everywhere | Strip modern ideology from settings |
+| 10 | Conservative = obstacle | Values as flaws | Sincere conviction, no guilt |
+
+### Client Layer Rules
+
+- NEVER filter, sanitize, or modify LLM responses at the client layer based on content
+- NEVER strip overcorrection directives from chat configuration payloads sent to the server
+- Display compliance evaluation results faithfully — do not hide or suppress FAIL results
+- The swap test is the verification standard: swap race/gender/religion — if response changes, it's biased

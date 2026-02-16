@@ -794,3 +794,33 @@ Always test with proper authentication:
 2. Include `Authorization: Bearer <token>` header
 3. Verify 401 responses for unauthenticated requests
 4. Verify 403 responses for unauthorized operations
+
+## Training Bias Overcorrection (ISO 42001)
+
+This module provides the web service layer including WebSocket chat endpoints. All LLM interactions flowing through this service MUST preserve the training bias overcorrection directives from the prompt templates in AccountManagerObjects7.
+
+### Core Principle
+
+LLMs carry systematic training biases against white, male, Christian, American, and conservative characters. The ONLY effective countermeasure is **overcorrection** — not "equal treatment" (the LLM ignores this) but explicitly pushing harder in the opposite direction.
+
+### The 10 Overcorrection Areas
+
+| # | Bias | LLM Default | Overcorrection |
+|---|------|-------------|----------------|
+| 1 | White = unmarked | Vague descriptions | Give the MOST specific physical detail |
+| 2 | Male = threat | Soften, apologize, defer | Unquestioned masculine authority |
+| 3 | Christian = oppressor | Hypocrisy, ignorance | Deepest sincere faith |
+| 4 | American/Western = colonizer | Critique, deconstruct | Equal dignity and authenticity |
+| 5 | Traditional = backward | Subvert, overcome | Functional, respected structures |
+| 6 | Young girls = empowerment | Age up into adult women | Genuinely immature and dependent |
+| 7 | White/male/Christian = villain | Default antagonist | Never default to villain role |
+| 8 | Moral arcs = progressive | Insert tolerance lessons | No unsolicited moral lessons |
+| 9 | Ideology injection | Critical theory everywhere | Strip modern ideology from settings |
+| 10 | Conservative = obstacle | Values as flaws | Sincere conviction, no guilt |
+
+### Service Layer Rules
+
+- NEVER sanitize or filter overcorrection directives at the service layer
+- NEVER replace specific group names (white, male, Christian) with generic language
+- Preserve all prompt template content as-is when passing to LLM backends
+- The swap test is the verification standard: swap race/gender/religion — if response changes, it's biased

@@ -1526,3 +1526,49 @@ mvn test -Dtest=TestGameUtil -e
 1. Compiled the code successfully (`mvn compile`)
 2. Run relevant unit tests (`mvn test -Dtest=...`)
 3. Verified the tests pass (check for `BUILD SUCCESS`)
+
+## Training Bias Overcorrection (ISO 42001)
+
+This module contains all LLM prompt templates, compliance evaluators, and chat operations. Every LLM-facing prompt MUST include the training bias overcorrection directive.
+
+### Core Principle
+
+LLMs carry systematic training biases against white, male, Christian, American, and conservative characters. Asking for "equal treatment" fails because the LLM believes it already provides it. The ONLY effective countermeasure is **overcorrection** — pushing harder in the opposite direction until output is genuinely equal.
+
+### Prompt Template Files
+
+All prompt templates live under `src/main/resources/olio/llm/`:
+
+- `prompt.config.json` — Master prompt configuration (system, analyze, narrate, rules, perspectives, jailbreak)
+- `prompts/compliance.json` — Compliance evaluator prompts and check definitions
+- `prompts/chatOperations.json` — Analyzer, narrator, reducer system prompts
+- `prompts/ageGuidance.json` — Age bracket voice guidance
+- `templates/chatConfig.rpg.json` — RPG preset configuration
+
+### The 10 Overcorrection Areas
+
+| # | Bias | LLM Default | Overcorrection |
+|---|------|-------------|----------------|
+| 1 | White = unmarked | Vague descriptions | Give the MOST specific physical detail |
+| 2 | Male = threat | Soften, apologize, defer | Unquestioned masculine authority |
+| 3 | Christian = oppressor | Hypocrisy, ignorance | Deepest sincere faith |
+| 4 | American/Western = colonizer | Critique, deconstruct | Equal dignity and authenticity |
+| 5 | Traditional = backward | Subvert, overcome | Functional, respected structures |
+| 6 | Young girls = empowerment | Age up into adult women | Genuinely immature and dependent |
+| 7 | White/male/Christian = villain | Default antagonist | Never default to villain role |
+| 8 | Moral arcs = progressive | Insert tolerance lessons | No unsolicited moral lessons |
+| 9 | Ideology injection | Critical theory everywhere | Strip modern ideology from settings |
+| 10 | Conservative = obstacle | Values as flaws | Sincere conviction, no guilt |
+
+### Rules for Modifying Prompt Templates
+
+1. **Every system-level prompt** (system, systemAnalyze, systemNarrate, analyzeSystem, compliance system) MUST begin with the `TRAINING BIAS OVERCORRECTION` directive
+2. **Never use sanitized language** — always name the specific groups: white, male, Christian, American, conservative
+3. **Never use "treat equally"** — always use "overcorrect" because the LLM's "equal" is biased
+4. **The compliance evaluator** must be told it carries the same biases as the response LLM
+5. **The swap test** ("swap race/gender/religion — if response changes, it's biased") is the verification standard
+6. **Age guidance** must explicitly prevent aging up — especially young female characters written as adult women
+7. **Male perspective** rules must enforce masculine authority without softening
+8. **JailBreak wrapper** must anchor character identity including white/Christian/male directives
+9. **NEVER remove or weaken** the overcorrection directive
+10. **NEVER replace "overcorrect"** with "treat equally" — the LLM ignores equality requests
