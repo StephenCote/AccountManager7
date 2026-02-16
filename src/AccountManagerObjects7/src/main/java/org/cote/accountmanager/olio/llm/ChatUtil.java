@@ -1342,6 +1342,9 @@ public class ChatUtil {
 			}
 		}
 		try {
+			if(cfg != null) {
+				req.set("stream", (boolean) cfg.get("stream"));
+			}
 			req.setModel(modelName);
 			double temperature = 0.9;
 			double top_p = 0.5;
