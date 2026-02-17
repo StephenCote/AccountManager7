@@ -97,6 +97,7 @@ public class ChatListener implements IChatListener {
 
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, chatReq.get(FieldNames.FIELD_OBJECT_ID));
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(false);
 		ChatRequest vChatReq = new ChatRequest(IOSystem.getActiveContext().getAccessPoint().find(user, q));
 		
 		vChatReq.setValue(FieldNames.FIELD_DATA, chatReq.get(FieldNames.FIELD_DATA));
@@ -356,6 +357,7 @@ public class ChatListener implements IChatListener {
 			try {
 				Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
 				cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+				cq.planMost(false);
 				chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
 			} catch (Exception e) {
 				logger.warn("Failed to pre-fetch chatRequest for title: " + e.getMessage());

@@ -128,6 +128,14 @@ public class Chat {
 		this.chatConfig = chatConfig;
 		this.promptConfig = promptConfig;
 		configureChat();
+		if (logger.isInfoEnabled()) {
+			String amodel = chatConfig != null ? chatConfig.get("analyzeModel") : null;
+			boolean hasPromptCfg = promptConfig != null;
+			boolean hasPromptTemplate = chatConfig != null && chatConfig.get("promptTemplate") != null;
+			logger.info("Chat config: model=" + model + " analyzeModel=" + amodel
+				+ " promptConfig=" + hasPromptCfg + " promptTemplate=" + hasPromptTemplate
+				+ " analyzeTimeout=" + analyzeTimeout + " keyFrameEvery=" + keyFrameEvery);
+		}
 	}
 
 
@@ -443,6 +451,7 @@ public class Chat {
 					try {
 						Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
 						cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+						cq.planMost(false);
 						chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
 						if (chatReqRec != null) {
 							String existingTitle = AttributeUtil.getAttributeValue(chatReqRec, "chatTitle");
@@ -1701,7 +1710,16 @@ public class Chat {
 		List<String> lines = ChatUtil.getFormattedChatHistory(snapshotReq, chatConfig, pruneSkip, false);
 		if (lines.isEmpty()) return null;
 
-		String sys = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "keyframeSystem");
+		/// Use promptConfig.systemAnalyze if available — this carries the user's
+		/// CDA/CRA directives and overcorrection training. Fall back to the generic
+		/// chatOperations keyframe prompt only when no analysis config is set.
+		String sys = null;
+		if (promptConfig != null) {
+			sys = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
+		}
+		if (sys == null || sys.isBlank()) {
+			sys = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "keyframeSystem");
+		}
 		if (sys == null) sys = "You produce brief, factual conversation summaries. Limit to 150 words.";
 		String cmd = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "keyframeUser");
 		if (cmd == null) cmd = "Summarize this conversation segment: who, what happened, key emotional beats, unresolved tensions.";
@@ -1740,10 +1758,16 @@ public class Chat {
 	/// concurrent modification, then persists the result as a durable memory.
 	/// OI-98: No longer injects keyframe messages into the chat history.
 	private void addKeyFrameAsync(OpenAIRequest req, List<OpenAIMessage> snapshot) {
+		logger.info("addKeyFrameAsync: START — snapshot size=" + snapshot.size());
 		BaseRecord systemChar = chatConfig.get("systemCharacter");
 		BaseRecord userChar = chatConfig.get("userCharacter");
+		if (systemChar == null || userChar == null) {
+			logger.warn("addKeyFrameAsync: systemCharacter or userCharacter is null — aborting");
+			return;
+		}
 
 		String lab = systemChar.get("firstName") + " and " + userChar.get("firstName");
+		logger.info("addKeyFrameAsync: characters=" + lab);
 
 		/// Step 1: Build a snapshot request for analysis (avoids concurrent modification)
 		OpenAIRequest snapshotReq = new OpenAIRequest();
@@ -1754,15 +1778,23 @@ public class Chat {
 		/// Step 1a: Build focused keyframe request and call with analyzeTimeout
 		OpenAIRequest kfReq = buildKeyframeRequest(snapshotReq);
 		String analysisText = null;
-		if (kfReq != null) {
+		if (kfReq == null) {
+			logger.warn("addKeyFrameAsync: buildKeyframeRequest returned null");
+		} else {
+			logger.info("addKeyFrameAsync: calling LLM for keyframe analysis (timeout=" + analyzeTimeout + "s, model=" + kfReq.getModel() + ")");
 			analyzeTimeoutOverride.set(analyzeTimeout);
 			try {
 				OpenAIResponse kfResp = chat(kfReq);
-				if (kfResp != null && kfResp.getMessage() != null) {
+				if (kfResp == null) {
+					logger.warn("addKeyFrameAsync: chat() returned null");
+				} else if (kfResp.getMessage() == null) {
+					logger.warn("addKeyFrameAsync: chat() response has no message");
+				} else {
 					analysisText = kfResp.getMessage().getContent();
+					logger.info("addKeyFrameAsync: analysis received, length=" + (analysisText != null ? analysisText.length() : 0));
 				}
 			} catch (Exception e) {
-				logger.warn("Keyframe analysis failed: " + e.getMessage());
+				logger.warn("Keyframe analysis failed: " + e.getMessage(), e);
 			} finally {
 				analyzeTimeoutOverride.remove();
 			}
@@ -1816,6 +1848,7 @@ public class Chat {
 	private void extractMemoriesIfEnabled(OpenAIRequest req, OpenAIRequest snapshotReq,
 			String cfgObjId, BaseRecord systemChar, BaseRecord userChar) {
 
+		logger.info("extractMemoriesIfEnabled: START");
 		boolean extractMemories = false;
 		try {
 			extractMemories = chatConfig.get("extractMemories");
@@ -1823,6 +1856,7 @@ public class Chat {
 			// field may not be set
 		}
 		if (!extractMemories) {
+			logger.info("extractMemoriesIfEnabled: extractMemories=false — skipping");
 			return;
 		}
 
@@ -1875,6 +1909,16 @@ public class Chat {
 		if (systemPrompt == null) {
 			logger.warn("Memory extraction prompt not found: " + promptName);
 			return java.util.Collections.emptyList();
+		}
+
+		/// Prepend the user's analysis framework (systemAnalyze) to the extraction
+		/// prompt so memory extraction is informed by CDA/CRA or other custom
+		/// analysis directives. The extraction format instructions remain at the end.
+		if (promptConfig != null) {
+			String analyzeDirective = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
+			if (analyzeDirective != null && !analyzeDirective.isBlank()) {
+				systemPrompt = analyzeDirective + System.lineSeparator() + System.lineSeparator() + systemPrompt;
+			}
 		}
 
 		/// Replace template tokens in the prompt
@@ -1948,7 +1992,9 @@ public class Chat {
 	private void persistKeyframeAsMemory(OpenAIRequest req, String analysisText, String characterLabel,
 			String cfgObjId, BaseRecord systemChar, BaseRecord userChar) {
 
+		logger.info("persistKeyframeAsMemory: START for " + characterLabel);
 		if (analysisText == null || analysisText.trim().isEmpty()) {
+			logger.warn("persistKeyframeAsMemory: analysisText is empty — aborting");
 			return;
 		}
 
@@ -1959,6 +2005,7 @@ public class Chat {
 			// field may not be set
 		}
 		if (!extractMemories) {
+			logger.info("persistKeyframeAsMemory: extractMemories=false — skipping");
 			return;
 		}
 
@@ -2095,24 +2142,27 @@ public class Chat {
 
 	private void pruneCount(OpenAIRequest req, int messageCount) {
 		boolean enablePrune = chatConfig.get("prune");
-		if (messageCount <= 0 || !enablePrune || !chatMode) {
-			return;
+		if (messageCount > 0 && enablePrune && chatMode) {
+			/// Target count = system + pruneSkip
+			int idx = getMessageOffset(req);
+			int len = req.getMessages().size() - messageCount;
+			for (int i = idx; i < len; i++) {
+				OpenAIMessage msg = req.getMessages().get(i);
+				msg.setPruned(true);
+			}
 		}
 
-		/// Target count = system + pruneSkip
-		int idx = getMessageOffset(req);
-		int len = req.getMessages().size() - messageCount;
-		for (int i = idx; i < len; i++) {
-			OpenAIMessage msg = req.getMessages().get(i);
-			msg.setPruned(true);
-		}
+		/// Keyframe trigger — separated from prune gating so memory extraction
+		/// works regardless of prune/assist settings.
+		checkKeyframeTrigger(req);
+	}
 
-		/// OI-98: Keyframes are now memory-only — no longer embedded in the message
-		/// history, so there are no keyframe messages to preserve during pruning.
-		/// Instead, use the lastKeyframeAt counter on chatConfig to determine when
-		/// the next keyframe is due.
-		boolean useAssist = chatConfig.get("assist");
-		if (!useAssist || keyFrameEvery <= 0) {
+	/// OI-98: Keyframes are now memory-only — no longer embedded in the message
+	/// history, so there are no keyframe messages to preserve during pruning.
+	/// Instead, use the lastKeyframeAt counter on chatConfig to determine when
+	/// the next keyframe is due.
+	private void checkKeyframeTrigger(OpenAIRequest req) {
+		if (!chatMode || keyFrameEvery <= 0) {
 			return;
 		}
 		int lastKfAt = 0;
@@ -2150,7 +2200,6 @@ public class Chat {
 			logger.info("(Deferring keyframe — will launch after main response)");
 			pendingKeyframeSnapshot = new ArrayList<>(req.getMessages());
 		}
-
 	}
 
 	/// Flush a deferred keyframe: launch the async pipeline now that the main response is complete.
@@ -2176,13 +2225,17 @@ public class Chat {
 			try {
 				addKeyFrameAsync(req, snapshot);
 			} catch (Exception e) {
-				logger.warn("Async keyframe generation failed: " + e.getMessage());
+				logger.warn("Async keyframe generation failed: " + e.getMessage(), e);
 			} finally {
 				asyncKeyframeInProgress = false;
 			}
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "keyframeDone", "Keyframe complete");
 			}
+		}).exceptionally(ex -> {
+			logger.error("Async keyframe CompletableFuture failed: " + ex.getMessage(), ex);
+			asyncKeyframeInProgress = false;
+			return null;
 		});
 	}
 
@@ -2327,6 +2380,9 @@ public class Chat {
 				logger.warn("Null response from streaming chat");
 				return;
 			}
+			if (!forwardToClient && response.statusCode() != 200) {
+				logger.warn("Buffer mode LLM call returned HTTP " + response.statusCode());
+			}
 			/// Phase 12: OI-27 — Register HTTP response for server-side abort on cancel
 			if (forwardToClient && listener instanceof ChatListener) {
 				String oid2 = req.get(FieldNames.FIELD_OBJECT_ID);
@@ -2410,14 +2466,20 @@ public class Chat {
 
 		BaseRecord asyncResp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, json);
 		if (asyncResp == null) {
+			String errMsg = "Failed to import response object from: " + json;
 			if (forwardToClient && listener != null) {
-				listener.onerror(user, req, aresp, "Failed to import response object from: " + json);
+				listener.onerror(user, req, aresp, errMsg);
+			} else {
+				logger.warn("processStreamChunk (buffer mode): " + errMsg);
 			}
 			return;
 		}
 		if (asyncResp.get("error") != null) {
+			String errMsg = "Received an error: " + asyncResp.get("error");
 			if (forwardToClient && listener != null) {
-				listener.onerror(user, req, aresp, "Received an error: " + asyncResp.get("error"));
+				listener.onerror(user, req, aresp, errMsg);
+			} else {
+				logger.warn("processStreamChunk (buffer mode): " + errMsg);
 			}
 			return;
 		}

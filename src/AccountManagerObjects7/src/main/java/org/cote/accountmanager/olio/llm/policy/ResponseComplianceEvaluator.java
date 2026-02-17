@@ -33,7 +33,8 @@ public class ResponseComplianceEvaluator {
 	private static final String RESOURCE = "compliance";
 	private static final String[] CHECK_NAMES = {
 		"CHARACTER_IDENTITY", "GENDERED_VOICE", "PROFILE_ADHERENCE",
-		"AGE_ADHERENCE", "EQUAL_TREATMENT", "PERSONALITY_CONSISTENCY"
+		"AGE_ADHERENCE", "EQUAL_TREATMENT", "PERSONALITY_CONSISTENCY",
+		"USER_AUTONOMY"
 	};
 
 	/// Evaluate the LLM response for compliance with character and content guidelines.

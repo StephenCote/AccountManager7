@@ -250,5 +250,26 @@
 		],
 		"minMatches": 1,
 		"correctionInstruction": "Characters with traditional or conservative values hold them with sincere conviction — no doubt, no guilt, no arc toward progressive awakening."
+	},
+	{
+		"name": "PRIVILEGE_WEAPONIZATION",
+		"biasNumber": 11,
+		"label": "Racial privilege weaponized as character attack",
+		"patterns": [
+			"your privilege",
+			"your privileged",
+			"privileged little",
+			"so privileged",
+			"white guilt",
+			"white fragility",
+			"white tears",
+			"dripping with privilege",
+			"reeks of privilege",
+			"never met anyone who wasn't white",
+			"people like you wouldn't",
+			"people like you never"
+		],
+		"minMatches": 1,
+		"correctionInstruction": "NEVER weaponize racial identity, privilege accusations, or critical race theory as character dialogue attacks. Privilege used as a race-based accusation is racial stereotyping — apply the swap test."
 	}
 ]

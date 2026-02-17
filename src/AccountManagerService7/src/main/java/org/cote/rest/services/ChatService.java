@@ -111,6 +111,7 @@ public class ChatService {
 		//ChatRequest vChatReq = new ChatRequest(IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, chatReq.getSchema(), chatReq.get(FieldNames.FIELD_OBJECT_ID)));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, chatReq.get(FieldNames.FIELD_OBJECT_ID));
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(false);
 		ChatRequest vChatReq = new ChatRequest(IOSystem.getActiveContext().getAccessPoint().find(user, q));
 		BaseRecord vreq = OlioUtil.getFullRecord(vChatReq.get("session"), false);
 		if(vreq != null) {
@@ -257,8 +258,9 @@ public class ChatService {
 
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, chatReq.get(FieldNames.FIELD_OBJECT_ID));
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(false);
 		ChatRequest vChatReq = new ChatRequest(IOSystem.getActiveContext().getAccessPoint().find(user, q));
-		
+
 		vChatReq.setValue(FieldNames.FIELD_DATA, chatReq.get(FieldNames.FIELD_DATA));
 		vChatReq.setValue(FieldNames.FIELD_MESSAGE, chatReq.get(FieldNames.FIELD_MESSAGE));
 		
@@ -322,7 +324,7 @@ public class ChatService {
 		try {
 			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
 			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-			sq.planMost(true);
+			sq.planMost(false);
 			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
 			if (chatReq == null) {
 				return Response.status(404).entity("{\"error\":\"Session not found\"}").build();
@@ -397,7 +399,7 @@ public class ChatService {
 		try {
 			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
 			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-			sq.planMost(true);
+			sq.planMost(false);
 			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
 			if (chatReq == null) {
 				return Response.status(404).entity("{\"error\":\"Session not found\"}").build();
@@ -567,10 +569,12 @@ public class ChatService {
 	public Response generateScene(String json, @PathParam("objectId") String objectId, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
-		/// 1. Load chat request
+		/// 1. Load chat request — planMost(false) avoids recursive foreign-ref expansion
+		/// which exceeds PostgreSQL's 100-argument limit on chatRequest → chatConfig → charPerson chains.
+		/// Child objects are loaded separately via OlioUtil.getFullRecord() below.
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		q.planMost(true);
+		q.planMost(false);
 		BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		if (chatReqRec == null) {
 			logger.error("generateScene: Chat request not found: " + objectId);

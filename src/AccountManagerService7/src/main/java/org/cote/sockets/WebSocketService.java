@@ -454,7 +454,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			return false;
 		}
 		if(!urnToSession.containsKey(user.get(FieldNames.FIELD_URN))) {
-			logger.warn("User does not have an active WebSocket");
+			logger.debug("User does not have an active WebSocket: " + user.get(FieldNames.FIELD_URN));
 			return false;
 		}
 		

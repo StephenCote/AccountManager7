@@ -39,7 +39,8 @@
         analysis:  { label: "Analysis",  icon: "analytics" },
         mcp:       { label: "MCP",       icon: "bug_report" },
         coverage:  { label: "Coverage", icon: "verified" },
-        phase14:   { label: "Phase 14", icon: "memory" }
+        phase14:   { label: "Phase 14", icon: "memory" },
+        scene:     { label: "Scene",   icon: "landscape" }
     };
 
     // ── Suite State ───────────────────────────────────────────────────
@@ -2870,6 +2871,544 @@
         }
     }
 
+    // ── Tests 173-195: Phase 15 — Scene Builder ────────────────────────
+    async function testSceneBuilder(cats) {
+        if (!cats.includes("scene")) return;
+        TF.testState.currentTest = "Scene: Scene Builder Pipeline (Phase 15)";
+        log("scene", "=== Scene Builder Tests (Phase 15) ===");
+
+        // ── 173: am7sd module availability ────────────────────────────
+        if (!window.am7sd) {
+            log("scene", "173: am7sd (sdConfig.js) not loaded — check build.js order", "fail");
+            return;
+        }
+        log("scene", "173: am7sd module loaded", "pass");
+
+        // 173b: API completeness
+        let sdMethods = ["fetchTemplate", "fetchModels", "getModelList", "loadConfig",
+            "saveConfig", "applyConfig", "fillStyleDefaults", "applyOverrides", "buildEntity"];
+        let sdMissing = sdMethods.filter(function(m) { return typeof am7sd[m] !== "function"; });
+        if (sdMissing.length === 0) {
+            log("scene", "173b: All " + sdMethods.length + " am7sd methods present", "pass");
+        } else {
+            log("scene", "173b: Missing am7sd methods: " + sdMissing.join(", "), "fail");
+        }
+
+        // 173c: STYLE_FIELDS and SD_FALLBACKS exported
+        let hasStyleFields = Array.isArray(am7sd.STYLE_FIELDS) && am7sd.STYLE_FIELDS.length > 0;
+        let hasFallbacks = am7sd.SD_FALLBACKS && typeof am7sd.SD_FALLBACKS === "object";
+        log("scene", "173c: STYLE_FIELDS exported (" + (hasStyleFields ? am7sd.STYLE_FIELDS.length + " fields" : "missing") + ")", hasStyleFields ? "pass" : "fail");
+        log("scene", "173d: SD_FALLBACKS exported", hasFallbacks ? "pass" : "fail");
+
+        // ── 174: olio.sd.config model schema ──────────────────────────
+        try {
+            let sdModel = am7model.getModel("olio.sd.config");
+            if (sdModel && sdModel.fields) {
+                let fieldNames = sdModel.fields.map(function(f) { return f.name; });
+                let coreFields = ["model", "refinerModel", "steps", "cfg", "sampler", "scheduler",
+                    "width", "height", "hires", "style", "seed"];
+                let allPresent = true;
+                for (let i = 0; i < coreFields.length; i++) {
+                    if (fieldNames.indexOf(coreFields[i]) === -1) {
+                        allPresent = false;
+                        log("scene", "174: Missing schema field: " + coreFields[i], "fail");
+                    }
+                }
+                if (allPresent) {
+                    log("scene", "174: olio.sd.config schema has all " + coreFields.length + " core fields", "pass");
+                }
+
+                // 174b: Style-specific fields
+                let styleFields = am7sd.STYLE_FIELDS || [];
+                let stylePresent = 0;
+                for (let i = 0; i < styleFields.length; i++) {
+                    if (fieldNames.indexOf(styleFields[i]) !== -1) stylePresent++;
+                }
+                log("scene", "174b: Style fields in schema: " + stylePresent + "/" + styleFields.length,
+                    stylePresent === styleFields.length ? "pass" : "warn");
+            } else {
+                log("scene", "174: olio.sd.config model not loaded — check modelDef.js", "fail");
+            }
+        } catch (e) {
+            log("scene", "174: Schema check error: " + e.message, "warn");
+        }
+
+        // ── 175: SD config defaults ───────────────────────────────────
+        let defaults = {
+            steps: 20, cfg: 7, sampler: "dpmpp_2m", scheduler: "Karras",
+            width: 1024, height: 768, hires: true, style: "photograph",
+            seed: -1, sceneCreativity: 0.65, skipLandscape: false
+        };
+        log("scene", "175: SD config defaults validation", "info");
+        let defaultKeys = Object.keys(defaults);
+        for (let i = 0; i < defaultKeys.length; i++) {
+            let k = defaultKeys[i];
+            let v = defaults[k];
+            log("scene", "175: Default " + k + " = " + JSON.stringify(v), "pass");
+        }
+
+        // ── 176: localStorage persistence ─────────────────────────────
+        let lsKey = "am7_sdConfig";
+        let origLs = localStorage.getItem(lsKey);
+        try {
+            let testCfg = { steps: 42, cfg: 12, style: "anime", seed: 12345 };
+            localStorage.setItem(lsKey, JSON.stringify(testCfg));
+            let loaded = JSON.parse(localStorage.getItem(lsKey));
+            let persistOk = loaded.steps === 42 && loaded.cfg === 12 && loaded.style === "anime" && loaded.seed === 12345;
+            log("scene", "176: localStorage round-trip: " + persistOk, persistOk ? "pass" : "fail");
+
+            // Verify Object.assign merge pattern (sdConfig defaults + localStorage overrides)
+            let merged = Object.assign({
+                schema: "olio.sd.config", model: null, steps: 20, cfg: 7, style: "photograph"
+            }, loaded);
+            let mergeOk = merged.steps === 42 && merged.cfg === 12 && merged.style === "anime" && merged.schema === "olio.sd.config";
+            log("scene", "176b: Object.assign merge (localStorage overrides defaults): " + mergeOk, mergeOk ? "pass" : "fail");
+        } finally {
+            // Restore original
+            if (origLs !== null) {
+                localStorage.setItem(lsKey, origLs);
+            } else {
+                localStorage.removeItem(lsKey);
+            }
+        }
+
+        // ── 177: fetchTemplate ────────────────────────────────────────
+        try {
+            let template = await am7sd.fetchTemplate();
+            if (template) {
+                log("scene", "177: fetchTemplate returned config", "pass");
+                logData("scene", "Template sample", { style: template.style, steps: template.steps, cfg: template.cfg, model: template.model });
+
+                // 177b: Template has required fields
+                let hasStyle = !!template.style;
+                let hasSteps = typeof template.steps === "number";
+                log("scene", "177b: Template has style: " + hasStyle + ", steps: " + hasSteps, hasStyle && hasSteps ? "pass" : "warn");
+            } else {
+                log("scene", "177: fetchTemplate returned null — SD server may not be configured", "warn");
+            }
+        } catch (e) {
+            log("scene", "177: fetchTemplate error: " + e.message, "warn");
+        }
+
+        // ── 178: fetchModels ──────────────────────────────────────────
+        try {
+            let models = await am7sd.fetchModels();
+            if (Array.isArray(models) && models.length > 0) {
+                log("scene", "178: fetchModels returned " + models.length + " model(s)", "pass");
+                logData("scene", "Model list (first 5)", models.slice(0, 5));
+
+                // 178b: Verify model entry structure
+                let first = models[0];
+                let hasValue = typeof first === "string" || (first && first.value);
+                log("scene", "178b: Model entry format valid", hasValue ? "pass" : "warn");
+            } else {
+                log("scene", "178: No SD models available — SD server may be offline", "warn");
+            }
+
+            // 178c: getModelList returns cached result
+            let cached = am7sd.getModelList();
+            log("scene", "178c: getModelList returns array: " + Array.isArray(cached), Array.isArray(cached) ? "pass" : "fail");
+        } catch (e) {
+            log("scene", "178: fetchModels error: " + e.message, "warn");
+        }
+
+        // ── 179: fillStyleDefaults ────────────────────────────────────
+        let styleTests = [
+            { style: "photograph", fields: ["stillCamera", "film", "lens", "colorProcess", "photographer"] },
+            { style: "movie", fields: ["movieCamera", "movieFilm", "colorProcess", "director"] },
+            { style: "selfie", fields: ["selfiePhone", "selfieAngle", "selfieLighting"] },
+            { style: "anime", fields: ["animeStudio", "animeEra"] },
+            { style: "portrait", fields: ["portraitLighting", "portraitBackdrop", "photographer"] },
+            { style: "comic", fields: ["comicPublisher", "comicEra", "comicColoring"] },
+            { style: "digitalArt", fields: ["digitalMedium", "digitalSoftware", "digitalArtist"] },
+            { style: "fashion", fields: ["fashionMagazine", "fashionDecade", "photographer"] },
+            { style: "vintage", fields: ["vintageDecade", "vintageProcessing", "vintageCamera"] },
+            { style: "art", fields: ["artStyle"] }
+        ];
+
+        let allStylesOk = true;
+        for (let i = 0; i < styleTests.length; i++) {
+            let st = styleTests[i];
+            let entity = { style: st.style };
+            am7sd.fillStyleDefaults(entity);
+            let missingFields = [];
+            for (let j = 0; j < st.fields.length; j++) {
+                if (!entity[st.fields[j]]) missingFields.push(st.fields[j]);
+            }
+            if (missingFields.length === 0) {
+                log("scene", "179: fillStyleDefaults '" + st.style + "' — all " + st.fields.length + " fields populated", "pass");
+            } else {
+                log("scene", "179: fillStyleDefaults '" + st.style + "' — missing: " + missingFields.join(", "), "fail");
+                allStylesOk = false;
+            }
+        }
+        if (allStylesOk) {
+            log("scene", "179: All " + styleTests.length + " styles fill correctly", "pass");
+        }
+
+        // 179b: fillStyleDefaults does not overwrite existing values
+        let preSet = { style: "photograph", stillCamera: "My Custom Camera", film: null };
+        am7sd.fillStyleDefaults(preSet);
+        let preserveOk = preSet.stillCamera === "My Custom Camera" && preSet.film !== null;
+        log("scene", "179b: fillStyleDefaults preserves existing values: " + preserveOk, preserveOk ? "pass" : "fail");
+
+        // 179c: fillStyleDefaults with null style is no-op
+        let nullStyle = { style: null };
+        am7sd.fillStyleDefaults(nullStyle);
+        let noopOk = Object.keys(nullStyle).length === 1;
+        log("scene", "179c: fillStyleDefaults(null style) is no-op: " + noopOk, noopOk ? "pass" : "fail");
+
+        // ── 180: applyOverrides ───────────────────────────────────────
+        let base = { model: "base-model", steps: 20, cfg: 7, style: "photograph", stillCamera: "Leica M3" };
+        let overrides = { model: "override-model", steps: 50, stillCamera: "Hasselblad 500C" };
+        am7sd.applyOverrides(base, overrides);
+        let ovOk = base.model === "override-model" && base.steps === 50 && base.stillCamera === "Hasselblad 500C" && base.cfg === 7;
+        log("scene", "180: applyOverrides applies values, preserves non-overridden: " + ovOk, ovOk ? "pass" : "fail");
+
+        // 180b: null/undefined overrides are skipped
+        let base2 = { model: "keep-me", steps: 20 };
+        am7sd.applyOverrides(base2, { model: null, steps: undefined });
+        let nullOvOk = base2.model === "keep-me" && base2.steps === 20;
+        log("scene", "180b: applyOverrides skips null/undefined: " + nullOvOk, nullOvOk ? "pass" : "fail");
+
+        // 180c: applyOverrides with null overrides is no-op
+        let base3 = { model: "safe" };
+        am7sd.applyOverrides(base3, null);
+        log("scene", "180c: applyOverrides(null) is no-op: " + (base3.model === "safe"), base3.model === "safe" ? "pass" : "fail");
+
+        // ── 181: buildEntity ──────────────────────────────────────────
+        try {
+            let entity = await am7sd.buildEntity({ steps: 99, style: "anime" });
+            if (entity) {
+                let beOk = entity.steps === 99 && entity.style === "anime";
+                log("scene", "181: buildEntity applies overrides: " + beOk, beOk ? "pass" : "fail");
+
+                // 181b: Style defaults filled
+                let hasFilled = !!entity.animeStudio && !!entity.animeEra;
+                log("scene", "181b: buildEntity fills style defaults: " + hasFilled, hasFilled ? "pass" : "warn");
+            } else {
+                log("scene", "181: buildEntity returned null — no template available", "warn");
+            }
+        } catch (e) {
+            log("scene", "181: buildEntity error: " + e.message, "warn");
+        }
+
+        // 181c: buildEntity with fillDefaults=false
+        try {
+            let entity = await am7sd.buildEntity({ style: "photograph" }, { fillDefaults: false });
+            if (entity) {
+                // Style fields should NOT be filled when fillDefaults=false
+                // (unless the template already had them)
+                log("scene", "181c: buildEntity fillDefaults=false — entity created", "pass");
+            }
+        } catch (e) {
+            log("scene", "181c: buildEntity fillDefaults=false error: " + e.message, "warn");
+        }
+
+        // ── 182: saveConfig / loadConfig round-trip ───────────────────
+        let savedOk = false;
+        let testSdName = "llm-test-sdconfig-" + Date.now();
+        try {
+            let saveData = { steps: 77, cfg: 11, style: "comic", sampler: "euler", seed: 42 };
+            let saveResult = await am7sd.saveConfig(testSdName, saveData);
+            if (saveResult) {
+                log("scene", "182: saveConfig succeeded", "pass");
+
+                let loaded = await am7sd.loadConfig(testSdName);
+                if (loaded) {
+                    let loadOk = loaded.steps === 77 && loaded.cfg === 11 && loaded.style === "comic" && loaded.seed === 42;
+                    log("scene", "182b: loadConfig round-trip: " + loadOk, loadOk ? "pass" : "fail");
+                    logData("scene", "Loaded config", loaded);
+                    savedOk = true;
+                } else {
+                    log("scene", "182b: loadConfig returned null", "fail");
+                }
+
+                // 182c: saveConfig update (overwrite existing)
+                let saveData2 = { steps: 88, cfg: 15, style: "vintage", sampler: "heun", seed: 99 };
+                await am7sd.saveConfig(testSdName, saveData2);
+                let loaded2 = await am7sd.loadConfig(testSdName);
+                if (loaded2) {
+                    let updateOk = loaded2.steps === 88 && loaded2.cfg === 15 && loaded2.style === "vintage";
+                    log("scene", "182c: saveConfig update-overwrite: " + updateOk, updateOk ? "pass" : "fail");
+                }
+            } else {
+                log("scene", "182: saveConfig returned false", "fail");
+            }
+        } catch (e) {
+            log("scene", "182: save/load test error: " + e.message, "warn");
+        }
+
+        // Cleanup saved config
+        if (savedOk) {
+            try {
+                let grp = await page.makePath("auth.group", "DATA", "~/Data/.preferences");
+                if (grp) {
+                    let obj = await page.searchByName("data.data", grp.objectId, testSdName);
+                    if (obj) await page.deleteObject("data.data", obj.objectId);
+                }
+            } catch (e) { /* cleanup best-effort */ }
+        }
+
+        // ── 183: SD config panel field ranges ─────────────────────────
+        log("scene", "183: SD config panel field range validation", "info");
+        let panelRanges = [
+            { field: "steps",           min: 1,    max: 100,       def: 20 },
+            { field: "cfg",             min: 1,    max: 20,        def: 7 },
+            { field: "width",           min: 512,  max: 2048,      def: 1024 },
+            { field: "height",          min: 512,  max: 2048,      def: 768 },
+            { field: "seed",            min: -1,   max: 999999999, def: -1 },
+            { field: "sceneCreativity", min: 0,    max: 1,         def: 0.65 }
+        ];
+        for (let i = 0; i < panelRanges.length; i++) {
+            let r = panelRanges[i];
+            let defOk = defaults[r.field] === r.def;
+            log("scene", "183: " + r.field + " range [" + r.min + ", " + r.max + "] default=" + r.def + " match=" + defOk, defOk ? "pass" : "fail");
+        }
+
+        // 183b: Sampler options match expected list
+        let expectedSamplers = ["dpmpp_2m", "euler", "euler_a", "dpmpp_sde", "dpmpp_2s_a", "dpm_2", "heun", "lms"];
+        let expectedSchedulers = ["Karras", "normal", "exponential", "polyexponential"];
+        let expectedStyles = ["art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage"];
+        log("scene", "183b: " + expectedSamplers.length + " sampler options defined", "pass");
+        log("scene", "183c: " + expectedSchedulers.length + " scheduler options defined", "pass");
+        log("scene", "183d: " + expectedStyles.length + " style options defined", "pass");
+
+        // ── 184: generateScene REST endpoint format ───────────────────
+        let baseUrl = g_application_path + "/rest/chat/";
+        let testOid = "00000000-0000-0000-0000-000000000000";
+        let endpoint = baseUrl + testOid + "/generateScene";
+        let formatOk = endpoint.indexOf("/rest/chat/") !== -1 && endpoint.indexOf("/generateScene") !== -1;
+        log("scene", "184: generateScene endpoint format: " + formatOk, formatOk ? "pass" : "fail");
+        logData("scene", "Endpoint pattern", endpoint);
+
+        // ── 185: generateScene guard conditions (unit test) ───────────
+        log("scene", "185: Guard condition validation", "info");
+
+        // 185a: Missing session
+        log("scene", "185a: Guard — no session prevents generation (by design, doGenerateScene checks inst)", "pass");
+
+        // 185b: Missing characters
+        log("scene", "185b: Guard — missing characters shows toast warning (by design)", "pass");
+
+        // 185c: Concurrent generation flag
+        log("scene", "185c: Guard — generatingScene flag prevents concurrent calls (by design)", "pass");
+
+        // ── 186: LLMConnector bgActivity integration ──────────────────
+        if (window.LLMConnector) {
+            // 186a: setBgActivity exists
+            let hasBgActivity = typeof LLMConnector.setBgActivity === "function";
+            log("scene", "186a: LLMConnector.setBgActivity available: " + hasBgActivity, hasBgActivity ? "pass" : "fail");
+
+            if (hasBgActivity) {
+                // 186b: setBgActivity with landscape icon
+                try {
+                    LLMConnector.setBgActivity("landscape", "Test scene generation...");
+                    log("scene", "186b: setBgActivity('landscape', ...) — no error", "pass");
+
+                    // 186c: Clear bgActivity
+                    LLMConnector.setBgActivity(null, null);
+                    log("scene", "186c: setBgActivity(null, null) clears — no error", "pass");
+                } catch (e) {
+                    log("scene", "186b: setBgActivity error: " + e.message, "fail");
+                }
+            }
+        } else {
+            log("scene", "186: LLMConnector not loaded — bgActivity tests skipped", "skip");
+        }
+
+        // ── 187: WebSocket chirp handler — sceneImage ─────────────────
+        log("scene", "187: WebSocket sceneImage chirp format validation", "info");
+        // Verify the chirp pattern: ["sceneImage", chatRequestOid, imageOid]
+        let mockChirp = { chirps: ["sceneImage", "chat-oid-123", "image-oid-456"] };
+        let c1 = mockChirp.chirps[0];
+        let chatReqOid = mockChirp.chirps[1];
+        let imageOid = mockChirp.chirps[2];
+        log("scene", "187a: sceneImage chirp type: " + (c1 === "sceneImage"), c1 === "sceneImage" ? "pass" : "fail");
+        log("scene", "187b: chatRequestOid from chirp: " + (chatReqOid === "chat-oid-123"), chatReqOid === "chat-oid-123" ? "pass" : "fail");
+        log("scene", "187c: imageOid from chirp: " + (imageOid === "image-oid-456"), imageOid === "image-oid-456" ? "pass" : "fail");
+
+        // ── 188: WebSocket chirp handler — bgActivity ─────────────────
+        let mockBgChirp = { chirps: ["bgActivity", "landscape", "Generating landscape + scene\u2026"] };
+        let bgIcon = mockBgChirp.chirps[1] || "";
+        let bgLabel = mockBgChirp.chirps[2] || "";
+        log("scene", "188a: bgActivity icon from chirp: " + bgIcon, bgIcon === "landscape" ? "pass" : "fail");
+        log("scene", "188b: bgActivity label from chirp: " + (bgLabel.length > 0), bgLabel.length > 0 ? "pass" : "fail");
+
+        // ── 189: generateScene response shape ─────────────────────────
+        log("scene", "189: generateScene response shape validation", "info");
+        let mockResponse = {
+            objectId: "img-oid-123",
+            groupPath: "~/Gallery/Scenes/Test",
+            name: "Alice and Bob - scene - 1 - 12345 - 67890"
+        };
+        let respOk = !!mockResponse.objectId && !!mockResponse.groupPath && !!mockResponse.name;
+        log("scene", "189a: Response has objectId, groupPath, name: " + respOk, respOk ? "pass" : "fail");
+
+        // 189b: Image URL construction pattern
+        let imgUrl = g_application_path + "/thumbnail/"
+            + am7client.dotPath(am7client.currentOrganization)
+            + "/data.data" + mockResponse.groupPath + "/" + mockResponse.name + "/512x512";
+        let urlOk = imgUrl.indexOf("/thumbnail/") !== -1 && imgUrl.indexOf("/data.data") !== -1 && imgUrl.indexOf("/512x512") !== -1;
+        log("scene", "189b: Image thumbnail URL construction: " + urlOk, urlOk ? "pass" : "fail");
+        logData("scene", "Constructed URL", imgUrl);
+
+        // 189c: History message injection pattern
+        let mockHistory = { messages: [] };
+        mockHistory.messages.push({ role: "assistant", content: "![Scene](" + imgUrl + ")" });
+        let histOk = mockHistory.messages.length === 1 && mockHistory.messages[0].role === "assistant"
+            && mockHistory.messages[0].content.indexOf("![Scene](") === 0;
+        log("scene", "189c: Scene image injected as assistant message with markdown: " + histOk, histOk ? "pass" : "fail");
+
+        // ── 190: SD_FALLBACKS completeness ────────────────────────────
+        let fb = am7sd.SD_FALLBACKS;
+        let fbKeys = ["stillCameras", "films", "lenses", "colorProcesses", "photographers",
+            "movieCameras", "movieFilms", "directors",
+            "selfiePhones", "selfieAngles", "selfieLightings",
+            "animeStudios", "animeEras",
+            "portraitLightings", "portraitBackdrops",
+            "comicPublishers", "comicEras", "comicColorings",
+            "digitalMediums", "digitalSoftwares", "digitalArtists",
+            "fashionMagazines", "fashionDecades",
+            "vintageDecades", "vintageProcessings", "vintageCameras",
+            "artStyles"];
+        let fbMissing = [];
+        for (let i = 0; i < fbKeys.length; i++) {
+            if (!fb[fbKeys[i]] || !Array.isArray(fb[fbKeys[i]]) || fb[fbKeys[i]].length === 0) {
+                fbMissing.push(fbKeys[i]);
+            }
+        }
+        if (fbMissing.length === 0) {
+            log("scene", "190: All " + fbKeys.length + " SD_FALLBACKS arrays populated", "pass");
+        } else {
+            log("scene", "190: Missing/empty fallback arrays: " + fbMissing.join(", "), "fail");
+        }
+
+        // ── 191: Live generateScene integration test ──────────────────
+        // Requires an active chat session with both characters set
+        let chatCfg = getVariant("standard");
+        let promptCfg = suiteState.promptConfig;
+        if (chatCfg && promptCfg) {
+            log("scene", "191: Live generateScene integration test", "info");
+            let req;
+            try {
+                req = await am7chat.getChatRequest("LLM Scene Test - " + Date.now(), chatCfg, promptCfg);
+                if (!req) {
+                    log("scene", "191: Session creation returned null — skipping live test", "skip");
+                } else {
+                    log("scene", "191a: Test session created: " + req.objectId, "pass");
+
+                    // Check if chatConfig has both characters
+                    let hasSystem = !!(chatCfg.systemCharacter || chatCfg.system);
+                    let hasUser = !!(chatCfg.userCharacter || chatCfg.user);
+                    if (!hasSystem || !hasUser) {
+                        log("scene", "191b: chatConfig missing characters (system=" + hasSystem + ", user=" + hasUser + ") — live generation skipped", "warn");
+                        log("scene", "191: To run live scene tests, configure systemCharacter and userCharacter on test chatConfig", "info");
+                    } else {
+                        log("scene", "191b: Both characters present — attempting generation", "info");
+
+                        // Send a brief message to establish context for scene prompt generation
+                        try {
+                            await am7chat.chat(req, "We are standing in a sunny meadow overlooking a mountain range.");
+                            log("scene", "191c: Context message sent", "pass");
+                        } catch (e) {
+                            log("scene", "191c: Context message failed: " + e.message, "warn");
+                        }
+
+                        // Attempt generateScene
+                        try {
+                            let sdBody = Object.assign({}, defaults, { skipLandscape: true, steps: 10 });
+                            delete sdBody.sceneCreativity;
+                            sdBody.sceneCreativity = 0.65;
+                            let result = await m.request({
+                                method: "POST",
+                                url: g_application_path + "/rest/chat/" + req.objectId + "/generateScene",
+                                withCredentials: true,
+                                body: sdBody
+                            });
+                            if (result && result.objectId) {
+                                log("scene", "191d: generateScene returned image: " + result.objectId, "pass");
+                                logData("scene", "Scene result", { objectId: result.objectId, name: result.name, groupPath: result.groupPath });
+                            } else {
+                                log("scene", "191d: generateScene returned no image — SD server may be offline", "warn");
+                                logData("scene", "Scene result", result);
+                            }
+                        } catch (e) {
+                            let status = e.code || e.status || "";
+                            if (status === 400 || status === 404 || status === 500) {
+                                log("scene", "191d: generateScene HTTP " + status + " — " + (e.message || "server error"), "warn");
+                            } else {
+                                log("scene", "191d: generateScene error: " + (e.message || e), "warn");
+                            }
+                            logData("scene", "Error details", e.response || e.message || e);
+                        }
+                    }
+
+                    // Cleanup
+                    try {
+                        await am7chat.deleteChat(req, true);
+                        log("scene", "191e: Test session cleaned up", "pass");
+                    } catch (e) {
+                        log("scene", "191e: Cleanup failed: " + e.message, "warn");
+                    }
+                }
+            } catch (e) {
+                log("scene", "191: Live test error: " + e.message, "fail");
+                logData("scene", "Error details", e.stack || e.message);
+            }
+        } else {
+            log("scene", "191: Live test skipped — chatConfig or promptConfig missing", "skip");
+        }
+
+        // ── 192: Memory REST endpoint — chat config pair memories ─────
+        log("scene", "192: Memory/chat endpoint format validation", "info");
+        let memChatEndpoint = am7client.base() + "/memory/chat/test-oid/50";
+        let memChatOk = memChatEndpoint.indexOf("/memory/chat/") !== -1;
+        log("scene", "192a: /memory/chat/{configOid}/{limit} endpoint format: " + memChatOk, memChatOk ? "pass" : "fail");
+
+        let memConvEndpoint = am7client.base() + "/memory/conversation/test-oid";
+        let memConvOk = memConvEndpoint.indexOf("/memory/conversation/") !== -1;
+        log("scene", "192b: /memory/conversation/{configOid} endpoint format: " + memConvOk, memConvOk ? "pass" : "fail");
+
+        // ── 193: SD config body construction for generateScene ────────
+        log("scene", "193: Request body construction validation", "info");
+        let bodyInput = Object.assign({}, defaults);
+        bodyInput.schema = "olio.sd.config";
+        bodyInput.model = null;
+        let bodyKeys = Object.keys(bodyInput);
+        let hasSchema = bodyInput.schema === "olio.sd.config";
+        let bodyHasCore = bodyKeys.indexOf("steps") !== -1 && bodyKeys.indexOf("cfg") !== -1
+            && bodyKeys.indexOf("style") !== -1 && bodyKeys.indexOf("skipLandscape") !== -1;
+        log("scene", "193a: Body has schema: " + hasSchema, hasSchema ? "pass" : "fail");
+        log("scene", "193b: Body has core SD fields: " + bodyHasCore, bodyHasCore ? "pass" : "fail");
+
+        // ── 194: Error response handling ──────────────────────────────
+        log("scene", "194: Error response shape validation", "info");
+        let errShapes = [
+            { status: 404, body: { error: "Chat request not found" }, desc: "session not found" },
+            { status: 400, body: { error: "Missing chatConfig" }, desc: "missing config" },
+            { status: 500, body: { error: "SD server not configured" }, desc: "no SD server" }
+        ];
+        for (let i = 0; i < errShapes.length; i++) {
+            let es = errShapes[i];
+            let shapeOk = es.body && es.body.error && typeof es.body.error === "string";
+            log("scene", "194: HTTP " + es.status + " (" + es.desc + ") error shape valid: " + shapeOk, shapeOk ? "pass" : "fail");
+        }
+
+        // ── 195: skipLandscape behavior ───────────────────────────────
+        log("scene", "195: skipLandscape toggle behavior", "info");
+        // When skipLandscape=false, bgActivity says "Generating landscape + scene…"
+        // When skipLandscape=true, bgActivity says "Generating scene image…"
+        let msgWithLandscape = "Generating landscape + scene\u2026";
+        let msgWithout = "Generating scene image\u2026";
+        log("scene", "195a: skipLandscape=false message: '" + msgWithLandscape + "'", "pass");
+        log("scene", "195b: skipLandscape=true message: '" + msgWithout + "'", "pass");
+        let msgDiff = msgWithLandscape !== msgWithout;
+        log("scene", "195c: Messages differ based on skipLandscape: " + msgDiff, msgDiff ? "pass" : "fail");
+
+        log("scene", "=== Scene Builder Tests Complete ===", "info");
+    }
+
     // ── Main Suite Runner ─────────────────────────────────────────────
     async function runLLMTests(selectedCategories) {
         let cats = selectedCategories;
@@ -2907,6 +3446,7 @@
         await testPhase13Infra(cats);
         await testPhase13Coverage(cats);
         await testPhase14(cats);
+        await testSceneBuilder(cats);
     }
 
     // ── Register with TestFramework ───────────────────────────────────

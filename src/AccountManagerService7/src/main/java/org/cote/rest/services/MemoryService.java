@@ -7,6 +7,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -81,6 +82,33 @@ public class MemoryService {
 		long pId1 = person1.get(FieldNames.FIELD_ID);
 		long pId2 = person2.get(FieldNames.FIELD_ID);
 		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(user, pId1, pId2, limit);
+		return Response.status(200).entity(serializeList(memories)).build();
+	}
+
+	/// ChatConfig-based pair memory endpoint. Resolves characters through the
+	/// user-owned chatConfig foreign references.
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/chat/{chatConfigObjectId:[A-Fa-f0-9\\-]+}/{limit:\\d+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getMemoriesByChatConfig(@PathParam("chatConfigObjectId") String chatConfigObjectId, @PathParam("limit") int limit, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord chatConfig = findByObjectId(user, "olio.llm.chatConfig", chatConfigObjectId);
+		if (chatConfig == null) {
+			return Response.status(404).entity("{\"error\":\"chatConfig not found\"}").build();
+		}
+		chatConfig = OlioUtil.getFullRecord(chatConfig);
+		if (chatConfig == null) {
+			return Response.status(404).entity("{\"error\":\"chatConfig could not be resolved\"}").build();
+		}
+		BaseRecord systemChar = chatConfig.get("systemCharacter");
+		BaseRecord userChar = chatConfig.get("userCharacter");
+		if (systemChar == null || userChar == null) {
+			return Response.status(404).entity("{\"error\":\"chatConfig missing character references\"}").build();
+		}
+		long sysId = systemChar.get(FieldNames.FIELD_ID);
+		long usrId = userChar.get(FieldNames.FIELD_ID);
+		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(user, sysId, usrId, limit);
 		return Response.status(200).entity(serializeList(memories)).build();
 	}
 
@@ -192,6 +220,7 @@ public class MemoryService {
 		try {
 			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_OBJECT_ID, objectId);
 			q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			q.planMost(false);
 			return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		}
 		catch (Exception e) {
