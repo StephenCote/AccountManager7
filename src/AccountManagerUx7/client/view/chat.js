@@ -839,6 +839,44 @@
       }
     }
 
+    let generatingScene = false;
+    async function doGenerateScene() {
+      if (!inst || !chatCfg.chat || generatingScene) return;
+      if (!chatCfg.system || !chatCfg.user) {
+        page.toast("warn", "Both system and user characters must be set to generate a scene", 5000);
+        return;
+      }
+      generatingScene = true;
+      if (window.LLMConnector) LLMConnector.setBgActivity("landscape", "Generating scene image\u2026");
+      m.redraw();
+      try {
+        let sdConfig = { schema: "olio.sd.config" };
+        let result = await m.request({
+          method: "POST",
+          url: g_application_path + "/rest/chat/" + inst.api.objectId() + "/generateScene",
+          withCredentials: true,
+          body: sdConfig
+        });
+        if (result && result.objectId) {
+          page.toast("success", "Scene image generated", 3000);
+          // Display inline as an assistant message with an image token
+          if (!chatCfg.history) chatCfg.history = {};
+          if (!chatCfg.history.messages) chatCfg.history.messages = [];
+          let imgUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + result.groupPath + "/" + result.name + "/512x512";
+          chatCfg.history.messages.push({ role: "assistant", content: "![Scene](" + imgUrl + ")" });
+        } else {
+          page.toast("error", "Failed to generate scene image", 5000);
+        }
+      } catch (e) {
+        console.error("generateScene error:", e);
+        page.toast("error", "Scene generation failed: " + (e.message || e), 5000);
+      } finally {
+        generatingScene = false;
+        if (window.LLMConnector) LLMConnector.setBgActivity(null, null);
+        m.redraw();
+      }
+    }
+
     function toggleProfile() {
       profile = !profile;
     }
@@ -1166,6 +1204,7 @@
         chatIconBtn(audio ? "volume_up" : "volume_mute", toggleAudio, audio, "Audio"),
         chatIconBtn("counter_8", sendToMagic8, false, "Magic 8"),
         chatIconBtn("query_stats", chatInto, false, "Analyze"),
+        chatIconBtn("landscape", doGenerateScene, generatingScene, "Generate Scene"),
         chatIconBtn("visibility" + (hideThoughts ? "" : "_off"), toggleThoughts, !hideThoughts, "Thoughts"),
         chatIconBtn("bug_report", function() { mcpDebug = !mcpDebug; }, mcpDebug, "MCP Debug")
       ];

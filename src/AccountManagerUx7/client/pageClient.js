@@ -641,6 +641,14 @@
                 }
                 m.redraw();
             }
+            else if(c1 === "sceneImage"){
+                // Scene image generated — chirps: [sceneImage, chatRequestOid, imageObjectId]
+                let chatReqOid = msg.chirps[1] || "";
+                let imageOid = msg.chirps[2] || "";
+                console.log("[SceneImage] Generated for chat " + chatReqOid + " image " + imageOid);
+                // bgActivity cleared by the REST response handler in chat.js
+                m.redraw();
+            }
             else if(c1.match(/^game\.action\./)){
                 // Game action messages (start, progress, complete, error, interrupt, cancel)
                 if(page.gameStream || window.gameStream){

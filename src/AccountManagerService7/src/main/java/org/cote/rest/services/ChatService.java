@@ -1,6 +1,9 @@
 package org.cote.rest.services;
 
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -17,11 +20,18 @@ import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.PromptBuilderContext;
 import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.llm.TemplatePatternEnumType;
+import org.cote.accountmanager.olio.sd.SDAPIEnumType;
+import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
+import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
+import org.cote.sockets.WebSocketService;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
@@ -542,6 +552,119 @@ public class ChatService {
 
 		// Status query placeholder - will resolve plan by objectId once persistence is wired
 		return Response.status(200).entity("{\"planId\":\"" + planId + "\",\"status\":\"unknown\"}").build();
+	}
+
+	/// Generate a contextual scene image for a chat session.
+	/// Combines both characters in the current setting using IP-Adapter face references.
+	/// POST body: SD config JSON (model, steps, cfg, sampler, dimensions, etc.)
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/{objectId:[A-Fa-f0-9\\-]+}/generateScene")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response generateScene(String json, @PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		/// 1. Load chat request
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(true);
+		BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if (chatReqRec == null) {
+			logger.error("generateScene: Chat request not found: " + objectId);
+			return Response.status(404).entity("{\"error\":\"Chat request not found\"}").build();
+		}
+		ChatRequest chatReq = new ChatRequest(chatReqRec);
+
+		/// 2. Load configs and create Chat instance
+		BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.getChatConfig());
+		BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.getPromptConfig());
+		if (chatConfig == null || promptConfig == null) {
+			logger.error("generateScene: Missing chatConfig or promptConfig");
+			return Response.status(400).entity("{\"error\":\"Missing chatConfig or promptConfig\"}").build();
+		}
+
+		BaseRecord systemChar = OlioUtil.getFullRecord(chatConfig.get("systemCharacter"));
+		BaseRecord userChar = OlioUtil.getFullRecord(chatConfig.get("userCharacter"));
+		if (systemChar == null || userChar == null) {
+			logger.error("generateScene: Both systemCharacter and userCharacter must be set on chatConfig");
+			return Response.status(400).entity("{\"error\":\"Both characters must be set\"}").build();
+		}
+
+		Chat chat = ChatUtil.getChat(user, chatReq, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+
+		/// 3. Load existing session to get chat history for the scene description LLM call
+		OpenAIRequest req = ChatUtil.getOpenAIRequest(user, chatReq);
+		if (req == null) {
+			logger.error("generateScene: Failed to create OpenAIRequest");
+			return Response.status(500).entity("{\"error\":\"Failed to load chat session\"}").build();
+		}
+
+		/// 4. Generate the scene prompt (LLM call + prompt assembly)
+		Chat.ScenePromptResult sceneResult = chat.generateScenePrompt(req);
+		if (sceneResult == null) {
+			logger.error("generateScene: Failed to generate scene prompt");
+			return Response.status(500).entity("{\"error\":\"Failed to generate scene prompt\"}").build();
+		}
+
+		/// 5. Parse SD config from request body
+		BaseRecord sdConfig = null;
+		if (json != null && !json.isBlank()) {
+			sdConfig = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		}
+		if (sdConfig != null) {
+			if (sdConfig.get("model") == null) {
+				sdConfig.setValue("model", context.getInitParameter("sd.model"));
+			}
+			if (sdConfig.get("refinerModel") == null) {
+				sdConfig.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+			}
+		}
+
+		/// 6. Build SWTxt2Img with scene prompt + SD config
+		SWTxt2Img s2i = SWUtil.newSceneTxt2Img(sceneResult.prompt, sceneResult.negativePrompt, sdConfig);
+
+		/// 7. Populate IP-Adapter promptImages with portrait bytes
+		Map<String, String> promptImages = new HashMap<>();
+		if (sceneResult.sysPortraitBytes != null) {
+			promptImages.put("sysPortrait", "data:image/png;base64," + Base64.getEncoder().encodeToString(sceneResult.sysPortraitBytes));
+		}
+		if (sceneResult.usrPortraitBytes != null) {
+			promptImages.put("userPortrait", "data:image/png;base64," + Base64.getEncoder().encodeToString(sceneResult.usrPortraitBytes));
+		}
+		if (!promptImages.isEmpty()) {
+			s2i.setPromptImages(promptImages);
+		}
+
+		/// 8. Create SDUtil and generate image
+		String apiType = context.getInitParameter("sd.server.apiType");
+		String server = context.getInitParameter("sd.server");
+		if (apiType == null || server == null) {
+			logger.error("generateScene: sd.server.apiType or sd.server not configured");
+			return Response.status(500).entity("{\"error\":\"SD server not configured\"}").build();
+		}
+
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(apiType), server);
+		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+		sdu.setImageAccessUser(user);
+
+		String groupPath = "~/Gallery/Scenes/" + sceneResult.label;
+		String name = sceneResult.label;
+		String sysOid = systemChar.get(FieldNames.FIELD_OBJECT_ID);
+		String usrOid = userChar.get(FieldNames.FIELD_OBJECT_ID);
+
+		List<BaseRecord> images = sdu.createSceneImage(user, groupPath, name, s2i, sysOid, usrOid);
+
+		if (images.isEmpty()) {
+			logger.error("generateScene: No images generated");
+			return Response.status(500).entity("{\"error\":\"No images generated\"}").build();
+		}
+
+		/// 9. Notify via WebSocket
+		String imageOid = images.get(0).get(FieldNames.FIELD_OBJECT_ID);
+		WebSocketService.chirpUser(user, new String[] {"sceneImage", objectId, imageOid});
+
+		/// 10. Return first image record
+		return Response.status(200).entity(images.get(0).toFullString()).build();
 	}
 
 }

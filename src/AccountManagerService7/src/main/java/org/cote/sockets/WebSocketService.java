@@ -584,6 +584,12 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		chirpUser(user, new String[] {"evalProgress", phase != null ? phase : "", detail != null ? detail : ""});
 	}
 
+	/// Scene image generated notification via WebSocket
+	@Override
+	public void onSceneImage(BaseRecord user, String chatRequestOid, String imageObjectId) {
+		chirpUser(user, new String[] {"sceneImage", chatRequestOid != null ? chatRequestOid : "", imageObjectId != null ? imageObjectId : ""});
+	}
+
 	// This method will handle forwarding audio to Python and receiving transcripts
 	public void handleAudioStream(Session clientSession, BaseRecord user, SocketMessage msg) {
 	    //asyncExecutor.submit(() -> {

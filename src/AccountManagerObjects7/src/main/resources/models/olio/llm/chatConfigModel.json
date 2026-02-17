@@ -274,6 +274,13 @@
 			"type": "string",
 			"maxLength": 128,
 			"description": "Custom memory extraction prompt resource name. Null uses default memoryExtraction.json."
+		},
+		{
+			"name": "promptTemplate",
+			"type": "model",
+			"baseModel": "olio.llm.promptTemplate",
+			"foreign": true,
+			"description": "Optional structured prompt template. When set, Chat uses PromptTemplateComposer instead of flat promptConfig fields for prompt assembly."
 		}
 
 	]

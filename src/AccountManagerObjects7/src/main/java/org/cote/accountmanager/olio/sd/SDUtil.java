@@ -723,6 +723,79 @@ public class SDUtil {
 		return datas;
 	}
 
+	/// Generate a contextual scene image for a chat, combining both characters in a setting.
+	/// Uses pre-assembled prompt from Chat.generateScenePrompt() with IP-Adapter portrait refs.
+	/// @param user The user record
+	/// @param groupPath Path where the image will be stored
+	/// @param name Base name for the generated image
+	/// @param s2i Pre-configured SWTxt2Img with prompt, promptImages, and generation params
+	/// @param sysCharOid System character objectId for attribution
+	/// @param usrCharOid User character objectId for attribution
+	/// @return List of generated image data records
+	public List<BaseRecord> createSceneImage(BaseRecord user, String groupPath, String name,
+			SWTxt2Img s2i, String sysCharOid, String usrCharOid) {
+		if (apiType != SDAPIEnumType.SWARM) {
+			logger.error("createSceneImage is only supported for SWARM API type");
+			return new ArrayList<>();
+		}
+
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		List<BaseRecord> datas = new ArrayList<>();
+		int rando = Math.abs(rand.nextInt());
+		try {
+			logger.info("Generating scene image: " + name);
+			SWImageResponse rep = txt2img(s2i);
+			if (rep == null || rep.getImages() == null || rep.getImages().isEmpty()) {
+				logger.error("No scene images returned in response");
+				return datas;
+			}
+
+			int counter = 1;
+			int seedl = s2i.getSeed();
+			for (String bai : rep.getImages()) {
+				byte[] dataTest = ClientUtil.get(byte[].class, ClientUtil.getResource(autoserver + "/" + bai), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+				SWImageInfo info = SWUtil.extractInfo(dataTest);
+				if (info != null && info.getImageParams() != null) {
+					seedl = info.getImageParams().getSeed();
+				}
+				if (dataTest == null || dataTest.length == 0) {
+					logger.error("Could not retrieve scene image data from swarm server for " + bai);
+					continue;
+				}
+
+				String dname = name + " - scene - " + counter + " - " + rando + " - " + seedl;
+				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+				q.field(FieldNames.FIELD_NAME, dname);
+				BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
+
+				if (data == null) {
+					ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+					clist.parameter(FieldNames.FIELD_NAME, dname);
+					data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
+					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+					data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+					AttributeUtil.addAttribute(data, "seed", seedl);
+					AttributeUtil.addAttribute(data, "imageType", "scene");
+					if (sysCharOid != null) AttributeUtil.addAttribute(data, "systemCharacter", sysCharOid);
+					if (usrCharOid != null) AttributeUtil.addAttribute(data, "userCharacter", usrCharOid);
+					AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
+					IOSystem.getActiveContext().getAccessPoint().create(user, data);
+				} else {
+					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+					IOSystem.getActiveContext().getAccessPoint().update(user, data);
+				}
+				datas.add(data);
+				counter++;
+				seedl = seedl + 1;
+			}
+		} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | ModelException | ImageProcessingException | IOException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+
+		return datas;
+	}
+
 	/// Generate a landscape image for a location based on terrain types.
 	/// @param user The user record
 	/// @param groupPath Path where the image will be stored

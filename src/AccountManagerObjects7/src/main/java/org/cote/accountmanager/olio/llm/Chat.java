@@ -30,6 +30,8 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioTaskAgent;
+import org.cote.accountmanager.olio.PersonalityProfile;
+import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -1124,6 +1126,149 @@ public class Chat {
 			return null;
 		}
 		return oresp.getMessage().getContent();
+	}
+
+	/// Generate a contextual scene image prompt from the current chat.
+	/// Returns a ScenePromptResult with the composite SD prompt, negative prompt,
+	/// and portrait bytes for IP-Adapter face references. Returns null on failure.
+	public ScenePromptResult generateScenePrompt(OpenAIRequest req) {
+		if (chatConfig == null) {
+			logger.warn("generateScenePrompt: chatConfig is null");
+			return null;
+		}
+
+		BaseRecord systemChar = chatConfig.get("systemCharacter");
+		BaseRecord userChar = chatConfig.get("userCharacter");
+		if (systemChar == null || userChar == null) {
+			logger.warn("generateScenePrompt: systemCharacter or userCharacter is null");
+			return null;
+		}
+
+		/// Step 1: Use LLM to generate a scene description from recent chat
+		String sceneDesc = generateSceneDescription(req);
+		if (sceneDesc == null || sceneDesc.isBlank()) {
+			sceneDesc = "two people facing each other";
+		}
+		logger.info("Scene description: " + sceneDesc);
+
+		/// Step 2: Get SD-optimized character descriptions via PersonalityProfile
+		PersonalityProfile sysPP = ProfileUtil.getProfile(null, systemChar);
+		PersonalityProfile usrPP = ProfileUtil.getProfile(null, userChar);
+		String sysDesc = sysPP != null ? NarrativeUtil.getSDMinPrompt(sysPP) : systemChar.get("firstName");
+		String usrDesc = usrPP != null ? NarrativeUtil.getSDMinPrompt(usrPP) : userChar.get("firstName");
+
+		/// Step 3: Get setting/terrain from chatConfig
+		String setting = null;
+		try { setting = chatConfig.get("setting"); } catch (Exception e) { /* ignore */ }
+		String terrain = null;
+		try { terrain = chatConfig.get("terrain"); } catch (Exception e) { /* ignore */ }
+		String settingDesc = "";
+		if (setting != null && !setting.isEmpty() && !"random".equalsIgnoreCase(setting)) {
+			settingDesc = setting;
+		} else if (terrain != null && !terrain.isEmpty()) {
+			settingDesc = terrain;
+		}
+
+		/// Step 4: Assemble composite prompt with IP-Adapter image tags
+		StringBuilder prompt = new StringBuilder();
+		prompt.append("8k highly detailed ((highest quality)) ((ultra realistic)) ");
+		prompt.append(sceneDesc);
+		prompt.append(", ").append(sysDesc).append(" on the left");
+		// Add IP-Adapter tag for system character if portrait available
+		byte[] sysPortraitBytes = getPortraitBytes(systemChar);
+		if (sysPortraitBytes != null) {
+			prompt.append(" <image:sysPortrait>");
+		}
+		prompt.append(", ").append(usrDesc).append(" on the right");
+		byte[] usrPortraitBytes = getPortraitBytes(userChar);
+		if (usrPortraitBytes != null) {
+			prompt.append(" <image:userPortrait>");
+		}
+		if (!settingDesc.isEmpty()) {
+			prompt.append(", ").append(settingDesc);
+		}
+
+		/// Step 5: Build negative prompt
+		String negPrompt = "text, watermark, signature, blurry, bad anatomy, extra limbs, deformed, disfigured, duplicate, error";
+		String sysNeg = NarrativeUtil.getSDNegativePrompt(systemChar);
+		if (sysNeg != null && !sysNeg.isEmpty()) negPrompt = sysNeg;
+
+		ScenePromptResult result = new ScenePromptResult();
+		result.prompt = prompt.toString();
+		result.negativePrompt = negPrompt;
+		result.sysPortraitBytes = sysPortraitBytes;
+		result.usrPortraitBytes = usrPortraitBytes;
+		result.label = systemChar.get("firstName") + " and " + userChar.get("firstName");
+		logger.info("Scene prompt assembled: " + result.prompt.substring(0, Math.min(200, result.prompt.length())) + "...");
+		return result;
+	}
+
+	/// LLM call to generate a concise scene description from recent chat history.
+	private String generateSceneDescription(OpenAIRequest req) {
+		List<String> lines = ChatUtil.getFormattedChatHistory(req, chatConfig, pruneSkip, false);
+		if (lines.isEmpty()) return null;
+
+		String sys = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "sceneSystem");
+		if (sys == null) sys = "You generate concise Stable Diffusion scene descriptions. Output ONLY the description. Limit to 50 words.";
+		String cmd = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "sceneUser");
+		if (cmd == null) cmd = "Describe the current scene for an image based on the most recent exchange.";
+
+		OpenAIRequest sceneReq = new OpenAIRequest();
+		String amodel = chatConfig.get("analyzeModel");
+		if (amodel == null || amodel.isEmpty()) amodel = chatConfig.get("model");
+		sceneReq.setModel(amodel);
+		sceneReq.setStream(false);
+		applyAnalyzeOptions(req, sceneReq);
+		try { sceneReq.set("temperature", 0.4); } catch (Exception e) { /* ignore */ }
+		String tokField = ChatUtil.getMaxTokenField(chatConfig);
+		try { sceneReq.set(tokField, 256); } catch (Exception e) { /* ignore */ }
+
+		OpenAIMessage sysMsg = new OpenAIMessage();
+		sysMsg.setRole(systemRole);
+		sysMsg.setContent(sys);
+		sceneReq.addMessage(sysMsg);
+
+		OpenAIMessage usrMsg = new OpenAIMessage();
+		usrMsg.setRole(userRole);
+		usrMsg.setContent(cmd + System.lineSeparator() + lines.stream().collect(Collectors.joining(System.lineSeparator())));
+		sceneReq.addMessage(usrMsg);
+
+		analyzeTimeoutOverride.set(analyzeTimeout);
+		try {
+			OpenAIResponse resp = chat(sceneReq);
+			if (resp != null && resp.getMessage() != null) {
+				return resp.getMessage().getContent();
+			}
+		} catch (Exception e) {
+			logger.warn("Scene description generation failed: " + e.getMessage());
+		} finally {
+			analyzeTimeoutOverride.remove();
+		}
+		return null;
+	}
+
+	/// Load portrait image bytes from a character's profile.portrait field.
+	private byte[] getPortraitBytes(BaseRecord character) {
+		try {
+			BaseRecord profile = character.get("profile");
+			if (profile == null) return null;
+			BaseRecord portrait = profile.get("portrait");
+			if (portrait == null) return null;
+			byte[] bytes = portrait.get(FieldNames.FIELD_BYTE_STORE);
+			if (bytes != null && bytes.length > 0) return bytes;
+		} catch (Exception e) {
+			logger.debug("Could not load portrait for " + character.get("firstName") + ": " + e.getMessage());
+		}
+		return null;
+	}
+
+	/// Result container for scene prompt generation.
+	public static class ScenePromptResult {
+		public String prompt;
+		public String negativePrompt;
+		public byte[] sysPortraitBytes;
+		public byte[] usrPortraitBytes;
+		public String label;
 	}
 
 	public String analyze(OpenAIRequest req, String command, boolean narrate, boolean reduce, boolean full) {
@@ -2591,7 +2736,21 @@ public class Chat {
 				PromptUtil.setMemoryContext(memoryCtx);
 			}
 		}
-		if (promptConfig != null) {
+		/// Check for structured prompt template on chatConfig
+		BaseRecord promptTemplate = (chatConfig != null) ? chatConfig.get("promptTemplate") : null;
+		if (promptTemplate != null) {
+			IOSystem.getActiveContext().getReader().populate(promptTemplate);
+		}
+
+		if (promptTemplate != null && promptConfig != null) {
+			/// Use structured template format via PromptTemplateComposer
+			BaseRecord effectiveChatConfig = (systemChar != null && userChar != null) ? chatConfig : null;
+			sysTemp = PromptTemplateComposer.composeSystem(promptTemplate, promptConfig, effectiveChatConfig);
+			if (useAssist) {
+				assist = PromptTemplateComposer.composeAssistant(promptTemplate, promptConfig, effectiveChatConfig);
+				userTemp = PromptTemplateComposer.composeUser(promptTemplate, promptConfig, effectiveChatConfig);
+			}
+		} else if (promptConfig != null) {
 			if (systemChar != null && userChar != null) {
 
 				if (useAssist) {

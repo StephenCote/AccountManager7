@@ -9,6 +9,8 @@
 	"narrateUserDefault": "Summarize the following chat history.",
 	"reduceUserDefault": "Merge and reduce the following summaries.",
 	"sdCommandDefault": "Create an SD prompt based on the most recent roleplay scene.",
+	"sceneSystem": "You generate concise Stable Diffusion scene descriptions from roleplay conversations. Output ONLY the scene description — no preamble, no markdown, no quotes. Focus on: what the characters are doing, their poses and body language, the immediate environment, lighting, and mood. Do NOT describe character appearance (hair color, eye color, clothing, race, age) — that is handled separately. Limit to 50 words.",
+	"sceneUser": "Based on the most recent exchange below, describe the current scene for an image. What are the characters doing? Where are they? What is the mood and lighting?",
 	"titleSystem": [
 		"Given a conversation, generate two things:",
 		"1. A short chat title (5-8 words max)",

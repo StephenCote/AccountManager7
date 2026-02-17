@@ -3679,6 +3679,89 @@
         }
     }
 
+    /// Convert a promptConfig record into a structured promptTemplate record
+    async function convertToPromptTemplate(objectPage, inst) {
+        if (!inst || !inst.entity) return;
+        let cfg = inst.entity;
+        if (!cfg.objectId) {
+            page.toast("warn", "Save the prompt config before converting", 3000);
+            return;
+        }
+        let sections = [];
+        let order = [];
+        let priority = 10;
+        let mappings = [
+            { field: "system", sectionName: "system", role: "system" },
+            { field: "systemCensorWarning", sectionName: "systemCensorWarning", role: "system" },
+            { field: "systemNlp", sectionName: "systemNlp", role: "system", condition: "useNLP" },
+            { field: "systemAnalyze", sectionName: "systemAnalyze", role: "system" },
+            { field: "systemNarrate", sectionName: "systemNarrate", role: "system" },
+            { field: "systemSDPrompt", sectionName: "systemSDPrompt", role: "system" },
+            { field: "malePerspective", sectionName: "malePerspective", role: "system" },
+            { field: "femalePerspective", sectionName: "femalePerspective", role: "system" },
+            { field: "scene", sectionName: "scene", role: "system" },
+            { field: "setting", sectionName: "setting", role: "system" },
+            { field: "responseRules", sectionName: "responseRules", role: "system" },
+            { field: "revisionRules", sectionName: "revisionRules", role: "system" },
+            { field: "clarificationRules", sectionName: "clarificationRules", role: "system" },
+            { field: "episodeRule", sectionName: "episodeRule", role: "system" },
+            { field: "jailBreak", sectionName: "jailBreak", role: "system", condition: "useJailBreak" },
+            { field: "user", sectionName: "userIntro", role: "user" },
+            { field: "userReminder", sectionName: "userReminder", role: "user" },
+            { field: "userAnalyze", sectionName: "userAnalyze", role: "user" },
+            { field: "userCitation", sectionName: "userCitation", role: "user" },
+            { field: "userNarrate", sectionName: "userNarrate", role: "user" },
+            { field: "userReduce", sectionName: "userReduce", role: "user" },
+            { field: "userConsentPrefix", sectionName: "userConsentPrefix", role: "user" },
+            { field: "userConsentRating", sectionName: "userConsentRating", role: "user" },
+            { field: "userConsentNlp", sectionName: "userConsentNlp", role: "user", condition: "useNLP" },
+            { field: "assistant", sectionName: "assistant", role: "assistant" },
+            { field: "assistantCensorWarning", sectionName: "assistantCensorWarning", role: "assistant" },
+            { field: "assistantNlp", sectionName: "assistantNlp", role: "assistant", condition: "useNLP" },
+            { field: "assistantAnalyze", sectionName: "assistantAnalyze", role: "assistant" },
+            { field: "assistantNarrate", sectionName: "assistantNarrate", role: "assistant" },
+            { field: "assistantReminder", sectionName: "assistantReminder", role: "assistant" }
+        ];
+        for (let map of mappings) {
+            let lines = cfg[map.field];
+            if (lines && Array.isArray(lines) && lines.length > 0) {
+                let section = {
+                    schema: "olio.llm.promptSection",
+                    sectionName: map.sectionName,
+                    role: map.role,
+                    lines: [...lines],
+                    priority: priority
+                };
+                if (map.condition) section.condition = map.condition;
+                sections.push(section);
+                order.push(map.sectionName);
+                priority += 10;
+            }
+        }
+        let template = {
+            schema: "olio.llm.promptTemplate",
+            name: (cfg.name || "Converted") + " Template",
+            description: "Converted from promptConfig: " + (cfg.name || ""),
+            role: "system",
+            templateVersion: 1,
+            sections: sections,
+            sectionOrder: order,
+            groupPath: cfg.groupPath || "~/Prompt Templates"
+        };
+        try {
+            let result = await new Promise(function(res) {
+                am7client.create("olio.llm.promptTemplate", template, function(v) { res(v); });
+            });
+            if (result && result.objectId) {
+                page.toast("success", "Created template: " + template.name, 5000);
+            } else {
+                page.toast("error", "Failed to create template", 5000);
+            }
+        } catch (e) {
+            page.toast("error", "Conversion failed: " + (e.message || e), 5000);
+        }
+    }
+
     forms.color = {
         label: "Color",
         fields: {
@@ -4622,8 +4705,18 @@
                     command: getSystemPrompt
                 }
             },
+            convertBtn: {
+                format: "button",
+                layout: "one",
+                icon: 'transform',
+                requiredAttributes: ["objectId"],
+                field: {
+                    label: "Convert to Template",
+                    command: convertToPromptTemplate
+                }
+            },
             blank: {
-                layout: "two-thirds",
+                layout: "one",
                 format: "blank",
                 field: {
                     label: "",
@@ -4741,6 +4834,53 @@
         },
         forms: []
     };
+
+    /// Prompt Template (structured section-based format) formdefs
+    forms.promptSection = {
+        label: "Section",
+        format: "table",
+        commands: {
+            new: { label: 'New', icon: 'add', altIcon: 'check', altCondition: ['edit'], function: 'newEntry', altFunction: 'checkEntry' },
+            edit: { label: 'Edit', icon: 'edit', function: 'editEntry', condition: ['select'] },
+            cancel: { label: 'Cancel', icon: 'cancel', function: 'cancelEntry', condition: ['select', 'edit'] },
+            delete: { label: 'Delete', icon: 'delete_outline', function: 'deleteEntry', condition: ['select'] }
+        },
+        fields: {
+            sectionName: { layout: "third", label: "Name" },
+            role: {
+                layout: "third",
+                field: {
+                    type: "list",
+                    label: "Role",
+                    limit: ["system", "user", "assistant"]
+                }
+            },
+            priority: { layout: "third" },
+            condition: { layout: "full", label: "Condition (e.g. useNLP, memoryBudget, episodes.size>0)" },
+            lines: { layout: "full", format: "textlist" }
+        }
+    };
+    forms.promptTemplate = {
+        label: "Prompt Template",
+        fields: {
+            name: { layout: "one", dragAndDrop: true },
+            description: { layout: "full", format: "textarea" },
+            role: {
+                layout: "third",
+                field: {
+                    type: "list",
+                    label: "Default Role",
+                    limit: ["system", "user", "assistant"]
+                }
+            },
+            extends: { layout: "third", label: "Extends (parent template name)" },
+            templateVersion: { layout: "third", label: "Version" },
+            sectionOrder: { layout: "full", format: "textlist", label: "Section Order" },
+            sections: { format: "table", layout: "full", form: forms.promptSection }
+        },
+        forms: ["groupinfo", "attributes"]
+    };
+
     forms.chatOptionsRef = {
         label: "Options",
         model: true,
@@ -4947,6 +5087,19 @@
                         entity: "policy"
                     },
                     label: "Policy"
+                }
+            },
+            promptTemplate: {
+                layout: 'one',
+                format: 'picker',
+                label: "Prompt Template (structured sections)",
+                field: {
+                    format: "picker",
+                    pickerType: "olio.llm.promptTemplate",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "promptTemplate"
+                    }
                 }
             },
             serverUrl:{

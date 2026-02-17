@@ -1,5 +1,7 @@
 package org.cote.accountmanager.olio.sd.swarm;
 
+import java.util.Map;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -61,8 +63,15 @@ public class SWTxt2Img extends SWCommon {
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	private Double initImageCreativity = null;
 
+	/// IP-Adapter reference images: SwarmUI accepts "promptimages" as a JSON object
+	/// mapping reference names to base64 image data. In the prompt text, use <image:name>
+	/// to embed the reference at that position for face/style consistency.
+	@JsonProperty("promptimages")
+	@JsonInclude(JsonInclude.Include.NON_EMPTY)
+	private Map<String, String> promptImages = null;
+
 	public SWTxt2Img() {
-		
+
 	}
 
 	public String getSampler() {
@@ -239,6 +248,14 @@ public class SWTxt2Img extends SWCommon {
 
 	public void setInitImageCreativity(Double initImageCreativity) {
 		this.initImageCreativity = initImageCreativity;
+	}
+
+	public Map<String, String> getPromptImages() {
+		return promptImages;
+	}
+
+	public void setPromptImages(Map<String, String> promptImages) {
+		this.promptImages = promptImages;
 	}
 
 }

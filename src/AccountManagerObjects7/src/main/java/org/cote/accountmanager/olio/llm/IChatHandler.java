@@ -22,4 +22,6 @@ public interface IChatHandler {
 	public default void onInteractionEvent(BaseRecord user, OpenAIRequest request, String data) {}
 	/// Called when an evaluation phase starts or completes, so UX can show progress
 	public default void onEvalProgress(BaseRecord user, OpenAIRequest request, String phase, String detail) {}
+	/// Called when a contextual scene image is generated for a chat
+	public default void onSceneImage(BaseRecord user, String chatRequestOid, String imageObjectId) {}
 }
