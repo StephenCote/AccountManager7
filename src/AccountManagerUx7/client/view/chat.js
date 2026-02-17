@@ -145,6 +145,49 @@
         };
     }
 
+    // Phase 15a: SD Config state for scene generation
+    let showSdConfig = false;
+    let sdConfig = Object.assign({
+      schema: "olio.sd.config",
+      model: null,
+      refinerModel: null,
+      steps: 20,
+      cfg: 7,
+      sampler: "dpmpp_2m",
+      scheduler: "Karras",
+      width: 1024,
+      height: 768,
+      hires: true,
+      style: "photograph",
+      seed: -1,
+      sceneCreativity: 0.65,
+      skipLandscape: false
+    }, JSON.parse(localStorage.getItem("am7_sdConfig") || "{}"));
+
+    function saveSdConfig() {
+      localStorage.setItem("am7_sdConfig", JSON.stringify(sdConfig));
+    }
+
+    // Available SD model list (populated from backend)
+    let sdModelList = [];
+    let sdModelListLoaded = false;
+    async function loadSdModels() {
+      if (sdModelListLoaded) return;
+      try {
+        let models = await m.request({
+          method: "GET",
+          url: g_application_path + "/rest/olio/sdModels",
+          withCredentials: true
+        });
+        if (Array.isArray(models)) {
+          sdModelList = models;
+          sdModelListLoaded = true;
+        }
+      } catch (e) {
+        console.warn("Failed to load SD models:", e);
+      }
+    }
+
     // Image token state
     let resolvingImages = {};
     let showTagSelector = false;
@@ -847,15 +890,15 @@
         return;
       }
       generatingScene = true;
-      if (window.LLMConnector) LLMConnector.setBgActivity("landscape", "Generating scene image\u2026");
+      if (window.LLMConnector) LLMConnector.setBgActivity("landscape", sdConfig.skipLandscape ? "Generating scene image\u2026" : "Generating landscape + scene\u2026");
       m.redraw();
       try {
-        let sdConfig = { schema: "olio.sd.config" };
+        let body = Object.assign({}, sdConfig);
         let result = await m.request({
           method: "POST",
           url: g_application_path + "/rest/chat/" + inst.api.objectId() + "/generateScene",
           withCredentials: true,
-          body: sdConfig
+          body: body
         });
         if (result && result.objectId) {
           page.toast("success", "Scene image generated", 3000);
@@ -1147,6 +1190,88 @@
       ]);
     }
 
+    // Phase 15a: SD Config panel — collapsible panel for scene generation parameters
+    function sdSlider(label, key, min, max, step) {
+      return m("div", { class: "flex items-center gap-2" }, [
+        m("label", { class: "text-xs text-gray-400 w-20 flex-shrink-0" }, label),
+        m("input[type=range]", {
+          class: "flex-1", min: min, max: max, step: step || 1,
+          value: sdConfig[key],
+          oninput: function(e) { sdConfig[key] = parseFloat(e.target.value); saveSdConfig(); }
+        }),
+        m("span", { class: "text-xs text-gray-300 w-10 text-right" }, sdConfig[key])
+      ]);
+    }
+    function sdSelect(label, key, options) {
+      return m("div", { class: "flex items-center gap-2" }, [
+        m("label", { class: "text-xs text-gray-400 w-20 flex-shrink-0" }, label),
+        m("select", {
+          class: "flex-1 text-xs bg-gray-700 text-gray-200 border border-gray-600 rounded px-1 py-0.5",
+          value: sdConfig[key] || "",
+          onchange: function(e) { sdConfig[key] = e.target.value || null; saveSdConfig(); }
+        }, options.map(function(opt) {
+          let val = typeof opt === "string" ? opt : opt.value;
+          let lbl = typeof opt === "string" ? opt : opt.label;
+          return m("option", { value: val, selected: sdConfig[key] === val }, lbl);
+        }))
+      ]);
+    }
+    function sdNumber(label, key, min, max) {
+      return m("div", { class: "flex items-center gap-2" }, [
+        m("label", { class: "text-xs text-gray-400 w-20 flex-shrink-0" }, label),
+        m("input[type=number]", {
+          class: "flex-1 text-xs bg-gray-700 text-gray-200 border border-gray-600 rounded px-1 py-0.5 w-16",
+          min: min, max: max, value: sdConfig[key],
+          onchange: function(e) { sdConfig[key] = parseInt(e.target.value) || min; saveSdConfig(); }
+        })
+      ]);
+    }
+    function sdToggle(label, key) {
+      return m("div", { class: "flex items-center gap-2" }, [
+        m("label", { class: "text-xs text-gray-400 w-20 flex-shrink-0" }, label),
+        m("button", {
+          class: "w-8 h-4 rounded-full transition-colors " + (sdConfig[key] ? "bg-purple-600" : "bg-gray-600"),
+          onclick: function() { sdConfig[key] = !sdConfig[key]; saveSdConfig(); }
+        }, m("div", {
+          class: "w-3.5 h-3.5 rounded-full bg-white transition-transform " + (sdConfig[key] ? "translate-x-4" : "translate-x-0.5")
+        }))
+      ]);
+    }
+
+    function getSdConfigPanel() {
+      if (!showSdConfig) return "";
+      // Load model list on first open
+      if (!sdModelListLoaded) loadSdModels();
+
+      let modelOptions = [{ value: "", label: "(default)" }];
+      sdModelList.forEach(function(m) { modelOptions.push(m); });
+
+      let styles = ["art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage"];
+      let samplers = ["dpmpp_2m", "euler", "euler_a", "dpmpp_sde", "dpmpp_2s_a", "dpm_2", "heun", "lms"];
+      let schedulers = ["Karras", "normal", "exponential", "polyexponential"];
+
+      return m("div", { class: "border-t border-gray-600 bg-gray-800 px-3 py-2 text-gray-200" }, [
+        m("div", { class: "flex items-center justify-between mb-2" }, [
+          m("span", { class: "text-xs font-semibold text-gray-300" }, "Scene Generation Config"),
+          m("button", { class: "text-xs text-gray-400 hover:text-white", onclick: function() { showSdConfig = false; } }, "Close")
+        ]),
+        m("div", { class: "grid grid-cols-2 gap-x-4 gap-y-1.5" }, [
+          sdSelect("Model", "model", modelOptions),
+          sdSelect("Style", "style", styles),
+          sdSlider("Steps", "steps", 1, 100),
+          sdSlider("CFG", "cfg", 1, 20),
+          sdSelect("Sampler", "sampler", samplers),
+          sdSelect("Scheduler", "scheduler", schedulers),
+          sdNumber("Width", "width", 512, 2048),
+          sdNumber("Height", "height", 512, 2048),
+          sdNumber("Seed", "seed", -1, 999999999),
+          sdSlider("Creativity", "sceneCreativity", 0, 1, 0.05),
+          sdToggle("Hires", "hires"),
+          sdToggle("Skip landscape", "skipLandscape")
+        ])
+      ]);
+    }
+
     function getChatBottomMenuView() {
 
       let pendBar = m("div", { class: "flex-1 px-2" },
@@ -1205,6 +1330,7 @@
         chatIconBtn("counter_8", sendToMagic8, false, "Magic 8"),
         chatIconBtn("query_stats", chatInto, false, "Analyze"),
         chatIconBtn("landscape", doGenerateScene, generatingScene, "Generate Scene"),
+        chatIconBtn("tune", function() { showSdConfig = !showSdConfig; }, showSdConfig, "SD Config"),
         chatIconBtn("visibility" + (hideThoughts ? "" : "_off"), toggleThoughts, !hideThoughts, "Thoughts"),
         chatIconBtn("bug_report", function() { mcpDebug = !mcpDebug; }, mcpDebug, "MCP Debug")
       ];
@@ -1237,6 +1363,7 @@
       ];
 
       return m("div", { class: "border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-black" }, [
+        getSdConfigPanel(),
         tagSelectorRow,
         // Toolbar row
         m("div", { class: "flex items-center gap-0.5 px-2 py-1" }, [

@@ -1732,11 +1732,9 @@ public class Chat {
 
 	/// Phase 14: Async keyframe pipeline (OI-86, OI-87).
 	/// Runs on a background thread. Uses the snapshot for analysis to avoid
-	/// concurrent modification, then synchronizes on the original request
-	/// to inject the keyframe message.
+	/// concurrent modification, then persists the result as a durable memory.
+	/// OI-98: No longer injects keyframe messages into the chat history.
 	private void addKeyFrameAsync(OpenAIRequest req, List<OpenAIMessage> snapshot) {
-		ESRBEnumType rating = chatConfig.getEnum("rating");
-
 		BaseRecord systemChar = chatConfig.get("systemCharacter");
 		BaseRecord userChar = chatConfig.get("userCharacter");
 
@@ -1770,44 +1768,12 @@ public class Chat {
 			logger.warn("Keyframe analysis returned empty — will skip memory extraction");
 		}
 
-		/// Step 2: Build MCP keyframe and inject into original request (synchronized)
+		/// OI-98: Keyframes are now memory-only. The MCP keyframe message is no longer
+		/// injected into the chat history. The lastKeyframeAt counter was already
+		/// eagerly updated in pruneCount to prevent duplicate triggers across requests.
 		String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
-		OpenAIMessage msg = new OpenAIMessage();
-		msg.setRole(keyframeRole);
-		McpContextBuilder builder = new McpContextBuilder();
-		builder.addKeyframe(
-			"am7://keyframe/" + (cfgObjId != null ? cfgObjId : "default"),
-			Map.of(
-				"summary", "Summary of " + lab + " with " + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating) + "-rated content",
-				"analysis", analysisText != null ? analysisText : "",
-				"rating", rating.toString(),
-				"ratingMpa", ESRBEnumType.getESRBMPA(rating),
-				"characters", lab
-			)
-		);
-		msg.setContent(builder.build());
 
-		synchronized (req) {
-			/// OI-14: MCP-only keyframe detection (old text format deprecated)
-			/// Filter out previous keyframes, keeping the last 2
-			List<OpenAIMessage> keyframes = req.getMessages().stream()
-					.filter(m -> isMcpKeyframe(m.getContent()))
-					.collect(Collectors.toList());
-			List<OpenAIMessage> nonKeyframes = req.getMessages().stream()
-					.filter(m -> !isMcpKeyframe(m.getContent()))
-					.collect(Collectors.toList());
-
-			if (keyframes.size() > 1) {
-				OpenAIMessage lastExisting = keyframes.get(keyframes.size() - 1);
-				nonKeyframes.add(lastExisting);
-			} else if (keyframes.size() == 1) {
-				nonKeyframes.add(keyframes.get(0));
-			}
-			nonKeyframes.add(msg);
-			req.setMessages(nonKeyframes);
-		}
-
-		/// Step 3: Persist keyframe analysis as a durable memory
+		/// Step 2: Persist keyframe analysis as a durable memory
 		if (analysisOk) {
 			persistKeyframeAsMemory(req, analysisText, lab, cfgObjId, systemChar, userChar);
 		}
@@ -2131,36 +2097,47 @@ public class Chat {
 		/// Target count = system + pruneSkip
 		int idx = getMessageOffset(req);
 		int len = req.getMessages().size() - messageCount;
-		List<OpenAIMessage> kfs = new ArrayList<>();
 		for (int i = idx; i < len; i++) {
 			OpenAIMessage msg = req.getMessages().get(i);
 			msg.setPruned(true);
-			/// OI-14: MCP-only keyframe detection (old text format deprecated)
-			if (msg.getContent() != null && isMcpKeyframe(msg.getContent())) {
-				kfs.add(msg);
-			}
 		}
 
-		/// Phase 3: Don't prune the last 2 keyframes for better continuity
-		if (kfs.size() > 0) {
-			kfs.get(kfs.size() - 1).setPruned(false);
-			if (kfs.size() > 1) {
-				kfs.get(kfs.size() - 2).setPruned(false);
-			}
-		}
+		/// OI-98: Keyframes are now memory-only — no longer embedded in the message
+		/// history, so there are no keyframe messages to preserve during pruning.
+		/// Instead, use the lastKeyframeAt counter on chatConfig to determine when
+		/// the next keyframe is due.
 		boolean useAssist = chatConfig.get("assist");
 		if (!useAssist || keyFrameEvery <= 0) {
 			return;
 		}
-		int qual = countBackToMcp(req, "/keyframe/");
+		int lastKfAt = 0;
+		try {
+			lastKfAt = chatConfig.get("lastKeyframeAt");
+		} catch (Exception e) {
+			// field may not be set on legacy configs
+		}
+		int msgSize = req.getMessages().size();
+		int sinceLastKF = msgSize - lastKfAt;
 		logger.info("Keyframe check: keyFrameEvery=" + keyFrameEvery
-			+ " msgSize=" + req.getMessages().size() + " pruneSkip=" + pruneSkip
-			+ " threshold=" + (pruneSkip + keyFrameEvery) + " sinceLastKF=" + qual);
-		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
+			+ " msgSize=" + msgSize + " lastKeyframeAt=" + lastKfAt
+			+ " sinceLastKF=" + sinceLastKF);
+		if (msgSize > (pruneSkip + keyFrameEvery) && sinceLastKF >= keyFrameEvery) {
 			/// Guard: skip if a previous async keyframe is still in progress
 			if (asyncKeyframeInProgress) {
 				logger.info("Skipping keyframe — async keyframe already in progress");
 				return;
+			}
+			/// Eagerly update lastKeyframeAt BEFORE launching the async pipeline.
+			/// Each HTTP request creates a new Chat instance, so the per-instance
+			/// asyncKeyframeInProgress guard doesn't protect across requests.
+			/// By persisting the counter now, a fast second request will see the
+			/// updated value and skip the keyframe trigger.
+			try {
+				chatConfig.setValue("lastKeyframeAt", msgSize);
+				IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig.copyRecord(new String[] {
+					FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, "lastKeyframeAt" }));
+			} catch (Exception e) {
+				logger.warn("Failed to eagerly update lastKeyframeAt: " + e.getMessage());
 			}
 			/// Defer keyframe launch: save snapshot now, launch AFTER main response completes.
 			/// This prevents the keyframe LLM call from competing with the main response
@@ -2204,12 +2181,8 @@ public class Chat {
 		});
 	}
 
-	/// OI-14: Unified MCP-only keyframe/reminder detection methods.
-	/// Old `(KeyFrame:` and `(Reminder:` text formats are deprecated.
-
-	private static boolean isMcpKeyframe(String content) {
-		return content != null && content.contains("<mcp:context") && content.contains("/keyframe/");
-	}
+	/// OI-14: MCP-only reminder detection.
+	/// Keyframe detection removed (OI-98) — keyframes are now memory-only.
 
 	private static boolean isMcpReminder(String content) {
 		return content != null && content.contains("<mcp:context") && content.contains("/reminder/");

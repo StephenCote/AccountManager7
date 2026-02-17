@@ -34,7 +34,8 @@
       "Bash(python -m json.tool:*)",
       "Bash(xargs:*)",
       "Bash(git checkout:*)",
-      "Bash(npx tailwindcss:*)"
+      "Bash(npx tailwindcss:*)",
+      "Bash(\"c:/Projects/GitHub/AccountManager7/src/chatRefactor.md\":*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

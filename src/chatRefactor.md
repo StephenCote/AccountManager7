@@ -5155,3 +5155,243 @@ Phase 14e: Agent7 integration (optional)
   - Create MemoryExtractionChain template
   - Wire ChainExecutor for advanced extraction flows
 ```
+
+
+## Phase 15: Enhanced Scene Generation Pipeline (Multi-Stage)
+
+### 15.0 Summary
+
+Revise the existing scene generation (Phase 13 deliverables) from a single-shot composite prompt into a **3-stage pipeline**:
+
+1. **SD Config UI** -- Expose model, steps, cfg, sampler, scheduler, style, and dimension controls in the chat UI so the user can pick generation parameters before clicking "Generate Scene."
+2. **Landscape Reference Image** -- Generate a standalone landscape/cityscape image from the chatConfig's setting and terrain data, using the existing SDUtil.generateLandscapeImage() pipeline.
+3. **Composite Scene Merge** -- Combine the landscape reference (as img2img initImage), character portrait IP-Adapter references (promptImages), and the LLM-generated scene description into a single final image.
+
+### 15.1 What Already Exists (Phase 13 Deliverables)
+
+| Component | File | Method/Field | What It Does |
+|-----------|------|--------------|-------------|
+| Scene prompt | Chat.java:1222 | generateScenePrompt() | LLM scene description + character SD descriptions + IP-Adapter tags |
+| Scene LLM call | Chat.java:1295 | generateSceneDescription() | Calls LLM with sceneSystem/sceneUser prompts from chatOperations.json |
+| REST endpoint | ChatService.java:563 | POST /{objectId}/generateScene | Full orchestration: load chat, LLM scene, prompt assembly, SwarmUI call, store, WebSocket notify |
+| Image generation | SDUtil.java:735 | createSceneImage() | SwarmUI txt2img call, stores with imageType=scene attribute + character objectIds |
+| Landscape gen | SDUtil.java:808 | generateLandscapeImage() | Standalone landscape from terrain/location, 1024x576 defaults |
+| Scene builder | SWUtil.java:76 | newSceneTxt2Img() | Applies SD config to SWTxt2Img, landscape defaults 1024x768 |
+| IP-Adapter fields | SWTxt2Img.java:69 | promptImages | Map of reference name to base64 data |
+| Img2img fields | SWTxt2Img.java:58 | initImage, initImageCreativity | Reference image for img2img (landscape merge) |
+| SD config model | configModel.json | olio.sd.config | model, steps, cfg, sampler, scheduler, refiner, style, dimensions, negativePrompt |
+| UI button | chat.js:1207 | chatIconBtn("landscape", ...) | "Generate Scene" button in chat toolbar |
+| UI handler | chat.js:856 | doGenerateScene() | POST to /generateScene with SD config body |
+| WS event | pageClient.js:644 | sceneImage chirp | Receives generated image objectId for display |
+
+### 15.2 Stage 1: SD Config UI
+
+**Goal:** Let the user configure SD generation parameters before clicking "Generate Scene."
+
+#### 15.2.1 UI Component: SD Config Panel
+
+Add a collapsible panel (or modal) accessible from the chat toolbar that exposes:
+
+| Field | Control Type | Source | Notes |
+|-------|-------------|--------|-------|
+| model | Dropdown | SwarmUI ListModels API | Checkpoint files (*.safetensors) |
+| refinerModel | Dropdown | SwarmUI ListModels API | Optional, for hires |
+| steps | Slider | 1-100, default 20 | |
+| cfg | Slider | 1-20, default 7 | |
+| sampler | Dropdown | SwarmUI ListSamplers or hardcoded list | dpmpp_2m, euler, euler_a, etc. |
+| scheduler | Dropdown | Hardcoded list | Karras, normal, exponential, etc. |
+| width | Number | 512-2048, default 1024 | |
+| height | Number | 512-2048, default 768 | |
+| hires | Toggle | default true | Enable refiner pass |
+| style | Dropdown | olio.sd.config limit list | art, movie, photograph, anime, etc. |
+| seed | Number | default -1 (random) | |
+
+#### 15.2.2 Model List API
+
+**Option A (preferred):** Proxy through AM7 backend -- new endpoint GET /rest/olio/sd/models that calls SwarmUI's ListModels and returns the list. Avoids CORS issues and keeps the SwarmUI server address server-side.
+
+**Option B:** Direct SwarmUI call from frontend -- requires CORS configuration on SwarmUI.
+
+#### 15.2.3 SD Config Persistence
+
+The SD config JSON is sent as the POST body to /generateScene. Consider adding an sdConfig field to chatConfig (or a separate persisted config record) so user preferences survive across sessions.
+
+### 15.3 Stage 2: Landscape Reference Image
+
+**Goal:** Generate a landscape/cityscape reference image from the chat's setting before compositing with characters.
+
+#### 15.3.1 Pipeline
+
+1. Extract setting + terrain from chatConfig (same as current generateScenePrompt() step 3)
+2. If chatConfig has a location record, use NarrativeUtil.getLandscapePrompt(location, adjacentTerrains) for the prompt
+3. If chatConfig only has setting/terrain strings, build a simplified landscape prompt from those
+4. Call SDUtil.generateLandscapeImage() with the user's SD config (model, steps, etc.)
+5. Store the landscape image temporarily (or in ~/Gallery/Scenes/Landscapes/)
+6. Pass the landscape image bytes forward to Stage 3 as initImage
+
+#### 15.3.2 Reuse
+
+SDUtil.generateLandscapeImage() already handles the full landscape generation pipeline. The main change is:
+- Accept an SD config parameter from the user (currently uses randomSDConfig() with minimal overrides)
+- Return the image bytes in addition to storing the record (needed for Stage 3 img2img)
+
+#### 15.3.3 Caching
+
+Landscape images change infrequently (setting/terrain don't change mid-chat). Consider caching the landscape by setting+terrain hash and reusing it across scene generations within the same chat, unless the user explicitly requests a new one.
+
+### 15.4 Stage 3: Composite Scene Merge
+
+**Goal:** Combine landscape reference + character portraits + scene description into a final image using SwarmUI's img2img + IP-Adapter.
+
+#### 15.4.1 SwarmUI API: img2img with IP-Adapter
+
+SwarmUI's GenerateText2Image endpoint supports both initimage and promptimages simultaneously:
+
+    {
+      "prompt": "scene description, char1 on left <image:sysPortrait>, char2 on right <image:userPortrait>, setting",
+      "negativeprompt": "...",
+      "initimage": "data:image/png;base64,...landscape bytes...",
+      "initimagecreativity": 0.65,
+      "promptimages": {
+        "sysPortrait": "data:image/png;base64,...portrait bytes...",
+        "userPortrait": "data:image/png;base64,...portrait bytes..."
+      },
+      "model": "...",
+      "steps": 25
+    }
+
+- **initimage**: The landscape reference provides the overall composition, lighting, and environment
+- **initimagecreativity**: Controls how much the landscape is modified (0.0 = exact copy, 1.0 = ignore). Recommended: **0.55-0.70** to keep the environment but add characters
+- **promptimages + image tags**: IP-Adapter references for face/appearance consistency from portraits
+
+#### 15.4.2 Modified Pipeline (ChatService.generateScene)
+
+The existing endpoint at ChatService.java:563 becomes a 3-stage orchestrator:
+
+    Stage 1: User submits SD config via POST body (already supported)
+         |
+    Stage 2: Generate landscape reference
+         - Call SDUtil.generateLandscapeImage() with user's SD config + chatConfig setting
+         - Get landscape image bytes
+         |
+    Stage 3: Composite generation
+         - LLM scene description (existing generateSceneDescription)
+         - Character SD descriptions (existing NarrativeUtil.getSDMinPrompt)
+         - Assemble prompt with image tags (existing generateScenePrompt)
+         - Set initImage = landscape bytes (NEW)
+         - Set initImageCreativity = 0.65 (NEW, configurable)
+         - Set promptImages = portrait bytes (existing)
+         - Call SDUtil.createSceneImage()
+         |
+    Return: Final composite image + WebSocket notification
+
+#### 15.4.3 SWTxt2Img Changes
+
+SWTxt2Img already has initImage and initImageCreativity fields (lines 58-64). No model changes needed -- just wire them up in the scene pipeline:
+
+- SWUtil.newSceneTxt2Img() -- accept optional initImage (base64 landscape) and initImageCreativity (double, default 0.65)
+- Or set them directly in ChatService.generateScene() after calling newSceneTxt2Img()
+
+#### 15.4.4 New SD Config Fields
+
+Add to olio.sd.config model (configModel.json):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| sceneCreativity | double | 0.65 | initImageCreativity for landscape-to-scene merge (0.0-1.0) |
+| skipLandscape | boolean | false | Skip landscape generation, use text-only scene prompt |
+
+### 15.5 Fallback Behavior
+
+| Scenario | Behavior |
+|----------|----------|
+| No location/terrain on chatConfig | Skip landscape stage, text-only scene (current behavior) |
+| No portraits on characters | Skip IP-Adapter tags, text-only characters (current behavior) |
+| IP-Adapter not installed in SwarmUI | SwarmUI ignores image tags silently, text-only generation |
+| SwarmUI doesn't support initImage | Falls back to pure txt2img (no landscape reference) |
+| User sets skipLandscape=true | Skip Stage 2, go directly to composite with text-only prompt |
+
+### 15.6 Frontend Changes
+
+#### 15.6.1 SD Config Panel (New)
+
+- Add sdConfigPanel.js or inline in chat.js
+- Collapsible panel or gear icon next to "Generate Scene" button
+- Fields bound to a local sdConfig object sent as POST body
+- Model dropdown populated via GET /rest/olio/sd/models (or cached)
+- "Advanced" toggle for refiner settings
+
+#### 15.6.2 Scene Display Enhancements
+
+- Show landscape reference as a thumbnail before final scene (optional preview)
+- Display generation progress: "Generating landscape..." then "Generating scene..." (two bgActivity phases)
+- Scene image displayed inline in chat (existing behavior via sceneImage WebSocket event)
+
+#### 15.6.3 Modified doGenerateScene()
+
+    async function doGenerateScene() {
+        generatingScene = true;
+        inst.render();
+        try {
+            const sdConfig = collectSDConfig(); // reads form fields into JSON object
+            const resp = await fetch(
+                g_application_path + "/rest/chat/" + inst.api.objectId() + "/generateScene",
+                { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(sdConfig) }
+            );
+            if (!resp.ok) { /* handle error */ }
+            const result = await resp.json();
+            // Image display handled by sceneImage WebSocket event
+        } catch(e) {
+            console.error("generateScene error:", e);
+        } finally {
+            generatingScene = false;
+            inst.render();
+        }
+    }
+
+### 15.7 Specifying SD Models
+
+The model field in olio.sd.config takes the checkpoint filename as it appears in SwarmUI's model directory (e.g., sdXL_v10VAEFix.safetensors, realVisXL.safetensors). Server-side defaults come from web.xml init parameters:
+
+- **sd.model** -- default checkpoint for txt2img
+- **sd.refinerModel** -- default checkpoint for refiner/hires pass
+
+SwarmUI provides a ListModels API endpoint that returns all available model files. The frontend model picker should query this (via an AM7 proxy endpoint) to populate dropdown options dynamically.
+
+### 15.8 Implementation Order
+
+    Phase 15a: SD Config UI
+      - Add SD config panel/modal in chat.js
+      - Wire form fields to sdConfig JSON, sent as POST body
+      - Add GET /rest/olio/sd/models proxy endpoint (optional, can hardcode initially)
+      - Persist last-used sdConfig in localStorage or chatConfig
+
+    Phase 15b: Landscape Reference Stage
+      - Modify ChatService.generateScene() to call generateLandscapeImage() first
+      - Modify SDUtil.generateLandscapeImage() to accept full SD config and return bytes
+      - Add landscape caching by setting+terrain hash
+      - Add landscape preview in UI (optional)
+
+    Phase 15c: Composite Merge Stage
+      - Wire landscape bytes to SWTxt2Img.initImage in scene pipeline
+      - Add sceneCreativity / skipLandscape to olio.sd.config model
+      - Add sceneCreativity slider to SD config panel
+      - Two-phase progress indicator (landscape then scene)
+
+    Phase 15d: Polish
+      - Model list dropdown populated from SwarmUI
+      - Landscape cache management
+      - Error handling for missing terrain/location data
+      - Fallback behavior testing
+
+### 15.9 Open Issues
+
+| ID | Description | Priority | Status |
+|----|-------------|----------|--------|
+| OI-92 | SwarmUI ListModels API format needs investigation (endpoint path, response schema) | P2 | PLANNED |
+| OI-93 | Optimal initImageCreativity for landscape-to-scene merge needs empirical testing | P2 | PLANNED |
+| OI-94 | Landscape generation adds ~30s latency; consider async generation or pre-caching | P2 | PLANNED |
+| OI-95 | IP-Adapter + initImage simultaneous use may conflict on some SwarmUI versions | P3 | PLANNED |
+| OI-96 | SD config persistence: localStorage vs chatConfig field vs separate record | P3 | PLANNED |
+| OI-97 | Auto-generated chat title and icon don't display in UX after generation; title generation returns null, async security context issues with chatRequest lookup | P1 | OPEN |
+| OI-98 | Refactored keyframe logic can create a keyframe (memory extraction) on every chat message instead of respecting the keyframeEvery interval. Root cause: saveSession() runs before flushPendingKeyframe(), so the async keyframe was never persisted. Fix: added saveSession(req) in addKeyFrameAsync after keyframe injection. | P1 | RESOLVED |

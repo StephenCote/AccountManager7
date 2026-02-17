@@ -300,15 +300,24 @@ public class MemoryUtil {
 
 		List<BaseRecord> memories = new ArrayList<>();
 		try {
+			// Strip markdown code fences if the LLM wrapped the JSON in them
+			String cleaned = llmResponse.trim();
+			if (cleaned.startsWith("```")) {
+				int firstNewline = cleaned.indexOf('\n');
+				if (firstNewline > 0) cleaned = cleaned.substring(firstNewline + 1);
+				if (cleaned.endsWith("```")) cleaned = cleaned.substring(0, cleaned.length() - 3);
+				cleaned = cleaned.trim();
+			}
+
 			// Parse JSON array from LLM response
-			int jsonStart = llmResponse.indexOf("[");
-			int jsonEnd = llmResponse.lastIndexOf("]");
+			int jsonStart = cleaned.indexOf("[");
+			int jsonEnd = cleaned.lastIndexOf("]");
 			if (jsonStart < 0 || jsonEnd < 0 || jsonEnd <= jsonStart) {
-				logger.warn("No valid JSON array in extraction response");
+				logger.warn("No valid JSON array in extraction response: " + cleaned.substring(0, Math.min(100, cleaned.length())));
 				return memories;
 			}
 
-			String jsonStr = llmResponse.substring(jsonStart, jsonEnd + 1);
+			String jsonStr = cleaned.substring(jsonStart, jsonEnd + 1);
 			org.json.JSONArray arr = new org.json.JSONArray(jsonStr);
 
 			/// Phase 14d: Pre-fetch existing memories for the person pair to enable dedup

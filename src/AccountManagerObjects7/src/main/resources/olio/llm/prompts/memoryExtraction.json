@@ -15,8 +15,11 @@
 		"- memoryType: One of FACT, RELATIONSHIP, EMOTION, DECISION, DISCOVERY",
 		"- importance: 1-10 (10 = life-changing, 7 = significant, 4 = notable, 1 = trivial)",
 		"",
-		"Respond with a JSON array. Extract 2-8 memories per segment.",
+		"Respond with ONLY a JSON array — no markdown, no code fences, no explanation. Extract 2-8 memories per segment.",
 		"Do NOT summarize the plot. Extract discrete, specific, retrievable facts.",
+		"",
+		"Example response format:",
+		"[{\"content\": \"Elena revealed she grew up in the mountain village of Alder.\", \"summary\": \"Elena from Alder village\", \"memoryType\": \"FACT\", \"importance\": 5}, {\"content\": \"Marcus agreed to help Elena find the missing artifact.\", \"summary\": \"Marcus commits to artifact search\", \"memoryType\": \"DECISION\", \"importance\": 7}]",
 		"",
 		"Characters: ${systemCharName} and ${userCharName}",
 		"Setting: ${setting}"

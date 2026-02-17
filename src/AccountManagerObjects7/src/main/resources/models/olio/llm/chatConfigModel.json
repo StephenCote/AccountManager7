@@ -237,6 +237,12 @@
 			"description": "When extractMemories is true, the number of keyframes between automatic memory extraction from keyframe analysis text. 0 = extract on every keyframe. Typical values: 0 (every keyframe), 3 (every 3rd), 5 (every 5th)."
 		},
 		{
+			"name": "lastKeyframeAt",
+			"type": "int",
+			"default": 0,
+			"description": "Message count at which the last keyframe was generated. Used by pruneCount to determine when the next keyframe is due. Updated by the async keyframe pipeline."
+		},
+		{
 			"name": "autoTitle",
 			"type": "boolean",
 			"default": true,

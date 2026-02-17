@@ -119,6 +119,7 @@
           "identity.voice",
           "olio.llm.chatConfig",
           "olio.llm.promptConfig",
+          "olio.llm.promptTemplate",
           "olio.llm.openai.openaiRequest",
           "olio.apparel",
           "olio.wearable",
