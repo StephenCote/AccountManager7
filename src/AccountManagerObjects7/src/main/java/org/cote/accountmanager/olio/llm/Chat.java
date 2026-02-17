@@ -2716,6 +2716,15 @@ public class Chat {
 		return getChatPrompt(model);
 	}
 
+	/// Re-inject memory thread-locals before each template processing call.
+	/// buildMemoryReplacements() consumes (removes) thread-locals on first use,
+	/// so they must be re-set before each PromptUtil/PromptTemplateComposer call.
+	private void injectMemoryThreadLocals(String memoryCtx) {
+		if (memoryCtx != null && !memoryCtx.isEmpty()) {
+			PromptUtil.setMemoryContext(memoryCtx);
+		}
+	}
+
 	public OpenAIRequest getChatPrompt(String model) {
 
 		OpenAIRequest req = newRequest(model);
@@ -2725,16 +2734,16 @@ public class Chat {
 		String userTemp = null;
 		String sysTemp = null;
 		boolean useAssist = false;
+		/// Memory context string saved locally — thread-locals are consumed on first use,
+		/// so we must re-inject before each template processing call.
+		String memoryCtx = null;
 		if (chatConfig != null) {
 			useAssist = chatConfig.get("assist");
 			systemChar = chatConfig.get("systemCharacter");
 			userChar = chatConfig.get("userCharacter");
 
-			// Phase 2: Retrieve and inject memory context before template processing
-			String memoryCtx = retrieveRelevantMemories(systemChar, userChar);
-			if (memoryCtx != null && !memoryCtx.isEmpty()) {
-				PromptUtil.setMemoryContext(memoryCtx);
-			}
+			// Phase 2: Retrieve memory context before template processing
+			memoryCtx = retrieveRelevantMemories(systemChar, userChar);
 		}
 		/// Check for structured prompt template on chatConfig
 		BaseRecord promptTemplate = (chatConfig != null) ? chatConfig.get("promptTemplate") : null;
@@ -2745,23 +2754,33 @@ public class Chat {
 		if (promptTemplate != null && promptConfig != null) {
 			/// Use structured template format via PromptTemplateComposer
 			BaseRecord effectiveChatConfig = (systemChar != null && userChar != null) ? chatConfig : null;
+			/// System template first — inject memory thread-locals before each call
+			injectMemoryThreadLocals(memoryCtx);
 			sysTemp = PromptTemplateComposer.composeSystem(promptTemplate, promptConfig, effectiveChatConfig);
 			if (useAssist) {
+				injectMemoryThreadLocals(memoryCtx);
 				assist = PromptTemplateComposer.composeAssistant(promptTemplate, promptConfig, effectiveChatConfig);
+				injectMemoryThreadLocals(memoryCtx);
 				userTemp = PromptTemplateComposer.composeUser(promptTemplate, promptConfig, effectiveChatConfig);
 			}
 		} else if (promptConfig != null) {
 			if (systemChar != null && userChar != null) {
-
+				/// System template FIRST so ${memory.context} resolves before thread-local is consumed
+				injectMemoryThreadLocals(memoryCtx);
+				sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
 				if (useAssist) {
+					injectMemoryThreadLocals(memoryCtx);
 					assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, chatConfig);
+					injectMemoryThreadLocals(memoryCtx);
 					userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, chatConfig);
 				}
-				sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
 
 			} else {
+				injectMemoryThreadLocals(memoryCtx);
 				sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, null);
+				injectMemoryThreadLocals(memoryCtx);
 				assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, null);
+				injectMemoryThreadLocals(memoryCtx);
 				userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, null);
 
 			}
