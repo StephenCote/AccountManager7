@@ -1,6 +1,6 @@
 {
 	"name": "tool.memory",
-	"inherits": ["data.directory"],
+	"inherits": ["data.directory", "common.dateTime"],
 	"vectorize": true,
 	"description": "Discrete memory entry (engram) capturing key notes, discoveries, behaviors, outcomes, and insights from conversations and agent interactions. Inherits createdDate/modifiedDate from data.directory for extraction timestamps.",
 	"fields": [

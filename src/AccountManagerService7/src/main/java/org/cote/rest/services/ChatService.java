@@ -440,7 +440,8 @@ public class ChatService {
 		try {
 			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
 			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-			sq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+			/// No recursion — sub-records are loaded individually via getFullRecord below
+			sq.planMost(false);
 			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
 			if (chatReq == null) {
 				return Response.status(200).entity("{}").build();

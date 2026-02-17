@@ -396,6 +396,19 @@ public class Chat {
 			return;
 		}
 
+		/// Inject fresh memory context before user message (dynamic per-turn)
+		if (chatConfig != null) {
+			BaseRecord sysChar = chatConfig.get("systemCharacter");
+			BaseRecord usrChar = chatConfig.get("userCharacter");
+			String memCtx = retrieveRelevantMemories(sysChar, usrChar);
+			if (memCtx != null && !memCtx.isEmpty()) {
+				OpenAIMessage memMsg = new OpenAIMessage();
+				memMsg.setRole(systemRole);
+				memMsg.setContent(memCtx);
+				req.addMessage(memMsg);
+			}
+		}
+
 		if (message != null && message.length() > 0) {
 			newMessage(req, message);
 		}
@@ -2452,21 +2465,25 @@ public class Chat {
 	///   Layer 3 (20%): Semantic (topic-relevant from any source)
 	private String retrieveRelevantMemories(BaseRecord systemChar, BaseRecord userChar) {
 		if (chatConfig == null || systemChar == null || userChar == null) {
+			logger.info("retrieveRelevantMemories: skipping — chatConfig=" + (chatConfig != null) + " sys=" + (systemChar != null) + " usr=" + (userChar != null));
 			return "";
 		}
 		int memoryBudget = chatConfig.get("memoryBudget");
 		if (memoryBudget <= 0) {
+			logger.info("retrieveRelevantMemories: memoryBudget=" + memoryBudget + " (disabled) — chatConfig.objectId=" + chatConfig.get(FieldNames.FIELD_OBJECT_ID) + " extractMemories=" + chatConfig.get("extractMemories"));
 			return "";
 		}
 
 		try {
 			long sysId = systemChar.get(FieldNames.FIELD_ID);
 			long usrId = userChar.get(FieldNames.FIELD_ID);
+			logger.info("retrieveRelevantMemories: budget=" + memoryBudget + " sysId=" + sysId + " usrId=" + usrId);
 
 			int maxPerLayer = Math.max(3, memoryBudget / 50);
 
 			/// Layer 1: Pair-specific memories (50% of budget)
 			List<BaseRecord> pairMemories = MemoryUtil.searchMemoriesByPersonPair(user, sysId, usrId, maxPerLayer);
+			logger.info("retrieveRelevantMemories: pairMemories=" + pairMemories.size());
 
 			/// Layer 2: Character-specific memories (30% of budget)
 			List<BaseRecord> charMemories = MemoryUtil.searchMemoriesByPerson(user, sysId, maxPerLayer / 2);
@@ -2519,6 +2536,8 @@ public class Chat {
 			long id1 = Math.min(sysId, usrId);
 			long id2 = Math.max(sysId, usrId);
 
+			logger.info("Memory budget allocation: total=" + memoryBudget + " tokens, scored=" + scored.size() + " memories");
+
 			/// First pass: allocate by type budget
 			for (java.util.Map.Entry<String, Double> entry : typeBudgetRatios.entrySet()) {
 				String targetType = entry.getKey();
@@ -2534,8 +2553,10 @@ public class Chat {
 					if (content == null) continue;
 
 					int memTokens = estimateTokens(content);
-					if (typeTokensUsed + memTokens > typeBudget) continue;
-					if (tokensUsed + memTokens > memoryBudget) continue;
+					if (typeTokensUsed + memTokens > typeBudget || tokensUsed + memTokens > memoryBudget) {
+						logger.info("Memory skipped: type=" + memType + " memTokens=" + memTokens + " typeBudget=" + typeBudget + " totalBudget=" + memoryBudget);
+						continue;
+					}
 
 					ms.included = true;
 					typeTokensUsed += memTokens;
@@ -2654,8 +2675,8 @@ public class Chat {
 	/// Phase 14c: Apply freshness decay to memory importance at query time.
 	/// Memories are not modified — decay is applied only for ranking during reconstitution.
 	/// - Recent (same conversation): Full importance
-	/// - Moderate (< 10 different sourceUris ago): importance × 0.7
-	/// - Old (> 10): importance × 0.4
+	/// - Moderate (< 7 days): importance × 0.7
+	/// - Old (> 30 days): importance × 0.4
 	/// - Pinned (importance = 10): Never decay
 	private double applyFreshnessDecay(BaseRecord memory, String currentConversationId) {
 		int importance = memory.get("importance");
@@ -2668,8 +2689,7 @@ public class Chat {
 			return importance; // Same conversation — full weight
 		}
 
-		/// Use createdDate to approximate age. Memories older than ~10 sessions
-		/// (approximated by days) get heavier decay.
+		/// Use createdDate to approximate age
 		try {
 			java.util.Date created = memory.get(FieldNames.FIELD_CREATED_DATE);
 			if (created != null) {
@@ -2682,7 +2702,7 @@ public class Chat {
 				}
 			}
 		} catch (Exception e) {
-			// createdDate field may not be populated
+			// Fall through to default
 		}
 
 		return importance;
@@ -2744,6 +2764,7 @@ public class Chat {
 
 			// Phase 2: Retrieve memory context before template processing
 			memoryCtx = retrieveRelevantMemories(systemChar, userChar);
+			logger.info("getChatPrompt: memoryCtx length=" + (memoryCtx != null ? memoryCtx.length() : "null"));
 		}
 		/// Check for structured prompt template on chatConfig
 		BaseRecord promptTemplate = (chatConfig != null) ? chatConfig.get("promptTemplate") : null;
