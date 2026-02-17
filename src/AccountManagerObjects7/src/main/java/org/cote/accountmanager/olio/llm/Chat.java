@@ -103,6 +103,8 @@ public class Chat {
 	private ThreadLocal<Integer> analyzeTimeoutOverride = new ThreadLocal<>();
 	/// Guard against duplicate async keyframe generation when messages arrive faster than analysis completes.
 	private volatile boolean asyncKeyframeInProgress = false;
+	/// Deferred keyframe: snapshot saved by pruneCount, launched after main response completes.
+	private volatile List<OpenAIMessage> pendingKeyframeSnapshot = null;
 	private int responseCount = 0;
 
 	/// Mid-stream policy evaluation tracking
@@ -413,6 +415,10 @@ public class Chat {
 				handleAutotuning(req, policyResult);
 			}
 
+			/// Flush deferred keyframe AFTER main response completes (buffer mode).
+			/// This prevents the keyframe LLM call from competing with the main response.
+			flushPendingKeyframe(req);
+
 			/// Phase 13g: Auto-generate title and icon after first real exchange (buffer mode)
 			boolean autoTitle = chatConfig != null && (boolean) chatConfig.get("autoTitle");
 			int offset = getMessageOffset(req);
@@ -421,10 +427,12 @@ public class Chat {
 			for (int i = offset; i < allMsgs.size(); i++) {
 				if (userRole.equals(allMsgs.get(i).getRole())) userMsgCount++;
 			}
+			logger.info("Auto-title check: autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount);
 			if (autoTitle && userMsgCount == 1) {
 				String[] titleAndIcon = generateChatTitleAndIcon(req);
 				String title = titleAndIcon[0];
 				String icon = titleAndIcon[1];
+				logger.info("Title generation result: title=" + title + " icon=" + icon);
 				String oid = req.get(FieldNames.FIELD_OBJECT_ID);
 				if (oid != null) {
 					try {
@@ -1921,33 +1929,46 @@ public class Chat {
 				logger.info("Skipping keyframe — async keyframe already in progress");
 				return;
 			}
-			logger.info("(Adding key frame — async)");
-			asyncKeyframeInProgress = true;
-
-			/// Phase 14: Notify client that background processing is starting
-			if (listener != null) {
-				listener.onEvalProgress(user, req, "keyframe", "Generating keyframe summary...");
-			}
-
-			/// Phase 14: Snapshot messages for async analysis (avoid concurrent modification)
-			final List<OpenAIMessage> snapshot = new ArrayList<>(req.getMessages());
-
-			/// Phase 14: Run keyframe pipeline asynchronously — the keyframe content
-			/// is NOT needed for the current message, only for future context management.
-			CompletableFuture.runAsync(() -> {
-				try {
-					addKeyFrameAsync(req, snapshot);
-				} catch (Exception e) {
-					logger.warn("Async keyframe generation failed: " + e.getMessage());
-				} finally {
-					asyncKeyframeInProgress = false;
-				}
-				if (listener != null) {
-					listener.onEvalProgress(user, req, "keyframeDone", "Keyframe complete");
-				}
-			});
+			/// Defer keyframe launch: save snapshot now, launch AFTER main response completes.
+			/// This prevents the keyframe LLM call from competing with the main response
+			/// for LLM resources (critical for single-slot LLMs like Ollama).
+			logger.info("(Deferring keyframe — will launch after main response)");
+			pendingKeyframeSnapshot = new ArrayList<>(req.getMessages());
 		}
 
+	}
+
+	/// Flush a deferred keyframe: launch the async pipeline now that the main response is complete.
+	/// Called from continueChat (buffer mode) and ChatListener.oncomplete (streaming mode).
+	public void flushPendingKeyframe(OpenAIRequest req) {
+		List<OpenAIMessage> snapshot = pendingKeyframeSnapshot;
+		pendingKeyframeSnapshot = null;
+		if (snapshot == null) {
+			return;
+		}
+		if (asyncKeyframeInProgress) {
+			logger.info("Skipping deferred keyframe — async keyframe already in progress");
+			return;
+		}
+		logger.info("(Launching deferred keyframe — main response complete)");
+		asyncKeyframeInProgress = true;
+
+		if (listener != null) {
+			listener.onEvalProgress(user, req, "keyframe", "Generating keyframe summary...");
+		}
+
+		CompletableFuture.runAsync(() -> {
+			try {
+				addKeyFrameAsync(req, snapshot);
+			} catch (Exception e) {
+				logger.warn("Async keyframe generation failed: " + e.getMessage());
+			} finally {
+				asyncKeyframeInProgress = false;
+			}
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "keyframeDone", "Keyframe complete");
+			}
+		});
 	}
 
 	/// OI-14: Unified MCP-only keyframe/reminder detection methods.

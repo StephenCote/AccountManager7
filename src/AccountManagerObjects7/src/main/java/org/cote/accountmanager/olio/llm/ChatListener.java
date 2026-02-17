@@ -331,6 +331,10 @@ public class ChatListener implements IChatListener {
 		chat.saveSession(request);
 		logger.info("Chat session saved for request: " + oid);
 
+		/// Flush deferred keyframe AFTER main response completes (streaming mode).
+		/// This prevents the keyframe LLM call from competing with the main response.
+		chat.flushPendingKeyframe(request);
+
 		/// Phase 13g: Auto-generate title and icon after first real user+assistant exchange
 		boolean autoTitle = false;
 		BaseRecord titleChatCfg = chat.getChatConfig();
@@ -344,12 +348,15 @@ public class ChatListener implements IChatListener {
 			String role = allMsgs.get(i).get("role");
 			if ("user".equals(role)) userMsgCount++;
 		}
+		logger.info("Auto-title check (stream): autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount + " oid=" + oid);
 		if (autoTitle && userMsgCount == 1) {
 			CompletableFuture.runAsync(() -> {
 				try {
+					logger.info("Generating title/icon for: " + oid);
 					String[] titleAndIcon = chat.generateChatTitleAndIcon(request);
 					String title = titleAndIcon[0];
 					String icon = titleAndIcon[1];
+					logger.info("Title generation result: title=" + title + " icon=" + icon + " oid=" + oid);
 					Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
 					cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 					BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
@@ -360,6 +367,8 @@ public class ChatListener implements IChatListener {
 						if (icon != null) {
 							chat.setChatIcon(chatReqRec, icon);
 						}
+					} else {
+						logger.warn("chatRequest record not found for title persist: " + oid);
 					}
 					if (title != null) {
 						handlers.forEach(h -> h.onChatTitle(user, request, title));
