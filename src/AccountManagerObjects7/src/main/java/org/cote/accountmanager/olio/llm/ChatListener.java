@@ -350,6 +350,16 @@ public class ChatListener implements IChatListener {
 		}
 		logger.info("Auto-title check (stream): autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount + " oid=" + oid);
 		if (autoTitle && userMsgCount == 1) {
+			/// Pre-fetch chatRequest in the main thread where security context is available
+			BaseRecord chatReqRec = null;
+			try {
+				Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
+				cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+				chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+			} catch (Exception e) {
+				logger.warn("Failed to pre-fetch chatRequest for title: " + e.getMessage());
+			}
+			final BaseRecord titleChatReqRec = chatReqRec;
 			CompletableFuture.runAsync(() -> {
 				try {
 					logger.info("Generating title/icon for: " + oid);
@@ -357,15 +367,12 @@ public class ChatListener implements IChatListener {
 					String title = titleAndIcon[0];
 					String icon = titleAndIcon[1];
 					logger.info("Title generation result: title=" + title + " icon=" + icon + " oid=" + oid);
-					Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
-					cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-					BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-					if (chatReqRec != null) {
+					if (titleChatReqRec != null) {
 						if (title != null) {
-							chat.setChatTitle(chatReqRec, title);
+							chat.setChatTitle(titleChatReqRec, title);
 						}
 						if (icon != null) {
-							chat.setChatIcon(chatReqRec, icon);
+							chat.setChatIcon(titleChatReqRec, icon);
 						}
 					} else {
 						logger.warn("chatRequest record not found for title persist: " + oid);

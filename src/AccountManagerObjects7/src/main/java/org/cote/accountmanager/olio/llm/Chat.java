@@ -736,10 +736,15 @@ public class Chat {
 	public String[] generateChatTitleAndIcon(OpenAIRequest req) {
 		int offset = getMessageOffset(req);
 		List<OpenAIMessage> msgs = req.getMessages();
-		if (msgs.size() < offset + 2) return new String[] { null, null };
+		logger.info("generateTitleAndIcon: offset=" + offset + " totalMsgs=" + msgs.size());
+		if (msgs.size() < offset + 2) {
+			logger.info("generateTitleAndIcon: not enough messages (need " + (offset + 2) + ", have " + msgs.size() + ")");
+			return new String[] { null, null };
+		}
 
 		String userMsg = msgs.get(offset).getContent();
 		String assistMsg = msgs.get(offset + 1).getContent();
+		logger.info("generateTitleAndIcon: userMsg=" + (userMsg != null ? userMsg.substring(0, Math.min(50, userMsg.length())) : "null") + " assistMsg=" + (assistMsg != null ? "present" : "null"));
 		if (userMsg == null || assistMsg == null) return new String[] { null, null };
 
 		if (userMsg.length() > 200) userMsg = userMsg.substring(0, 200) + "...";
@@ -771,6 +776,7 @@ public class Chat {
 		String icon = null;
 		try {
 			OpenAIResponse resp = chat(titleReq);
+			logger.info("generateTitleAndIcon: chat() returned " + (resp != null ? "response" : "null"));
 			if (resp != null) {
 				String content = null;
 				BaseRecord msg = resp.get("message");
@@ -782,6 +788,7 @@ public class Chat {
 						if (cmsg != null) content = cmsg.get("content");
 					}
 				}
+				logger.info("generateTitleAndIcon: LLM content=" + (content != null ? content.substring(0, Math.min(100, content.length())) : "null"));
 				if (content != null) {
 					content = content.trim();
 					String[] lines = content.split("\\r?\\n");
