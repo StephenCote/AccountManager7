@@ -921,6 +921,84 @@ public class SDUtil {
 		return null;
 	}
 
+	/// Phase 15b: Generate a landscape image from a text prompt and SD config.
+	/// Returns the raw image bytes for use as an initImage in the composite scene pipeline.
+	/// Unlike generateLandscapeImage(), this method does not require a location record —
+	/// it works with a simple prompt string (built from chatConfig setting/terrain).
+	/// @param prompt The landscape prompt text
+	/// @param negPrompt Negative prompt (null for default)
+	/// @param sdConfig SD configuration (model, steps, etc.)
+	/// @return Raw PNG image bytes, or null on failure
+	public byte[] generateLandscapeBytes(String prompt, String negPrompt, BaseRecord sdConfig) {
+		if (apiType != SDAPIEnumType.SWARM) {
+			logger.error("generateLandscapeBytes is only supported for SWARM API type");
+			return null;
+		}
+		if (negPrompt == null) {
+			negPrompt = NarrativeUtil.getLandscapeNegativePrompt();
+		}
+
+		BaseRecord config = sdConfig != null ? sdConfig : randomSDConfig();
+		SWTxt2Img s2i = new SWTxt2Img();
+		s2i.setPrompt(prompt);
+		s2i.setNegativePrompt(negPrompt);
+		s2i.setWidth(1024);
+		s2i.setHeight(576);
+		s2i.setSeed(Math.abs(rand.nextInt()));
+
+		Integer cfgSteps = config.get("steps");
+		String cfgModel = config.get("model");
+		String cfgScheduler = config.get("scheduler");
+		String cfgSampler = config.get("sampler");
+		Integer cfgCfg = config.get("cfg");
+		Integer cfgSeed = config.get("seed");
+		Boolean hires = config.get("hires");
+
+		s2i.setSteps(cfgSteps != null ? cfgSteps : 25);
+		s2i.setModel(cfgModel != null ? cfgModel : "sdXL_v10VAEFix.safetensors");
+		s2i.setScheduler(cfgScheduler != null ? cfgScheduler : "Karras");
+		s2i.setSampler(cfgSampler != null ? cfgSampler : "dpmpp_2m");
+		s2i.setCfgScale(cfgCfg != null ? cfgCfg : 7);
+		if (cfgSeed != null && cfgSeed > 0) {
+			s2i.setSeed(cfgSeed);
+		}
+		s2i.setImages(1);
+
+		if (hires != null && hires) {
+			s2i.setRefinerScheduler(config.get("refinerScheduler"));
+			s2i.setRefinerSampler(config.get("refinerSampler"));
+			s2i.setRefinerMethod(config.get("refinerMethod"));
+			s2i.setRefinerModel(config.get("refinerModel"));
+			s2i.setRefinerSteps(config.get("refinerSteps"));
+			s2i.setRefinerUpscale(config.get("refinerUpscale"));
+			s2i.setRefinerUpscaleMethod(config.get("refinerUpscaleMethod"));
+			s2i.setRefinerCfgScale(config.get("refinerCfg"));
+			s2i.setRefinerControlPercentage(config.get("refinerControlPercentage"));
+		} else {
+			s2i.setRefinerControlPercentage(0.0);
+		}
+
+		try {
+			logger.info("Generating landscape bytes: " + prompt.substring(0, Math.min(100, prompt.length())) + "...");
+			SWImageResponse rep = txt2img(s2i);
+			if (rep == null || rep.getImages() == null || rep.getImages().isEmpty()) {
+				logger.error("No landscape images returned in response");
+				return null;
+			}
+			String bai = rep.getImages().get(0);
+			byte[] data = ClientUtil.get(byte[].class, ClientUtil.getResource(autoserver + "/" + bai), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+			if (data == null || data.length == 0) {
+				logger.error("Could not retrieve landscape image data from swarm server");
+				return null;
+			}
+			logger.info("Landscape image generated: " + data.length + " bytes");
+			return data;
+		} catch (Exception e) {
+			logger.error("Error generating landscape bytes", e);
+		}
+		return null;
+	}
+
 	/// Generate an animal image with optional landscape reference.
 	/// @param user The user record
 	/// @param animal The animal record

@@ -641,6 +641,15 @@
                 }
                 m.redraw();
             }
+            else if(c1 === "bgActivity"){
+                // Phase 15: Server-side progress indicator — chirps: [bgActivity, icon, label]
+                let icon = msg.chirps[1] || "";
+                let label = msg.chirps[2] || "";
+                if (window.LLMConnector) {
+                    LLMConnector.setBgActivity(icon || null, label || null);
+                }
+                m.redraw();
+            }
             else if(c1 === "sceneImage"){
                 // Scene image generated — chirps: [sceneImage, chatRequestOid, imageObjectId]
                 let chatReqOid = msg.chirps[1] || "";

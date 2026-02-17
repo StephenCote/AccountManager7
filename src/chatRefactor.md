@@ -5388,10 +5388,10 @@ SwarmUI provides a ListModels API endpoint that returns all available model file
 
 | ID | Description | Priority | Status |
 |----|-------------|----------|--------|
-| OI-92 | SwarmUI ListModels API format needs investigation (endpoint path, response schema) | P2 | PLANNED |
-| OI-93 | Optimal initImageCreativity for landscape-to-scene merge needs empirical testing | P2 | PLANNED |
-| OI-94 | Landscape generation adds ~30s latency; consider async generation or pre-caching | P2 | PLANNED |
+| OI-92 | SwarmUI ListModels API format needs investigation (endpoint path, response schema). Existing GET /rest/olio/sdModels endpoint already proxies ListModels API. Frontend SD config panel wired to it. | P2 | RESOLVED |
+| OI-93 | Optimal initImageCreativity for landscape-to-scene merge needs empirical testing. Exposed as sceneCreativity slider (default 0.65) in SD Config panel. | P2 | RESOLVED |
+| OI-94 | Landscape generation adds ~30s latency; consider async generation or pre-caching. Two-phase WebSocket progress (bgActivity chirps) implemented for UX feedback. Pre-caching deferred. | P2 | OPEN |
 | OI-95 | IP-Adapter + initImage simultaneous use may conflict on some SwarmUI versions | P3 | PLANNED |
-| OI-96 | SD config persistence: localStorage vs chatConfig field vs separate record | P3 | PLANNED |
+| OI-96 | SD config persistence: localStorage vs chatConfig field vs separate record. Implemented via localStorage in chat.js (am7_sdConfig key). | P3 | RESOLVED |
 | OI-97 | Auto-generated chat title and icon don't display in UX after generation; title generation returns null, async security context issues with chatRequest lookup | P1 | OPEN |
-| OI-98 | Refactored keyframe logic can create a keyframe (memory extraction) on every chat message instead of respecting the keyframeEvery interval. Root cause: saveSession() runs before flushPendingKeyframe(), so the async keyframe was never persisted. Fix: added saveSession(req) in addKeyFrameAsync after keyframe injection. | P1 | RESOLVED |
+| OI-98 | Keyframes now memory-only (not embedded in chat history). Root cause: keyframe MCP messages were never persisted to session, causing triggers on every turn. Fix: removed message injection entirely, added lastKeyframeAt counter on chatConfig (eagerly updated in pruneCount). Also fixed cross-request duplicate firing (Chat instances are per-request, asyncKeyframeInProgress guard was ineffective). Memory extraction prompt enhanced with explicit JSON format example. | P1 | RESOLVED |

@@ -21,6 +21,7 @@ import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyEva
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.AttributeUtil;
 
 public class ChatListener implements IChatListener {
 	private static final Logger logger = LogManager.getLogger(ChatListener.class);
@@ -349,7 +350,7 @@ public class ChatListener implements IChatListener {
 			if ("user".equals(role)) userMsgCount++;
 		}
 		logger.info("Auto-title check (stream): autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount + " oid=" + oid);
-		if (autoTitle && userMsgCount == 1) {
+		if (autoTitle && userMsgCount >= 1) {
 			/// Pre-fetch chatRequest in the main thread where security context is available
 			BaseRecord chatReqRec = null;
 			try {
@@ -359,34 +360,46 @@ public class ChatListener implements IChatListener {
 			} catch (Exception e) {
 				logger.warn("Failed to pre-fetch chatRequest for title: " + e.getMessage());
 			}
-			final BaseRecord titleChatReqRec = chatReqRec;
-			CompletableFuture.runAsync(() -> {
+			/// OI-97: Skip if title already exists — prevents redundant generation on every exchange.
+			/// The check fires on userMsgCount >= 1 (not just == 1) so that if the first attempt
+			/// fails (LLM timeout, network error), subsequent exchanges will retry.
+			if (chatReqRec != null) {
 				try {
-					logger.info("Generating title/icon for: " + oid);
-					String[] titleAndIcon = chat.generateChatTitleAndIcon(request);
-					String title = titleAndIcon[0];
-					String icon = titleAndIcon[1];
-					logger.info("Title generation result: title=" + title + " icon=" + icon + " oid=" + oid);
-					if (titleChatReqRec != null) {
+					String existingTitle = AttributeUtil.getAttributeValue(chatReqRec, "chatTitle");
+					if (existingTitle != null && !existingTitle.isEmpty()) {
+						logger.info("Title already exists, skipping generation: " + existingTitle);
+						chatReqRec = null; // signal to skip
+					}
+				} catch (Exception e) {
+					// attribute not found — proceed with generation
+				}
+			}
+			final BaseRecord titleChatReqRec = chatReqRec;
+			if (titleChatReqRec != null) {
+				CompletableFuture.runAsync(() -> {
+					try {
+						logger.info("Generating title/icon for: " + oid);
+						String[] titleAndIcon = chat.generateChatTitleAndIcon(request);
+						String title = titleAndIcon[0];
+						String icon = titleAndIcon[1];
+						logger.info("Title generation result: title=" + title + " icon=" + icon + " oid=" + oid);
 						if (title != null) {
 							chat.setChatTitle(titleChatReqRec, title);
 						}
 						if (icon != null) {
 							chat.setChatIcon(titleChatReqRec, icon);
 						}
-					} else {
-						logger.warn("chatRequest record not found for title persist: " + oid);
+						if (title != null) {
+							handlers.forEach(h -> h.onChatTitle(user, request, title));
+						}
+						if (icon != null) {
+							handlers.forEach(h -> h.onChatIcon(user, request, icon));
+						}
+					} catch (Exception e) {
+						logger.warn("Async title/icon generation failed: " + e.getMessage());
 					}
-					if (title != null) {
-						handlers.forEach(h -> h.onChatTitle(user, request, title));
-					}
-					if (icon != null) {
-						handlers.forEach(h -> h.onChatIcon(user, request, icon));
-					}
-				} catch (Exception e) {
-					logger.warn("Async title/icon generation failed: " + e.getMessage());
-				}
-			});
+				});
+			}
 		}
 
 		handlers.forEach(h -> h.onChatComplete(user, request, response));

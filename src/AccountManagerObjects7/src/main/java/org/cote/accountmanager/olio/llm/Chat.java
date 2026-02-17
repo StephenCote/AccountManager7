@@ -434,33 +434,38 @@ public class Chat {
 				if (userRole.equals(allMsgs.get(i).getRole())) userMsgCount++;
 			}
 			logger.info("Auto-title check: autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount);
-			if (autoTitle && userMsgCount == 1) {
-				String[] titleAndIcon = generateChatTitleAndIcon(req);
-				String title = titleAndIcon[0];
-				String icon = titleAndIcon[1];
-				logger.info("Title generation result: title=" + title + " icon=" + icon);
+			if (autoTitle && userMsgCount >= 1) {
+				/// OI-97: Check if title already exists before generating (retry-safe)
 				String oid = req.get(FieldNames.FIELD_OBJECT_ID);
+				BaseRecord chatReqRec = null;
+				boolean titleExists = false;
 				if (oid != null) {
 					try {
 						Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
 						cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-						BaseRecord chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+						chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
 						if (chatReqRec != null) {
-							if (title != null) {
-								setChatTitle(chatReqRec, title);
-							}
-							if (icon != null) {
-								setChatIcon(chatReqRec, icon);
-							}
+							String existingTitle = AttributeUtil.getAttributeValue(chatReqRec, "chatTitle");
+							titleExists = existingTitle != null && !existingTitle.isEmpty();
 						}
 					} catch (Exception e) {
-						logger.warn("Buffer mode title/icon persist failed: " + e.getMessage());
+						// attribute not found — proceed with generation
 					}
 				}
-				/// Notify listener for real-time client update
-				if (listener != null) {
-					if (title != null) listener.onChatTitle(user, req, title);
-					if (icon != null) listener.onChatIcon(user, req, icon);
+				if (!titleExists) {
+					String[] titleAndIcon = generateChatTitleAndIcon(req);
+					String title = titleAndIcon[0];
+					String icon = titleAndIcon[1];
+					logger.info("Title generation result: title=" + title + " icon=" + icon);
+					if (chatReqRec != null) {
+						if (title != null) setChatTitle(chatReqRec, title);
+						if (icon != null) setChatIcon(chatReqRec, icon);
+					}
+					/// Notify listener for real-time client update
+					if (listener != null) {
+						if (title != null) listener.onChatTitle(user, req, title);
+						if (icon != null) listener.onChatIcon(user, req, icon);
+					}
 				}
 			}
 		}
@@ -2533,17 +2538,11 @@ public class Chat {
 			List<BaseRecord> pairMemories = MemoryUtil.searchMemoriesByPersonPair(user, sysId, usrId, maxPerLayer);
 			logger.info("retrieveRelevantMemories: pairMemories=" + pairMemories.size());
 
-			/// Layer 2: Character-specific memories (30% of budget)
-			List<BaseRecord> charMemories = MemoryUtil.searchMemoriesByPerson(user, sysId, maxPerLayer / 2);
-			/// Add user character memories too, deduplicating against pair results
-			List<BaseRecord> userCharMemories = MemoryUtil.searchMemoriesByPerson(user, usrId, maxPerLayer / 2);
-			for (BaseRecord ucm : userCharMemories) {
-				long ucmId = ucm.get(FieldNames.FIELD_ID);
-				boolean dup = charMemories.stream().anyMatch(m -> (long) m.get(FieldNames.FIELD_ID) == ucmId);
-				if (!dup) {
-					charMemories.add(ucm);
-				}
-			}
+			/// Layer 2: System character's cross-pair memories (30% of budget)
+			/// Only retrieve memories involving the SYSTEM character (the one the LLM plays).
+			/// User character's memories with other characters are private to the user character
+			/// and should NOT be presented to the system character as its own knowledge.
+			List<BaseRecord> charMemories = MemoryUtil.searchMemoriesByPerson(user, sysId, maxPerLayer);
 			/// Remove any that are already in pair results
 			java.util.Set<Long> pairIds = new java.util.HashSet<>();
 			for (BaseRecord pm : pairMemories) {

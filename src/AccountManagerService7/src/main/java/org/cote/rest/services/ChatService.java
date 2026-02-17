@@ -555,9 +555,11 @@ public class ChatService {
 		return Response.status(200).entity("{\"planId\":\"" + planId + "\",\"status\":\"unknown\"}").build();
 	}
 
-	/// Generate a contextual scene image for a chat session.
-	/// Combines both characters in the current setting using IP-Adapter face references.
-	/// POST body: SD config JSON (model, steps, cfg, sampler, dimensions, etc.)
+	/// Phase 15: 3-stage scene generation pipeline.
+	/// Stage 1: User submits SD config via POST body (model, steps, cfg, sampler, etc.)
+	/// Stage 2: Generate landscape reference image from chatConfig setting/terrain
+	/// Stage 3: Composite scene — landscape as initImage + character portraits via IP-Adapter
+	/// POST body: SD config JSON with sceneCreativity and skipLandscape fields
 	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/{objectId:[A-Fa-f0-9\\-]+}/generateScene")
@@ -600,14 +602,7 @@ public class ChatService {
 			return Response.status(500).entity("{\"error\":\"Failed to load chat session\"}").build();
 		}
 
-		/// 4. Generate the scene prompt (LLM call + prompt assembly)
-		Chat.ScenePromptResult sceneResult = chat.generateScenePrompt(req);
-		if (sceneResult == null) {
-			logger.error("generateScene: Failed to generate scene prompt");
-			return Response.status(500).entity("{\"error\":\"Failed to generate scene prompt\"}").build();
-		}
-
-		/// 5. Parse SD config from request body
+		/// Stage 1: Parse SD config from request body
 		BaseRecord sdConfig = null;
 		if (json != null && !json.isBlank()) {
 			sdConfig = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
@@ -621,10 +616,77 @@ public class ChatService {
 			}
 		}
 
-		/// 6. Build SWTxt2Img with scene prompt + SD config
+		/// Create SDUtil early — needed for both landscape and scene stages
+		String apiType = context.getInitParameter("sd.server.apiType");
+		String server = context.getInitParameter("sd.server");
+		if (apiType == null || server == null) {
+			logger.error("generateScene: sd.server.apiType or sd.server not configured");
+			return Response.status(500).entity("{\"error\":\"SD server not configured\"}").build();
+		}
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(apiType), server);
+		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+		sdu.setImageAccessUser(user);
+
+		/// Stage 2: Generate landscape reference image (unless skipLandscape=true)
+		boolean skipLandscape = false;
+		double sceneCreativity = 0.65;
+		if (sdConfig != null) {
+			try { skipLandscape = (boolean) sdConfig.get("skipLandscape"); } catch (Exception e) { /* default false */ }
+			try {
+				Double sc = sdConfig.get("sceneCreativity");
+				if (sc != null) sceneCreativity = sc;
+			} catch (Exception e) { /* default 0.65 */ }
+		}
+
+		byte[] landscapeBytes = null;
+		if (!skipLandscape) {
+			String setting = null;
+			String terrain = null;
+			try { setting = chatConfig.get("setting"); } catch (Exception e) { /* ignore */ }
+			try { terrain = chatConfig.get("terrain"); } catch (Exception e) { /* ignore */ }
+
+			if (setting != null && !setting.isEmpty() && !"random".equalsIgnoreCase(setting)) {
+				String landscapePrompt = "8k highly detailed landscape photograph, " + setting;
+				if (terrain != null && !terrain.isEmpty()) {
+					landscapePrompt += ", " + terrain + " terrain";
+				}
+				landscapePrompt += ", cinematic lighting, wide angle, no people, no text";
+				logger.info("generateScene Stage 2: Generating landscape — " + landscapePrompt.substring(0, Math.min(100, landscapePrompt.length())));
+				WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Generating landscape..."});
+				landscapeBytes = sdu.generateLandscapeBytes(landscapePrompt, null, sdConfig);
+				if (landscapeBytes != null) {
+					logger.info("generateScene Stage 2: Landscape generated — " + landscapeBytes.length + " bytes");
+				} else {
+					logger.warn("generateScene Stage 2: Landscape generation failed, falling back to text-only");
+				}
+			} else {
+				logger.info("generateScene Stage 2: No setting on chatConfig, skipping landscape");
+			}
+		} else {
+			logger.info("generateScene Stage 2: Skipped (skipLandscape=true)");
+		}
+
+		/// Stage 3: Composite scene — LLM scene description + character portraits + landscape reference
+		WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Generating scene..."});
+
+		/// 3a. Generate the scene prompt (LLM call + prompt assembly)
+		Chat.ScenePromptResult sceneResult = chat.generateScenePrompt(req);
+		if (sceneResult == null) {
+			logger.error("generateScene: Failed to generate scene prompt");
+			return Response.status(500).entity("{\"error\":\"Failed to generate scene prompt\"}").build();
+		}
+
+		/// 3b. Build SWTxt2Img with scene prompt + SD config
 		SWTxt2Img s2i = SWUtil.newSceneTxt2Img(sceneResult.prompt, sceneResult.negativePrompt, sdConfig);
 
-		/// 7. Populate IP-Adapter promptImages with portrait bytes
+		/// 3c. Wire landscape as initImage for img2img compositing
+		if (landscapeBytes != null) {
+			s2i.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(landscapeBytes));
+			s2i.setInitImageCreativity(sceneCreativity);
+			logger.info("generateScene Stage 3: Using landscape as initImage (creativity=" + sceneCreativity + ")");
+		}
+
+		/// 3d. Populate IP-Adapter promptImages with portrait bytes
 		Map<String, String> promptImages = new HashMap<>();
 		if (sceneResult.sysPortraitBytes != null) {
 			promptImages.put("sysPortrait", "data:image/png;base64," + Base64.getEncoder().encodeToString(sceneResult.sysPortraitBytes));
@@ -636,18 +698,7 @@ public class ChatService {
 			s2i.setPromptImages(promptImages);
 		}
 
-		/// 8. Create SDUtil and generate image
-		String apiType = context.getInitParameter("sd.server.apiType");
-		String server = context.getInitParameter("sd.server");
-		if (apiType == null || server == null) {
-			logger.error("generateScene: sd.server.apiType or sd.server not configured");
-			return Response.status(500).entity("{\"error\":\"SD server not configured\"}").build();
-		}
-
-		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(apiType), server);
-		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
-		sdu.setImageAccessUser(user);
-
+		/// 3e. Generate the final composite scene image
 		String groupPath = "~/Gallery/Scenes/" + sceneResult.label;
 		String name = sceneResult.label;
 		String sysOid = systemChar.get(FieldNames.FIELD_OBJECT_ID);
@@ -660,11 +711,12 @@ public class ChatService {
 			return Response.status(500).entity("{\"error\":\"No images generated\"}").build();
 		}
 
-		/// 9. Notify via WebSocket
+		/// Notify via WebSocket and clear bgActivity
 		String imageOid = images.get(0).get(FieldNames.FIELD_OBJECT_ID);
 		WebSocketService.chirpUser(user, new String[] {"sceneImage", objectId, imageOid});
+		WebSocketService.chirpUser(user, new String[] {"bgActivity", "", ""});
 
-		/// 10. Return first image record
+		/// Return first image record
 		return Response.status(200).entity(images.get(0).toFullString()).build();
 	}
 

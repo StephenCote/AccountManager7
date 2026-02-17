@@ -287,6 +287,20 @@
 			"name": "imageName",
 			"type": "string",
 			"description": "Output file name for the generated image."
+		},
+		{
+			"name": "sceneCreativity",
+			"type": "double",
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"default": 0.65,
+			"description": "initImageCreativity for landscape-to-scene merge. 0.0 = exact copy, 1.0 = ignore landscape. Recommended: 0.55-0.70."
+		},
+		{
+			"name": "skipLandscape",
+			"type": "boolean",
+			"default": false,
+			"description": "When true, skip landscape reference generation and use text-only scene prompt (single-stage generation)."
 		}
 	]
 }
