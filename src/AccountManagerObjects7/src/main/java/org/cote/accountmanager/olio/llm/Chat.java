@@ -396,18 +396,9 @@ public class Chat {
 			return;
 		}
 
-		/// Inject fresh memory context before user message (dynamic per-turn)
-		if (chatConfig != null) {
-			BaseRecord sysChar = chatConfig.get("systemCharacter");
-			BaseRecord usrChar = chatConfig.get("userCharacter");
-			String memCtx = retrieveRelevantMemories(sysChar, usrChar);
-			if (memCtx != null && !memCtx.isEmpty()) {
-				OpenAIMessage memMsg = new OpenAIMessage();
-				memMsg.setRole(systemRole);
-				memMsg.setContent(memCtx);
-				req.addMessage(memMsg);
-			}
-		}
+		/// Rebuild the system prompt (and intros) from current state each turn.
+		/// This ensures dynamic tokens (memory, scene, episode, etc.) are always fresh.
+		refreshSystemPrompt(req);
 
 		if (message != null && message.length() > 0) {
 			newMessage(req, message);
@@ -858,6 +849,83 @@ public class Chat {
 						+ vchar.get(FieldNames.FIELD_GENDER) + ujobDesc + ")")
 				+ " *: " + msg.getContent());
 
+	}
+
+	/// Rebuild the system prompt (and user/assistant intros) from the current chatConfig state.
+	/// Replaces the preamble messages in-place so dynamic tokens (memory, scene, episode, etc.)
+	/// are always freshly resolved. Call at the start of each turn before adding the user message.
+	public void refreshSystemPrompt(OpenAIRequest req) {
+		if (promptConfig == null || req == null) return;
+
+		BaseRecord systemChar = null;
+		BaseRecord userChar = null;
+		boolean useAssist = false;
+		String memoryCtx = null;
+
+		if (chatConfig != null) {
+			useAssist = chatConfig.get("assist");
+			systemChar = chatConfig.get("systemCharacter");
+			userChar = chatConfig.get("userCharacter");
+			memoryCtx = retrieveRelevantMemories(systemChar, userChar);
+		}
+
+		/// Check for structured prompt template on chatConfig
+		BaseRecord promptTemplate = (chatConfig != null) ? chatConfig.get("promptTemplate") : null;
+		if (promptTemplate != null) {
+			IOSystem.getActiveContext().getReader().populate(promptTemplate);
+		}
+
+		String sysTemp = null;
+		String assistTemp = null;
+		String userTemp = null;
+
+		if (promptTemplate != null) {
+			BaseRecord effectiveChatConfig = (systemChar != null && userChar != null) ? chatConfig : null;
+			injectMemoryThreadLocals(memoryCtx);
+			sysTemp = PromptTemplateComposer.composeSystem(promptTemplate, promptConfig, effectiveChatConfig);
+			if (useAssist) {
+				injectMemoryThreadLocals(memoryCtx);
+				assistTemp = PromptTemplateComposer.composeAssistant(promptTemplate, promptConfig, effectiveChatConfig);
+				injectMemoryThreadLocals(memoryCtx);
+				userTemp = PromptTemplateComposer.composeUser(promptTemplate, promptConfig, effectiveChatConfig);
+			}
+		} else {
+			BaseRecord cfgArg = (systemChar != null && userChar != null) ? chatConfig : null;
+			injectMemoryThreadLocals(memoryCtx);
+			sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, cfgArg);
+			if (useAssist || cfgArg == null) {
+				injectMemoryThreadLocals(memoryCtx);
+				assistTemp = PromptUtil.getAssistChatPromptTemplate(promptConfig, cfgArg);
+				injectMemoryThreadLocals(memoryCtx);
+				userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, cfgArg);
+			}
+		}
+
+		/// Replace preamble messages in-place.
+		/// Messages may be BaseRecord (loaded from DB) or OpenAIMessage (fresh), so use BaseRecord API.
+		List<BaseRecord> msgs = req.get("messages");
+		if (msgs.isEmpty()) return;
+
+		/// [0] = system prompt — always replace
+		if (sysTemp != null) {
+			msgs.get(0).setValue("content", sysTemp.trim());
+			setLlmSystemPrompt(sysTemp);
+		}
+
+		/// [1] = user intro, [2] = assistant intro (when assist=true)
+		if (useAssist && msgs.size() >= 3) {
+			if (userTemp != null && !userTemp.isEmpty()) {
+				msgs.get(1).setValue("content", userTemp.trim());
+			}
+			if (assistTemp != null && !assistTemp.isEmpty()) {
+				msgs.get(2).setValue("content", assistTemp.trim());
+			}
+		} else if (!useAssist && msgs.size() >= 2) {
+			/// [1] = user intro only (no assistant intro)
+			if (userTemp != null && !userTemp.isEmpty()) {
+				msgs.get(1).setValue("content", userTemp.trim());
+			}
+		}
 	}
 
 	public int getMessageOffset() {
