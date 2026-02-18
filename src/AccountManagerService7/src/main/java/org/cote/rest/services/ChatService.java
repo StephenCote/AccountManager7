@@ -633,13 +633,13 @@ public class ChatService {
 
 		/// Stage 2: Generate landscape reference image (unless skipLandscape=true)
 		boolean skipLandscape = false;
-		double sceneCreativity = 0.65;
+		double sceneCreativity = 0.85;
 		if (sdConfig != null) {
 			try { skipLandscape = (boolean) sdConfig.get("skipLandscape"); } catch (Exception e) { /* default false */ }
 			try {
 				Double sc = sdConfig.get("sceneCreativity");
 				if (sc != null) sceneCreativity = sc;
-			} catch (Exception e) { /* default 0.65 */ }
+			} catch (Exception e) { /* default 0.85 */ }
 		}
 
 		byte[] landscapeBytes = null;
@@ -700,6 +700,9 @@ public class ChatService {
 		}
 		if (!promptImages.isEmpty()) {
 			s2i.setPromptImages(promptImages);
+			logger.info("generateScene Stage 3d: IP-Adapter promptImages populated with " + promptImages.size() + " portrait(s): " + promptImages.keySet());
+		} else {
+			logger.warn("generateScene Stage 3d: No portrait images available — characters will rely on text prompt only (IP-Adapter inactive)");
 		}
 
 		/// 3e. Generate the final composite scene image

@@ -1272,16 +1272,18 @@ public class Chat {
 		}
 
 		/// Step 4: Assemble composite prompt with IP-Adapter image tags
+		/// Character emphasis is critical — without strong weighting, img2img from a
+		/// "no people" landscape will suppress the figures entirely.
 		StringBuilder prompt = new StringBuilder();
 		prompt.append("8k highly detailed ((highest quality)) ((ultra realistic)) ");
+		prompt.append("((two people in scene)) ");
 		prompt.append(sceneDesc);
-		prompt.append(", ").append(sysDesc).append(" on the left");
-		// Add IP-Adapter tag for system character if portrait available
+		prompt.append(", ((").append(sysDesc).append(")) on the left");
 		byte[] sysPortraitBytes = getPortraitBytes(systemChar);
 		if (sysPortraitBytes != null) {
 			prompt.append(" <image:sysPortrait>");
 		}
-		prompt.append(", ").append(usrDesc).append(" on the right");
+		prompt.append(", ((").append(usrDesc).append(")) on the right");
 		byte[] usrPortraitBytes = getPortraitBytes(userChar);
 		if (usrPortraitBytes != null) {
 			prompt.append(" <image:userPortrait>");
