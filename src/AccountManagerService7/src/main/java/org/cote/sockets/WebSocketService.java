@@ -27,7 +27,13 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.agent.AgentToolManager;
+import org.cote.accountmanager.agent.AM7AgentTool;
+import org.cote.accountmanager.agent.ChainExecutor;
+import org.cote.accountmanager.mcp.McpContextBuilder;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.ChatListener;
+import org.cote.accountmanager.olio.llm.IChainEventListener;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.IChatHandler;
 import org.cote.accountmanager.olio.llm.IChatListener;
@@ -307,10 +313,76 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			return;
 		}
 
+		/// Resolve chatConfig if provided
+		String chatConfigObjectId = chainReq.get("chatConfigObjectId");
+		BaseRecord chatConfig = null;
+		if (chatConfigObjectId != null && !chatConfigObjectId.isEmpty()) {
+			try {
+				Query cfgQ = QueryUtil.createQuery("olio.llm.chatConfig", FieldNames.FIELD_OBJECT_ID, chatConfigObjectId);
+				cfgQ.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+				cfgQ.planMost(false);
+				chatConfig = OlioUtil.getFullRecord(IOSystem.getActiveContext().getAccessPoint().find(user, cfgQ));
+			} catch (Exception e) {
+				logger.warn("Failed to resolve chatConfig for chain: " + e.getMessage());
+			}
+		}
+
+		/// Check for pre-built plan JSON
+		String planJson = chainReq.get("plan");
+		final BaseRecord resolvedChatConfig = chatConfig;
+
 		java.util.concurrent.CompletableFuture.runAsync(() -> {
 			try {
 				logger.info("Starting chain execution for user " + user.get(FieldNames.FIELD_URN) + ": " + planQuery);
 				chirpUser(user, new String[] {"chainEvent", "chainStart", planQuery});
+
+				AM7AgentTool agentTool = new AM7AgentTool(user);
+				AgentToolManager toolMgr = new AgentToolManager(user, resolvedChatConfig, agentTool);
+				ChainExecutor executor = toolMgr.getChainExecutor();
+
+				/// Wire event listener to chirp progress
+				executor.setListener(new IChainEventListener() {
+					@Override
+					public void onChainEvent(BaseRecord evtUser, BaseRecord chainEvent) {
+						String eventType = chainEvent.get("eventType");
+						String stepSummary = chainEvent.get("stepSummary");
+						int stepNum = chainEvent.get("stepNumber");
+						int totalSteps = chainEvent.get("totalSteps");
+						chirpUser(user, new String[] {
+							"chainEvent", eventType,
+							"Step " + stepNum + "/" + totalSteps + ": " + (stepSummary != null ? stepSummary : eventType)
+						});
+					}
+				});
+
+				BaseRecord plan;
+				if (planJson != null && !planJson.isEmpty()) {
+					plan = JSONUtil.importObject(planJson, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+					if (plan == null) {
+						chirpUser(user, new String[] {"chainEvent", "chainError", "Invalid plan JSON"});
+						return;
+					}
+					toolMgr.preparePlanSteps(plan);
+				} else {
+					plan = toolMgr.createChainPlan(planQuery);
+					if (plan == null) {
+						chirpUser(user, new String[] {"chainEvent", "chainError", "Failed to create chain plan"});
+						return;
+					}
+				}
+
+				executor.executeChain(plan);
+
+				/// Build MCP context from chain results
+				java.util.Map<String, Object> ctx = executor.getChainContext();
+				McpContextBuilder mcpBuilder = new McpContextBuilder();
+				String planName = plan.get(FieldNames.FIELD_NAME);
+				mcpBuilder.addResource("am7://chain/" + (planName != null ? planName : "result"),
+					"urn:am7:agent:chain-result", ctx, true);
+				String mcpResult = mcpBuilder.build();
+
+				chirpUser(user, new String[] {"chainEvent", "chainComplete", mcpResult});
+
 			} catch (Exception e) {
 				logger.error("Chain execution failed", e);
 				chirpUser(user, new String[] {"chainEvent", "chainError", e.getMessage()});

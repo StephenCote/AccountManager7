@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -823,132 +825,209 @@ public class ChatUtil {
 	private static String summarizeUserCommand = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
 	
 	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean remote) {
-		int iter = 0;
-		int max = 100;
-		int minLength = 300;
 		List<String> summaries = new ArrayList<>();
 
 		try {
+			/// Step 1: Load chunks
+			List<String> chunks = loadChunks(user, ref);
+			if (chunks.isEmpty()) {
+				logger.warn("composeSummary: no chunks found for ref " + ref.getSchema());
+				return summaries;
+			}
+			logger.info("composeSummary: loaded " + chunks.size() + " chunks for map-reduce");
+
+			/// Step 2: Map phase — parallel batch summarization
+			int batchSize = 5;
+			summaries = mapSummarize(user, chatConfig, promptConfig, chunks, remote, batchSize);
+			logger.info("composeSummary: map phase produced " + summaries.size() + " summaries");
+
+			/// Step 3: Reduce phase — hierarchical merge until single summary
+			if (summaries.size() > 1) {
+				summaries = reduceSummaries(user, chatConfig, promptConfig, summaries, remote, batchSize);
+				logger.info("composeSummary: reduce phase completed with " + summaries.size() + " final summaries");
+			}
+		}
+		catch(Exception e) {
+			logger.error(e);
+		}
+		return summaries;
+	}
+
+	/// Load vector store chunks for a reference record.
+	private static List<String> loadChunks(BaseRecord user, BaseRecord ref) {
+		List<String> chunks = new ArrayList<>();
+		try {
 			VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
-			//List<BaseRecord> store = vu.getVectorStore(ref);
-			
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, ref.copyRecord(new String[] {FieldNames.FIELD_ID}));
 			q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, ref.getSchema());
 			q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_VECTOR_REFERENCE, FieldNames.FIELD_VECTOR_REFERENCE_TYPE, FieldNames.FIELD_CHUNK, FieldNames.FIELD_CHUNK_COUNT, FieldNames.FIELD_CONTENT});
 			q.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CHUNK);
 			List<BaseRecord> store = new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().find(q).getResults()));
-			
+
 			Set<Long> chatIds = new HashSet<>();
-			if(ref.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
+			if (ref.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
 				BaseRecord tag = DocumentUtil.getCreateTag(user, ref.get(FieldNames.FIELD_NAME), ref.getSchema());
 				List<BaseRecord> chats = vu.findByTag(OlioModelNames.MODEL_VECTOR_CHAT_HISTORY, new BaseRecord[] {tag});
 				chatIds = chats.stream().map(c -> (long)c.get(FieldNames.FIELD_ID)).collect(Collectors.toSet());
 				store.addAll(chats);
 			}
-			
-			
-			Chat chat = null;
-			if(chatConfig != null && promptConfig != null) {
-				chat = new Chat(user, chatConfig, promptConfig);
-				chat.setDeferRemote(remote);
-			}
 
+			int minLength = 300;
 			StringBuilder contentBuffer = new StringBuilder();
-			EmbeddingUtil eu = IOSystem.getActiveContext().getVectorUtil().getEmbedUtil();
-			
-			for(int i = 0; i < store.size(); i++) {
+			for (int i = 0; i < store.size(); i++) {
 				BaseRecord v = store.get(i);
 				long id = v.get(FieldNames.FIELD_ID);
 				String cit = getCitationText(v, "chunk", false);
-
-				if(cit != null || cit.length() > 0) {
-					if(chatIds.contains(id)) {
+				if (cit != null && cit.length() > 0) {
+					if (chatIds.contains(id)) {
 						cit = "<chat>" + System.lineSeparator() + cit + System.lineSeparator() + "</chat>";
 					}
 					contentBuffer.append(cit + System.lineSeparator());
 				}
-				if(i < (store.size() - 1) && cit.length() < minLength) {
+				if (i < (store.size() - 1) && contentBuffer.length() < minLength) {
 					continue;
 				}
-
-				logger.info("Summarizing chunk #" + (iter + 1) + " of " + store.size());
-				String summ = null;
-				String prevSum = "";
-				if(chat == null) {
-					if (eu.getServiceType() == LLMServiceEnumType.LOCAL) {
-						summ = eu.getSummary(contentBuffer.toString());
-						// logger.info(contentBuffer.toString());
-						logger.info(summ);
-					}
-					else {
-						logger.warn("Remote summarization not currently supported");
-					}
-				}
-				else {
-					OpenAIRequest req = chat.getChatPrompt();
-					/*
-					if(summaries.size() > 0) {
-						prevSum = "<previous-summary>" + System.lineSeparator() + summaries.get(summaries.size() - 1) + System.lineSeparator() + "</previous-summary>" + System.lineSeparator();
-					}
-					*/
-					String cmd = summarizeUserCommand + prevSum + contentBuffer.toString();
-					chat.newMessage(req, cmd, Chat.userRole);
-	
-					OpenAIResponse resp = null;
-					if(remote) {
-						resp = chat.checkRemote(req, null, false);
-					}
-					else {
-						resp = chat.chat(req);
-					}
-					if (resp == null || resp.getMessage() == null) {
-						logger.warn("Content null or blocked.");
-						summ = "Content null or blocked.";
-					}
-					else {
-						summ = resp.getMessage().getContent();
-					}
-					// logger.info(req.toFullString());
-					// logger.info(summ);
-				}
-				if(summ != null && summ.length() > 0) {
-					summaries.add("<summary-chunk chunk=\"" + (i + 1) + "\">" + System.lineSeparator() + summ + System.lineSeparator() + "</summary-chunk>");
-				}
-				contentBuffer = new StringBuilder();
-				iter++;
-				if(max > 0 && iter >= max) {
-					logger.warn("Maximum summarization requests reached - " + max + " of " + store.size());
-					break;
-				}
-				
-			}
-		
-			if(summaries.size() > 0) {
-				logger.info("Completing summarization with " + summaries.size() + " summary chunks");
-				if(chatConfig == null) {
-					summaries.add(eu.getSummary(summaries.stream().collect(Collectors.joining(System.lineSeparator()))));
-				}
-				else {
-					if (summaries.size() > 1) {
-						String userCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator() + summaries.stream().collect(Collectors.joining(System.lineSeparator()));
-						OpenAIRequest req = chat.getChatPrompt();
-						chat.newMessage(req, userCommand, Chat.userRole);
-						OpenAIResponse resp = null;
-						if(remote) {
-							resp = chat.checkRemote(req, null, false);
-						}
-						else {
-							resp = chat.chat(req);
-						}
-						summaries.add("<summary>" + System.lineSeparator() + resp.getMessage().getContent() + System.lineSeparator() + "</summary>");
-					}
+				if (contentBuffer.length() > 0) {
+					chunks.add(contentBuffer.toString());
+					contentBuffer = new StringBuilder();
 				}
 			}
+			if (contentBuffer.length() > 0) {
+				chunks.add(contentBuffer.toString());
+			}
+		} catch (Exception e) {
+			logger.error("loadChunks: " + e.getMessage());
 		}
-		catch(ProcessingException | ReaderException e) {
-			logger.error(e);
+		return chunks;
+	}
+
+	/// Map phase: parallel batch summarization of content chunks.
+	/// Each batch runs in its own thread with its own Chat instance (Chat is not thread-safe).
+	private static List<String> mapSummarize(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> chunks, boolean remote, int batchSize) {
+		List<String> summaries = new ArrayList<>();
+		if (chatConfig == null || promptConfig == null) {
+			/// Fallback to local embedding if no chat config
+			EmbeddingUtil eu = IOSystem.getActiveContext().getVectorUtil().getEmbedUtil();
+			for (int i = 0; i < chunks.size(); i++) {
+				String summ = eu.getSummary(chunks.get(i));
+				if (summ != null && !summ.isEmpty()) {
+					summaries.add(wrapChunkSummary(i + 1, summ));
+				}
+			}
+			return summaries;
+		}
+
+		/// Split into batches and process each batch in parallel
+		List<List<String>> batches = new ArrayList<>();
+		for (int i = 0; i < chunks.size(); i += batchSize) {
+			batches.add(chunks.subList(i, Math.min(i + batchSize, chunks.size())));
+		}
+
+		logger.info("mapSummarize: " + chunks.size() + " chunks in " + batches.size() + " batches of " + batchSize);
+
+		List<CompletableFuture<List<String>>> futures = new ArrayList<>();
+		for (int b = 0; b < batches.size(); b++) {
+			final List<String> batch = batches.get(b);
+			final int batchIdx = b;
+			futures.add(CompletableFuture.supplyAsync(() -> {
+				List<String> batchResults = new ArrayList<>();
+				/// Each parallel task creates its own Chat instance for thread safety
+				Chat chat = new Chat(user, chatConfig, promptConfig);
+				chat.setDeferRemote(remote);
+				for (int i = 0; i < batch.size(); i++) {
+					try {
+						String summ = summarizeChunk(batch.get(i), chat, remote);
+						if (summ != null && !summ.isEmpty()) {
+							batchResults.add(wrapChunkSummary(batchIdx * batchSize + i + 1, summ));
+						}
+					} catch (Exception e) {
+						logger.warn("mapSummarize: chunk " + (batchIdx * batchSize + i) + " failed: " + e.getMessage());
+					}
+				}
+				return batchResults;
+			}));
+		}
+
+		/// Collect results with timeout
+		for (CompletableFuture<List<String>> future : futures) {
+			try {
+				List<String> batchResult = future.get(120, TimeUnit.SECONDS);
+				summaries.addAll(batchResult);
+			} catch (Exception e) {
+				logger.warn("mapSummarize: batch timed out or failed: " + e.getMessage());
+			}
 		}
 		return summaries;
+	}
+
+	/// Summarize a single chunk of content using a Chat instance.
+	private static String summarizeChunk(String content, Chat chat, boolean remote) {
+		OpenAIRequest req = chat.getChatPrompt();
+		String cmd = summarizeUserCommand + content;
+		chat.newMessage(req, cmd, Chat.userRole);
+
+		OpenAIResponse resp = null;
+		if (remote) {
+			resp = chat.checkRemote(req, null, false);
+		} else {
+			resp = chat.chat(req);
+		}
+		if (resp == null || resp.getMessage() == null) {
+			logger.warn("summarizeChunk: Content null or blocked.");
+			return null;
+		}
+		return resp.getMessage().getContent();
+	}
+
+	/// Reduce phase: hierarchical merge of summaries until a single summary remains.
+	/// Guard: MAX_REDUCE_DEPTH prevents infinite recursion on pathological inputs.
+	private static final int MAX_REDUCE_DEPTH = 5;
+	private static final String reduceCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator();
+
+	private static List<String> reduceSummaries(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> summaries, boolean remote, int batchSize) {
+		int depth = 0;
+		List<String> current = new ArrayList<>(summaries);
+
+		while (current.size() > 1 && depth < MAX_REDUCE_DEPTH) {
+			depth++;
+			logger.info("reduceSummaries: depth=" + depth + " reducing " + current.size() + " summaries");
+			List<String> reduced = new ArrayList<>();
+
+			for (int i = 0; i < current.size(); i += batchSize) {
+				List<String> batch = current.subList(i, Math.min(i + batchSize, current.size()));
+				String merged = batch.stream().collect(Collectors.joining(System.lineSeparator()));
+
+				/// Each reduce creates its own Chat instance for thread safety
+				Chat chat = new Chat(user, chatConfig, promptConfig);
+				chat.setDeferRemote(remote);
+
+				OpenAIRequest req = chat.getChatPrompt();
+				chat.newMessage(req, reduceCommand + merged, Chat.userRole);
+
+				OpenAIResponse resp = null;
+				if (remote) {
+					resp = chat.checkRemote(req, null, false);
+				} else {
+					resp = chat.chat(req);
+				}
+				if (resp != null && resp.getMessage() != null) {
+					reduced.add("<summary>" + System.lineSeparator() + resp.getMessage().getContent() + System.lineSeparator() + "</summary>");
+				} else {
+					/// Keep the batch as-is if merge fails
+					reduced.addAll(batch);
+				}
+			}
+			current = reduced;
+		}
+
+		if (depth >= MAX_REDUCE_DEPTH && current.size() > 1) {
+			logger.warn("reduceSummaries: hit MAX_REDUCE_DEPTH=" + MAX_REDUCE_DEPTH + " with " + current.size() + " summaries remaining");
+		}
+		return current;
+	}
+
+	private static String wrapChunkSummary(int chunkNum, String content) {
+		return "<summary-chunk chunk=\"" + chunkNum + "\">" + System.lineSeparator() + content + System.lineSeparator() + "</summary-chunk>";
 	}
 	
 

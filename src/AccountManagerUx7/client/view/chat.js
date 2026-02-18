@@ -195,6 +195,10 @@
     let showTagSelector = false;
     let selectedImageTags = [];
 
+    // Image drag/drop state
+    let dragActive = false;
+    let uploadingImage = false;
+
     // Patch image tokens on the server request, then reload history to stay in sync
     // replacements: array of {from: unresolvedTokenStr, to: resolvedTokenStr}
     async function patchChatImageToken(replacements) {
@@ -1387,6 +1391,7 @@
       let featureTools = [
         chatIconBtn(camera ? "photo_camera" : "no_photography", toggleCamera, camera, "Camera"),
         chatIconBtn(showTagSelector ? "image" : "add_photo_alternate", function() { showTagSelector = !showTagSelector; if (!showTagSelector) selectedImageTags = []; }, showTagSelector, "Image tags"),
+        uploadingImage ? chatIconBtn("hourglass_top", function(){}, true, "Uploading image...") : "",
         chatIconBtn(profile ? "account_circle" : "account_circle_off", toggleProfile, profile, "Profile"),
         chatIconBtn(audio ? "volume_up" : "volume_mute", toggleAudio, audio, "Audio"),
         chatIconBtn("counter_8", sendToMagic8, false, "Magic 8"),
@@ -1423,7 +1428,13 @@
         chatIconBtn("chat", doChat, false, "Send")
       ];
 
-      return m("div", { class: "border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-black" }, [
+      return m("div", {
+        class: "border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-black" + (dragActive ? " ring-2 ring-purple-500" : ""),
+        ondragover: function(ev) { ev.preventDefault(); dragActive = true; },
+        ondragenter: function(ev) { ev.preventDefault(); dragActive = true; },
+        ondragleave: function() { dragActive = false; },
+        ondrop: function(ev) { ev.preventDefault(); dragActive = false; handleImageDrop(ev); }
+      }, [
         getSdConfigPanel(),
         tagSelectorRow,
         // Toolbar row
@@ -1443,6 +1454,79 @@
       ]);
     }
     
+    function readFileAsBase64(file) {
+      return new Promise(function(resolve, reject) {
+        let reader = new FileReader();
+        reader.onload = function() {
+          resolve(reader.result.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function handleImageDrop(e) {
+      if (!inst || uploadingImage) return;
+      let files = e.dataTransfer ? e.dataTransfer.files : null;
+      if (!files || files.length === 0) return;
+
+      let file = files[0];
+      if (!file.type.startsWith("image/")) {
+        page.toast("warn", "Only image files can be dropped here");
+        return;
+      }
+
+      uploadingImage = true;
+      m.redraw();
+
+      try {
+        let base64 = await readFileAsBase64(file);
+
+        let cdir = await page.makePath("auth.group", "data", "~/Gallery/Uploads");
+        let dataObj = am7model.newPrimitive("data.data");
+        dataObj.name = file.name || ("upload-" + Date.now());
+        dataObj.contentType = file.type;
+        dataObj.groupPath = cdir.path;
+        dataObj.organizationId = page.user.organizationId;
+        dataObj.dataBytesStore = base64;
+
+        let created = await page.createObject(dataObj);
+        if (!created || !created.objectId) {
+          page.toast("error", "Image upload failed");
+          return;
+        }
+
+        let tags = [];
+        try {
+          let tagResult = await m.request({
+            method: "GET",
+            url: g_application_path + "/rest/tag/" + created.objectId,
+            withCredentials: true
+          });
+          if (tagResult && tagResult.tags) {
+            tags = tagResult.tags.map(function(t) { return t.name || t; }).slice(0, 5);
+          }
+        } catch (tagErr) {
+          console.warn("Image tagging failed, using defaults:", tagErr);
+        }
+        if (tags.length === 0) tags = ["photo"];
+
+        let token = "${image." + created.objectId + "." + tags.join(",") + "}";
+        let inputEl = document.querySelector("[name='chatmessage']");
+        if (inputEl) {
+          inputEl.value = (inputEl.value ? inputEl.value + " " : "") + token;
+        }
+
+        page.toast("success", "Image uploaded: " + tags.join(", "));
+      } catch (err) {
+        console.error("Image drop error:", err);
+        page.toast("error", "Image upload failed");
+      } finally {
+        uploadingImage = false;
+        m.redraw();
+      }
+    }
+
     async function handleAudioSave(mimeType, base64) {
       let name = inst.api.objectId() + " - " + (chatCfg?.history?.messages?.length || 1);
       console.log("Save:", name);

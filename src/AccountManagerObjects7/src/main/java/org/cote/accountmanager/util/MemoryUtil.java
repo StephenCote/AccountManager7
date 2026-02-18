@@ -251,6 +251,36 @@ public class MemoryUtil {
 		return results;
 	}
 
+	/// Phase 3 (chatRefactor2): Search memories by person AND semantic query.
+	/// Combines person-filtered retrieval with vector similarity matching.
+	/// Returns memories where personId matches AND vector similarity > threshold.
+	public static List<BaseRecord> searchMemoriesByPersonAndQuery(BaseRecord user, String queryText, long personId, int limit, double threshold) {
+		List<BaseRecord> results = new ArrayList<>();
+		if (queryText == null || queryText.isEmpty()) {
+			return results;
+		}
+		try {
+			/// First get vector-similar memories
+			List<BaseRecord> vectorResults = searchMemories(user, queryText, limit * 3, threshold);
+			if (vectorResults.isEmpty()) {
+				return results;
+			}
+
+			/// Filter to only those involving the specified person
+			for (BaseRecord mem : vectorResults) {
+				long pid1 = mem.get("personId1");
+				long pid2 = mem.get("personId2");
+				if (pid1 == personId || pid2 == personId) {
+					results.add(mem);
+					if (results.size() >= limit) break;
+				}
+			}
+		} catch (Exception e) {
+			logger.error("Error in searchMemoriesByPersonAndQuery: " + e.getMessage());
+		}
+		return results;
+	}
+
 	public static String formatMemoriesAsContext(List<BaseRecord> memories) {
 		if (memories == null || memories.isEmpty()) {
 			return "";

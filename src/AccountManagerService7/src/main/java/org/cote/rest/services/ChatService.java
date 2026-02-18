@@ -11,6 +11,10 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.agent.AgentToolManager;
+import org.cote.accountmanager.agent.AM7AgentTool;
+import org.cote.accountmanager.agent.ChainExecutor;
+import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatResponse;
 import org.cote.accountmanager.olio.llm.ChatUtil;
@@ -538,9 +542,51 @@ public class ChatService {
 
 		logger.info("Synchronous chain execution for user " + user.get("name") + ": " + planQuery);
 
-		// Synchronous chain execution placeholder - full implementation requires AgentToolManager
-		// which depends on Agent7 module not available in Service7 classpath
-		return Response.status(200).entity("{\"status\":\"chain_submitted\",\"planQuery\":\"" + planQuery + "\"}").build();
+		/// Resolve chatConfig if provided (needed for AgentToolManager context)
+		String chatConfigObjectId = chainReq.get("chatConfigObjectId");
+		BaseRecord chatConfig = null;
+		if (chatConfigObjectId != null && !chatConfigObjectId.isEmpty()) {
+			chatConfig = OlioUtil.getFullRecord(findByObjectId(user, "olio.llm.chatConfig", chatConfigObjectId));
+		}
+
+		/// Check for pre-built plan JSON
+		String planJson = chainReq.get("plan");
+
+		try {
+			AM7AgentTool agentTool = new AM7AgentTool(user);
+			AgentToolManager toolMgr = new AgentToolManager(user, chatConfig, agentTool);
+			ChainExecutor executor = toolMgr.getChainExecutor();
+
+			BaseRecord plan;
+			if (planJson != null && !planJson.isEmpty()) {
+				plan = JSONUtil.importObject(planJson, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+				if (plan == null) {
+					return Response.status(400).entity("{\"error\":\"Invalid plan JSON\"}").build();
+				}
+				toolMgr.preparePlanSteps(plan);
+			} else {
+				plan = toolMgr.createChainPlan(planQuery);
+				if (plan == null) {
+					return Response.status(500).entity("{\"error\":\"Failed to create chain plan\"}").build();
+				}
+			}
+
+			executor.executeChain(plan);
+
+			/// Build MCP context from chain results
+			java.util.Map<String, Object> ctx = executor.getChainContext();
+			McpContextBuilder mcpBuilder = new McpContextBuilder();
+			String planName = plan.get(FieldNames.FIELD_NAME);
+			mcpBuilder.addResource("am7://chain/" + (planName != null ? planName : "result"),
+				"urn:am7:agent:chain-result",
+				ctx, true);
+			String mcpResult = mcpBuilder.build();
+
+			return Response.status(200).entity("{\"status\":\"complete\",\"planQuery\":\"" + escJson(planQuery) + "\",\"mcpContext\":\"" + escJson(mcpResult) + "\"}").build();
+		} catch (Exception e) {
+			logger.error("Chain execution failed for user " + user.get("name"), e);
+			return Response.status(500).entity("{\"error\":\"Chain execution failed: " + escJson(e.getMessage()) + "\"}").build();
+		}
 	}
 
 	@RolesAllowed({"admin","user"})

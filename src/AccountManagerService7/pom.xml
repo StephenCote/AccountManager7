@@ -145,6 +145,11 @@
 			<version>7.0.0-SNAPSHOT</version>
 		</dependency>
 		<dependency>
+			<groupId>org.cote.accountmanager</groupId>
+			<artifactId>AccountManagerAgent7</artifactId>
+			<version>7.0.0-SNAPSHOT</version>
+		</dependency>
+		<dependency>
 			<groupId>commons-codec</groupId>
 			<artifactId>commons-codec</artifactId>
 			<version>1.18.0</version>

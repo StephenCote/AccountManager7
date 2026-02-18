@@ -23,6 +23,11 @@
     let showCreateForm = false;
     let createForm = { content: "", summary: "", memoryType: "NOTE", importance: 5 };
 
+    // Phase 3 (chatRefactor2): Cross-conversation memory browsing
+    let viewMode = "pair";        // "pair" | "character" | "search"
+    let characterMemories = [];
+    let characterLoading = false;
+
     // ── Memory type icons (Material Symbols) ─────────────────────────────
 
     let typeIcons = {
@@ -123,6 +128,68 @@
         m.redraw();
     }
 
+    // Phase 3 (chatRefactor2): Load all memories for a character across conversations
+    async function loadForCharacter(personObjectId) {
+        if (!personObjectId) {
+            characterMemories = [];
+            return;
+        }
+        characterLoading = true;
+        m.redraw();
+        try {
+            let result = await m.request({
+                method: 'GET',
+                url: am7client.base() + "/memory/person/" + personObjectId + "/50",
+                withCredentials: true
+            });
+            characterMemories = (result && Array.isArray(result)) ? result : [];
+        } catch(e) {
+            console.warn("[MemoryPanel] Failed to load character memories:", e);
+            characterMemories = [];
+        }
+        characterLoading = false;
+        m.redraw();
+    }
+
+    // Phase 3 (chatRefactor2): Share a memory from character/search view to current pair
+    async function shareMemoryToCurrentPair(mem) {
+        if (!mem || !currentConfig) {
+            page.toast("warn", "No active chat session");
+            return;
+        }
+        let sys = currentConfig.systemCharacter;
+        let usr = currentConfig.userCharacter;
+        if (!sys || !usr || !sys.objectId || !usr.objectId) {
+            page.toast("warn", "Character pair not available");
+            return;
+        }
+        try {
+            let body = {
+                content: mem.content || "",
+                summary: mem.summary || null,
+                memoryType: mem.memoryType || "NOTE",
+                importance: mem.importance || 5,
+                person1ObjectId: sys.objectId,
+                person2ObjectId: usr.objectId,
+                conversationId: currentConfig.objectId || null
+            };
+            await m.request({
+                method: 'POST',
+                url: am7client.base() + "/memory/create",
+                withCredentials: true,
+                body: body
+            });
+            page.toast("success", "Memory shared to current pair");
+            // Refresh pair view
+            if (sys.objectId && usr.objectId) {
+                await loadForPair(sys.objectId, usr.objectId);
+            }
+        } catch(e) {
+            page.toast("error", "Failed to share memory");
+        }
+        m.redraw();
+    }
+
     async function deleteMemory(mem) {
         if (!mem || !mem.objectId) return;
         try {
@@ -216,6 +283,15 @@
                 }, icon),
                 m("span", { class: "memory-summary" }, summary),
                 importance > 0 ? m("span", { class: "memory-importance" }, importance) : "",
+                // Phase 3: Share button visible in character/search modes
+                (viewMode !== "pair") ? m("span", {
+                    class: "material-symbols-outlined memory-share",
+                    title: "Share to current pair",
+                    onclick: function(e) {
+                        e.stopPropagation();
+                        shareMemoryToCurrentPair(mem);
+                    }
+                }, "share") : "",
                 m("span", {
                     class: "material-symbols-outlined memory-delete",
                     title: "Delete",
@@ -291,16 +367,58 @@
     }
 
     function memoryListView() {
-        let list = searchResults !== null ? searchResults : memories;
-        if (loading) {
+        let list;
+        let isLoading = loading;
+        if (viewMode === "character") {
+            list = characterMemories;
+            isLoading = characterLoading;
+        } else if (viewMode === "search") {
+            list = searchResults !== null ? searchResults : [];
+        } else {
+            list = searchResults !== null ? searchResults : memories;
+        }
+        if (isLoading) {
             return m("div", { class: "memory-empty" }, "Loading...");
         }
         if (!list || list.length === 0) {
-            return m("div", { class: "memory-empty" },
-                searchResults !== null ? "No search results" : "No memories"
-            );
+            let emptyMsg = viewMode === "character" ? "No character memories"
+                : (viewMode === "search" ? "Search for memories" : "No memories");
+            return m("div", { class: "memory-empty" }, emptyMsg);
         }
         return list.map(function(mem) { return memoryItemView(mem); });
+    }
+
+    // Phase 3 (chatRefactor2): View mode selector
+    function viewModeSelector() {
+        let modes = [
+            { key: "pair", label: "Pair", icon: "people" },
+            { key: "character", label: "Character", icon: "person" },
+            { key: "search", label: "Search", icon: "search" }
+        ];
+        return m("div", { class: "memory-mode-selector" },
+            modes.map(function(mode) {
+                return m("button", {
+                    class: "memory-mode-btn" + (viewMode === mode.key ? " active" : ""),
+                    title: mode.label,
+                    onclick: function() {
+                        viewMode = mode.key;
+                        searchResults = null;
+                        if (mode.key === "character" && currentConfig) {
+                            let sys = currentConfig.systemCharacter;
+                            if (sys && sys.objectId) {
+                                loadForCharacter(sys.objectId);
+                            }
+                        }
+                    }
+                }, [
+                    m("span", {
+                        class: "material-symbols-outlined",
+                        style: "font-size: 14px;"
+                    }, mode.icon),
+                    m("span", { class: "memory-mode-label" }, mode.label)
+                ]);
+            })
+        );
     }
 
     // ── Panel Component ──────────────────────────────────────────────────
@@ -338,6 +456,7 @@
                 ]),
                 // Expanded content
                 expanded ? m("div", { class: "memory-body" }, [
+                    viewModeSelector(),
                     createFormView(),
                     searchInputView(),
                     memoryListView()
@@ -351,6 +470,14 @@
     let MemoryPanel = {
 
         PanelView: PanelView,
+
+        view: function() { return m(PanelView); },
+
+        setConfig: function(cfg) { currentConfig = cfg; },
+
+        loadForPair: loadForPair,
+
+        loadForCharacter: loadForCharacter,
 
         loadForSession: function(chatConfig) {
             currentConfig = chatConfig;

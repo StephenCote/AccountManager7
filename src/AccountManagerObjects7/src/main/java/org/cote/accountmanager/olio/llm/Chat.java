@@ -46,6 +46,11 @@ import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.MemoryUtil;
+import org.cote.accountmanager.util.BinaryUtil;
+import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.ThumbnailUtil;
+import org.cote.accountmanager.tools.ImageTagUtil;
+import org.cote.accountmanager.tools.ImageTagResponse;
 import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
@@ -97,6 +102,9 @@ public class Chat {
 	private String apiVersion = null;
 	private String authorizationToken = null;
 	private boolean deferRemote = false;
+	/// Phase 3 (chatRefactor2): Stash the incoming user message so Layer 3 semantic recall
+	/// can use it during refreshSystemPrompt() before the message is added to the request.
+	private String pendingUserMessage = null;
 	private boolean enableKeyFrame = true;
 	private IChatListener listener = null;
 	/// The chatRequest objectId — different from the session/OpenAIRequest objectId.
@@ -427,11 +435,24 @@ public class Chat {
 			return;
 		}
 
+		/// Stash the incoming message for Layer 3 semantic recall (used in retrieveRelevantMemories)
+		pendingUserMessage = message;
+
 		/// Rebuild the system prompt (and intros) from current state each turn.
 		/// This ensures dynamic tokens (memory, scene, episode, etc.) are always fresh.
 		refreshSystemPrompt(req);
 
 		if (message != null && message.length() > 0) {
+			/// Phase 2 (chatRefactor2): Enrich image tokens with MCP context (description + tags)
+			String imageCtx = buildImageMcpContext(user, message);
+			if (imageCtx != null && !imageCtx.isEmpty()) {
+				message = message + "\n" + imageCtx;
+			}
+			/// Phase 2a (chatRefactor2): Route through agentic bridge if enabled
+			String agenticCtx = detectAndRouteAgentic(user, chatConfig, message);
+			if (agenticCtx != null && !agenticCtx.isEmpty()) {
+				message = message + "\n" + agenticCtx;
+			}
 			newMessage(req, message);
 		}
 		boolean stream = req.get("stream");
@@ -996,6 +1017,162 @@ public class Chat {
 			idx = 2;
 		}
 		return idx;
+	}
+
+	/// Phase 2 (chatRefactor2): Regex for ${image.OBJECTID.TAGS} tokens in user messages.
+	/// Group 1 = objectId (UUID), Group 2 = comma-separated tags.
+	private static final Pattern IMAGE_TOKEN_PATTERN = Pattern.compile(
+		"\\$\\{image\\.([a-fA-F0-9\\-]+)\\.([^}]+)\\}"
+	);
+
+	/// Phase 2 (chatRefactor2): Scan a user message for image tokens and build MCP context
+	/// blocks containing the image description and tags from ImageTagUtil.
+	/// Returns empty string if no tokens found or if the tagging service is unavailable.
+	public String buildImageMcpContext(BaseRecord user, String message) {
+		if (message == null || !message.contains("${image.")) {
+			return "";
+		}
+		java.util.regex.Matcher matcher = IMAGE_TOKEN_PATTERN.matcher(message);
+		McpContextBuilder ctxBuilder = new McpContextBuilder();
+		while (matcher.find()) {
+			String objectId = matcher.group(1);
+			String tags = matcher.group(2);
+			try {
+				Query q = QueryUtil.createQuery("data.data", FieldNames.FIELD_OBJECT_ID, objectId);
+				q.planMost(false);
+				q.getRequest().add(FieldNames.FIELD_BYTE_STORE);
+				BaseRecord data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+				if (data == null) {
+					logger.warn("buildImageMcpContext: data.data not found for objectId=" + objectId);
+					continue;
+				}
+				String contentType = data.get(FieldNames.FIELD_CONTENT_TYPE);
+				if (contentType == null || !contentType.startsWith("image/")) {
+					continue;
+				}
+
+				/// Create thumbnail for tagging (768x768 matches TagService pattern)
+				BaseRecord thumb = ThumbnailUtil.getCreateThumbnail(data, 768, 768);
+				if (thumb == null) {
+					logger.warn("buildImageMcpContext: thumbnail generation failed for " + objectId);
+					continue;
+				}
+				String tid = thumb.get(FieldNames.FIELD_OBJECT_ID);
+				Query tq = QueryUtil.createQuery("data.thumbnail", FieldNames.FIELD_OBJECT_ID, tid);
+				tq.planMost(false);
+				tq.getRequest().add(FieldNames.FIELD_BYTE_STORE);
+				thumb = IOSystem.getActiveContext().getAccessPoint().find(user, tq);
+				if (thumb == null) {
+					logger.warn("buildImageMcpContext: thumbnail retrieval failed for " + tid);
+					continue;
+				}
+
+				String base64 = BinaryUtil.toBase64Str(ByteModelUtil.getValue(thumb));
+				ImageTagUtil itu = new ImageTagUtil();
+				ImageTagResponse resp = itu.tagImageBase64(base64);
+				if (resp == null) {
+					logger.warn("buildImageMcpContext: tagging failed for " + objectId);
+					continue;
+				}
+
+				String caption = "";
+				if (resp.getCaptions() != null && !resp.getCaptions().isEmpty()) {
+					caption = resp.getCaptions().get(0);
+				}
+				List<String> tagList = resp.getTagStrings() != null ? resp.getTagStrings() : List.of();
+
+				ctxBuilder.addResource(
+					"am7://image/" + objectId,
+					"urn:am7:media:image-description",
+					Map.of(
+						"objectId", objectId,
+						"tags", tags,
+						"caption", caption,
+						"extractedTags", tagList
+					),
+					true
+				);
+			} catch (Exception e) {
+				logger.warn("buildImageMcpContext: error processing image " + objectId + ": " + e.getMessage());
+			}
+		}
+		return ctxBuilder.size() > 0 ? ctxBuilder.build() : "";
+	}
+
+	/// Phase 2a (chatRefactor2): Detect if agentic processing is enabled on the chatConfig
+	/// and route the message through a lightweight chain execution to gather MCP context
+	/// from "Agent Aware" tagged objects.
+	/// Returns MCP context string or empty string if agentic is not enabled or no results.
+	public String detectAndRouteAgentic(BaseRecord user, BaseRecord chatCfg, String message) {
+		if (chatCfg == null || message == null || message.isEmpty()) {
+			return "";
+		}
+
+		/// Check for agentic flag on chatConfig
+		boolean agentEnabled = false;
+		if (chatCfg.hasField("agentEnabled")) {
+			Object ae = chatCfg.get("agentEnabled");
+			if (ae instanceof Boolean) {
+				agentEnabled = (Boolean) ae;
+			}
+		}
+		if (!agentEnabled) {
+			return "";
+		}
+
+		try {
+			logger.info("detectAndRouteAgentic: agentic mode enabled, building chain for: "
+				+ message.substring(0, Math.min(80, message.length())));
+
+			/// Dynamically load Agent7 classes to avoid hard compile dependency from Objects7
+			Class<?> am7Class = Class.forName("org.cote.accountmanager.agent.AM7AgentTool");
+			Object agentTool = am7Class.getConstructor(BaseRecord.class).newInstance(user);
+
+			Class<?> atmClass = Class.forName("org.cote.accountmanager.agent.AgentToolManager");
+			Object toolMgr = atmClass.getConstructor(BaseRecord.class, BaseRecord.class, Object.class)
+				.newInstance(user, chatCfg, agentTool);
+
+			/// Create chain plan from the user message
+			java.lang.reflect.Method createPlan = atmClass.getMethod("createChainPlan", String.class);
+			BaseRecord plan = (BaseRecord) createPlan.invoke(toolMgr, message);
+			if (plan == null) {
+				logger.warn("detectAndRouteAgentic: plan creation returned null");
+				return "";
+			}
+
+			/// Execute the chain
+			java.lang.reflect.Method getExec = atmClass.getMethod("getChainExecutor");
+			Object executor = getExec.invoke(toolMgr);
+			java.lang.reflect.Method execChain = executor.getClass().getMethod("executeChain", BaseRecord.class);
+			execChain.invoke(executor, plan);
+
+			/// Extract results from chain context
+			java.lang.reflect.Method getCtx = executor.getClass().getMethod("getChainContext");
+			@SuppressWarnings("unchecked")
+			Map<String, Object> chainCtx = (Map<String, Object>) getCtx.invoke(executor);
+
+			if (chainCtx == null || chainCtx.isEmpty()) {
+				return "";
+			}
+
+			McpContextBuilder mcpBuilder = new McpContextBuilder();
+			String planName = plan.get(FieldNames.FIELD_NAME);
+			mcpBuilder.addResource(
+				"am7://agent/" + (planName != null ? planName : "result"),
+				"urn:am7:agent:chain-result",
+				chainCtx, true
+			);
+			String result = mcpBuilder.build();
+			logger.info("detectAndRouteAgentic: chain produced " + chainCtx.size() + " context entries");
+			return result;
+
+		} catch (ClassNotFoundException e) {
+			logger.debug("detectAndRouteAgentic: Agent7 not on classpath — skipping agentic routing");
+			return "";
+		} catch (Exception e) {
+			logger.warn("detectAndRouteAgentic: error during agentic routing: " + e.getMessage());
+			return "";
+		}
 	}
 
 	private List<BaseRecord> createNarrativeVector(BaseRecord user, OpenAIRequest req) {
@@ -2789,6 +2966,28 @@ public class Chat {
 			}
 			charMemories.removeIf(m -> pairIds.contains((long) m.get(FieldNames.FIELD_ID)));
 
+			/// Layer 3 (chatRefactor2 Phase 3): Semantic relevance — vector similarity search
+			/// using the last user message to find contextually relevant memories.
+			/// Budget: 10% stolen from Layer 2.
+			List<BaseRecord> semanticMemories = new ArrayList<>();
+			try {
+				String lastMsg = pendingUserMessage;
+				if (lastMsg != null && !lastMsg.isEmpty() && VectorUtil.isVectorSupported()) {
+					int semanticLimit = Math.max(2, maxPerLayer / 3);
+					semanticMemories = MemoryUtil.searchMemoriesByPersonAndQuery(user, lastMsg, sysId, semanticLimit, 0.6);
+					/// Deduplicate against Layer 1 + Layer 2
+					java.util.Set<Long> existingIds = new java.util.HashSet<>(pairIds);
+					for (BaseRecord cm : charMemories) {
+						existingIds.add((long) cm.get(FieldNames.FIELD_ID));
+					}
+					semanticMemories.removeIf(m -> existingIds.contains((long) m.get(FieldNames.FIELD_ID)));
+					logger.info("retrieveRelevantMemories: semanticMemories=" + semanticMemories.size()
+						+ " (query: " + lastMsg.substring(0, Math.min(50, lastMsg.length())) + ")");
+				}
+			} catch (Exception e) {
+				logger.debug("retrieveRelevantMemories: semantic search failed: " + e.getMessage());
+			}
+
 			/// Combine all memories with freshness decay applied
 			List<MemoryWithScore> scored = new ArrayList<>();
 			String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
@@ -2797,6 +2996,9 @@ public class Chat {
 			}
 			for (BaseRecord mem : charMemories) {
 				scored.add(new MemoryWithScore(mem, applyFreshnessDecay(mem, cfgObjId), 2));
+			}
+			for (BaseRecord mem : semanticMemories) {
+				scored.add(new MemoryWithScore(mem, applyFreshnessDecay(mem, cfgObjId), 3));
 			}
 
 			/// Sort by effective importance descending
