@@ -407,7 +407,7 @@
     // When true, opens the reimage dialog before generating so user can review/edit config
     let debugReimage = false;
 
-    async function generateImageForTags(character, tags) {
+    async function generateImageForTags(character, tags, options) {
         if (!character) return null;
 
         page.toast("info", "Generating image for " + (character.name || "character") + "...", -1);
@@ -426,6 +426,12 @@
 
             // Load SD config
             let entity = await am7sd.fetchTemplate(true);
+
+            // If a landscape setting was provided, pass it so the server
+            // generates/caches a landscape and uses it as initImage reference
+            if (options && options.landscapeSetting) {
+                entity.landscapeSetting = options.landscapeSetting;
+            }
 
             // Set style to selfie if tags include "selfie"
             if (tags.indexOf("selfie") >= 0) {
@@ -574,7 +580,7 @@
         }
     }
 
-    async function resolveImageToken(token, character) {
+    async function resolveImageToken(token, character, options) {
         if (token.id) {
             if (resolvedImageCache[token.id]) {
                 return resolvedImageCache[token.id];
@@ -597,7 +603,7 @@
 
         let image = await findImageForTags(character, token.tags);
         if (!image) {
-            image = await generateImageForTags(character, token.tags);
+            image = await generateImageForTags(character, token.tags, options);
         }
         if (image) {
             let url = getImageThumbnailUrl(image, "256x256");

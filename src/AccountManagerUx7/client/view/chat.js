@@ -300,7 +300,11 @@
             if (!unresolvedToken) break; // All resolved
 
             try {
-                let resolved = await window.am7imageTokens.resolve(unresolvedToken, character);
+                let resolveOpts = {};
+                if (inst && inst.api.setting && inst.api.setting()) {
+                    resolveOpts.landscapeSetting = inst.api.setting();
+                }
+                let resolved = await window.am7imageTokens.resolve(unresolvedToken, character, resolveOpts);
                 if (resolved && resolved.image) {
                     if (!unresolvedToken.id) {
                         let newToken = "${image." + resolved.image.objectId + "." + unresolvedToken.tags.join(",") + "}";

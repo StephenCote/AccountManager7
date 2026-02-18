@@ -170,6 +170,21 @@ public class OlioService {
 			return Response.status(200).entity(null).build();
 		}
 
+		/// If landscapeSetting is provided and no referenceImageId exists,
+		/// generate or retrieve a cached landscape to use as the image reference.
+		String landscapeSetting = imp.get("landscapeSetting");
+		String existingRefId = imp.get("referenceImageId");
+		if (landscapeSetting != null && !landscapeSetting.isBlank() && (existingRefId == null || existingRefId.isBlank())) {
+			String landscapeRefId = getOrCreateSettingLandscape(user, sdu, landscapeSetting, imp);
+			if (landscapeRefId != null) {
+				imp.setValue("referenceImageId", landscapeRefId);
+				if (imp.get("denoisingStrength") == null) {
+					imp.setValue("denoisingStrength", 0.85);
+				}
+				logger.info("reimageWithConfig: Using landscape reference " + landscapeRefId + " for setting: " + landscapeSetting);
+			}
+		}
+
 		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
@@ -548,6 +563,55 @@ public class OlioService {
 		} catch(Exception e) {
 			logger.error("generateArt: " + e.getMessage());
 			return Response.status(500).entity("{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}").build();
+		}
+	}
+
+	/// Generate or retrieve a cached landscape image for a text setting.
+	/// Landscapes are cached under ~/Gallery/Landscapes/Settings/{settingName}.
+	/// Returns the objectId of the landscape data record, or null on failure.
+	private String getOrCreateSettingLandscape(BaseRecord user, SDUtil sdu, String setting, BaseRecord sdConfig) {
+		try {
+			String safeName = setting.replaceAll("[^a-zA-Z0-9 ]", "").trim();
+			if (safeName.length() > 60) safeName = safeName.substring(0, 60);
+			String groupPath = "~/Gallery/Landscapes/Settings";
+			String imageName = safeName;
+
+			/// Check for existing cached landscape
+			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if (dir != null) {
+				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, (long) dir.get(FieldNames.FIELD_ID));
+				q.field(FieldNames.FIELD_NAME, imageName);
+				BaseRecord existing = IOSystem.getActiveContext().getSearch().findRecord(q);
+				if (existing != null) {
+					String oid = existing.get(FieldNames.FIELD_OBJECT_ID);
+					logger.info("getOrCreateSettingLandscape: Using cached landscape " + oid + " for setting: " + setting);
+					return oid;
+				}
+			}
+
+			/// Generate new landscape
+			String prompt = "8k highly detailed landscape photograph, " + setting + ", cinematic lighting, wide angle, no people, no text";
+			byte[] landscapeBytes = sdu.generateLandscapeBytes(prompt, null, sdConfig);
+			if (landscapeBytes == null || landscapeBytes.length == 0) {
+				logger.warn("getOrCreateSettingLandscape: Landscape generation failed for: " + setting);
+				return null;
+			}
+
+			/// Save as cached data record
+			dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			org.cote.accountmanager.io.ParameterList clist = org.cote.accountmanager.io.ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+			clist.parameter(FieldNames.FIELD_NAME, imageName);
+			BaseRecord data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
+			data.set(FieldNames.FIELD_BYTE_STORE, landscapeBytes);
+			data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+			IOSystem.getActiveContext().getAccessPoint().create(user, data);
+
+			String oid = data.get(FieldNames.FIELD_OBJECT_ID);
+			logger.info("getOrCreateSettingLandscape: Generated and cached landscape " + oid + " (" + landscapeBytes.length + " bytes) for: " + setting);
+			return oid;
+		} catch (Exception e) {
+			logger.warn("getOrCreateSettingLandscape failed: " + e.getMessage());
+			return null;
 		}
 	}
 

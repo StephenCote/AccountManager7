@@ -2186,6 +2186,19 @@ public class Chat {
 			// field may not be set on legacy configs
 		}
 		int msgSize = req.getMessages().size();
+		/// Guard: if lastKeyframeAt exceeds current message count (e.g. messages were
+		/// pruned or chat was reset), reset the marker so keyframes can trigger again.
+		if (lastKfAt > msgSize) {
+			logger.warn("lastKeyframeAt (" + lastKfAt + ") > msgSize (" + msgSize + ") — resetting stale marker");
+			lastKfAt = 0;
+			try {
+				chatConfig.setValue("lastKeyframeAt", 0);
+				IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig.copyRecord(new String[] {
+					FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, "lastKeyframeAt" }));
+			} catch (Exception e) {
+				logger.warn("Failed to reset lastKeyframeAt: " + e.getMessage());
+			}
+		}
 		int sinceLastKF = msgSize - lastKfAt;
 		logger.info("Keyframe check: keyFrameEvery=" + keyFrameEvery
 			+ " msgSize=" + msgSize + " lastKeyframeAt=" + lastKfAt
