@@ -501,7 +501,7 @@
             let c1 = msg.chirps[0] || "";
             if(c1.match(/(chatStart|chatComplete|chatUpdate|chatError)/)){
                 if(!page.chatStream){
-                    console.error("Chat stream isn't available");
+                    // Late-arriving event after stream was cleared — drop silently
                     return;
                 }
                 page.chatStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2], msg.chirps[3]);
