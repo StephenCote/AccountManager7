@@ -35,7 +35,8 @@
       "Bash(xargs:*)",
       "Bash(git checkout:*)",
       "Bash(npx tailwindcss:*)",
-      "Bash(\"c:/Projects/GitHub/AccountManager7/src/chatRefactor.md\":*)"
+      "Bash(\"c:/Projects/GitHub/AccountManager7/src/chatRefactor.md\":*)",
+      "Read(//c/Projects/GitHub/**)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

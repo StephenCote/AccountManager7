@@ -145,6 +145,9 @@ public class ChatListener implements IChatListener {
 		
 		Chat chat = ChatUtil.getChat(user, vChatReq, deferRemote);
 		chat.setListener(this);
+		/// Pass chatRequest objectId for title/icon event routing (different from session objectId)
+		String chatReqOid = vChatReq.get(FieldNames.FIELD_OBJECT_ID);
+		chat.setChatRequestObjectId(chatReqOid);
 
 		asyncRequests.put(oid, req);
 		asyncRequestCount.put(oid, 0);
@@ -379,13 +382,14 @@ public class ChatListener implements IChatListener {
 			}
 			final BaseRecord titleChatReqRec = chatReqRec;
 			if (titleChatReqRec != null) {
+				final String chatReqOid = titleChatReqRec.get(FieldNames.FIELD_OBJECT_ID);
 				CompletableFuture.runAsync(() -> {
 					try {
-						logger.info("Generating title/icon for: " + oid);
+						logger.info("Generating title/icon for: " + oid + " chatReqOid=" + chatReqOid);
 						String[] titleAndIcon = chat.generateChatTitleAndIcon(request);
 						String title = titleAndIcon[0];
 						String icon = titleAndIcon[1];
-						logger.info("Title generation result: title=" + title + " icon=" + icon + " oid=" + oid);
+						logger.info("Title generation result: title=" + title + " icon=" + icon + " chatReqOid=" + chatReqOid);
 						if (title != null) {
 							chat.setChatTitle(titleChatReqRec, title);
 						}
@@ -393,10 +397,10 @@ public class ChatListener implements IChatListener {
 							chat.setChatIcon(titleChatReqRec, icon);
 						}
 						if (title != null) {
-							handlers.forEach(h -> h.onChatTitle(user, request, title));
+							handlers.forEach(h -> h.onChatTitle(user, request, chatReqOid, title));
 						}
 						if (icon != null) {
-							handlers.forEach(h -> h.onChatIcon(user, request, icon));
+							handlers.forEach(h -> h.onChatIcon(user, request, chatReqOid, icon));
 						}
 					} catch (Exception e) {
 						logger.warn("Async title/icon generation failed: " + e.getMessage());
@@ -448,14 +452,14 @@ public class ChatListener implements IChatListener {
 
 	/// Phase 13g: Forward title events to handlers (buffer-mode path)
 	@Override
-	public void onChatTitle(BaseRecord user, OpenAIRequest request, String title) {
-		handlers.forEach(h -> h.onChatTitle(user, request, title));
+	public void onChatTitle(BaseRecord user, OpenAIRequest request, String chatRequestId, String title) {
+		handlers.forEach(h -> h.onChatTitle(user, request, chatRequestId, title));
 	}
 
 	/// Phase 13g: Forward icon events to handlers
 	@Override
-	public void onChatIcon(BaseRecord user, OpenAIRequest request, String icon) {
-		handlers.forEach(h -> h.onChatIcon(user, request, icon));
+	public void onChatIcon(BaseRecord user, OpenAIRequest request, String chatRequestId, String icon) {
+		handlers.forEach(h -> h.onChatIcon(user, request, chatRequestId, icon));
 	}
 
 	/// Phase 13g: Forward autotune events to handlers

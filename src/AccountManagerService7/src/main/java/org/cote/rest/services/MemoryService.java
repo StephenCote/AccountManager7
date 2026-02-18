@@ -10,12 +10,10 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
-import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.MemoryUtil;
 import org.cote.service.util.ServiceUtil;
 
@@ -165,7 +163,7 @@ public class MemoryService {
 	public Response createMemory(String body, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		try {
-			LooseRecord rec = JSONUtil.importObject(body, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+			BaseRecord rec = RecordFactory.importRecord(ModelNames.MODEL_MEMORY, body);
 			if (rec == null) {
 				return Response.status(400).entity("{\"error\":\"Invalid JSON\"}").build();
 			}

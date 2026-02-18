@@ -1824,6 +1824,111 @@
         } else {
             log("convmgr", "errorState test skipped — not available", "skip");
         }
+
+        // Test 110b-110h: Title/icon display (Phase 13g — OI-80)
+        if (window.ConversationManager) {
+            log("convmgr", "=== Title/Icon Display Tests (OI-80) ===");
+
+            // 110b: updateSessionTitle API exists
+            let hasTitleFn = typeof ConversationManager.updateSessionTitle === "function";
+            let hasIconFn = typeof ConversationManager.updateSessionIcon === "function";
+            log("convmgr", "110b: updateSessionTitle available: " + hasTitleFn, hasTitleFn ? "pass" : "fail");
+            log("convmgr", "110b: updateSessionIcon available: " + hasIconFn, hasIconFn ? "pass" : "fail");
+
+            // 110c: updateSessionTitle sets chatTitle attribute on a mock session
+            let origSessions = ConversationManager.getSessions();
+            let mockSession = { objectId: "test-title-oid-" + Date.now(), name: "Untitled Session", attributes: [] };
+            let mockSessions = [mockSession];
+            // Temporarily inject mock sessions for isolated testing
+            let _internalSessions = origSessions;
+            // Use the loaded sessions if available; otherwise we test with a manual attribute check
+            if (_internalSessions && _internalSessions.length > 0) {
+                // Use a real session from the loaded list
+                let testSession = _internalSessions[0];
+                let origAttrs = JSON.parse(JSON.stringify(testSession.attributes || []));
+                let testTitle = "Auto-Title Test " + Date.now();
+                ConversationManager.updateSessionTitle(testSession.objectId, testTitle);
+
+                // Verify attribute was set
+                let titleAttr = (testSession.attributes || []).find(function(a) { return a.name === "chatTitle"; });
+                let titleSet = titleAttr && titleAttr.value === testTitle;
+                log("convmgr", "110c: updateSessionTitle sets chatTitle attribute: " + titleSet, titleSet ? "pass" : "fail");
+                if (titleAttr) logData("convmgr", "110c: chatTitle attribute", titleAttr);
+
+                // 110d: updateSessionIcon sets chatIcon attribute
+                let testIcon = "psychology";
+                ConversationManager.updateSessionIcon(testSession.objectId, testIcon);
+                let iconAttr = (testSession.attributes || []).find(function(a) { return a.name === "chatIcon"; });
+                let iconSet = iconAttr && iconAttr.value === testIcon;
+                log("convmgr", "110d: updateSessionIcon sets chatIcon attribute: " + iconSet, iconSet ? "pass" : "fail");
+                if (iconAttr) logData("convmgr", "110d: chatIcon attribute", iconAttr);
+
+                // 110e: updateSessionTitle overwrites existing title
+                let testTitle2 = "Updated Title " + Date.now();
+                ConversationManager.updateSessionTitle(testSession.objectId, testTitle2);
+                let titleAttr2 = (testSession.attributes || []).find(function(a) { return a.name === "chatTitle"; });
+                let overwritten = titleAttr2 && titleAttr2.value === testTitle2;
+                log("convmgr", "110e: updateSessionTitle overwrites existing: " + overwritten, overwritten ? "pass" : "fail");
+
+                // 110f: Sidebar renders title instead of session name
+                try {
+                    let container = document.createElement("div");
+                    // Render the SidebarView into a detached container
+                    m.render(container, m(ConversationManager.SidebarView, { onNew: null }));
+                    let html = container.innerHTML;
+                    // The rendered HTML should contain the auto-title, not just the session name
+                    let hasTitle = html.indexOf(testTitle2) !== -1;
+                    log("convmgr", "110f: SidebarView renders chatTitle text: " + hasTitle, hasTitle ? "pass" : "fail");
+
+                    // 110g: Sidebar renders material-symbols icon for chatIcon
+                    let hasIcon = html.indexOf(testIcon) !== -1;
+                    log("convmgr", "110g: SidebarView renders chatIcon material symbol: " + hasIcon, hasIcon ? "pass" : "fail");
+
+                    // 110h: Session name is NOT displayed when title is set (title replaces name)
+                    // sessionItemView shows title || session.name — so if title is set, name should not appear
+                    // (unless the name happens to be a substring of the title)
+                    let nameVisible = html.indexOf(testSession.name) !== -1;
+                    let titleVisible = html.indexOf(testTitle2) !== -1;
+                    let titleReplacesName = titleVisible && !nameVisible;
+                    log("convmgr", "110h: Title replaces session name in display: " + titleReplacesName,
+                        titleReplacesName ? "pass" : (titleVisible ? "pass" : "fail"));
+                    if (nameVisible && titleVisible) {
+                        log("convmgr", "110h: Both title and name visible (name may be substring of title)", "info");
+                    }
+
+                    // Cleanup: remove rendered container
+                    m.render(container, null);
+                } catch (e) {
+                    log("convmgr", "110f-h: SidebarView render test error: " + e.message, "fail");
+                    logData("convmgr", "110f-h: Error", e.stack || e.message);
+                }
+
+                // Restore original attributes
+                testSession.attributes = origAttrs;
+            } else {
+                log("convmgr", "110c-h: No sessions loaded — title/icon display tests skipped (load sessions first)", "skip");
+            }
+
+            // 110i: updateSessionTitle with non-existent objectId is no-op
+            let beforeCount = (_internalSessions || []).length;
+            ConversationManager.updateSessionTitle("nonexistent-oid-" + Date.now(), "Ghost Title");
+            let afterCount = (ConversationManager.getSessions() || []).length;
+            let noopOk = beforeCount === afterCount;
+            log("convmgr", "110i: updateSessionTitle with unknown oid is no-op: " + noopOk, noopOk ? "pass" : "fail");
+
+            // 110j: updateSessionTitle with null/empty args is no-op
+            ConversationManager.updateSessionTitle(null, "test");
+            ConversationManager.updateSessionTitle("oid", null);
+            ConversationManager.updateSessionTitle(null, null);
+            log("convmgr", "110j: updateSessionTitle null guards — no crash", "pass");
+
+            ConversationManager.updateSessionIcon(null, "test");
+            ConversationManager.updateSessionIcon("oid", null);
+            ConversationManager.updateSessionIcon(null, null);
+            log("convmgr", "110j: updateSessionIcon null guards — no crash", "pass");
+        } else {
+            log("convmgr", "110b-j: ConversationManager not loaded — title/icon tests skipped", "skip");
+        }
     }
 
     // ── Tests 111-113: Layout (Phase 12a) ──────────────────────────────

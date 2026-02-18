@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -97,6 +98,9 @@ public class Chat {
 	private boolean deferRemote = false;
 	private boolean enableKeyFrame = true;
 	private IChatListener listener = null;
+	/// The chatRequest objectId — different from the session/OpenAIRequest objectId.
+	/// Set by ChatListener.sendMessageToServer for use in title/icon event routing.
+	private String chatRequestObjectId = null;
 	private int requestTimeout = 120;
 	/// Phase 14: Separate timeout for internal analyze/memory extraction LLM calls.
 	/// Default 120s. Legacy configs without the field keep this default.
@@ -105,6 +109,13 @@ public class Chat {
 	private ThreadLocal<Integer> analyzeTimeoutOverride = new ThreadLocal<>();
 	/// Guard against duplicate async keyframe generation when messages arrive faster than analysis completes.
 	private volatile boolean asyncKeyframeInProgress = false;
+	/// Global per-chat keyframe lock: prevents multiple concurrent keyframes for the same chat
+	/// across request boundaries (each request creates a new Chat instance, so instance-level
+	/// guards don't protect against simultaneous requests). Key is chatConfig objectId,
+	/// value is acquisition timestamp (ms) for leak detection.
+	private static final ConcurrentHashMap<String, Long> activeKeyframes = new ConcurrentHashMap<>();
+	/// Maximum time (ms) a keyframe lock can be held before it's considered leaked and forcibly removed.
+	private static final long KEYFRAME_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 	/// Deferred keyframe: snapshot saved by pruneCount, launched after main response completes.
 	private volatile List<OpenAIMessage> pendingKeyframeSnapshot = null;
 	private int responseCount = 0;
@@ -194,6 +205,14 @@ public class Chat {
 
 	public void setDeferRemote(boolean deferRemote) {
 		this.deferRemote = deferRemote;
+	}
+
+	public String getChatRequestObjectId() {
+		return chatRequestObjectId;
+	}
+
+	public void setChatRequestObjectId(String chatRequestObjectId) {
+		this.chatRequestObjectId = chatRequestObjectId;
 	}
 
 	public int getRequestTimeout() {
@@ -444,12 +463,14 @@ public class Chat {
 			logger.info("Auto-title check: autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount);
 			if (autoTitle && userMsgCount >= 1) {
 				/// OI-97: Check if title already exists before generating (retry-safe)
-				String oid = req.get(FieldNames.FIELD_OBJECT_ID);
+				/// Use chatRequestObjectId (set by ChatListener) — the session objectId
+				/// is different from the chatRequest objectId.
+				String chatReqOid = chatRequestObjectId;
 				BaseRecord chatReqRec = null;
 				boolean titleExists = false;
-				if (oid != null) {
+				if (chatReqOid != null) {
 					try {
-						Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
+						Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, chatReqOid);
 						cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 						cq.planMost(false);
 						chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
@@ -460,6 +481,8 @@ public class Chat {
 					} catch (Exception e) {
 						// attribute not found — proceed with generation
 					}
+				} else {
+					logger.warn("chatRequestObjectId not set — cannot persist title (buffer mode)");
 				}
 				if (!titleExists) {
 					String[] titleAndIcon = generateChatTitleAndIcon(req);
@@ -471,9 +494,9 @@ public class Chat {
 						if (icon != null) setChatIcon(chatReqRec, icon);
 					}
 					/// Notify listener for real-time client update
-					if (listener != null) {
-						if (title != null) listener.onChatTitle(user, req, title);
-						if (icon != null) listener.onChatIcon(user, req, icon);
+					if (listener != null && chatReqOid != null) {
+						if (title != null) listener.onChatTitle(user, req, chatReqOid, title);
+						if (icon != null) listener.onChatIcon(user, req, chatReqOid, icon);
 					}
 				}
 			}
@@ -758,6 +781,14 @@ public class Chat {
 		OpenAIRequest titleReq = new OpenAIRequest();
 		titleReq.setModel(req.getModel());
 		titleReq.setStream(false);
+		applyChatOptions(titleReq);
+		try {
+			titleReq.set("temperature", 0.3);
+			String tokField = ChatUtil.getMaxTokenField(chatConfig);
+			if (tokField != null && tokField.length() > 0) {
+				titleReq.set(tokField, 200);
+			}
+		} catch (Exception e) { /* ignore */ }
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
@@ -1735,7 +1766,13 @@ public class Chat {
 			sys = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "keyframeSystem");
 		}
 		if (sys == null) sys = "You produce brief, factual conversation summaries. Limit to 150 words.";
-		String cmd = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "keyframeUser");
+		String cmd = null;
+		if (promptConfig != null) {
+			cmd = PromptUtil.getUserAnalyzeTemplate(promptConfig, chatConfig);
+		}
+		if (cmd == null || cmd.isBlank()) {
+			cmd = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "keyframeUser");
+		}
 		if (cmd == null) cmd = "Summarize this conversation segment: who, what happened, key emotional beats, unresolved tensions.";
 
 		OpenAIRequest kfReq = new OpenAIRequest();
@@ -1791,6 +1828,7 @@ public class Chat {
 
 		/// Step 1a: Build focused keyframe request and call with analyzeTimeout
 		OpenAIRequest kfReq = buildKeyframeRequest(snapshotReq);
+		logger.info(kfReq.toFullString());
 		String analysisText = null;
 		if (kfReq == null) {
 			logger.warn("addKeyFrameAsync: buildKeyframeRequest returned null");
@@ -1816,7 +1854,17 @@ public class Chat {
 
 		boolean analysisOk = analysisText != null && !analysisText.isBlank();
 		if (!analysisOk) {
-			logger.warn("Keyframe analysis returned empty — will skip memory extraction");
+			logger.warn("Keyframe analysis returned empty — will skip memory extraction, rolling back lastKeyframeAt for retry");
+			/// Roll back lastKeyframeAt so the next message can re-trigger the keyframe.
+			/// Without this, a failed analysis consumes the keyframe slot and memories
+			/// are never created until keyFrameEvery more messages accumulate.
+			try {
+				chatConfig.setValue("lastKeyframeAt", 0);
+				IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig.copyRecord(new String[] {
+					FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, "lastKeyframeAt" }));
+			} catch (Exception e) {
+				logger.warn("Failed to roll back lastKeyframeAt: " + e.getMessage());
+			}
 		}
 
 		/// OI-98: Keyframes are now memory-only. The MCP keyframe message is no longer
@@ -2050,6 +2098,9 @@ public class Chat {
 		try {
 			long sysId = systemChar.get(FieldNames.FIELD_ID);
 			long usrId = userChar.get(FieldNames.FIELD_ID);
+			logger.info("persistKeyframeAsMemory: sysId=" + sysId + " usrId=" + usrId
+				+ " canonPair=[" + Math.min(sysId, usrId) + "," + Math.max(sysId, usrId) + "]"
+				+ " cfgObjId=" + cfgObjId);
 
 			/// Truncate analysis to a summary (first 200 chars, ending at sentence boundary)
 			String summary = truncateToSentence(analysisText, 200);
@@ -2204,10 +2255,25 @@ public class Chat {
 			+ " msgSize=" + msgSize + " lastKeyframeAt=" + lastKfAt
 			+ " sinceLastKF=" + sinceLastKF);
 		if (msgSize > (pruneSkip + keyFrameEvery) && sinceLastKF >= keyFrameEvery) {
-			/// Guard: skip if a previous async keyframe is still in progress
+			/// Guard: skip if a previous async keyframe is still in progress (instance-level)
 			if (asyncKeyframeInProgress) {
-				logger.info("Skipping keyframe — async keyframe already in progress");
+				logger.info("Skipping keyframe — async keyframe already in progress (instance)");
 				return;
+			}
+			/// Guard: skip if another request already has a keyframe in flight for this chat
+			String cfgOid = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+			if (cfgOid != null) {
+				Long lockTime = activeKeyframes.get(cfgOid);
+				if (lockTime != null) {
+					long held = System.currentTimeMillis() - lockTime;
+					if (held > KEYFRAME_LOCK_TIMEOUT_MS) {
+						logger.warn("Forcing expired keyframe lock for chat " + cfgOid + " (held " + held + "ms)");
+						activeKeyframes.remove(cfgOid);
+					} else {
+						logger.info("Skipping keyframe — global keyframe already active for chat " + cfgOid + " (" + held + "ms)");
+						return;
+					}
+				}
 			}
 			/// Eagerly update lastKeyframeAt BEFORE launching the async pipeline.
 			/// Each HTTP request creates a new Chat instance, so the per-instance
@@ -2238,16 +2304,37 @@ public class Chat {
 			return;
 		}
 		if (asyncKeyframeInProgress) {
-			logger.info("Skipping deferred keyframe — async keyframe already in progress");
+			logger.info("Skipping deferred keyframe — async keyframe already in progress (instance)");
 			return;
 		}
-		logger.info("(Launching deferred keyframe — main response complete)");
+		/// Global per-chat CAS gate: only one keyframe in flight per chat config.
+		/// putIfAbsent returns null on success (slot was empty), non-null if already taken.
+		String cfgOid = chatConfig != null ? chatConfig.get(FieldNames.FIELD_OBJECT_ID) : null;
+		if (cfgOid != null) {
+			Long existingLock = activeKeyframes.get(cfgOid);
+			if (existingLock != null) {
+				long held = System.currentTimeMillis() - existingLock;
+				if (held > KEYFRAME_LOCK_TIMEOUT_MS) {
+					logger.warn("Forcing expired keyframe lock in flush for chat " + cfgOid + " (held " + held + "ms)");
+					activeKeyframes.remove(cfgOid);
+				} else {
+					logger.info("Skipping deferred keyframe — global keyframe already active for chat " + cfgOid + " (" + held + "ms)");
+					return;
+				}
+			}
+			if (activeKeyframes.putIfAbsent(cfgOid, System.currentTimeMillis()) != null) {
+				logger.info("Skipping deferred keyframe — lost CAS race for chat " + cfgOid);
+				return;
+			}
+		}
+		logger.info("(Launching deferred keyframe — main response complete) chat=" + cfgOid);
 		asyncKeyframeInProgress = true;
 
 		if (listener != null) {
 			listener.onEvalProgress(user, req, "keyframe", "Generating keyframe summary...");
 		}
 
+		final String lockKey = cfgOid;
 		CompletableFuture.runAsync(() -> {
 			try {
 				addKeyFrameAsync(req, snapshot);
@@ -2255,6 +2342,7 @@ public class Chat {
 				logger.warn("Async keyframe generation failed: " + e.getMessage(), e);
 			} finally {
 				asyncKeyframeInProgress = false;
+				if (lockKey != null) activeKeyframes.remove(lockKey);
 			}
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "keyframeDone", "Keyframe complete");
@@ -2262,6 +2350,7 @@ public class Chat {
 		}).exceptionally(ex -> {
 			logger.error("Async keyframe CompletableFuture failed: " + ex.getMessage(), ex);
 			asyncKeyframeInProgress = false;
+			if (lockKey != null) activeKeyframes.remove(lockKey);
 			return null;
 		});
 	}
@@ -2407,6 +2496,9 @@ public class Chat {
 				logger.warn("Null response from streaming chat");
 				return;
 			}
+			if (!forwardToClient) {
+				logger.info("Buffer mode LLM call HTTP status: " + response.statusCode());
+			}
 			if (!forwardToClient && response.statusCode() != 200) {
 				logger.warn("Buffer mode LLM call returned HTTP " + response.statusCode());
 			}
@@ -2423,6 +2515,11 @@ public class Chat {
 				.forEach(line -> {
 					processStreamChunk(line, req, aresp, forwardToClient);
 				});
+			if (!forwardToClient) {
+				BaseRecord bufMsg = aresp.get("message");
+				String bufContent = bufMsg != null ? bufMsg.get("content") : null;
+				logger.info("Buffer mode stream complete: contentLength=" + (bufContent != null ? bufContent.length() : "null"));
+			}
 		}).whenComplete((result, error) -> {
 			if (error != null) {
 				String errMsg;
@@ -2619,7 +2716,15 @@ public class Chat {
 		try {
 			long sysId = systemChar.get(FieldNames.FIELD_ID);
 			long usrId = userChar.get(FieldNames.FIELD_ID);
-			logger.info("retrieveRelevantMemories: budget=" + memoryBudget + " sysId=" + sysId + " usrId=" + usrId);
+			String sysName = systemChar.get(FieldNames.FIELD_FIRST_NAME);
+			String usrName = userChar.get(FieldNames.FIELD_FIRST_NAME);
+			long canonId1 = Math.min(sysId, usrId);
+			long canonId2 = Math.max(sysId, usrId);
+			logger.info("retrieveRelevantMemories: budget=" + memoryBudget
+				+ " sys=" + sysName + "(id=" + sysId + ")"
+				+ " usr=" + usrName + "(id=" + usrId + ")"
+				+ " canonPair=[" + canonId1 + "," + canonId2 + "]"
+				+ " chatCfg=" + chatConfig.get(FieldNames.FIELD_OBJECT_ID));
 
 			int maxPerLayer = Math.max(3, memoryBudget / 50);
 
