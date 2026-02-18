@@ -683,29 +683,25 @@ public class ChatService {
 		/// 3b. Build SWTxt2Img with scene prompt + SD config
 		SWTxt2Img s2i = SWUtil.newSceneTxt2Img(sceneResult.prompt, sceneResult.negativePrompt, sdConfig);
 
-		/// 3c. Wire landscape as initImage for img2img compositing
-		if (landscapeBytes != null) {
-			s2i.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(landscapeBytes));
+		/// 3c. Composite portrait images onto the landscape canvas, then use as initImage.
+		/// This merges the character faces directly into the reference image so the
+		/// img2img pass refines them into the scene — no IP-Adapter required.
+		byte[] compositeBytes = SDUtil.compositeSceneCanvas(
+			landscapeBytes,
+			sceneResult.sysPortraitBytes,
+			sceneResult.usrPortraitBytes,
+			s2i.getWidth(),
+			s2i.getHeight()
+		);
+		if (compositeBytes != null) {
+			s2i.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(compositeBytes));
 			s2i.setInitImageCreativity(sceneCreativity);
-			logger.info("generateScene Stage 3: Using landscape as initImage (creativity=" + sceneCreativity + ")");
+			logger.info("generateScene Stage 3c: Composite canvas as initImage (creativity=" + sceneCreativity
+				+ " sysPortrait=" + (sceneResult.sysPortraitBytes != null)
+				+ " usrPortrait=" + (sceneResult.usrPortraitBytes != null) + ")");
 		}
 
-		/// 3d. Populate IP-Adapter promptImages with portrait bytes
-		Map<String, String> promptImages = new HashMap<>();
-		if (sceneResult.sysPortraitBytes != null) {
-			promptImages.put("sysPortrait", "data:image/png;base64," + Base64.getEncoder().encodeToString(sceneResult.sysPortraitBytes));
-		}
-		if (sceneResult.usrPortraitBytes != null) {
-			promptImages.put("userPortrait", "data:image/png;base64," + Base64.getEncoder().encodeToString(sceneResult.usrPortraitBytes));
-		}
-		if (!promptImages.isEmpty()) {
-			s2i.setPromptImages(promptImages);
-			logger.info("generateScene Stage 3d: IP-Adapter promptImages populated with " + promptImages.size() + " portrait(s): " + promptImages.keySet());
-		} else {
-			logger.warn("generateScene Stage 3d: No portrait images available — characters will rely on text prompt only (IP-Adapter inactive)");
-		}
-
-		/// 3e. Generate the final composite scene image
+		/// 3d. Generate the final composite scene image
 		String groupPath = "~/Gallery/Scenes/" + sceneResult.label;
 		String name = sceneResult.label;
 		String sysOid = systemChar.get(FieldNames.FIELD_OBJECT_ID);

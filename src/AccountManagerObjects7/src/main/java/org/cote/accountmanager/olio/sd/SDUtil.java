@@ -143,7 +143,21 @@ public class SDUtil {
 			}
 			req.setSession_id(sess);
 		}
-		return ClientUtil.post(SWImageResponse.class, ClientUtil.getResource(autoserver + "/API/GenerateText2Image"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
+		String payload = JSONUtil.exportObject(req);
+		int payloadLen = payload != null ? payload.length() : 0;
+		boolean hasPromptImages = req.getPromptImages() != null && !req.getPromptImages().isEmpty();
+		boolean hasInitImage = req.getInitImage() != null && !req.getInitImage().isEmpty();
+		logger.info("txt2img request: payloadSize=" + payloadLen + " hasPromptImages=" + hasPromptImages + " hasInitImage=" + hasInitImage);
+
+		SWImageResponse resp = ClientUtil.post(SWImageResponse.class, ClientUtil.getResource(autoserver + "/API/GenerateText2Image"), payload, MediaType.APPLICATION_JSON_TYPE);
+		if (resp == null) {
+			logger.error("txt2img: null response from Swarm — check ClientUtil warnings for HTTP status/body");
+		} else if (resp.getError() != null && !resp.getError().isEmpty()) {
+			logger.error("txt2img: Swarm returned error: " + resp.getError());
+		} else if (resp.getImages() == null || resp.getImages().isEmpty()) {
+			logger.warn("txt2img: Swarm returned 200 but images list is empty");
+		}
+		return resp;
 	}
 	
 	public List<String> listModels() {
@@ -997,6 +1011,73 @@ public class SDUtil {
 			logger.error("Error generating landscape bytes", e);
 		}
 		return null;
+	}
+
+	/// Composite portrait images onto a landscape canvas for use as initImage.
+	/// Places left portrait in the lower-left third, right portrait in the lower-right third.
+	/// If no landscape is provided, creates a blank canvas at the target dimensions.
+	/// @param landscapeBytes The landscape PNG bytes (or null for blank canvas)
+	/// @param leftPortraitBytes Left character portrait PNG bytes (or null to skip)
+	/// @param rightPortraitBytes Right character portrait PNG bytes (or null to skip)
+	/// @param canvasWidth Target canvas width (e.g. 1024)
+	/// @param canvasHeight Target canvas height (e.g. 768)
+	/// @return Composite PNG bytes, or the original landscape if no portraits available
+	public static byte[] compositeSceneCanvas(byte[] landscapeBytes, byte[] leftPortraitBytes, byte[] rightPortraitBytes, int canvasWidth, int canvasHeight) {
+		if (leftPortraitBytes == null && rightPortraitBytes == null) {
+			return landscapeBytes;
+		}
+		try {
+			java.awt.image.BufferedImage canvas;
+			if (landscapeBytes != null) {
+				canvas = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(landscapeBytes));
+				/// Scale canvas to target dimensions if needed
+				if (canvas.getWidth() != canvasWidth || canvas.getHeight() != canvasHeight) {
+					java.awt.image.BufferedImage scaled = new java.awt.image.BufferedImage(canvasWidth, canvasHeight, java.awt.image.BufferedImage.TYPE_INT_RGB);
+					java.awt.Graphics2D g = scaled.createGraphics();
+					g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+					g.drawImage(canvas, 0, 0, canvasWidth, canvasHeight, null);
+					g.dispose();
+					canvas = scaled;
+				}
+			} else {
+				canvas = new java.awt.image.BufferedImage(canvasWidth, canvasHeight, java.awt.image.BufferedImage.TYPE_INT_RGB);
+			}
+
+			java.awt.Graphics2D g2d = canvas.createGraphics();
+			g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
+			/// Portrait target: roughly 1/3 canvas width, placed in lower portion
+			int portraitW = canvasWidth / 3;
+			int portraitH = (int)(portraitW * 1.33); // ~3:4 aspect for portrait
+			if (portraitH > canvasHeight * 3 / 4) {
+				portraitH = canvasHeight * 3 / 4;
+				portraitW = (int)(portraitH / 1.33);
+			}
+			int yOffset = canvasHeight - portraitH - (canvasHeight / 20); // slight margin from bottom
+
+			if (leftPortraitBytes != null) {
+				java.awt.image.BufferedImage leftImg = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(leftPortraitBytes));
+				int xLeft = canvasWidth / 12; // offset from left edge
+				g2d.drawImage(leftImg, xLeft, yOffset, portraitW, portraitH, null);
+				logger.info("compositeSceneCanvas: left portrait placed at (" + xLeft + "," + yOffset + ") size " + portraitW + "x" + portraitH);
+			}
+			if (rightPortraitBytes != null) {
+				java.awt.image.BufferedImage rightImg = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(rightPortraitBytes));
+				int xRight = canvasWidth - portraitW - (canvasWidth / 12); // offset from right edge
+				g2d.drawImage(rightImg, xRight, yOffset, portraitW, portraitH, null);
+				logger.info("compositeSceneCanvas: right portrait placed at (" + xRight + "," + yOffset + ") size " + portraitW + "x" + portraitH);
+			}
+			g2d.dispose();
+
+			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+			javax.imageio.ImageIO.write(canvas, "png", baos);
+			byte[] result = baos.toByteArray();
+			logger.info("compositeSceneCanvas: composite image " + result.length + " bytes (" + canvasWidth + "x" + canvasHeight + ")");
+			return result;
+		} catch (Exception e) {
+			logger.error("compositeSceneCanvas failed, falling back to landscape only", e);
+			return landscapeBytes;
+		}
 	}
 
 	/// Generate an animal image with optional landscape reference.

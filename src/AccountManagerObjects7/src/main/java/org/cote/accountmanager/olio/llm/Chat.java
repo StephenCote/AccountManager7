@@ -1271,26 +1271,22 @@ public class Chat {
 			settingDesc = terrain;
 		}
 
-		/// Step 4: Assemble composite prompt with IP-Adapter image tags
-		/// Character emphasis is critical — without strong weighting, img2img from a
-		/// "no people" landscape will suppress the figures entirely.
+		/// Step 4: Assemble composite prompt with strong character emphasis.
+		/// Character weighting is critical — without it, img2img from a landscape
+		/// will suppress the figures entirely.
 		StringBuilder prompt = new StringBuilder();
 		prompt.append("8k highly detailed ((highest quality)) ((ultra realistic)) ");
 		prompt.append("((two people in scene)) ");
 		prompt.append(sceneDesc);
 		prompt.append(", ((").append(sysDesc).append(")) on the left");
-		byte[] sysPortraitBytes = getPortraitBytes(systemChar);
-		if (sysPortraitBytes != null) {
-			prompt.append(" <image:sysPortrait>");
-		}
 		prompt.append(", ((").append(usrDesc).append(")) on the right");
-		byte[] usrPortraitBytes = getPortraitBytes(userChar);
-		if (usrPortraitBytes != null) {
-			prompt.append(" <image:userPortrait>");
-		}
 		if (!settingDesc.isEmpty()) {
 			prompt.append(", ").append(settingDesc);
 		}
+
+		/// Step 4b: Load portrait bytes for canvas compositing
+		byte[] sysPortraitBytes = getPortraitBytes(systemChar);
+		byte[] usrPortraitBytes = getPortraitBytes(userChar);
 
 		/// Step 5: Build negative prompt
 		String negPrompt = "text, watermark, signature, blurry, bad anatomy, extra limbs, deformed, disfigured, duplicate, error";
@@ -1352,13 +1348,29 @@ public class Chat {
 	}
 
 	/// Load portrait image bytes from a character's profile.portrait field.
+	/// The FULL_PLAN_FILTER excludes FIELD_BYTE_STORE, so portrait binary data
+	/// is never present after getFullRecord(). Explicitly populate each step.
 	private byte[] getPortraitBytes(BaseRecord character) {
 		try {
 			BaseRecord profile = character.get("profile");
+			if (profile == null) {
+				IOSystem.getActiveContext().getReader().populate(character, new String[] {"profile"});
+				profile = character.get("profile");
+			}
 			if (profile == null) return null;
+
 			BaseRecord portrait = profile.get("portrait");
+			if (portrait == null) {
+				IOSystem.getActiveContext().getReader().populate(profile, new String[] {"portrait"});
+				portrait = profile.get("portrait");
+			}
 			if (portrait == null) return null;
+
 			byte[] bytes = portrait.get(FieldNames.FIELD_BYTE_STORE);
+			if (bytes == null || bytes.length == 0) {
+				IOSystem.getActiveContext().getReader().populate(portrait, new String[] {FieldNames.FIELD_BYTE_STORE});
+				bytes = portrait.get(FieldNames.FIELD_BYTE_STORE);
+			}
 			if (bytes != null && bytes.length > 0) return bytes;
 		} catch (Exception e) {
 			logger.debug("Could not load portrait for " + character.get("firstName") + ": " + e.getMessage());

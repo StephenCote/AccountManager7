@@ -241,6 +241,30 @@
         }
     }
 
+    // Append a new message to the server-side session so it persists across refresh
+    async function appendSessionMessage(role, content) {
+        if (!inst) return;
+        try {
+            let sessionType = inst.api.sessionType();
+            let session = inst.api.session();
+            if (!sessionType || !session || !session.id) {
+                console.warn("appendSessionMessage: No session available");
+                return;
+            }
+            let q = am7view.viewQuery(am7model.newInstance(sessionType));
+            q.field("id", session.id);
+            let qr = await page.search(q);
+            if (qr && qr.results && qr.results.length > 0) {
+                let req = qr.results[0];
+                if (!req.messages) req.messages = [];
+                req.messages.push({ role: role, content: content });
+                await page.patchObject(req);
+            }
+        } catch (e) {
+            console.error("appendSessionMessage error:", e);
+        }
+    }
+
     // Resolve all image tokens in a message (chat.js version)
     // Processes one token at a time, patching after each to keep positions and server state in sync
     async function resolveChatImages(msgIndex) {
@@ -902,11 +926,13 @@
         });
         if (result && result.objectId) {
           page.toast("success", "Scene image generated", 3000);
-          // Display inline as an assistant message with an image token
+          // Persist scene image as an ${image} token so it survives refresh
+          let sceneToken = "${image." + result.objectId + "}";
           if (!chatCfg.history) chatCfg.history = {};
           if (!chatCfg.history.messages) chatCfg.history.messages = [];
-          let imgUrl = encodeURI(g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + result.groupPath + "/" + result.name + "/512x512");
-          chatCfg.history.messages.push({ role: "assistant", content: "![Scene](" + imgUrl + ")" });
+          chatCfg.history.messages.push({ role: "assistant", content: sceneToken });
+          // Append the scene message to the server-side session
+          await appendSessionMessage("assistant", sceneToken);
         } else {
           page.toast("error", "Failed to generate scene image", 5000);
         }

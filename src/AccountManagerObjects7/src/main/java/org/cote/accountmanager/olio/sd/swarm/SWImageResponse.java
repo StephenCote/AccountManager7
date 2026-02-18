@@ -8,7 +8,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class SWImageResponse {
 	private List<String> images = new ArrayList<>();
-	
+	private String error;
+
 	public SWImageResponse() {
 
 	}
@@ -20,6 +21,12 @@ public class SWImageResponse {
 	public void setImages(List<String> images) {
 		this.images = images;
 	}
-	
-	
+
+	public String getError() {
+		return error;
+	}
+
+	public void setError(String error) {
+		this.error = error;
+	}
 }
