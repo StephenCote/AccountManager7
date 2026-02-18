@@ -504,12 +504,21 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		}
 		msg.getChirps().addAll(Arrays.asList(chirps));
 		if(sync) {
-			RemoteEndpoint.Basic basicRemote = session.getBasicRemote();
-			try {
-				basicRemote.sendText(JSONUtil.exportObject(msg));
-			}
-			catch(IOException e) {
-				logger.error(e);
+			/// Synchronize on session — Jakarta WebSocket BasicRemote is not thread-safe.
+			/// Background threads (keyframe, compliance, interaction, auto-title, memory)
+			/// can fire chirps concurrently, causing TEXT_FULL_WRITING IllegalStateException.
+			synchronized(session) {
+				if (!session.isOpen()) {
+					logger.warn("Session " + session.getId() + " is closed — skipping sendText");
+					return;
+				}
+				RemoteEndpoint.Basic basicRemote = session.getBasicRemote();
+				try {
+					basicRemote.sendText(JSONUtil.exportObject(msg));
+				}
+				catch(IOException e) {
+					logger.error(e);
+				}
 			}
 		}
 		else {

@@ -508,7 +508,7 @@ public class ChatService {
 		try {
 			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_OBJECT_ID, objectId);
 			q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-			q.planMost(true);
+			q.planMost(false);
 			return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		}
 		catch (Exception e) {

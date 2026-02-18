@@ -1068,7 +1068,7 @@ public class ChatUtil {
 			q.field(FieldNames.FIELD_OBJECT_ID, objectId);
 		}
 		q.setContextUser(user);
-		q.planMost(true);
+		q.planMost(false);
 		cfg = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		return cfg;
 	}
