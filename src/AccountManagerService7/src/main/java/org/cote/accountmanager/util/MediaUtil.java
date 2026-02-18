@@ -271,14 +271,7 @@ public class MediaUtil {
 				});
 				BaseRecord sdata = IOSystem.getActiveContext().getSearch().findRecord(q);
 				if (sdata == null) {
-					logger.error("Failed to find record:");
-					logger.error(q.copyRecord(new String[] {
-						FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
-						FieldNames.FIELD_NAME, FieldNames.FIELD_CONTENT_TYPE,
-						FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH,
-						FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH
-					}).toFullString());
-					ErrorUtil.printStackTrace();
+					logger.error("Failed to find record: name='" + objName + "' groupId=" + group.get(FieldNames.FIELD_ID) + " groupPath=" + group.get(FieldNames.FIELD_PATH));
 					response.sendError(404);
 					return;
 				}

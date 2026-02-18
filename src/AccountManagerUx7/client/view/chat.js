@@ -905,7 +905,7 @@
           // Display inline as an assistant message with an image token
           if (!chatCfg.history) chatCfg.history = {};
           if (!chatCfg.history.messages) chatCfg.history.messages = [];
-          let imgUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + result.groupPath + "/" + result.name + "/512x512";
+          let imgUrl = encodeURI(g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + result.groupPath + "/" + result.name + "/512x512");
           chatCfg.history.messages.push({ role: "assistant", content: "![Scene](" + imgUrl + ")" });
         } else {
           page.toast("error", "Failed to generate scene image", 5000);
@@ -1253,7 +1253,14 @@
       return m("div", { class: "border-t border-gray-600 bg-gray-800 px-3 py-2 text-gray-200" }, [
         m("div", { class: "flex items-center justify-between mb-2" }, [
           m("span", { class: "text-xs font-semibold text-gray-300" }, "Scene Generation Config"),
-          m("button", { class: "text-xs text-gray-400 hover:text-white", onclick: function() { showSdConfig = false; } }, "Close")
+          m("div", { class: "flex items-center gap-2" }, [
+            m("button", {
+              class: "px-3 py-1 rounded text-xs font-semibold " + (generatingScene ? "bg-gray-600 text-gray-400 cursor-not-allowed" : "bg-purple-600 text-white hover:bg-purple-700"),
+              disabled: generatingScene,
+              onclick: function() { doGenerateScene(); }
+            }, generatingScene ? "Generating..." : "Generate"),
+            m("button", { class: "text-xs text-gray-400 hover:text-white", onclick: function() { showSdConfig = false; } }, "Close")
+          ])
         ]),
         m("div", { class: "grid grid-cols-2 gap-x-4 gap-y-1.5" }, [
           sdSelect("Model", "model", modelOptions),
@@ -1329,8 +1336,7 @@
         chatIconBtn(audio ? "volume_up" : "volume_mute", toggleAudio, audio, "Audio"),
         chatIconBtn("counter_8", sendToMagic8, false, "Magic 8"),
         chatIconBtn("query_stats", chatInto, false, "Analyze"),
-        chatIconBtn("landscape", doGenerateScene, generatingScene, "Generate Scene"),
-        chatIconBtn("tune", function() { showSdConfig = !showSdConfig; }, showSdConfig, "SD Config"),
+        chatIconBtn("landscape", function() { showSdConfig = true; }, showSdConfig, "Generate Scene"),
         chatIconBtn("visibility" + (hideThoughts ? "" : "_off"), toggleThoughts, !hideThoughts, "Thoughts"),
         chatIconBtn("bug_report", function() { mcpDebug = !mcpDebug; }, mcpDebug, "MCP Debug")
       ];

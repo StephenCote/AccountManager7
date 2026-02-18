@@ -68,7 +68,10 @@
                 memoryCount = 0;
             }
         } catch(e) {
-            console.warn("[MemoryPanel] Failed to load pair memories:", e);
+            /// 404 is normal — no memories yet or characters not resolved
+            if (e && e.code !== 404) {
+                console.warn("[MemoryPanel] Failed to load pair memories:", e);
+            }
             memories = [];
             memoryCount = 0;
         }
