@@ -118,6 +118,9 @@ public class Chat {
 	private static final long KEYFRAME_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 	/// Deferred keyframe: snapshot saved by pruneCount, launched after main response completes.
 	private volatile List<OpenAIMessage> pendingKeyframeSnapshot = null;
+	/// The message index at which the previous keyframe was created (0 if first keyframe).
+	/// Used to scope the keyframe content window to only new messages since the last keyframe.
+	private volatile int pendingKeyframeStartIdx = 0;
 	private int responseCount = 0;
 
 	/// Mid-stream policy evaluation tracking
@@ -1334,15 +1337,20 @@ public class Chat {
 		return result;
 	}
 
-	/// LLM call to generate a concise scene description from recent chat history.
+	/// LLM call to generate a concise scene verb phrase from the most recent exchange.
+	/// Only uses the last 2 messages (user + assistant) to produce a short action phrase
+	/// suitable for an image prompt (e.g. "walking together through a meadow").
 	private String generateSceneDescription(OpenAIRequest req) {
-		List<String> lines = ChatUtil.getFormattedChatHistory(req, chatConfig, pruneSkip, false);
-		if (lines.isEmpty()) return null;
+		/// Only take the last 2 messages (most recent exchange)
+		List<String> allLines = ChatUtil.getFormattedChatHistory(req, chatConfig, pruneSkip, false);
+		if (allLines.isEmpty()) return null;
+		int start = Math.max(0, allLines.size() - 2);
+		List<String> lines = allLines.subList(start, allLines.size());
 
 		String sys = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "sceneSystem");
-		if (sys == null) sys = "You generate concise Stable Diffusion scene descriptions. Output ONLY the description. Limit to 50 words.";
+		if (sys == null) sys = "You generate very short Stable Diffusion scene descriptions. Output ONLY a brief verb phrase describing the action and setting, 10-15 words max. No character names or physical descriptions.";
 		String cmd = PromptResourceUtil.getString(CHAT_OPS_RESOURCE, "sceneUser");
-		if (cmd == null) cmd = "Describe the current scene for an image based on the most recent exchange.";
+		if (cmd == null) cmd = "Based on this exchange, output a short verb phrase describing what the two people are doing and where (e.g. 'arguing on a rain-soaked rooftop at night'):";
 
 		OpenAIRequest sceneReq = new OpenAIRequest();
 		String amodel = chatConfig.get("analyzeModel");
@@ -1751,8 +1759,17 @@ public class Chat {
 	public static final int KEYFRAME_MAX_TOKENS = 1024;
 
 	/// Build a focused keyframe analysis request with condensed prompts and low token cap.
-	private OpenAIRequest buildKeyframeRequest(OpenAIRequest snapshotReq) {
-		List<String> lines = ChatUtil.getFormattedChatHistory(snapshotReq, chatConfig, pruneSkip, false);
+	private OpenAIRequest buildKeyframeRequest(OpenAIRequest snapshotReq, int previousKeyframeAt) {
+		/// Scope content window: read backwards from the end.
+		/// Start at previousKeyframeAt if set, otherwise skip system prompt (+1)
+		/// and assist intro messages (pruneSkip if assist mode).
+		boolean useAssist = false;
+		try { useAssist = chatConfig.get("assist"); } catch (Exception e) { /* default false */ }
+		int startIdx = previousKeyframeAt > 0 ? previousKeyframeAt : (useAssist ? pruneSkip : 0) + 1;
+		int msgCount = snapshotReq.getMessages().size();
+		logger.info("buildKeyframeRequest: startIdx=" + startIdx + " msgCount=" + msgCount
+			+ " previousKeyframeAt=" + previousKeyframeAt + " assist=" + useAssist);
+		List<String> lines = ChatUtil.getFormattedChatHistory(snapshotReq, chatConfig, startIdx);
 		if (lines.isEmpty()) return null;
 
 		/// Use promptConfig.systemAnalyze if available — this carries the user's
@@ -1808,8 +1825,8 @@ public class Chat {
 	/// Runs on a background thread. Uses the snapshot for analysis to avoid
 	/// concurrent modification, then persists the result as a durable memory.
 	/// OI-98: No longer injects keyframe messages into the chat history.
-	private void addKeyFrameAsync(OpenAIRequest req, List<OpenAIMessage> snapshot) {
-		logger.info("addKeyFrameAsync: START — snapshot size=" + snapshot.size());
+	private void addKeyFrameAsync(OpenAIRequest req, List<OpenAIMessage> snapshot, int previousKeyframeAt) {
+		logger.info("addKeyFrameAsync: START — snapshot size=" + snapshot.size() + " previousKeyframeAt=" + previousKeyframeAt);
 		BaseRecord systemChar = chatConfig.get("systemCharacter");
 		BaseRecord userChar = chatConfig.get("userCharacter");
 		if (systemChar == null || userChar == null) {
@@ -1827,7 +1844,7 @@ public class Chat {
 		applyChatOptions(snapshotReq);
 
 		/// Step 1a: Build focused keyframe request and call with analyzeTimeout
-		OpenAIRequest kfReq = buildKeyframeRequest(snapshotReq);
+		OpenAIRequest kfReq = buildKeyframeRequest(snapshotReq, previousKeyframeAt);
 		logger.info(kfReq.toFullString());
 		String analysisText = null;
 		if (kfReq == null) {
@@ -1885,7 +1902,7 @@ public class Chat {
 		/// Step 4: Extract discrete memories via dedicated prompt (Phase 14b)
 		/// Skip if keyframe analysis failed — avoid double timeout
 		if (analysisOk) {
-			extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar);
+			extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar, previousKeyframeAt);
 		}
 
 		/// Step 5: Interaction evaluation — runs inline since we're already async
@@ -1908,7 +1925,7 @@ public class Chat {
 	/// Phase 14b: Extract discrete memories from the conversation segment
 	/// using a dedicated memory extraction prompt. Called from the async keyframe pipeline.
 	private void extractMemoriesIfEnabled(OpenAIRequest req, OpenAIRequest snapshotReq,
-			String cfgObjId, BaseRecord systemChar, BaseRecord userChar) {
+			String cfgObjId, BaseRecord systemChar, BaseRecord userChar, int previousKeyframeAt) {
 
 		logger.info("extractMemoriesIfEnabled: START");
 		boolean extractMemories = false;
@@ -1927,7 +1944,7 @@ public class Chat {
 		}
 
 		try {
-			List<BaseRecord> memories = extractMemoriesFromSegment(snapshotReq, cfgObjId, systemChar, userChar);
+			List<BaseRecord> memories = extractMemoriesFromSegment(snapshotReq, cfgObjId, systemChar, userChar, previousKeyframeAt);
 
 			if (listener != null) {
 				String countMsg = memories.size() + " memories extracted";
@@ -1946,10 +1963,13 @@ public class Chat {
 	/// categorized engrams (FACT, RELATIONSHIP, EMOTION, DECISION, DISCOVERY) from
 	/// the conversation segment, instead of relying on the generic analyze() output.
 	private List<BaseRecord> extractMemoriesFromSegment(OpenAIRequest snapshotReq,
-			String conversationId, BaseRecord systemChar, BaseRecord userChar) {
+			String conversationId, BaseRecord systemChar, BaseRecord userChar, int previousKeyframeAt) {
 
-		/// Build the conversation segment text from the snapshot
-		String segment = ChatUtil.getFormattedChatHistory(snapshotReq, chatConfig, pruneSkip, false)
+		/// Build the conversation segment text from the snapshot, scoped to new content
+		boolean useAssist = false;
+		try { useAssist = chatConfig.get("assist"); } catch (Exception e) { /* default false */ }
+		int startIdx = previousKeyframeAt > 0 ? previousKeyframeAt : (useAssist ? pruneSkip : 0) + 1;
+		String segment = ChatUtil.getFormattedChatHistory(snapshotReq, chatConfig, startIdx)
 			.stream().collect(Collectors.joining(System.lineSeparator()));
 
 		if (segment == null || segment.trim().isEmpty()) {
@@ -2250,11 +2270,18 @@ public class Chat {
 				logger.warn("Failed to reset lastKeyframeAt: " + e.getMessage());
 			}
 		}
-		int sinceLastKF = msgSize - lastKfAt;
+		/// Account for intro overhead on first keyframe: system prompt (+1) and
+		/// assist intro messages (pruneSkip if assist mode) aren't real conversation.
+		boolean useAssist = false;
+		try { useAssist = chatConfig.get("assist"); } catch (Exception e) { /* default false */ }
+		int introOverhead = (useAssist ? pruneSkip : 0) + 1;
+		int effectiveStart = lastKfAt > 0 ? lastKfAt : introOverhead;
+		int sinceLastKF = msgSize - effectiveStart;
 		logger.info("Keyframe check: keyFrameEvery=" + keyFrameEvery
 			+ " msgSize=" + msgSize + " lastKeyframeAt=" + lastKfAt
-			+ " sinceLastKF=" + sinceLastKF);
-		if (msgSize > (pruneSkip + keyFrameEvery) && sinceLastKF >= keyFrameEvery) {
+			+ " effectiveStart=" + effectiveStart + " sinceLastKF=" + sinceLastKF
+			+ " assist=" + useAssist);
+		if (sinceLastKF >= keyFrameEvery) {
 			/// Guard: skip if a previous async keyframe is still in progress (instance-level)
 			if (asyncKeyframeInProgress) {
 				logger.info("Skipping keyframe — async keyframe already in progress (instance)");
@@ -2292,6 +2319,9 @@ public class Chat {
 			/// for LLM resources (critical for single-slot LLMs like Ollama).
 			logger.info("(Deferring keyframe — will launch after main response)");
 			pendingKeyframeSnapshot = new ArrayList<>(req.getMessages());
+			/// Save the previous lastKeyframeAt so the keyframe only analyzes new messages
+			/// since the last keyframe, not the entire conversation from the top.
+			pendingKeyframeStartIdx = lastKfAt;
 		}
 	}
 
@@ -2299,7 +2329,9 @@ public class Chat {
 	/// Called from continueChat (buffer mode) and ChatListener.oncomplete (streaming mode).
 	public void flushPendingKeyframe(OpenAIRequest req) {
 		List<OpenAIMessage> snapshot = pendingKeyframeSnapshot;
+		int startIdx = pendingKeyframeStartIdx;
 		pendingKeyframeSnapshot = null;
+		pendingKeyframeStartIdx = 0;
 		if (snapshot == null) {
 			return;
 		}
@@ -2335,9 +2367,10 @@ public class Chat {
 		}
 
 		final String lockKey = cfgOid;
+		final int kfStartIdx = startIdx;
 		CompletableFuture.runAsync(() -> {
 			try {
-				addKeyFrameAsync(req, snapshot);
+				addKeyFrameAsync(req, snapshot, kfStartIdx);
 			} catch (Exception e) {
 				logger.warn("Async keyframe generation failed: " + e.getMessage(), e);
 			} finally {

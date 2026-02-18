@@ -1421,9 +1421,19 @@ public class ChatUtil {
 		return outReq;
 	}
 	
+	/// Overload that accepts an explicit start index for scoping the content window
+	/// (e.g. to only include messages since the last keyframe).
+	public static List<String> getFormattedChatHistory(OpenAIRequest req, BaseRecord chatConfig, int startIndex) {
+		return getFormattedChatHistoryFrom(req, chatConfig, startIndex);
+	}
+
 	public static List<String> getFormattedChatHistory(OpenAIRequest req, BaseRecord chatConfig, int pruneSkip, boolean full) {
+		return getFormattedChatHistoryFrom(req, chatConfig, full ? 0 : (pruneSkip + 2));
+	}
+
+	private static List<String> getFormattedChatHistoryFrom(OpenAIRequest req, BaseRecord chatConfig, int startIndex) {
 		List<String> buff = new ArrayList<>();
-		for (int i = (full ? 0 : (pruneSkip + 2)); i < req.getMessages().size(); i++) {
+		for (int i = startIndex; i < req.getMessages().size(); i++) {
 			OpenAIMessage msg = req.getMessages().get(i);
 			String cont = msg.getContent();
 			/// OI-14: Skip keyframe messages (MCP format and legacy text format)

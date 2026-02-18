@@ -242,6 +242,25 @@
     }
 
     // Append a new message to the server-side session so it persists across refresh
+    function waitForChatIdle(timeout) {
+        timeout = timeout || 30000;
+        return new Promise(function(resolve) {
+            let elapsed = 0;
+            function check() {
+                if (!page.chatStream && !chatCfg.streaming) {
+                    resolve();
+                } else if (elapsed >= timeout) {
+                    console.warn("waitForChatIdle: timed out after " + timeout + "ms");
+                    resolve();
+                } else {
+                    elapsed += 500;
+                    setTimeout(check, 500);
+                }
+            }
+            check();
+        });
+    }
+
     async function appendSessionMessage(role, content) {
         if (!inst) return;
         try {
@@ -930,12 +949,13 @@
         });
         if (result && result.objectId) {
           page.toast("success", "Scene image generated", 3000);
-          // Persist scene image as an ${image} token so it survives refresh
           let sceneToken = "${image." + result.objectId + "}";
           if (!chatCfg.history) chatCfg.history = {};
           if (!chatCfg.history.messages) chatCfg.history.messages = [];
           chatCfg.history.messages.push({ role: "assistant", content: sceneToken });
-          // Append the scene message to the server-side session
+          // Defer server-side append until chat stream is idle to avoid
+          // concurrent read-modify-write overwriting the scene token
+          await waitForChatIdle();
           await appendSessionMessage("assistant", sceneToken);
         } else {
           page.toast("error", "Failed to generate scene image", 5000);
@@ -1294,6 +1314,7 @@
         ]),
         m("div", { class: "grid grid-cols-2 gap-x-4 gap-y-1.5" }, [
           sdSelect("Model", "model", modelOptions),
+          sdSelect("Refiner", "refinerModel", modelOptions),
           sdSelect("Style", "style", styles),
           sdSlider("Steps", "steps", 1, 100),
           sdSlider("CFG", "cfg", 1, 20),
