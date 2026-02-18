@@ -151,6 +151,8 @@
       schema: "olio.sd.config",
       model: null,
       refinerModel: null,
+      refinerSteps: 20,
+      refinerCfg: 7,
       steps: 20,
       cfg: 7,
       sampler: "dpmpp_2m",
@@ -1315,6 +1317,8 @@
         m("div", { class: "grid grid-cols-2 gap-x-4 gap-y-1.5" }, [
           sdSelect("Model", "model", modelOptions),
           sdSelect("Refiner", "refinerModel", modelOptions),
+          sdSlider("Ref Steps", "refinerSteps", 1, 100),
+          sdSlider("Ref CFG", "refinerCfg", 1, 20),
           sdSelect("Style", "style", styles),
           sdSlider("Steps", "steps", 1, 100),
           sdSlider("CFG", "cfg", 1, 20),

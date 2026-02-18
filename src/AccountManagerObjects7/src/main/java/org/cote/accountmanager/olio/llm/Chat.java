@@ -30,6 +30,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
@@ -1280,6 +1281,15 @@ public class Chat {
 			return null;
 		}
 
+		/// Ensure characters are fully populated — chatConfig's nested foreign refs
+		/// may be stubs without hair/eye/outfit detail needed for SD prompts.
+		systemChar = OlioUtil.getFullRecord(systemChar);
+		userChar = OlioUtil.getFullRecord(userChar);
+		if (systemChar == null || userChar == null) {
+			logger.warn("generateScenePrompt: failed to resolve full character records");
+			return null;
+		}
+
 		/// Step 1: Use LLM to generate a scene description from recent chat
 		String sceneDesc = generateSceneDescription(req);
 		if (sceneDesc == null || sceneDesc.isBlank()) {
@@ -1292,6 +1302,8 @@ public class Chat {
 		PersonalityProfile usrPP = ProfileUtil.getProfile(null, userChar);
 		String sysDesc = sysPP != null ? NarrativeUtil.getSDMinPrompt(sysPP) : systemChar.get("firstName");
 		String usrDesc = usrPP != null ? NarrativeUtil.getSDMinPrompt(usrPP) : userChar.get("firstName");
+		logger.info("Scene sysDesc: " + sysDesc);
+		logger.info("Scene usrDesc: " + usrDesc);
 
 		/// Step 3: Get setting/terrain from chatConfig
 		String setting = null;
