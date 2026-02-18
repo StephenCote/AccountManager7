@@ -29,6 +29,8 @@ public class ChatListener implements IChatListener {
 	private static Map<String, OpenAIRequest> asyncRequests = new ConcurrentHashMap<>();
 	private static Map<String, Integer> asyncRequestCount = new ConcurrentHashMap<>();
 	private static Map<String, Boolean> asyncRequestStop = new ConcurrentHashMap<>();
+	/// Pre-fetched chatRequest records for use in async oncomplete (where AccessPoint.find fails)
+	private static Map<String, BaseRecord> asyncChatRequestRecords = new ConcurrentHashMap<>();
 	/// Phase 9: Track stream futures for forced cancellation failover
 	private static Map<String, CompletableFuture<?>> asyncStreamFutures = new ConcurrentHashMap<>();
 	/// Phase 12: OI-27 — Track response body streams for server-side abort on cancel
@@ -65,6 +67,7 @@ public class ChatListener implements IChatListener {
 		asyncChats.remove(oid);
 		asyncStreamFutures.remove(oid);
 		asyncHttpResponses.remove(oid);
+		asyncChatRequestRecords.remove(oid);
 	}
 
 	/// Phase 9: Register a stream future for failover cancellation
@@ -115,7 +118,9 @@ public class ChatListener implements IChatListener {
 			return null;
 		}
 		logger.info("Chat request object id: " + oid);
-		
+		/// Pre-fetch chatRequest for async oncomplete — AccessPoint.find fails in ForkJoinPool
+		asyncChatRequestRecords.put(oid, vChatReq);
+
 		if(false == (boolean)req.get("stream")) {
 			logger.warn("Chat request is not a stream request - forcing to stream");
 			req.setValue("stream", true);
@@ -352,15 +357,11 @@ public class ChatListener implements IChatListener {
 		}
 		logger.info("Auto-title check (stream): autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount + " oid=" + oid);
 		if (autoTitle && userMsgCount >= 1) {
-			/// Pre-fetch chatRequest in the main thread where security context is available
-			BaseRecord chatReqRec = null;
-			try {
-				Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
-				cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-				cq.planMost(false);
-				chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-			} catch (Exception e) {
-				logger.warn("Failed to pre-fetch chatRequest for title: " + e.getMessage());
+			/// Use chatRequest pre-fetched in sendMessageToServer (main thread) —
+			/// AccessPoint.find fails in ForkJoinPool async threads (AUDIT INVALID)
+			BaseRecord chatReqRec = asyncChatRequestRecords.get(oid);
+			if (chatReqRec == null) {
+				logger.warn("Pre-fetched chatRequest not found for auto-title: " + oid);
 			}
 			/// OI-97: Skip if title already exists — prevents redundant generation on every exchange.
 			/// The check fires on userMsgCount >= 1 (not just == 1) so that if the first attempt
