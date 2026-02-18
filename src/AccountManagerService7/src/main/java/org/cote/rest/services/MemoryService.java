@@ -75,7 +75,8 @@ public class MemoryService {
 		BaseRecord person1 = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, person1ObjectId);
 		BaseRecord person2 = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, person2ObjectId);
 		if (person1 == null || person2 == null) {
-			return Response.status(404).entity(null).build();
+			logger.warn("Person lookup failed for pair endpoint (PBAC race or missing record): p1=" + (person1 != null) + " p2=" + (person2 != null));
+			return Response.status(200).entity("[]").build();
 		}
 		long pId1 = person1.get(FieldNames.FIELD_ID);
 		long pId2 = person2.get(FieldNames.FIELD_ID);
@@ -133,7 +134,8 @@ public class MemoryService {
 		BaseRecord person1 = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, person1ObjectId);
 		BaseRecord person2 = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, person2ObjectId);
 		if (person1 == null || person2 == null) {
-			return Response.status(404).entity(null).build();
+			logger.warn("Person lookup failed for count endpoint (PBAC race or missing record): p1=" + (person1 != null) + " p2=" + (person2 != null));
+			return Response.status(200).entity(0).build();
 		}
 		long pId1 = person1.get(FieldNames.FIELD_ID);
 		long pId2 = person2.get(FieldNames.FIELD_ID);
@@ -151,8 +153,26 @@ public class MemoryService {
 		if (rec == null) {
 			return Response.status(404).entity(false).build();
 		}
+		String conversationId = rec.get("conversationId");
 		boolean deleted = IOSystem.getActiveContext().getAccessPoint().delete(user, rec);
+		if (deleted && conversationId != null && !conversationId.isEmpty()) {
+			resetLastKeyframeAt(user, conversationId);
+		}
 		return Response.status(deleted ? 200 : 404).entity(deleted).build();
+	}
+
+	private void resetLastKeyframeAt(BaseRecord user, String chatConfigObjectId) {
+		try {
+			BaseRecord cfg = findByObjectId(user, "olio.llm.chatConfig", chatConfigObjectId);
+			if (cfg != null) {
+				cfg.setValue("lastKeyframeAt", 0);
+				IOSystem.getActiveContext().getAccessPoint().update(user, cfg.copyRecord(new String[] {
+					FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, "lastKeyframeAt" }));
+				logger.info("Reset lastKeyframeAt for chatConfig " + chatConfigObjectId);
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to reset lastKeyframeAt: " + e.getMessage());
+		}
 	}
 
 	@RolesAllowed({"admin","user"})
