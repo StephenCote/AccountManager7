@@ -76,14 +76,9 @@ public class MemoryUtil {
 				long[] canon = canonicalPersonIds(personId1, personId2);
 				memory.set("personId1", canon[0]);
 				memory.set("personId2", canon[1]);
-				/// Set foreign key references for proper model resolution
 				if (personModel != null && !personModel.isEmpty()) {
 					memory.set("person1Model", personModel);
 					memory.set("person2Model", personModel);
-					BaseRecord p1 = IOSystem.getActiveContext().getAccessPoint().findById(user, personModel, canon[0]);
-					BaseRecord p2 = IOSystem.getActiveContext().getAccessPoint().findById(user, personModel, canon[1]);
-					if (p1 != null) memory.set("person1", p1);
-					if (p2 != null) memory.set("person2", p2);
 				}
 			}
 			if (personModel != null && !personModel.isEmpty()) {
