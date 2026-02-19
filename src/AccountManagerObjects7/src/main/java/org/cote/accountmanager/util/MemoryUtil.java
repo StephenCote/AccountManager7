@@ -339,65 +339,113 @@ public class MemoryUtil {
 				cleaned = cleaned.trim();
 			}
 
-			// Parse JSON array from LLM response
-			int jsonStart = cleaned.indexOf("[");
-			int jsonEnd = cleaned.lastIndexOf("]");
-			if (jsonStart < 0 || jsonEnd < 0 || jsonEnd <= jsonStart) {
-				logger.warn("No valid JSON array in extraction response: " + cleaned.substring(0, Math.min(100, cleaned.length())));
-				return memories;
-			}
-
-			String jsonStr = cleaned.substring(jsonStart, jsonEnd + 1);
-			org.json.JSONArray arr = new org.json.JSONArray(jsonStr);
-
 			/// Phase 14d: Pre-fetch existing memories for the person pair to enable dedup
 			List<BaseRecord> existingMemories = null;
 			if (personId1 > 0L && personId2 > 0L) {
 				existingMemories = searchMemoriesByPersonPair(user, personId1, personId2, 50);
 			}
 
-			for (int i = 0; i < arr.length(); i++) {
-				org.json.JSONObject obj = arr.getJSONObject(i);
-				String content = obj.optString("content", null);
-				String summary = obj.optString("summary", null);
-				String typeStr = obj.optString("memoryType", "NOTE");
-				int importance = obj.optInt("importance", 5);
-
-				if (content == null || content.trim().isEmpty()) continue;
-
-				MemoryTypeEnumType type;
+			// Try JSON array parsing first
+			int jsonStart = cleaned.indexOf("[");
+			int jsonEnd = cleaned.lastIndexOf("]");
+			if (jsonStart >= 0 && jsonEnd > jsonStart) {
 				try {
-					type = MemoryTypeEnumType.fromValue(typeStr);
-				} catch (IllegalArgumentException e) {
-					type = MemoryTypeEnumType.NOTE;
-				}
-
-				/// Phase 14d: Check for semantic duplicate before creating
-				BaseRecord duplicate = findSemanticDuplicate(user, content, existingMemories);
-				if (duplicate != null) {
-					/// Merge: keep the higher importance, combine sourceUris
-					BaseRecord merged = mergeMemory(user, duplicate, content, summary, type, importance, sourceUri);
-					if (merged != null) {
-						memories.add(merged);
-						logger.info("Merged duplicate memory (id=" + duplicate.get(FieldNames.FIELD_ID) + ")");
+					String jsonStr = cleaned.substring(jsonStart, jsonEnd + 1);
+					org.json.JSONArray arr = new org.json.JSONArray(jsonStr);
+					for (int i = 0; i < arr.length(); i++) {
+						org.json.JSONObject obj = arr.getJSONObject(i);
+						String content = obj.optString("content", null);
+						String summary = obj.optString("summary", null);
+						String typeStr = obj.optString("memoryType", "NOTE");
+						int importance = obj.optInt("importance", 5);
+						if (content == null || content.trim().isEmpty()) continue;
+						addOrMergeMemory(user, memories, existingMemories, content, summary, typeStr,
+							importance, sourceUri, conversationId, personId1, personId2, personModel);
 					}
-					continue;
+					return memories;
+				} catch (org.json.JSONException je) {
+					logger.info("JSON parse failed, falling back to text parser: " + je.getMessage());
 				}
+			}
 
-				BaseRecord mem = createMemory(user, content, summary, type, importance, sourceUri, conversationId,
-					personId1, personId2, personModel);
-				if (mem != null) {
-					memories.add(mem);
-					/// Add newly created to existing list so subsequent items in this batch can dedup against it
-					if (existingMemories != null) {
-						existingMemories.add(mem);
+			/// Text fallback: parse "TYPE: content" lines produced by models that ignore
+			/// the JSON format instruction. Collects continuation lines (starting with -)
+			/// into the content of the preceding memory entry.
+			logger.info("Attempting text-based extraction from " + cleaned.length() + " chars");
+			java.util.regex.Pattern typePattern = java.util.regex.Pattern.compile(
+				"^(FACT|RELATIONSHIP|EMOTION|DECISION|DISCOVERY|NOTE|INSIGHT|OUTCOME|BEHAVIOR|ERROR_LESSON)\\s*[:—–-]\\s*(.+)",
+				java.util.regex.Pattern.CASE_INSENSITIVE
+			);
+			String[] lines = cleaned.split("\\r?\\n");
+			String currentType = null;
+			StringBuilder currentContent = null;
+			for (String line : lines) {
+				String trimmed = line.trim();
+				if (trimmed.isEmpty()) continue;
+				java.util.regex.Matcher mat = typePattern.matcher(trimmed);
+				if (mat.matches()) {
+					/// Flush previous entry
+					if (currentType != null && currentContent != null && currentContent.length() > 0) {
+						String content = currentContent.toString().trim();
+						String summary = content.length() > 100 ? content.substring(0, 97) + "..." : content;
+						addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
+							5, sourceUri, conversationId, personId1, personId2, personModel);
 					}
+					currentType = mat.group(1).toUpperCase();
+					currentContent = new StringBuilder(mat.group(2).trim());
+				} else if (currentContent != null && (trimmed.startsWith("-") || trimmed.startsWith("*"))) {
+					/// Continuation line — append to current entry
+					currentContent.append(" ").append(trimmed.substring(1).trim());
 				}
+			}
+			/// Flush final entry
+			if (currentType != null && currentContent != null && currentContent.length() > 0) {
+				String content = currentContent.toString().trim();
+				String summary = content.length() > 100 ? content.substring(0, 97) + "..." : content;
+				addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
+					5, sourceUri, conversationId, personId1, personId2, personModel);
+			}
+			if (!memories.isEmpty()) {
+				logger.info("Text fallback extracted " + memories.size() + " memories");
+			} else {
+				logger.warn("No memories extracted from response: " + cleaned.substring(0, Math.min(200, cleaned.length())));
 			}
 		} catch (Exception e) {
 			logger.error("Error parsing memory extraction response: " + e.getMessage());
 		}
 		return memories;
+	}
+
+	/// Shared helper for extractMemoriesFromResponse: dedup-check, then create or merge.
+	private static void addOrMergeMemory(BaseRecord user, List<BaseRecord> memories,
+			List<BaseRecord> existingMemories, String content, String summary, String typeStr,
+			int importance, String sourceUri, String conversationId,
+			long personId1, long personId2, String personModel) {
+		MemoryTypeEnumType type;
+		try {
+			type = MemoryTypeEnumType.fromValue(typeStr);
+		} catch (IllegalArgumentException e) {
+			type = MemoryTypeEnumType.NOTE;
+		}
+
+		BaseRecord duplicate = findSemanticDuplicate(user, content, existingMemories);
+		if (duplicate != null) {
+			BaseRecord merged = mergeMemory(user, duplicate, content, summary, type, importance, sourceUri);
+			if (merged != null) {
+				memories.add(merged);
+				logger.info("Merged duplicate memory (id=" + duplicate.get(FieldNames.FIELD_ID) + ")");
+			}
+			return;
+		}
+
+		BaseRecord mem = createMemory(user, content, summary, type, importance, sourceUri, conversationId,
+			personId1, personId2, personModel);
+		if (mem != null) {
+			memories.add(mem);
+			if (existingMemories != null) {
+				existingMemories.add(mem);
+			}
+		}
 	}
 
 	/// Phase 14d: Find a semantically duplicate memory from the existing list.
