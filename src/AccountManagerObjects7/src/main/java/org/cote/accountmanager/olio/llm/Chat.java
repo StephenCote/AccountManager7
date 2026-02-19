@@ -1119,8 +1119,10 @@ public class Chat {
 		String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
 		int lastKeyframeAt = 0;
 		try { lastKeyframeAt = chatConfig.get("lastKeyframeAt"); } catch (Exception e) { /* default 0 */ }
-		int keyframeEvery = 0;
-		try { keyframeEvery = chatConfig.get("keyframeEvery"); } catch (Exception e) { /* default 0 */ }
+		/// Use keyFrameEvery (instance field with enforced minimum) as the chunk size.
+		/// memoryExtractionEvery controls how often automatic keyframes trigger extraction (every Nth keyframe),
+		/// not the message chunk size.
+		int chunkSize = keyFrameEvery;
 
 		int totalMessages = req.getMessages().size();
 		boolean useAssist = false;
@@ -1133,24 +1135,24 @@ public class Chat {
 		}
 
 		logger.info("forceExtractMemories: " + totalMessages + " messages, startIdx=" + startIdx
-			+ ", keyframeEvery=" + keyframeEvery
+			+ ", chunkSize=" + chunkSize
 			+ " for " + systemChar.get("firstName") + " / " + userChar.get("firstName"));
 
 		int remaining = totalMessages - startIdx;
 
-		/// If keyframeEvery is 0 or covers the remaining messages, extract in one shot
-		if (keyframeEvery <= 0 || remaining <= keyframeEvery) {
+		/// If chunkSize is 0 or covers the remaining messages, extract in one shot
+		if (chunkSize <= 0 || remaining <= chunkSize) {
 			logger.info("forceExtractMemories: chunk 1 of 1 containing " + remaining + " messages");
 			return extractMemoriesFromSegment(req, cfgObjId, systemChar, userChar, startIdx);
 		}
 
 		/// Chunk the conversation and extract from each chunk
-		int totalChunks = (int) Math.ceil((double) remaining / keyframeEvery);
+		int totalChunks = (int) Math.ceil((double) remaining / chunkSize);
 		List<BaseRecord> allMemories = new ArrayList<>();
 		int chunkStart = startIdx;
 		int chunkNum = 0;
 		while (chunkStart < totalMessages) {
-			int chunkEnd = Math.min(chunkStart + keyframeEvery, totalMessages);
+			int chunkEnd = Math.min(chunkStart + chunkSize, totalMessages);
 			chunkNum++;
 			int msgCount = chunkEnd - chunkStart;
 			logger.info("forceExtractMemories: chunk " + chunkNum + " of " + totalChunks + " containing " + msgCount + " messages [" + chunkStart + ".." + chunkEnd + ")");
@@ -2300,6 +2302,22 @@ public class Chat {
 		applyChatOptions(extractReq);
 		/// Lower temperature for factual extraction
 		try { extractReq.set("temperature", 0.3); } catch (Exception e) { /* ignore */ }
+
+		/// Ensure enough output room for extraction responses.
+		/// The default num_ctx/max_tokens from chatOptions may be too small, causing truncated output.
+		String tokField = ChatUtil.getMaxTokenField(chatConfig);
+		if (tokField != null && !tokField.isEmpty()) {
+			try {
+				int current = extractReq.get(tokField);
+				int minTokens = (chatConfig.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) ? 16384 : 8192;
+				if (current < minTokens) {
+					extractReq.set(tokField, minTokens);
+					logger.info("extractMemoriesFromText: bumped " + tokField + " from " + current + " to " + minTokens);
+				}
+			} catch (Exception e) {
+				// ignore — field may not exist on request
+			}
+		}
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
