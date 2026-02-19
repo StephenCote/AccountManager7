@@ -722,8 +722,26 @@
          */
         bgActivity: null,
         _bgActivityTimer: null,
+        _bgActivityLock: 0,
+
+        /**
+         * Lock the bg activity so WebSocket events cannot clear it.
+         * Returns a lock token; pass it to unlockBgActivity when done.
+         */
+        lockBgActivity: function() {
+            return ++LLMConnector._bgActivityLock;
+        },
+        unlockBgActivity: function(token) {
+            if (LLMConnector._bgActivityLock === token) {
+                LLMConnector._bgActivityLock = 0;
+            }
+        },
 
         setBgActivity: function(icon, label) {
+            // If locked and caller is trying to clear, skip
+            if (LLMConnector._bgActivityLock > 0 && !(icon && label)) {
+                return;
+            }
             if (LLMConnector._bgActivityTimer) {
                 clearTimeout(LLMConnector._bgActivityTimer);
                 LLMConnector._bgActivityTimer = null;
@@ -734,6 +752,7 @@
                 LLMConnector._bgActivityTimer = setTimeout(function() {
                     LLMConnector.bgActivity = null;
                     LLMConnector._bgActivityTimer = null;
+                    LLMConnector._bgActivityLock = 0;
                     if (typeof m !== "undefined") m.redraw();
                 }, 90000);
             }

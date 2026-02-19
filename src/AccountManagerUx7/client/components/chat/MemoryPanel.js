@@ -253,6 +253,11 @@
             return;
         }
         extracting = true;
+        let lockToken = 0;
+        if (window.LLMConnector) {
+            lockToken = LLMConnector.lockBgActivity();
+            LLMConnector.setBgActivity("neurology", "Forming memories\u2026");
+        }
         m.redraw();
         try {
             let result = await m.request({
@@ -261,7 +266,7 @@
                 withCredentials: true
             });
             let count = (result && Array.isArray(result)) ? result.length : 0;
-            page.toast("success", "Extracted " + count + " memories");
+            page.toast("info", count > 0 ? "Extracted " + count + " memories" : "No new memories extracted", 3000);
             // Refresh the pair view to show new memories
             if (currentConfig) {
                 let sys = currentConfig.systemCharacter;
@@ -275,6 +280,10 @@
             console.warn("[MemoryPanel] forceExtract error:", e);
         }
         extracting = false;
+        if (window.LLMConnector) {
+            LLMConnector.unlockBgActivity(lockToken);
+            LLMConnector.setBgActivity(null, null);
+        }
         m.redraw();
     }
 
@@ -491,8 +500,7 @@
                     m("span", {
                         class: "material-symbols-outlined",
                         style: "font-size: 14px;"
-                    }, mode.icon),
-                    m("span", { class: "memory-mode-label" }, mode.label)
+                    }, mode.icon)
                 ]);
             })
         );

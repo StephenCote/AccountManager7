@@ -2497,10 +2497,32 @@
       .memory-header-btn {
         @apply flex-1;
       }
+      .memory-header-actions {
+        @apply flex items-center;
+      }
       .memory-add-btn {
-        @apply px-2 py-2 text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400 cursor-pointer;
+        @apply px-1.5 py-1.5 rounded cursor-pointer;
+        @apply text-gray-500 hover:text-blue-500 hover:bg-gray-100 active:bg-gray-200;
+        @apply dark:text-gray-400 dark:hover:text-blue-400 dark:hover:bg-gray-700 dark:active:bg-gray-600;
         background: none;
         border: none;
+        transition: color 0.15s, background-color 0.15s;
+      }
+      .memory-mode-selector {
+        @apply flex items-center gap-0.5 px-2 py-1 border-b;
+        @apply border-gray-200 dark:border-gray-700;
+      }
+      .memory-mode-btn {
+        @apply px-1.5 py-1 rounded cursor-pointer;
+        @apply text-gray-400 hover:text-gray-700 hover:bg-gray-100 active:bg-gray-200;
+        @apply dark:text-gray-500 dark:hover:text-gray-200 dark:hover:bg-gray-700 dark:active:bg-gray-600;
+        background: none;
+        border: none;
+        transition: color 0.15s, background-color 0.15s;
+      }
+      .memory-mode-btn.active {
+        @apply text-blue-600 bg-blue-50;
+        @apply dark:text-blue-400 dark:bg-blue-500/20;
       }
       .memory-body {
         @apply max-h-80 overflow-y-auto;
@@ -2523,10 +2545,22 @@
         @apply flex-shrink-0 px-1 rounded text-[10px] font-bold;
         @apply bg-amber-100 text-amber-700 dark:bg-amber-500/30 dark:text-amber-300;
       }
-      .memory-delete {
-        @apply flex-shrink-0 opacity-0 cursor-pointer;
-        @apply text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400;
+      .memory-share {
+        @apply flex-shrink-0 opacity-0 cursor-pointer rounded;
+        @apply text-gray-400 hover:text-blue-500 active:text-blue-700;
+        @apply dark:text-gray-500 dark:hover:text-blue-400 dark:active:text-blue-300;
         font-size: 14px;
+        transition: color 0.15s, opacity 0.15s;
+      }
+      .group:hover .memory-share {
+        @apply opacity-100;
+      }
+      .memory-delete {
+        @apply flex-shrink-0 opacity-0 cursor-pointer rounded;
+        @apply text-gray-400 hover:text-red-500 active:text-red-700;
+        @apply dark:text-gray-500 dark:hover:text-red-400 dark:active:text-red-300;
+        font-size: 14px;
+        transition: color 0.15s, opacity 0.15s;
       }
       .group:hover .memory-delete {
         @apply opacity-100;

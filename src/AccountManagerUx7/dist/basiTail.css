@@ -7829,19 +7829,32 @@ button.button-tab-active:hover:is(.dark *) {
   flex: 1 1 0%;
 }
 
+.memory-header-actions {
+  display: flex;
+  align-items: center;
+}
+
 .memory-add-btn {
   cursor: pointer;
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
+  border-radius: 0.25rem;
+  padding-left: 0.375rem;
+  padding-right: 0.375rem;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
   --tw-text-opacity: 1;
   color: rgb(107 114 128 / var(--tw-text-opacity, 1));
 }
 
 .memory-add-btn:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(243 244 246 / var(--tw-bg-opacity, 1));
   --tw-text-opacity: 1;
   color: rgb(59 130 246 / var(--tw-text-opacity, 1));
+}
+
+.memory-add-btn:active {
+  --tw-bg-opacity: 1;
+  background-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
 }
 
 .memory-add-btn:is(.dark *) {
@@ -7850,13 +7863,111 @@ button.button-tab-active:hover:is(.dark *) {
 }
 
 .memory-add-btn:hover:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(55 65 81 / var(--tw-bg-opacity, 1));
   --tw-text-opacity: 1;
   color: rgb(96 165 250 / var(--tw-text-opacity, 1));
+}
+
+.memory-add-btn:active:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(75 85 99 / var(--tw-bg-opacity, 1));
 }
 
 .memory-add-btn {
   background: none;
   border: none;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.memory-mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  border-bottom-width: 1px;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  --tw-border-opacity: 1;
+  border-color: rgb(229 231 235 / var(--tw-border-opacity, 1));
+}
+
+.memory-mode-selector:is(.dark *) {
+  --tw-border-opacity: 1;
+  border-color: rgb(55 65 81 / var(--tw-border-opacity, 1));
+}
+
+.memory-mode-btn {
+  cursor: pointer;
+  border-radius: 0.25rem;
+  padding-left: 0.375rem;
+  padding-right: 0.375rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  --tw-text-opacity: 1;
+  color: rgb(156 163 175 / var(--tw-text-opacity, 1));
+}
+
+.memory-mode-btn:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(243 244 246 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(55 65 81 / var(--tw-text-opacity, 1));
+}
+
+.memory-mode-btn:active {
+  --tw-bg-opacity: 1;
+  background-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
+}
+
+.memory-mode-btn:is(.dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(107 114 128 / var(--tw-text-opacity, 1));
+}
+
+.memory-mode-btn:hover:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(55 65 81 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(229 231 235 / var(--tw-text-opacity, 1));
+}
+
+.memory-mode-btn:active:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(75 85 99 / var(--tw-bg-opacity, 1));
+}
+
+.memory-mode-btn {
+  background: none;
+  border: none;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.memory-mode-btn.active {
+  --tw-bg-opacity: 1;
+  background-color: rgb(239 246 255 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(37 99 235 / var(--tw-text-opacity, 1));
+}
+
+.memory-mode-btn.\!active {
+  --tw-bg-opacity: 1;
+  background-color: rgb(239 246 255 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(37 99 235 / var(--tw-text-opacity, 1));
+}
+
+.memory-mode-btn.active:is(.dark *) {
+  background-color: rgb(59 130 246 / 0.2);
+  --tw-text-opacity: 1;
+  color: rgb(96 165 250 / var(--tw-text-opacity, 1));
+}
+
+.memory-mode-btn.\!active:is(.dark *) {
+  background-color: rgb(59 130 246 / 0.2);
+  --tw-text-opacity: 1;
+  color: rgb(96 165 250 / var(--tw-text-opacity, 1));
 }
 
 .memory-body {
@@ -7951,9 +8062,57 @@ button.button-tab-active:hover:is(.dark *) {
   color: rgb(252 211 77 / var(--tw-text-opacity, 1));
 }
 
+.memory-share {
+  flex-shrink: 0;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  opacity: 0;
+  --tw-text-opacity: 1;
+  color: rgb(156 163 175 / var(--tw-text-opacity, 1));
+}
+
+.memory-share:hover {
+  --tw-text-opacity: 1;
+  color: rgb(59 130 246 / var(--tw-text-opacity, 1));
+}
+
+.memory-share:active {
+  --tw-text-opacity: 1;
+  color: rgb(29 78 216 / var(--tw-text-opacity, 1));
+}
+
+.memory-share:is(.dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(107 114 128 / var(--tw-text-opacity, 1));
+}
+
+.memory-share:hover:is(.dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(96 165 250 / var(--tw-text-opacity, 1));
+}
+
+.memory-share:active:is(.dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(147 197 253 / var(--tw-text-opacity, 1));
+}
+
+.memory-share {
+  font-size: 14px;
+  transition: color 0.15s, opacity 0.15s;
+}
+
+.\!group:hover .memory-share {
+  opacity: 1;
+}
+
+.group:hover .memory-share {
+  opacity: 1;
+}
+
 .memory-delete {
   flex-shrink: 0;
   cursor: pointer;
+  border-radius: 0.25rem;
   opacity: 0;
   --tw-text-opacity: 1;
   color: rgb(156 163 175 / var(--tw-text-opacity, 1));
@@ -7962,6 +8121,11 @@ button.button-tab-active:hover:is(.dark *) {
 .memory-delete:hover {
   --tw-text-opacity: 1;
   color: rgb(239 68 68 / var(--tw-text-opacity, 1));
+}
+
+.memory-delete:active {
+  --tw-text-opacity: 1;
+  color: rgb(185 28 28 / var(--tw-text-opacity, 1));
 }
 
 .memory-delete:is(.dark *) {
@@ -7974,8 +8138,14 @@ button.button-tab-active:hover:is(.dark *) {
   color: rgb(248 113 113 / var(--tw-text-opacity, 1));
 }
 
+.memory-delete:active:is(.dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(252 165 165 / var(--tw-text-opacity, 1));
+}
+
 .memory-delete {
   font-size: 14px;
+  transition: color 0.15s, opacity 0.15s;
 }
 
 .\!group:hover .memory-delete {
