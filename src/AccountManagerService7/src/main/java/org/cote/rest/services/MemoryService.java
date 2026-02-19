@@ -196,8 +196,6 @@ public class MemoryService {
 			String memoryTypeStr = rec.get("memoryType");
 			int importance = 5;
 			try { importance = rec.get("importance"); } catch (Exception e) { /* use default */ }
-			String person1ObjectId = rec.get("person1ObjectId");
-			String person2ObjectId = rec.get("person2ObjectId");
 			String conversationId = rec.get("conversationId");
 
 			if (content == null || content.trim().isEmpty()) {
@@ -212,16 +210,19 @@ public class MemoryService {
 				try { memType = MemoryTypeEnumType.valueOf(memoryTypeStr); } catch (Exception e) { /* default NOTE */ }
 			}
 
+			/// Resolve person references from the foreign key fields
 			long pId1 = 0L;
 			long pId2 = 0L;
 			String personModel = null;
-			if (person1ObjectId != null && person2ObjectId != null) {
-				BaseRecord person1 = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, person1ObjectId);
-				BaseRecord person2 = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, person2ObjectId);
+			BaseRecord person1Ref = rec.get("person1");
+			BaseRecord person2Ref = rec.get("person2");
+			if (person1Ref != null && person2Ref != null) {
+				BaseRecord person1 = OlioUtil.getFullRecord(person1Ref);
+				BaseRecord person2 = OlioUtil.getFullRecord(person2Ref);
 				if (person1 != null && person2 != null) {
 					pId1 = person1.get(FieldNames.FIELD_ID);
 					pId2 = person2.get(FieldNames.FIELD_ID);
-					personModel = OlioModelNames.MODEL_CHAR_PERSON;
+					personModel = rec.get("person1Model");
 				}
 			}
 

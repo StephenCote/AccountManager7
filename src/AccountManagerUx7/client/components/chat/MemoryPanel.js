@@ -26,7 +26,7 @@
     let createForm = { content: "", summary: "", memoryType: "NOTE", importance: 5 };
 
     // Phase 3 (chatRefactor2): Cross-conversation memory browsing
-    let viewMode = "pair";        // "pair" | "character" | "search"
+    let viewMode = "pair";        // "pair" | "sysChar" | "usrChar" | "search"
     let characterMemories = [];
     let characterLoading = false;
 
@@ -153,28 +153,40 @@
         m.redraw();
     }
 
-    // Phase 3 (chatRefactor2): Share a memory from character/search view to current pair
+    // Build the person foreign key payload for memory create requests
+    function buildPersonPayload() {
+        if (!currentConfig) return null;
+        let sys = currentConfig.systemCharacter;
+        let usr = currentConfig.userCharacter;
+        if (!sys || !usr || !sys.objectId || !usr.objectId) return null;
+        let pModel = sys.schema || "olio.charPerson";
+        return {
+            person1Model: pModel,
+            person1: { objectId: sys.objectId },
+            person2Model: pModel,
+            person2: { objectId: usr.objectId },
+            conversationId: currentConfig.objectId || null
+        };
+    }
+
+    // Phase 3 (chatRefactor2): Share a memory from system character view to current pair
     async function shareMemoryToCurrentPair(mem) {
         if (!mem || !currentConfig) {
             page.toast("warn", "No active chat session");
             return;
         }
-        let sys = currentConfig.systemCharacter;
-        let usr = currentConfig.userCharacter;
-        if (!sys || !usr || !sys.objectId || !usr.objectId) {
+        let pp = buildPersonPayload();
+        if (!pp) {
             page.toast("warn", "Character pair not available");
             return;
         }
         try {
-            let body = {
+            let body = Object.assign({
                 content: mem.content || "",
                 summary: mem.summary || null,
                 memoryType: mem.memoryType || "NOTE",
-                importance: mem.importance || 5,
-                person1ObjectId: sys.objectId,
-                person2ObjectId: usr.objectId,
-                conversationId: currentConfig.objectId || null
-            };
+                importance: mem.importance || 5
+            }, pp);
             await m.request({
                 method: 'POST',
                 url: am7client.base() + "/memory/create",
@@ -182,14 +194,37 @@
                 body: body
             });
             page.toast("success", "Memory shared to current pair");
-            // Refresh pair view
-            if (sys.objectId && usr.objectId) {
+            let sys = currentConfig.systemCharacter;
+            let usr = currentConfig.userCharacter;
+            if (sys && usr && sys.objectId && usr.objectId) {
                 await loadForPair(sys.objectId, usr.objectId);
             }
         } catch(e) {
             page.toast("error", "Failed to share memory");
         }
         m.redraw();
+    }
+
+    // Inject a memory as MCP context into the user's next message
+    function injectMemoryToChat(mem) {
+        if (!mem || !mem.content) {
+            page.toast("warn", "Memory has no content");
+            return;
+        }
+        let memType = mem.memoryType || "NOTE";
+        let summary = mem.summary || "";
+        let mcpBlock = "<mcp:context uri=\"am7://memory/" + (mem.objectId || "injected") + "\" type=\"urn:am7:memory:" + memType.toLowerCase() + "\">\n"
+            + (summary ? summary + ": " : "") + mem.content + "\n"
+            + "</mcp:context>";
+        let inputEl = document.querySelector("[name='chatmessage']");
+        if (inputEl) {
+            let existing = inputEl.value.trim();
+            inputEl.value = existing ? existing + "\n" + mcpBlock : mcpBlock;
+            inputEl.focus();
+            page.toast("info", "Memory added to message");
+        } else {
+            page.toast("warn", "Chat input not found");
+        }
     }
 
     async function deleteMemory(mem) {
@@ -248,29 +283,21 @@
             page.toast("warn", "Memory content is required");
             return;
         }
-        if (!currentConfig) {
-            page.toast("warn", "No active chat session");
-            return;
-        }
-        let sys = currentConfig.systemCharacter;
-        let usr = currentConfig.userCharacter;
-        if (!sys || !usr || !sys.objectId || !usr.objectId) {
-            page.toast("warn", "Character pair not available");
+        let pp = buildPersonPayload();
+        if (!pp) {
+            page.toast("warn", "No active chat session or character pair not available");
             return;
         }
 
         loading = true;
         m.redraw();
         try {
-            let body = {
+            let body = Object.assign({
                 content: createForm.content.trim(),
                 summary: createForm.summary.trim() || null,
                 memoryType: createForm.memoryType,
-                importance: createForm.importance,
-                person1ObjectId: sys.objectId,
-                person2ObjectId: usr.objectId,
-                conversationId: currentConfig.objectId || null
-            };
+                importance: createForm.importance
+            }, pp);
             await m.request({
                 method: 'POST',
                 url: am7client.base() + "/memory/create",
@@ -280,8 +307,9 @@
             page.toast("success", "Memory created");
             createForm = { content: "", summary: "", memoryType: "NOTE", importance: 5 };
             showCreateForm = false;
-            // Reload memories
-            if (sys.objectId && usr.objectId) {
+            let sys = currentConfig.systemCharacter;
+            let usr = currentConfig.userCharacter;
+            if (sys && usr && sys.objectId && usr.objectId) {
                 await loadForPair(sys.objectId, usr.objectId);
             }
         } catch(e) {
@@ -316,8 +344,8 @@
                 }, icon),
                 m("span", { class: "memory-summary" }, summary),
                 importance > 0 ? m("span", { class: "memory-importance" }, importance) : "",
-                // Phase 3: Share button visible in character/search modes
-                (viewMode !== "pair") ? m("span", {
+                // Share/inject buttons visible in non-pair modes
+                (viewMode === "sysChar" || viewMode === "search") ? m("span", {
                     class: "material-symbols-outlined memory-share",
                     title: "Share to current pair",
                     onclick: function(e) {
@@ -325,6 +353,14 @@
                         shareMemoryToCurrentPair(mem);
                     }
                 }, "share") : "",
+                (viewMode === "usrChar") ? m("span", {
+                    class: "material-symbols-outlined memory-share",
+                    title: "Add to next message",
+                    onclick: function(e) {
+                        e.stopPropagation();
+                        injectMemoryToChat(mem);
+                    }
+                }, "chat_add_on") : "",
                 m("span", {
                     class: "material-symbols-outlined memory-delete",
                     title: "Delete",
@@ -402,7 +438,7 @@
     function memoryListView() {
         let list;
         let isLoading = loading;
-        if (viewMode === "character") {
+        if (viewMode === "sysChar" || viewMode === "usrChar") {
             list = characterMemories;
             isLoading = characterLoading;
         } else if (viewMode === "search") {
@@ -414,7 +450,7 @@
             return m("div", { class: "memory-empty" }, "Loading...");
         }
         if (!list || list.length === 0) {
-            let emptyMsg = viewMode === "character" ? "No character memories"
+            let emptyMsg = (viewMode === "sysChar" || viewMode === "usrChar") ? "No character memories"
                 : (viewMode === "search" ? "Search for memories" : "No memories");
             return m("div", { class: "memory-empty" }, emptyMsg);
         }
@@ -423,9 +459,12 @@
 
     // Phase 3 (chatRefactor2): View mode selector
     function viewModeSelector() {
+        let sysName = currentConfig && currentConfig.systemCharacter ? (currentConfig.systemCharacter.firstName || "System") : "System";
+        let usrName = currentConfig && currentConfig.userCharacter ? (currentConfig.userCharacter.firstName || "User") : "User";
         let modes = [
             { key: "pair", label: "Pair", icon: "people" },
-            { key: "character", label: "Character", icon: "person" },
+            { key: "sysChar", label: sysName, icon: "smart_toy" },
+            { key: "usrChar", label: usrName, icon: "person" },
             { key: "search", label: "Search", icon: "search" }
         ];
         return m("div", { class: "memory-mode-selector" },
@@ -436,10 +475,15 @@
                     onclick: function() {
                         viewMode = mode.key;
                         searchResults = null;
-                        if (mode.key === "character" && currentConfig) {
+                        if (mode.key === "sysChar" && currentConfig) {
                             let sys = currentConfig.systemCharacter;
                             if (sys && sys.objectId) {
                                 loadForCharacter(sys.objectId);
+                            }
+                        } else if (mode.key === "usrChar" && currentConfig) {
+                            let usr = currentConfig.userCharacter;
+                            if (usr && usr.objectId) {
+                                loadForCharacter(usr.objectId);
                             }
                         }
                     }

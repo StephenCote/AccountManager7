@@ -63,6 +63,34 @@
 			"type": "string",
 			"maxLength": 64,
 			"description": "Model type of the person records (e.g. identity.person, olio.charPerson)"
+		},
+		{
+			"name": "person1Model",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "person1",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "person1Model",
+			"participantModel": "memory.person1",
+			"description": "Foreign reference to first person in canonical order"
+		},
+		{
+			"name": "person2Model",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "person2",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "person2Model",
+			"participantModel": "memory.person2",
+			"description": "Foreign reference to second person in canonical order"
 		}
 	]
 }

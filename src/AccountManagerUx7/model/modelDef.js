@@ -10746,6 +10746,91 @@
           "foreign": true
         }
       ]
+    },
+    {
+      "name": "tool.memory",
+      "inherits": ["data.directory", "common.dateTime"],
+      "vectorize": true,
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        },
+        {
+          "name": "summary",
+          "type": "string",
+          "maxLength": 512
+        },
+        {
+          "name": "memoryType",
+          "type": "enum",
+          "baseClass": "org.cote.accountmanager.schema.type.MemoryTypeEnumType",
+          "maxLength": 32,
+          "default": "NOTE"
+        },
+        {
+          "name": "importance",
+          "type": "int",
+          "default": 5
+        },
+        {
+          "name": "sourceUri",
+          "type": "string"
+        },
+        {
+          "name": "sourceContext",
+          "type": "string",
+          "maxLength": 512
+        },
+        {
+          "name": "annotations",
+          "type": "string"
+        },
+        {
+          "name": "conversationId",
+          "type": "string",
+          "maxLength": 128
+        },
+        {
+          "name": "personId1",
+          "type": "long"
+        },
+        {
+          "name": "personId2",
+          "type": "long"
+        },
+        {
+          "name": "personModel",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "person1Model",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "person1",
+          "baseModel": "$flex",
+          "type": "model",
+          "foreign": true,
+          "foreignType": "person1Model",
+          "participantModel": "memory.person1"
+        },
+        {
+          "name": "person2Model",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "person2",
+          "baseModel": "$flex",
+          "type": "model",
+          "foreign": true,
+          "foreignType": "person2Model",
+          "participantModel": "memory.person2"
+        }
+      ]
     }
   ],
   "validationRules": [
