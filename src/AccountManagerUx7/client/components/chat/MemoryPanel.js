@@ -20,6 +20,8 @@
     let searchResults = null;
     let expandedMemoryId = null;
     let currentConfig = null;
+    let chatRequestObjectId = null;
+    let extracting = false;
     let showCreateForm = false;
     let createForm = { content: "", summary: "", memoryType: "NOTE", importance: 5 };
 
@@ -207,6 +209,37 @@
         } catch(e) {
             page.toast("error", "Failed to delete memory");
         }
+        m.redraw();
+    }
+
+    async function forceExtract() {
+        if (!chatRequestObjectId) {
+            page.toast("warn", "No active chat session");
+            return;
+        }
+        extracting = true;
+        m.redraw();
+        try {
+            let result = await m.request({
+                method: 'POST',
+                url: am7client.base() + "/memory/extract/" + chatRequestObjectId,
+                withCredentials: true
+            });
+            let count = (result && Array.isArray(result)) ? result.length : 0;
+            page.toast("success", "Extracted " + count + " memories");
+            // Refresh the pair view to show new memories
+            if (currentConfig) {
+                let sys = currentConfig.systemCharacter;
+                let usr = currentConfig.userCharacter;
+                if (sys && usr && sys.objectId && usr.objectId) {
+                    await loadForPair(sys.objectId, usr.objectId);
+                }
+            }
+        } catch(e) {
+            page.toast("error", "Memory extraction failed");
+            console.warn("[MemoryPanel] forceExtract error:", e);
+        }
+        extracting = false;
         m.redraw();
     }
 
@@ -443,15 +476,28 @@
                             style: "font-size: 16px;"
                         }, expanded ? "expand_less" : "expand_more")
                     ]),
-                    expanded ? m("button", {
-                        class: "memory-add-btn",
-                        title: "Create memory",
-                        onclick: function() { showCreateForm = !showCreateForm; }
-                    }, [
-                        m("span", {
-                            class: "material-symbols-outlined",
-                            style: "font-size: 16px;"
-                        }, "add_circle")
+                    expanded ? m("span", { class: "memory-header-actions" }, [
+                        m("button", {
+                            class: "memory-add-btn",
+                            title: "Extract memories from conversation",
+                            disabled: extracting,
+                            onclick: forceExtract
+                        }, [
+                            m("span", {
+                                class: "material-symbols-outlined",
+                                style: "font-size: 16px;"
+                            }, extracting ? "hourglass_top" : "auto_awesome")
+                        ]),
+                        m("button", {
+                            class: "memory-add-btn",
+                            title: "Create memory",
+                            onclick: function() { showCreateForm = !showCreateForm; }
+                        }, [
+                            m("span", {
+                                class: "material-symbols-outlined",
+                                style: "font-size: 16px;"
+                            }, "add_circle")
+                        ])
                     ]) : ""
                 ]),
                 // Expanded content
@@ -479,8 +525,9 @@
 
         loadForCharacter: loadForCharacter,
 
-        loadForSession: function(chatConfig) {
+        loadForSession: function(chatConfig, chatReqObjectId) {
             currentConfig = chatConfig;
+            chatRequestObjectId = chatReqObjectId || null;
             if (!chatConfig) {
                 memories = [];
                 memoryCount = 0;

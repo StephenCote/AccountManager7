@@ -8,6 +8,10 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatRequest;
+import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -230,6 +234,45 @@ public class MemoryService {
 			return Response.status(200).entity(memory.toFullString()).build();
 		} catch (Exception e) {
 			logger.error("Failed to create memory", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Force-run memory extraction on an existing conversation without sending a new message.
+	/// Use case: testing prompt changes for memory analysis without continuing the conversation.
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/extract/{chatRequestObjectId:[A-Fa-f0-9\\-]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response forceExtractMemories(@PathParam("chatRequestObjectId") String chatRequestObjectId, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		/// Load the ChatRequest by objectId (same pattern as ChatService)
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, chatRequestObjectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(false);
+		ChatRequest chatReq = new ChatRequest(IOSystem.getActiveContext().getAccessPoint().find(user, q));
+		if (chatReq == null || chatReq.getChatConfig() == null) {
+			return Response.status(404).entity("{\"error\":\"ChatRequest not found\"}").build();
+		}
+
+		/// Load the session (conversation messages)
+		OpenAIRequest oreq = ChatUtil.getOpenAIRequest(user, chatReq);
+		if (oreq == null || oreq.getMessages() == null || oreq.getMessages().isEmpty()) {
+			return Response.status(400).entity("{\"error\":\"No conversation session found\"}").build();
+		}
+
+		/// Create a Chat instance from the ChatRequest's config
+		Chat chat = ChatUtil.getChat(user, chatReq, false);
+		if (chat == null) {
+			return Response.status(500).entity("{\"error\":\"Failed to initialize Chat\"}").build();
+		}
+
+		try {
+			List<BaseRecord> memories = chat.forceExtractMemories(oreq);
+			return Response.status(200).entity(serializeList(memories)).build();
+		} catch (Exception e) {
+			logger.error("Force extract failed", e);
 			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
 		}
 	}

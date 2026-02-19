@@ -406,7 +406,7 @@
       doPeek().then(function() {
         // Phase 13f: Load memories for the character pair (OI-69)
         if (window.MemoryPanel && chatCfg.chat) {
-          MemoryPanel.loadForSession(chatCfg.chat);
+          MemoryPanel.loadForSession(chatCfg.chat, inst ? inst.api.objectId() : null);
         }
       }).catch(function(e) {
         console.warn("Failed to peek session", e);

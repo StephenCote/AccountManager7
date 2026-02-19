@@ -1099,6 +1099,33 @@ public class Chat {
 		return ctxBuilder.size() > 0 ? ctxBuilder.build() : "";
 	}
 
+	/// Force-run memory extraction on the current conversation without sending a new message.
+	/// Use case: testing prompt changes for analysis by triggering memory creation directly.
+	/// Takes the loaded conversation session (OpenAIRequest with messages) and runs
+	/// extractMemoriesFromSegment() using the current chatConfig/promptConfig settings.
+	public List<BaseRecord> forceExtractMemories(OpenAIRequest req) {
+		if (chatConfig == null || req == null || req.getMessages() == null || req.getMessages().isEmpty()) {
+			logger.warn("forceExtractMemories: missing chatConfig or empty session");
+			return java.util.Collections.emptyList();
+		}
+
+		BaseRecord systemChar = chatConfig.get("systemCharacter");
+		BaseRecord userChar = chatConfig.get("userCharacter");
+		if (systemChar == null || userChar == null) {
+			logger.warn("forceExtractMemories: systemCharacter or userCharacter is null");
+			return java.util.Collections.emptyList();
+		}
+
+		String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+		/// Extract from the entire conversation (offset 0) so the full context is available
+		int previousKeyframeAt = 0;
+
+		logger.info("forceExtractMemories: running extraction on " + req.getMessages().size()
+			+ " messages for " + systemChar.get("firstName") + " / " + userChar.get("firstName"));
+
+		return extractMemoriesFromSegment(req, cfgObjId, systemChar, userChar, previousKeyframeAt);
+	}
+
 	/// Phase 2a (chatRefactor2): Detect if agentic processing is enabled on the chatConfig
 	/// and route the message through a lightweight chain execution to gather MCP context
 	/// from "Agent Aware" tagged objects.
