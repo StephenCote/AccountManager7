@@ -1101,8 +1101,8 @@ public class Chat {
 
 	/// Force-run memory extraction on the current conversation without sending a new message.
 	/// Use case: testing prompt changes for analysis by triggering memory creation directly.
-	/// Takes the loaded conversation session (OpenAIRequest with messages) and runs
-	/// extractMemoriesFromSegment() using the current chatConfig/promptConfig settings.
+	/// Respects lastKeyframeAt (starts from there) and keyframeEvery (chunk size).
+	/// Submits 1..N extraction calls to avoid overwhelming the LLM with the full conversation.
 	public List<BaseRecord> forceExtractMemories(OpenAIRequest req) {
 		if (chatConfig == null || req == null || req.getMessages() == null || req.getMessages().isEmpty()) {
 			logger.warn("forceExtractMemories: missing chatConfig or empty session");
@@ -1117,13 +1117,45 @@ public class Chat {
 		}
 
 		String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
-		/// Extract from the entire conversation (offset 0) so the full context is available
-		int previousKeyframeAt = 0;
+		int lastKeyframeAt = 0;
+		try { lastKeyframeAt = chatConfig.get("lastKeyframeAt"); } catch (Exception e) { /* default 0 */ }
+		int keyframeEvery = 0;
+		try { keyframeEvery = chatConfig.get("keyframeEvery"); } catch (Exception e) { /* default 0 */ }
 
-		logger.info("forceExtractMemories: running extraction on " + req.getMessages().size()
-			+ " messages for " + systemChar.get("firstName") + " / " + userChar.get("firstName"));
+		int totalMessages = req.getMessages().size();
+		boolean useAssist = false;
+		try { useAssist = chatConfig.get("assist"); } catch (Exception e) { /* default false */ }
+		int startIdx = lastKeyframeAt > 0 ? lastKeyframeAt : (useAssist ? pruneSkip : 0) + 1;
 
-		return extractMemoriesFromSegment(req, cfgObjId, systemChar, userChar, previousKeyframeAt);
+		if (startIdx >= totalMessages) {
+			logger.info("forceExtractMemories: no new messages since lastKeyframeAt=" + lastKeyframeAt);
+			return java.util.Collections.emptyList();
+		}
+
+		logger.info("forceExtractMemories: " + totalMessages + " messages, startIdx=" + startIdx
+			+ ", keyframeEvery=" + keyframeEvery
+			+ " for " + systemChar.get("firstName") + " / " + userChar.get("firstName"));
+
+		/// If keyframeEvery is 0 or covers the remaining messages, extract in one shot
+		if (keyframeEvery <= 0 || (totalMessages - startIdx) <= keyframeEvery) {
+			return extractMemoriesFromSegment(req, cfgObjId, systemChar, userChar, startIdx);
+		}
+
+		/// Chunk the conversation and extract from each chunk
+		List<BaseRecord> allMemories = new ArrayList<>();
+		int chunkStart = startIdx;
+		int chunkNum = 0;
+		while (chunkStart < totalMessages) {
+			int chunkEnd = Math.min(chunkStart + keyframeEvery, totalMessages);
+			chunkNum++;
+			logger.info("forceExtractMemories: chunk " + chunkNum + " [" + chunkStart + ".." + chunkEnd + ") of " + totalMessages);
+			List<BaseRecord> chunkMemories = extractMemoriesFromRange(req, cfgObjId, systemChar, userChar, chunkStart, chunkEnd);
+			allMemories.addAll(chunkMemories);
+			chunkStart = chunkEnd;
+		}
+
+		logger.info("forceExtractMemories: extracted " + allMemories.size() + " memories from " + chunkNum + " chunks");
+		return allMemories;
 	}
 
 	/// Phase 2a (chatRefactor2): Detect if agentic processing is enabled on the chatConfig
@@ -2187,6 +2219,23 @@ public class Chat {
 		int startIdx = previousKeyframeAt > 0 ? previousKeyframeAt : (useAssist ? pruneSkip : 0) + 1;
 		String segment = ChatUtil.getFormattedChatHistory(snapshotReq, chatConfig, startIdx)
 			.stream().collect(Collectors.joining(System.lineSeparator()));
+
+		return extractMemoriesFromText(segment, conversationId, systemChar, userChar);
+	}
+
+	/// Range-bounded variant: extracts memories from messages [startIdx, endIdx).
+	private List<BaseRecord> extractMemoriesFromRange(OpenAIRequest snapshotReq,
+			String conversationId, BaseRecord systemChar, BaseRecord userChar, int startIdx, int endIdx) {
+
+		String segment = ChatUtil.getFormattedChatHistory(snapshotReq, chatConfig, startIdx, endIdx)
+			.stream().collect(Collectors.joining(System.lineSeparator()));
+
+		return extractMemoriesFromText(segment, conversationId, systemChar, userChar);
+	}
+
+	/// Core extraction: takes pre-built segment text and runs the LLM extraction call.
+	private List<BaseRecord> extractMemoriesFromText(String segment,
+			String conversationId, BaseRecord systemChar, BaseRecord userChar) {
 
 		if (segment == null || segment.trim().isEmpty()) {
 			return java.util.Collections.emptyList();

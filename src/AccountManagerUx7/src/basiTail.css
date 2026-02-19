@@ -2524,6 +2524,14 @@
         @apply text-blue-600 bg-blue-50;
         @apply dark:text-blue-400 dark:bg-blue-500/20;
       }
+      .memory-spin {
+        animation: memorySpin 1.2s ease-in-out infinite;
+      }
+      @keyframes memorySpin {
+        0%   { transform: rotate(0deg); }
+        50%  { transform: rotate(180deg); }
+        100% { transform: rotate(360deg); }
+      }
       .memory-body {
         @apply max-h-80 overflow-y-auto;
       }

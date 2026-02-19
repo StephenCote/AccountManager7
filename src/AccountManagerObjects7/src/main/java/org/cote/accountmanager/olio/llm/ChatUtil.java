@@ -1510,9 +1510,20 @@ public class ChatUtil {
 		return getFormattedChatHistoryFrom(req, chatConfig, full ? 0 : (pruneSkip + 2));
 	}
 
+	/// Range-bounded variant: formats messages from startIndex (inclusive) to endIndex (exclusive).
+	/// If endIndex <= 0 or > message count, reads to the end.
+	public static List<String> getFormattedChatHistory(OpenAIRequest req, BaseRecord chatConfig, int startIndex, int endIndex) {
+		int end = (endIndex > 0 && endIndex < req.getMessages().size()) ? endIndex : req.getMessages().size();
+		return getFormattedChatHistoryRange(req, chatConfig, startIndex, end);
+	}
+
 	private static List<String> getFormattedChatHistoryFrom(OpenAIRequest req, BaseRecord chatConfig, int startIndex) {
+		return getFormattedChatHistoryRange(req, chatConfig, startIndex, req.getMessages().size());
+	}
+
+	private static List<String> getFormattedChatHistoryRange(OpenAIRequest req, BaseRecord chatConfig, int startIndex, int endIndex) {
 		List<String> buff = new ArrayList<>();
-		for (int i = startIndex; i < req.getMessages().size(); i++) {
+		for (int i = startIndex; i < endIndex; i++) {
 			OpenAIMessage msg = req.getMessages().get(i);
 			String cont = msg.getContent();
 			/// OI-14: Skip keyframe messages (MCP format and legacy text format)

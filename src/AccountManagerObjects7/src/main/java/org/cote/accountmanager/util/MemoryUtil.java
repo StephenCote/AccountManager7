@@ -372,12 +372,22 @@ public class MemoryUtil {
 				}
 			}
 
-			/// Text fallback: parse "TYPE: content" lines produced by models that ignore
-			/// the JSON format instruction. Collects continuation lines (starting with -)
-			/// into the content of the preceding memory entry.
+			/// Text fallback: parse lines produced by models that ignore the JSON format
+			/// instruction. Handles:
+			///   1. "TYPE: content" lines (e.g., FACT: Abby is 12 years old)
+			///   2. Plain bullet points "- content" (treated as NOTE)
+			///   3. Numbered items "1. content" or "1) content" (treated as NOTE)
+			/// Skips header lines like "Memories:", "Memory Fragments:", etc.
 			logger.info("Attempting text-based extraction from " + cleaned.length() + " chars");
 			java.util.regex.Pattern typePattern = java.util.regex.Pattern.compile(
 				"^(FACT|RELATIONSHIP|EMOTION|DECISION|DISCOVERY|NOTE|INSIGHT|OUTCOME|BEHAVIOR|ERROR_LESSON)\\s*[:—–-]\\s*(.+)",
+				java.util.regex.Pattern.CASE_INSENSITIVE
+			);
+			java.util.regex.Pattern bulletPattern = java.util.regex.Pattern.compile(
+				"^(?:[-*•]|\\d+[.)]) \\s*(.+)"
+			);
+			java.util.regex.Pattern headerPattern = java.util.regex.Pattern.compile(
+				"^(?:Memor(?:ies|y)|Key|Summary|Notes|Extracted|Fragments).*:$",
 				java.util.regex.Pattern.CASE_INSENSITIVE
 			);
 			String[] lines = cleaned.split("\\r?\\n");
@@ -386,6 +396,8 @@ public class MemoryUtil {
 			for (String line : lines) {
 				String trimmed = line.trim();
 				if (trimmed.isEmpty()) continue;
+				/// Skip header lines
+				if (headerPattern.matcher(trimmed).matches()) continue;
 				java.util.regex.Matcher mat = typePattern.matcher(trimmed);
 				if (mat.matches()) {
 					/// Flush previous entry
@@ -397,9 +409,22 @@ public class MemoryUtil {
 					}
 					currentType = mat.group(1).toUpperCase();
 					currentContent = new StringBuilder(mat.group(2).trim());
-				} else if (currentContent != null && (trimmed.startsWith("-") || trimmed.startsWith("*"))) {
-					/// Continuation line — append to current entry
-					currentContent.append(" ").append(trimmed.substring(1).trim());
+				} else {
+					java.util.regex.Matcher bmat = bulletPattern.matcher(trimmed);
+					if (bmat.matches()) {
+						/// Flush previous entry
+						if (currentType != null && currentContent != null && currentContent.length() > 0) {
+							String content = currentContent.toString().trim();
+							String summary = content.length() > 100 ? content.substring(0, 97) + "..." : content;
+							addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
+								5, sourceUri, conversationId, personId1, personId2, personModel);
+						}
+						currentType = "NOTE";
+						currentContent = new StringBuilder(bmat.group(1).trim());
+					} else if (currentContent != null) {
+						/// Continuation line — append to current entry
+						currentContent.append(" ").append(trimmed);
+					}
 				}
 			}
 			/// Flush final entry

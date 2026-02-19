@@ -536,7 +536,7 @@
                             onclick: forceExtract
                         }, [
                             m("span", {
-                                class: "material-symbols-outlined",
+                                class: "material-symbols-outlined" + (extracting ? " memory-spin" : ""),
                                 style: "font-size: 16px;"
                             }, extracting ? "hourglass_top" : "auto_awesome")
                         ]),
