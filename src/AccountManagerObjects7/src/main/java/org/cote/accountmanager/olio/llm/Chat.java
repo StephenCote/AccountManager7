@@ -1136,19 +1136,24 @@ public class Chat {
 			+ ", keyframeEvery=" + keyframeEvery
 			+ " for " + systemChar.get("firstName") + " / " + userChar.get("firstName"));
 
+		int remaining = totalMessages - startIdx;
+
 		/// If keyframeEvery is 0 or covers the remaining messages, extract in one shot
-		if (keyframeEvery <= 0 || (totalMessages - startIdx) <= keyframeEvery) {
+		if (keyframeEvery <= 0 || remaining <= keyframeEvery) {
+			logger.info("forceExtractMemories: chunk 1 of 1 containing " + remaining + " messages");
 			return extractMemoriesFromSegment(req, cfgObjId, systemChar, userChar, startIdx);
 		}
 
 		/// Chunk the conversation and extract from each chunk
+		int totalChunks = (int) Math.ceil((double) remaining / keyframeEvery);
 		List<BaseRecord> allMemories = new ArrayList<>();
 		int chunkStart = startIdx;
 		int chunkNum = 0;
 		while (chunkStart < totalMessages) {
 			int chunkEnd = Math.min(chunkStart + keyframeEvery, totalMessages);
 			chunkNum++;
-			logger.info("forceExtractMemories: chunk " + chunkNum + " [" + chunkStart + ".." + chunkEnd + ") of " + totalMessages);
+			int msgCount = chunkEnd - chunkStart;
+			logger.info("forceExtractMemories: chunk " + chunkNum + " of " + totalChunks + " containing " + msgCount + " messages [" + chunkStart + ".." + chunkEnd + ")");
 			List<BaseRecord> chunkMemories = extractMemoriesFromRange(req, cfgObjId, systemChar, userChar, chunkStart, chunkEnd);
 			allMemories.addAll(chunkMemories);
 			chunkStart = chunkEnd;
