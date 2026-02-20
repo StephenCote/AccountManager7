@@ -49,25 +49,10 @@
 			"maxLength": 128
 		},
 		{
-			"name": "personId1",
-			"type": "long",
-			"description": "First person ID in canonical (lower) order for cross-conversation pair retrieval"
-		},
-		{
-			"name": "personId2",
-			"type": "long",
-			"description": "Second person ID in canonical (higher) order for cross-conversation pair retrieval"
-		},
-		{
-			"name": "personModel",
-			"type": "string",
-			"maxLength": 64,
-			"description": "Model type of the person records (e.g. identity.person, olio.charPerson)"
-		},
-		{
 			"name": "person1Model",
 			"type": "string",
-			"maxLength": 64
+			"maxLength": 64,
+			"description": "Model type of person1 (e.g. olio.charPerson)"
 		},
 		{
 			"name": "person1",
@@ -75,13 +60,13 @@
 			"type": "model",
 			"foreign": true,
 			"foreignType": "person1Model",
-			"participantModel": "memory.person1",
-			"description": "Foreign reference to first person in canonical order"
+			"description": "Foreign reference to first person in canonical (lower ID) order"
 		},
 		{
 			"name": "person2Model",
 			"type": "string",
-			"maxLength": 64
+			"maxLength": 64,
+			"description": "Model type of person2 (e.g. olio.charPerson)"
 		},
 		{
 			"name": "person2",
@@ -89,8 +74,7 @@
 			"type": "model",
 			"foreign": true,
 			"foreignType": "person2Model",
-			"participantModel": "memory.person2",
-			"description": "Foreign reference to second person in canonical order"
+			"description": "Foreign reference to second person in canonical (higher ID) order"
 		}
 	]
 }

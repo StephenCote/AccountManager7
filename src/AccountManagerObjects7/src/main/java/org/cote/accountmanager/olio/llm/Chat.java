@@ -30,6 +30,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.PersonalityProfile;
@@ -877,8 +878,8 @@ public class Chat {
 	/// Phase 13: Set the chatTitle attribute on a chatRequest record and persist.
 	public void setChatTitle(BaseRecord chatRequest, String title) {
 		try {
-			AttributeUtil.addAttribute(chatRequest, "chatTitle", title);
-			IOSystem.getActiveContext().getAccessPoint().update(user, chatRequest);
+			BaseRecord attr = AttributeUtil.addAttribute(chatRequest, "chatTitle", title);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(attr);
 			logger.info("Chat title set: " + title);
 		} catch (Exception e) {
 			logger.warn("Failed to set chatTitle attribute: " + e.getMessage());
@@ -888,8 +889,8 @@ public class Chat {
 	/// Phase 13g: Set the chatIcon attribute on a chatRequest record and persist.
 	public void setChatIcon(BaseRecord chatRequest, String icon) {
 		try {
-			AttributeUtil.addAttribute(chatRequest, "chatIcon", icon);
-			IOSystem.getActiveContext().getAccessPoint().update(user, chatRequest);
+			BaseRecord attr = AttributeUtil.addAttribute(chatRequest, "chatIcon", icon);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(attr);
 			logger.info("Chat icon set: " + icon);
 		} catch (Exception e) {
 			logger.warn("Failed to set chatIcon attribute: " + e.getMessage());
@@ -1511,7 +1512,7 @@ public class Chat {
 	/// Generate a contextual scene image prompt from the current chat.
 	/// Returns a ScenePromptResult with the composite SD prompt, negative prompt,
 	/// and portrait bytes for IP-Adapter face references. Returns null on failure.
-	public ScenePromptResult generateScenePrompt(OpenAIRequest req) {
+	public ScenePromptResult generateScenePrompt(OpenAIRequest req, BaseRecord sdConfig) {
 		if (chatConfig == null) {
 			logger.warn("generateScenePrompt: chatConfig is null");
 			return null;
@@ -1543,8 +1544,8 @@ public class Chat {
 		/// Step 2: Get SD-optimized character descriptions via PersonalityProfile
 		PersonalityProfile sysPP = ProfileUtil.getProfile(null, systemChar);
 		PersonalityProfile usrPP = ProfileUtil.getProfile(null, userChar);
-		String sysDesc = sysPP != null ? NarrativeUtil.getSDMinPrompt(sysPP) : systemChar.get("firstName");
-		String usrDesc = usrPP != null ? NarrativeUtil.getSDMinPrompt(usrPP) : userChar.get("firstName");
+		String sysDesc = sysPP != null ? NarrativeUtil.getSDMinPrompt(sysPP) : buildMinimalCharDesc(systemChar);
+		String usrDesc = usrPP != null ? NarrativeUtil.getSDMinPrompt(usrPP) : buildMinimalCharDesc(userChar);
 		logger.info("Scene sysDesc: " + sysDesc);
 		logger.info("Scene usrDesc: " + usrDesc);
 
@@ -1572,6 +1573,12 @@ public class Chat {
 		if (!settingDesc.isEmpty()) {
 			prompt.append(", ").append(settingDesc);
 		}
+		if (sdConfig != null) {
+			String styleSuffix = SDUtil.getSDConfigPrompt(sdConfig);
+			if (styleSuffix != null && !styleSuffix.isEmpty()) {
+				prompt.append(". ").append(styleSuffix);
+			}
+		}
 
 		/// Step 4b: Load portrait bytes for canvas compositing
 		byte[] sysPortraitBytes = getPortraitBytes(systemChar);
@@ -1590,6 +1597,28 @@ public class Chat {
 		result.label = systemChar.get("firstName") + " and " + userChar.get("firstName");
 		logger.info("Scene prompt assembled: " + result.prompt.substring(0, Math.min(200, result.prompt.length())) + "...");
 		return result;
+	}
+
+	/// Build a minimal SD-usable character description from direct record fields
+	/// when PersonalityProfile is unavailable. Provides enough detail for SD to
+	/// differentiate two characters instead of falling back to just a first name.
+	private String buildMinimalCharDesc(BaseRecord character) {
+		String name = character.get("firstName");
+		String gender = character.get(FieldNames.FIELD_GENDER);
+		int age = 0;
+		try { age = character.get(FieldNames.FIELD_AGE); } catch (Exception e) { /* ignore */ }
+		String genderLabel = "person";
+		if (gender != null) {
+			if (age > 0 && age < 18) {
+				genderLabel = gender.equals("male") ? "boy" : "girl";
+			} else {
+				genderLabel = gender.equals("male") ? "man" : "woman";
+			}
+		}
+		if (age > 0) {
+			return "a " + age + " year old " + genderLabel + " named " + name;
+		}
+		return "a " + genderLabel + " named " + name;
 	}
 
 	/// LLM call to generate a concise scene verb phrase from the most recent exchange.
@@ -2342,17 +2371,11 @@ public class Chat {
 			return java.util.Collections.emptyList();
 		}
 
-		long sysId = systemChar.get(FieldNames.FIELD_ID);
-		long usrId = userChar.get(FieldNames.FIELD_ID);
-		String personModel = null;
-		if (systemChar.getSchema() != null) {
-			personModel = systemChar.getSchema();
-		}
 		String sourceUri = "am7://keyframe/" + (conversationId != null ? conversationId : "default");
 
 		return MemoryUtil.extractMemoriesFromResponse(
 			user, resp.getMessage().getContent(), sourceUri, conversationId,
-			sysId, usrId, personModel
+			systemChar, userChar
 		);
 	}
 
@@ -2415,12 +2438,6 @@ public class Chat {
 			String sourceUri = "am7://keyframe/" + (cfgObjId != null ? cfgObjId : "default");
 			String conversationId = cfgObjId;
 
-			/// OI-1: Populate personModel from the character schema
-			String personModel = null;
-			if (systemChar.getSchema() != null) {
-				personModel = systemChar.getSchema();
-			}
-
 			BaseRecord memory = MemoryUtil.createMemory(
 				user,
 				analysisText,
@@ -2429,9 +2446,8 @@ public class Chat {
 				7,  // Keyframe summaries are moderately important
 				sourceUri,
 				conversationId,
-				sysId,
-				usrId,
-				personModel
+				systemChar,
+				userChar
 			);
 
 			if (memory != null) {

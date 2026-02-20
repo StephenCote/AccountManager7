@@ -65,8 +65,7 @@ public class MemoryService {
 		if (person == null) {
 			return Response.status(404).entity(null).build();
 		}
-		long personId = person.get(FieldNames.FIELD_ID);
-		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPerson(user, personId, limit);
+		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPerson(user, person, limit);
 		return Response.status(200).entity(serializeList(memories)).build();
 	}
 
@@ -82,9 +81,7 @@ public class MemoryService {
 			logger.warn("Person lookup failed for pair endpoint (PBAC race or missing record): p1=" + (person1 != null) + " p2=" + (person2 != null));
 			return Response.status(200).entity("[]").build();
 		}
-		long pId1 = person1.get(FieldNames.FIELD_ID);
-		long pId2 = person2.get(FieldNames.FIELD_ID);
-		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(user, pId1, pId2, limit);
+		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(user, person1, person2, limit);
 		return Response.status(200).entity(serializeList(memories)).build();
 	}
 
@@ -109,9 +106,7 @@ public class MemoryService {
 		if (systemChar == null || userChar == null) {
 			return Response.status(404).entity("{\"error\":\"chatConfig missing character references\"}").build();
 		}
-		long sysId = systemChar.get(FieldNames.FIELD_ID);
-		long usrId = userChar.get(FieldNames.FIELD_ID);
-		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(user, sysId, usrId, limit);
+		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(user, systemChar, userChar, limit);
 		return Response.status(200).entity(serializeList(memories)).build();
 	}
 
@@ -141,9 +136,7 @@ public class MemoryService {
 			logger.warn("Person lookup failed for count endpoint (PBAC race or missing record): p1=" + (person1 != null) + " p2=" + (person2 != null));
 			return Response.status(200).entity(0).build();
 		}
-		long pId1 = person1.get(FieldNames.FIELD_ID);
-		long pId2 = person2.get(FieldNames.FIELD_ID);
-		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(user, pId1, pId2, Integer.MAX_VALUE);
+		List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(user, person1, person2, Integer.MAX_VALUE);
 		return Response.status(200).entity(memories.size()).build();
 	}
 
@@ -211,23 +204,17 @@ public class MemoryService {
 			}
 
 			/// Resolve person references from the foreign key fields
-			long pId1 = 0L;
-			long pId2 = 0L;
-			String personModel = null;
+			BaseRecord person1 = null;
+			BaseRecord person2 = null;
 			BaseRecord person1Ref = rec.get("person1");
 			BaseRecord person2Ref = rec.get("person2");
 			if (person1Ref != null && person2Ref != null) {
-				BaseRecord person1 = OlioUtil.getFullRecord(person1Ref);
-				BaseRecord person2 = OlioUtil.getFullRecord(person2Ref);
-				if (person1 != null && person2 != null) {
-					pId1 = person1.get(FieldNames.FIELD_ID);
-					pId2 = person2.get(FieldNames.FIELD_ID);
-					personModel = rec.get("person1Model");
-				}
+				person1 = OlioUtil.getFullRecord(person1Ref);
+				person2 = OlioUtil.getFullRecord(person2Ref);
 			}
 
 			BaseRecord memory = MemoryUtil.createMemory(user, content, summary, memType, importance,
-				"am7://manual", conversationId, pId1, pId2, personModel);
+				"am7://manual", conversationId, person1, person2);
 
 			if (memory == null) {
 				return Response.status(500).entity("{\"error\":\"Failed to create memory\"}").build();

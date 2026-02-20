@@ -718,7 +718,7 @@ public class ChatService {
 		WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Generating scene..."});
 
 		/// 3a. Generate the scene prompt (LLM call + prompt assembly)
-		Chat.ScenePromptResult sceneResult = chat.generateScenePrompt(req);
+		Chat.ScenePromptResult sceneResult = chat.generateScenePrompt(req, sdConfig);
 		if (sceneResult == null) {
 			logger.error("generateScene: Failed to generate scene prompt");
 			return Response.status(500).entity("{\"error\":\"Failed to generate scene prompt\"}").build();

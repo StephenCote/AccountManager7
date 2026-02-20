@@ -169,7 +169,9 @@ public class DocumentUtil {
 			}
 		}
 		else if(model.inherits(ModelNames.MODEL_CRYPTOBYTESTORE)) {
-			//IOSystem.getActiveContext().getReader().populate(vectorRef, new String[] { FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_BYTE_STORE });
+			if(!model.hasField(FieldNames.FIELD_BYTE_STORE)) {
+				IOSystem.getActiveContext().getReader().populate(model, new String[] { FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_BYTE_STORE });
+			}
 			String contentType = model.get(FieldNames.FIELD_CONTENT_TYPE);
 			if(contentType != null) {
 				 try {

@@ -18,6 +18,16 @@ import org.junit.Test;
 /// searchMemoriesByPerson(), searchMemoriesByPersonAndQuery(), and memory creation.
 public class TestMemorySharing extends BaseTest {
 
+	private long getPersonId(BaseRecord memory, String fieldName) {
+		try {
+			BaseRecord person = memory.get(fieldName);
+			if (person != null) {
+				return person.get(FieldNames.FIELD_ID);
+			}
+		} catch (Exception e) { /* field not populated */ }
+		return 0L;
+	}
+
 	@Test
 	public void testCreateAndRetrieveMemory() {
 		logger.info("testCreateAndRetrieveMemory");
@@ -90,8 +100,8 @@ public class TestMemorySharing extends BaseTest {
 		/// Memory (400, 500) should NOT appear in person 300's results
 		boolean foundUnrelated = false;
 		for (BaseRecord mem : results) {
-			long p1 = mem.get("personId1");
-			long p2 = mem.get("personId2");
+			long p1 = getPersonId(mem, "person1");
+			long p2 = getPersonId(mem, "person2");
 			if (p1 != 300L && p2 != 300L) {
 				foundUnrelated = true;
 				break;

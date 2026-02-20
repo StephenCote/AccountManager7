@@ -80,6 +80,14 @@
             else {
                 name = page.sessionName();
             }
+            /// Dedup: check existing sessions for name collisions and add a counter
+            let existing = (window.ConversationManager && ConversationManager.getSessions()) || [];
+            let baseName = name;
+            let counter = 1;
+            while (existing.some(function(s) { return s.name === name; })) {
+                counter++;
+                name = baseName + " " + counter;
+            }
         }
         inst.api.name(name);
 

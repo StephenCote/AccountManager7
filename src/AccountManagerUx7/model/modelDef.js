@@ -106,8 +106,8 @@
     },
      {
         "schema": "system.modelCategory",
-        "name": "event",
-        "label": "Event",
+        "name": "olio",
+        "label": "Olio",
         "order": [
           /*
           "message.spool",
@@ -117,10 +117,6 @@
           */
           "olio.charPerson",
           "identity.voice",
-          "olio.llm.chatConfig",
-          "olio.llm.promptConfig",
-          "olio.llm.promptTemplate",
-          "olio.llm.openai.openaiRequest",
           "olio.apparel",
           "olio.wearable",
           "olio.item"
@@ -143,12 +139,14 @@
     },
     {
       "schema": "system.modelCategory",
-      "name": "form",
-      "label": "Forms",
+      "name": "ai",
+      "label": "AI",
       "order": [
-        "form",
-        "formelement",
-        "policy.validationrule"
+          "tool.memory",
+          "olio.llm.chatConfig",
+          "olio.llm.promptConfig",
+          "olio.llm.promptTemplate",
+          "olio.llm.openai.openaiRequest"
       ],
       "icon": "dynamic_form"
     }
@@ -10751,6 +10749,8 @@
       "name": "tool.memory",
       "inherits": ["data.directory", "common.dateTime"],
       "vectorize": true,
+      "group": "Memories",
+      "icon": "robot",
       "fields": [
         {
           "name": "content",
@@ -10792,19 +10792,6 @@
           "maxLength": 128
         },
         {
-          "name": "personId1",
-          "type": "long"
-        },
-        {
-          "name": "personId2",
-          "type": "long"
-        },
-        {
-          "name": "personModel",
-          "type": "string",
-          "maxLength": 64
-        },
-        {
           "name": "person1Model",
           "type": "string",
           "maxLength": 64
@@ -10814,8 +10801,7 @@
           "baseModel": "$flex",
           "type": "model",
           "foreign": true,
-          "foreignType": "person1Model",
-          "participantModel": "memory.person1"
+          "foreignType": "person1Model"
         },
         {
           "name": "person2Model",
@@ -10827,8 +10813,7 @@
           "baseModel": "$flex",
           "type": "model",
           "foreign": true,
-          "foreignType": "person2Model",
-          "participantModel": "memory.person2"
+          "foreignType": "person2Model"
         }
       ]
     }

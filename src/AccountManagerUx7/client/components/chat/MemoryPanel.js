@@ -16,8 +16,7 @@
     let memories = [];
     let memoryCount = 0;
     let loading = false;
-    let searchQuery = "";
-    let searchResults = null;
+    let filterQuery = "";
     let expandedMemoryId = null;
     let currentConfig = null;
     let chatRequestObjectId = null;
@@ -26,7 +25,7 @@
     let createForm = { content: "", summary: "", memoryType: "NOTE", importance: 5 };
 
     // Phase 3 (chatRefactor2): Cross-conversation memory browsing
-    let viewMode = "pair";        // "pair" | "sysChar" | "usrChar" | "search"
+    let viewMode = "pair";        // "pair" | "sysChar" | "usrChar"
     let characterMemories = [];
     let characterLoading = false;
 
@@ -105,29 +104,16 @@
         }
     }
 
-    async function doSearch() {
-        if (!searchQuery || searchQuery.trim().length < 2) {
-            searchResults = null;
-            m.redraw();
-            return;
-        }
-        loading = true;
-        m.redraw();
-        try {
-            let result = await m.request({
-                method: 'POST',
-                url: am7client.base() + "/memory/search/20/0.5",
-                withCredentials: true,
-                body: searchQuery,
-                headers: { "Content-Type": "text/plain" }
-            });
-            searchResults = (result && Array.isArray(result)) ? result : [];
-        } catch(e) {
-            console.warn("[MemoryPanel] Search failed:", e);
-            searchResults = [];
-        }
-        loading = false;
-        m.redraw();
+    /// Client-side filter: match filterQuery against memory content, summary, or type
+    function filterMemoryList(list) {
+        if (!filterQuery || filterQuery.trim().length < 2) return list;
+        let q = filterQuery.trim().toLowerCase();
+        return list.filter(function(mem) {
+            let content = (mem.content || "").toLowerCase();
+            let summary = (mem.summary || "").toLowerCase();
+            let mtype = (mem.memoryType || "").toLowerCase();
+            return content.indexOf(q) >= 0 || summary.indexOf(q) >= 0 || mtype.indexOf(q) >= 0;
+        });
     }
 
     // Phase 3 (chatRefactor2): Load all memories for a character across conversations
@@ -237,9 +223,6 @@
             });
             memories = memories.filter(function(m2) { return m2.objectId !== mem.objectId; });
             memoryCount = Math.max(0, memoryCount - 1);
-            if (searchResults) {
-                searchResults = searchResults.filter(function(m2) { return m2.objectId !== mem.objectId; });
-            }
             page.toast("success", "Memory deleted");
         } catch(e) {
             page.toast("error", "Failed to delete memory");
@@ -267,12 +250,18 @@
             });
             let count = (result && Array.isArray(result)) ? result.length : 0;
             page.toast("info", count > 0 ? "Extracted " + count + " memories" : "No new memories extracted", 3000);
-            // Refresh the pair view to show new memories
+            // Refresh memories to show new entries
             if (currentConfig) {
                 let sys = currentConfig.systemCharacter;
                 let usr = currentConfig.userCharacter;
                 if (sys && usr && sys.objectId && usr.objectId) {
                     await loadForPair(sys.objectId, usr.objectId);
+                }
+                // Also refresh character view if active
+                if (viewMode === "sysChar" && sys && sys.objectId) {
+                    await loadForCharacter(sys.objectId);
+                } else if (viewMode === "usrChar" && usr && usr.objectId) {
+                    await loadForCharacter(usr.objectId);
                 }
             }
         } catch(e) {
@@ -354,7 +343,7 @@
                 m("span", { class: "memory-summary" }, summary),
                 importance > 0 ? m("span", { class: "memory-importance" }, importance) : "",
                 // Share/inject buttons visible in non-pair modes
-                (viewMode === "sysChar" || viewMode === "search") ? m("span", {
+                (viewMode === "sysChar") ? m("span", {
                     class: "material-symbols-outlined memory-share",
                     title: "Share to current pair",
                     onclick: function(e) {
@@ -391,10 +380,9 @@
             m("input", {
                 type: "text",
                 class: "memory-search-input",
-                placeholder: "Search memories...",
-                value: searchQuery,
-                oninput: function(e) { searchQuery = e.target.value; },
-                onkeydown: function(e) { if (e.key === "Enter") doSearch(); }
+                placeholder: "Filter memories...",
+                value: filterQuery,
+                oninput: function(e) { filterQuery = e.target.value; }
             })
         ]);
     }
@@ -450,18 +438,19 @@
         if (viewMode === "sysChar" || viewMode === "usrChar") {
             list = characterMemories;
             isLoading = characterLoading;
-        } else if (viewMode === "search") {
-            list = searchResults !== null ? searchResults : [];
         } else {
-            list = searchResults !== null ? searchResults : memories;
+            list = memories;
         }
         if (isLoading) {
             return m("div", { class: "memory-empty" }, "Loading...");
         }
         if (!list || list.length === 0) {
-            let emptyMsg = (viewMode === "sysChar" || viewMode === "usrChar") ? "No character memories"
-                : (viewMode === "search" ? "Search for memories" : "No memories");
+            let emptyMsg = (viewMode === "sysChar" || viewMode === "usrChar") ? "No character memories" : "No memories";
             return m("div", { class: "memory-empty" }, emptyMsg);
+        }
+        list = filterMemoryList(list);
+        if (list.length === 0) {
+            return m("div", { class: "memory-empty" }, "No matches");
         }
         return list.map(function(mem) { return memoryItemView(mem); });
     }
@@ -473,8 +462,7 @@
         let modes = [
             { key: "pair", label: "Pair", icon: "people" },
             { key: "sysChar", label: sysName, icon: "smart_toy" },
-            { key: "usrChar", label: usrName, icon: "person" },
-            { key: "search", label: "Search", icon: "search" }
+            { key: "usrChar", label: usrName, icon: "person" }
         ];
         return m("div", { class: "memory-mode-selector" },
             modes.map(function(mode) {
@@ -483,7 +471,6 @@
                     title: mode.label,
                     onclick: function() {
                         viewMode = mode.key;
-                        searchResults = null;
                         if (mode.key === "sysChar" && currentConfig) {
                             let sys = currentConfig.systemCharacter;
                             if (sys && sys.objectId) {
