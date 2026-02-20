@@ -2312,7 +2312,6 @@ public class Chat {
 				int minTokens = (chatConfig.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) ? 16384 : 8192;
 				if (current < minTokens) {
 					extractReq.set(tokField, minTokens);
-					logger.info("extractMemoriesFromText: bumped " + tokField + " from " + current + " to " + minTokens);
 				}
 			} catch (Exception e) {
 				// ignore — field may not exist on request

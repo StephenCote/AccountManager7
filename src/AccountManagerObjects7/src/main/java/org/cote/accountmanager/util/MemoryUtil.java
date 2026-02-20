@@ -373,66 +373,131 @@ public class MemoryUtil {
 			}
 
 			/// Text fallback: parse lines produced by models that ignore the JSON format
-			/// instruction. Handles:
-			///   1. "TYPE: content" lines (e.g., FACT: Abby is 12 years old)
-			///   2. Plain bullet points "- content" (treated as NOTE)
-			///   3. Numbered items "1. content" or "1) content" (treated as NOTE)
-			/// Skips header lines like "Memories:", "Memory Fragments:", etc.
+			/// instruction. The LLM may return structured entries with labeled fields:
+			///   FACT: content here
+			///   SUMMARY: one-line summary
+			///   MEMORYTYPE: RELATIONSHIP
+			///   IMPORTANCE: 7
+			/// Or simpler formats: numbered items, bullets, or plain TYPE: content lines.
+			/// SUMMARY/MEMORYTYPE/IMPORTANCE lines are metadata of the current entry, not new entries.
 			logger.info("Attempting text-based extraction from " + cleaned.length() + " chars");
+
+			/// Content-starting patterns: these begin a new memory entry
 			java.util.regex.Pattern typePattern = java.util.regex.Pattern.compile(
 				"^(FACT|RELATIONSHIP|EMOTION|DECISION|DISCOVERY|NOTE|INSIGHT|OUTCOME|BEHAVIOR|ERROR_LESSON)\\s*[:—–-]\\s*(.+)",
 				java.util.regex.Pattern.CASE_INSENSITIVE
 			);
 			java.util.regex.Pattern bulletPattern = java.util.regex.Pattern.compile(
-				"^(?:[-*•]|\\d+[.)]) \\s*(.+)"
+				"^(?:[-*•]|\\d+[.)]) ?\\s*(.*)"
+			);
+			/// Metadata patterns: these modify the current entry's fields
+			java.util.regex.Pattern summaryPattern = java.util.regex.Pattern.compile(
+				"^SUMMARY\\s*[:—–-]\\s*(.+)", java.util.regex.Pattern.CASE_INSENSITIVE
+			);
+			java.util.regex.Pattern memTypePattern = java.util.regex.Pattern.compile(
+				"^MEMORYTYPE\\s*[:—–-]\\s*(.+)", java.util.regex.Pattern.CASE_INSENSITIVE
+			);
+			java.util.regex.Pattern importancePattern = java.util.regex.Pattern.compile(
+				"^IMPORTANCE\\s*[:—–-]\\s*(\\d+)", java.util.regex.Pattern.CASE_INSENSITIVE
+			);
+			java.util.regex.Pattern contentPattern = java.util.regex.Pattern.compile(
+				"^CONTENT\\s*[:—–-]\\s*(.+)", java.util.regex.Pattern.CASE_INSENSITIVE
 			);
 			java.util.regex.Pattern headerPattern = java.util.regex.Pattern.compile(
-				"^(?:Memor(?:ies|y)|Key|Summary|Notes|Extracted|Fragments).*:$",
+				"^(?:Memor(?:ies|y)|Key|Notes|Extracted|Fragments).*:$",
 				java.util.regex.Pattern.CASE_INSENSITIVE
 			);
+
 			String[] lines = cleaned.split("\\r?\\n");
 			String currentType = null;
 			StringBuilder currentContent = null;
+			String currentSummary = null;
+			int currentImportance = 5;
+
 			for (String line : lines) {
 				String trimmed = line.trim();
 				if (trimmed.isEmpty()) continue;
-				/// Skip header lines
 				if (headerPattern.matcher(trimmed).matches()) continue;
+
+				/// Check metadata fields first — these enrich the current entry, not start a new one
+				java.util.regex.Matcher sm = summaryPattern.matcher(trimmed);
+				if (sm.matches()) {
+					if (currentContent != null) currentSummary = sm.group(1).trim();
+					continue;
+				}
+				java.util.regex.Matcher mm = memTypePattern.matcher(trimmed);
+				if (mm.matches()) {
+					if (currentContent != null) currentType = mm.group(1).trim().toUpperCase();
+					continue;
+				}
+				java.util.regex.Matcher im = importancePattern.matcher(trimmed);
+				if (im.matches()) {
+					if (currentContent != null) {
+						try { currentImportance = Integer.parseInt(im.group(1).trim()); } catch (NumberFormatException e) { /* keep default */ }
+					}
+					continue;
+				}
+				java.util.regex.Matcher cm = contentPattern.matcher(trimmed);
+				if (cm.matches()) {
+					/// Explicit CONTENT: label — if we already have content, this starts enriching it
+					if (currentContent != null && currentContent.length() > 0) {
+						currentContent.append(" ").append(cm.group(1).trim());
+					} else {
+						if (currentContent == null) currentContent = new StringBuilder();
+						currentContent.append(cm.group(1).trim());
+					}
+					continue;
+				}
+
+				/// Content-starting patterns — flush previous entry and start a new one
 				java.util.regex.Matcher mat = typePattern.matcher(trimmed);
 				if (mat.matches()) {
 					/// Flush previous entry
 					if (currentType != null && currentContent != null && currentContent.length() > 0) {
 						String content = currentContent.toString().trim();
-						String summary = content.length() > 100 ? content.substring(0, 97) + "..." : content;
+						String summary = currentSummary != null ? currentSummary : (content.length() > 100 ? content.substring(0, 97) + "..." : content);
 						addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
-							5, sourceUri, conversationId, personId1, personId2, personModel);
+							currentImportance, sourceUri, conversationId, personId1, personId2, personModel);
 					}
 					currentType = mat.group(1).toUpperCase();
 					currentContent = new StringBuilder(mat.group(2).trim());
-				} else {
-					java.util.regex.Matcher bmat = bulletPattern.matcher(trimmed);
-					if (bmat.matches()) {
-						/// Flush previous entry
-						if (currentType != null && currentContent != null && currentContent.length() > 0) {
-							String content = currentContent.toString().trim();
-							String summary = content.length() > 100 ? content.substring(0, 97) + "..." : content;
-							addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
-								5, sourceUri, conversationId, personId1, personId2, personModel);
-						}
-						currentType = "NOTE";
-						currentContent = new StringBuilder(bmat.group(1).trim());
-					} else if (currentContent != null) {
-						/// Continuation line — append to current entry
-						currentContent.append(" ").append(trimmed);
+					currentSummary = null;
+					currentImportance = 5;
+					continue;
+				}
+
+				java.util.regex.Matcher bmat = bulletPattern.matcher(trimmed);
+				if (bmat.matches()) {
+					/// Flush previous entry
+					if (currentType != null && currentContent != null && currentContent.length() > 0) {
+						String content = currentContent.toString().trim();
+						String summary = currentSummary != null ? currentSummary : (content.length() > 100 ? content.substring(0, 97) + "..." : content);
+						addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
+							currentImportance, sourceUri, conversationId, personId1, personId2, personModel);
 					}
+					currentType = "NOTE";
+					currentContent = new StringBuilder(bmat.group(1).trim());
+					currentSummary = null;
+					currentImportance = 5;
+					continue;
+				}
+
+				/// Continuation or unrecognized substantive line
+				if (currentContent != null) {
+					currentContent.append(" ").append(trimmed);
+				} else if (trimmed.length() > 10) {
+					currentType = "NOTE";
+					currentContent = new StringBuilder(trimmed);
+					currentSummary = null;
+					currentImportance = 5;
 				}
 			}
 			/// Flush final entry
 			if (currentType != null && currentContent != null && currentContent.length() > 0) {
 				String content = currentContent.toString().trim();
-				String summary = content.length() > 100 ? content.substring(0, 97) + "..." : content;
+				String summary = currentSummary != null ? currentSummary : (content.length() > 100 ? content.substring(0, 97) + "..." : content);
 				addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
-					5, sourceUri, conversationId, personId1, personId2, personModel);
+					currentImportance, sourceUri, conversationId, personId1, personId2, personModel);
 			}
 			if (!memories.isEmpty()) {
 				logger.info("Text fallback extracted " + memories.size() + " memories");
