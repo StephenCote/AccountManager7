@@ -390,6 +390,12 @@ img.alignleft
     color: #B8860B;
     font-weight: 600;
 }
+.tf-test-cat-bulk {
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
 .tf-test-summary {
     display: flex;
     align-items: center;

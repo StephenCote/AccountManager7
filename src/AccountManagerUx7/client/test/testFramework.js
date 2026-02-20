@@ -339,12 +339,29 @@
         };
     }
 
-    // TestCategoryToggleUI — category checkboxes
+    // TestCategoryToggleUI — category checkboxes with All/None selectors
     function TestCategoryToggleUI() {
         return {
             view: function(vnode) {
                 let categories = vnode.attrs.categories || {};
-                return m("div", { class: "tf-test-categories" },
+                let allKeys = Object.keys(categories);
+                let allSelected = allKeys.length > 0 && allKeys.every(function(k) { return testState.selectedCategories.includes(k); });
+                let noneSelected = allKeys.every(function(k) { return !testState.selectedCategories.includes(k); });
+                return m("div", { class: "tf-test-categories" }, [
+                    m("label", {
+                        class: "tf-test-cat tf-test-cat-bulk" + (allSelected ? " active" : ""),
+                        onclick: function() {
+                            testState.selectedCategories = allKeys.slice();
+                            m.redraw();
+                        }
+                    }, "All"),
+                    m("label", {
+                        class: "tf-test-cat tf-test-cat-bulk" + (noneSelected ? " active" : ""),
+                        onclick: function() {
+                            testState.selectedCategories = [];
+                            m.redraw();
+                        }
+                    }, "None"),
                     Object.entries(categories).map(function(pair) {
                         let key = pair[0];
                         let cat = pair[1];
@@ -361,7 +378,7 @@
                             " " + cat.label
                         ]);
                     })
-                );
+                ]);
             }
         };
     }
