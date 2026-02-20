@@ -120,6 +120,94 @@ public class SWUtil {
 		return s2i;
 	}
 
+	/// Build a FLUX Kontext scene request for a 2-pass compositing pipeline.
+	/// Caller sets promptImages as a List of data URI strings via setPromptImages().
+	/// Pass 1: portrait + landscape → places one character into the scene.
+	/// Pass 2: portrait + pass1Result → adds the second character.
+	/// @param pass             1 or 2 — determines prompt structure
+	/// @param charDesc         SD character description for the character being placed (SDXL weighting stripped)
+	/// @param existingCharDesc SD description of the character already in the scene (pass 2 only; null for pass 1)
+	/// @param sceneDesc        LLM-generated scene verb phrase (what the characters are doing together)
+	/// @param settingDesc      Setting/location description from chatConfig
+	/// @param sdConfig         SD config record (for kontextModel override); may be null
+	public static SWTxt2Img newKontextSceneTxt2Img(int pass, String charDesc, String existingCharDesc, String sceneDesc, String settingDesc, BaseRecord sdConfig) {
+		SWTxt2Img s2i = newKontextBase(sdConfig);
+
+		/// Strip SDXL-style prompt weighting — FLUX doesn't support ((...:1.5)) syntax
+		String cleanDesc = stripSDXLWeighting(charDesc);
+		String cleanExisting = stripSDXLWeighting(existingCharDesc);
+
+		StringBuilder prompt = new StringBuilder();
+		if (pass == 1) {
+			prompt.append("Place the person from the reference portrait into the scene. ");
+			if (cleanDesc != null && !cleanDesc.isEmpty()) {
+				prompt.append("The person is ").append(cleanDesc).append(". ");
+			}
+			if (settingDesc != null && !settingDesc.isEmpty()) {
+				prompt.append("The setting is ").append(settingDesc).append(". ");
+			}
+			prompt.append("Maintain their exact appearance, clothing, and features. ");
+			prompt.append("Natural lighting consistent with the background. High quality photograph.");
+		} else {
+			prompt.append("Add the person from the reference portrait into the existing scene. ");
+			if (cleanDesc != null && !cleanDesc.isEmpty()) {
+				prompt.append("The new person is ").append(cleanDesc).append(". ");
+			}
+			if (cleanExisting != null && !cleanExisting.isEmpty()) {
+				prompt.append("The existing person in the scene is ").append(cleanExisting).append(". ");
+			}
+			if (sceneDesc != null && !sceneDesc.isEmpty()) {
+				prompt.append("They are ").append(sceneDesc).append(". ");
+			}
+			prompt.append("Keep the existing person and scene exactly as they are. ");
+			prompt.append("Place the new person naturally in the scene. ");
+			prompt.append("Maintain all appearances and features. High quality photograph.");
+		}
+
+		s2i.setPrompt(prompt.toString());
+		s2i.setNegativePrompt("");
+		return s2i;
+	}
+
+	/// Create base Kontext SWTxt2Img with model and optimal defaults.
+	private static SWTxt2Img newKontextBase(BaseRecord sdConfig) {
+		SWTxt2Img s2i = new SWTxt2Img();
+
+		String kontextModel = null;
+		if (sdConfig != null) {
+			try { kontextModel = sdConfig.get("kontextModel"); } catch (Exception e) { /* ignore */ }
+		}
+		if (kontextModel == null || kontextModel.isEmpty()) {
+			kontextModel = "flux1Kontext_flux1KontextDev";
+		}
+		s2i.setModel(kontextModel);
+
+		s2i.setSteps(28);
+		s2i.setCfgScale(1);
+		s2i.setSampler("euler");
+		s2i.setScheduler("simple");
+		s2i.setSeed(Math.abs(rand.nextInt()));
+		s2i.setWidth(1024);
+		s2i.setHeight(1024);
+		s2i.setRefinerControlPercentage(0.0);
+
+		return s2i;
+	}
+
+	/// Strip SDXL-style prompt weighting syntax from descriptions.
+	/// Removes patterns like ((word:1.5)), (word), and ((word)) leaving just the text.
+	/// FLUX Kontext ignores this syntax, so it just clutters the prompt.
+	public static String stripSDXLWeighting(String desc) {
+		if (desc == null || desc.isEmpty()) return desc;
+		/// Remove weight numbers like :1.5)
+		String clean = desc.replaceAll(":\\d+\\.?\\d*\\)", ")");
+		/// Remove all parentheses used for emphasis grouping
+		clean = clean.replaceAll("[()]", "");
+		/// Collapse multiple spaces
+		clean = clean.replaceAll("\\s+", " ").trim();
+		return clean;
+	}
+
 	public static String getAnonymousSession(String server) {
 		SWSessionResponse test = ClientUtil.post(SWSessionResponse.class, ClientUtil.getResource(server + "/API/GetNewSession"), "{}", MediaType.APPLICATION_JSON_TYPE);
 		if (test == null) {

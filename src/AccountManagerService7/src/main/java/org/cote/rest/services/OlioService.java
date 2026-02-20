@@ -197,6 +197,10 @@ public class OlioService {
 			octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 		}
 		BaseRecord oi = a1.get("profile.portrait");
+		if (oi == null) {
+			logger.warn("reimageWithConfig: portrait is null after generation for " + objectId);
+			return Response.status(200).entity("{}").build();
+		}
 
 		return Response.status(200).entity(oi.toFullString()).build();
 	}

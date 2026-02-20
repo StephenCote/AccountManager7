@@ -353,8 +353,13 @@
             let id = null;
             let tagStr;
             if (parts.length > 1 && parts[0].indexOf("-") > -1) {
+                // ID + tags: ${image.UUID.tag1,tag2}
                 id = parts[0];
                 tagStr = parts.slice(1).join(".");
+            } else if (parts.length === 1 && parts[0].indexOf("-") > -1) {
+                // ID-only token (e.g., scene image): ${image.UUID}
+                id = parts[0];
+                tagStr = "";
             } else {
                 tagStr = inner;
             }
@@ -593,19 +598,33 @@
             if (resolvedImageCache[token.id]) {
                 return resolvedImageCache[token.id];
             }
-            let charName = character.name || (character.firstName + " " + character.lastName);
-            let nameTag = await page.getTag(charName, "data.data");
-            if (nameTag) {
-                let members = await am7client.members("data.tag", nameTag.objectId, "data.data", 0, 100);
-                if (members) {
-                    let img = members.find(mi => mi.objectId === token.id);
-                    if (img) {
-                        let url = getImageThumbnailUrl(img, "256x256");
-                        resolvedImageCache[token.id] = { image: img, url: url };
-                        return { image: img, url: url };
+            // Try character nameTag lookup first (for character portrait tokens)
+            let charName = character ? (character.name || (character.firstName + " " + character.lastName)) : null;
+            if (charName) {
+                let nameTag = await page.getTag(charName, "data.data");
+                if (nameTag) {
+                    let members = await am7client.members("data.tag", nameTag.objectId, "data.data", 0, 100);
+                    if (members) {
+                        let img = members.find(mi => mi.objectId === token.id);
+                        if (img) {
+                            let url = getImageThumbnailUrl(img, "256x256");
+                            resolvedImageCache[token.id] = { image: img, url: url };
+                            return { image: img, url: url };
+                        }
                     }
                 }
             }
+            // Fallback: direct data lookup (for scene images and other non-tagged images)
+            try {
+                let directImg = await am7client.get("data.data", token.id);
+                if (directImg) {
+                    let url = getImageThumbnailUrl(directImg, "256x256");
+                    if (url) {
+                        resolvedImageCache[token.id] = { image: directImg, url: url };
+                        return { image: directImg, url: url };
+                    }
+                }
+            } catch (e) { /* ignore lookup failure */ }
             return null;
         }
 

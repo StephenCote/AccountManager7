@@ -67,6 +67,18 @@
 			"foreign": true,
 			"foreignType": "contextType",
 			"description": "Generic context object associated with this chat session. Type determined by contextType field."
+		},
+		{
+			"name": "chatTitle",
+			"type": "string",
+			"maxLength": 256,
+			"description": "Auto-generated conversation title."
+		},
+		{
+			"name": "chatIcon",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Auto-generated Material Symbols icon name."
 		}
 	]
 }

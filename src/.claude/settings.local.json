@@ -36,7 +36,9 @@
       "Bash(git checkout:*)",
       "Bash(npx tailwindcss:*)",
       "Bash(\"c:/Projects/GitHub/AccountManager7/src/chatRefactor.md\":*)",
-      "Read(//c/Projects/GitHub/**)"
+      "Read(//c/Projects/GitHub/**)",
+      "WebFetch(domain:192.168.1.42)",
+      "WebFetch(domain:github.com)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

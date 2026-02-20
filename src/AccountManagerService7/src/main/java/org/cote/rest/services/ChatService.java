@@ -675,16 +675,23 @@ public class ChatService {
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 		sdu.setImageAccessUser(user);
 
-		/// Stage 2: Generate landscape reference image (unless skipLandscape=true)
+		/// Parse scene config flags from sdConfig
 		boolean skipLandscape = false;
-		double sceneCreativity = 0.85;
+		boolean useKontext = true;
 		if (sdConfig != null) {
 			try { skipLandscape = (boolean) sdConfig.get("skipLandscape"); } catch (Exception e) { /* default false */ }
+			try { Boolean uk = sdConfig.get("useKontext"); if (uk != null) useKontext = uk; } catch (Exception e) { /* default true */ }
+		}
+		/// Kontext 2-pass needs moderate creativity — enough to restructure panels while preserving faces
+		double sceneCreativity = useKontext ? 0.65 : 0.85;
+		if (sdConfig != null) {
 			try {
 				Double sc = sdConfig.get("sceneCreativity");
 				if (sc != null) sceneCreativity = sc;
-			} catch (Exception e) { /* default 0.85 */ }
+			} catch (Exception e) { /* use default */ }
 		}
+
+		/// Stage 2: Generate landscape reference image (unless skipLandscape=true)
 
 		byte[] landscapeBytes = null;
 		if (!skipLandscape) {
@@ -724,34 +731,87 @@ public class ChatService {
 			return Response.status(500).entity("{\"error\":\"Failed to generate scene prompt\"}").build();
 		}
 
-		/// 3b. Build SWTxt2Img with scene prompt + SD config
-		SWTxt2Img s2i = SWUtil.newSceneTxt2Img(sceneResult.prompt, sceneResult.negativePrompt, sdConfig);
-
-		/// 3c. Composite portrait images onto the landscape canvas, then use as initImage.
-		/// This merges the character faces directly into the reference image so the
-		/// img2img pass refines them into the scene — no IP-Adapter required.
-		byte[] compositeBytes = SDUtil.compositeSceneCanvas(
-			landscapeBytes,
-			sceneResult.sysPortraitBytes,
-			sceneResult.usrPortraitBytes,
-			s2i.getWidth(),
-			s2i.getHeight()
-		);
-		if (compositeBytes != null) {
-			s2i.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(compositeBytes));
-			s2i.setInitImageCreativity(sceneCreativity);
-			logger.info("generateScene Stage 3c: Composite canvas as initImage (creativity=" + sceneCreativity
-				+ " sysPortrait=" + (sceneResult.sysPortraitBytes != null)
-				+ " usrPortrait=" + (sceneResult.usrPortraitBytes != null) + ")");
-		}
-
-		/// 3d. Generate the final composite scene image
+		/// 3b–3d: Branch between Kontext (stitch-and-prompt) and classic (Graphics2D composite) pipelines
 		String groupPath = "~/Gallery/Scenes/" + sceneResult.label;
 		String name = sceneResult.label;
 		String sysOid = systemChar.get(FieldNames.FIELD_OBJECT_ID);
 		String usrOid = userChar.get(FieldNames.FIELD_OBJECT_ID);
+		List<BaseRecord> images = new java.util.ArrayList<>();
 
-		List<BaseRecord> images = sdu.createSceneImage(user, groupPath, name, s2i, sysOid, usrOid);
+		if (useKontext) {
+			/// KONTEXT 2-PASS PIPELINE using promptImages (not initImage):
+			/// FLUX Kontext needs images fed as promptImages with <image:name> tags in the prompt,
+			/// NOT as initImage which just does img2img denoising.
+			/// Pass 1: portrait + landscape as prompt images → scene with system character
+			/// Pass 2: portrait + pass1 result as prompt images → final scene with both characters
+			String settingDesc = "";
+			try { String s = chatConfig.get("setting"); if (s != null && !s.isEmpty()) settingDesc = s; } catch (Exception e) { /* ignore */ }
+
+			/// Pass 1: Place system character into the landscape
+			WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Kontext pass 1/2..."});
+
+			SWTxt2Img s2iPass1 = SWUtil.newKontextSceneTxt2Img(1, sceneResult.sysCharDesc, null, sceneResult.sceneDesc, settingDesc, sdConfig);
+			List<String> pass1PromptImages = new java.util.ArrayList<>();
+			if (sceneResult.sysPortraitBytes != null) {
+				pass1PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(sceneResult.sysPortraitBytes));
+			}
+			if (landscapeBytes != null) {
+				pass1PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(landscapeBytes));
+			}
+			if (!pass1PromptImages.isEmpty()) {
+				s2iPass1.setPromptImages(pass1PromptImages);
+				logger.info("generateScene Kontext pass 1: " + pass1PromptImages.size() + " prompt images");
+			}
+
+			List<BaseRecord> pass1Images = sdu.createSceneImage(user, groupPath, name + " - pass1", s2iPass1, sysOid, null);
+
+			if (!pass1Images.isEmpty()) {
+				/// Pass 2: Add user character into the pass 1 result
+				WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Kontext pass 2/2..."});
+				byte[] pass1Bytes = pass1Images.get(0).get(FieldNames.FIELD_BYTE_STORE);
+				if (pass1Bytes == null || pass1Bytes.length == 0) {
+					pass1Bytes = SDUtil.getDataBytes(pass1Images.get(0));
+				}
+
+				SWTxt2Img s2iPass2 = SWUtil.newKontextSceneTxt2Img(2, sceneResult.usrCharDesc, sceneResult.sysCharDesc, sceneResult.sceneDesc, settingDesc, sdConfig);
+				List<String> pass2PromptImages = new java.util.ArrayList<>();
+				if (sceneResult.usrPortraitBytes != null) {
+					pass2PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(sceneResult.usrPortraitBytes));
+				}
+				if (pass1Bytes != null) {
+					pass2PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(pass1Bytes));
+				}
+				if (!pass2PromptImages.isEmpty()) {
+					s2iPass2.setPromptImages(pass2PromptImages);
+					logger.info("generateScene Kontext pass 2: " + pass2PromptImages.size() + " prompt images");
+				}
+
+				images = sdu.createSceneImage(user, groupPath, name, s2iPass2, sysOid, usrOid);
+			}
+
+			if (images.isEmpty()) {
+				logger.warn("generateScene: Kontext pipeline produced no images — falling back to classic");
+				useKontext = false;
+			}
+		}
+
+		if (!useKontext) {
+			/// CLASSIC PIPELINE: Graphics2D composite + SDXL img2img refinement
+			SWTxt2Img s2i = SWUtil.newSceneTxt2Img(sceneResult.prompt, sceneResult.negativePrompt, sdConfig);
+			byte[] compositeBytes = SDUtil.compositeSceneCanvas(
+				landscapeBytes,
+				sceneResult.sysPortraitBytes,
+				sceneResult.usrPortraitBytes,
+				s2i.getWidth(),
+				s2i.getHeight()
+			);
+			if (compositeBytes != null) {
+				s2i.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(compositeBytes));
+				s2i.setInitImageCreativity(sceneCreativity);
+				logger.info("generateScene Classic: composite " + compositeBytes.length + " bytes, creativity=" + sceneCreativity);
+			}
+			images = sdu.createSceneImage(user, groupPath, name, s2i, sysOid, usrOid);
+		}
 
 		if (images.isEmpty()) {
 			logger.error("generateScene: No images generated");

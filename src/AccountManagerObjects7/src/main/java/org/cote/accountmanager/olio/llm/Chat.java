@@ -41,7 +41,6 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -501,7 +500,7 @@ public class Chat {
 						cq.planMost(false);
 						chatReqRec = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
 						if (chatReqRec != null) {
-							String existingTitle = AttributeUtil.getAttributeValue(chatReqRec, "chatTitle");
+							String existingTitle = chatReqRec.get("chatTitle");
 							titleExists = existingTitle != null && !existingTitle.isEmpty();
 						}
 					} catch (Exception e) {
@@ -875,25 +874,27 @@ public class Chat {
 		return generateChatTitleAndIcon(req)[0];
 	}
 
-	/// Phase 13: Set the chatTitle attribute on a chatRequest record and persist.
+	/// Phase 13: Set the chatTitle on a chatRequest record and persist.
+	/// Stores as a direct field on the record for efficient list queries.
 	public void setChatTitle(BaseRecord chatRequest, String title) {
 		try {
-			BaseRecord attr = AttributeUtil.addAttribute(chatRequest, "chatTitle", title);
-			IOSystem.getActiveContext().getRecordUtil().createRecord(attr);
+			chatRequest.set("chatTitle", title);
+			IOSystem.getActiveContext().getRecordUtil().updateRecord(chatRequest);
 			logger.info("Chat title set: " + title);
 		} catch (Exception e) {
-			logger.warn("Failed to set chatTitle attribute: " + e.getMessage());
+			logger.warn("Failed to set chatTitle: " + e.getMessage());
 		}
 	}
 
-	/// Phase 13g: Set the chatIcon attribute on a chatRequest record and persist.
+	/// Phase 13g: Set the chatIcon on a chatRequest record and persist.
+	/// Stores as a direct field on the record for efficient list queries.
 	public void setChatIcon(BaseRecord chatRequest, String icon) {
 		try {
-			BaseRecord attr = AttributeUtil.addAttribute(chatRequest, "chatIcon", icon);
-			IOSystem.getActiveContext().getRecordUtil().createRecord(attr);
+			chatRequest.set("chatIcon", icon);
+			IOSystem.getActiveContext().getRecordUtil().updateRecord(chatRequest);
 			logger.info("Chat icon set: " + icon);
 		} catch (Exception e) {
-			logger.warn("Failed to set chatIcon attribute: " + e.getMessage());
+			logger.warn("Failed to set chatIcon: " + e.getMessage());
 		}
 	}
 
@@ -1595,6 +1596,9 @@ public class Chat {
 		result.sysPortraitBytes = sysPortraitBytes;
 		result.usrPortraitBytes = usrPortraitBytes;
 		result.label = systemChar.get("firstName") + " and " + userChar.get("firstName");
+		result.sysCharDesc = sysDesc;
+		result.usrCharDesc = usrDesc;
+		result.sceneDesc = sceneDesc;
 		logger.info("Scene prompt assembled: " + result.prompt.substring(0, Math.min(200, result.prompt.length())) + "...");
 		return result;
 	}
@@ -1708,6 +1712,10 @@ public class Chat {
 		public byte[] sysPortraitBytes;
 		public byte[] usrPortraitBytes;
 		public String label;
+		/// Individual components for Kontext pipeline (Option C stitch-and-prompt)
+		public String sysCharDesc;
+		public String usrCharDesc;
+		public String sceneDesc;
 	}
 
 	public String analyze(OpenAIRequest req, String command, boolean narrate, boolean reduce, boolean full) {

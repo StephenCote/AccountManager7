@@ -1837,39 +1837,30 @@
             log("convmgr", "110b: updateSessionTitle available: " + hasTitleFn, hasTitleFn ? "pass" : "fail");
             log("convmgr", "110b: updateSessionIcon available: " + hasIconFn, hasIconFn ? "pass" : "fail");
 
-            // 110c: updateSessionTitle sets chatTitle attribute on a mock session
+            // 110c: updateSessionTitle sets chatTitle field on session
             let origSessions = ConversationManager.getSessions();
-            let mockSession = { objectId: "test-title-oid-" + Date.now(), name: "Untitled Session", attributes: [] };
-            let mockSessions = [mockSession];
-            // Temporarily inject mock sessions for isolated testing
             let _internalSessions = origSessions;
-            // Use the loaded sessions if available; otherwise we test with a manual attribute check
             if (_internalSessions && _internalSessions.length > 0) {
-                // Use a real session from the loaded list
                 let testSession = _internalSessions[0];
-                let origAttrs = JSON.parse(JSON.stringify(testSession.attributes || []));
                 let testTitle = "Auto-Title Test " + Date.now();
                 ConversationManager.updateSessionTitle(testSession.objectId, testTitle);
 
-                // Verify attribute was set
-                let titleAttr = (testSession.attributes || []).find(function(a) { return a.name === "chatTitle"; });
-                let titleSet = titleAttr && titleAttr.value === testTitle;
-                log("convmgr", "110c: updateSessionTitle sets chatTitle attribute: " + titleSet, titleSet ? "pass" : "fail");
-                if (titleAttr) logData("convmgr", "110c: chatTitle attribute", titleAttr);
+                // Verify direct field was set
+                let titleSet = testSession.chatTitle === testTitle;
+                log("convmgr", "110c: updateSessionTitle sets chatTitle field: " + titleSet, titleSet ? "pass" : "fail");
+                if (titleSet) logData("convmgr", "110c: chatTitle value", testSession.chatTitle);
 
-                // 110d: updateSessionIcon sets chatIcon attribute
+                // 110d: updateSessionIcon sets chatIcon field
                 let testIcon = "psychology";
                 ConversationManager.updateSessionIcon(testSession.objectId, testIcon);
-                let iconAttr = (testSession.attributes || []).find(function(a) { return a.name === "chatIcon"; });
-                let iconSet = iconAttr && iconAttr.value === testIcon;
-                log("convmgr", "110d: updateSessionIcon sets chatIcon attribute: " + iconSet, iconSet ? "pass" : "fail");
-                if (iconAttr) logData("convmgr", "110d: chatIcon attribute", iconAttr);
+                let iconSet = testSession.chatIcon === testIcon;
+                log("convmgr", "110d: updateSessionIcon sets chatIcon field: " + iconSet, iconSet ? "pass" : "fail");
+                if (iconSet) logData("convmgr", "110d: chatIcon value", testSession.chatIcon);
 
                 // 110e: updateSessionTitle overwrites existing title
                 let testTitle2 = "Updated Title " + Date.now();
                 ConversationManager.updateSessionTitle(testSession.objectId, testTitle2);
-                let titleAttr2 = (testSession.attributes || []).find(function(a) { return a.name === "chatTitle"; });
-                let overwritten = titleAttr2 && titleAttr2.value === testTitle2;
+                let overwritten = testSession.chatTitle === testTitle2;
                 log("convmgr", "110e: updateSessionTitle overwrites existing: " + overwritten, overwritten ? "pass" : "fail");
 
                 // 110f: Sidebar renders title instead of session name

@@ -163,7 +163,9 @@
       style: "photograph",
       seed: -1,
       sceneCreativity: 0.65,
-      skipLandscape: false
+      skipLandscape: false,
+      useKontext: true,
+      kontextModel: "flux1Kontext_flux1KontextDev"
     }, JSON.parse(localStorage.getItem("am7_sdConfig") || "{}"));
 
     function saveSdConfig() {
@@ -1282,6 +1284,16 @@
         })
       ]);
     }
+    function sdText(label, key) {
+      return m("div", { class: "flex items-center gap-2" }, [
+        m("label", { class: "text-xs text-gray-400 w-20 flex-shrink-0" }, label),
+        m("input[type=text]", {
+          class: "flex-1 text-xs bg-gray-700 text-gray-200 border border-gray-600 rounded px-1 py-0.5",
+          value: sdConfig[key] || "",
+          onchange: function(e) { sdConfig[key] = e.target.value; saveSdConfig(); }
+        })
+      ]);
+    }
     function sdToggle(label, key) {
       return m("div", { class: "flex items-center gap-2" }, [
         m("label", { class: "text-xs text-gray-400 w-20 flex-shrink-0" }, label),
@@ -1333,7 +1345,9 @@
           sdNumber("Seed", "seed", -1, 999999999),
           sdSlider("Creativity", "sceneCreativity", 0, 1, 0.05),
           sdToggle("Hires", "hires"),
-          sdToggle("Skip landscape", "skipLandscape")
+          sdToggle("Skip landscape", "skipLandscape"),
+          sdToggle("Kontext scene", "useKontext"),
+          sdText("Kontext model", "kontextModel")
         ])
       ]);
     }

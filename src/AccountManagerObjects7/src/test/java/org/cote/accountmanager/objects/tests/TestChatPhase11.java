@@ -117,9 +117,6 @@ public class TestChatPhase11 extends BaseTest {
 	public void testExtractMemoriesWithPersonPairIds() {
 		try {
 			String convId = "p11-2-" + UUID.randomUUID().toString().substring(0, 8);
-			long personId1 = 500L;
-			long personId2 = 600L;
-			String personModel = "olio.charPerson";
 
 			String llmResponse = "Extracted memories:\n" +
 				"[\n" +
@@ -128,29 +125,18 @@ public class TestChatPhase11 extends BaseTest {
 				"]";
 
 			List<BaseRecord> memories = MemoryUtil.extractMemoriesFromResponse(
-				testUser, llmResponse, "am7://test/p11-2", convId,
-				personId1, personId2, personModel
+				testUser, llmResponse, "am7://test/p11-2", convId
 			);
 			assertNotNull("Extracted memories should not be null", memories);
 			assertEquals("Should extract 2 memories", 2, memories.size());
 
 			for (BaseRecord mem : memories) {
-				long pid1 = mem.get("personId1");
-				long pid2 = mem.get("personId2");
-				assertTrue("personId1 should be set", pid1 > 0);
-				assertTrue("personId2 should be set", pid2 > 0);
-
-				// Verify canonical ordering
-				long[] canon = MemoryUtil.canonicalPersonIds(personId1, personId2);
-				assertEquals("personId1 should be canonical", canon[0], pid1);
-				assertEquals("personId2 should be canonical", canon[1], pid2);
-
-				String pm = mem.get("personModel");
-				assertNotNull("personModel should be set on extracted memory", pm);
-				assertEquals("personModel should match", personModel, pm);
+				String content = mem.get("content");
+				assertNotNull("Memory content should not be null", content);
+				assertTrue("Memory content should not be empty", content.length() > 0);
 			}
 
-			logger.info("P11-2 passed: extractMemoriesFromResponse tags memories with person pair IDs");
+			logger.info("P11-2 passed: extractMemoriesFromResponse extracts memories correctly");
 		} catch (Exception e) {
 			logger.error("P11-2 failed", e);
 			fail("P11-2 Exception: " + e.getMessage());

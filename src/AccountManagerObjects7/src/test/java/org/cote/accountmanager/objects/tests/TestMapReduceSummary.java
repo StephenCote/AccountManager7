@@ -37,18 +37,18 @@ public class TestMapReduceSummary extends BaseTest {
 			return;
 		}
 
-		byte[] textBytes;
+		String textContent;
 		try {
-			textBytes = Files.readAllBytes(txtPath);
+			textContent = Files.readString(txtPath);
 		} catch (IOException e) {
 			logger.error("Failed to read test file", e);
 			return;
 		}
-		assertTrue("Text file is empty", textBytes.length > 0);
+		assertTrue("Text file is empty", textContent.length() > 0);
 
 		/// Upload as data record
 		BaseRecord data = getCreateData(testUser, "CardFox-summary-test.txt", "text/plain",
-			textBytes, "~/Tests/Summaries", testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			textContent.getBytes(), "~/Tests/Summaries", testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 		assertNotNull("Data record is null", data);
 
 		/// Create vector store for the data
@@ -59,7 +59,9 @@ public class TestMapReduceSummary extends BaseTest {
 		}
 
 		try {
-			List<BaseRecord> chunks = vu.createVectorStore(data, VectorUtil.ChunkEnumType.WORD, 500);
+			/// Pass text content directly — avoids byte store re-extraction issues on re-runs
+			/// where getCreateData returns an existing record without byte store loaded
+			List<BaseRecord> chunks = vu.createVectorStore(data, textContent, VectorUtil.ChunkEnumType.WORD, 500);
 			if (chunks.isEmpty()) {
 				logger.warn("Vector store creation returned no chunks — skipping");
 				return;

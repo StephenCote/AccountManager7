@@ -1080,6 +1080,60 @@ public class SDUtil {
 		}
 	}
 
+	/// Stitch up to three source images side-by-side into equal square panels for FLUX Kontext.
+	/// Each non-null image is center-cropped to square, then scaled to panelSize x panelSize.
+	/// Layout: [left | center | right] — e.g. [sysPortrait | usrPortrait | landscape].
+	/// @param leftBytes   Left panel image (e.g. system character portrait), or null to skip
+	/// @param centerBytes Center panel image (e.g. user character portrait), or null to skip
+	/// @param rightBytes  Right panel image (e.g. landscape background), or null to skip
+	/// @param panelSize   Size of each square panel in pixels (e.g. 1024)
+	/// @return Stitched PNG bytes, or null if all inputs are null
+	public static byte[] stitchSceneImages(byte[] leftBytes, byte[] centerBytes, byte[] rightBytes, int panelSize) {
+		byte[][] sources = new byte[][] { leftBytes, centerBytes, rightBytes };
+		int panelCount = 0;
+		for (byte[] src : sources) {
+			if (src != null && src.length > 0) panelCount++;
+		}
+		if (panelCount == 0) return null;
+
+		try {
+			int totalWidth = panelCount * panelSize;
+			java.awt.image.BufferedImage canvas = new java.awt.image.BufferedImage(totalWidth, panelSize, java.awt.image.BufferedImage.TYPE_INT_RGB);
+			java.awt.Graphics2D g2d = canvas.createGraphics();
+			g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
+			int panelIndex = 0;
+			for (byte[] src : sources) {
+				if (src == null || src.length == 0) continue;
+				java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(src));
+				if (img == null) continue;
+
+				/// Center-crop to square: use the shorter dimension as the crop size
+				int w = img.getWidth();
+				int h = img.getHeight();
+				int cropSize = Math.min(w, h);
+				int cropX = (w - cropSize) / 2;
+				int cropY = (h - cropSize) / 2;
+				java.awt.image.BufferedImage cropped = img.getSubimage(cropX, cropY, cropSize, cropSize);
+
+				/// Draw into panel slot
+				int xOffset = panelIndex * panelSize;
+				g2d.drawImage(cropped, xOffset, 0, panelSize, panelSize, null);
+				panelIndex++;
+			}
+			g2d.dispose();
+
+			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+			javax.imageio.ImageIO.write(canvas, "png", baos);
+			byte[] result = baos.toByteArray();
+			logger.info("stitchSceneImages: " + panelCount + " panels stitched → " + totalWidth + "x" + panelSize + " (" + result.length + " bytes)");
+			return result;
+		} catch (Exception e) {
+			logger.error("stitchSceneImages failed", e);
+			return null;
+		}
+	}
+
 	/// Generate an animal image with optional landscape reference.
 	/// @param user The user record
 	/// @param animal The animal record

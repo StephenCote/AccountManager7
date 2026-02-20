@@ -301,6 +301,46 @@
 			"type": "boolean",
 			"default": false,
 			"description": "When true, skip landscape reference generation and use text-only scene prompt (single-stage generation)."
+		},
+		{
+			"name": "useKontext",
+			"type": "boolean",
+			"default": true,
+			"description": "When true, use FLUX Kontext stitch-and-prompt pipeline for scene compositing instead of classic Graphics2D + SDXL img2img."
+		},
+		{
+			"name": "kontextModel",
+			"type": "string",
+			"default": "flux1Kontext_flux1KontextDev",
+			"description": "FLUX Kontext model name for scene compositing."
+		},
+		{
+			"name": "kontextSteps",
+			"type": "int",
+			"minValue": 1,
+			"maxValue": 100,
+			"default": 28,
+			"description": "Sampling steps for FLUX Kontext generation."
+		},
+		{
+			"name": "kontextCfg",
+			"type": "int",
+			"minValue": 1,
+			"maxValue": 20,
+			"default": 1,
+			"description": "CFG scale for FLUX Kontext (FLUX uses internal guidance, typically 1)."
+		},
+		{
+			"name": "kontextSampler",
+			"type": "string",
+			"default": "euler",
+			"description": "Sampler for FLUX Kontext generation."
+		},
+		{
+			"name": "kontextScheduler",
+			"type": "string",
+			"default": "simple",
+			"description": "Scheduler for FLUX Kontext generation."
 		}
 	]
 }

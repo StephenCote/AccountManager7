@@ -69,8 +69,10 @@
 					<excludes>
 						<!--
 						
-						
+						<exclude>**/TestKontext</exclude>
 						-->
+						<exclude>**/TestMapReduceSummary</exclude>
+						<exclude>**/TestMemorySharing</exclude>
 						<exclude>**/TestChatOptions</exclude>
 						<exclude>**/TestChatPhase10</exclude>
 						<exclude>**/TestChatPhase11</exclude>

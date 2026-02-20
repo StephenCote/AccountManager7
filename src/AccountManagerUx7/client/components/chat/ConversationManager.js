@@ -43,7 +43,7 @@
                 chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0) || [];
             }
             if (reqDir) {
-                sessions = await am7client.list("olio.llm.chatRequest", reqDir.objectId, "name,objectId,attributes,chatConfig,promptConfig,session,sessionType,setting,contextType", 0, 0) || [];
+                sessions = await am7client.list("olio.llm.chatRequest", reqDir.objectId, "name,objectId,chatTitle,chatIcon,chatConfig,promptConfig,session,sessionType,setting,contextType", 0, 0) || [];
             } else {
                 sessions = [];
             }
@@ -74,8 +74,7 @@
         let lower = filterText.toLowerCase();
         return sessions.filter(function(s) {
             let name = (s.name || "").toLowerCase();
-            let title = (window.am7client && am7client.getAttributeValue
-                ? (am7client.getAttributeValue(s, "chatTitle", 0) || "") : "").toLowerCase();
+            let title = (s.chatTitle || "").toLowerCase();
             return name.indexOf(lower) !== -1 || title.indexOf(lower) !== -1;
         });
     }
@@ -138,10 +137,8 @@
         let cls = "flyout-button flex items-center w-full group";
         if (isSelected) cls += " active";
 
-        let title = (window.am7client && am7client.getAttributeValue
-            ? am7client.getAttributeValue(session, "chatTitle", 0) : null) || session.name || "(unnamed)";
-        let icon = (window.am7client && am7client.getAttributeValue
-            ? am7client.getAttributeValue(session, "chatIcon", 0) : null);
+        let title = session.chatTitle || session.name || "(unnamed)";
+        let icon = session.chatIcon || null;
 
         return m("button", {
             key: session.objectId,
@@ -323,18 +320,7 @@
             if (!sessions || !objectId || !title) return;
             for (let i = 0; i < sessions.length; i++) {
                 if (sessions[i].objectId === objectId) {
-                    if (!sessions[i].attributes) sessions[i].attributes = [];
-                    let found = false;
-                    for (let j = 0; j < sessions[i].attributes.length; j++) {
-                        if (sessions[i].attributes[j].name === "chatTitle") {
-                            sessions[i].attributes[j].value = title;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        sessions[i].attributes.push({ name: "chatTitle", value: title });
-                    }
+                    sessions[i].chatTitle = title;
                     m.redraw();
                     return;
                 }
@@ -350,18 +336,7 @@
             if (!sessions || !objectId || !icon) return;
             for (let i = 0; i < sessions.length; i++) {
                 if (sessions[i].objectId === objectId) {
-                    if (!sessions[i].attributes) sessions[i].attributes = [];
-                    let found = false;
-                    for (let j = 0; j < sessions[i].attributes.length; j++) {
-                        if (sessions[i].attributes[j].name === "chatIcon") {
-                            sessions[i].attributes[j].value = icon;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        sessions[i].attributes.push({ name: "chatIcon", value: icon });
-                    }
+                    sessions[i].chatIcon = icon;
                     m.redraw();
                     return;
                 }

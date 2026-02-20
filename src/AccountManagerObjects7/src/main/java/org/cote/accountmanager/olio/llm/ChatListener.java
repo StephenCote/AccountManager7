@@ -21,7 +21,6 @@ import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyEva
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.util.AttributeUtil;
 
 public class ChatListener implements IChatListener {
 	private static final Logger logger = LogManager.getLogger(ChatListener.class);
@@ -370,14 +369,10 @@ public class ChatListener implements IChatListener {
 			/// The check fires on userMsgCount >= 1 (not just == 1) so that if the first attempt
 			/// fails (LLM timeout, network error), subsequent exchanges will retry.
 			if (chatReqRec != null) {
-				try {
-					String existingTitle = AttributeUtil.getAttributeValue(chatReqRec, "chatTitle");
-					if (existingTitle != null && !existingTitle.isEmpty()) {
-						logger.info("Title already exists, skipping generation: " + existingTitle);
-						chatReqRec = null; // signal to skip
-					}
-				} catch (Exception e) {
-					// attribute not found — proceed with generation
+				String existingTitle = chatReqRec.get("chatTitle");
+				if (existingTitle != null && !existingTitle.isEmpty()) {
+					logger.info("Title already exists, skipping generation: " + existingTitle);
+					chatReqRec = null; // signal to skip
 				}
 			}
 			final BaseRecord titleChatReqRec = chatReqRec;

@@ -21,7 +21,6 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.util.MemoryUtil;
 import org.junit.Before;
@@ -257,7 +256,7 @@ public class TestPhase14Memory extends BaseTest {
 				"]";
 
 			List<BaseRecord> extracted = MemoryUtil.extractMemoriesFromResponse(
-				testUser, llmResponse, "am7://test/extdedup2", convId, pid1, pid2, null);
+				testUser, llmResponse, "am7://test/extdedup2", convId, person1, person2);
 
 			assertNotNull(extracted);
 			assertEquals("Should process 2 memories (1 merged + 1 new)", 2, extracted.size());
