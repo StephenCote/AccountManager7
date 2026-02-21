@@ -80,10 +80,9 @@ public class TestKontext extends BaseTest {
 	public void testNewKontextSceneTxt2ImgDefaults() {
 		logger.info("testNewKontextSceneTxt2ImgDefaults");
 
-		/// Test pass 1 (place character into landscape)
-		SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(1,
+		SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(
 			"a tall man with brown hair",
-			null,
+			"a short woman with red hair",
 			"walking through a meadow",
 			"a sunlit countryside",
 			null
@@ -102,41 +101,26 @@ public class TestKontext extends BaseTest {
 
 		String prompt = s2i.getPrompt();
 		assertNotNull("Prompt should not be null", prompt);
-		assertTrue("Pass 1 should mention placing person", prompt.contains("Place the person from the reference portrait"));
-		assertTrue("Pass 1 prompt should contain char desc", prompt.contains("a tall man with brown hair"));
-		assertTrue("Pass 1 prompt should mention setting", prompt.contains("a sunlit countryside"));
+		assertTrue("Should mention combining reference images", prompt.contains("Combine the reference images"));
+		assertTrue("Should mention panels", prompt.contains("left and center panels"));
+		assertTrue("Should contain first char desc", prompt.contains("a tall man with brown hair"));
+		assertTrue("Should contain second char desc", prompt.contains("a short woman with red hair"));
+		assertTrue("Should contain scene action", prompt.contains("walking through a meadow"));
+		assertTrue("Should contain setting", prompt.contains("a sunlit countryside"));
 		assertEquals("Negative prompt should be empty for Kontext", "", s2i.getNegativePrompt());
-		logger.info("Pass 1 prompt: " + prompt);
-
-		/// Test pass 2 (add second character to existing scene)
-		SWTxt2Img s2i2 = SWUtil.newKontextSceneTxt2Img(2,
-			"a short woman with red hair",
-			"a tall man with brown hair",
-			"walking through a meadow",
-			"a sunlit countryside",
-			null
-		);
-
-		String prompt2 = s2i2.getPrompt();
-		assertNotNull("Pass 2 prompt should not be null", prompt2);
-		assertTrue("Pass 2 should mention adding person", prompt2.contains("Add the person from the reference portrait"));
-		assertTrue("Pass 2 should describe existing person", prompt2.contains("The existing person in the scene is a tall man with brown hair"));
-		assertTrue("Pass 2 should keep existing person", prompt2.contains("Keep the existing person"));
-		assertTrue("Pass 2 prompt should contain new char desc", prompt2.contains("a short woman with red hair"));
-		assertTrue("Pass 2 prompt should contain scene action", prompt2.contains("walking through a meadow"));
-		logger.info("Pass 2 prompt: " + prompt2);
+		logger.info("Prompt: " + prompt);
 	}
 
 	@Test
 	public void testNewKontextSceneTxt2ImgNullDescriptions() {
 		logger.info("testNewKontextSceneTxt2ImgNullDescriptions");
 
-		SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(1, null, null, null, null, null);
+		SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(null, null, null, null, null);
 		assertNotNull("SWTxt2Img should not be null", s2i);
 
 		String prompt = s2i.getPrompt();
 		assertNotNull("Prompt should not be null", prompt);
-		assertTrue("Prompt should have base instruction", prompt.contains("Place the person from the reference portrait"));
+		assertTrue("Prompt should have base instruction", prompt.contains("Combine the reference images"));
 		assertTrue("Prompt should not contain 'null'", !prompt.contains("null"));
 		logger.info("Null-safe prompt: " + prompt);
 	}
@@ -145,9 +129,9 @@ public class TestKontext extends BaseTest {
 	public void testNewKontextSceneTxt2ImgSerialization() {
 		logger.info("testNewKontextSceneTxt2ImgSerialization");
 
-		SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(1,
+		SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(
 			"a man with blue eyes",
-			null,
+			"a woman with green eyes",
 			"sitting at a cafe",
 			"Paris street",
 			null
@@ -333,50 +317,31 @@ public class TestKontext extends BaseTest {
 		String sceneDesc = "walking together through a village";
 		String settingDesc = "a peaceful fantasy village with cobblestone paths";
 
-		/// Step 5: PASS 1 — Place person 1 into the landscape using promptImages
-		logger.info("=== Kontext Pass 1: Place " + person1.get(FieldNames.FIELD_NAME) + " into landscape ===");
+		/// Step 5: Stitch [portrait1 | portrait2 | landscape] into single composite reference
+		byte[] refComposite = SDUtil.stitchSceneImages(portrait1Bytes, portrait2Bytes, landscapeBytes, 1024);
+		assertNotNull("Stitched composite should not be null", refComposite);
+		exportImage("kontext-reference-composite.png", refComposite);
+		logger.info("Stitched composite: " + refComposite.length + " bytes");
 
-		SWTxt2Img s2iPass1 = SWUtil.newKontextSceneTxt2Img(1, desc1, null, sceneDesc, settingDesc, null);
-		List<String> pass1PromptImages = new ArrayList<>();
-		pass1PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(portrait1Bytes));
-		pass1PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(landscapeBytes));
-		s2iPass1.setPromptImages(pass1PromptImages);
-		logger.info("Pass 1 prompt: " + s2iPass1.getPrompt());
-		logger.info("Pass 1 promptImages count: " + pass1PromptImages.size());
+		/// Step 6: Single-pass Kontext — send composite as one promptImage
+		logger.info("=== Kontext: Compositing " + person1.get(FieldNames.FIELD_NAME) + " & " + person2.get(FieldNames.FIELD_NAME) + " into scene ===");
 
-		List<BaseRecord> pass1Images = sdu.createSceneImage(testUser, "~/Gallery",
-			"Kontext Pass1 - " + person1.get("firstName") + " - " + UUID.randomUUID().toString(),
-			s2iPass1, person1.get(FieldNames.FIELD_OBJECT_ID), null);
+		SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(desc1, desc2, sceneDesc, settingDesc, null);
+		List<String> promptImages = new ArrayList<>();
+		promptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(refComposite));
+		s2i.setPromptImages(promptImages);
 
-		if (pass1Images.isEmpty()) {
-			logger.warn("Kontext pass 1 returned no images — FLUX Kontext model may not be available");
-			return;
-		}
-
-		byte[] pass1Bytes = pass1Images.get(0).get(FieldNames.FIELD_BYTE_STORE);
-		assertNotNull("Pass 1 result should have bytes", pass1Bytes);
-		exportImage("kontext-pass1-result.png", pass1Bytes);
-		logger.info("Pass 1 result: " + pass1Bytes.length + " bytes");
-
-		/// Step 6: PASS 2 — Add person 2 into the pass 1 result using promptImages
-		logger.info("=== Kontext Pass 2: Add " + person2.get(FieldNames.FIELD_NAME) + " to scene ===");
-
-		SWTxt2Img s2iPass2 = SWUtil.newKontextSceneTxt2Img(2, desc2, desc1, sceneDesc, settingDesc, null);
-		List<String> pass2PromptImages = new ArrayList<>();
-		pass2PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(portrait2Bytes));
-		pass2PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(pass1Bytes));
-		s2iPass2.setPromptImages(pass2PromptImages);
-		logger.info("Pass 2 prompt: " + s2iPass2.getPrompt());
-		logger.info("Pass 2 promptImages count: " + pass2PromptImages.size());
+		logger.info("Prompt: " + s2i.getPrompt());
+		logger.info("promptImages count: " + promptImages.size());
 
 		List<BaseRecord> sceneImages = sdu.createSceneImage(testUser, "~/Gallery",
 			"Kontext Scene - " + person1.get("firstName") + " & " + person2.get("firstName") + " - " + UUID.randomUUID().toString(),
-			s2iPass2,
+			s2i,
 			person1.get(FieldNames.FIELD_OBJECT_ID),
 			person2.get(FieldNames.FIELD_OBJECT_ID));
 
 		if (sceneImages.isEmpty()) {
-			logger.warn("Kontext pass 2 returned no images — FLUX Kontext model may not be available");
+			logger.warn("Kontext returned no images — FLUX Kontext model may not be available");
 			return;
 		}
 
@@ -387,6 +352,6 @@ public class TestKontext extends BaseTest {
 			logger.info("Final scene " + i + ": " + sceneBytes.length + " bytes");
 		}
 
-		logger.info("testKontextSceneWithOlioCharacters PASSED — 2-pass pipeline produced " + sceneImages.size() + " scene image(s)");
+		logger.info("testKontextSceneWithOlioCharacters PASSED — single-pass pipeline produced " + sceneImages.size() + " scene image(s)");
 	}
 }

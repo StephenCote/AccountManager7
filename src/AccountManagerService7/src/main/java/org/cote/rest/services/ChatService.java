@@ -739,55 +739,33 @@ public class ChatService {
 		List<BaseRecord> images = new java.util.ArrayList<>();
 
 		if (useKontext) {
-			/// KONTEXT 2-PASS PIPELINE using promptImages (not initImage):
-			/// FLUX Kontext needs images fed as promptImages with <image:name> tags in the prompt,
-			/// NOT as initImage which just does img2img denoising.
-			/// Pass 1: portrait + landscape as prompt images → scene with system character
-			/// Pass 2: portrait + pass1 result as prompt images → final scene with both characters
+			/// KONTEXT SINGLE-PASS PIPELINE: stitch [sysPortrait | usrPortrait | landscape]
+			/// into one composite reference image, send as a single promptImage.
 			String settingDesc = "";
 			try { String s = chatConfig.get("setting"); if (s != null && !s.isEmpty()) settingDesc = s; } catch (Exception e) { /* ignore */ }
 
-			/// Pass 1: Place system character into the landscape
-			WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Kontext pass 1/2..."});
+			WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Kontext compositing..."});
 
-			SWTxt2Img s2iPass1 = SWUtil.newKontextSceneTxt2Img(1, sceneResult.sysCharDesc, null, sceneResult.sceneDesc, settingDesc, sdConfig);
-			List<String> pass1PromptImages = new java.util.ArrayList<>();
-			if (sceneResult.sysPortraitBytes != null) {
-				pass1PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(sceneResult.sysPortraitBytes));
+			byte[] stitchedBytes = SDUtil.stitchSceneImages(
+				sceneResult.sysPortraitBytes,
+				sceneResult.usrPortraitBytes,
+				landscapeBytes,
+				1024
+			);
+
+			SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(
+				sceneResult.sysCharDesc, sceneResult.usrCharDesc,
+				sceneResult.sceneDesc, settingDesc, sdConfig
+			);
+
+			if (stitchedBytes != null) {
+				List<String> promptImages = new java.util.ArrayList<>();
+				promptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(stitchedBytes));
+				s2i.setPromptImages(promptImages);
+				logger.info("generateScene Kontext: stitched composite " + stitchedBytes.length + " bytes");
 			}
-			if (landscapeBytes != null) {
-				pass1PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(landscapeBytes));
-			}
-			if (!pass1PromptImages.isEmpty()) {
-				s2iPass1.setPromptImages(pass1PromptImages);
-				logger.info("generateScene Kontext pass 1: " + pass1PromptImages.size() + " prompt images");
-			}
 
-			List<BaseRecord> pass1Images = sdu.createSceneImage(user, groupPath, name + " - pass1", s2iPass1, sysOid, null);
-
-			if (!pass1Images.isEmpty()) {
-				/// Pass 2: Add user character into the pass 1 result
-				WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Kontext pass 2/2..."});
-				byte[] pass1Bytes = pass1Images.get(0).get(FieldNames.FIELD_BYTE_STORE);
-				if (pass1Bytes == null || pass1Bytes.length == 0) {
-					pass1Bytes = SDUtil.getDataBytes(pass1Images.get(0));
-				}
-
-				SWTxt2Img s2iPass2 = SWUtil.newKontextSceneTxt2Img(2, sceneResult.usrCharDesc, sceneResult.sysCharDesc, sceneResult.sceneDesc, settingDesc, sdConfig);
-				List<String> pass2PromptImages = new java.util.ArrayList<>();
-				if (sceneResult.usrPortraitBytes != null) {
-					pass2PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(sceneResult.usrPortraitBytes));
-				}
-				if (pass1Bytes != null) {
-					pass2PromptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(pass1Bytes));
-				}
-				if (!pass2PromptImages.isEmpty()) {
-					s2iPass2.setPromptImages(pass2PromptImages);
-					logger.info("generateScene Kontext pass 2: " + pass2PromptImages.size() + " prompt images");
-				}
-
-				images = sdu.createSceneImage(user, groupPath, name, s2iPass2, sysOid, usrOid);
-			}
+			images = sdu.createSceneImage(user, groupPath, name, s2i, sysOid, usrOid);
 
 			if (images.isEmpty()) {
 				logger.warn("generateScene: Kontext pipeline produced no images — falling back to classic");

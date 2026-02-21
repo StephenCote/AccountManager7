@@ -120,49 +120,38 @@ public class SWUtil {
 		return s2i;
 	}
 
-	/// Build a FLUX Kontext scene request for a 2-pass compositing pipeline.
-	/// Caller sets promptImages as a List of data URI strings via setPromptImages().
-	/// Pass 1: portrait + landscape → places one character into the scene.
-	/// Pass 2: portrait + pass1Result → adds the second character.
-	/// @param pass             1 or 2 — determines prompt structure
-	/// @param charDesc         SD character description for the character being placed (SDXL weighting stripped)
-	/// @param existingCharDesc SD description of the character already in the scene (pass 2 only; null for pass 1)
-	/// @param sceneDesc        LLM-generated scene verb phrase (what the characters are doing together)
-	/// @param settingDesc      Setting/location description from chatConfig
-	/// @param sdConfig         SD config record (for kontextModel override); may be null
-	public static SWTxt2Img newKontextSceneTxt2Img(int pass, String charDesc, String existingCharDesc, String sceneDesc, String settingDesc, BaseRecord sdConfig) {
+	/// Build a FLUX Kontext scene request using a single stitched composite as the prompt image.
+	/// The composite contains [portrait1 | portrait2 | landscape] stitched side-by-side.
+	/// Caller creates the composite via SDUtil.stitchSceneImages() and passes it as a single promptImage.
+	/// @param sysCharDesc   SD description of the first character (left panel)
+	/// @param usrCharDesc   SD description of the second character (center panel)
+	/// @param sceneDesc     LLM-generated scene verb phrase (what the characters are doing)
+	/// @param settingDesc   Setting/location description from chatConfig
+	/// @param sdConfig      SD config record (for kontextModel override); may be null
+	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc, BaseRecord sdConfig) {
 		SWTxt2Img s2i = newKontextBase(sdConfig);
 
 		/// Strip SDXL-style prompt weighting — FLUX doesn't support ((...:1.5)) syntax
-		String cleanDesc = stripSDXLWeighting(charDesc);
-		String cleanExisting = stripSDXLWeighting(existingCharDesc);
+		String cleanSys = stripSDXLWeighting(sysCharDesc);
+		String cleanUsr = stripSDXLWeighting(usrCharDesc);
 
 		StringBuilder prompt = new StringBuilder();
-		if (pass == 1) {
-			prompt.append("Place the person from the reference portrait into the scene. ");
-			if (cleanDesc != null && !cleanDesc.isEmpty()) {
-				prompt.append("The person is ").append(cleanDesc).append(". ");
-			}
-			if (settingDesc != null && !settingDesc.isEmpty()) {
-				prompt.append("The setting is ").append(settingDesc).append(". ");
-			}
-			prompt.append("Maintain their exact appearance, clothing, and features. ");
-			prompt.append("Natural lighting consistent with the background. High quality photograph.");
-		} else {
-			prompt.append("Add the person from the reference portrait into the existing scene. ");
-			if (cleanDesc != null && !cleanDesc.isEmpty()) {
-				prompt.append("The new person is ").append(cleanDesc).append(". ");
-			}
-			if (cleanExisting != null && !cleanExisting.isEmpty()) {
-				prompt.append("The existing person in the scene is ").append(cleanExisting).append(". ");
-			}
-			if (sceneDesc != null && !sceneDesc.isEmpty()) {
-				prompt.append("They are ").append(sceneDesc).append(". ");
-			}
-			prompt.append("Keep the existing person and scene exactly as they are. ");
-			prompt.append("Place the new person naturally in the scene. ");
-			prompt.append("Maintain all appearances and features. High quality photograph.");
+		prompt.append("Combine the reference images into one cohesive scene. ");
+		prompt.append("Place both people from the left and center panels into the environment shown in the right panel. ");
+		if (cleanSys != null && !cleanSys.isEmpty()) {
+			prompt.append("The first person is ").append(cleanSys).append(". ");
 		}
+		if (cleanUsr != null && !cleanUsr.isEmpty()) {
+			prompt.append("The second person is ").append(cleanUsr).append(". ");
+		}
+		if (sceneDesc != null && !sceneDesc.isEmpty()) {
+			prompt.append("They are ").append(sceneDesc).append(". ");
+		}
+		if (settingDesc != null && !settingDesc.isEmpty()) {
+			prompt.append("The setting is ").append(settingDesc).append(". ");
+		}
+		prompt.append("Maintain their exact appearances, clothing, and features. ");
+		prompt.append("Natural lighting consistent with the background. High quality photograph.");
 
 		s2i.setPrompt(prompt.toString());
 		s2i.setNegativePrompt("");

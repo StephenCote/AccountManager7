@@ -95,6 +95,7 @@
     let mcpDebug = false;
     let editIndex = -1;
     let editMode = false;
+    let deletedIndices = new Set();
 
     let profile = false;
 
@@ -1003,43 +1004,53 @@
     function clearEditMode() {
       editMode = false;
       editIndex = -1;
+      deletedIndices = new Set();
     }
 
-    /// Currently only editing the last assistant message
-    /// The reasoning: The message history used for display is a truncated version of what's in the chat request
-    /// Alternately, this could be a separate API, but that seems unnecessary at the moment
-    async function editMessageHistory(idx, cnt) {
-
+    /// Save all message edits and deletions to the server-side OpenAI request object
+    async function saveEditsAndDeletes() {
       let q = am7view.viewQuery(am7model.newInstance(inst.api.sessionType()));
       q.field("id", inst.api.session().id);
       let qr = await page.search(q);
       if (qr && qr.results.length > 0) {
-        console.log("Patching session data", qr.results[0].objectId);
         let req = qr.results[0];
+        let amsg = chatCfg.history?.messages || [];
 
-        /// change the contents of the last message 
-        req.messages[req.messages.length - 1].content = cnt;
-        let patch = await page.patchObject(req);
+        /// Apply edits from textareas
+        for (let i = 0; i < amsg.length; i++) {
+          if (deletedIndices.has(i)) continue;
+          let el = document.getElementById("editMessage-" + i);
+          if (el) {
+            req.messages[i].content = el.value;
+          }
+        }
+
+        /// Remove deleted messages (reverse order to preserve indices)
+        let sorted = Array.from(deletedIndices).sort((a, b) => b - a);
+        for (let idx of sorted) {
+          if (idx >= 0 && idx < req.messages.length) {
+            req.messages.splice(idx, 1);
+          }
+        }
+
+        await page.patchObject(req);
         clearEditMode();
         await am7client.clearCache();
         await doCancel();
         await doPeek();
+      } else {
+        console.error("Failed to find session data to save edits");
+        clearEditMode();
       }
-      else {
-        console.error("Failed to find session data to edit", qr);
-      }
-      clearEditMode();
     }
-    function toggleEditMode(idx) {
+    function toggleEditMode() {
       if (editMode) {
-
-        /// Put message back in the history
-        ///
-        editMessageHistory(idx, document.getElementById("editMessage").value);
-      }
-      else {
+        /// Exiting edit mode — save all changes
+        saveEditsAndDeletes();
+      } else {
         editMode = true;
-        editIndex = idx;
+        editIndex = -1;
+        deletedIndices = new Set();
       }
     }
 
@@ -1096,7 +1107,7 @@
         let cnt = msg.content || "";
         let ectl = "";
         let ecls = "";
-        let bectl = false;
+        let bectl = editMode && !deletedIndices.has(midx);
         let lastMsg = (midx == (amsg.length - 1));
         /// Prefer server-side displayContent when available and hideThoughts is active
         let useServerDisplay = hideThoughts && !editMode && msg.displayContent;
@@ -1106,25 +1117,40 @@
         if (!useServerDisplay && hideThoughts && !editMode && window.LLMConnector) {
           cnt = LLMConnector.pruneOut(cnt, "--- CITATION", "END CITATIONS ---")
         }
-        if (msg.role == "assistant") {
-          bectl = (editMode && editIndex == midx);
+        /// Delete icon on all messages when in edit mode
+        if (editMode) {
+          let isDeleted = deletedIndices.has(midx);
+          ectl = m("span", {
+            onclick: function () {
+              if (deletedIndices.has(midx)) {
+                deletedIndices.delete(midx);
+              } else {
+                deletedIndices.add(midx);
+              }
+              m.redraw();
+            },
+            class: "material-icons-outlined cursor-pointer " + (isDeleted ? "text-red-500" : "text-slate-700"),
+            title: isDeleted ? "Restore" : "Delete"
+          }, "delete");
+        }
 
-          /// Only edit last message
-          if (midx == amsg.length - 1) {
-            ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
-          }
+        if (msg.role == "assistant") {
           if (!useServerDisplay && hideThoughts && !editMode && window.LLMConnector) {
             cnt = LLMConnector.pruneToMark(cnt, "<|reserved_special_token");
             cnt = LLMConnector.pruneTag(cnt, "think");
             cnt = LLMConnector.pruneTag(cnt, "thought");
             cnt = LLMConnector.pruneOther(cnt);
           }
+        }
 
-          if (bectl) {
+        /// In edit mode: editable textareas for non-deleted, strikethrough for deleted
+        if (editMode) {
+          if (deletedIndices.has(midx)) {
+            ecls = "w-full opacity-30 line-through ";
+          } else {
             ecls = "w-full ";
-            cnt = m("textarea", { id: "editMessage", class: "text-field textarea-field-full" }, cnt);
+            cnt = m("textarea", { id: "editMessage-" + midx, class: "text-field textarea-field-full" }, cnt);
           }
-
         }
         if (!useServerDisplay && !bectl && hideThoughts && window.LLMConnector) {
           cnt = LLMConnector.pruneToMark(cnt, "(Metrics");
@@ -1408,7 +1434,7 @@
         uploadingImage ? chatIconBtn("hourglass_top", function(){}, true, "Uploading image...") : "",
         chatIconBtn(profile ? "account_circle" : "account_circle_off", toggleProfile, profile, "Profile"),
         chatIconBtn(audio ? "volume_up" : "volume_mute", toggleAudio, audio, "Audio"),
-        chatIconBtn("counter_8", sendToMagic8, false, "Magic 8"),
+        chatIconBtn("edit_note", toggleEditMode, editMode, "Edit"),
         chatIconBtn("query_stats", chatInto, false, "Analyze"),
         chatIconBtn("landscape", function() { showSdConfig = true; }, showSdConfig, "Generate Scene"),
         chatIconBtn("visibility" + (hideThoughts ? "" : "_off"), toggleThoughts, !hideThoughts, "Thoughts"),
