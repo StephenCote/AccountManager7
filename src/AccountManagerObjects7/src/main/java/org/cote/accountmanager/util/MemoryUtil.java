@@ -724,6 +724,14 @@ public class MemoryUtil {
 	}
 
 	/// Backward-compatible overload accepting long person IDs.
+	public static List<BaseRecord> extractMemoriesFromResponse(BaseRecord user, String llmResponse,
+			String sourceUri, String conversationId, long personId1, long personId2) {
+		BaseRecord p1 = stubPersonRecord(personId1, null);
+		BaseRecord p2 = stubPersonRecord(personId2, null);
+		return extractMemoriesFromResponse(user, llmResponse, sourceUri, conversationId, p1, p2);
+	}
+
+	/// Backward-compatible overload accepting long person IDs.
 	public static List<BaseRecord> searchMemoriesByPersonPair(BaseRecord user, long person1Id, long person2Id, int limit) {
 		BaseRecord p1 = stubPersonRecord(person1Id, null);
 		BaseRecord p2 = stubPersonRecord(person2Id, null);

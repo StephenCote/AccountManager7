@@ -222,7 +222,7 @@ public class AM7AgentTool {
     ) {
     	String sourceUri = "am7://agent/memory-extraction/" + (conversationId != null ? conversationId : "unknown");
     	List<BaseRecord> extracted = MemoryUtil.extractMemoriesFromResponse(
-    		toolUser, text, sourceUri, conversationId, personId1, personId2, null
+    		toolUser, text, sourceUri, conversationId, personId1, personId2
     	);
     	return extracted.size();
     }
