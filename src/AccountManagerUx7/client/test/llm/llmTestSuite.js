@@ -42,7 +42,8 @@
         phase14:   { label: "Phase 14", icon: "memory" },
         scene:     { label: "Scene",   icon: "landscape" },
         imageDrop: { label: "ImageDrop", icon: "add_photo_alternate" },
-        memoryBrowser: { label: "MemBrowser", icon: "share" }
+        memoryBrowser: { label: "MemBrowser", icon: "share" },
+        editMode:      { label: "EditMode",  icon: "edit_note" }
     };
 
     // ── Suite State ───────────────────────────────────────────────────
@@ -3771,6 +3772,181 @@
         log("memoryBrowser", "=== Memory Browser Tests Complete ===", "info");
     }
 
+    // ── Tests 213-220: Edit Mode (message edit & delete) ────────────
+    async function testEditMode(cats) {
+        if (!cats.includes("editMode")) return;
+        TF.testState.currentTest = "EditMode: message edit & delete";
+        log("editMode", "=== Edit Mode Tests ===");
+
+        let chatCfg = getVariant("standard");
+        let promptCfg = suiteState.promptConfig;
+        if (!chatCfg || !promptCfg) {
+            log("editMode", "chatConfig or promptConfig missing — skipping", "skip");
+            return;
+        }
+
+        // ── 213: Create test session with messages ────────────────────
+        let req;
+        try {
+            req = await am7chat.getChatRequest("Edit Mode Test - " + Date.now(), chatCfg, promptCfg);
+            log("editMode", "213: Test session created", req ? "pass" : "fail");
+        } catch (e) {
+            log("editMode", "213: Session create failed: " + e.message, "fail");
+            return;
+        }
+        if (!req) return;
+
+        let testMessages = ["Edit test alpha", "Edit test beta", "Edit test gamma"];
+        for (let i = 0; i < testMessages.length; i++) {
+            try {
+                await am7chat.chat(req, testMessages[i]);
+                log("editMode", "213: Sent message " + (i + 1), "info");
+                if (i < testMessages.length - 1) {
+                    await new Promise(function(r) { setTimeout(r, 200); });
+                }
+            } catch (e) {
+                log("editMode", "213: Failed to send message " + (i + 1) + ": " + e.message, "fail");
+            }
+        }
+
+        // ── 214: Fetch session and count messages ─────────────────────
+        let sessionType = "olio.llm.chatRequest";
+        let q = am7view.viewQuery(am7model.newInstance(sessionType));
+        q.field("id", req.id);
+        let qr;
+        try {
+            qr = await page.search(q);
+        } catch (e) {
+            log("editMode", "214: Session fetch failed: " + e.message, "fail");
+            return;
+        }
+        if (!qr || !qr.results || qr.results.length === 0) {
+            log("editMode", "214: No session found", "fail");
+            return;
+        }
+        let serverReq = qr.results[0];
+        let origCount = serverReq.messages.length;
+        log("editMode", "214: Server messages count: " + origCount, origCount > 0 ? "pass" : "fail");
+
+        // ── 215: Verify offset calculation (system prompt detection) ──
+        let histReq = {
+            schema: "olio.llm.chatRequest",
+            objectId: req.objectId,
+            uid: page.uid()
+        };
+        let hist;
+        try {
+            hist = await m.request({ method: "POST", url: g_application_path + "/rest/chat/history", withCredentials: true, body: histReq });
+        } catch (e) {
+            log("editMode", "215: History fetch failed: " + e.message, "fail");
+            hist = null;
+        }
+        let displayMsgs = hist ? hist.messages : [];
+        let offset = origCount - displayMsgs.length;
+        log("editMode", "215: Display messages: " + displayMsgs.length + ", offset: " + offset, offset >= 0 ? "pass" : "fail");
+
+        // ── 216: Test edit — modify a message via server patch ─────────
+        if (displayMsgs.length > 0) {
+            let editIdx = 0;
+            let serverIdx = editIdx + offset;
+            let origContent = serverReq.messages[serverIdx].content;
+            let editedContent = origContent + " [EDITED]";
+            serverReq.messages[serverIdx].content = editedContent;
+            try {
+                await page.patchObject(serverReq);
+                log("editMode", "216: Patched message " + serverIdx + " with edit", "pass");
+
+                // Re-fetch and verify
+                let qr2 = await page.search(q);
+                if (qr2 && qr2.results.length > 0) {
+                    let patched = qr2.results[0].messages[serverIdx].content;
+                    let editApplied = patched.indexOf("[EDITED]") !== -1;
+                    log("editMode", "216b: Edit persisted: " + editApplied, editApplied ? "pass" : "fail");
+                    // Restore original
+                    qr2.results[0].messages[serverIdx].content = origContent;
+                    await page.patchObject(qr2.results[0]);
+                }
+            } catch (e) {
+                log("editMode", "216: Edit patch failed: " + e.message, "fail");
+            }
+        } else {
+            log("editMode", "216: No display messages to edit", "skip");
+        }
+
+        // ── 217: Test delete — remove a message via splice + patch ────
+        if (origCount >= 3) {
+            try {
+                let qr3 = await page.search(q);
+                let delReq = qr3.results[0];
+                let preDeleteCount = delReq.messages.length;
+                // Delete the last message (safe — won't break role alternation for test)
+                let deleteServerIdx = preDeleteCount - 1;
+                delReq.messages.splice(deleteServerIdx, 1);
+                await page.patchObject(delReq);
+
+                // Re-fetch and verify
+                let qr4 = await page.search(q);
+                let postDeleteCount = qr4.results[0].messages.length;
+                let deleted = postDeleteCount === preDeleteCount - 1;
+                log("editMode", "217: Delete message — before: " + preDeleteCount + " after: " + postDeleteCount, deleted ? "pass" : "fail");
+            } catch (e) {
+                log("editMode", "217: Delete patch failed: " + e.message, "fail");
+            }
+        } else {
+            log("editMode", "217: Not enough messages to test delete", "skip");
+        }
+
+        // ── 218: Test bulk delete (multiple indices, reverse order) ────
+        try {
+            let qr5 = await page.search(q);
+            let bulkReq = qr5.results[0];
+            let preBulkCount = bulkReq.messages.length;
+            if (preBulkCount >= 3) {
+                // Delete indices 2 and 1 (in reverse to preserve positions)
+                let toDelete = [2, 1];
+                let sorted = toDelete.sort(function(a, b) { return b - a; });
+                for (let i = 0; i < sorted.length; i++) {
+                    if (sorted[i] < bulkReq.messages.length) {
+                        bulkReq.messages.splice(sorted[i], 1);
+                    }
+                }
+                await page.patchObject(bulkReq);
+
+                let qr6 = await page.search(q);
+                let postBulkCount = qr6.results[0].messages.length;
+                let bulkDeleted = postBulkCount === preBulkCount - 2;
+                log("editMode", "218: Bulk delete — before: " + preBulkCount + " after: " + postBulkCount, bulkDeleted ? "pass" : "fail");
+            } else {
+                log("editMode", "218: Not enough messages for bulk delete test", "skip");
+            }
+        } catch (e) {
+            log("editMode", "218: Bulk delete failed: " + e.message, "fail");
+        }
+
+        // ── 219: Verify role integrity after edits ────────────────────
+        try {
+            let qr7 = await page.search(q);
+            let finalReq = qr7.results[0];
+            let roles = finalReq.messages.map(function(m) { return m.role; });
+            let hasSystem = roles[0] === "system";
+            let validRoles = roles.every(function(r) { return r === "system" || r === "user" || r === "assistant"; });
+            log("editMode", "219: Valid roles after edits: " + validRoles + " (system first: " + hasSystem + ")", validRoles ? "pass" : "fail");
+            logData("editMode", "Final roles", roles);
+        } catch (e) {
+            log("editMode", "219: Role check failed: " + e.message, "fail");
+        }
+
+        // ── 220: Cleanup ──────────────────────────────────────────────
+        try {
+            await am7chat.deleteChat(req, true);
+            log("editMode", "220: Test session cleaned up", "pass");
+        } catch (e) {
+            log("editMode", "220: Cleanup failed: " + e.message, "warn");
+        }
+
+        log("editMode", "=== Edit Mode Tests Complete ===", "info");
+    }
+
     // ── Main Suite Runner ─────────────────────────────────────────────
     async function runLLMTests(selectedCategories) {
         let cats = selectedCategories;
@@ -3811,6 +3987,7 @@
         await testSceneBuilder(cats);
         await testImageDrop(cats);
         await testMemoryBrowser(cats);
+        await testEditMode(cats);
     }
 
     // ── Register with TestFramework ───────────────────────────────────

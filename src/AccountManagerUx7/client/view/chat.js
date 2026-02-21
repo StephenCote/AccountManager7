@@ -1016,20 +1016,26 @@
         let req = qr.results[0];
         let amsg = chatCfg.history?.messages || [];
 
+        /// The server request includes system prompt(s) before the display messages.
+        /// Calculate offset so display index 0 maps to the correct server index.
+        let offset = req.messages.length - amsg.length;
+        if (offset < 0) offset = 0;
+
         /// Apply edits from textareas
         for (let i = 0; i < amsg.length; i++) {
           if (deletedIndices.has(i)) continue;
           let el = document.getElementById("editMessage-" + i);
-          if (el) {
-            req.messages[i].content = el.value;
+          if (el && (i + offset) < req.messages.length) {
+            req.messages[i + offset].content = el.value;
           }
         }
 
         /// Remove deleted messages (reverse order to preserve indices)
         let sorted = Array.from(deletedIndices).sort((a, b) => b - a);
         for (let idx of sorted) {
-          if (idx >= 0 && idx < req.messages.length) {
-            req.messages.splice(idx, 1);
+          let serverIdx = idx + offset;
+          if (serverIdx >= 0 && serverIdx < req.messages.length) {
+            req.messages.splice(serverIdx, 1);
           }
         }
 
@@ -1095,8 +1101,9 @@
       let aidx = 1;
       let amsg = chatCfg.history?.messages || [];
       let hasAutoPlayedThisSession = false;
-      let msgs = amsg.map((msg) => {
+      let msgs = amsg.map((msg, mi) => {
         midx++;
+        const curIdx = mi;
         let align = "justify-start";
         let txt = "bg-gray-600 text-white";
         // console.log(msg);
@@ -1107,7 +1114,7 @@
         let cnt = msg.content || "";
         let ectl = "";
         let ecls = "";
-        let bectl = editMode && !deletedIndices.has(midx);
+        let bectl = editMode && !deletedIndices.has(curIdx);
         let lastMsg = (midx == (amsg.length - 1));
         /// Prefer server-side displayContent when available and hideThoughts is active
         let useServerDisplay = hideThoughts && !editMode && msg.displayContent;
@@ -1119,13 +1126,13 @@
         }
         /// Delete icon on all messages when in edit mode
         if (editMode) {
-          let isDeleted = deletedIndices.has(midx);
+          let isDeleted = deletedIndices.has(curIdx);
           ectl = m("span", {
             onclick: function () {
-              if (deletedIndices.has(midx)) {
-                deletedIndices.delete(midx);
+              if (deletedIndices.has(curIdx)) {
+                deletedIndices.delete(curIdx);
               } else {
-                deletedIndices.add(midx);
+                deletedIndices.add(curIdx);
               }
               m.redraw();
             },
@@ -1145,11 +1152,11 @@
 
         /// In edit mode: editable textareas for non-deleted, strikethrough for deleted
         if (editMode) {
-          if (deletedIndices.has(midx)) {
+          if (deletedIndices.has(curIdx)) {
             ecls = "w-full opacity-30 line-through ";
           } else {
             ecls = "w-full ";
-            cnt = m("textarea", { id: "editMessage-" + midx, class: "text-field textarea-field-full" }, cnt);
+            cnt = m("textarea", { id: "editMessage-" + curIdx, class: "text-field textarea-field-full" }, cnt);
           }
         }
         if (!useServerDisplay && !bectl && hideThoughts && window.LLMConnector) {
