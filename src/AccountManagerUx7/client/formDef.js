@@ -5243,7 +5243,25 @@
             memoryExtractionTypes: {
                 layout: "one",
                 label: "Memory Extraction Types",
-                hint: "Comma-separated types: FACT,RELATIONSHIP,DISCOVERY,DECISION,INSIGHT"
+                hint: "Comma-separated types: FACT,RELATIONSHIP,DISCOVERY,DECISION,INSIGHT",
+                placeholder: "FACT,RELATIONSHIP,DISCOVERY,DECISION,INSIGHT",
+                defaultValue: "FACT,RELATIONSHIP,DISCOVERY,DECISION,INSIGHT"
+            },
+            memoryExtractionPrompt: {
+                layout: "one",
+                label: "Memory Extraction Prompt",
+                hint: "Custom prompt resource name. Blank uses default memoryExtractionV2."
+            },
+
+            // Compliance evaluation
+            complianceCheck: {
+                layout: "one",
+                label: "Compliance Check"
+            },
+            complianceCheckEvery: {
+                layout: "one",
+                label: "Compliance Check Every",
+                hint: "Evaluate every Nth response. 1=every (expensive), 3=recommended, 0=disabled."
             },
 
             // Phase 5 (MemoryRefactor2): Gossip / cross-character recall

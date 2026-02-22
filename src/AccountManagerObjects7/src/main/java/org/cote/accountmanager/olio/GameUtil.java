@@ -1781,11 +1781,11 @@ public class GameUtil {
 		sb.append("Previous interactions between ").append(actorName).append(" and ").append(targetName).append(":\n");
 
 		for (BaseRecord inter : interactions) {
-			String type = String.valueOf(inter.get(FieldNames.FIELD_TYPE));
+			String type = String.valueOf((Object) inter.get(FieldNames.FIELD_TYPE));
 			String desc = inter.get(FieldNames.FIELD_DESCRIPTION);
-			String state = String.valueOf(inter.get(FieldNames.FIELD_STATE));
-			String actOutcome = String.valueOf(inter.get("actorOutcome"));
-			String intOutcome = String.valueOf(inter.get("interactorOutcome"));
+			String state = String.valueOf((Object) inter.get(FieldNames.FIELD_STATE));
+			String actOutcome = String.valueOf((Object) inter.get("actorOutcome"));
+			String intOutcome = String.valueOf((Object) inter.get("interactorOutcome"));
 			if (desc == null || desc.isEmpty()) desc = type;
 			sb.append("- ").append(type).append(": ").append(desc);
 			sb.append(" (result: ").append(state);

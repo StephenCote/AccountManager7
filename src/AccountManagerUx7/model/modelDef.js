@@ -8926,6 +8926,17 @@
           "description": "Automatically tune chat options based on conversation context"
         },
         {
+          "name": "complianceCheck",
+          "type": "boolean",
+          "description": "Run LLM-based response compliance evaluation"
+        },
+        {
+          "name": "complianceCheckEvery",
+          "type": "int",
+          "default": 3,
+          "description": "Evaluate every Nth response. 1=every (expensive), 3=recommended, 0=disabled."
+        },
+        {
           "name": "requestTimeout",
           "type": "int",
           "default": 120,

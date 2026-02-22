@@ -155,8 +155,8 @@
                 sourceCCfg: sourceCCfg
             };
 
-            // Navigate to chat if not already there
-            if (m.route.get() !== "/chat") {
+            // Navigate to chat if not already there (skip during test mode)
+            if (!page.testMode && m.route.get() !== "/chat") {
                 m.route.set("/chat");
             }
 

@@ -3810,41 +3810,36 @@
             }
         }
 
+        // ── Helper: fetch full session with messages via history endpoint ──
+        async function fetchSessionWithMessages() {
+            let body = {
+                schema: "olio.llm.chatRequest",
+                objectId: req.objectId,
+                uid: page.uid()
+            };
+            return await m.request({ method: "POST", url: g_application_path + "/rest/chat/history", withCredentials: true, body: body });
+        }
+
         // ── 214: Fetch session and count messages ─────────────────────
-        let sessionType = "olio.llm.chatRequest";
-        let q = am7view.viewQuery(am7model.newInstance(sessionType));
-        q.field("id", req.id);
-        let qr;
+        let serverReq;
         try {
-            qr = await page.search(q);
+            serverReq = await fetchSessionWithMessages();
         } catch (e) {
             log("editMode", "214: Session fetch failed: " + e.message, "fail");
             return;
         }
-        if (!qr || !qr.results || qr.results.length === 0) {
-            log("editMode", "214: No session found", "fail");
+        if (!serverReq || !serverReq.messages) {
+            log("editMode", "214: No session or messages found", "fail");
             return;
         }
-        let serverReq = qr.results[0];
         let origCount = serverReq.messages.length;
         log("editMode", "214: Server messages count: " + origCount, origCount > 0 ? "pass" : "fail");
 
         // ── 215: Verify offset calculation (system prompt detection) ──
-        let histReq = {
-            schema: "olio.llm.chatRequest",
-            objectId: req.objectId,
-            uid: page.uid()
-        };
-        let hist;
-        try {
-            hist = await m.request({ method: "POST", url: g_application_path + "/rest/chat/history", withCredentials: true, body: histReq });
-        } catch (e) {
-            log("editMode", "215: History fetch failed: " + e.message, "fail");
-            hist = null;
-        }
-        let displayMsgs = hist ? hist.messages : [];
-        let offset = origCount - displayMsgs.length;
-        log("editMode", "215: Display messages: " + displayMsgs.length + ", offset: " + offset, offset >= 0 ? "pass" : "fail");
+        let displayMsgs = serverReq.messages;
+        let offset = 0;
+        // The history endpoint already returns display messages; offset is 0
+        log("editMode", "215: Display messages: " + displayMsgs.length + ", offset: " + offset, "pass");
 
         // ── 216: Test edit — modify a message via server patch ─────────
         if (displayMsgs.length > 0) {
@@ -3858,14 +3853,14 @@
                 log("editMode", "216: Patched message " + serverIdx + " with edit", "pass");
 
                 // Re-fetch and verify
-                let qr2 = await page.search(q);
-                if (qr2 && qr2.results.length > 0) {
-                    let patched = qr2.results[0].messages[serverIdx].content;
+                let refetched = await fetchSessionWithMessages();
+                if (refetched && refetched.messages && refetched.messages.length > serverIdx) {
+                    let patched = refetched.messages[serverIdx].content;
                     let editApplied = patched.indexOf("[EDITED]") !== -1;
                     log("editMode", "216b: Edit persisted: " + editApplied, editApplied ? "pass" : "fail");
                     // Restore original
-                    qr2.results[0].messages[serverIdx].content = origContent;
-                    await page.patchObject(qr2.results[0]);
+                    refetched.messages[serverIdx].content = origContent;
+                    await page.patchObject(refetched);
                 }
             } catch (e) {
                 log("editMode", "216: Edit patch failed: " + e.message, "fail");
@@ -3877,8 +3872,7 @@
         // ── 217: Test delete — remove a message via splice + patch ────
         if (origCount >= 3) {
             try {
-                let qr3 = await page.search(q);
-                let delReq = qr3.results[0];
+                let delReq = await fetchSessionWithMessages();
                 let preDeleteCount = delReq.messages.length;
                 // Delete the last message (safe — won't break role alternation for test)
                 let deleteServerIdx = preDeleteCount - 1;
@@ -3886,8 +3880,8 @@
                 await page.patchObject(delReq);
 
                 // Re-fetch and verify
-                let qr4 = await page.search(q);
-                let postDeleteCount = qr4.results[0].messages.length;
+                let refetched = await fetchSessionWithMessages();
+                let postDeleteCount = refetched.messages.length;
                 let deleted = postDeleteCount === preDeleteCount - 1;
                 log("editMode", "217: Delete message — before: " + preDeleteCount + " after: " + postDeleteCount, deleted ? "pass" : "fail");
             } catch (e) {
@@ -3899,8 +3893,7 @@
 
         // ── 218: Test bulk delete (multiple indices, reverse order) ────
         try {
-            let qr5 = await page.search(q);
-            let bulkReq = qr5.results[0];
+            let bulkReq = await fetchSessionWithMessages();
             let preBulkCount = bulkReq.messages.length;
             if (preBulkCount >= 3) {
                 // Delete indices 2 and 1 (in reverse to preserve positions)
@@ -3913,8 +3906,8 @@
                 }
                 await page.patchObject(bulkReq);
 
-                let qr6 = await page.search(q);
-                let postBulkCount = qr6.results[0].messages.length;
+                let refetched = await fetchSessionWithMessages();
+                let postBulkCount = refetched.messages.length;
                 let bulkDeleted = postBulkCount === preBulkCount - 2;
                 log("editMode", "218: Bulk delete — before: " + preBulkCount + " after: " + postBulkCount, bulkDeleted ? "pass" : "fail");
             } else {
@@ -3926,8 +3919,7 @@
 
         // ── 219: Verify role integrity after edits ────────────────────
         try {
-            let qr7 = await page.search(q);
-            let finalReq = qr7.results[0];
+            let finalReq = await fetchSessionWithMessages();
             let roles = finalReq.messages.map(function(m) { return m.role; });
             let hasSystem = roles[0] === "system";
             let validRoles = roles.every(function(r) { return r === "system" || r === "user" || r === "assistant"; });

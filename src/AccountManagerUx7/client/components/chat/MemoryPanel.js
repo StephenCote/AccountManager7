@@ -12,7 +12,7 @@
 
     // ── State ────────────────────────────────────────────────────────────
 
-    let expanded = false;
+    let expanded = true;
     let memories = [];
     let memoryCount = 0;
     let loading = false;

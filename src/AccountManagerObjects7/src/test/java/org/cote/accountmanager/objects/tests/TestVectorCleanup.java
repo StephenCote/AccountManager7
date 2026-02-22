@@ -15,7 +15,6 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
@@ -145,11 +144,19 @@ public class TestVectorCleanup extends BaseTest {
 	@Test
 	public void testDeleteNonexistentMemory() {
 		try {
-			BaseRecord fakeMem = RecordFactory.newInstance(ModelNames.MODEL_MEMORY);
-			fakeMem.set(FieldNames.FIELD_ID, -1L);
+			// Create a real memory then delete it, so the second delete returns false
+			String convId = "nonexist-" + UUID.randomUUID().toString().substring(0, 8);
+			BaseRecord mem = MemoryUtil.createMemory(testUser, "Will be deleted", "temp",
+				MemoryTypeEnumType.NOTE, 1, "am7://test/nonexist", convId);
+			assertNotNull("Memory should be created", mem);
 
-			boolean deleted = MemoryUtil.deleteMemoryWithCascade(testUser, fakeMem);
-			assertFalse("Deleting nonexistent memory should return false", deleted);
+			// First delete succeeds
+			boolean deleted1 = MemoryUtil.deleteMemoryWithCascade(testUser, mem);
+			assertTrue("First delete should succeed", deleted1);
+
+			// Second delete of same record should return false
+			boolean deleted2 = MemoryUtil.deleteMemoryWithCascade(testUser, mem);
+			assertFalse("Deleting already-deleted memory should return false", deleted2);
 
 			logger.info("testDeleteNonexistentMemory passed");
 		} catch (Exception e) {
