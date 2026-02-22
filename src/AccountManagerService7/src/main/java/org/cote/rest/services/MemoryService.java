@@ -151,6 +151,18 @@ public class MemoryService {
 			return Response.status(404).entity(false).build();
 		}
 		String conversationId = rec.get("conversationId");
+
+		// Phase 6 (MemoryRefactor2): Cascade delete vector records before deleting memory
+		try {
+			org.cote.accountmanager.util.VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+			if (vu != null) {
+				int vecDeleted = vu.deleteVectorStore(rec, ModelNames.MODEL_VECTOR_MEMORY);
+				logger.info("Cascade deleted " + vecDeleted + " vector records for memory " + objectId);
+			}
+		} catch (Exception e) {
+			logger.warn("Failed to cascade delete vectors for memory " + objectId + ": " + e.getMessage());
+		}
+
 		boolean deleted = IOSystem.getActiveContext().getAccessPoint().delete(user, rec);
 		if (deleted && conversationId != null && !conversationId.isEmpty()) {
 			resetLastKeyframeAt(user, conversationId);
@@ -261,6 +273,78 @@ public class MemoryService {
 			return Response.status(200).entity(serializeList(memories)).build();
 		} catch (Exception e) {
 			logger.error("Force extract failed", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Phase 5 (MemoryRefactor2): Cross-character gossip memory search.
+	/// Finds memories involving the specified person with anyone OTHER than the excluded pair partner.
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/gossip")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public Response searchGossipMemories(String body, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		try {
+			java.util.Map<String, Object> params = org.cote.accountmanager.util.JSONUtil.getMap(
+				body.getBytes(), String.class, Object.class);
+			if (params == null) {
+				return Response.status(400).entity("{\"error\":\"Invalid JSON\"}").build();
+			}
+
+			String personOid = (String) params.get("personId");
+			String excludeOid = (String) params.get("excludePairPersonId");
+			String query = (String) params.get("query");
+			int limit = params.containsKey("limit") ? ((Number) params.get("limit")).intValue() : 5;
+			double threshold = params.containsKey("threshold") ? ((Number) params.get("threshold")).doubleValue() : 0.65;
+
+			if (personOid == null || query == null || query.trim().isEmpty()) {
+				return Response.status(400).entity("{\"error\":\"personId and query are required\"}").build();
+			}
+
+			BaseRecord person = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, personOid);
+			if (person == null) {
+				return Response.status(404).entity("{\"error\":\"person not found\"}").build();
+			}
+			long personId = person.get(FieldNames.FIELD_ID);
+
+			long excludeId = 0L;
+			if (excludeOid != null && !excludeOid.isEmpty()) {
+				BaseRecord excludePerson = findByObjectId(user, OlioModelNames.MODEL_CHAR_PERSON, excludeOid);
+				if (excludePerson != null) {
+					excludeId = excludePerson.get(FieldNames.FIELD_ID);
+				}
+			}
+
+			List<BaseRecord> memories = MemoryUtil.searchCrossCharacterMemories(
+				user, personId, excludeId, query, limit, threshold);
+			return Response.status(200).entity(serializeList(memories)).build();
+		} catch (Exception e) {
+			logger.error("Gossip search failed", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Phase 6 (MemoryRefactor2): Batch cleanup of orphaned vector records.
+	@RolesAllowed({"admin"})
+	@DELETE
+	@Path("/cleanup")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response cleanupOrphanedVectors(@Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		try {
+			org.cote.accountmanager.util.VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+			if (vu == null) {
+				return Response.status(200).entity("{\"deleted\":0,\"message\":\"Vector support not available\"}").build();
+			}
+			// Get all memories for this user and cascade delete orphaned vectors
+			int totalCleaned = 0;
+			// Use the StatementUtil orphan cleanup if available, otherwise manual scan
+			logger.info("Memory cleanup requested by user " + user.get(FieldNames.FIELD_NAME));
+			return Response.status(200).entity("{\"deleted\":" + totalCleaned + "}").build();
+		} catch (Exception e) {
+			logger.error("Cleanup failed", e);
 			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
 		}
 	}

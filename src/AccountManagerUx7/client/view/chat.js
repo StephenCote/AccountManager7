@@ -93,6 +93,15 @@
     let hideThoughts = true;
     // Phase 13f item 25: MCP debug toggle (OI-70)
     let mcpDebug = false;
+
+    // Phase 8 (MemoryRefactor2): Collapsible sidebar state
+    let sidebarCollapsed = true;       // default collapsed (48px icon strip)
+    let sidebarActivePanel = null;     // null | "conversations" | "memories" | "context"
+
+    // Phase 8.5 (MemoryRefactor2): Gossip state
+    let gossipResults = [];
+    let gossipLoading = false;
+    let gossipFlyoutOpen = false;
     let editIndex = -1;
     let editMode = false;
     let deletedIndices = new Set();
@@ -830,8 +839,8 @@
     }
 
     function getSplitRightContainerView() {
-      let cls = "splitrightcontainer";
-      if (fullMode) cls = "splitfullcontainer";
+      // Phase 8: Use flex-1 so right side fills remaining space after collapsible sidebar
+      let cls = fullMode ? "splitfullcontainer" : "flex flex-col flex-1 p-4 overflow-hidden";
       return m("div", { class: cls }, [
         getResultsView()
       ]);
@@ -841,22 +850,63 @@
 
     };
 
-    // Phase 10b: Sidebar delegates to ConversationManager component
-    // Phase 10c: ContextPanel added below ConversationManager
-    // Phase 12: Removed pre-10b fallback session list (OI-52)
-    // Phase 13f item 23: MemoryPanel added between ConversationManager and ContextPanel
+    // Phase 8 (MemoryRefactor2): Collapsible sidebar with icon strip
+    function toggleSidebarPanel(panel) {
+      if (sidebarCollapsed) {
+        sidebarCollapsed = false;
+        sidebarActivePanel = panel;
+      } else if (sidebarActivePanel === panel) {
+        sidebarCollapsed = true;
+        sidebarActivePanel = null;
+      } else {
+        sidebarActivePanel = panel;
+      }
+    }
+
+    function getSidebarIconStrip() {
+      let icons = [
+        { panel: "conversations", icon: "list",       tooltip: "Conversations" },
+        { panel: "memories",      icon: "psychology",  tooltip: "Memories" },
+        { panel: "context",       icon: "link",        tooltip: "Context" }
+      ];
+      return m("div", { class: "sidebar-icon-strip" }, [
+        icons.map(function(item) {
+          return m("button", {
+            class: "sidebar-icon-btn" + (sidebarActivePanel === item.panel && !sidebarCollapsed ? " active" : ""),
+            title: item.tooltip,
+            onclick: function() { toggleSidebarPanel(item.panel); }
+          }, m("span", { class: "material-symbols-outlined", style: "font-size: 20px;" }, item.icon));
+        }),
+        // Collapse arrow when expanded
+        !sidebarCollapsed ? m("button", {
+          class: "sidebar-icon-btn mt-auto",
+          title: "Collapse sidebar",
+          onclick: function() { sidebarCollapsed = true; sidebarActivePanel = null; }
+        }, m("span", { class: "material-symbols-outlined", style: "font-size: 20px;" }, "chevron_left")) : ""
+      ]);
+    }
+
+    function getSidebarPanelContent() {
+      if (sidebarCollapsed) return "";
+      let panel;
+      if (sidebarActivePanel === "conversations" && window.ConversationManager) {
+        panel = m(ConversationManager.SidebarView, { onNew: openChatSettings });
+      } else if (sidebarActivePanel === "memories" && window.MemoryPanel) {
+        panel = m(MemoryPanel.PanelView);
+      } else if (sidebarActivePanel === "context" && window.ContextPanel) {
+        panel = m(ContextPanel.PanelView);
+      } else {
+        panel = m("div", { class: "px-3 py-2 text-gray-400 text-xs" }, "Select a panel");
+      }
+      return m("div", { class: "flex flex-col flex-1 overflow-hidden" }, panel);
+    }
+
     function getSplitLeftContainerView() {
-      let children = [];
-      if (window.ConversationManager) {
-        children.push(m(ConversationManager.SidebarView, { onNew: openChatSettings }));
-      }
-      if (window.MemoryPanel) {
-        children.push(m(MemoryPanel.PanelView));
-      }
-      if (window.ContextPanel) {
-        children.push(m(ContextPanel.PanelView));
-      }
-      return m("div", { class: "splitleftcontainer flex flex-col" }, children);
+      let cls = sidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded";
+      return m("div", { class: cls + " flex overflow-hidden border-r border-gray-200 dark:border-gray-700" }, [
+        getSidebarIconStrip(),
+        getSidebarPanelContent()
+      ]);
     }
 
 
@@ -1226,7 +1276,7 @@
           aidx++;
         }
         return m("div", { class: "relative receive-chat flex " + align },
-          [ectl, m("div", { class: ecls + "px-3 mb-1 " + txt + " py-1.5 text-sm max-w-[85%] border rounded-md font-light" },
+          [ectl, m("div", { class: ecls + "px-3 mb-1 " + txt + " py-1.5 text-sm max-w-[90%] border rounded-md" },
             (audio ? aud : m("p", cnt))
             //,aud
           )]
@@ -1247,7 +1297,7 @@
       let setLbl = "";
       if (setting) {
         setLbl = m("div", { class: "relative receive-chat flex justify-start" },
-          m("div", { class: "px-5 mb-2 bg-gray-200 dark:bg-gray-900 dark:text-white text-black py-2 text-sm w-full border rounded-md font-light truncate", title: setting },
+          m("div", { class: "px-5 mb-2 bg-gray-200 dark:bg-gray-900 dark:text-white text-black py-2 text-sm w-full border rounded-md truncate", title: setting },
             "Setting: " + setting
           )
         );
@@ -1385,6 +1435,87 @@
       ]);
     }
 
+    // Phase 8.5 (MemoryRefactor2): Gossip — cross-character memory recall
+    async function loadGossipResults() {
+      if (!chatCfg.chat || !chatCfg.chat.gossipEnabled) return;
+      let sys = chatCfg.system;
+      let usr = chatCfg.user;
+      if (!sys || !usr || !sys.id || !usr.id) return;
+
+      gossipLoading = true;
+      m.redraw();
+      try {
+        let body = {
+          personId: sys.id,
+          excludePairPersonId: usr.id,
+          query: "",
+          limit: chatCfg.chat.gossipMaxSuggestions || 5,
+          threshold: chatCfg.chat.gossipThreshold || 0.65
+        };
+        let result = await m.request({
+          method: 'POST',
+          url: g_application_path + "/rest/memory/gossip",
+          withCredentials: true,
+          body: body
+        });
+        gossipResults = Array.isArray(result) ? result : [];
+      } catch (e) {
+        console.warn("[Chat] Gossip load failed:", e);
+        gossipResults = [];
+      }
+      gossipLoading = false;
+      m.redraw();
+    }
+
+    function getGossipButton() {
+      if (!chatCfg.chat || !chatCfg.chat.gossipEnabled) return "";
+      let hasResults = gossipResults.length > 0;
+      let cls = "inline-flex items-center justify-center w-10 h-10 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors relative";
+      if (hasResults) {
+        cls += " text-purple-500 dark:text-purple-400 gossip-pulse";
+      } else {
+        cls += " text-gray-500 dark:text-gray-400 gossip-dim";
+      }
+      return m("div", { class: "relative" }, [
+        m("button", {
+          class: cls,
+          title: "Gossip — cross-character memories" + (hasResults ? " (" + gossipResults.length + " available)" : ""),
+          onclick: function() {
+            if (hasResults) {
+              gossipFlyoutOpen = !gossipFlyoutOpen;
+            } else {
+              loadGossipResults();
+            }
+          }
+        }, m("span", { class: "material-symbols-outlined" }, "psychology")),
+        gossipFlyoutOpen && hasResults ? getGossipFlyout() : ""
+      ]);
+    }
+
+    function getGossipFlyout() {
+      return m("div", { class: "gossip-flyout" }, [
+        m("div", { class: "px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600" }, "Cross-Character Memories"),
+        gossipResults.map(function(mem) {
+          return m("div", {
+            class: "gossip-flyout-item",
+            onclick: function() {
+              let token = "<mcp:context uri=\"am7://memory/" + (mem.objectId || "gossip") + "\" type=\"urn:am7:memory:gossip\">\n"
+                + (mem.summary || mem.content || "") + "\n</mcp:context>";
+              let inputEl = document.querySelector("[name='chatmessage']");
+              if (inputEl) {
+                inputEl.value = (inputEl.value ? inputEl.value + "\n" : "") + token;
+                inputEl.focus();
+              }
+              gossipFlyoutOpen = false;
+            }
+          }, [
+            m("span", { class: "material-symbols-outlined flex-shrink-0", style: "font-size: 14px;" }, "psychology"),
+            m("span", { class: "truncate" }, mem.summary || (mem.content ? mem.content.substring(0, 60) + "..." : "—"))
+          ]);
+        })
+      ]);
+    }
+
     function getChatBottomMenuView() {
 
       let pendBar = m("div", { class: "flex-1 px-2" },
@@ -1445,7 +1576,9 @@
         chatIconBtn("query_stats", chatInto, false, "Analyze"),
         chatIconBtn("landscape", function() { showSdConfig = true; }, showSdConfig, "Generate Scene"),
         chatIconBtn("visibility" + (hideThoughts ? "" : "_off"), toggleThoughts, !hideThoughts, "Thoughts"),
-        chatIconBtn("bug_report", function() { mcpDebug = !mcpDebug; }, mcpDebug, "MCP Debug")
+        chatIconBtn("bug_report", function() { mcpDebug = !mcpDebug; }, mcpDebug, "MCP Debug"),
+        // Phase 8.5 (MemoryRefactor2): Gossip button — cross-character memory recall
+        getGossipButton()
       ];
 
       // Input area — recording or text input or pending bar

@@ -311,6 +311,82 @@ public class MemoryUtil {
 		return 0L;
 	}
 
+	/// Get all distinct person IDs that share memories with the given person.
+	/// Returns IDs of all partners (as person1 or person2) excluding the given personId.
+	public static List<Long> getMemoryPartners(BaseRecord user, long personId) {
+		Set<Long> partners = new HashSet<>();
+		try {
+			BaseRecord group = getMemoryGroup(user);
+			if (group == null) return new ArrayList<>(partners);
+			long groupId = group.get(FieldNames.FIELD_ID);
+
+			// Build a person stub for the query (matches $flex foreign ref pattern)
+			BaseRecord personStub = org.cote.accountmanager.record.RecordFactory.newInstance("olio.charPerson");
+			personStub.set(FieldNames.FIELD_ID, personId);
+
+			// Search where person is person1
+			Query q1 = QueryUtil.createQuery(ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, groupId);
+			q1.field("person1", personStub);
+			q1.planMost(true);
+			q1.setRequestRange(0L, 200);
+			BaseRecord[] recs1 = IOSystem.getActiveContext().getSearch().findRecords(q1);
+			if (recs1 != null) {
+				for (BaseRecord r : recs1) {
+					long pid2 = getPersonId(r, "person2");
+					if (pid2 > 0 && pid2 != personId) partners.add(pid2);
+				}
+			}
+
+			// Search where person is person2
+			Query q2 = QueryUtil.createQuery(ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, groupId);
+			q2.field("person2", personStub);
+			q2.planMost(true);
+			q2.setRequestRange(0L, 200);
+			BaseRecord[] recs2 = IOSystem.getActiveContext().getSearch().findRecords(q2);
+			if (recs2 != null) {
+				for (BaseRecord r : recs2) {
+					long pid1 = getPersonId(r, "person1");
+					if (pid1 > 0 && pid1 != personId) partners.add(pid1);
+				}
+			}
+		} catch (Exception e) {
+			logger.error("Error getting memory partners: " + e.getMessage());
+		}
+		return new ArrayList<>(partners);
+	}
+
+	/// Search memories across all partners except the excluded one.
+	/// Used for gossip/cross-character recall — finds memories involving personId
+	/// with anyone OTHER than excludePartnerId, filtered by semantic relevance.
+	public static List<BaseRecord> searchCrossCharacterMemories(
+			BaseRecord user, long personId, long excludePartnerId,
+			String query, int limit, double threshold) {
+
+		List<BaseRecord> results = new ArrayList<>();
+		if (query == null || query.isEmpty()) return results;
+
+		try {
+			// Get all vector-similar memories
+			List<BaseRecord> vectorResults = searchMemories(user, query, limit * 5, threshold);
+			if (vectorResults.isEmpty()) return results;
+
+			// Filter: must involve personId but NOT the excluded partner
+			for (BaseRecord mem : vectorResults) {
+				long pid1 = getPersonId(mem, "person1");
+				long pid2 = getPersonId(mem, "person2");
+				boolean involvesTarget = (pid1 == personId || pid2 == personId);
+				boolean involvesExcluded = (pid1 == excludePartnerId || pid2 == excludePartnerId);
+				if (involvesTarget && !involvesExcluded) {
+					results.add(mem);
+					if (results.size() >= limit) break;
+				}
+			}
+		} catch (Exception e) {
+			logger.error("Error in searchCrossCharacterMemories: " + e.getMessage());
+		}
+		return results;
+	}
+
 	public static String formatMemoriesAsContext(List<BaseRecord> memories) {
 		if (memories == null || memories.isEmpty()) {
 			return "";
@@ -586,6 +662,27 @@ public class MemoryUtil {
 		java.util.Set<String> union = new java.util.HashSet<>(a);
 		union.addAll(b);
 		return (double) intersection.size() / union.size();
+	}
+
+	/// Phase 6 (MemoryRefactor2): Cascade delete vector records for a memory.
+	/// Returns the number of vector records deleted.
+	public static int cascadeDeleteVectors(BaseRecord memoryRecord) {
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		if (vu == null) return 0;
+		try {
+			return vu.deleteVectorStore(memoryRecord, ModelNames.MODEL_VECTOR_MEMORY);
+		} catch (Exception e) {
+			logger.warn("cascadeDeleteVectors failed: " + e.getMessage());
+			return 0;
+		}
+	}
+
+	/// Phase 6: Delete a memory and its associated vector records.
+	/// Returns true if the memory was deleted.
+	public static boolean deleteMemoryWithCascade(BaseRecord user, BaseRecord memoryRecord) {
+		if (user == null || memoryRecord == null) return false;
+		cascadeDeleteVectors(memoryRecord);
+		return IOSystem.getActiveContext().getAccessPoint().delete(user, memoryRecord);
 	}
 
 }

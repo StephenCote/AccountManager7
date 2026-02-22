@@ -132,33 +132,47 @@
         );
     }
 
-    // Phase 13g item 29: Display chatTitle/chatIcon attributes when present (OI-80)
+    // Phase 8 (MemoryRefactor2): Compact session item with auto-title/icon display
     function sessionItemView(session, isSelected) {
-        let cls = "flyout-button flex items-center w-full group";
-        if (isSelected) cls += " active";
+        let cls = "session-item-compact";
+        if (isSelected) cls += " bg-gray-200 dark:bg-gray-600";
 
-        let title = session.chatTitle || session.name || "(unnamed)";
+        let autoTitle = session.chatTitle || null;
+        let name = session.name || "(unnamed)";
         let icon = session.chatIcon || null;
 
-        return m("button", {
+        // Phase 8.6: Auto-title is primary, name is secondary
+        let titleContent;
+        if (autoTitle) {
+            titleContent = m("div", { class: "flex flex-col flex-1 min-w-0" }, [
+                m("span", { class: "session-title-primary" }, autoTitle),
+                m("span", { class: "session-title-secondary" }, name)
+            ]);
+        } else {
+            titleContent = m("div", { class: "flex flex-col flex-1 min-w-0" }, [
+                m("span", { class: "session-title-primary" }, name)
+            ]);
+        }
+
+        return m("div", {
             key: session.objectId,
             class: cls,
             onclick: function() { selectSession(session); }
         }, [
             m("span", {
-                class: "material-symbols-outlined material-icons-24 flex-shrink-0 mr-1 opacity-30 group-hover:opacity-100 transition-opacity",
+                class: "material-symbols-outlined flex-shrink-0 opacity-30 group-hover:opacity-100 transition-opacity",
                 title: "Delete session",
-                style: "font-size: 18px;",
+                style: "font-size: 16px;",
                 onclick: function(e) {
                     e.stopPropagation();
                     deleteSession(session);
                 }
             }, "delete_outline"),
             icon ? m("span", {
-                class: "material-symbols-outlined flex-shrink-0 mr-1",
-                style: "font-size: 16px;"
+                class: "material-symbols-outlined flex-shrink-0",
+                style: "font-size: 16px; color: #9ca3af;"
             }, icon) : "",
-            m("span", { class: "flex-1 truncate text-left" }, title)
+            titleContent
         ]);
     }
 
@@ -199,6 +213,7 @@
         return m("div", { class: "text-xs text-gray-400" }, label + ": " + value);
     }
 
+    // Phase 8.2 (MemoryRefactor2): Combined "Session Info" section (replaces separate Details)
     function metadataView() {
         if (!metadataExpanded) return "";
         let meta = getSelectedMetadata();
@@ -207,31 +222,62 @@
         }
 
         let rows = [];
-        rows.push(metaRow("Name", meta.name || "—"));
+
+        // Title (editable)
+        rows.push(m("div", { class: "text-xs text-gray-400 flex items-center gap-1" }, [
+            m("span", "Title: "),
+            m("input", {
+                type: "text",
+                class: "flex-1 text-xs bg-transparent border-b border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 px-1",
+                value: meta.chatTitle || "",
+                placeholder: "(auto-generated)",
+                onchange: function(e) {
+                    meta.chatTitle = e.target.value;
+                    // Persist title change
+                    if (meta.objectId) {
+                        ConversationManager.updateSessionTitle(meta.objectId, e.target.value);
+                    }
+                }
+            })
+        ]));
+
+        // Icon (editable)
+        rows.push(m("div", { class: "text-xs text-gray-400 flex items-center gap-1" }, [
+            m("span", "Icon: "),
+            meta.chatIcon ? m("span", { class: "material-symbols-outlined", style: "font-size: 14px;" }, meta.chatIcon) : "",
+            m("input", {
+                type: "text",
+                class: "flex-1 text-xs bg-transparent border-b border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 px-1",
+                value: meta.chatIcon || "",
+                placeholder: "(material icon name)",
+                onchange: function(e) {
+                    meta.chatIcon = e.target.value;
+                    if (meta.objectId) {
+                        ConversationManager.updateSessionIcon(meta.objectId, e.target.value);
+                    }
+                }
+            })
+        ]));
 
         if (meta.chatConfig) {
-            // Resolve full chatConfig from cached list (foreign ref on chatRequest is a stub)
             let cc = meta.chatConfig;
             if (chatConfigs && cc.objectId) {
                 let full = chatConfigs.find(function(c) { return c.objectId === cc.objectId; });
                 if (full) cc = full;
             }
-            rows.push(objectLinkRow("Config", cc, "olio.llm.chatConfig"));
             if (cc.model) rows.push(metaRow("Model", cc.model));
-            if (cc.messageTrim != null) rows.push(metaRow("Trim", cc.messageTrim));
-            rows.push(metaRow("Stream", cc.stream ? "yes" : "no"));
-            rows.push(metaRow("Prune", cc.prune !== false ? "yes" : "no"));
-            if (cc.autoTunePrompts) rows.push(metaRow("Auto-Tune Prompts", "yes"));
-            if (cc.autoTuneChatOptions) rows.push(metaRow("Auto-Tune Options", "yes"));
-            if (cc.systemCharacter) {
-                rows.push(objectLinkRow("System", cc.systemCharacter, "olio.charPerson"));
+            if (cc.systemCharacter && cc.userCharacter) {
+                let sysName = cc.systemCharacter.name || "?";
+                let usrName = cc.userCharacter.name || "?";
+                rows.push(metaRow("Characters", sysName + " \u2194 " + usrName));
             }
-            if (cc.userCharacter) {
-                rows.push(objectLinkRow("User Char", cc.userCharacter, "olio.charPerson"));
-            }
+            rows.push(objectLinkRow("Config", cc, "olio.llm.chatConfig"));
         }
         if (meta.promptConfig) {
             rows.push(objectLinkRow("Prompt", meta.promptConfig, "olio.llm.promptConfig"));
+        }
+        if (meta.contextType) {
+            rows.push(metaRow("Context", meta.contextType));
         }
 
         return m("div", { class: "px-3 py-2 border-t border-gray-600 space-y-1" }, rows);
@@ -382,11 +428,11 @@
                         m("div", { class: "px-2 py-1" }, [
                             m("button", {
                                 class: "flyout-button text-xs",
-                                title: "Toggle details",
+                                title: "Toggle session info",
                                 onclick: function() { metadataExpanded = !metadataExpanded; }
                             }, [
                                 m("span", { class: "material-symbols-outlined material-icons-24" }, "info"),
-                                " Details"
+                                " Session Info"
                             ])
                         ]),
                         metadataView()

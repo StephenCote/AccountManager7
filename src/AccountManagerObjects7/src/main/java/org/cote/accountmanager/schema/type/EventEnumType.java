@@ -67,7 +67,8 @@ public enum EventEnumType {
     MARRIAGE,
     DIVORCE,
     EMIGRATE,
-    NATURE
+    NATURE,
+    INTERACT
     ;
 
     public String value() {

@@ -2639,5 +2639,88 @@
         @apply dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700;
       }
 
+      /* ==========================================
+         Phase 8: Collapsible Sidebar
+         ========================================== */
+
+      .sidebar-collapsed {
+        width: 48px;
+        min-width: 48px;
+        max-width: 48px;
+        transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease;
+      }
+      .sidebar-expanded {
+        width: 300px;
+        min-width: 300px;
+        max-width: 300px;
+        transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease;
+      }
+      .sidebar-icon-strip {
+        @apply flex flex-col items-center py-2 gap-1;
+        width: 48px;
+      }
+      .sidebar-icon-btn {
+        @apply flex items-center justify-center w-10 h-10 rounded cursor-pointer;
+        @apply text-gray-400 hover:text-gray-700 hover:bg-gray-100;
+        @apply dark:text-gray-500 dark:hover:text-gray-200 dark:hover:bg-gray-700;
+        background: none;
+        border: none;
+        transition: color 0.15s, background-color 0.15s;
+      }
+      .sidebar-icon-btn.active {
+        @apply text-blue-600 bg-blue-50;
+        @apply dark:text-blue-400 dark:bg-blue-500/20;
+      }
+
+      /* Phase 8.3: Compact session list density */
+      .session-item-compact {
+        @apply flex items-center w-full cursor-pointer;
+        padding: 4px 8px;
+        font-size: 0.8125rem;
+        line-height: 1.25rem;
+        gap: 4px;
+      }
+      .session-item-compact .material-symbols-outlined {
+        font-size: 18px;
+      }
+
+      /* Phase 8.5: Gossip button pulse animation */
+      .gossip-pulse {
+        animation: gossipPulse 2s ease-in-out infinite;
+      }
+      @keyframes gossipPulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; box-shadow: 0 0 8px rgba(168, 85, 247, 0.5); }
+      }
+      .gossip-dim {
+        @apply opacity-40;
+      }
+
+      /* Phase 8.5: Gossip flyout */
+      .gossip-flyout {
+        @apply absolute bottom-full left-0 mb-1 w-72 max-h-60 overflow-y-auto rounded border shadow-lg z-50;
+        @apply bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-600;
+      }
+      .gossip-flyout-item {
+        @apply flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer;
+        @apply hover:bg-gray-100 dark:hover:bg-gray-700;
+        @apply text-gray-700 dark:text-gray-200;
+      }
+
+      /* Phase 8.6: Auto-title session display */
+      .session-title-primary {
+        @apply text-sm font-semibold truncate;
+        @apply text-gray-800 dark:text-gray-100;
+      }
+      .session-title-secondary {
+        @apply text-[11px] truncate;
+        @apply text-gray-400 dark:text-gray-500;
+      }
+      .session-title-generating {
+        @apply text-[11px] italic;
+        @apply text-purple-400 dark:text-purple-500;
+        animation: gossipPulse 2s ease-in-out infinite;
+      }
+
  }
 

@@ -300,6 +300,24 @@
 			"baseModel": "olio.llm.promptTemplate",
 			"foreign": true,
 			"description": "Optional structured prompt template. When set, Chat uses PromptTemplateComposer instead of flat promptConfig fields for prompt assembly."
+		},
+		{
+			"name": "gossipEnabled",
+			"type": "boolean",
+			"default": false,
+			"description": "Enable cross-character memory recall and gossip suggestions."
+		},
+		{
+			"name": "gossipThreshold",
+			"type": "double",
+			"default": 0.65,
+			"description": "Minimum relevance score for gossip memory suggestions."
+		},
+		{
+			"name": "gossipMaxSuggestions",
+			"type": "int",
+			"default": 5,
+			"description": "Maximum number of gossip memory suggestions to return."
 		}
 
 	]

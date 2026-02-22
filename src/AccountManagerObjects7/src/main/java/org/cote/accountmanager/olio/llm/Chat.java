@@ -406,6 +406,13 @@ public class Chat {
 		return oresp;
 	}
 	
+	/// Phase 7 (MemoryRefactor2): Overload accepting chatRequestObjectId to ensure
+	/// it's available in buffer mode for title/icon persistence.
+	public void continueChat(OpenAIRequest req, String message, String chatReqOid) {
+		if (chatReqOid != null) this.chatRequestObjectId = chatReqOid;
+		continueChat(req, message);
+	}
+
 	public void continueChat(OpenAIRequest req, String message) {
 		if (deferRemote) {
 			checkRemote(req, message, true);
@@ -432,6 +439,11 @@ public class Chat {
 		/// Rebuild the system prompt (and intros) from current state each turn.
 		/// This ensures dynamic tokens (memory, scene, episode, etc.) are always fresh.
 		refreshSystemPrompt(req);
+
+		/// Phase 4 (MemoryRefactor2): Create chat event on first message
+		if (chatConfig != null) {
+			ChatEventUtil.getOrCreateChatEvent(user, chatConfig);
+		}
 
 		if (message != null && message.length() > 0) {
 			/// Phase 2 (chatRefactor2): Enrich image tokens with MCP context (description + tags)
@@ -469,7 +481,9 @@ public class Chat {
 			flushPendingKeyframe(req);
 
 			/// Phase 13g: Auto-generate title and icon after first real exchange (buffer mode)
-			boolean autoTitle = chatConfig != null && (boolean) chatConfig.get("autoTitle");
+			/// Phase 7 (MemoryRefactor2): Read autoTitle defensively, defaulting to true
+			boolean autoTitle = true;
+			try { autoTitle = chatConfig != null && (boolean) chatConfig.get("autoTitle"); } catch (Exception e) { /* default true */ }
 			int offset = getMessageOffset(req);
 			List<OpenAIMessage> allMsgs = req.getMessages();
 			int userMsgCount = 0;
@@ -777,19 +791,20 @@ public class Chat {
 
 	/// Phase 13g: Auto-generate a concise chat title and Material Symbols icon from the first exchange.
 	/// Returns a String[] with [0]=title, [1]=icon. Either may be null on failure.
+	/// Phase 7 (MemoryRefactor2): Added retry with backoff and fallback title from first user message.
 	public String[] generateChatTitleAndIcon(OpenAIRequest req) {
 		int offset = getMessageOffset(req);
 		List<OpenAIMessage> msgs = req.getMessages();
 		logger.info("generateTitleAndIcon: offset=" + offset + " totalMsgs=" + msgs.size());
 		if (msgs.size() < offset + 2) {
 			logger.info("generateTitleAndIcon: not enough messages (need " + (offset + 2) + ", have " + msgs.size() + ")");
-			return new String[] { null, null };
+			return new String[] { deriveFallbackTitle(req), "chat" };
 		}
 
 		String userMsg = msgs.get(offset).getContent();
 		String assistMsg = msgs.get(offset + 1).getContent();
 		logger.info("generateTitleAndIcon: userMsg=" + (userMsg != null ? userMsg.substring(0, Math.min(50, userMsg.length())) : "null") + " assistMsg=" + (assistMsg != null ? "present" : "null"));
-		if (userMsg == null || assistMsg == null) return new String[] { null, null };
+		if (userMsg == null || assistMsg == null) return new String[] { deriveFallbackTitle(req), "chat" };
 
 		if (userMsg.length() > 200) userMsg = userMsg.substring(0, 200) + "...";
 		if (assistMsg.length() > 200) assistMsg = assistMsg.substring(0, 200) + "...";
@@ -824,40 +839,70 @@ public class Chat {
 		}
 		titleReq.getMessages().add(userPrompt);
 
-		String title = null;
-		String icon = null;
-		try {
-			OpenAIResponse resp = chat(titleReq);
-			logger.info("generateTitleAndIcon: chat() returned " + (resp != null ? "response" : "null"));
-			if (resp != null) {
-				String content = null;
-				BaseRecord msg = resp.get("message");
-				if (msg != null) content = msg.get("content");
-				if (content == null) {
-					List<BaseRecord> choices = resp.get("choices");
-					if (choices != null && !choices.isEmpty()) {
-						BaseRecord cmsg = choices.get(0).get("message");
-						if (cmsg != null) content = cmsg.get("content");
+		/// Phase 7: Retry with backoff (2 attempts)
+		for (int attempt = 0; attempt < 2; attempt++) {
+			String title = null;
+			String icon = null;
+			try {
+				OpenAIResponse resp = chat(titleReq);
+				logger.info("generateTitleAndIcon: attempt " + (attempt + 1) + " chat() returned " + (resp != null ? "response" : "null"));
+				if (resp != null) {
+					String content = null;
+					BaseRecord msg = resp.get("message");
+					if (msg != null) content = msg.get("content");
+					if (content == null) {
+						List<BaseRecord> choices = resp.get("choices");
+						if (choices != null && !choices.isEmpty()) {
+							BaseRecord cmsg = choices.get(0).get("message");
+							if (cmsg != null) content = cmsg.get("content");
+						}
+					}
+					logger.info("generateTitleAndIcon: LLM content=" + (content != null ? content.substring(0, Math.min(100, content.length())) : "null"));
+					if (content != null) {
+						content = content.trim();
+						String[] lines = content.split("\\r?\\n");
+						if (lines.length >= 1) {
+							title = lines[0].trim().replaceAll("^\"|\"$", "");
+							if (title.length() > 60) title = title.substring(0, 60);
+						}
+						if (lines.length >= 2) {
+							icon = lines[1].trim().toLowerCase().replaceAll("[^a-z0-9_]", "");
+							if (icon.isEmpty()) icon = null;
+						}
 					}
 				}
-				logger.info("generateTitleAndIcon: LLM content=" + (content != null ? content.substring(0, Math.min(100, content.length())) : "null"));
-				if (content != null) {
-					content = content.trim();
-					String[] lines = content.split("\\r?\\n");
-					if (lines.length >= 1) {
-						title = lines[0].trim().replaceAll("^\"|\"$", "");
-						if (title.length() > 60) title = title.substring(0, 60);
-					}
-					if (lines.length >= 2) {
-						icon = lines[1].trim().toLowerCase().replaceAll("[^a-z0-9_]", "");
-						if (icon.isEmpty()) icon = null;
-					}
+				if (title != null) return new String[] { title, icon };
+			} catch (Exception e) {
+				logger.warn("Title/icon generation attempt " + (attempt + 1) + " failed: " + e.getMessage());
+			}
+			if (attempt == 0) {
+				try { Thread.sleep(1000); } catch (InterruptedException ie) { break; }
+			}
+		}
+		/// Phase 7: Fallback title from first user message when LLM fails
+		return new String[] { deriveFallbackTitle(req), "chat" };
+	}
+
+	/// Phase 7 (MemoryRefactor2): Derive a fallback title from the first user message.
+	/// Truncates at word boundary to ~40 chars.
+	public String deriveFallbackTitle(OpenAIRequest req) {
+		try {
+			int offset = getMessageOffset(req);
+			List<OpenAIMessage> msgs = req.getMessages();
+			if (msgs.size() > offset) {
+				String firstMsg = msgs.get(offset).getContent();
+				if (firstMsg != null && !firstMsg.isEmpty()) {
+					firstMsg = firstMsg.trim();
+					if (firstMsg.length() <= 40) return firstMsg;
+					int lastSpace = firstMsg.lastIndexOf(' ', 40);
+					if (lastSpace > 10) return firstMsg.substring(0, lastSpace);
+					return firstMsg.substring(0, 40);
 				}
 			}
 		} catch (Exception e) {
-			logger.warn("Title/icon generation failed: " + e.getMessage());
+			// ignore
 		}
-		return new String[] { title, icon };
+		return null;
 	}
 
 	/// Phase 13: Backward-compatible wrapper — returns only the title.
@@ -2201,6 +2246,8 @@ public class Chat {
 				if (extractedMemories != null && !extractedMemories.isEmpty()) {
 					InteractionExtractor.linkMemoriesToInteraction(extractedMemories, interaction);
 				}
+				// Phase 4: Add interaction to chat event
+				ChatEventUtil.addInteractionToEvent(user, chatConfig, interaction);
 				// Emit chirp for backward-compatible listener notification
 				if (listener != null) {
 					String chirp = InteractionExtractor.buildInteractionChirp(interaction);
