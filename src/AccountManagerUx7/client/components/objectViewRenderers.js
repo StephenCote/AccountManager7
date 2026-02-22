@@ -226,6 +226,74 @@
         );
     }
 
+    /// Memory renderer — displays tool.memory records with type, importance, summary, and content.
+    /// Fetches the full object on first render since list queries only include query fields.
+    function renderMemoryField(inst, fieldName, attrs) {
+        let object = inst.entity;
+        let objectId = object.objectId;
+        let ctx = page.context();
+
+        /// Fetch full object if content is missing (list view only provides query fields)
+        if (!ctx.contextObjects[objectId]) {
+            let modelType = "tool.memory";
+            let q = am7view.viewQuery(am7model.newInstance(modelType));
+            q.field("objectId", objectId);
+
+            page.search(q).then(function(qr) {
+                ctx.contextObjects[objectId] = (qr && qr.results.length ? qr.results[0] : null);
+                m.redraw();
+            });
+
+            return m("div", { class: "carousel-article-outer" },
+                m("div", { class: "carousel-article carousel-article-margin p-4" },
+                    "Loading memory..."
+                )
+            );
+        }
+
+        let dat = ctx.contextObjects[objectId] || object;
+        let memType = dat.memoryType || "NOTE";
+        let importance = dat.importance != null ? dat.importance : 5;
+        let summary = dat.summary || "";
+        let content = dat.content || "";
+        let person1Name = (dat.person1 && dat.person1.name) ? dat.person1.name : "";
+        let person2Name = (dat.person2 && dat.person2.name) ? dat.person2.name : "";
+
+        let typeColors = {
+            "RELATIONSHIP": "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+            "FACT": "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+            "DECISION": "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+            "DISCOVERY": "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+            "EMOTION": "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200",
+            "NOTE": "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
+        };
+        let badgeClass = typeColors[memType] || typeColors["NOTE"];
+
+        let header = [];
+        header.push(m("span", { class: "inline-block px-2 py-0.5 rounded text-xs font-medium " + badgeClass }, memType));
+        header.push(m("span", { class: "text-xs text-gray-500 dark:text-gray-400 ml-2" }, "Importance: " + importance + "/10"));
+        if (person1Name || person2Name) {
+            let people = [person1Name, person2Name].filter(function(n) { return n; }).join(" & ");
+            header.push(m("span", { class: "text-xs text-gray-500 dark:text-gray-400 ml-2" }, people));
+        }
+
+        let sections = [];
+        sections.push(m("div", { class: "flex items-center gap-1 mb-2 flex-wrap" }, header));
+        if (summary) {
+            sections.push(m("div", { class: "text-sm font-medium text-gray-700 dark:text-gray-200 mb-2" }, summary));
+        }
+        if (content) {
+            sections.push(m("div", {
+                class: "text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto",
+                style: "line-height: 1.5;"
+            }, content));
+        }
+
+        return m("div", { class: "carousel-article-outer" },
+            m("div", { class: "carousel-article carousel-article-margin p-4" }, sections)
+        );
+    }
+
     /// Helper to build media path
     function buildMediaPath(object) {
         return g_application_path + "/media/" +
@@ -248,6 +316,7 @@
     am7view.customRenderers.pdf = renderPDFField;
     am7view.customRenderers.markdown = renderMarkdownField;
     am7view.customRenderers.messageContent = renderMessageContentField;
+    am7view.customRenderers.memory = renderMemoryField;
 
     /// Export for external use
     window.objectViewRenderers = {
@@ -259,6 +328,7 @@
         pdf: renderPDFField,
         markdown: renderMarkdownField,
         messageContent: renderMessageContentField,
+        memory: renderMemoryField,
         buildMediaPath: buildMediaPath
     };
 

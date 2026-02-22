@@ -90,6 +90,8 @@
                     return "form";
                 case 'message':
                     return "messageContent";
+                case 'tool.memory':
+                    return "memory";
             }
         }
 

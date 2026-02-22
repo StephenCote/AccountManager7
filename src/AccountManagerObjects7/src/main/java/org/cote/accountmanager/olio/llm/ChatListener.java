@@ -307,13 +307,14 @@ public class ChatListener implements IChatListener {
 			return;
 		}
 		Chat chat = asyncChats.get(oid);
-		chat.handleResponse(request, response, false);
 
-		/// Wrap all post-processing in try-finally to guarantee chatComplete always fires.
-		/// If any step (policy eval, saveSession, keyframe, title gen) throws an exception,
-		/// the client's pending state would never clear without the finally block.
+		/// Wrap ALL post-processing in try-finally to guarantee chatComplete always fires.
+		/// handleResponse is inside the try block so that even if response parsing fails,
+		/// the client's pending state is still cleared via the finally block.
 		try {
-			if(asyncRequestStop.containsKey(oid) && asyncRequestStop.containsKey(oid) == true) {
+			chat.handleResponse(request, response, false);
+
+			if(asyncRequestStop.containsKey(oid) && asyncRequestStop.get(oid) == true) {
 				List<BaseRecord> msgs = request.get("messages");
 				if(msgs != null && msgs.size() > 0) {
 					BaseRecord lastMsg = msgs.get(msgs.size() - 1);
@@ -348,7 +349,10 @@ public class ChatListener implements IChatListener {
 			/// This prevents the keyframe LLM call from competing with the main response.
 			chat.flushPendingKeyframe(request);
 
-			/// Phase 13g: Auto-generate title and icon after first real user+assistant exchange
+			/// Phase 13g: Auto-generate title and icon after first real user+assistant exchange.
+			/// Strategy: set a SYNCHRONOUS fallback title immediately (from first user message),
+			/// then launch an async LLM call to generate a better title that overrides the fallback.
+			/// This guarantees a title is always visible even if the LLM call fails or times out.
 			boolean autoTitle = false;
 			BaseRecord titleChatCfg = chat.getChatConfig();
 			if (titleChatCfg != null) {
@@ -361,7 +365,7 @@ public class ChatListener implements IChatListener {
 				String role = allMsgs.get(i).get("role");
 				if ("user".equals(role)) userMsgCount++;
 			}
-			logger.info("Auto-title check (stream): autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount + " oid=" + oid);
+			logger.info("Auto-title check (stream): autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount + " offset=" + offset + " totalMsgs=" + allMsgs.size() + " oid=" + oid);
 			if (autoTitle && userMsgCount >= 1) {
 				/// Use chatRequest pre-fetched in sendMessageToServer (main thread) —
 				/// AccessPoint.find fails in ForkJoinPool async threads (AUDIT INVALID)
@@ -382,27 +386,48 @@ public class ChatListener implements IChatListener {
 				final BaseRecord titleChatReqRec = chatReqRec;
 				if (titleChatReqRec != null) {
 					final String chatReqOid = titleChatReqRec.get(FieldNames.FIELD_OBJECT_ID);
+
+					/// Step 1: Set a SYNCHRONOUS fallback title immediately.
+					/// This runs on the current thread (before chatComplete fires),
+					/// guaranteeing the UX always gets a title even if the LLM call fails.
+					String fallbackTitle = chat.deriveFallbackTitle(request);
+					String fallbackIcon = "chat";
+					logger.info("Setting synchronous fallback title: '" + fallbackTitle + "' icon='" + fallbackIcon + "' chatReqOid=" + chatReqOid);
+					if (fallbackTitle != null) {
+						try {
+							chat.setChatTitle(titleChatReqRec, fallbackTitle);
+						} catch (Exception e) {
+							logger.warn("Failed to persist fallback title: " + e.getMessage());
+						}
+						handlers.forEach(h -> h.onChatTitle(user, request, chatReqOid, fallbackTitle));
+					}
+					try {
+						chat.setChatIcon(titleChatReqRec, fallbackIcon);
+					} catch (Exception e) {
+						logger.warn("Failed to persist fallback icon: " + e.getMessage());
+					}
+					handlers.forEach(h -> h.onChatIcon(user, request, chatReqOid, fallbackIcon));
+
+					/// Step 2: Launch async LLM call to generate a better title.
+					/// If it succeeds, it overrides the fallback. If it fails, the fallback remains.
 					CompletableFuture.runAsync(() -> {
 						try {
-							logger.info("Generating title/icon for: " + oid + " chatReqOid=" + chatReqOid);
+							logger.info("Generating LLM title/icon for: " + oid + " chatReqOid=" + chatReqOid);
 							String[] titleAndIcon = chat.generateChatTitleAndIcon(request);
 							String title = titleAndIcon[0];
 							String icon = titleAndIcon[1];
-							logger.info("Title generation result: title=" + title + " icon=" + icon + " chatReqOid=" + chatReqOid);
-							if (title != null) {
+							logger.info("LLM title generation result: title='" + title + "' icon='" + icon + "' chatReqOid=" + chatReqOid);
+							/// Only override if LLM produced something different from fallback
+							if (title != null && !title.equals(fallbackTitle)) {
 								chat.setChatTitle(titleChatReqRec, title);
-							}
-							if (icon != null) {
-								chat.setChatIcon(titleChatReqRec, icon);
-							}
-							if (title != null) {
 								handlers.forEach(h -> h.onChatTitle(user, request, chatReqOid, title));
 							}
-							if (icon != null) {
+							if (icon != null && !icon.equals(fallbackIcon)) {
+								chat.setChatIcon(titleChatReqRec, icon);
 								handlers.forEach(h -> h.onChatIcon(user, request, chatReqOid, icon));
 							}
 						} catch (Exception e) {
-							logger.warn("Async title/icon generation failed: " + e.getMessage());
+							logger.warn("Async LLM title/icon generation failed (fallback already set): " + e.getMessage());
 						}
 					});
 				}

@@ -529,18 +529,30 @@ public class Chat {
 					logger.warn("chatRequestObjectId not set — cannot persist title (buffer mode)");
 				}
 				if (!titleExists) {
+					/// Step 1: Set synchronous fallback title from first user message.
+					/// Guarantees a title exists even if LLM call fails/times out.
+					String fallbackTitle = deriveFallbackTitle(req);
+					if (fallbackTitle != null && chatReqRec != null) {
+						setChatTitle(chatReqRec, fallbackTitle);
+						setChatIcon(chatReqRec, "chat");
+						if (listener != null && chatReqOid != null) {
+							listener.onChatTitle(user, req, chatReqOid, fallbackTitle);
+							listener.onChatIcon(user, req, chatReqOid, "chat");
+						}
+					}
+					/// Step 2: Generate LLM title to override fallback.
 					String[] titleAndIcon = generateChatTitleAndIcon(req);
 					String title = titleAndIcon[0];
 					String icon = titleAndIcon[1];
 					logger.info("Title generation result: title=" + title + " icon=" + icon);
 					if (chatReqRec != null) {
-						if (title != null) setChatTitle(chatReqRec, title);
-						if (icon != null) setChatIcon(chatReqRec, icon);
+						if (title != null && !title.equals(fallbackTitle)) setChatTitle(chatReqRec, title);
+						if (icon != null && !"chat".equals(icon)) setChatIcon(chatReqRec, icon);
 					}
-					/// Notify listener for real-time client update
+					/// Notify listener for real-time client update (only if different from fallback)
 					if (listener != null && chatReqOid != null) {
-						if (title != null) listener.onChatTitle(user, req, chatReqOid, title);
-						if (icon != null) listener.onChatIcon(user, req, chatReqOid, icon);
+						if (title != null && !title.equals(fallbackTitle)) listener.onChatTitle(user, req, chatReqOid, title);
+						if (icon != null && !"chat".equals(icon)) listener.onChatIcon(user, req, chatReqOid, icon);
 					}
 				}
 			}
@@ -1066,7 +1078,7 @@ public class Chat {
 		int idx = 1;
 		if (chatConfig != null) {
 			boolean useAssist = chatConfig.get("assist");
-			idx = (useAssist ? 3 : 2);
+			idx = (useAssist ? 3 : 1);
 		}
 		return idx;
 	}
@@ -1074,11 +1086,29 @@ public class Chat {
 	/// Overload that checks the actual session messages to detect when the
 	/// user-consent template resolved to empty (e.g. rating "E" with assist=true).
 	/// In that case the session has only system + assistant-template = 2 base messages.
+	///
+	/// Preamble layouts:
+	///   assist=false:  [system] → offset=1
+	///   assist=true:   [system, user-consent, assistant-template] → offset=3
+	///   assist=true with empty consent: [system, assistant-template] → offset=2
 	public int getMessageOffset(OpenAIRequest req) {
-		int idx = getMessageOffset();
-		if (idx == 3 && req != null && req.getMessages().size() > 1
-				&& assistantRole.equals(req.getMessages().get(1).getRole())) {
-			idx = 2;
+		if (req == null) return getMessageOffset();
+		List<OpenAIMessage> msgs = req.getMessages();
+		if (msgs.size() < 2) return msgs.isEmpty() ? 0 : 1;
+
+		int idx = 1; // always skip system at [0]
+		if (chatConfig != null) {
+			boolean useAssist = chatConfig.get("assist");
+			if (useAssist) {
+				// Expected: system, [user-consent], assistant-template
+				// Detect empty consent: if msg[1] is assistant, consent was skipped
+				if (assistantRole.equals(msgs.get(1).getRole())) {
+					idx = 2; // system + assistant-template (no consent)
+				} else {
+					idx = 3; // system + user-consent + assistant-template
+				}
+			}
+			// assist=false: idx stays 1 (only system prompt)
 		}
 		return idx;
 	}

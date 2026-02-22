@@ -141,4 +141,17 @@
         }
     };
 
+    am7model.forms.memoryView = {
+        label: "Memory Viewer",
+        icon: "psychology",
+        viewType: "memory",
+        fields: {
+            content: {
+                layout: "full",
+                format: "memory",
+                field: {name: "content", type: "string"}
+            }
+        }
+    };
+
 }());
