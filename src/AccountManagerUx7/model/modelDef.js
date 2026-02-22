@@ -8958,6 +8958,36 @@
           "name": "memoryExtractionPrompt",
           "type": "string",
           "description": "Custom memory extraction prompt resource name"
+        },
+        {
+          "name": "memoryExtractionMaxPerSegment",
+          "type": "int",
+          "default": 1,
+          "description": "Max memories to extract per keyframe segment (1-5)"
+        },
+        {
+          "name": "memoryExtractionTypes",
+          "type": "string",
+          "default": "FACT,RELATIONSHIP,DISCOVERY,DECISION,INSIGHT",
+          "description": "Comma-separated memory types to extract"
+        },
+        {
+          "name": "gossipEnabled",
+          "type": "boolean",
+          "default": false,
+          "description": "Enable cross-character memory recall (gossip)"
+        },
+        {
+          "name": "gossipThreshold",
+          "type": "double",
+          "default": 0.65,
+          "description": "Minimum relevance threshold for gossip suggestions"
+        },
+        {
+          "name": "gossipMaxSuggestions",
+          "type": "int",
+          "default": 5,
+          "description": "Maximum gossip memory suggestions"
         }
       ]
     },

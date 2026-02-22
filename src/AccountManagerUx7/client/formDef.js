@@ -5234,6 +5234,34 @@
                 hint: "Timeout for background analyze/memory calls. 0=use 2x requestTimeout."
             },
 
+            // Phase 2 (MemoryRefactor2): Memory extraction tuning
+            memoryExtractionMaxPerSegment: {
+                layout: "one",
+                label: "Max Memories Per Segment",
+                hint: "Max memories extracted per keyframe (1-5). Default 1."
+            },
+            memoryExtractionTypes: {
+                layout: "one",
+                label: "Memory Extraction Types",
+                hint: "Comma-separated types: FACT,RELATIONSHIP,DISCOVERY,DECISION,INSIGHT"
+            },
+
+            // Phase 5 (MemoryRefactor2): Gossip / cross-character recall
+            gossipEnabled: {
+                layout: "one",
+                label: "Enable Gossip"
+            },
+            gossipThreshold: {
+                layout: "one",
+                label: "Gossip Threshold",
+                hint: "Minimum relevance for gossip suggestions (0.0-1.0)"
+            },
+            gossipMaxSuggestions: {
+                layout: "one",
+                label: "Gossip Max Suggestions",
+                hint: "Maximum gossip memories to suggest (1-20)"
+            },
+
         },
         forms: ["episodectl", "chatOptionsRef", "groupinfo", "attributes"]
 
