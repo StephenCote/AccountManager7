@@ -167,7 +167,7 @@ public class TestMemoryPhase2 extends BaseTest {
 			String convId = "fmt-phase2-" + UUID.randomUUID().toString().substring(0, 8);
 			MemoryUtil.createMemory(testUser, "They argued about the best pizza topping.",
 				"Pizza argument", MemoryTypeEnumType.BEHAVIOR, 6,
-				"am7://test/format", convId, 100L, 200L);
+				"am7://test/format", convId);
 
 			List<BaseRecord> memories = MemoryUtil.getConversationMemories(testUser, convId);
 			assertFalse("Should have at least one memory", memories.isEmpty());
@@ -193,17 +193,15 @@ public class TestMemoryPhase2 extends BaseTest {
 			List<BaseRecord> pop = getPopulation(2);
 			BaseRecord bob = pop.get(0);
 			BaseRecord rob = pop.get(1);
-			long bobId = bob.get(FieldNames.FIELD_ID);
-			long robId = rob.get(FieldNames.FIELD_ID);
 
 			// Store memory with Bob as "user" (id1) and Rob as "system" (id2)
 			String convId = "role-agnostic-" + UUID.randomUUID().toString().substring(0, 8);
 			MemoryUtil.createMemory(testUser, "Bob and Rob discussed their favorite books.",
 				"Book discussion", MemoryTypeEnumType.NOTE, 7,
-				"am7://test/role-agnostic", convId, bobId, robId);
+				"am7://test/role-agnostic", convId, bob, rob);
 
 			// Retrieve with roles swapped: Rob as id1, Bob as id2
-			List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(testUser, robId, bobId, 10);
+			List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(testUser, rob, bob, 10);
 			assertNotNull("Memories should not be null", memories);
 			assertTrue("Should find at least 1 memory with swapped roles", memories.size() >= 1);
 
@@ -227,9 +225,6 @@ public class TestMemoryPhase2 extends BaseTest {
 			BaseRecord bob = pop.get(0);
 			BaseRecord rob = pop.get(1);
 			BaseRecord nob = pop.get(2);
-			long bobId = bob.get(FieldNames.FIELD_ID);
-			long robId = rob.get(FieldNames.FIELD_ID);
-			long nobId = nob.get(FieldNames.FIELD_ID);
 
 			String convBR = "cross-br-" + UUID.randomUUID().toString().substring(0, 8);
 			String convBN = "cross-bn-" + UUID.randomUUID().toString().substring(0, 8);
@@ -237,15 +232,15 @@ public class TestMemoryPhase2 extends BaseTest {
 			// Memory between Bob and Rob
 			MemoryUtil.createMemory(testUser, "Bob taught Rob to play chess.",
 				"Chess lesson", MemoryTypeEnumType.BEHAVIOR, 6,
-				null, convBR, bobId, robId);
+				null, convBR, bob, rob);
 
 			// Memory between Bob and Nob
 			MemoryUtil.createMemory(testUser, "Bob and Nob went hiking together.",
 				"Hiking trip", MemoryTypeEnumType.NOTE, 5,
-				null, convBN, bobId, nobId);
+				null, convBN, bob, nob);
 
 			// Search all of Bob's memories
-			List<BaseRecord> bobMemories = MemoryUtil.searchMemoriesByPerson(testUser, bobId, 20);
+			List<BaseRecord> bobMemories = MemoryUtil.searchMemoriesByPerson(testUser, bob, 20);
 			assertNotNull("Bob's memories should not be null", bobMemories);
 			assertTrue("Bob should have at least 2 memories from different partners",
 				bobMemories.size() >= 2);
@@ -268,19 +263,25 @@ public class TestMemoryPhase2 extends BaseTest {
 	@Test
 	public void testCreateMemoryWithPersonIds() {
 		try {
+			List<BaseRecord> pop = getPopulation(2);
+			BaseRecord personA = pop.get(0);
+			BaseRecord personB = pop.get(1);
+			long idA = personA.get(FieldNames.FIELD_ID);
+			long idB = personB.get(FieldNames.FIELD_ID);
+
 			String convId = "charids-" + UUID.randomUUID().toString().substring(0, 8);
 			BaseRecord memory = MemoryUtil.createMemory(testUser,
 				"A shared adventure in the forest.", "Forest adventure",
 				MemoryTypeEnumType.OUTCOME, 8, "am7://test/charids", convId,
-				300L, 100L);  // intentionally out of order
+				personA, personB);
 
 			assertNotNull("Created memory should not be null", memory);
 			long cid1 = memory.get("personId1");
 			long cid2 = memory.get("personId2");
 
 			// Should be canonicalized: lower first
-			assertEquals("personId1 should be the lower ID", 100L, cid1);
-			assertEquals("personId2 should be the higher ID", 300L, cid2);
+			assertEquals("personId1 should be the lower ID", Math.min(idA, idB), cid1);
+			assertEquals("personId2 should be the higher ID", Math.max(idA, idB), cid2);
 
 			logger.info("Test 14 passed: memory created with canonical person IDs");
 		} catch (Exception e) {
@@ -378,19 +379,19 @@ public class TestMemoryPhase2 extends BaseTest {
 	public void testRoleSwapProducesSameIds() {
 		try {
 			List<BaseRecord> pop = getPopulation(2);
-			long bobId = pop.get(0).get(FieldNames.FIELD_ID);
-			long robId = pop.get(1).get(FieldNames.FIELD_ID);
+			BaseRecord bob = pop.get(0);
+			BaseRecord rob = pop.get(1);
 
-			// Scenario 1: Bob as system (id1=bobId), Rob as user (id2=robId)
+			// Scenario 1: Bob as system, Rob as user
 			String conv1 = "swap1-" + UUID.randomUUID().toString().substring(0, 8);
 			BaseRecord mem1 = MemoryUtil.createMemory(testUser, "Swap test scenario 1",
-				"Swap 1", MemoryTypeEnumType.NOTE, 5, null, conv1, bobId, robId);
+				"Swap 1", MemoryTypeEnumType.NOTE, 5, null, conv1, bob, rob);
 			assertNotNull("Memory 1 should not be null", mem1);
 
-			// Scenario 2: Bob as user (id2=bobId), Rob as system (id1=robId)
+			// Scenario 2: Rob as system, Bob as user (roles swapped)
 			String conv2 = "swap2-" + UUID.randomUUID().toString().substring(0, 8);
 			BaseRecord mem2 = MemoryUtil.createMemory(testUser, "Swap test scenario 2",
-				"Swap 2", MemoryTypeEnumType.NOTE, 5, null, conv2, robId, bobId);
+				"Swap 2", MemoryTypeEnumType.NOTE, 5, null, conv2, rob, bob);
 			assertNotNull("Memory 2 should not be null", mem2);
 
 			// Both should have identical canonical IDs
