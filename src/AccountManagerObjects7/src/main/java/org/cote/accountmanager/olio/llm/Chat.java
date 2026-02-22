@@ -57,7 +57,6 @@ import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner.AutotuneResult;
-import org.cote.accountmanager.olio.llm.policy.InteractionEvaluator;
 import org.cote.accountmanager.olio.llm.policy.ResponseComplianceEvaluator;
 import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator;
 import org.cote.accountmanager.olio.llm.policy.ResponsePolicyEvaluator.PolicyEvaluationResult;
@@ -89,7 +88,6 @@ public class Chat {
 	private String saveName = "chat.json";
 	private BaseRecord user = null;
 	private int pruneSkip = 1;
-	private boolean formatOutput = false;
 	private boolean includeScene = false;
 	private boolean forceJailbreak = false;
 	private boolean streamMode = false;
@@ -319,14 +317,6 @@ public class Chat {
 
 	public void setServiceType(LLMServiceEnumType serviceType) {
 		this.serviceType = serviceType;
-	}
-
-	public boolean isFormatOutput() {
-		return formatOutput;
-	}
-
-	public void setFormatOutput(boolean formatOutput) {
-		this.formatOutput = formatOutput;
 	}
 
 	public boolean isIncludeScene() {
@@ -2193,22 +2183,36 @@ public class Chat {
 
 		/// Step 4: Extract discrete memories via dedicated prompt (Phase 14b)
 		/// Skip if keyframe analysis failed — avoid double timeout
+		List<BaseRecord> extractedMemories = null;
 		if (analysisOk) {
-			extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar, previousKeyframeAt);
+			extractedMemories = extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar, previousKeyframeAt);
 		}
 
-		/// Step 5: Interaction evaluation — runs inline since we're already async
+		/// Step 5: Interaction extraction — creates persisted olio.interaction record (Phase 3, MemoryRefactor2)
 		if (listener != null) {
-			listener.onEvalProgress(user, req, "interaction", "Evaluating interaction: type, outcome, relationship direction");
-			try {
-				InteractionEvaluator ie = new InteractionEvaluator();
-				String result = ie.evaluate(user, chatConfig, req.getMessages());
-				if (result != null && !result.isEmpty()) {
-					listener.onInteractionEvent(user, req, result);
+			listener.onEvalProgress(user, req, "interaction", "Extracting interaction...");
+		}
+		try {
+			BaseRecord interaction = InteractionExtractor.extractInteraction(
+				user, chatConfig, systemChar, userChar, snapshotReq.getMessages(), cfgObjId);
+			if (interaction != null) {
+				// Link previously-extracted memories to this interaction
+				if (extractedMemories != null && !extractedMemories.isEmpty()) {
+					InteractionExtractor.linkMemoriesToInteraction(extractedMemories, interaction);
 				}
-				listener.onEvalProgress(user, req, "interactionDone", result != null ? "complete" : "no result");
-			} catch (Exception e) {
-				logger.warn("Interaction evaluation failed: " + e.getMessage());
+				// Emit chirp for backward-compatible listener notification
+				if (listener != null) {
+					String chirp = InteractionExtractor.buildInteractionChirp(interaction);
+					listener.onInteractionEvent(user, req, chirp);
+				}
+			}
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "interactionDone",
+					interaction != null ? "complete" : "no interaction");
+			}
+		} catch (Exception e) {
+			logger.warn("Interaction extraction failed: " + e.getMessage());
+			if (listener != null) {
 				listener.onEvalProgress(user, req, "interactionDone", "error");
 			}
 		}
@@ -2216,7 +2220,8 @@ public class Chat {
 
 	/// Phase 14b: Extract discrete memories from the conversation segment
 	/// using a dedicated memory extraction prompt. Called from the async keyframe pipeline.
-	private void extractMemoriesIfEnabled(OpenAIRequest req, OpenAIRequest snapshotReq,
+	/// Returns the list of extracted memories (for linking to interactions), or empty list on failure/skip.
+	private List<BaseRecord> extractMemoriesIfEnabled(OpenAIRequest req, OpenAIRequest snapshotReq,
 			String cfgObjId, BaseRecord systemChar, BaseRecord userChar, int previousKeyframeAt) {
 
 		logger.info("extractMemoriesIfEnabled: START");
@@ -2228,7 +2233,7 @@ public class Chat {
 		}
 		if (!extractMemories) {
 			logger.info("extractMemoriesIfEnabled: extractMemories=false — skipping");
-			return;
+			return new ArrayList<>();
 		}
 
 		if (listener != null) {
@@ -2243,11 +2248,13 @@ public class Chat {
 				listener.onMemoryEvent(user, req, "extracted", countMsg);
 				listener.onEvalProgress(user, req, "memoryExtractDone", countMsg);
 			}
+			return memories;
 		} catch (Exception e) {
 			logger.warn("Memory extraction failed: " + e.getMessage());
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "memoryExtractDone", "error");
 			}
+			return new ArrayList<>();
 		}
 	}
 
@@ -2293,10 +2300,32 @@ public class Chat {
 			// field may not be set
 		}
 		if (promptName == null || promptName.isEmpty()) {
-			promptName = "memoryExtraction";
+			promptName = "memoryExtractionV2";
 		}
 
-		String systemPrompt = PromptResourceUtil.getLines(promptName, "system");
+		/// Phase 2 (MemoryRefactor2): Read extraction config fields
+		int maxPerSegment = 1;
+		try {
+			int val = chatConfig.get("memoryExtractionMaxPerSegment");
+			if (val > 0) maxPerSegment = Math.min(val, 10);
+		} catch (Exception e) { /* use default */ }
+
+		String extractionTypes = "FACT,RELATIONSHIP,DISCOVERY,DECISION,INSIGHT";
+		try {
+			String val = chatConfig.get("memoryExtractionTypes");
+			if (val != null && !val.isEmpty()) extractionTypes = val;
+		} catch (Exception e) { /* use default */ }
+
+		/// Phase 2: Try loading as a promptTemplate record first, fall back to old format
+		String systemPrompt = null;
+		BaseRecord templateRec = PromptResourceUtil.loadAsRecord(promptName);
+		if (templateRec != null && "olio.llm.promptTemplate".equals(templateRec.getSchema())) {
+			systemPrompt = PromptTemplateComposer.composeSystem(templateRec, promptConfig, chatConfig);
+		}
+		if (systemPrompt == null) {
+			/// Fall back to old flat format (system array)
+			systemPrompt = PromptResourceUtil.getLines(promptName, "system");
+		}
 		if (systemPrompt == null) {
 			logger.warn("Memory extraction prompt not found: " + promptName);
 			return java.util.Collections.emptyList();
@@ -2326,6 +2355,7 @@ public class Chat {
 		systemPrompt = PromptResourceUtil.replaceToken(systemPrompt, "systemCharName", sysCharName);
 		systemPrompt = PromptResourceUtil.replaceToken(systemPrompt, "userCharName", usrCharName);
 		systemPrompt = PromptResourceUtil.replaceToken(systemPrompt, "setting", setting);
+		systemPrompt = PromptResourceUtil.replaceToken(systemPrompt, "memoryExtractionTypes", extractionTypes);
 
 		/// Use analyzeModel if configured, otherwise main model
 		String amodel = chatConfig.get("analyzeModel");
@@ -2381,10 +2411,13 @@ public class Chat {
 
 		String sourceUri = "am7://keyframe/" + (conversationId != null ? conversationId : "default");
 
-		return MemoryUtil.extractMemoriesFromResponse(
+		/// Phase 2 (MemoryRefactor2): Use 7-arg overload with maxPerSegment limit,
+		/// then filter to only allowed memory types.
+		List<BaseRecord> extracted = MemoryUtil.extractMemoriesFromResponse(
 			user, resp.getMessage().getContent(), sourceUri, conversationId,
-			systemChar, userChar
+			systemChar, userChar, maxPerSegment
 		);
+		return MemoryUtil.filterByTypes(extracted, extractionTypes);
 	}
 
 	/// Phase 3: Persist the keyframe analysis text as a durable OUTCOME memory
@@ -2506,18 +2539,10 @@ public class Chat {
 			}
 			String cont = m.get("content");
 			if (emitResponse && cont != null) {
-				System.out.println(formatOutput(cont));
+				System.out.println(cont);
 			}
 		}
 
-	}
-
-	private String formatOutput(String input) {
-		if (!formatOutput) {
-			return input;
-		}
-		String output = input.replace('’', '\'');
-		return output;
 	}
 
 	public OpenAIRequest newRequest(String model) {
@@ -3073,14 +3098,14 @@ public class Chat {
 			int maxPerLayer = Math.max(3, memoryBudget / 50);
 
 			/// Layer 1: Pair-specific memories (50% of budget)
-			List<BaseRecord> pairMemories = MemoryUtil.searchMemoriesByPersonPair(user, sysId, usrId, maxPerLayer);
+			List<BaseRecord> pairMemories = MemoryUtil.searchMemoriesByPersonPair(user, systemChar, userChar, maxPerLayer);
 			logger.info("retrieveRelevantMemories: pairMemories=" + pairMemories.size());
 
 			/// Layer 2: System character's cross-pair memories (30% of budget)
 			/// Only retrieve memories involving the SYSTEM character (the one the LLM plays).
 			/// User character's memories with other characters are private to the user character
 			/// and should NOT be presented to the system character as its own knowledge.
-			List<BaseRecord> charMemories = MemoryUtil.searchMemoriesByPerson(user, sysId, maxPerLayer);
+			List<BaseRecord> charMemories = MemoryUtil.searchMemoriesByPerson(user, systemChar, maxPerLayer);
 			/// Remove any that are already in pair results
 			java.util.Set<Long> pairIds = new java.util.HashSet<>();
 			for (BaseRecord pm : pairMemories) {

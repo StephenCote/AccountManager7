@@ -18,6 +18,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.util.MemoryUtil;
 
 public class AM7AgentTool {
@@ -200,7 +201,12 @@ public class AM7AgentTool {
     	@AgentToolParameter(name = "limit", type = FieldEnumType.INT) int limit
     ) {
     	if (limit <= 0) limit = 20;
-    	List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(toolUser, personId1, personId2, limit);
+    	BaseRecord p1 = stubPersonRecord(personId1);
+    	BaseRecord p2 = stubPersonRecord(personId2);
+    	if (p1 == null || p2 == null) {
+    		return "Invalid person IDs: " + personId1 + "/" + personId2;
+    	}
+    	List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(toolUser, p1, p2, limit);
     	if (results.isEmpty()) {
     		return "No memories found for person pair " + personId1 + "/" + personId2;
     	}
@@ -210,7 +216,7 @@ public class AM7AgentTool {
     /// Phase 14e: Extract and store memories from LLM-generated text.
     /// Parses a JSON array of memory objects and persists them with person pair tagging.
     @AgentTool(
-		description = "Extract and store memories from a JSON array of memory objects. Each object should have: content, summary, memoryType (FACT/RELATIONSHIP/EMOTION/DECISION/DISCOVERY), importance (1-10).",
+		description = "Extract and store 1-2 focused memories from a JSON array of memory objects. Each object should have: content, summary, memoryType (FACT/RELATIONSHIP/DISCOVERY/DECISION/INSIGHT), importance (1-10). Prefer quality over quantity.",
 		returnName = "extractedCount",
 		returnType = FieldEnumType.INT
 	)
@@ -221,8 +227,10 @@ public class AM7AgentTool {
     	@AgentToolParameter(name = "personId2", type = FieldEnumType.LONG) long personId2
     ) {
     	String sourceUri = "am7://agent/memory-extraction/" + (conversationId != null ? conversationId : "unknown");
+    	BaseRecord p1 = stubPersonRecord(personId1);
+    	BaseRecord p2 = stubPersonRecord(personId2);
     	List<BaseRecord> extracted = MemoryUtil.extractMemoriesFromResponse(
-    		toolUser, text, sourceUri, conversationId, personId1, personId2
+    		toolUser, text, sourceUri, conversationId, p1, p2
     	);
     	return extracted.size();
     }
@@ -238,11 +246,26 @@ public class AM7AgentTool {
     	@AgentToolParameter(name = "limit", type = FieldEnumType.INT) int limit
     ) {
     	if (limit <= 0) limit = 20;
-    	List<BaseRecord> results = MemoryUtil.searchMemoriesByPerson(toolUser, personId, limit);
+    	BaseRecord p = stubPersonRecord(personId);
+    	if (p == null) {
+    		return "Invalid person ID: " + personId;
+    	}
+    	List<BaseRecord> results = MemoryUtil.searchMemoriesByPerson(toolUser, p, limit);
     	if (results.isEmpty()) {
     		return "No memories found for person " + personId;
     	}
     	return MemoryUtil.formatMemoriesAsContext(results);
+    }
+
+    private BaseRecord stubPersonRecord(long id) {
+    	try {
+    		BaseRecord rec = RecordFactory.newInstance("olio.charPerson");
+    		rec.set(FieldNames.FIELD_ID, id);
+    		return rec;
+    	} catch (Exception e) {
+    		logger.error("Error creating stub person record: " + e.getMessage());
+    		return null;
+    	}
     }
 
 }

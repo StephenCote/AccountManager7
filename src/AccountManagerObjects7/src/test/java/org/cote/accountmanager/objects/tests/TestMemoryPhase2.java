@@ -75,12 +75,10 @@ public class TestMemoryPhase2 extends BaseTest {
 			assertNotNull("Chat config should not be null", chatConfig);
 
 			// Create a memory for this person pair
-			long sysId = sysChar.get(FieldNames.FIELD_ID);
-			long usrId = usrChar.get(FieldNames.FIELD_ID);
 			MemoryUtil.createMemory(testUser, "They met at a coffee shop and discussed philosophy.",
 				"Met at coffee shop", MemoryTypeEnumType.NOTE, 7,
 				"am7://test/phase2", "conv-" + UUID.randomUUID().toString().substring(0, 8),
-				sysId, usrId);
+				sysChar, usrChar);
 
 			// Set memory budget so retrieval happens
 			chatConfig.setValue("memoryBudget", 500);
@@ -169,7 +167,7 @@ public class TestMemoryPhase2 extends BaseTest {
 			String convId = "fmt-phase2-" + UUID.randomUUID().toString().substring(0, 8);
 			MemoryUtil.createMemory(testUser, "They argued about the best pizza topping.",
 				"Pizza argument", MemoryTypeEnumType.BEHAVIOR, 6,
-				"am7://test/format", convId, 100L, 200L);
+				"am7://test/format", convId, stubPerson(100L), stubPerson(200L));
 
 			List<BaseRecord> memories = MemoryUtil.getConversationMemories(testUser, convId);
 			assertFalse("Should have at least one memory", memories.isEmpty());
@@ -195,17 +193,14 @@ public class TestMemoryPhase2 extends BaseTest {
 			List<BaseRecord> pop = getPopulation(2);
 			BaseRecord bob = pop.get(0);
 			BaseRecord rob = pop.get(1);
-			long bobId = bob.get(FieldNames.FIELD_ID);
-			long robId = rob.get(FieldNames.FIELD_ID);
-
 			// Store memory with Bob as "user" (id1) and Rob as "system" (id2)
 			String convId = "role-agnostic-" + UUID.randomUUID().toString().substring(0, 8);
 			MemoryUtil.createMemory(testUser, "Bob and Rob discussed their favorite books.",
 				"Book discussion", MemoryTypeEnumType.NOTE, 7,
-				"am7://test/role-agnostic", convId, bobId, robId);
+				"am7://test/role-agnostic", convId, bob, rob);
 
 			// Retrieve with roles swapped: Rob as id1, Bob as id2
-			List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(testUser, robId, bobId, 10);
+			List<BaseRecord> memories = MemoryUtil.searchMemoriesByPersonPair(testUser, rob, bob, 10);
 			assertNotNull("Memories should not be null", memories);
 			assertTrue("Should find at least 1 memory with swapped roles", memories.size() >= 1);
 
@@ -229,25 +224,21 @@ public class TestMemoryPhase2 extends BaseTest {
 			BaseRecord bob = pop.get(0);
 			BaseRecord rob = pop.get(1);
 			BaseRecord nob = pop.get(2);
-			long bobId = bob.get(FieldNames.FIELD_ID);
-			long robId = rob.get(FieldNames.FIELD_ID);
-			long nobId = nob.get(FieldNames.FIELD_ID);
-
 			String convBR = "cross-br-" + UUID.randomUUID().toString().substring(0, 8);
 			String convBN = "cross-bn-" + UUID.randomUUID().toString().substring(0, 8);
 
 			// Memory between Bob and Rob
 			MemoryUtil.createMemory(testUser, "Bob taught Rob to play chess.",
 				"Chess lesson", MemoryTypeEnumType.BEHAVIOR, 6,
-				null, convBR, bobId, robId);
+				null, convBR, bob, rob);
 
 			// Memory between Bob and Nob
 			MemoryUtil.createMemory(testUser, "Bob and Nob went hiking together.",
 				"Hiking trip", MemoryTypeEnumType.NOTE, 5,
-				null, convBN, bobId, nobId);
+				null, convBN, bob, nob);
 
 			// Search all of Bob's memories
-			List<BaseRecord> bobMemories = MemoryUtil.searchMemoriesByPerson(testUser, bobId, 20);
+			List<BaseRecord> bobMemories = MemoryUtil.searchMemoriesByPerson(testUser, bob, 20);
 			assertNotNull("Bob's memories should not be null", bobMemories);
 			assertTrue("Bob should have at least 2 memories from different partners",
 				bobMemories.size() >= 2);
@@ -274,15 +265,19 @@ public class TestMemoryPhase2 extends BaseTest {
 			BaseRecord memory = MemoryUtil.createMemory(testUser,
 				"A shared adventure in the forest.", "Forest adventure",
 				MemoryTypeEnumType.OUTCOME, 8, "am7://test/charids", convId,
-				300L, 100L);  // intentionally out of order
+				stubPerson(300L), stubPerson(100L));  // intentionally out of order
 
 			assertNotNull("Created memory should not be null", memory);
-			long cid1 = memory.get("personId1");
-			long cid2 = memory.get("personId2");
+			BaseRecord p1 = memory.get("person1");
+			BaseRecord p2 = memory.get("person2");
+			assertNotNull("person1 should not be null", p1);
+			assertNotNull("person2 should not be null", p2);
+			long cid1 = p1.get(FieldNames.FIELD_ID);
+			long cid2 = p2.get(FieldNames.FIELD_ID);
 
 			// Should be canonicalized: lower first
-			assertEquals("personId1 should be the lower ID", 100L, cid1);
-			assertEquals("personId2 should be the higher ID", 300L, cid2);
+			assertEquals("person1 ID should be the lower ID", 100L, cid1);
+			assertEquals("person2 ID should be the higher ID", 300L, cid2);
 
 			logger.info("Test 14 passed: memory created with canonical person IDs");
 		} catch (Exception e) {
@@ -297,9 +292,9 @@ public class TestMemoryPhase2 extends BaseTest {
 	public void testSearchMemoriesByPersonPair() {
 		try {
 			List<BaseRecord> pop = getPopulation(3);
-			long aId = pop.get(0).get(FieldNames.FIELD_ID);
-			long bId = pop.get(1).get(FieldNames.FIELD_ID);
-			long cId = pop.get(2).get(FieldNames.FIELD_ID);
+			BaseRecord a = pop.get(0);
+			BaseRecord b = pop.get(1);
+			BaseRecord c = pop.get(2);
 
 			// Use a unique tag to distinguish these test memories
 			String tagAB = "pair-ab-" + UUID.randomUUID().toString().substring(0, 8);
@@ -309,23 +304,23 @@ public class TestMemoryPhase2 extends BaseTest {
 			for (int i = 0; i < 3; i++) {
 				MemoryUtil.createMemory(testUser, "AB memory " + i + " " + tagAB,
 					"AB mem " + i, MemoryTypeEnumType.NOTE, 5 + i,
-					null, tagAB, aId, bId);
+					null, tagAB, a, b);
 			}
 			// 2 memories for pair (A, C)
 			for (int i = 0; i < 2; i++) {
 				MemoryUtil.createMemory(testUser, "AC memory " + i + " " + tagAC,
 					"AC mem " + i, MemoryTypeEnumType.NOTE, 5,
-					null, tagAC, aId, cId);
+					null, tagAC, a, c);
 			}
 
 			// Search for pair (A, B) — should get exactly 3
-			List<BaseRecord> abMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, aId, bId, 20);
+			List<BaseRecord> abMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, a, b, 20);
 			long abCount = abMemories.stream().filter(m ->
 				((String) m.get("content")).contains(tagAB)).count();
 			assertEquals("Should find exactly 3 memories for pair (A,B)", 3, abCount);
 
 			// Search for pair (A, C) — should get exactly 2
-			List<BaseRecord> acMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, aId, cId, 20);
+			List<BaseRecord> acMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, a, c, 20);
 			long acCount = acMemories.stream().filter(m ->
 				((String) m.get("content")).contains(tagAC)).count();
 			assertEquals("Should find exactly 2 memories for pair (A,C)", 2, acCount);
@@ -343,9 +338,9 @@ public class TestMemoryPhase2 extends BaseTest {
 	public void testSearchMemoriesByPerson() {
 		try {
 			List<BaseRecord> pop = getPopulation(3);
-			long aId = pop.get(0).get(FieldNames.FIELD_ID);
-			long bId = pop.get(1).get(FieldNames.FIELD_ID);
-			long cId = pop.get(2).get(FieldNames.FIELD_ID);
+			BaseRecord a = pop.get(0);
+			BaseRecord b = pop.get(1);
+			BaseRecord c = pop.get(2);
 
 			String tag = "charall-" + UUID.randomUUID().toString().substring(0, 8);
 
@@ -353,16 +348,16 @@ public class TestMemoryPhase2 extends BaseTest {
 			for (int i = 0; i < 3; i++) {
 				MemoryUtil.createMemory(testUser, "AllA-AB " + i + " " + tag,
 					"AllA-AB " + i, MemoryTypeEnumType.NOTE, 5,
-					null, "conv-ab-" + tag, aId, bId);
+					null, "conv-ab-" + tag, a, b);
 			}
 			// 2 memories for pair (A, C)
 			for (int i = 0; i < 2; i++) {
 				MemoryUtil.createMemory(testUser, "AllA-AC " + i + " " + tag,
 					"AllA-AC " + i, MemoryTypeEnumType.NOTE, 5,
-					null, "conv-ac-" + tag, aId, cId);
+					null, "conv-ac-" + tag, a, c);
 			}
 
-			List<BaseRecord> aMemories = MemoryUtil.searchMemoriesByPerson(testUser, aId, 50);
+			List<BaseRecord> aMemories = MemoryUtil.searchMemoriesByPerson(testUser, a, 50);
 			long tagCount = aMemories.stream().filter(m ->
 				((String) m.get("content")).contains(tag)).count();
 			assertTrue("Person A should have at least 5 tagged memories", tagCount >= 5);
@@ -380,29 +375,34 @@ public class TestMemoryPhase2 extends BaseTest {
 	public void testRoleSwapProducesSameIds() {
 		try {
 			List<BaseRecord> pop = getPopulation(2);
-			long bobId = pop.get(0).get(FieldNames.FIELD_ID);
-			long robId = pop.get(1).get(FieldNames.FIELD_ID);
+			BaseRecord bob = pop.get(0);
+			BaseRecord rob = pop.get(1);
 
-			// Scenario 1: Bob as system (id1=bobId), Rob as user (id2=robId)
+			// Scenario 1: Bob as system (id1=bob), Rob as user (id2=rob)
 			String conv1 = "swap1-" + UUID.randomUUID().toString().substring(0, 8);
 			BaseRecord mem1 = MemoryUtil.createMemory(testUser, "Swap test scenario 1",
-				"Swap 1", MemoryTypeEnumType.NOTE, 5, null, conv1, bobId, robId);
+				"Swap 1", MemoryTypeEnumType.NOTE, 5, null, conv1, bob, rob);
 			assertNotNull("Memory 1 should not be null", mem1);
 
-			// Scenario 2: Bob as user (id2=bobId), Rob as system (id1=robId)
+			// Scenario 2: Bob as user (id2=bob), Rob as system (id1=rob)
 			String conv2 = "swap2-" + UUID.randomUUID().toString().substring(0, 8);
 			BaseRecord mem2 = MemoryUtil.createMemory(testUser, "Swap test scenario 2",
-				"Swap 2", MemoryTypeEnumType.NOTE, 5, null, conv2, robId, bobId);
+				"Swap 2", MemoryTypeEnumType.NOTE, 5, null, conv2, rob, bob);
 			assertNotNull("Memory 2 should not be null", mem2);
 
 			// Both should have identical canonical IDs
-			long cid1_1 = mem1.get("personId1");
-			long cid2_1 = mem1.get("personId2");
-			long cid1_2 = mem2.get("personId1");
-			long cid2_2 = mem2.get("personId2");
+			BaseRecord p1_1 = mem1.get("person1");
+			BaseRecord p2_1 = mem1.get("person2");
+			BaseRecord p1_2 = mem2.get("person1");
+			BaseRecord p2_2 = mem2.get("person2");
 
-			assertEquals("personId1 should be identical regardless of role", cid1_1, cid1_2);
-			assertEquals("personId2 should be identical regardless of role", cid2_1, cid2_2);
+			long cid1_1 = p1_1.get(FieldNames.FIELD_ID);
+			long cid2_1 = p2_1.get(FieldNames.FIELD_ID);
+			long cid1_2 = p1_2.get(FieldNames.FIELD_ID);
+			long cid2_2 = p2_2.get(FieldNames.FIELD_ID);
+
+			assertEquals("person1 ID should be identical regardless of role", cid1_1, cid1_2);
+			assertEquals("person2 ID should be identical regardless of role", cid2_1, cid2_2);
 
 			logger.info("Test 17 passed: role swap produces identical person IDs");
 		} catch (Exception e) {
@@ -419,8 +419,6 @@ public class TestMemoryPhase2 extends BaseTest {
 			List<BaseRecord> pop = getPopulation(2);
 			BaseRecord sysChar = pop.get(0);
 			BaseRecord usrChar = pop.get(1);
-			long sysId = sysChar.get(FieldNames.FIELD_ID);
-			long usrId = usrChar.get(FieldNames.FIELD_ID);
 			String sysName = sysChar.get(FieldNames.FIELD_FIRST_NAME);
 			String usrName = usrChar.get(FieldNames.FIELD_FIRST_NAME);
 
@@ -431,11 +429,11 @@ public class TestMemoryPhase2 extends BaseTest {
 			MemoryUtil.createMemory(testUser,
 				sysName + " told " + usrName + " a story about a dragon.",
 				"Dragon story", MemoryTypeEnumType.NOTE, 8,
-				"am7://test/integration", convId, sysId, usrId);
+				"am7://test/integration", convId, sysChar, usrChar);
 			MemoryUtil.createMemory(testUser,
 				usrName + " shared a secret about hidden treasure.",
 				"Treasure secret", MemoryTypeEnumType.INSIGHT, 9,
-				"am7://test/integration", convId, sysId, usrId);
+				"am7://test/integration", convId, sysChar, usrChar);
 
 			// Create a prompt config with ${memory.context} in the system prompt
 			BaseRecord promptConfig = createMemoryPromptConfig("IntegPrompt");
@@ -611,6 +609,16 @@ public class TestMemoryPhase2 extends BaseTest {
 			return msgs.get(0).getContent();
 		}
 		return null;
+	}
+
+	private BaseRecord stubPerson(long id) {
+		try {
+			BaseRecord rec = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_PERSON);
+			rec.set(FieldNames.FIELD_ID, id);
+			return rec;
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to create stub person: " + e.getMessage(), e);
+		}
 	}
 
 	private BaseRecord reloadChatConfig(BaseRecord cfg) {

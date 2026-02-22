@@ -12,6 +12,8 @@
 	"extractMemories": true,
 	"memoryBudget": 1000,
 	"memoryExtractionEvery": 3,
+	"memoryExtractionMaxPerSegment": 2,
+	"memoryExtractionTypes": "FACT,RELATIONSHIP,EMOTION,DECISION,INSIGHT",
 	"autoTitle": true,
 	"complianceCheck": true,
 	"complianceCheckEvery": 3,

@@ -215,36 +215,36 @@ public class TestKeyframeMemory extends BaseTest {
 			// Create 2 memories for pair A-B
 			MemoryUtil.createMemory(testUser, "A and B discussed philosophy at the market.",
 				"Philosophy discussion", MemoryTypeEnumType.OUTCOME, 7,
-				"am7://keyframe/" + cfgABObjId, cfgABObjId, aId, bId);
+				"am7://keyframe/" + cfgABObjId, cfgABObjId, charA, charB);
 			MemoryUtil.createMemory(testUser, "A and B argued about the weather and made up.",
 				"Weather argument", MemoryTypeEnumType.OUTCOME, 6,
-				"am7://keyframe/" + cfgABObjId, cfgABObjId, aId, bId);
+				"am7://keyframe/" + cfgABObjId, cfgABObjId, charA, charB);
 
 			// Create 1 memory for pair A-C
 			MemoryUtil.createMemory(testUser, "A and C shared a meal together at the tavern.",
 				"Shared meal", MemoryTypeEnumType.OUTCOME, 5,
-				"am7://keyframe/" + cfgACObjId, cfgACObjId, aId, cId);
+				"am7://keyframe/" + cfgACObjId, cfgACObjId, charA, charC);
 
 			// Verify pair A-B query returns exactly 2
-			List<BaseRecord> abMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, aId, bId, 10);
+			List<BaseRecord> abMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, charA, charB, 10);
 			assertTrue("Pair A-B should have at least 2 memories, found " + abMemories.size(),
 				abMemories.size() >= 2);
 
 			// Verify pair A-C query returns exactly 1
-			List<BaseRecord> acMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, aId, cId, 10);
+			List<BaseRecord> acMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, charA, charC, 10);
 			assertTrue("Pair A-C should have at least 1 memory, found " + acMemories.size(),
 				acMemories.size() >= 1);
 
 			// Verify pair B-C query returns 0 (no relationship)
-			List<BaseRecord> bcMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, bId, cId, 10);
+			List<BaseRecord> bcMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, charB, charC, 10);
 			assertEquals("Pair B-C should have 0 memories", 0, bcMemories.size());
 
 			// Verify role-agnostic: querying B-A returns same as A-B
-			List<BaseRecord> baMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, bId, aId, 10);
+			List<BaseRecord> baMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, charB, charA, 10);
 			assertEquals("Pair B-A should return same count as A-B", abMemories.size(), baMemories.size());
 
 			// Verify person query: A should see memories from both pairs
-			List<BaseRecord> aAllMemories = MemoryUtil.searchMemoriesByPerson(testUser, aId, 20);
+			List<BaseRecord> aAllMemories = MemoryUtil.searchMemoriesByPerson(testUser, charA, 20);
 			assertTrue("Person A should have at least 3 memories (from both pairs), found " + aAllMemories.size(),
 				aAllMemories.size() >= 3);
 
@@ -380,7 +380,7 @@ public class TestKeyframeMemory extends BaseTest {
 			String convId = "roundtrip-" + UUID.randomUUID().toString().substring(0, 8);
 			BaseRecord memory = MemoryUtil.createMemory(testUser, uniqueContent, summary,
 				MemoryTypeEnumType.OUTCOME, 8, "am7://keyframe/roundtrip-test", convId,
-				sysId, usrId);
+				sysChar, usrChar);
 			assertNotNull("Memory should be created successfully", memory);
 
 			// Step 2: Create a NEW chat session for the same character pair with memoryBudget > 0

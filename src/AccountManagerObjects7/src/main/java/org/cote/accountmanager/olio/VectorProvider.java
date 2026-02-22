@@ -58,14 +58,12 @@ public class VectorProvider implements IProvider {
 				content.append(" " + pro + " is " + nar.get("mbtiDescription") + ".");
 			}
 		}
-		// TODO Auto-generated method stub
 		return (content.length() > 0 ? content.toString() : null);
 	}
 
 	@Override
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model)
 			throws ModelException, FieldException, ValueException, ModelNotFoundException, ReaderException {
-		// TODO Auto-generated method stub
 
 	}
 
@@ -73,7 +71,6 @@ public class VectorProvider implements IProvider {
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model,
 			FieldSchema lfield, FieldType field)
 			throws ModelException, FieldException, ValueException, ModelNotFoundException, ReaderException {
-		// TODO Auto-generated method stub
 
 	}
 

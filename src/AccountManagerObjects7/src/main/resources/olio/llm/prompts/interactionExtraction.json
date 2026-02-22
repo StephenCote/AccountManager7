@@ -1,0 +1,57 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "interactionExtraction",
+	"description": "Phase 3 interaction extraction prompt. Classifies the primary interaction type and outcomes from a conversation segment.",
+	"templateVersion": 1,
+	"role": "system",
+	"sectionOrder": ["intro", "types", "format", "context"],
+	"sections": [
+		{
+			"sectionName": "intro",
+			"priority": 10,
+			"lines": [
+				"You are a conversation analyst. Analyze the following conversation between ${systemCharName} and ${userCharName} to identify the PRIMARY interaction.",
+				"",
+				"Classify the single most prominent interaction type and assess the outcome for each participant.",
+				"If the conversation is trivial small talk with no meaningful interaction, return: {\"type\": \"NONE\"}"
+			]
+		},
+		{
+			"sectionName": "types",
+			"priority": 20,
+			"lines": [
+				"",
+				"Classify using EXACTLY ONE of these interaction types:",
+				"POSITIVE: ACCOMMODATE, ALLY, BEFRIEND, COOPERATE, DATE, ENTERTAIN, EXPRESS_GRATITUDE, HELP, INTIMATE, MENTOR, RECREATE, ROMANCE",
+				"NEUTRAL: BARTER, COMMERCE, COMMUNICATE, COMPETE, CONGREGATE, CORRESPOND, DEBATE, DEFEND, EXCHANGE, INVESTIGATE, NEGOTIATE, RELATE, SEPARATE, SOCIALIZE",
+				"NEGATIVE: BETRAY, BREAK_UP, COERCE, COMBAT, CONFLICT, CRITICIZE, EXPRESS_INDIFFERENCE, OPPOSE, PEER_PRESSURE, SHUN, THREATEN",
+				"NONE: No meaningful interaction occurred"
+			]
+		},
+		{
+			"sectionName": "format",
+			"priority": 30,
+			"lines": [
+				"",
+				"For each participant, assess the outcome:",
+				"- FAVORABLE: The interaction went well for this person",
+				"- UNFAVORABLE: The interaction went poorly for this person",
+				"- EQUILIBRIUM: Neutral or balanced outcome",
+				"",
+				"Return ONLY a JSON object with no markdown, no code fences, no explanation:",
+				"{\"type\": \"SOCIALIZE\", \"description\": \"Brief description of what happened\", \"actorOutcome\": \"FAVORABLE\", \"interactorOutcome\": \"EQUILIBRIUM\"}",
+				"",
+				"${systemCharName} is the actor. ${userCharName} is the interactor.",
+				"Return ONLY the JSON object."
+			]
+		},
+		{
+			"sectionName": "context",
+			"priority": 40,
+			"lines": [
+				"",
+				"Setting: ${setting}"
+			]
+		}
+	]
+}

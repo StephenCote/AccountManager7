@@ -198,7 +198,7 @@ public class TestPhase14Memory extends BaseTest {
 
 			BaseRecord mem1 = MemoryUtil.createMemory(testUser, "Elena is afraid of water.",
 				"Elena fears water", MemoryTypeEnumType.FACT, 8,
-				"am7://test/dedup", convId, pid1, pid2, null);
+				"am7://test/dedup", convId, person1, person2);
 			assertNotNull(mem1);
 
 			List<BaseRecord> existing = List.of(mem1);
@@ -221,7 +221,7 @@ public class TestPhase14Memory extends BaseTest {
 
 			BaseRecord mem1 = MemoryUtil.createMemory(testUser, "Elena is afraid of water and cannot swim in rivers.",
 				"Elena fears water", MemoryTypeEnumType.FACT, 8,
-				"am7://test/dedup2", convId, pid1, pid2, null);
+				"am7://test/dedup2", convId, person1, person2);
 			assertNotNull(mem1);
 
 			List<BaseRecord> existing = new java.util.ArrayList<>();
@@ -247,7 +247,7 @@ public class TestPhase14Memory extends BaseTest {
 			// Create an existing memory
 			MemoryUtil.createMemory(testUser, "Elena is afraid of water and cannot swim.",
 				"Elena fears water", MemoryTypeEnumType.FACT, 7,
-				"am7://test/extdedup", convId, pid1, pid2, null);
+				"am7://test/extdedup", convId, person1, person2);
 
 			// Extract with a duplicate and a new memory
 			String llmResponse = "[\n" +
@@ -402,16 +402,16 @@ public class TestPhase14Memory extends BaseTest {
 
 			MemoryUtil.createMemory(testUser, "Fact about the pair.",
 				"Pair fact", MemoryTypeEnumType.FACT, 8,
-				null, convId, pid1, pid2, null);
+				null, convId, person1, person2);
 			MemoryUtil.createMemory(testUser, "Relationship development.",
 				"Pair rel", MemoryTypeEnumType.RELATIONSHIP, 7,
-				null, convId, pid1, pid2, null);
+				null, convId, person1, person2);
 			MemoryUtil.createMemory(testUser, "Emotional moment.",
 				"Pair emo", MemoryTypeEnumType.EMOTION, 6,
-				null, convId, pid1, pid2, null);
+				null, convId, person1, person2);
 
-			// Search with reversed IDs — should still find due to canonicalization
-			List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, pid2, pid1, 10);
+			// Search with reversed persons — should still find due to canonicalization
+			List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, person2, person1, 10);
 			assertNotNull(results);
 			assertEquals("Should find 3 memories for pair (reversed)", 3, results.size());
 
@@ -436,15 +436,15 @@ public class TestPhase14Memory extends BaseTest {
 			// personA with personB
 			MemoryUtil.createMemory(testUser, "Memory of A and B interaction.",
 				"A-B interaction", MemoryTypeEnumType.FACT, 8,
-				null, convId, idA, idB, null);
+				null, convId, personA, personB);
 
 			// personA with personC
 			MemoryUtil.createMemory(testUser, "Memory of A and C interaction.",
 				"A-C interaction", MemoryTypeEnumType.RELATIONSHIP, 7,
-				null, convId, idA, idC, null);
+				null, convId, personA, personC);
 
 			// Search for all personA memories
-			List<BaseRecord> results = MemoryUtil.searchMemoriesByPerson(testUser, idA, 10);
+			List<BaseRecord> results = MemoryUtil.searchMemoriesByPerson(testUser, personA, 10);
 			assertNotNull(results);
 			assertTrue("Should find at least 2 memories for personA", results.size() >= 2);
 

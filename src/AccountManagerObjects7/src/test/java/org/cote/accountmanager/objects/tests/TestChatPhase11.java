@@ -25,6 +25,7 @@ import org.cote.accountmanager.olio.llm.PromptConfigMigrator;
 import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.util.MemoryUtil;
@@ -55,57 +56,57 @@ public class TestChatPhase11 extends BaseTest {
 		assertNotNull("Test user should not be null", testUser);
 	}
 
-	/// P11-1: OI-1 — personModel field is populated when passed to createMemory
+	/// P11-1: OI-1 — person1Model/person2Model fields are populated from BaseRecord schema
 	@Test
 	public void testPersonModelFieldPopulation() {
 		try {
 			String convId = "p11-1-" + UUID.randomUUID().toString().substring(0, 8);
-			String personModel = "olio.charPerson";
+
+			BaseRecord p1 = RecordFactory.newInstance("olio.charPerson");
+			p1.set(FieldNames.FIELD_ID, 100L);
+			BaseRecord p2 = RecordFactory.newInstance("olio.charPerson");
+			p2.set(FieldNames.FIELD_ID, 200L);
 
 			BaseRecord memory = MemoryUtil.createMemory(
 				testUser, "Test content for personModel", "personModel test",
 				MemoryTypeEnumType.OUTCOME, 7,
 				"am7://test/p11-1", convId,
-				100L, 200L, personModel
+				p1, p2
 			);
 			assertNotNull("Memory should be created", memory);
 
-			String storedModel = memory.get("personModel");
-			assertNotNull("personModel should not be null", storedModel);
-			assertEquals("personModel should match", personModel, storedModel);
+			String storedModel1 = memory.get("person1Model");
+			String storedModel2 = memory.get("person2Model");
+			assertNotNull("person1Model should not be null", storedModel1);
+			assertNotNull("person2Model should not be null", storedModel2);
+			assertEquals("person1Model should match", "olio.charPerson", storedModel1);
+			assertEquals("person2Model should match", "olio.charPerson", storedModel2);
 
-			// Verify canonical ordering is preserved
-			long pid1 = memory.get("personId1");
-			long pid2 = memory.get("personId2");
-			assertEquals("personId1 should be canonical lower", 100L, pid1);
-			assertEquals("personId2 should be canonical higher", 200L, pid2);
-
-			logger.info("P11-1 passed: personModel field populated correctly");
+			logger.info("P11-1 passed: person model fields populated correctly");
 		} catch (Exception e) {
 			logger.error("P11-1 failed", e);
 			fail("P11-1 Exception: " + e.getMessage());
 		}
 	}
 
-	/// P11-1b: Backward compatibility — createMemory without personModel still works
+	/// P11-1b: person1Model/person2Model are null when no persons are passed
 	@Test
 	public void testPersonModelFieldBackwardCompat() {
 		try {
 			String convId = "p11-1b-" + UUID.randomUUID().toString().substring(0, 8);
 
 			BaseRecord memory = MemoryUtil.createMemory(
-				testUser, "Test backward compat", "compat test",
+				testUser, "Test without persons", "no person test",
 				MemoryTypeEnumType.NOTE, 5,
-				null, convId, 300L, 400L
+				null, convId
 			);
-			assertNotNull("Memory should be created without personModel", memory);
+			assertNotNull("Memory should be created without persons", memory);
 
-			String storedModel = memory.get("personModel");
-			// personModel should be null or empty when not passed
-			assertTrue("personModel should be null or empty when not set",
-				storedModel == null || storedModel.isEmpty());
+			String storedModel1 = memory.get("person1Model");
+			assertTrue("person1Model should be null or empty when not set",
+				storedModel1 == null || storedModel1.isEmpty());
 
-			logger.info("P11-1b passed: backward compatible createMemory works");
+			logger.info("P11-1b passed: no person model fields when persons not provided");
 		} catch (Exception e) {
 			logger.error("P11-1b failed", e);
 			fail("P11-1b Exception: " + e.getMessage());

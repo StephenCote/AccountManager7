@@ -8,6 +8,7 @@ import java.util.List;
 
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.util.MemoryUtil;
@@ -17,6 +18,16 @@ import org.junit.Test;
 /// Phase 3 (chatRefactor2): Tests for cross-conversation memory sharing,
 /// searchMemoriesByPerson(), searchMemoriesByPersonAndQuery(), and memory creation.
 public class TestMemorySharing extends BaseTest {
+
+	private BaseRecord stubPerson(long id) {
+		try {
+			BaseRecord rec = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_PERSON);
+			rec.set(FieldNames.FIELD_ID, id);
+			return rec;
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to create stub person: " + e.getMessage(), e);
+		}
+	}
 
 	private long getPersonId(BaseRecord memory, String fieldName) {
 		try {
@@ -43,7 +54,7 @@ public class TestMemorySharing extends BaseTest {
 			7,
 			"am7://test",
 			"test-conv-1",
-			100L, 200L, OlioModelNames.MODEL_CHAR_PERSON
+			stubPerson(100L), stubPerson(200L)
 		);
 		assertNotNull("Created memory is null", memory);
 		logger.info("Created memory: " + memory.get(FieldNames.FIELD_OBJECT_ID));
@@ -58,19 +69,19 @@ public class TestMemorySharing extends BaseTest {
 		/// Create memories for pair (100, 200)
 		MemoryUtil.createMemory(testUser, "Pair memory 1", "PM1",
 			MemoryTypeEnumType.FACT, 5, "am7://test", "conv-pair-1",
-			100L, 200L, OlioModelNames.MODEL_CHAR_PERSON);
+			stubPerson(100L), stubPerson(200L));
 		MemoryUtil.createMemory(testUser, "Pair memory 2", "PM2",
 			MemoryTypeEnumType.RELATIONSHIP, 8, "am7://test", "conv-pair-1",
-			100L, 200L, OlioModelNames.MODEL_CHAR_PERSON);
+			stubPerson(100L), stubPerson(200L));
 
 		/// Retrieve pair memories — order shouldn't matter
-		List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, 100L, 200L, 50);
+		List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, stubPerson(100L), stubPerson(200L), 50);
 		assertNotNull("Results are null", results);
 		assertTrue("Should find at least 2 pair memories", results.size() >= 2);
 		logger.info("Found " + results.size() + " pair memories for (100, 200)");
 
 		/// Reversed order should give same results
-		List<BaseRecord> reversed = MemoryUtil.searchMemoriesByPersonPair(testUser, 200L, 100L, 50);
+		List<BaseRecord> reversed = MemoryUtil.searchMemoriesByPersonPair(testUser, stubPerson(200L), stubPerson(100L), 50);
 		assertTrue("Reversed pair should give same count", reversed.size() == results.size());
 	}
 
@@ -83,16 +94,16 @@ public class TestMemorySharing extends BaseTest {
 		/// Create memories across multiple pairs for person 300
 		MemoryUtil.createMemory(testUser, "Person300 with 400", "P300-400",
 			MemoryTypeEnumType.FACT, 6, "am7://test", "conv-p1",
-			300L, 400L, OlioModelNames.MODEL_CHAR_PERSON);
+			stubPerson(300L), stubPerson(400L));
 		MemoryUtil.createMemory(testUser, "Person300 with 500", "P300-500",
 			MemoryTypeEnumType.RELATIONSHIP, 7, "am7://test", "conv-p2",
-			300L, 500L, OlioModelNames.MODEL_CHAR_PERSON);
+			stubPerson(300L), stubPerson(500L));
 		MemoryUtil.createMemory(testUser, "Person400 with 500 (no 300)", "P400-500",
 			MemoryTypeEnumType.EMOTION, 5, "am7://test", "conv-p3",
-			400L, 500L, OlioModelNames.MODEL_CHAR_PERSON);
+			stubPerson(400L), stubPerson(500L));
 
 		/// Search for person 300 — should find memories from both pairs
-		List<BaseRecord> results = MemoryUtil.searchMemoriesByPerson(testUser, 300L, 50);
+		List<BaseRecord> results = MemoryUtil.searchMemoriesByPerson(testUser, stubPerson(300L), 50);
 		assertNotNull("Results are null", results);
 		assertTrue("Should find at least 2 memories for person 300", results.size() >= 2);
 		logger.info("Found " + results.size() + " memories for person 300");
@@ -124,10 +135,10 @@ public class TestMemorySharing extends BaseTest {
 		/// Create memories with distinct content for semantic matching
 		MemoryUtil.createMemory(testUser, "Person 600 loves cooking Italian food with fresh basil and tomatoes.",
 			"Cooking interest", MemoryTypeEnumType.FACT, 7, "am7://test", "conv-q1",
-			600L, 700L, OlioModelNames.MODEL_CHAR_PERSON);
+			stubPerson(600L), stubPerson(700L));
 		MemoryUtil.createMemory(testUser, "Person 600 enjoys reading science fiction novels about space exploration.",
 			"Reading interest", MemoryTypeEnumType.FACT, 6, "am7://test", "conv-q2",
-			600L, 700L, OlioModelNames.MODEL_CHAR_PERSON);
+			stubPerson(600L), stubPerson(700L));
 
 		/// Semantic search: query about food should match the cooking memory
 		List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonAndQuery(
@@ -152,7 +163,7 @@ public class TestMemorySharing extends BaseTest {
 			"Alice told Bob about her trip to Paris and the Eiffel Tower.",
 			"Paris trip discussion",
 			MemoryTypeEnumType.FACT, 8, "am7://test", "conv-alice-bob",
-			800L, 900L, OlioModelNames.MODEL_CHAR_PERSON
+			stubPerson(800L), stubPerson(900L)
 		);
 		assertNotNull("Original memory is null", originalMemory);
 
@@ -162,12 +173,12 @@ public class TestMemorySharing extends BaseTest {
 		BaseRecord sharedMemory = MemoryUtil.createMemory(
 			testUser, content, summary,
 			MemoryTypeEnumType.FACT, 8, "am7://manual", "conv-charlie-bob",
-			900L, 1000L, OlioModelNames.MODEL_CHAR_PERSON
+			stubPerson(900L), stubPerson(1000L)
 		);
 		assertNotNull("Shared memory is null", sharedMemory);
 
 		/// Verify the shared memory appears in (Charlie, Bob) pair
-		List<BaseRecord> charlieBobMems = MemoryUtil.searchMemoriesByPersonPair(testUser, 900L, 1000L, 50);
+		List<BaseRecord> charlieBobMems = MemoryUtil.searchMemoriesByPersonPair(testUser, stubPerson(900L), stubPerson(1000L), 50);
 		assertNotNull("Charlie-Bob results are null", charlieBobMems);
 		boolean found = false;
 		for (BaseRecord mem : charlieBobMems) {
@@ -180,7 +191,7 @@ public class TestMemorySharing extends BaseTest {
 		assertTrue("Shared memory should appear in Charlie-Bob pair", found);
 
 		/// Bob's cross-pair search should find memories from both pairs
-		List<BaseRecord> bobMems = MemoryUtil.searchMemoriesByPerson(testUser, 900L, 50);
+		List<BaseRecord> bobMems = MemoryUtil.searchMemoriesByPerson(testUser, stubPerson(900L), 50);
 		assertTrue("Bob should have memories from multiple pairs", bobMems.size() >= 2);
 		logger.info("Bob has " + bobMems.size() + " cross-pair memories");
 	}
@@ -193,9 +204,9 @@ public class TestMemorySharing extends BaseTest {
 
 		MemoryUtil.createMemory(testUser, "Formatting test memory", "Format test",
 			MemoryTypeEnumType.NOTE, 5, "am7://test", "conv-fmt",
-			1100L, 1200L, OlioModelNames.MODEL_CHAR_PERSON);
+			stubPerson(1100L), stubPerson(1200L));
 
-		List<BaseRecord> mems = MemoryUtil.searchMemoriesByPersonPair(testUser, 1100L, 1200L, 10);
+		List<BaseRecord> mems = MemoryUtil.searchMemoriesByPersonPair(testUser, stubPerson(1100L), stubPerson(1200L), 10);
 		assertNotNull("Memories are null", mems);
 		assertTrue("Should have at least one memory", mems.size() > 0);
 

@@ -75,6 +75,20 @@
 			"foreign": true,
 			"foreignType": "person2Model",
 			"description": "Foreign reference to second person in canonical (higher ID) order"
+		},
+		{
+			"name": "interactionModel",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Model type of interaction (olio.interaction)"
+		},
+		{
+			"name": "interaction",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "interactionModel",
+			"description": "Foreign reference to the associated olio.interaction record (temporal pin). Links this memory to the interaction that was active when it was extracted."
 		}
 	]
 }

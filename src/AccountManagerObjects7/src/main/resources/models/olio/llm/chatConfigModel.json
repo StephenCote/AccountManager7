@@ -279,7 +279,20 @@
 			"name": "memoryExtractionPrompt",
 			"type": "string",
 			"maxLength": 128,
-			"description": "Custom memory extraction prompt resource name. Null uses default memoryExtraction.json."
+			"description": "Custom memory extraction prompt resource name. Null uses default memoryExtractionV2.json."
+		},
+		{
+			"name": "memoryExtractionMaxPerSegment",
+			"type": "int",
+			"default": 1,
+			"description": "Maximum number of memories to extract per conversation segment. 1 = focused single-memory extraction (recommended). 0 = unlimited. Max 10."
+		},
+		{
+			"name": "memoryExtractionTypes",
+			"type": "string",
+			"maxLength": 256,
+			"default": "FACT,RELATIONSHIP,DISCOVERY,DECISION,INSIGHT",
+			"description": "Comma-separated list of allowed MemoryTypeEnumType values for extraction. Only memories matching these types will be persisted."
 		},
 		{
 			"name": "promptTemplate",

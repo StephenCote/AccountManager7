@@ -615,7 +615,6 @@ public class OlioAction extends CommonAction implements IAction{
 			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 
 			Chat chat = new Chat(user, chatConfig, promptConfig);
-			chat.setFormatOutput(true);
 
 			OpenAIRequest req = null;
 			if(cmd.hasOption("session")) {
@@ -651,9 +650,7 @@ public class OlioAction extends CommonAction implements IAction{
 			}
 			chatConfig2.setValue("useNLP", false);
 			Chat chat = new Chat(user, chatConfig, promptConfig);
-			chat.setFormatOutput(true);
 			Chat chat2 = new Chat(user, chatConfig2, promptConfig);
-			chat2.setFormatOutput(true);
 			OpenAIRequest req1 = chat.getChatPrompt();
 			OpenAIRequest req2 = chat2.getChatPrompt();
 			if(cmd.hasOption("debug")) {

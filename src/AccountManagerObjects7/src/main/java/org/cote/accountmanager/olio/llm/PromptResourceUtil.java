@@ -5,6 +5,8 @@ import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -79,6 +81,23 @@ public class PromptResourceUtil {
 			if (val instanceof String) return (String) val;
 		}
 		return null;
+	}
+
+	/// Phase 2 (MemoryRefactor2): Load a prompt resource as a BaseRecord.
+	/// Uses RecordFactory.importRecord to deserialize the JSON into a typed record
+	/// (e.g., olio.llm.promptTemplate). Returns null if the resource is not found or parse fails.
+	public static BaseRecord loadAsRecord(String name) {
+		String json = ResourceUtil.getInstance().getResource(PREFIX + name + ".json");
+		if (json == null) {
+			logger.warn("Prompt resource not found: " + name);
+			return null;
+		}
+		try {
+			return RecordFactory.importRecord(json);
+		} catch (Exception e) {
+			logger.error("Failed to import prompt resource as record " + name + ": " + e.getMessage());
+			return null;
+		}
 	}
 
 	/// Simple token replacement for prompt templates.

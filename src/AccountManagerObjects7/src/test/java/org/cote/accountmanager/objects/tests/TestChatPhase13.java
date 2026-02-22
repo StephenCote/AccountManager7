@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
@@ -57,6 +58,16 @@ public class TestChatPhase13 extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "phase13User", testOrgContext.getOrganizationId());
 		assertNotNull("Test user should not be null", testUser);
+	}
+
+	private BaseRecord stubPerson(long id) {
+		try {
+			BaseRecord rec = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_PERSON);
+			rec.set(FieldNames.FIELD_ID, id);
+			return rec;
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to create stub person: " + e.getMessage(), e);
+		}
 	}
 
 	/// P13-1: Verify chatConfigModel has the fields extractMemories, memoryBudget, memoryExtractionEvery
@@ -230,11 +241,11 @@ public class TestChatPhase13 extends BaseTest {
 				"Aria's fear confession",
 				MemoryTypeEnumType.NOTE, 8,
 				"am7://test/phase13", conversationId,
-				personId1, personId2
+				stubPerson(personId1), stubPerson(personId2)
 			);
 			assertNotNull("Memory with person pair should not be null", memory);
 
-			List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, personId1, personId2, 10);
+			List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, stubPerson(personId1), stubPerson(personId2), 10);
 			assertNotNull("Person pair search results should not be null", results);
 			assertTrue("Should find at least 1 memory for person pair (1, 2), found " + results.size(),
 				results.size() >= 1);
@@ -265,7 +276,7 @@ public class TestChatPhase13 extends BaseTest {
 				"Strategy discussion",
 				MemoryTypeEnumType.NOTE, 5,
 				"am7://test/phase13", UUID.randomUUID().toString(),
-				personId1, personId2
+				stubPerson(personId1), stubPerson(personId2)
 			);
 			assertNotNull("Memory 1 should not be null", mem1);
 
@@ -275,7 +286,7 @@ public class TestChatPhase13 extends BaseTest {
 				"Dawn training",
 				MemoryTypeEnumType.NOTE, 6,
 				"am7://test/phase13", UUID.randomUUID().toString(),
-				personId1, personId2
+				stubPerson(personId1), stubPerson(personId2)
 			);
 			assertNotNull("Memory 2 should not be null", mem2);
 
@@ -285,11 +296,11 @@ public class TestChatPhase13 extends BaseTest {
 				"Campfire stories",
 				MemoryTypeEnumType.NOTE, 4,
 				"am7://test/phase13", UUID.randomUUID().toString(),
-				personId1, personId2
+				stubPerson(personId1), stubPerson(personId2)
 			);
 			assertNotNull("Memory 3 should not be null", mem3);
 
-			List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, personId1, personId2, 10);
+			List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, stubPerson(personId1), stubPerson(personId2), 10);
 			assertNotNull("Person pair search results should not be null", results);
 			assertTrue("Should find at least 3 memories for person pair (1001, 1002), found " + results.size(),
 				results.size() >= 3);
@@ -358,7 +369,7 @@ public class TestChatPhase13 extends BaseTest {
 				"Moonstone ritual requirement",
 				MemoryTypeEnumType.NOTE, 7,
 				"am7://test/phase13", session1,
-				personId1, personId2
+				stubPerson(personId1), stubPerson(personId2)
 			);
 			assertNotNull("Session1 memory should not be null", mem1);
 
@@ -369,12 +380,12 @@ public class TestChatPhase13 extends BaseTest {
 				"Moonstone fragment found",
 				MemoryTypeEnumType.NOTE, 6,
 				"am7://test/phase13", session2,
-				personId1, personId2
+				stubPerson(personId1), stubPerson(personId2)
 			);
 			assertNotNull("Session2 memory should not be null", mem2);
 
 			// Search by person pair -- should find memories from BOTH sessions
-			List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, personId1, personId2, 10);
+			List<BaseRecord> results = MemoryUtil.searchMemoriesByPersonPair(testUser, stubPerson(personId1), stubPerson(personId2), 10);
 			assertNotNull("Cross-conversation results should not be null", results);
 			assertTrue("Should find at least 2 memories across conversations, found " + results.size(),
 				results.size() >= 2);

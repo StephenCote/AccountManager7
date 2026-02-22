@@ -2,8 +2,10 @@ package org.cote.accountmanager.util;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
@@ -19,7 +21,6 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
@@ -54,27 +55,6 @@ public class MemoryUtil {
 	public static BaseRecord createMemory(BaseRecord user, String content, String summary,
 			MemoryTypeEnumType type, int importance, String sourceUri, String conversationId) {
 		return createMemory(user, content, summary, type, importance, sourceUri, conversationId, (BaseRecord) null, (BaseRecord) null);
-	}
-
-	/// Backward-compatible overload accepting long person IDs.
-	public static BaseRecord createMemory(BaseRecord user, String content, String summary,
-			MemoryTypeEnumType type, int importance, String sourceUri, String conversationId,
-			long personId1, long personId2) {
-		return createMemory(user, content, summary, type, importance, sourceUri, conversationId, personId1, personId2, null);
-	}
-
-	/// Backward-compatible overload accepting long person IDs with explicit model type.
-	public static BaseRecord createMemory(BaseRecord user, String content, String summary,
-			MemoryTypeEnumType type, int importance, String sourceUri, String conversationId,
-			long personId1, long personId2, String personModel) {
-		if (personId1 > 0L && personId2 > 0L) {
-			BaseRecord p1 = stubPersonRecord(personId1, personModel);
-			BaseRecord p2 = stubPersonRecord(personId2, personModel);
-			if (p1 != null && p2 != null) {
-				return createMemory(user, content, summary, type, importance, sourceUri, conversationId, p1, p2);
-			}
-		}
-		return createMemory(user, content, summary, type, importance, sourceUri, conversationId);
 	}
 
 	public static BaseRecord createMemory(BaseRecord user, String content, String summary,
@@ -189,13 +169,22 @@ public class MemoryUtil {
 		return results;
 	}
 
+	/// Resolve the memory group for the given user, returning null if unavailable.
+	private static BaseRecord getMemoryGroup(BaseRecord user) {
+		if (user == null) {
+			logger.warn("Cannot resolve memory group: user is null");
+			return null;
+		}
+		return IOSystem.getActiveContext().getPathUtil().makePath(
+			user, ModelNames.MODEL_GROUP, MEMORY_GROUP_PATH,
+			GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID)
+		);
+	}
+
 	public static List<BaseRecord> getConversationMemories(BaseRecord user, String conversationId) {
 		List<BaseRecord> results = new ArrayList<>();
 		try {
-			BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(
-				user, ModelNames.MODEL_GROUP, MEMORY_GROUP_PATH,
-				GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID)
-			);
+			BaseRecord group = getMemoryGroup(user);
 			if (group == null) {
 				return results;
 			}
@@ -217,14 +206,11 @@ public class MemoryUtil {
 	public static List<BaseRecord> searchMemoriesByPersonPair(BaseRecord user, BaseRecord person1, BaseRecord person2, int limit) {
 		List<BaseRecord> results = new ArrayList<>();
 		try {
-			BaseRecord[] canon = canonicalPersonOrder(person1, person2);
-			BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(
-				user, ModelNames.MODEL_GROUP, MEMORY_GROUP_PATH,
-				GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID)
-			);
+			BaseRecord group = getMemoryGroup(user);
 			if (group == null) {
 				return results;
 			}
+			BaseRecord[] canon = canonicalPersonOrder(person1, person2);
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 			q.field("person1", canon[0]);
 			q.field("person2", canon[1]);
@@ -244,14 +230,10 @@ public class MemoryUtil {
 	public static List<BaseRecord> searchMemoriesByPerson(BaseRecord user, BaseRecord person, int limit) {
 		List<BaseRecord> results = new ArrayList<>();
 		try {
-			BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(
-				user, ModelNames.MODEL_GROUP, MEMORY_GROUP_PATH,
-				GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID)
-			);
+			BaseRecord group = getMemoryGroup(user);
 			if (group == null) {
 				return results;
 			}
-			// Query memories where person appears as either person1 or person2
 			Query q1 = QueryUtil.createQuery(ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 			q1.field("person1", person);
 			q1.planMost(true);
@@ -267,7 +249,6 @@ public class MemoryUtil {
 			q2.setRequestRange(0L, limit);
 			BaseRecord[] recs2 = IOSystem.getActiveContext().getSearch().findRecords(q2);
 			if (recs2 != null) {
-				// Deduplicate
 				for (BaseRecord r : recs2) {
 					long rid = r.get(FieldNames.FIELD_ID);
 					boolean dup = results.stream().anyMatch(existing -> (long) existing.get(FieldNames.FIELD_ID) == rid);
@@ -277,7 +258,6 @@ public class MemoryUtil {
 				}
 			}
 
-			// Sort by importance descending, limit
 			results.sort((a, b) -> Integer.compare((int) b.get("importance"), (int) a.get("importance")));
 			if (results.size() > limit) {
 				results = new ArrayList<>(results.subList(0, limit));
@@ -414,177 +394,62 @@ public class MemoryUtil {
 					}
 					return memories;
 				} catch (org.json.JSONException je) {
-					logger.info("JSON parse failed, falling back to text parser: " + je.getMessage());
+					logger.warn("Memory extraction returned non-JSON response: " + je.getMessage());
 				}
 			}
 
-			/// Text fallback: parse lines produced by models that ignore the JSON format.
-			/// The LLM may return numbered entries with bulleted sub-fields:
-			///   1. Brief description
-			///      - content: "detailed text"
-			///      - summary: short summary
-			///      - memoryType: RELATIONSHIP
-			///      - importance: 7
-			/// Or flat TYPE: content lines, or simple bullet lists.
-			/// Strategy: strip bullet/number prefix first, then check metadata vs content.
-			logger.info("Attempting text-based extraction from " + cleaned.length() + " chars");
-
-			java.util.regex.Pattern typePattern = java.util.regex.Pattern.compile(
-				"^(FACT|RELATIONSHIP|EMOTION|DECISION|DISCOVERY|NOTE|INSIGHT|OUTCOME|BEHAVIOR|ERROR_LESSON)\\s*[:—–-]\\s*(.+)",
-				java.util.regex.Pattern.CASE_INSENSITIVE
-			);
-			java.util.regex.Pattern numberedPrefix = java.util.regex.Pattern.compile(
-				"^(\\d+)[.)]\\s*(.*)"
-			);
-			java.util.regex.Pattern bulletPrefix = java.util.regex.Pattern.compile(
-				"^[-*•]\\s*(.*)"
-			);
-			/// Metadata patterns: enrich the current entry
-			java.util.regex.Pattern summaryPattern = java.util.regex.Pattern.compile(
-				"^summary\\s*[:—–-]\\s*(.+)", java.util.regex.Pattern.CASE_INSENSITIVE
-			);
-			java.util.regex.Pattern memTypePattern = java.util.regex.Pattern.compile(
-				"^(?:memoryType|memory_type|type)\\s*[:—–-]\\s*(.+)", java.util.regex.Pattern.CASE_INSENSITIVE
-			);
-			java.util.regex.Pattern importancePattern = java.util.regex.Pattern.compile(
-				"^importance\\s*[:—–-]\\s*(\\d+)", java.util.regex.Pattern.CASE_INSENSITIVE
-			);
-			java.util.regex.Pattern contentPattern = java.util.regex.Pattern.compile(
-				"^content\\s*[:—–-]\\s*(.+)", java.util.regex.Pattern.CASE_INSENSITIVE
-			);
-			java.util.regex.Pattern headerPattern = java.util.regex.Pattern.compile(
-				"^(?:Memor(?:ies|y)|Key|Notes|Extracted|Fragments|Here are|The following|Below are).*[:.]$",
-				java.util.regex.Pattern.CASE_INSENSITIVE
-			);
-
-			String[] lines = cleaned.split("\\r?\\n");
-			String currentType = null;
-			StringBuilder currentContent = null;
-			String currentSummary = null;
-			int currentImportance = 5;
-
-			for (String line : lines) {
-				String trimmed = line.trim();
-				if (trimmed.isEmpty()) continue;
-				if (headerPattern.matcher(trimmed).matches()) continue;
-
-				/// Step 1: Strip bullet/number prefix to get inner text
-				String inner = trimmed;
-				boolean isNumbered = false;
-				boolean hasBullet = false;
-				java.util.regex.Matcher nm = numberedPrefix.matcher(trimmed);
-				if (nm.matches()) {
-					inner = nm.group(2).trim();
-					isNumbered = true;
-					hasBullet = true;
-				} else {
-					java.util.regex.Matcher bm = bulletPrefix.matcher(trimmed);
-					if (bm.matches()) {
-						inner = bm.group(1).trim();
-						hasBullet = true;
-					}
-				}
-
-				/// Step 2: Check metadata labels against inner text (bullet prefix stripped)
-				java.util.regex.Matcher sm = summaryPattern.matcher(inner);
-				if (sm.matches()) {
-					if (currentContent != null) currentSummary = sm.group(1).trim();
-					continue;
-				}
-				java.util.regex.Matcher mm = memTypePattern.matcher(inner);
-				if (mm.matches()) {
-					if (currentContent != null) currentType = mm.group(1).trim().toUpperCase();
-					continue;
-				}
-				java.util.regex.Matcher im = importancePattern.matcher(inner);
-				if (im.matches()) {
-					if (currentContent != null) {
-						try { currentImportance = Integer.parseInt(im.group(1).trim()); } catch (NumberFormatException e) { /* keep default */ }
-					}
-					continue;
-				}
-				java.util.regex.Matcher cm = contentPattern.matcher(inner);
-				if (cm.matches()) {
-					/// content: field replaces current content (it's the LLM's intended memory text,
-					/// the numbered-item text was just a brief header)
-					String val = cm.group(1).trim();
-					if (val.startsWith("\"")) val = val.substring(1);
-					if (val.endsWith("\"")) val = val.substring(0, val.length() - 1);
-					if (currentContent != null) {
-						currentContent = new StringBuilder(val);
-					} else {
-						currentType = "NOTE";
-						currentContent = new StringBuilder(val);
-					}
-					continue;
-				}
-
-				/// Step 3: Check TYPE: prefix against inner text
-				java.util.regex.Matcher mat = typePattern.matcher(inner);
-				if (mat.matches()) {
-					/// Flush previous entry
-					if (currentType != null && currentContent != null && currentContent.length() > 0) {
-						String content = currentContent.toString().trim();
-						String summary = currentSummary != null ? currentSummary : (content.length() > 100 ? content.substring(0, 97) + "..." : content);
-						addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
-							currentImportance, sourceUri, conversationId, person1, person2);
-					}
-					currentType = mat.group(1).toUpperCase();
-					currentContent = new StringBuilder(mat.group(2).trim());
-					currentSummary = null;
-					currentImportance = 5;
-					continue;
-				}
-
-				/// Step 4: Numbered items start new entries
-				if (isNumbered) {
-					/// Flush previous entry
-					if (currentType != null && currentContent != null && currentContent.length() > 0) {
-						String content = currentContent.toString().trim();
-						String summary = currentSummary != null ? currentSummary : (content.length() > 100 ? content.substring(0, 97) + "..." : content);
-						addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
-							currentImportance, sourceUri, conversationId, person1, person2);
-					}
-					currentType = "NOTE";
-					currentContent = new StringBuilder(inner);
-					currentSummary = null;
-					currentImportance = 5;
-					continue;
-				}
-
-				/// Step 5: Plain bullets with non-metadata content — continuation of current entry
-				/// (sub-bullets under a numbered item are typically extra detail, not new entries)
-				if (hasBullet && currentContent != null && inner.length() > 0) {
-					currentContent.append(" ").append(inner);
-					continue;
-				}
-
-				/// Step 6: Continuation or fallback
-				if (currentContent != null) {
-					currentContent.append(" ").append(trimmed);
-				} else if (trimmed.length() > 10) {
-					currentType = "NOTE";
-					currentContent = new StringBuilder(trimmed);
-					currentSummary = null;
-					currentImportance = 5;
-				}
-			}
-			/// Flush final entry
-			if (currentType != null && currentContent != null && currentContent.length() > 0) {
-				String content = currentContent.toString().trim();
-				String summary = currentSummary != null ? currentSummary : (content.length() > 100 ? content.substring(0, 97) + "..." : content);
-				addOrMergeMemory(user, memories, existingMemories, content, summary, currentType,
-					currentImportance, sourceUri, conversationId, person1, person2);
-			}
-			if (!memories.isEmpty()) {
-				logger.info("Text fallback extracted " + memories.size() + " memories");
-			} else {
+			/// JSON is the only supported extraction format.
+			/// If the LLM didn't return valid JSON, log and return empty.
+			if (memories.isEmpty()) {
 				logger.warn("No memories extracted from response: " + cleaned.substring(0, Math.min(200, cleaned.length())));
 			}
 		} catch (Exception e) {
 			logger.error("Error parsing memory extraction response: " + e.getMessage());
 		}
 		return memories;
+	}
+
+	/// Phase 2 (MemoryRefactor2): Overload with max-per-segment limit.
+	/// Delegates to the 6-arg overload, then truncates to maxPerSegment.
+	/// maxPerSegment <= 0 means unlimited (backward compat).
+	public static List<BaseRecord> extractMemoriesFromResponse(BaseRecord user, String llmResponse,
+			String sourceUri, String conversationId, BaseRecord person1, BaseRecord person2, int maxPerSegment) {
+
+		List<BaseRecord> results = extractMemoriesFromResponse(user, llmResponse, sourceUri, conversationId, person1, person2);
+		if (maxPerSegment > 0 && results.size() > maxPerSegment) {
+			return new ArrayList<>(results.subList(0, maxPerSegment));
+		}
+		return results;
+	}
+
+	/// Phase 2 (MemoryRefactor2): Filter memories to only those whose memoryType
+	/// is in the comma-separated allowedTypes string.
+	/// If allowedTypes is null or empty, returns the full list (no filtering).
+	public static List<BaseRecord> filterByTypes(List<BaseRecord> memories, String allowedTypes) {
+		if (memories == null || memories.isEmpty()) {
+			return memories != null ? memories : new ArrayList<>();
+		}
+		if (allowedTypes == null || allowedTypes.trim().isEmpty()) {
+			return memories;
+		}
+		Set<String> allowed = new HashSet<>();
+		for (String t : allowedTypes.split(",")) {
+			String trimmed = t.trim();
+			if (!trimmed.isEmpty()) {
+				allowed.add(trimmed);
+			}
+		}
+		if (allowed.isEmpty()) {
+			return memories;
+		}
+		List<BaseRecord> filtered = new ArrayList<>();
+		for (BaseRecord mem : memories) {
+			Object mt = mem.get("memoryType");
+			if (mt != null && allowed.contains(mt.toString())) {
+				filtered.add(mem);
+			}
+		}
+		return filtered;
 	}
 
 	/// Shared helper for extractMemoriesFromResponse: dedup-check, then create or merge.
@@ -723,43 +588,4 @@ public class MemoryUtil {
 		return (double) intersection.size() / union.size();
 	}
 
-	/// Backward-compatible overload accepting long person IDs.
-	public static List<BaseRecord> extractMemoriesFromResponse(BaseRecord user, String llmResponse,
-			String sourceUri, String conversationId, long personId1, long personId2) {
-		BaseRecord p1 = stubPersonRecord(personId1, null);
-		BaseRecord p2 = stubPersonRecord(personId2, null);
-		return extractMemoriesFromResponse(user, llmResponse, sourceUri, conversationId, p1, p2);
-	}
-
-	/// Backward-compatible overload accepting long person IDs.
-	public static List<BaseRecord> searchMemoriesByPersonPair(BaseRecord user, long person1Id, long person2Id, int limit) {
-		BaseRecord p1 = stubPersonRecord(person1Id, null);
-		BaseRecord p2 = stubPersonRecord(person2Id, null);
-		if (p1 != null && p2 != null) {
-			return searchMemoriesByPersonPair(user, p1, p2, limit);
-		}
-		return new ArrayList<>();
-	}
-
-	/// Backward-compatible overload accepting a long person ID.
-	public static List<BaseRecord> searchMemoriesByPerson(BaseRecord user, long personId, int limit) {
-		BaseRecord p = stubPersonRecord(personId, null);
-		if (p != null) {
-			return searchMemoriesByPerson(user, p, limit);
-		}
-		return new ArrayList<>();
-	}
-
-	/// Create a minimal stub record with just an ID for use with foreign key queries.
-	private static BaseRecord stubPersonRecord(long id, String personModel) {
-		try {
-			String model = (personModel != null && !personModel.isEmpty()) ? personModel : "olio.charPerson";
-			BaseRecord rec = RecordFactory.newInstance(model);
-			rec.set(FieldNames.FIELD_ID, id);
-			return rec;
-		} catch (Exception e) {
-			logger.error("Error creating stub person record: " + e.getMessage());
-			return null;
-		}
-	}
 }
