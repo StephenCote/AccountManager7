@@ -14,10 +14,12 @@ import org.cote.accountmanager.olio.OutcomeEnumType;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.MemoryUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 
 /// Extracts and persists olio.interaction records from conversation segments.
 /// Runs in the keyframe pipeline after memory extraction (Phase 3, MemoryRefactor2).
@@ -86,7 +88,13 @@ public class InteractionExtractor {
 
 	/// Build the system prompt from the promptTemplate resource.
 	private static String buildSystemPrompt(String sysName, String usrName, String setting) {
-		BaseRecord templateRec = PromptResourceUtil.loadAsRecord(PROMPT_NAME);
+		String promptJson = ResourceUtil.getInstance().getResource(PromptResourceUtil.getPrefix() + PROMPT_NAME + ".json");
+		BaseRecord templateRec = null;
+		try {
+			if (promptJson != null) templateRec = RecordFactory.importRecord(promptJson);
+		} catch (Exception e) {
+			// Not a record format, fall back to flat format
+		}
 		String prompt;
 		if (templateRec != null) {
 			prompt = PromptTemplateComposer.composeSystem(templateRec, null, null);
@@ -186,7 +194,6 @@ public class InteractionExtractor {
 
 	/// Parse the LLM JSON response and persist an olio.interaction record.
 	/// Returns null if type is NONE or on parse/persistence failure.
-	@SuppressWarnings("unchecked")
 	public static BaseRecord parseAndPersist(BaseRecord user, BaseRecord chatConfig,
 			BaseRecord systemChar, BaseRecord userChar, String jsonResponse, String conversationId) {
 		try {

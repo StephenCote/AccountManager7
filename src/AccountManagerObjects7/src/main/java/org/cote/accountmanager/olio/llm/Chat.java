@@ -45,6 +45,7 @@ import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.MemoryUtil;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
@@ -2318,7 +2319,13 @@ public class Chat {
 
 		/// Phase 2: Try loading as a promptTemplate record first, fall back to old format
 		String systemPrompt = null;
-		BaseRecord templateRec = PromptResourceUtil.loadAsRecord(promptName);
+		String promptJson = ResourceUtil.getInstance().getResource(PromptResourceUtil.getPrefix() + promptName + ".json");
+		BaseRecord templateRec = null;
+		try {
+			if (promptJson != null) templateRec = RecordFactory.importRecord(promptJson);
+		} catch (Exception e) {
+			logger.debug("Prompt " + promptName + " is not a record format, trying flat format");
+		}
 		if (templateRec != null && "olio.llm.promptTemplate".equals(templateRec.getSchema())) {
 			systemPrompt = PromptTemplateComposer.composeSystem(templateRec, promptConfig, chatConfig);
 		}

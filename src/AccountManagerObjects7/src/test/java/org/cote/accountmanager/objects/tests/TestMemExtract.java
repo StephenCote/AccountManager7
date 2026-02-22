@@ -159,7 +159,15 @@ public class TestMemExtract extends BaseTest {
 	/// Verify memoryExtractionV2.json loads as a promptTemplate record.
 	@Test
 	public void testV2PromptLoads() {
-		BaseRecord templateRec = PromptResourceUtil.loadAsRecord("memoryExtractionV2");
+		String json = org.cote.accountmanager.util.ResourceUtil.getInstance().getResource(
+			PromptResourceUtil.getPrefix() + "memoryExtractionV2.json");
+		assertNotNull("V2 prompt JSON should load from resources", json);
+		BaseRecord templateRec = null;
+		try {
+			templateRec = RecordFactory.importRecord(json);
+		} catch (Exception e) {
+			fail("Failed to import V2 prompt as record: " + e.getMessage());
+		}
 		assertNotNull("V2 prompt should load from resources as a record", templateRec);
 		assertEquals("V2 prompt should be a promptTemplate",
 			"olio.llm.promptTemplate", templateRec.getSchema());

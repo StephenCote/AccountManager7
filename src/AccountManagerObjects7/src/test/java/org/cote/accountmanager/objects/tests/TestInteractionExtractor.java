@@ -122,7 +122,15 @@ public class TestInteractionExtractor extends BaseTest {
 	/// Load interactionExtraction.json as promptTemplate, compose, verify content.
 	@Test
 	public void testInteractionPromptLoads() {
-		BaseRecord templateRec = PromptResourceUtil.loadAsRecord("interactionExtraction");
+		String json = org.cote.accountmanager.util.ResourceUtil.getInstance().getResource(
+			PromptResourceUtil.getPrefix() + "interactionExtraction.json");
+		assertNotNull("Interaction prompt JSON should load from resources", json);
+		BaseRecord templateRec = null;
+		try {
+			templateRec = RecordFactory.importRecord(json);
+		} catch (Exception e) {
+			fail("Failed to import interaction prompt as record: " + e.getMessage());
+		}
 		assertNotNull("Interaction prompt should load as record", templateRec);
 		assertEquals("Should be a promptTemplate",
 			"olio.llm.promptTemplate", templateRec.getSchema());
