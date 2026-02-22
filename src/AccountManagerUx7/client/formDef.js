@@ -5573,6 +5573,7 @@
 
     forms.memory = {
         label: "Memory",
+        query: ["person1Model", "person2Model"],
         fields: {
             name: {
                 layout: "half",
@@ -5597,11 +5598,29 @@
             },
             person1: {
                 layout: "half",
-                label: "Person 1"
+                label: "Person 1",
+                format: "picker",
+                field: {
+                    format: "picker",
+                    pickerType: ".person1Model",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "person1"
+                    }
+                }
             },
             person2: {
                 layout: "half",
-                label: "Person 2"
+                label: "Person 2",
+                format: "picker",
+                field: {
+                    format: "picker",
+                    pickerType: ".person2Model",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "person2"
+                    }
+                }
             },
             conversationId: {
                 layout: "half",
