@@ -718,6 +718,9 @@
               chatCfg.history.messages = r?.messages || [];
               chatCfg.pending = false;
               // Audio components will automatically update when messages change
+            }).catch((e) => {
+              console.error("REST chat error", e);
+              chatCfg.pending = false;
             });
           }
         }

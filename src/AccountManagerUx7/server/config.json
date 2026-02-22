@@ -1,5 +1,5 @@
 {
-    "production": false,
+    "production": true,
     "clientPort": 8899,
     "serverKey": "/ssl/server.key",
     "serverCert": "/ssl/server.cert",

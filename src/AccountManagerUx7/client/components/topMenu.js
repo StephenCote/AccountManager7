@@ -201,7 +201,7 @@
                         (page.testMode || !page.productionMode) ? button(0, "science", (mr.match(/^\/test/gi) ? "active" : ""), function(){ m.route.set("/test"); }) : null,
                         m(page.components.games.component),
                         m(page.components.emoji.component),
-                        (page.components.moodRing.enabled() ? m(page.components.moodRing.component) : ""),
+                        (page.components.moodRing && page.components.moodRing.enabled() ? m(page.components.moodRing.component) : ""),
                         m("div", { class: "context-menu-container" }, [
                             profileContextButton(),
                             m("div", { id: "profileContextMenu", class: "transition transition-0 context-menu-48" }, [

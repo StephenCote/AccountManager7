@@ -2994,11 +2994,13 @@ public class Chat {
 				}
 			}
 			boolean hasListener = listener != null;
-			response.body()
-				.takeWhile(line -> !hasListener || !listener.isStopStream(req))
-				.forEach(line -> {
-					processStreamChunk(line, req, aresp, forwardToClient);
-				});
+			java.util.Iterator<String> streamIt = response.body().iterator();
+			while (streamIt.hasNext()) {
+				if (hasListener && listener.isStopStream(req)) break;
+				String line = streamIt.next();
+				boolean done = processStreamChunk(line, req, aresp, forwardToClient);
+				if (done) break;
+			}
 			if (!forwardToClient) {
 				BaseRecord bufMsg = aresp.get("message");
 				String bufContent = bufMsg != null ? bufMsg.get("content") : null;
@@ -3059,9 +3061,10 @@ public class Chat {
 
 	/// Phase 7: Shared stream chunk processing — eliminates duplicated parsing logic
 	/// between Ollama (message-based) and OpenAI (choices/delta-based) response formats.
-	private void processStreamChunk(String line, OpenAIRequest req, OpenAIResponse aresp, boolean forwardToClient) {
+	/// Returns true when the stream is complete ([DONE], done:true, or empty message).
+	private boolean processStreamChunk(String line, OpenAIRequest req, OpenAIResponse aresp, boolean forwardToClient) {
 		if (line == null || line.isEmpty()) {
-			return;
+			return false;
 		}
 
 		String json = line;
@@ -3069,7 +3072,7 @@ public class Chat {
 			json = line.substring(6);
 		}
 		if ("[DONE]".equals(json)) {
-			return;
+			return true;
 		}
 
 		BaseRecord asyncResp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, json);
@@ -3080,7 +3083,7 @@ public class Chat {
 			} else {
 				logger.warn("processStreamChunk (buffer mode): " + errMsg);
 			}
-			return;
+			return false;
 		}
 		if (asyncResp.get("error") != null) {
 			String errMsg = "Received an error: " + asyncResp.get("error");
@@ -3089,7 +3092,7 @@ public class Chat {
 			} else {
 				logger.warn("processStreamChunk (buffer mode): " + errMsg);
 			}
-			return;
+			return false;
 		}
 
 		List<BaseRecord> choices = asyncResp.get("choices");
@@ -3098,12 +3101,12 @@ public class Chat {
 			BaseRecord deltaMessage = asyncResp.get("message");
 			if (deltaMessage == null) {
 				logger.info("Received empty message ... treat as completed");
-				return;
+				return true;
 			}
 			String contentChunk = deltaMessage.get("content");
 			boolean done = asyncResp.get("done");
 			if (done) {
-				return;
+				return true;
 			}
 			if (contentChunk != null && contentChunk.length() > 0) {
 				accumulateChunk(aresp, deltaMessage, contentChunk, forwardToClient, req);
@@ -3111,6 +3114,10 @@ public class Chat {
 		} else {
 			/// OpenAI format: choices array with delta objects
 			for (BaseRecord choice : choices) {
+				String finishReason = choice.get("finish_reason");
+				if (finishReason != null && !finishReason.isEmpty()) {
+					return true;
+				}
 				BaseRecord delta = choice.get("delta");
 				if (delta != null && delta.hasField("content")) {
 					String contentChunk = delta.get("content");
@@ -3120,6 +3127,7 @@ public class Chat {
 				}
 			}
 		}
+		return false;
 	}
 
 	/// Accumulate a content chunk into the response and optionally forward to listener.
