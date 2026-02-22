@@ -2419,24 +2419,27 @@ public class Chat {
 
 		/// Build extraction request
 		OpenAIRequest extractReq = new OpenAIRequest();
-		extractReq.setModel(amodel);
 		applyChatOptions(extractReq);
+		/// Restore analyzeModel AFTER applyChatOptions (which overwrites model to primary)
+		extractReq.setModel(amodel);
 		/// Lower temperature for factual extraction
 		try { extractReq.set("temperature", 0.3); } catch (Exception e) { /* ignore */ }
 
 		/// Ensure enough output room for extraction responses.
 		/// The default num_ctx/max_tokens from chatOptions may be too small, causing truncated output.
-		String tokField = ChatUtil.getMaxTokenField(chatConfig);
-		if (tokField != null && !tokField.isEmpty()) {
-			try {
-				int current = extractReq.get(tokField);
-				int minTokens = (chatConfig.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) ? 16384 : 8192;
+		/// Set floor on ALL token fields to cover model differences (o-series uses
+		/// max_completion_tokens, Ollama uses num_ctx, others use max_tokens).
+		int minTokens = (chatConfig.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) ? 16384 : 8192;
+		try {
+			String[] tokenFields = {"max_tokens", "max_completion_tokens", "num_ctx"};
+			for (String tf : tokenFields) {
+				int current = extractReq.get(tf);
 				if (current < minTokens) {
-					extractReq.set(tokField, minTokens);
+					extractReq.set(tf, minTokens);
 				}
-			} catch (Exception e) {
-				// ignore — field may not exist on request
 			}
+		} catch (Exception e) {
+			// ignore — field may not exist on request
 		}
 
 		OpenAIMessage sysMsg = new OpenAIMessage();

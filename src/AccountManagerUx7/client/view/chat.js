@@ -222,9 +222,10 @@
                 console.warn("patchChatImageToken: No session available for server patch");
                 return;
             }
-            // Load the full request from the server
+            // Load the full request from the server (bypass cache — may be stale from streaming)
             let q = am7view.viewQuery(am7model.newInstance(sessionType));
             q.field("id", session.id);
+            q.cache(false);
             let qr = await page.search(q);
             if (qr && qr.results && qr.results.length > 0) {
                 let req = qr.results[0];
@@ -290,6 +291,7 @@
             }
             let q = am7view.viewQuery(am7model.newInstance(sessionType));
             q.field("id", session.id);
+            q.cache(false);
             let qr = await page.search(q);
             if (qr && qr.results && qr.results.length > 0) {
                 let req = qr.results[0];
@@ -1057,47 +1059,86 @@
       deletedIndices = new Set();
     }
 
-    /// Save all message edits and deletions to the server-side OpenAI request object
+    /// Save all message edits and deletions to the server-side OpenAI request object.
+    /// Uses the /rest/chat/history endpoint to get the full server session (bypasses
+    /// client cache which may be stale from streaming-added messages).
     async function saveEditsAndDeletes() {
+      if (!inst || !inst.api.objectId()) {
+        console.error("No active chat instance for edit save");
+        clearEditMode();
+        return;
+      }
+      let amsg = chatCfg.history?.messages || [];
+
+      /// Fetch the FULL server session via history endpoint — returns the openaiRequest
+      /// with all messages including system/template prefixes.
+      let historyBody = {
+        schema: inst.model.name,
+        objectId: inst.api.objectId(),
+        uid: page.uid()
+      };
+      let serverSession;
+      try {
+        serverSession = await m.request({
+          method: 'POST',
+          url: g_application_path + "/rest/chat/history",
+          withCredentials: true,
+          body: historyBody
+        });
+      } catch (e) {
+        console.error("Failed to fetch session for edit save:", e);
+        clearEditMode();
+        return;
+      }
+
+      /// The history endpoint returns a ChatResponse whose messages start AFTER
+      /// system/template prefixes. We need the raw server record to preserve those
+      /// prefixes. Fetch via uncached search.
       let q = am7view.viewQuery(am7model.newInstance(inst.api.sessionType()));
       q.field("id", inst.api.session().id);
+      q.cache(false);
       let qr = await page.search(q);
-      if (qr && qr.results.length > 0) {
-        let req = qr.results[0];
-        let amsg = chatCfg.history?.messages || [];
-
-        /// The server request includes system prompt(s) before the display messages.
-        /// Calculate offset so display index 0 maps to the correct server index.
-        let offset = req.messages.length - amsg.length;
-        if (offset < 0) offset = 0;
-
-        /// Apply edits from textareas
-        for (let i = 0; i < amsg.length; i++) {
-          if (deletedIndices.has(i)) continue;
-          let el = document.getElementById("editMessage-" + i);
-          if (el && (i + offset) < req.messages.length) {
-            req.messages[i + offset].content = el.value;
-          }
-        }
-
-        /// Remove deleted messages (reverse order to preserve indices)
-        let sorted = Array.from(deletedIndices).sort((a, b) => b - a);
-        for (let idx of sorted) {
-          let serverIdx = idx + offset;
-          if (serverIdx >= 0 && serverIdx < req.messages.length) {
-            req.messages.splice(serverIdx, 1);
-          }
-        }
-
-        await page.patchObject(req);
+      if (!qr || !qr.results || !qr.results.length) {
+        console.error("Failed to find server session record for edit save");
         clearEditMode();
-        await am7client.clearCache();
-        await doCancel();
-        await doPeek();
-      } else {
-        console.error("Failed to find session data to save edits");
-        clearEditMode();
+        return;
       }
+      let req = qr.results[0];
+      if (!req.messages || !req.messages.length) {
+        console.error("Server session has no messages");
+        clearEditMode();
+        return;
+      }
+
+      /// Calculate offset: number of system/template messages at the start of
+      /// the server record that are NOT shown in the display.
+      let offset = req.messages.length - amsg.length;
+      if (offset < 0) offset = 0;
+
+      /// Apply edits from textareas (only content — preserve roles)
+      for (let i = 0; i < amsg.length; i++) {
+        if (deletedIndices.has(i)) continue;
+        let el = document.getElementById("editMessage-" + i);
+        if (el && (i + offset) < req.messages.length) {
+          req.messages[i + offset].content = el.value;
+        }
+      }
+
+      /// Remove deleted messages (reverse order to preserve indices)
+      let sorted = Array.from(deletedIndices).sort((a, b) => b - a);
+      for (let idx of sorted) {
+        let serverIdx = idx + offset;
+        if (serverIdx >= 0 && serverIdx < req.messages.length) {
+          req.messages.splice(serverIdx, 1);
+        }
+      }
+
+      await page.patchObject(req);
+      clearEditMode();
+      await am7client.clearCache();
+      chatCfg.peek = false;
+      chatCfg.history = { messages: [] };
+      await doPeek();
     }
     function toggleEditMode() {
       if (editMode) {

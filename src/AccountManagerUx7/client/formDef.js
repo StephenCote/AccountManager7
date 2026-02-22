@@ -5571,6 +5571,60 @@
         forms: ["grouptypeinfo", "attributes"]
     };
 
+    forms.memory = {
+        label: "Memory",
+        fields: {
+            name: {
+                layout: "half",
+                label: "Name"
+            },
+            memoryType: {
+                layout: "quarter",
+                label: "Type"
+            },
+            importance: {
+                layout: "quarter",
+                label: "Importance"
+            },
+            summary: {
+                layout: "one",
+                label: "Summary"
+            },
+            content: {
+                layout: "full",
+                format: "textarea",
+                label: "Content"
+            },
+            person1: {
+                layout: "half",
+                label: "Person 1"
+            },
+            person2: {
+                layout: "half",
+                label: "Person 2"
+            },
+            conversationId: {
+                layout: "half",
+                label: "Conversation"
+            },
+            sourceUri: {
+                layout: "half",
+                label: "Source"
+            },
+            sourceContext: {
+                layout: "one",
+                label: "Source Context"
+            },
+            createdDate: {
+                layout: "half"
+            },
+            modifiedDate: {
+                layout: "half"
+            }
+        },
+        forms: ["grouptypeinfo", "attributes"]
+    };
+
     forms.commands = {
         character,
         createCharacter,

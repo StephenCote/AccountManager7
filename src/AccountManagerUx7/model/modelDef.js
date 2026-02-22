@@ -994,6 +994,19 @@
       "LOCAL",
       "OLLAMA",
       "OPENAI"
+    ],
+    "memoryTypeEnumType": [
+      "UNKNOWN",
+      "DISCOVERY",
+      "BEHAVIOR",
+      "OUTCOME",
+      "NOTE",
+      "INSIGHT",
+      "DECISION",
+      "ERROR_LESSON",
+      "FACT",
+      "RELATIONSHIP",
+      "EMOTION"
     ]
   },
   "models": [

@@ -57,6 +57,7 @@ import org.cote.accountmanager.schema.type.FunctionEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.LevelEnumType;
 import org.cote.accountmanager.schema.type.LocationEnumType;
+import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.schema.type.OperationEnumType;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
@@ -101,7 +102,7 @@ public class SchemaUtil {
 	private static List<Class<? extends Enum<?>>> enumList = Arrays.asList(
 		FieldEnumType.class, SystemPermissionEnumType.class, AccountEnumType.class, AccountStatusEnumType.class, ActionEnumType.class, ApprovalEnumType.class, ApprovalResponseEnumType.class, ApproverEnumType.class, AuthenticationResponseEnumType.class, ComparatorEnumType.class, CompressionEnumType.class, ConditionEnumType.class, ConnectionEnumType.class, ContactEnumType.class, ContactInformationEnumType.class, ControlActionEnumType.class, ControlEnumType.class, CredentialEnumType.class, EffectEnumType.class, FactEnumType.class, FunctionEnumType.class, GroupEnumType.class, LevelEnumType.class, LocationEnumType.class, OperationEnumType.class, OperationResponseEnumType.class, OrderEnumType.class, OrganizationEnumType.class, PatternEnumType.class, PermissionEnumType.class, PolicyRequestEnumType.class, PolicyResponseEnumType.class, QueryEnumType.class, ResponseEnumType.class, RoleEnumType.class, RuleEnumType.class, SpoolBucketEnumType.class, SpoolNameEnumType.class, SpoolStatusEnumType.class, SqlDataEnumType.class, StatisticsEnumType.class, StreamEnumType.class, TagEnumType.class, UserEnumType.class, UserStatusEnumType.class, ValidationEnumType.class, ValueEnumType.class, VerificationEnumType.class,
 		AlignmentEnumType.class, AssessedEnumType.class, AssessmentEnumType.class, CharacterRoleEnumType.class, DensityEnumType.class, DirectionEnumType.class, EsteemNeedsEnumType.class, EthnicityEnumType.class, HighEnumType.class, InstinctEnumType.class, InteractionEnumType.class, LoveNeedsEnumType.class, OutcomeEnumType.class, PointOfInterestEnumType.class, RaceEnumType.class, ReasonEnumType.class, RollEnumType.class, SafetyNeedsEnumType.class, ThreatEnumType.class, VeryEnumType.class, WearLevelEnumType.class,
-		ESRBEnumType.class, LLMServiceEnumType.class
+		ESRBEnumType.class, LLMServiceEnumType.class, MemoryTypeEnumType.class
 		);
 	
 	private static String getModel(String name) {
