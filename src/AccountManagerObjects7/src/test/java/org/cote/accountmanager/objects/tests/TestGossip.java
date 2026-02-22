@@ -15,7 +15,6 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.util.MemoryUtil;
@@ -41,10 +40,13 @@ public class TestGossip extends BaseTest {
 		assertNotNull("Test user should not be null", testUser);
 	}
 
-	/// Helper to create a charPerson stub with a given ID.
-	private BaseRecord createPersonStub(long id) throws Exception {
-		BaseRecord p = RecordFactory.newInstance("olio.charPerson");
-		p.set(FieldNames.FIELD_ID, id);
+	/// Create a properly persisted charPerson record for testing.
+	private BaseRecord createTestPerson(String label) throws Exception {
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/People");
+		plist.parameter(FieldNames.FIELD_NAME, label + "-" + UUID.randomUUID().toString().substring(0, 8));
+		BaseRecord p = IOSystem.getActiveContext().getFactory().newInstance("olio.charPerson", testUser, null, plist);
+		p = IOSystem.getActiveContext().getAccessPoint().create(testUser, p);
+		assertNotNull("Person " + label + " should be created", p);
 		return p;
 	}
 
@@ -80,10 +82,13 @@ public class TestGossip extends BaseTest {
 		try {
 			String convId = "partners-" + UUID.randomUUID().toString().substring(0, 8);
 
-			// Create 3 person stubs: Don(800), Rex(801), Mike(802)
-			BaseRecord don = createPersonStub(800L);
-			BaseRecord rex = createPersonStub(801L);
-			BaseRecord mike = createPersonStub(802L);
+			// Create 3 proper person records
+			BaseRecord don = createTestPerson("don");
+			BaseRecord rex = createTestPerson("rex");
+			BaseRecord mike = createTestPerson("mike");
+			long donId = don.get(FieldNames.FIELD_ID);
+			long rexId = rex.get(FieldNames.FIELD_ID);
+			long mikeId = mike.get(FieldNames.FIELD_ID);
 
 			// Create memories: Don+Rex and Don+Mike
 			MemoryUtil.createMemory(testUser, "Don and Rex talked", "don-rex conv",
@@ -91,12 +96,12 @@ public class TestGossip extends BaseTest {
 			MemoryUtil.createMemory(testUser, "Don and Mike discussed plans", "don-mike conv",
 				MemoryTypeEnumType.FACT, 5, "am7://test/gossip", convId, don, mike);
 
-			// Get partners for Don (id=800)
-			List<Long> partners = MemoryUtil.getMemoryPartners(testUser, 800L);
+			// Get partners for Don
+			List<Long> partners = MemoryUtil.getMemoryPartners(testUser, donId);
 			assertNotNull("Partners list should not be null", partners);
 			assertTrue("Don should have at least 2 partners", partners.size() >= 2);
-			assertTrue("Partners should include Rex (801)", partners.contains(801L));
-			assertTrue("Partners should include Mike (802)", partners.contains(802L));
+			assertTrue("Partners should include Rex", partners.contains(rexId));
+			assertTrue("Partners should include Mike", partners.contains(mikeId));
 
 			logger.info("testMemoryPartners passed — partners=" + partners);
 		} catch (Exception e) {
@@ -110,9 +115,11 @@ public class TestGossip extends BaseTest {
 	public void testExcludesCurrentPair() {
 		try {
 			String convId = "excl-" + UUID.randomUUID().toString().substring(0, 8);
-			BaseRecord don = createPersonStub(810L);
-			BaseRecord rex = createPersonStub(811L);
-			BaseRecord mike = createPersonStub(812L);
+			BaseRecord don = createTestPerson("don-excl");
+			BaseRecord rex = createTestPerson("rex-excl");
+			BaseRecord mike = createTestPerson("mike-excl");
+			long donId = don.get(FieldNames.FIELD_ID);
+			long rexId = rex.get(FieldNames.FIELD_ID);
 
 			// Create memories for both pairs
 			MemoryUtil.createMemory(testUser, "Don told Rex about the weather", "don-rex weather",
@@ -120,10 +127,10 @@ public class TestGossip extends BaseTest {
 			MemoryUtil.createMemory(testUser, "Don and Mike found treasure", "don-mike treasure",
 				MemoryTypeEnumType.FACT, 7, "am7://test/gossip", convId, don, mike);
 
-			// searchCrossCharacterMemories for Don (810), excluding Rex (811)
+			// searchCrossCharacterMemories for Don, excluding Rex
 			// Without vector support, this returns empty — but verifies the method runs without error
 			List<BaseRecord> results = MemoryUtil.searchCrossCharacterMemories(
-				testUser, 810L, 811L, "treasure", 5, 0.5);
+				testUser, donId, rexId, "treasure", 5, 0.5);
 			assertNotNull("Results should not be null", results);
 			// Verify no Don+Rex memories in results (if any results returned)
 			for (BaseRecord r : results) {
@@ -132,8 +139,8 @@ public class TestGossip extends BaseTest {
 				BaseRecord p2 = r.get("person2");
 				if (p1 != null) pid1 = p1.get(FieldNames.FIELD_ID);
 				if (p2 != null) pid2 = p2.get(FieldNames.FIELD_ID);
-				assertFalse("Should not include Rex (811) as person1", pid1 == 811L);
-				assertFalse("Should not include Rex (811) as person2", pid2 == 811L);
+				assertFalse("Should not include Rex as person1", pid1 == rexId);
+				assertFalse("Should not include Rex as person2", pid2 == rexId);
 			}
 
 			logger.info("testExcludesCurrentPair passed — results=" + results.size());

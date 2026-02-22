@@ -75,12 +75,10 @@ public class TestMemoryPhase2 extends BaseTest {
 			assertNotNull("Chat config should not be null", chatConfig);
 
 			// Create a memory for this person pair
-			long sysId = sysChar.get(FieldNames.FIELD_ID);
-			long usrId = usrChar.get(FieldNames.FIELD_ID);
 			MemoryUtil.createMemory(testUser, "They met at a coffee shop and discussed philosophy.",
 				"Met at coffee shop", MemoryTypeEnumType.NOTE, 7,
 				"am7://test/phase2", "conv-" + UUID.randomUUID().toString().substring(0, 8),
-				sysId, usrId);
+				sysChar, usrChar);
 
 			// Set memory budget so retrieval happens
 			chatConfig.setValue("memoryBudget", 500);
@@ -297,9 +295,9 @@ public class TestMemoryPhase2 extends BaseTest {
 	public void testSearchMemoriesByPersonPair() {
 		try {
 			List<BaseRecord> pop = getPopulation(3);
-			long aId = pop.get(0).get(FieldNames.FIELD_ID);
-			long bId = pop.get(1).get(FieldNames.FIELD_ID);
-			long cId = pop.get(2).get(FieldNames.FIELD_ID);
+			BaseRecord charA = pop.get(0);
+			BaseRecord charB = pop.get(1);
+			BaseRecord charC = pop.get(2);
 
 			// Use a unique tag to distinguish these test memories
 			String tagAB = "pair-ab-" + UUID.randomUUID().toString().substring(0, 8);
@@ -309,23 +307,23 @@ public class TestMemoryPhase2 extends BaseTest {
 			for (int i = 0; i < 3; i++) {
 				MemoryUtil.createMemory(testUser, "AB memory " + i + " " + tagAB,
 					"AB mem " + i, MemoryTypeEnumType.NOTE, 5 + i,
-					null, tagAB, aId, bId);
+					null, tagAB, charA, charB);
 			}
 			// 2 memories for pair (A, C)
 			for (int i = 0; i < 2; i++) {
 				MemoryUtil.createMemory(testUser, "AC memory " + i + " " + tagAC,
 					"AC mem " + i, MemoryTypeEnumType.NOTE, 5,
-					null, tagAC, aId, cId);
+					null, tagAC, charA, charC);
 			}
 
 			// Search for pair (A, B) — should get exactly 3
-			List<BaseRecord> abMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, aId, bId, 20);
+			List<BaseRecord> abMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, charA, charB, 20);
 			long abCount = abMemories.stream().filter(m ->
 				((String) m.get("content")).contains(tagAB)).count();
 			assertEquals("Should find exactly 3 memories for pair (A,B)", 3, abCount);
 
 			// Search for pair (A, C) — should get exactly 2
-			List<BaseRecord> acMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, aId, cId, 20);
+			List<BaseRecord> acMemories = MemoryUtil.searchMemoriesByPersonPair(testUser, charA, charC, 20);
 			long acCount = acMemories.stream().filter(m ->
 				((String) m.get("content")).contains(tagAC)).count();
 			assertEquals("Should find exactly 2 memories for pair (A,C)", 2, acCount);
@@ -343,9 +341,9 @@ public class TestMemoryPhase2 extends BaseTest {
 	public void testSearchMemoriesByPerson() {
 		try {
 			List<BaseRecord> pop = getPopulation(3);
-			long aId = pop.get(0).get(FieldNames.FIELD_ID);
-			long bId = pop.get(1).get(FieldNames.FIELD_ID);
-			long cId = pop.get(2).get(FieldNames.FIELD_ID);
+			BaseRecord charA = pop.get(0);
+			BaseRecord charB = pop.get(1);
+			BaseRecord charC = pop.get(2);
 
 			String tag = "charall-" + UUID.randomUUID().toString().substring(0, 8);
 
@@ -353,16 +351,16 @@ public class TestMemoryPhase2 extends BaseTest {
 			for (int i = 0; i < 3; i++) {
 				MemoryUtil.createMemory(testUser, "AllA-AB " + i + " " + tag,
 					"AllA-AB " + i, MemoryTypeEnumType.NOTE, 5,
-					null, "conv-ab-" + tag, aId, bId);
+					null, "conv-ab-" + tag, charA, charB);
 			}
 			// 2 memories for pair (A, C)
 			for (int i = 0; i < 2; i++) {
 				MemoryUtil.createMemory(testUser, "AllA-AC " + i + " " + tag,
 					"AllA-AC " + i, MemoryTypeEnumType.NOTE, 5,
-					null, "conv-ac-" + tag, aId, cId);
+					null, "conv-ac-" + tag, charA, charC);
 			}
 
-			List<BaseRecord> aMemories = MemoryUtil.searchMemoriesByPerson(testUser, aId, 50);
+			List<BaseRecord> aMemories = MemoryUtil.searchMemoriesByPerson(testUser, charA, 50);
 			long tagCount = aMemories.stream().filter(m ->
 				((String) m.get("content")).contains(tag)).count();
 			assertTrue("Person A should have at least 5 tagged memories", tagCount >= 5);
@@ -431,11 +429,11 @@ public class TestMemoryPhase2 extends BaseTest {
 			MemoryUtil.createMemory(testUser,
 				sysName + " told " + usrName + " a story about a dragon.",
 				"Dragon story", MemoryTypeEnumType.NOTE, 8,
-				"am7://test/integration", convId, sysId, usrId);
+				"am7://test/integration", convId, sysChar, usrChar);
 			MemoryUtil.createMemory(testUser,
 				usrName + " shared a secret about hidden treasure.",
 				"Treasure secret", MemoryTypeEnumType.INSIGHT, 9,
-				"am7://test/integration", convId, sysId, usrId);
+				"am7://test/integration", convId, sysChar, usrChar);
 
 			// Create a prompt config with ${memory.context} in the system prompt
 			BaseRecord promptConfig = createMemoryPromptConfig("IntegPrompt");

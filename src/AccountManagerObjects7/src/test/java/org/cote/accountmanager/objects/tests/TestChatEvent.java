@@ -165,7 +165,7 @@ public class TestChatEvent extends BaseTest {
 
 			// Query by objectId
 			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_OBJECT_ID, objectId);
-			q.planMost(true);
+			q.planMost(false);
 			BaseRecord[] results = IOSystem.getActiveContext().getSearch().findRecords(q);
 			assertNotNull("Query results should not be null", results);
 			assertTrue("Should find at least 1 result", results.length > 0);
@@ -192,7 +192,7 @@ public class TestChatEvent extends BaseTest {
 			// Re-read chatConfig to verify binding
 			String cfgOid = cfg.get(FieldNames.FIELD_OBJECT_ID);
 			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_OBJECT_ID, cfgOid);
-			q.planMost(true);
+			q.planMost(false);
 			BaseRecord foundCfg = IOSystem.getActiveContext().getSearch().findRecord(q);
 			assertNotNull("ChatConfig should be found", foundCfg);
 
@@ -247,7 +247,7 @@ public class TestChatEvent extends BaseTest {
 			// Re-read event
 			String eventOid = event.get(FieldNames.FIELD_OBJECT_ID);
 			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_OBJECT_ID, eventOid);
-			q.planMost(true);
+			q.planMost(false);
 			BaseRecord found = IOSystem.getActiveContext().getSearch().findRecord(q);
 			assertNotNull("Event should be found after close", found);
 

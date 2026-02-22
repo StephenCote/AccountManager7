@@ -53,6 +53,16 @@ public class TestInteractionExtractor extends BaseTest {
 		assertNotNull("Test user should not be null", testUser);
 	}
 
+	/// Create a properly persisted charPerson record for testing.
+	private BaseRecord createTestPerson(String label) throws Exception {
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/People");
+		plist.parameter(FieldNames.FIELD_NAME, label + "-" + UUID.randomUUID().toString().substring(0, 8));
+		BaseRecord p = IOSystem.getActiveContext().getFactory().newInstance("olio.charPerson", testUser, null, plist);
+		p = IOSystem.getActiveContext().getAccessPoint().create(testUser, p);
+		assertNotNull("Person " + label + " should be created", p);
+		return p;
+	}
+
 	/// Verify the interaction foreign reference field exists on tool.memory.
 	@Test
 	public void testInteractionFieldExists() {
@@ -100,11 +110,9 @@ public class TestInteractionExtractor extends BaseTest {
 			String objectId = inter.get(FieldNames.FIELD_OBJECT_ID);
 			assertNotNull("objectId should be set", objectId);
 
-			// Phase 2: Set actor/interactor and update
-			BaseRecord p1 = RecordFactory.newInstance("olio.charPerson");
-			p1.set(FieldNames.FIELD_ID, 900L);
-			BaseRecord p2 = RecordFactory.newInstance("olio.charPerson");
-			p2.set(FieldNames.FIELD_ID, 901L);
+			// Phase 2: Set actor/interactor and update using proper person records
+			BaseRecord p1 = createTestPerson("actor");
+			BaseRecord p2 = createTestPerson("interactor");
 
 			inter.set(OlioFieldNames.FIELD_ACTOR_TYPE, "olio.charPerson");
 			inter.set(OlioFieldNames.FIELD_ACTOR, p1);
@@ -235,10 +243,8 @@ public class TestInteractionExtractor extends BaseTest {
 	public void testInteractionTypeNoneReturnsNull() {
 		try {
 			String noneJson = "{\"type\": \"NONE\"}";
-			BaseRecord p1 = RecordFactory.newInstance("olio.charPerson");
-			p1.set(FieldNames.FIELD_ID, 910L);
-			BaseRecord p2 = RecordFactory.newInstance("olio.charPerson");
-			p2.set(FieldNames.FIELD_ID, 911L);
+			BaseRecord p1 = createTestPerson("none-p1");
+			BaseRecord p2 = createTestPerson("none-p2");
 
 			BaseRecord result = InteractionExtractor.parseAndPersist(
 				testUser, null, p1, p2, noneJson, "none-test");
@@ -255,18 +261,19 @@ public class TestInteractionExtractor extends BaseTest {
 	@Test
 	public void testCanonicalPersonOrderInInteraction() {
 		try {
-			// Create persons with IDs in non-canonical order (higher first)
-			BaseRecord p1 = RecordFactory.newInstance("olio.charPerson");
-			p1.set(FieldNames.FIELD_ID, 999L);
-			BaseRecord p2 = RecordFactory.newInstance("olio.charPerson");
-			p2.set(FieldNames.FIELD_ID, 100L);
+			// Create two proper person records — canonical ordering puts lower ID first
+			BaseRecord p1 = createTestPerson("canon-high");
+			BaseRecord p2 = createTestPerson("canon-low");
+			long id1 = p1.get(FieldNames.FIELD_ID);
+			long id2 = p2.get(FieldNames.FIELD_ID);
 
 			// Canonical ordering should put lower ID first
 			BaseRecord[] canon = MemoryUtil.canonicalPersonOrder(p1, p2);
 			long firstId = canon[0].get(FieldNames.FIELD_ID);
 			long secondId = canon[1].get(FieldNames.FIELD_ID);
-			assertEquals("First canonical person should have lower ID", 100L, firstId);
-			assertEquals("Second canonical person should have higher ID", 999L, secondId);
+			assertTrue("First canonical person should have lower ID", firstId <= secondId);
+			assertEquals("First canonical ID should be min of the two", Math.min(id1, id2), firstId);
+			assertEquals("Second canonical ID should be max of the two", Math.max(id1, id2), secondId);
 
 			logger.info("testCanonicalPersonOrderInInteraction passed");
 		} catch (Exception e) {
@@ -297,7 +304,7 @@ public class TestInteractionExtractor extends BaseTest {
 			// Query back by objectId
 			String objectId = inter.get(FieldNames.FIELD_OBJECT_ID);
 			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_INTERACTION, FieldNames.FIELD_OBJECT_ID, objectId);
-			q.planMost(true);
+			q.planMost(false);
 			BaseRecord[] results = IOSystem.getActiveContext().getSearch().findRecords(q);
 			assertNotNull("Query results should not be null", results);
 			assertTrue("Should find at least 1 result", results.length > 0);

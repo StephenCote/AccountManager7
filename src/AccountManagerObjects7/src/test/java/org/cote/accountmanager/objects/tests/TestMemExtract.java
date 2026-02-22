@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.UUID;
 
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.llm.PromptResourceUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -39,6 +41,16 @@ public class TestMemExtract extends BaseTest {
 		assertNotNull("Test user should not be null", testUser);
 	}
 
+	/// Create a properly persisted charPerson record for testing.
+	private BaseRecord createTestPerson(String label) throws Exception {
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/People");
+		plist.parameter(FieldNames.FIELD_NAME, label + "-" + UUID.randomUUID().toString().substring(0, 8));
+		BaseRecord p = IOSystem.getActiveContext().getFactory().newInstance("olio.charPerson", testUser, null, plist);
+		p = IOSystem.getActiveContext().getAccessPoint().create(testUser, p);
+		assertNotNull("Person " + label + " should be created", p);
+		return p;
+	}
+
 	/// Pass 5-memory JSON to 7-arg overload with maxPerSegment=1, verify only 1 returned.
 	@Test
 	public void testMaxPerSegmentEnforced() {
@@ -52,10 +64,8 @@ public class TestMemExtract extends BaseTest {
 				+ "]";
 
 			String convId = "max-seg-" + UUID.randomUUID().toString().substring(0, 8);
-			BaseRecord p1 = RecordFactory.newInstance("olio.charPerson");
-			p1.set(FieldNames.FIELD_ID, 700L);
-			BaseRecord p2 = RecordFactory.newInstance("olio.charPerson");
-			p2.set(FieldNames.FIELD_ID, 800L);
+			BaseRecord p1 = createTestPerson("maxseg-p1");
+			BaseRecord p2 = createTestPerson("maxseg-p2");
 
 			List<BaseRecord> results = MemoryUtil.extractMemoriesFromResponse(
 				testUser, json, "am7://test/max-seg", convId, p1, p2, 1
@@ -82,10 +92,8 @@ public class TestMemExtract extends BaseTest {
 				+ "]";
 
 			String convId = "max-unlim-" + UUID.randomUUID().toString().substring(0, 8);
-			BaseRecord p1 = RecordFactory.newInstance("olio.charPerson");
-			p1.set(FieldNames.FIELD_ID, 701L);
-			BaseRecord p2 = RecordFactory.newInstance("olio.charPerson");
-			p2.set(FieldNames.FIELD_ID, 801L);
+			BaseRecord p1 = createTestPerson("maxunlim-p1");
+			BaseRecord p2 = createTestPerson("maxunlim-p2");
 
 			List<BaseRecord> results = MemoryUtil.extractMemoriesFromResponse(
 				testUser, json, "am7://test/max-unlim", convId, p1, p2, 0
@@ -236,10 +244,8 @@ public class TestMemExtract extends BaseTest {
 				+ "]";
 
 			String convId = "max-two-" + UUID.randomUUID().toString().substring(0, 8);
-			BaseRecord p1 = RecordFactory.newInstance("olio.charPerson");
-			p1.set(FieldNames.FIELD_ID, 702L);
-			BaseRecord p2 = RecordFactory.newInstance("olio.charPerson");
-			p2.set(FieldNames.FIELD_ID, 802L);
+			BaseRecord p1 = createTestPerson("maxtwo-p1");
+			BaseRecord p2 = createTestPerson("maxtwo-p2");
 
 			List<BaseRecord> results = MemoryUtil.extractMemoriesFromResponse(
 				testUser, json, "am7://test/max-two", convId, p1, p2, 2

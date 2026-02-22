@@ -11,10 +11,11 @@ import java.util.List;
 import java.util.UUID;
 
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.util.MemoryUtil;
@@ -38,6 +39,16 @@ public class TestPhase1Cleanup extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "phase1CleanupUser", testOrgContext.getOrganizationId());
 		assertNotNull("Test user should not be null", testUser);
+	}
+
+	/// Create a properly persisted charPerson record for testing.
+	private BaseRecord createTestPerson(String label) throws Exception {
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/People");
+		plist.parameter(FieldNames.FIELD_NAME, label + "-" + UUID.randomUUID().toString().substring(0, 8));
+		BaseRecord p = IOSystem.getActiveContext().getFactory().newInstance("olio.charPerson", testUser, null, plist);
+		p = IOSystem.getActiveContext().getAccessPoint().create(testUser, p);
+		assertNotNull("Person " + label + " should be created", p);
+		return p;
 	}
 
 	/// Verify that non-JSON input to extractMemoriesFromResponse returns empty list.
@@ -70,10 +81,8 @@ public class TestPhase1Cleanup extends BaseTest {
 	public void testCreateMemoryWithBaseRecordPersons() {
 		try {
 			String convId = "cleanup-br-" + UUID.randomUUID().toString().substring(0, 8);
-			BaseRecord p1 = RecordFactory.newInstance("olio.charPerson");
-			p1.set(FieldNames.FIELD_ID, 500L);
-			BaseRecord p2 = RecordFactory.newInstance("olio.charPerson");
-			p2.set(FieldNames.FIELD_ID, 600L);
+			BaseRecord p1 = createTestPerson("cleanup-p1");
+			BaseRecord p2 = createTestPerson("cleanup-p2");
 
 			BaseRecord memory = MemoryUtil.createMemory(
 				testUser, "Phase 1 cleanup test", "cleanup test",
@@ -196,8 +205,7 @@ public class TestPhase1Cleanup extends BaseTest {
 	@Test
 	public void testSearchWithNullUserReturnsEmpty() {
 		try {
-			BaseRecord p = RecordFactory.newInstance("olio.charPerson");
-			p.set(FieldNames.FIELD_ID, 1L);
+			BaseRecord p = createTestPerson("null-user-test");
 			List<BaseRecord> results = MemoryUtil.searchMemoriesByPerson(null, p, 10);
 			assertNotNull("Results should not be null", results);
 			assertEquals("Null user should return empty list", 0, results.size());
