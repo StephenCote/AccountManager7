@@ -6,7 +6,7 @@
 	"group": "ChatRequests",
 	"icon": "chat",
 	"label": "Requests",
-	"query": ["id", "groupId", "chatConfig", "promptConfig", "session", "sessionType", "setting", "contextType"],
+	"query": ["id", "groupId", "chatConfig", "promptConfig", "promptTemplate", "session", "sessionType", "setting", "contextType"],
 	"description": "Used for proxying chat requests",
 	"fields": [
 		{
@@ -30,7 +30,15 @@
 			"name": "promptConfig",
 			"type": "model",
 			"baseModel": "olio.llm.promptConfig",
-			"foreign": true
+			"foreign": true,
+			"description": "PENDING DEPRECATION — promptTemplate replaces the structural role (sections, ordering, conditions). However, promptConfig is STILL REQUIRED for token replacement data (race definitions, response rules, scene templates used by PromptUtil.getChatPromptTemplate). Future phase will migrate token data into promptTemplate or chatConfig, at which point this field becomes fully deprecated."
+		},
+		{
+			"name": "promptTemplate",
+			"type": "model",
+			"baseModel": "olio.llm.promptTemplate",
+			"foreign": true,
+			"description": "Structured prompt template. When set, Chat uses PromptTemplateComposer for prompt assembly instead of flat promptConfig arrays."
 		},
 		{
 			"name": "sessionType",

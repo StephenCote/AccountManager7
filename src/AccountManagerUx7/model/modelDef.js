@@ -9206,6 +9206,80 @@
       ]
     },
     {
+      "name": "olio.llm.promptSection",
+      "ioConstraints": [
+        "unknown"
+      ],
+      "label": "Prompt Section",
+      "description": "A composable section within a prompt template.",
+      "fields": [
+        {
+          "name": "sectionName",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "role",
+          "type": "string",
+          "maxLength": 16
+        },
+        {
+          "name": "lines",
+          "type": "list",
+          "baseType": "string"
+        },
+        {
+          "name": "condition",
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "priority",
+          "type": "int",
+          "default": 100
+        }
+      ]
+    },
+    {
+      "name": "olio.llm.promptTemplate",
+      "inherits": [
+        "data.directory",
+        "common.description"
+      ],
+      "group": "Chat",
+      "icon": "chat",
+      "label": "Prompt Template",
+      "description": "Structured prompt template with composable, conditional sections, ordering, and inheritance.",
+      "fields": [
+        {
+          "name": "templateVersion",
+          "type": "int",
+          "default": 1
+        },
+        {
+          "name": "extends",
+          "type": "string"
+        },
+        {
+          "name": "sections",
+          "type": "list",
+          "baseType": "model",
+          "baseModel": "olio.llm.promptSection"
+        },
+        {
+          "name": "sectionOrder",
+          "type": "list",
+          "baseType": "string"
+        },
+        {
+          "name": "role",
+          "type": "string",
+          "maxLength": 16,
+          "default": "system"
+        }
+      ]
+    },
+    {
       "name": "olio.pointOfInterest",
       "likeInherits": [
         "data.directory"
@@ -10090,9 +10164,11 @@
         "groupId",
         "chatConfig",
         "promptConfig",
+        "promptTemplate",
         "session",
         "sessionType",
-        "setting"
+        "setting",
+        "contextType"
       ],
       "description": "Used for proxying chat requests",
       "fields": [
@@ -10120,6 +10196,12 @@
           "foreign": true
         },
         {
+          "name": "promptTemplate",
+          "type": "model",
+          "baseModel": "olio.llm.promptTemplate",
+          "foreign": true
+        },
+        {
           "name": "sessionType",
           "type": "string",
           "maxLength": 64
@@ -10140,6 +10222,28 @@
         {
           "name": "setting",
           "type": "string"
+        },
+        {
+          "name": "contextType",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "context",
+          "baseModel": "$flex",
+          "type": "model",
+          "foreign": true,
+          "foreignType": "contextType"
+        },
+        {
+          "name": "chatTitle",
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "chatIcon",
+          "type": "string",
+          "maxLength": 64
         }
       ]
     },

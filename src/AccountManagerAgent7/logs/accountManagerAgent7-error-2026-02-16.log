@@ -1,6 +1,0 @@
-[ERROR] 2026-02-16 16:27:53.794 [main] AgentToolManager - Tool nonExistentTool not found for step 1
-[ERROR] 2026-02-16 16:27:53.796 [main] AgentToolManager - Tool nonExistentTool not found
-[ERROR] 2026-02-16 16:27:55.045 [main] AgentToolManager - Tool nonExistentTool not found for step 1
-[ERROR] 2026-02-16 16:27:55.045 [main] AgentToolManager - Tool nonExistentTool not found
-[ERROR] 2026-02-16 16:28:01.146 [main] RecordFactory - java.lang.ClassNotFoundException: org.cote.accountmanager.schema.type.MemoryTypeEnumType
-[ERROR] 2026-02-16 16:28:01.146 [main] RecordFactory - org.cote.accountmanager.exceptions.ValueException: Value "NOTE" is not a valid entry in "org.cote.accountmanager.schema.type.MemoryTypeEnumType"

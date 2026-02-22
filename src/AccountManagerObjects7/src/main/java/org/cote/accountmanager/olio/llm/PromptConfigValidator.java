@@ -33,6 +33,8 @@ public class PromptConfigValidator {
 		for (TemplatePatternEnumType t : TemplatePatternEnumType.values()) {
 			KNOWN_TOKENS.add(t.getKey());
 		}
+		/// Chat.java-specific tokens replaced at different pipeline stages
+		KNOWN_TOKENS.add("embmsg");
 	}
 
 	private PromptConfigValidator() {}

@@ -35,7 +35,7 @@
     label: "Chat Request",
     fields: {
       promptConfig: {
-        layout: 'third',
+        layout: 'quarter',
         format: 'picker',
         field: {
           format: 'picker',
@@ -47,8 +47,21 @@
           label: "Prompt Config"
         }
       },
+      promptTemplate: {
+        layout: 'quarter',
+        format: 'picker',
+        field: {
+          format: 'picker',
+          pickerType: "olio.llm.promptTemplate",
+          pickerProperty: {
+            selected: "{object}",
+            entity: "promptTemplate"
+          },
+          label: "Prompt Template"
+        }
+      },
       chatConfig: {
-        layout: 'third',
+        layout: 'quarter',
         format: 'picker',
         field: {
           format: 'picker',
@@ -62,7 +75,7 @@
       },
       name: {
         label: "Chat Name",
-        layout: 'third'
+        layout: 'quarter'
       },
       setting: {
         label: "Setting",
@@ -774,26 +787,37 @@
 
       let c1 = inst.api.promptConfig();
       let c2 = inst.api.chatConfig();
+      /// promptTemplate may be used instead of (or alongside) promptConfig
+      let c3pt = inst.api.promptTemplate ? inst.api.promptTemplate() : null;
+      let hasPrompt = (c1 && (c1.name || c1.objectId)) || (c3pt && (c3pt.name || c3pt.objectId));
       let p;
-      if (c1 && c2 && (c1.name || c1.objectId) && (c2.name || c2.objectId)) {
-        // Phase 10b: Prefer objectId-based lookup (10a endpoints), fall back to name
-        let promptUrl = c1.objectId
-            ? g_application_path + "/rest/chat/config/prompt/id/" + c1.objectId
-            : g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(c1.name);
+      if (c2 && hasPrompt && (c2.name || c2.objectId)) {
         let chatUrl = c2.objectId
             ? g_application_path + "/rest/chat/config/chat/id/" + c2.objectId
             : g_application_path + "/rest/chat/config/chat/" + encodeURIComponent(c2.name);
 
         chatCfg.peek = true;
+
+        /// Fetch promptConfig if present
+        let promptFetch;
+        if (c1 && (c1.name || c1.objectId)) {
+          let promptUrl = c1.objectId
+              ? g_application_path + "/rest/chat/config/prompt/id/" + c1.objectId
+              : g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(c1.name);
+          promptFetch = m.request({ method: 'GET', url: promptUrl, withCredentials: true });
+        } else {
+          promptFetch = Promise.resolve(null);
+        }
+
         p = new Promise((res, rej) => {
-          m.request({ method: 'GET', url: promptUrl, withCredentials: true })
+          promptFetch
             .then((c) => {
               chatCfg.prompt = c;
 
-              m.request({ method: 'GET', url: chatUrl, withCredentials: true }).then((c3) => {
-                chatCfg.chat = c3;
-                chatCfg.system = c3.systemCharacter;
-                chatCfg.user = c3.userCharacter;
+              m.request({ method: 'GET', url: chatUrl, withCredentials: true }).then((cc) => {
+                chatCfg.chat = cc;
+                chatCfg.system = cc.systemCharacter;
+                chatCfg.user = cc.userCharacter;
                 getHistory().then((h) => {
                   chatCfg.peek = true;
                   chatCfg.history = h;
@@ -921,9 +945,15 @@
           name: e.name,
           objectId: e.objectId,
           chatConfig: { objectId: e.chatConfig.objectId },
-          promptConfig: { objectId: e.promptConfig.objectId },
           uid: page.uid()
         };
+        /// Include whichever prompt the user selected (or both for backward compat)
+        if (e.promptConfig && e.promptConfig.objectId) {
+          chatReq.promptConfig = { objectId: e.promptConfig.objectId };
+        }
+        if (e.promptTemplate && e.promptTemplate.objectId) {
+          chatReq.promptTemplate = { objectId: e.promptTemplate.objectId };
+        }
         let obj = await m.request({ method: 'POST', url: g_application_path + "/rest/chat/new", withCredentials: true, body: chatReq });
         inst = am7model.prepareInstance(obj);
         window.dbgInst = inst;

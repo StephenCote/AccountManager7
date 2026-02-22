@@ -178,9 +178,9 @@ public class PromptUtil {
 	}
 	
 	public static String getChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig, String templ, boolean firstPerson) {
-		if(promptConfig == null) {
-			logger.error("Prompt configuration is null");
-			return null;
+		if(promptConfig == null && chatConfig == null) {
+			logger.warn("Both prompt configuration and chat configuration are null");
+			return templ;
 		}
 		if(chatConfig == null) {
 			// logger.info("No chat configuration provided");
@@ -391,7 +391,8 @@ public class PromptUtil {
 		String asupp = "";
 		String srace = "";
 		String urace = "";
-		List<BaseRecord> races = ctx.promptConfig.get("races");
+		List<BaseRecord> races = (ctx.promptConfig != null) ? ctx.promptConfig.get("races") : null;
+		if (races == null) races = new ArrayList<>();
 		if(ctx.sysProf != null) {
 			List<String> sysRaces = ctx.sysProf.getRace();
 	
@@ -424,7 +425,7 @@ public class PromptUtil {
 			cscene = iscene;
 		}
 		boolean auto = (cscene != null && cscene.length() > 0);
-		if((boolean)ctx.chatConfig.get("includeScene")) {
+		if((boolean)ctx.chatConfig.get("includeScene") && ctx.promptConfig != null) {
 			scenel = ((List<String>)ctx.promptConfig.get("scene")).stream().collect(Collectors.joining(System.lineSeparator()));
 		}
 		ctx.replace(TemplatePatternEnumType.SCENE, scenel);
@@ -470,31 +471,33 @@ public class PromptUtil {
 		boolean useNLP = ctx.chatConfig.get("useNLP");
 
 		// Episode rules (conditional) or default "stay in character"
-		if(ctx.episode) {
+		if(ctx.episode && ctx.promptConfig != null) {
 			addRuleIfPresent(rules, ctx.promptConfig, "episodeRule");
 		}
 		else {
 			rules.add("Always stay in character.");
 		}
 
-		// Censor warning (conditional on AO/RC rating)
-		if(ctx.rating == ESRBEnumType.AO || ctx.rating == ESRBEnumType.RC) {
-			addRuleIfPresent(rules, ctx.promptConfig, "systemCensorWarning");
+		if (ctx.promptConfig != null) {
+			// Censor warning (conditional on AO/RC rating)
+			if(ctx.rating == ESRBEnumType.AO || ctx.rating == ESRBEnumType.RC) {
+				addRuleIfPresent(rules, ctx.promptConfig, "systemCensorWarning");
+			}
+
+			// Response rules (always present when defined)
+			addRuleIfPresent(rules, ctx.promptConfig, "responseRules");
+
+			// NLP rules (conditional on useNLP)
+			if(useNLP) {
+				addRuleIfPresent(rules, ctx.promptConfig, "systemNlp");
+			}
+
+			// Revision rules (always present when defined)
+			addRuleIfPresent(rules, ctx.promptConfig, "revisionRules");
+
+			// Clarification rules (always present when defined)
+			addRuleIfPresent(rules, ctx.promptConfig, "clarificationRules");
 		}
-
-		// Response rules (always present when defined)
-		addRuleIfPresent(rules, ctx.promptConfig, "responseRules");
-
-		// NLP rules (conditional on useNLP)
-		if(useNLP) {
-			addRuleIfPresent(rules, ctx.promptConfig, "systemNlp");
-		}
-
-		// Revision rules (always present when defined)
-		addRuleIfPresent(rules, ctx.promptConfig, "revisionRules");
-
-		// Clarification rules (always present when defined)
-		addRuleIfPresent(rules, ctx.promptConfig, "clarificationRules");
 
 		// Number dynamically
 		StringBuilder sb = new StringBuilder();
@@ -529,8 +532,12 @@ public class PromptUtil {
 			episodeAssistText = episodeRec.get("episodeAssist");
 			if(episodeAssistText == null) episodeAssistText = "";
 			episodicLabel = " episodic";
-			// Matcher.quoteReplacement(
-			episodeRuleText =  ((List<String>)ctx.promptConfig.get("episodeRule")).stream().collect(Collectors.joining(System.lineSeparator()));
+			if (ctx.promptConfig != null) {
+				List<String> epRules = ctx.promptConfig.get("episodeRule");
+				if (epRules != null && !epRules.isEmpty()) {
+					episodeRuleText = epRules.stream().collect(Collectors.joining(System.lineSeparator()));
+				}
+			}
 			StringBuilder elBuff = new StringBuilder();
 			StringBuilder epBuff = new StringBuilder(); 
 			elBuff.append("EPISODE GUIDANCE:" + System.lineSeparator());
@@ -588,30 +595,32 @@ public class PromptUtil {
 		String nlpCommand = null;
 		if(useNLP) {
 			nlpCommand = ctx.chatConfig.get("nlpCommand");
-			sysNlp = composeTemplate(ctx.promptConfig.get("systemNlp"));
-			assistNlp = composeTemplate(ctx.promptConfig.get("assistantNlp"));
+			if (ctx.promptConfig != null) {
+				sysNlp = composeTemplate(ctx.promptConfig.get("systemNlp"));
+				assistNlp = composeTemplate(ctx.promptConfig.get("assistantNlp"));
+			}
 		}
-		
+
 		ctx.replace(TemplatePatternEnumType.NLP, sysNlp);
 		ctx.replace(TemplatePatternEnumType.NLP_WARN, assistNlp);
-		
+
 		String sysCens = "";
 		String assistCens = "";
 		ESRBEnumType rating = ctx.chatConfig.getEnum("rating");
-		if(rating == ESRBEnumType.AO || rating == ESRBEnumType.RC) {
+		if((rating == ESRBEnumType.AO || rating == ESRBEnumType.RC) && ctx.promptConfig != null) {
 			sysCens = composeTemplate(ctx.promptConfig.get("systemCensorWarning"));
 			assistCens = composeTemplate(ctx.promptConfig.get("assistantCensorWarning"));
-			
+
 		}
 
-		String uconpref = composeTemplate(ctx.promptConfig.get("userConsentPrefix"));
+		String uconpref = (ctx.promptConfig != null) ? composeTemplate(ctx.promptConfig.get("userConsentPrefix")) : "";
 		String ucons = "";
 		if(rating == ESRBEnumType.M || rating == ESRBEnumType.AO || rating == ESRBEnumType.RC) {
-			ucons = composeTemplate(ctx.promptConfig.get("userConsentRating"));
+			ucons = (ctx.promptConfig != null) ? composeTemplate(ctx.promptConfig.get("userConsentRating")) : "";
 		}
 		if(useNLP) {
 			if(ucons.length() > 0) ucons += " and ";
-			ucons += composeTemplate(ctx.promptConfig.get("userConsentNlp"));
+			ucons += (ctx.promptConfig != null) ? composeTemplate(ctx.promptConfig.get("userConsentNlp")) : "";
 		}
 		String nlpReminderBlock = "";
 		if(useNLP) {
@@ -674,7 +683,7 @@ public class PromptUtil {
 		int uage = ctx.userChar.get(FieldNames.FIELD_AGE);
 
 		String sper = "";
-		if(sgen.equals("male") || sgen.equals("female")) {
+		if((sgen.equals("male") || sgen.equals("female")) && ctx.promptConfig != null) {
 			List<String> per = ctx.promptConfig.get(sgen + "Perspective");
 			if(per != null && per.size() > 0) {
 				// Matcher.quoteReplacement(

@@ -73,6 +73,7 @@ public class Chat {
 	protected IOContext ioContext = null;
 	public static final Logger logger = LogManager.getLogger(Chat.class);
 	private BaseRecord promptConfig = null;
+	private BaseRecord promptTemplate = null;
 	private BaseRecord chatConfig = null;
 	private boolean chatMode = true;
 	private boolean includeMessageHistory = chatMode;
@@ -146,16 +147,25 @@ public class Chat {
 	}
 	
 	public Chat(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig) {
+		this(user, chatConfig, promptConfig, null);
+	}
+
+	public Chat(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord promptTemplate) {
 		this.user = user;
 		this.chatConfig = chatConfig;
 		this.promptConfig = promptConfig;
+		this.promptTemplate = promptTemplate;
 		configureChat();
 		if (logger.isInfoEnabled()) {
 			String amodel = chatConfig != null ? chatConfig.get("analyzeModel") : null;
 			boolean hasPromptCfg = promptConfig != null;
-			boolean hasPromptTemplate = chatConfig != null && chatConfig.get("promptTemplate") != null;
+			boolean hasPromptTpl = promptTemplate != null;
+			/// Backward compat: also check chatConfig.promptTemplate (deprecated)
+			if (!hasPromptTpl && chatConfig != null && chatConfig.get("promptTemplate") != null) {
+				hasPromptTpl = true;
+			}
 			logger.info("Chat config: model=" + model + " analyzeModel=" + amodel
-				+ " promptConfig=" + hasPromptCfg + " promptTemplate=" + hasPromptTemplate
+				+ " promptConfig=" + hasPromptCfg + " promptTemplate=" + hasPromptTpl
 				+ " analyzeTimeout=" + analyzeTimeout + " keyFrameEvery=" + keyFrameEvery);
 		}
 	}
@@ -172,6 +182,10 @@ public class Chat {
 
 	public BaseRecord getPromptConfig() {
 		return promptConfig;
+	}
+
+	public BaseRecord getPromptTemplate() {
+		return promptTemplate;
 	}
 
 	public BaseRecord getChatConfig() {
@@ -857,18 +871,27 @@ public class Chat {
 							if (cmsg != null) content = cmsg.get("content");
 						}
 					}
-					logger.info("generateTitleAndIcon: LLM content=" + (content != null ? content.substring(0, Math.min(100, content.length())) : "null"));
+					logger.info("generateTitleAndIcon: LLM raw content=" + (content != null ? content.substring(0, Math.min(200, content.length())) : "null"));
 					if (content != null) {
 						content = content.trim();
-						String[] lines = content.split("\\r?\\n");
-						if (lines.length >= 1) {
-							title = lines[0].trim().replaceAll("^\"|\"$", "");
+						/// Strip markdown code fences if present
+						content = content.replaceAll("(?s)^```[a-z]*\\s*", "").replaceAll("(?s)\\s*```$", "").trim();
+						/// Filter to non-empty lines
+						String[] allLines = content.split("\\r?\\n");
+						java.util.List<String> nonEmpty = new java.util.ArrayList<>();
+						for (String l : allLines) {
+							String trimmed = l.trim();
+							if (!trimmed.isEmpty()) nonEmpty.add(trimmed);
+						}
+						if (!nonEmpty.isEmpty()) {
+							title = nonEmpty.get(0).replaceAll("^\"|\"$", "").replaceAll("^Title:\\s*", "").trim();
 							if (title.length() > 60) title = title.substring(0, 60);
 						}
-						if (lines.length >= 2) {
-							icon = lines[1].trim().toLowerCase().replaceAll("[^a-z0-9_]", "");
+						if (nonEmpty.size() >= 2) {
+							icon = nonEmpty.get(1).replaceAll("^Icon:\\s*", "").trim().toLowerCase().replaceAll("[^a-z0-9_]", "");
 							if (icon.isEmpty()) icon = null;
 						}
+						logger.info("generateTitleAndIcon: parsed title='" + title + "' icon='" + icon + "'");
 					}
 				}
 				if (title != null) return new String[] { title, icon };
@@ -963,7 +986,7 @@ public class Chat {
 	/// Replaces the preamble messages in-place so dynamic tokens (memory, scene, episode, etc.)
 	/// are always freshly resolved. Call at the start of each turn before adding the user message.
 	public void refreshSystemPrompt(OpenAIRequest req) {
-		if (promptConfig == null || req == null) return;
+		if ((promptConfig == null && promptTemplate == null) || req == null) return;
 
 		BaseRecord systemChar = null;
 		BaseRecord userChar = null;
@@ -977,27 +1000,30 @@ public class Chat {
 			memoryCtx = retrieveRelevantMemories(systemChar, userChar);
 		}
 
-		/// Check for structured prompt template on chatConfig
-		BaseRecord promptTemplate = (chatConfig != null) ? chatConfig.get("promptTemplate") : null;
-		if (promptTemplate != null) {
-			IOSystem.getActiveContext().getReader().populate(promptTemplate);
+		/// Use instance promptTemplate (from chatRequest); fall back to chatConfig for backward compat
+		BaseRecord effectivePromptTemplate = this.promptTemplate;
+		if (effectivePromptTemplate == null && chatConfig != null) {
+			effectivePromptTemplate = chatConfig.get("promptTemplate");
+		}
+		if (effectivePromptTemplate != null) {
+			IOSystem.getActiveContext().getReader().populate(effectivePromptTemplate);
 		}
 
 		String sysTemp = null;
 		String assistTemp = null;
 		String userTemp = null;
 
-		if (promptTemplate != null) {
+		if (effectivePromptTemplate != null) {
 			BaseRecord effectiveChatConfig = (systemChar != null && userChar != null) ? chatConfig : null;
 			injectMemoryThreadLocals(memoryCtx);
-			sysTemp = PromptTemplateComposer.composeSystem(promptTemplate, promptConfig, effectiveChatConfig);
+			sysTemp = PromptTemplateComposer.composeSystem(effectivePromptTemplate, promptConfig, effectiveChatConfig);
 			if (useAssist) {
 				injectMemoryThreadLocals(memoryCtx);
-				assistTemp = PromptTemplateComposer.composeAssistant(promptTemplate, promptConfig, effectiveChatConfig);
+				assistTemp = PromptTemplateComposer.composeAssistant(effectivePromptTemplate, promptConfig, effectiveChatConfig);
 				injectMemoryThreadLocals(memoryCtx);
-				userTemp = PromptTemplateComposer.composeUser(promptTemplate, promptConfig, effectiveChatConfig);
+				userTemp = PromptTemplateComposer.composeUser(effectivePromptTemplate, promptConfig, effectiveChatConfig);
 			}
-		} else {
+		} else if (promptConfig != null) {
 			BaseRecord cfgArg = (systemChar != null && userChar != null) ? chatConfig : null;
 			injectMemoryThreadLocals(memoryCtx);
 			sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, cfgArg);
@@ -2430,17 +2456,19 @@ public class Chat {
 		/// Set floor on ALL token fields to cover model differences (o-series uses
 		/// max_completion_tokens, Ollama uses num_ctx, others use max_tokens).
 		int minTokens = (chatConfig.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) ? 16384 : 8192;
-		try {
-			String[] tokenFields = {"max_tokens", "max_completion_tokens", "num_ctx"};
-			for (String tf : tokenFields) {
+		String[] tokenFields = {"max_tokens", "max_completion_tokens", "num_ctx"};
+		for (String tf : tokenFields) {
+			try {
 				int current = extractReq.get(tf);
 				if (current < minTokens) {
 					extractReq.set(tf, minTokens);
 				}
+			} catch (Exception e) {
+				// ignore — field may not exist on request
 			}
-		} catch (Exception e) {
-			// ignore — field may not exist on request
 		}
+
+		logger.info("Memory extraction: model=" + amodel + ", temperature=0.3, minTokens=" + minTokens);
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
@@ -3458,23 +3486,26 @@ public class Chat {
 			memoryCtx = retrieveRelevantMemories(systemChar, userChar);
 			logger.info("getChatPrompt: memoryCtx length=" + (memoryCtx != null ? memoryCtx.length() : "null"));
 		}
-		/// Check for structured prompt template on chatConfig
-		BaseRecord promptTemplate = (chatConfig != null) ? chatConfig.get("promptTemplate") : null;
-		if (promptTemplate != null) {
-			IOSystem.getActiveContext().getReader().populate(promptTemplate);
+		/// Use instance promptTemplate (from chatRequest); fall back to chatConfig for backward compat
+		BaseRecord effectivePromptTemplate = this.promptTemplate;
+		if (effectivePromptTemplate == null && chatConfig != null) {
+			effectivePromptTemplate = chatConfig.get("promptTemplate");
+		}
+		if (effectivePromptTemplate != null) {
+			IOSystem.getActiveContext().getReader().populate(effectivePromptTemplate);
 		}
 
-		if (promptTemplate != null && promptConfig != null) {
+		if (effectivePromptTemplate != null) {
 			/// Use structured template format via PromptTemplateComposer
 			BaseRecord effectiveChatConfig = (systemChar != null && userChar != null) ? chatConfig : null;
 			/// System template first — inject memory thread-locals before each call
 			injectMemoryThreadLocals(memoryCtx);
-			sysTemp = PromptTemplateComposer.composeSystem(promptTemplate, promptConfig, effectiveChatConfig);
+			sysTemp = PromptTemplateComposer.composeSystem(effectivePromptTemplate, promptConfig, effectiveChatConfig);
 			if (useAssist) {
 				injectMemoryThreadLocals(memoryCtx);
-				assist = PromptTemplateComposer.composeAssistant(promptTemplate, promptConfig, effectiveChatConfig);
+				assist = PromptTemplateComposer.composeAssistant(effectivePromptTemplate, promptConfig, effectiveChatConfig);
 				injectMemoryThreadLocals(memoryCtx);
-				userTemp = PromptTemplateComposer.composeUser(promptTemplate, promptConfig, effectiveChatConfig);
+				userTemp = PromptTemplateComposer.composeUser(effectivePromptTemplate, promptConfig, effectiveChatConfig);
 			}
 		} else if (promptConfig != null) {
 			if (systemChar != null && userChar != null) {

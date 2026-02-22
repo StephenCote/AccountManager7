@@ -189,6 +189,7 @@ public class ChatService {
 		String name = chatReq.get(FieldNames.FIELD_NAME);
 		String chatConfigId = null;
 		String promptConfigId = null;
+		String promptTemplateId = null;
 
 		if (chatReq.getChatConfig() != null) {
 			chatConfigId = chatReq.get("chatConfig.objectId");
@@ -198,8 +199,16 @@ public class ChatService {
 			promptConfigId = chatReq.get("promptConfig.objectId");
 		}
 
-		if(promptConfigId == null || promptConfigId.length() == 0|| chatConfigId == null || chatConfigId.length() == 0 || name == null || name.length() == 0) {
-			logger.warn("Name, prompt, or chat config was null or empty");
+		if (chatReq.get("promptTemplate") != null) {
+			BaseRecord ptRef = chatReq.get("promptTemplate");
+			if (ptRef != null) promptTemplateId = ptRef.get(FieldNames.FIELD_OBJECT_ID);
+		}
+
+		/// Require chatConfig + name, plus at least one of promptConfig or promptTemplate
+		boolean hasPrompt = (promptConfigId != null && promptConfigId.length() > 0)
+			|| (promptTemplateId != null && promptTemplateId.length() > 0);
+		if(chatConfigId == null || chatConfigId.length() == 0 || name == null || name.length() == 0 || !hasPrompt) {
+			logger.warn("Name, chat config, or prompt (config/template) was null or empty");
 			return Response.status(404).entity(null).build();
 		}
 
@@ -210,25 +219,38 @@ public class ChatService {
 			logger.warn("Chat config not found");
 			return Response.status(404).entity(null).build();
 		}
-		
-		Query q2 = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_OBJECT_ID, promptConfigId);
-		q2.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		BaseRecord promptConfig = IOSystem.getActiveContext().getAccessPoint().find(user, q2);
-		
-		if (promptConfig == null) {
-			logger.warn("Prompt config not found");
-			return Response.status(404).entity(null).build();
+
+		BaseRecord promptConfig = null;
+		if (promptConfigId != null && promptConfigId.length() > 0) {
+			Query q2 = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_OBJECT_ID, promptConfigId);
+			q2.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			promptConfig = IOSystem.getActiveContext().getAccessPoint().find(user, q2);
+			if (promptConfig == null) {
+				logger.warn("Prompt config not found: " + promptConfigId);
+				return Response.status(404).entity(null).build();
+			}
 		}
-		
+
+		BaseRecord promptTemplate = null;
+		if (promptTemplateId != null && promptTemplateId.length() > 0) {
+			Query q3 = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_TEMPLATE, FieldNames.FIELD_OBJECT_ID, promptTemplateId);
+			q3.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			promptTemplate = IOSystem.getActiveContext().getAccessPoint().find(user, q3);
+			if (promptTemplate == null) {
+				logger.warn("Prompt template not found: " + promptTemplateId);
+				return Response.status(404).entity(null).build();
+			}
+		}
+
 		BaseRecord req = ChatUtil.getChatRequest(user, name, chatConfig, promptConfig);
 		if(req != null) {
 			logger.warn("Chat request '" + name + "' already exists");
 			return Response.status(404).entity(null).build();
 		}
-		
-		req = ChatUtil.getCreateChatRequest(user, name, chatConfig, promptConfig);
+
+		req = ChatUtil.getCreateChatRequest(user, name, chatConfig, promptConfig, promptTemplate);
 		if(req != null) {
-			/// Fetch again since the create will only return the identifiers. 
+			/// Fetch again since the create will only return the identifiers.
 			req = ChatUtil.getChatRequest(user, name, chatConfig, promptConfig);
 		}
 		if(req != null) {
@@ -238,7 +260,7 @@ public class ChatService {
 			logger.error("Failed to create chat request: " + name);
 		}
 		return Response.status((req != null ? 200 : 404)).entity(req.toFullString()).build();
-		
+
 	}
 	
 	@RolesAllowed({"admin","user"})
@@ -280,16 +302,23 @@ public class ChatService {
 		}
 		
 		Chat chat = ChatUtil.getChat(user, vChatReq, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
-		
+		/// Set chatRequestObjectId so auto-title can persist to the chatRequest record
+		if (chat != null) {
+			String chatReqOid = vChatReq.get(FieldNames.FIELD_OBJECT_ID);
+			if (chatReqOid != null) {
+				chat.setChatRequestObjectId(chatReqOid);
+			}
+		}
+
 		String citDesc = "";
 		if(citRef.length() > 0) {
-			citDesc = PromptUtil.getUserCitationTemplate(chat.getPromptConfig(), chat.getChatConfig());
-			if(citDesc == null || citDesc.length() == 0) {
+			String citTpl = (chat.getPromptConfig() != null) ? PromptUtil.getUserCitationTemplate(chat.getPromptConfig(), chat.getChatConfig()) : null;
+			if(citTpl == null || citTpl.length() == 0) {
 				/// MCP blocks are self-describing; no wrapper needed
 				citDesc = citRef + System.lineSeparator();
 			}
 			else {
-			    PromptBuilderContext ctx = new PromptBuilderContext(chat.getPromptConfig(), chat.getChatConfig(), citDesc, true);
+			    PromptBuilderContext ctx = new PromptBuilderContext(chat.getPromptConfig(), chat.getChatConfig(), citTpl, true);
 			    ctx.replace(TemplatePatternEnumType.USER_QUESTION, vChatReq.getMessage());
 			    ctx.replace(TemplatePatternEnumType.USER_CITATION, citRef);
 			    citDesc = ctx.template.trim();

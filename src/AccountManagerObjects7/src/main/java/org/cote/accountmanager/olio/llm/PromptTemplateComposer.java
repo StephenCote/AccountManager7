@@ -99,8 +99,12 @@ public class PromptTemplateComposer {
 		}
 
 		// Step 6: Run through PromptUtil token replacement pipeline
+		// Token replacement works with or without promptConfig — chatConfig-based
+		// tokens (setting, episodes, memory, rating, pronouns, characters, profiles,
+		// interactions) are resolved regardless. promptConfig-only tokens (races,
+		// scene lines, dynamic rules) are skipped when promptConfig is null.
 		String composedText = composed.toString();
-		if (promptConfig != null) {
+		if (promptConfig != null || chatConfig != null) {
 			composedText = PromptUtil.getChatPromptTemplate(promptConfig, chatConfig, composedText);
 		}
 

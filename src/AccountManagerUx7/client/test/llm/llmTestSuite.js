@@ -1844,6 +1844,8 @@
             let _internalSessions = origSessions;
             if (_internalSessions && _internalSessions.length > 0) {
                 let testSession = _internalSessions[0];
+                let origTitle = testSession.chatTitle;
+                let origIcon = testSession.chatIcon;
                 let testTitle = "Auto-Title Test " + Date.now();
                 ConversationManager.updateSessionTitle(testSession.objectId, testTitle);
 
@@ -1898,8 +1900,9 @@
                     logData("convmgr", "110f-h: Error", e.stack || e.message);
                 }
 
-                // Restore original attributes
-                testSession.attributes = origAttrs;
+                // Restore original values
+                testSession.chatTitle = origTitle;
+                testSession.chatIcon = origIcon;
             } else {
                 log("convmgr", "110c-h: No sessions loaded — title/icon display tests skipped (load sessions first)", "skip");
             }

@@ -272,12 +272,15 @@ public class ChatUtil {
 		return new OpenAIRequest(OlioUtil.getFullRecord(creq.get("session"), false));
 	}
 	public static BaseRecord getChatRequest(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg) {
-		return getCreateChatRequest(user, name, cfg, pcfg, false);
+		return getCreateChatRequest(user, name, cfg, pcfg, null, false);
 	}
 	public static BaseRecord getCreateChatRequest(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg) {
-		return getCreateChatRequest(user, name, cfg, pcfg, true);
+		return getCreateChatRequest(user, name, cfg, pcfg, null, true);
 	}
-	private static BaseRecord getCreateChatRequest(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg, boolean create) {
+	public static BaseRecord getCreateChatRequest(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg, BaseRecord ptpl) {
+		return getCreateChatRequest(user, name, cfg, pcfg, ptpl, true);
+	}
+	private static BaseRecord getCreateChatRequest(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg, BaseRecord ptpl, boolean create) {
 		BaseRecord ocreq = null;
 		BaseRecord creq = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_REQUEST, name, "~/ChatRequests", false);
 		if(creq != null) {
@@ -286,17 +289,19 @@ public class ChatUtil {
 		if (!create) {
 			return null;
 		}
-		
+
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/ChatRequests");
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			creq = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_REQUEST, user, null, plist);
 			creq.set("chatConfig", cfg);
-			creq.set("promptConfig", pcfg);
-			
+			if (pcfg != null) creq.set("promptConfig", pcfg);
+			if (ptpl != null) creq.set("promptTemplate", ptpl);
+
 			BaseRecord chatConfig = OlioUtil.getFullRecord(cfg);
-			BaseRecord promptConfig = OlioUtil.getFullRecord(pcfg);
-			
+			BaseRecord promptConfig = (pcfg != null) ? OlioUtil.getFullRecord(pcfg) : null;
+			BaseRecord promptTemplate = (ptpl != null) ? OlioUtil.getFullRecord(ptpl) : null;
+
 			String setting = chatConfig.get("setting");
 			if (setting != null) {
 				if(setting.equals("random")) {
@@ -306,8 +311,8 @@ public class ChatUtil {
 				}
 				creq.setValue("setting", setting);
 			}
-			
-			Chat chat = new Chat(user, chatConfig, promptConfig);
+
+			Chat chat = new Chat(user, chatConfig, promptConfig, promptTemplate);
 			OpenAIRequest req = chat.getChatPrompt();
 			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, req, name, "~/ChatRequests", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			BaseRecord oreq = IOSystem.getActiveContext().getAccessPoint().create(user, req);
@@ -1282,8 +1287,9 @@ public class ChatUtil {
 		Chat chat = null;
 		BaseRecord chatConfig = OlioUtil.getFullRecord(creq.getChatConfig());
 		BaseRecord promptConfig = OlioUtil.getFullRecord(creq.getPromptConfig());
+		BaseRecord promptTemplate = OlioUtil.getFullRecord(creq.get("promptTemplate"));
 
-		if(chatConfig != null && promptConfig != null) {
+		if(chatConfig != null && (promptConfig != null || promptTemplate != null)) {
             BaseRecord vreq = OlioUtil.getFullRecord(creq.get("session"), false);
 			if(vreq != null) {
 				OpenAIRequest oreq = new OpenAIRequest(vreq);
@@ -1304,7 +1310,7 @@ public class ChatUtil {
 					chatConfig = chatConfig.copyRecord();
 					chatConfig.setValue("setting", creq.get("setting"));
 				}
-				chat = new Chat(user, chatConfig, promptConfig);
+				chat = new Chat(user, chatConfig, promptConfig, promptTemplate);
 				req = chat.getChatPrompt();
 			}
 
@@ -1316,8 +1322,11 @@ public class ChatUtil {
 	public static Chat getChat(BaseRecord user, ChatRequest req, boolean deferRemote) {
 		BaseRecord chatConfig = OlioUtil.getFullRecord(req.getChatConfig());
 		BaseRecord promptConfig = OlioUtil.getFullRecord(req.getPromptConfig());
+		/// Read promptTemplate from chatRequest (primary) — decoupled from chatConfig
+		BaseRecord promptTemplate = OlioUtil.getFullRecord(req.get("promptTemplate"));
 		Chat chat = null;
-		if(chatConfig != null && promptConfig != null) {
+		/// Either promptConfig or promptTemplate is sufficient alongside chatConfig
+		if(chatConfig != null && (promptConfig != null || promptTemplate != null)) {
 			BaseRecord cchatConfig = chatConfig.copyRecord();
 			if (req.get("setting") != null) {
 				cchatConfig.setValue("setting", req.get("setting"));
@@ -1335,7 +1344,7 @@ public class ChatUtil {
 				try { cchatConfig.set("apiKey", null); } catch (Exception ex) { /* ignore */ }
 			}
 
-			chat = new Chat(user, cchatConfig, promptConfig);
+			chat = new Chat(user, cchatConfig, promptConfig, promptTemplate);
 			chat.setDeferRemote(deferRemote);
 		}
 		return chat;

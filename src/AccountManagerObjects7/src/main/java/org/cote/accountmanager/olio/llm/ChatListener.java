@@ -155,13 +155,13 @@ public class ChatListener implements IChatListener {
 
 		String citDesc = "";
 		if(citRef.length() > 0) {
-			citDesc = PromptUtil.getUserCitationTemplate(chat.getPromptConfig(), chat.getChatConfig());
-			if(citDesc == null || citDesc.length() == 0) {
+			String citTpl = (chat.getPromptConfig() != null) ? PromptUtil.getUserCitationTemplate(chat.getPromptConfig(), chat.getChatConfig()) : null;
+			if(citTpl == null || citTpl.length() == 0) {
 				/// MCP blocks are self-describing; no wrapper needed
 				citDesc = citRef + System.lineSeparator();
 			}
 			else {
-			    PromptBuilderContext ctx = new PromptBuilderContext(chat.getPromptConfig(), chat.getChatConfig(), citDesc, true);
+			    PromptBuilderContext ctx = new PromptBuilderContext(chat.getPromptConfig(), chat.getChatConfig(), citTpl, true);
 			    ctx.replace(TemplatePatternEnumType.USER_QUESTION, vChatReq.getMessage());
 			    ctx.replace(TemplatePatternEnumType.USER_CITATION, citRef);
 			    citDesc = ctx.template.trim();
@@ -309,103 +309,110 @@ public class ChatListener implements IChatListener {
 		Chat chat = asyncChats.get(oid);
 		chat.handleResponse(request, response, false);
 
-		if(asyncRequestStop.containsKey(oid) && asyncRequestStop.containsKey(oid) == true) {
-			List<BaseRecord> msgs = request.get("messages");
-			if(msgs != null && msgs.size() > 0) {
-				BaseRecord lastMsg = msgs.get(msgs.size() - 1);
-				if(lastMsg.get("content") != null) {
-					lastMsg.setValue("content", lastMsg.get("content") + System.lineSeparator() + "[interrupted]");
-				}
-			}
-		}
-
-		/// Phase 9: Post-response policy evaluation (streaming mode)
-		/// If a mid-stream violation already stopped the stream, use that result;
-		/// otherwise run the full post-stream evaluation (heuristic + compliance).
-		PolicyEvaluationResult midViolation = chat.getMidStreamViolation();
-		PolicyEvaluationResult policyResult;
-		if (midViolation != null) {
-			logger.info("Using mid-stream policy violation result: " + midViolation.getViolationSummary());
-			policyResult = midViolation;
-		} else {
-			policyResult = chat.evaluateResponsePolicy(request, response);
-		}
-		if (policyResult != null && !policyResult.isPermitted()) {
-			logger.warn("Policy violation in stream response: " + policyResult.getViolationSummary());
-			handlers.forEach(h -> h.onPolicyViolation(user, request, response, policyResult));
-			/// Phase 13g: Auto-tune after policy violation (streaming mode)
-			chat.handleAutotuning(request, policyResult);
-		}
-
-		chat.saveSession(request);
-		logger.info("Chat session saved for request: " + oid);
-
-		/// Flush deferred keyframe AFTER main response completes (streaming mode).
-		/// This prevents the keyframe LLM call from competing with the main response.
-		chat.flushPendingKeyframe(request);
-
-		/// Phase 13g: Auto-generate title and icon after first real user+assistant exchange
-		boolean autoTitle = false;
-		BaseRecord titleChatCfg = chat.getChatConfig();
-		if (titleChatCfg != null) {
-			autoTitle = (boolean) titleChatCfg.get("autoTitle");
-		}
-		int offset = chat.getMessageOffset(request);
-		List<BaseRecord> allMsgs = request.get("messages");
-		int userMsgCount = 0;
-		for (int i = offset; i < allMsgs.size(); i++) {
-			String role = allMsgs.get(i).get("role");
-			if ("user".equals(role)) userMsgCount++;
-		}
-		logger.info("Auto-title check (stream): autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount + " oid=" + oid);
-		if (autoTitle && userMsgCount >= 1) {
-			/// Use chatRequest pre-fetched in sendMessageToServer (main thread) —
-			/// AccessPoint.find fails in ForkJoinPool async threads (AUDIT INVALID)
-			BaseRecord chatReqRec = asyncChatRequestRecords.get(oid);
-			if (chatReqRec == null) {
-				logger.warn("Pre-fetched chatRequest not found for auto-title: " + oid);
-			}
-			/// OI-97: Skip if title already exists — prevents redundant generation on every exchange.
-			/// The check fires on userMsgCount >= 1 (not just == 1) so that if the first attempt
-			/// fails (LLM timeout, network error), subsequent exchanges will retry.
-			if (chatReqRec != null) {
-				String existingTitle = chatReqRec.get("chatTitle");
-				if (existingTitle != null && !existingTitle.isEmpty()) {
-					logger.info("Title already exists, skipping generation: " + existingTitle);
-					chatReqRec = null; // signal to skip
-				}
-			}
-			final BaseRecord titleChatReqRec = chatReqRec;
-			if (titleChatReqRec != null) {
-				final String chatReqOid = titleChatReqRec.get(FieldNames.FIELD_OBJECT_ID);
-				CompletableFuture.runAsync(() -> {
-					try {
-						logger.info("Generating title/icon for: " + oid + " chatReqOid=" + chatReqOid);
-						String[] titleAndIcon = chat.generateChatTitleAndIcon(request);
-						String title = titleAndIcon[0];
-						String icon = titleAndIcon[1];
-						logger.info("Title generation result: title=" + title + " icon=" + icon + " chatReqOid=" + chatReqOid);
-						if (title != null) {
-							chat.setChatTitle(titleChatReqRec, title);
-						}
-						if (icon != null) {
-							chat.setChatIcon(titleChatReqRec, icon);
-						}
-						if (title != null) {
-							handlers.forEach(h -> h.onChatTitle(user, request, chatReqOid, title));
-						}
-						if (icon != null) {
-							handlers.forEach(h -> h.onChatIcon(user, request, chatReqOid, icon));
-						}
-					} catch (Exception e) {
-						logger.warn("Async title/icon generation failed: " + e.getMessage());
+		/// Wrap all post-processing in try-finally to guarantee chatComplete always fires.
+		/// If any step (policy eval, saveSession, keyframe, title gen) throws an exception,
+		/// the client's pending state would never clear without the finally block.
+		try {
+			if(asyncRequestStop.containsKey(oid) && asyncRequestStop.containsKey(oid) == true) {
+				List<BaseRecord> msgs = request.get("messages");
+				if(msgs != null && msgs.size() > 0) {
+					BaseRecord lastMsg = msgs.get(msgs.size() - 1);
+					if(lastMsg.get("content") != null) {
+						lastMsg.setValue("content", lastMsg.get("content") + System.lineSeparator() + "[interrupted]");
 					}
-				});
+				}
 			}
-		}
 
-		handlers.forEach(h -> h.onChatComplete(user, request, response));
-		clearCache(oid);
+			/// Phase 9: Post-response policy evaluation (streaming mode)
+			/// If a mid-stream violation already stopped the stream, use that result;
+			/// otherwise run the full post-stream evaluation (heuristic + compliance).
+			PolicyEvaluationResult midViolation = chat.getMidStreamViolation();
+			PolicyEvaluationResult policyResult;
+			if (midViolation != null) {
+				logger.info("Using mid-stream policy violation result: " + midViolation.getViolationSummary());
+				policyResult = midViolation;
+			} else {
+				policyResult = chat.evaluateResponsePolicy(request, response);
+			}
+			if (policyResult != null && !policyResult.isPermitted()) {
+				logger.warn("Policy violation in stream response: " + policyResult.getViolationSummary());
+				handlers.forEach(h -> h.onPolicyViolation(user, request, response, policyResult));
+				/// Phase 13g: Auto-tune after policy violation (streaming mode)
+				chat.handleAutotuning(request, policyResult);
+			}
+
+			chat.saveSession(request);
+			logger.info("Chat session saved for request: " + oid);
+
+			/// Flush deferred keyframe AFTER main response completes (streaming mode).
+			/// This prevents the keyframe LLM call from competing with the main response.
+			chat.flushPendingKeyframe(request);
+
+			/// Phase 13g: Auto-generate title and icon after first real user+assistant exchange
+			boolean autoTitle = false;
+			BaseRecord titleChatCfg = chat.getChatConfig();
+			if (titleChatCfg != null) {
+				autoTitle = (boolean) titleChatCfg.get("autoTitle");
+			}
+			int offset = chat.getMessageOffset(request);
+			List<BaseRecord> allMsgs = request.get("messages");
+			int userMsgCount = 0;
+			for (int i = offset; i < allMsgs.size(); i++) {
+				String role = allMsgs.get(i).get("role");
+				if ("user".equals(role)) userMsgCount++;
+			}
+			logger.info("Auto-title check (stream): autoTitle=" + autoTitle + " userMsgCount=" + userMsgCount + " oid=" + oid);
+			if (autoTitle && userMsgCount >= 1) {
+				/// Use chatRequest pre-fetched in sendMessageToServer (main thread) —
+				/// AccessPoint.find fails in ForkJoinPool async threads (AUDIT INVALID)
+				BaseRecord chatReqRec = asyncChatRequestRecords.get(oid);
+				if (chatReqRec == null) {
+					logger.warn("Pre-fetched chatRequest not found for auto-title: " + oid);
+				}
+				/// OI-97: Skip if title already exists — prevents redundant generation on every exchange.
+				/// The check fires on userMsgCount >= 1 (not just == 1) so that if the first attempt
+				/// fails (LLM timeout, network error), subsequent exchanges will retry.
+				if (chatReqRec != null) {
+					String existingTitle = chatReqRec.get("chatTitle");
+					if (existingTitle != null && !existingTitle.isEmpty()) {
+						logger.info("Title already exists, skipping generation: " + existingTitle);
+						chatReqRec = null; // signal to skip
+					}
+				}
+				final BaseRecord titleChatReqRec = chatReqRec;
+				if (titleChatReqRec != null) {
+					final String chatReqOid = titleChatReqRec.get(FieldNames.FIELD_OBJECT_ID);
+					CompletableFuture.runAsync(() -> {
+						try {
+							logger.info("Generating title/icon for: " + oid + " chatReqOid=" + chatReqOid);
+							String[] titleAndIcon = chat.generateChatTitleAndIcon(request);
+							String title = titleAndIcon[0];
+							String icon = titleAndIcon[1];
+							logger.info("Title generation result: title=" + title + " icon=" + icon + " chatReqOid=" + chatReqOid);
+							if (title != null) {
+								chat.setChatTitle(titleChatReqRec, title);
+							}
+							if (icon != null) {
+								chat.setChatIcon(titleChatReqRec, icon);
+							}
+							if (title != null) {
+								handlers.forEach(h -> h.onChatTitle(user, request, chatReqOid, title));
+							}
+							if (icon != null) {
+								handlers.forEach(h -> h.onChatIcon(user, request, chatReqOid, icon));
+							}
+						} catch (Exception e) {
+							logger.warn("Async title/icon generation failed: " + e.getMessage());
+						}
+					});
+				}
+			}
+		} catch (Exception e) {
+			logger.error("Post-processing failed in oncomplete for " + oid + ": " + e.getMessage(), e);
+		} finally {
+			handlers.forEach(h -> h.onChatComplete(user, request, response));
+			clearCache(oid);
+		}
 	}
 
 

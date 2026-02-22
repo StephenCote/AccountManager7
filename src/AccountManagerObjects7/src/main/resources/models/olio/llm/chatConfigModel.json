@@ -299,7 +299,7 @@
 			"type": "model",
 			"baseModel": "olio.llm.promptTemplate",
 			"foreign": true,
-			"description": "Optional structured prompt template. When set, Chat uses PromptTemplateComposer instead of flat promptConfig fields for prompt assembly."
+			"description": "DEPRECATED — use promptTemplate on chatRequest instead. This field is retained for backward compatibility and will be removed in a future version. When set, Chat uses PromptTemplateComposer instead of flat promptConfig fields for prompt assembly."
 		},
 		{
 			"name": "gossipEnabled",

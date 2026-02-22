@@ -41,6 +41,11 @@
         return await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0);
     }
 
+    async function loadPromptTemplateList(){
+        let dir = await page.findObject("auth.group", "DATA", "~/Chat");
+        return await am7client.list("olio.llm.promptTemplate", dir.objectId, null, 0, 0);
+    }
+
     async function loadChatList() {
         let dir = await page.findObject("auth.group", "DATA", "~/Chat");
         return await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
@@ -48,15 +53,16 @@
 
     function updateSessionName(inst, acfg, pcfg, bRename){
         let chat = inst.api.chatConfig();
-        let prompt = inst.api.promptConfig();
-        if(!chat || !prompt){
-            console.warn("Invalid chat or prompt selection: " + chat + " / " + prompt);
+        let prompt = inst.api.promptConfig ? inst.api.promptConfig() : null;
+        let ptpl = inst.api.promptTemplate ? inst.api.promptTemplate() : null;
+        if(!chat || (!prompt && !ptpl)){
+            console.warn("Invalid chat or prompt selection: " + chat + " / " + prompt + " / " + ptpl);
             return;
         }
-       
-        let ycfg = pcfg.filter(a => a.name.toLowerCase() == prompt.name.toLowerCase());
+
+        let ycfg = prompt ? pcfg.filter(a => a.name.toLowerCase() == prompt.name.toLowerCase()) : [];
         let vcfg = acfg.filter(a => a.name.toLowerCase() == chat.name.toLowerCase());
-        if(!ycfg.length || !vcfg.length){
+        if(!vcfg.length || (!ycfg.length && !ptpl)){
             console.warn("Invalid chat or prompt list: " + chat + " / " + prompt);
             return;
         }
@@ -100,9 +106,12 @@
         if(acfg && acfg.length && !entity.chatConfig) entity.chatConfig = acfg[0];
         let pcfg = await loadPromptList();
         if(pcfg && pcfg.length && !entity.promptConfig) entity.promptConfig = pcfg[0];
+        /// Load prompt templates for the new picker
+        let ptcfg = await loadPromptTemplateList();
 
         inst.action("chatConfig", function(){updateSessionName(inst, acfg, pcfg, true);});
         inst.action("promptConfig", function(){updateSessionName(inst, acfg, pcfg, true);});
+        if (inst.action) inst.action("promptTemplate", function(){updateSessionName(inst, acfg, pcfg, true);});
         updateSessionName(inst, acfg, pcfg);
 
         let cfg = {
