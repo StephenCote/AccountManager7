@@ -108,8 +108,11 @@ public class BodyStatsProvider implements IProvider {
 		person.setValue(OlioFieldNames.FIELD_BMI, Double.parseDouble(df.format(bmi)));
 	}
 
-	/// Compute body type on charPerson model from statistics.
-	/// Determines somatotype: ECTOMORPH, MESOMORPH, or ENDOMORPH.
+	/// Compute body type on charPerson model using stat-driven archetype scoring.
+	/// Mesomorph (Male): physicalStrength, athleticism, maximumHealth
+	/// Mesomorph (Female): physicalStrength, agility, physicalAppearance
+	/// Ectomorph: speed, agility, manualDexterity
+	/// Endomorph: physicalEndurance, mentalEndurance, potential
 	///
 	private void provideBodyType(BaseRecord person) {
 		BaseRecord stats = resolveStatistics(person);
@@ -117,25 +120,34 @@ public class BodyStatsProvider implements IProvider {
 			return;
 		}
 
-		double powerStats = getAverage(stats, OlioFieldNames.FIELD_PHYSICAL_STRENGTH, OlioFieldNames.FIELD_PHYSICAL_ENDURANCE, "maximumHealth");
-		double finesseStats = getAverage(stats, OlioFieldNames.FIELD_AGILITY, OlioFieldNames.FIELD_SPEED);
+		String gender = person.get(FieldNames.FIELD_GENDER);
+		boolean isMale = "male".equals(gender);
+
+		double mesoScore;
+		if (isMale) {
+			mesoScore = getAverage(stats, OlioFieldNames.FIELD_PHYSICAL_STRENGTH, OlioFieldNames.FIELD_ATHLETICISM, "maximumHealth");
+		} else {
+			mesoScore = getAverage(stats, OlioFieldNames.FIELD_PHYSICAL_STRENGTH, OlioFieldNames.FIELD_AGILITY, "physicalAppearance");
+		}
+
+		double ectoScore = getAverage(stats, OlioFieldNames.FIELD_SPEED, OlioFieldNames.FIELD_AGILITY, OlioFieldNames.FIELD_MANUAL_DEXTERITY);
+		double endoScore = getEndoScore(stats);
 
 		BodyTypeEnumType bodyType;
-		if (finesseStats > powerStats + 3) {
-			bodyType = BodyTypeEnumType.ECTOMORPH;
-		}
-		else if (powerStats > finesseStats + 3) {
-			bodyType = BodyTypeEnumType.ENDOMORPH;
-		}
-		else {
+		if (mesoScore >= ectoScore && mesoScore >= endoScore) {
 			bodyType = BodyTypeEnumType.MESOMORPH;
+		} else if (ectoScore >= endoScore) {
+			bodyType = BodyTypeEnumType.ECTOMORPH;
+		} else {
+			bodyType = BodyTypeEnumType.ENDOMORPH;
 		}
 
 		person.setValue(OlioFieldNames.FIELD_BODY_TYPE, bodyType.toString());
 	}
 
-	/// Compute body shape on charPerson model from statistics and gender.
-	/// Uses stat patterns and gender to determine shape.
+	/// Compute body shape on charPerson model using stat-driven archetype scoring.
+	/// Male shapes: V_TAPER (str/ath/maxHp), RECTANGLE (spd/agi/dex), ROUND (end/mEnd/pot)
+	/// Female shapes: HOURGLASS (str/agi/physApp), RECTANGLE, ROUND, INVERTED_TRIANGLE (str/ath), PEAR (maxHp/pot)
 	///
 	private void provideBodyShape(BaseRecord person) {
 		BaseRecord stats = resolveStatistics(person);
@@ -146,69 +158,51 @@ public class BodyStatsProvider implements IProvider {
 		String gender = person.get(FieldNames.FIELD_GENDER);
 		boolean isMale = "male".equals(gender);
 
-		int strength = stats.get(OlioFieldNames.FIELD_PHYSICAL_STRENGTH);
-		int agility = stats.get(OlioFieldNames.FIELD_AGILITY);
-		int speed = stats.get(OlioFieldNames.FIELD_SPEED);
-		int endurance = stats.get(OlioFieldNames.FIELD_PHYSICAL_ENDURANCE);
-		int maxHealth = stats.get("maximumHealth");
+		double rectangleScore = getAverage(stats, OlioFieldNames.FIELD_SPEED, OlioFieldNames.FIELD_AGILITY, OlioFieldNames.FIELD_MANUAL_DEXTERITY);
+		double roundScore = getEndoScore(stats);
 
-		double powerStats = (strength + endurance + maxHealth) / 3.0;
-		double finesseStats = (agility + speed) / 2.0;
-
-		BodyShapeEnumType shape;
+		BodyShapeEnumType bestShape;
+		double bestScore;
 
 		if (isMale) {
-			if (strength > 16 && agility > 12) {
-				shape = BodyShapeEnumType.V_TAPER;
+			/// Male: V_TAPER, RECTANGLE, ROUND
+			bestScore = getAverage(stats, OlioFieldNames.FIELD_PHYSICAL_STRENGTH, OlioFieldNames.FIELD_ATHLETICISM, "maximumHealth");
+			bestShape = BodyShapeEnumType.V_TAPER;
+
+			if (rectangleScore > bestScore) {
+				bestShape = BodyShapeEnumType.RECTANGLE;
+				bestScore = rectangleScore;
 			}
-			else if (maxHealth > 15 && speed < 8) {
-				shape = BodyShapeEnumType.ROUND;
+			if (roundScore > bestScore) {
+				bestShape = BodyShapeEnumType.ROUND;
 			}
-			else if (powerStats > finesseStats + 5 && endurance > 14) {
-				shape = BodyShapeEnumType.ROUND;
+		} else {
+			/// Female: HOURGLASS, RECTANGLE, ROUND, INVERTED_TRIANGLE, PEAR
+			bestScore = getAverage(stats, OlioFieldNames.FIELD_PHYSICAL_STRENGTH, OlioFieldNames.FIELD_AGILITY, "physicalAppearance");
+			bestShape = BodyShapeEnumType.HOURGLASS;
+
+			if (rectangleScore > bestScore) {
+				bestShape = BodyShapeEnumType.RECTANGLE;
+				bestScore = rectangleScore;
 			}
-			else if (finesseStats > powerStats + 4) {
-				shape = BodyShapeEnumType.RECTANGLE;
+			if (roundScore > bestScore) {
+				bestShape = BodyShapeEnumType.ROUND;
+				bestScore = roundScore;
 			}
-			else if (strength > 14 && agility > 10) {
-				shape = BodyShapeEnumType.INVERTED_TRIANGLE;
+
+			double invertedTriScore = getAverage(stats, OlioFieldNames.FIELD_PHYSICAL_STRENGTH, OlioFieldNames.FIELD_ATHLETICISM);
+			if (invertedTriScore > bestScore) {
+				bestShape = BodyShapeEnumType.INVERTED_TRIANGLE;
+				bestScore = invertedTriScore;
 			}
-			else if (agility < 8 && speed < 8 && endurance > 12) {
-				shape = BodyShapeEnumType.PEAR;
-			}
-			else {
-				shape = BodyShapeEnumType.RECTANGLE;
-			}
-		}
-		else {
-			/// Female shape determination
-			if (strength > 16 && agility > 12) {
-				shape = BodyShapeEnumType.HOURGLASS;
-			}
-			else if (maxHealth > 15 && speed < 8) {
-				shape = BodyShapeEnumType.ROUND;
-			}
-			else if (agility > 14 && strength > 10) {
-				shape = BodyShapeEnumType.HOURGLASS;
-			}
-			else if (strength > 14 && agility < 10) {
-				shape = BodyShapeEnumType.INVERTED_TRIANGLE;
-			}
-			else if (finesseStats > powerStats + 4) {
-				shape = BodyShapeEnumType.RECTANGLE;
-			}
-			else if (maxHealth > 13 && agility < 10 && speed < 10) {
-				shape = BodyShapeEnumType.PEAR;
-			}
-			else if (powerStats > finesseStats + 5 && endurance > 14) {
-				shape = BodyShapeEnumType.ROUND;
-			}
-			else {
-				shape = BodyShapeEnumType.RECTANGLE;
+
+			double pearScore = getPearScore(stats);
+			if (pearScore > bestScore) {
+				bestShape = BodyShapeEnumType.PEAR;
 			}
 		}
 
-		person.setValue(OlioFieldNames.FIELD_BODY_SHAPE, shape.toString());
+		person.setValue(OlioFieldNames.FIELD_BODY_SHAPE, bestShape.toString());
 	}
 
 	/// Compute BMI from statistics fields using the stat-based formula.
@@ -255,6 +249,31 @@ public class BodyStatsProvider implements IProvider {
 			}
 		}
 		return count > 0 ? sum / count : 0;
+	}
+
+	/// Compute endomorph score from physicalEndurance, mentalEndurance, and normalized potential.
+	///
+	private double getEndoScore(BaseRecord stats) {
+		double endurance = stats.hasField(OlioFieldNames.FIELD_PHYSICAL_ENDURANCE) ? (int) stats.get(OlioFieldNames.FIELD_PHYSICAL_ENDURANCE) : 0;
+		double mentalEnd = stats.hasField(OlioFieldNames.FIELD_MENTAL_ENDURANCE) ? (int) stats.get(OlioFieldNames.FIELD_MENTAL_ENDURANCE) : 0;
+		double normPotential = getNormalizedPotential(stats);
+		return (endurance + mentalEnd + normPotential) / 3.0;
+	}
+
+	/// Compute pear shape score from maximumHealth and normalized potential.
+	///
+	private double getPearScore(BaseRecord stats) {
+		double maxHealth = stats.hasField("maximumHealth") ? (int) stats.get("maximumHealth") : 10;
+		double normPotential = getNormalizedPotential(stats);
+		return (maxHealth + normPotential) / 2.0;
+	}
+
+	/// Normalize potential (0-150) to 0-20 scale for stat comparisons.
+	///
+	private double getNormalizedPotential(BaseRecord stats) {
+		if (!stats.hasField("potential")) return 10.0;
+		int potential = stats.get("potential");
+		return Math.min(20.0, potential / 7.5);
 	}
 
 	/// Get the beauty adjustment for a body shape and gender combination.

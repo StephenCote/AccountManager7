@@ -21,6 +21,7 @@ const jsFiles = [
     'client/pageClient.js',
 
     // Base components
+    'client/components/sdConfig.js',
     'client/components/dialog.js',
     'client/components/dnd.js',
     'client/components/pdf.js',

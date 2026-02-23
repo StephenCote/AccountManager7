@@ -597,7 +597,7 @@ public class TestBodyStats extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
 		try {
-			/// Create a strong, slow male (should lean ENDOMORPH / ROUND)
+			/// Create a strong, slow male (should lean MESOMORPH — strength drives meso archetype)
 			BaseRecord strongGuy = mf.newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, null);
 			strongGuy.set(FieldNames.FIELD_NAME, "Strong Guy - " + UUID.randomUUID().toString());
 			strongGuy.set(FieldNames.FIELD_GENDER, "male");
@@ -626,7 +626,7 @@ public class TestBodyStats extends BaseTest {
 			double sgBmi = strongGuy.get(OlioFieldNames.FIELD_BMI);
 			double sgWeight = sgStats.get(OlioFieldNames.FIELD_WEIGHT);
 			logger.info("Strong guy: bodyType=" + sgBodyType + ", BMI=" + sgBmi + ", weight=" + sgWeight);
-			assertEquals("High STR / Low AGI should be ENDOMORPH", "ENDOMORPH", sgBodyType);
+			assertEquals("High STR male should be MESOMORPH", "MESOMORPH", sgBodyType);
 			assertTrue("High STR BMI should be above average (>22)", sgBmi > 22);
 
 			/// Create an agile, light female (should lean ECTOMORPH / RECTANGLE)
@@ -662,7 +662,7 @@ public class TestBodyStats extends BaseTest {
 			assertTrue("High AGI BMI should be below average (<22)", ngBmi < 22);
 
 			/// Verify nimble gal weighs less than strong guy
-			assertTrue("Ectomorph female should weigh less than endomorph male", ngWeight < sgWeight);
+			assertTrue("Ectomorph female should weigh less than mesomorph male", ngWeight < sgWeight);
 
 			/// Create a balanced character (should be MESOMORPH)
 			BaseRecord balanced = mf.newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, null);
