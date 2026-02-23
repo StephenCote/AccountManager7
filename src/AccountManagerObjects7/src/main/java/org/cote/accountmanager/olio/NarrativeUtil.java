@@ -962,9 +962,20 @@ public class NarrativeUtil {
 		boolean isMale = gender.equals("male");
 		String mof = getGenderLabel(gender, age);
 
-		buff.append("a " + getLooksPrettyUgly(pp) + " " + getIsPrettyAthletic(pp));
+		String buildDesc = describeBuild(pp.getRecord());
+		String shapeDesc = describeBodyShape(pp.getRecord());
+
+		buff.append("a " + getLooksPrettyUgly(pp));
+		if(buildDesc.length() > 0 || shapeDesc.length() > 0) {
+			buff.append(" (");
+			if(buildDesc.length() > 0) buff.append(buildDesc);
+			if(buildDesc.length() > 0 && shapeDesc.length() > 0) buff.append(", ");
+			if(shapeDesc.length() > 0) buff.append(shapeDesc);
+			buff.append(")");
+		}
+		buff.append(" " + getIsPrettyAthletic(pp));
 		buff.append(" ((" + getNumberName(age).toLowerCase() + ":1.5) (" + age + "yo:1.5)");
-		
+
 		String raceDesc = getRaceDescription(pp.getRace());
 		buff.append(raceDesc.length() > 0 ? " (" + raceDesc.toLowerCase() + ")" : "");
 
@@ -972,22 +983,12 @@ public class NarrativeUtil {
 		buff.append(ethDesc.length() > 0 ? " (" + ethDesc.toLowerCase() + ")" : "");
 
 		buff.append(" (" + mof.toLowerCase() + "))");
-		
+
 		String hairColor = getColor(pp.getRecord(), OlioFieldNames.FIELD_HAIR_COLOR);
 		String hairStyle = pp.getRecord().get(OlioFieldNames.FIELD_HAIR_STYLE);
 		String eyeColor =  getColor(pp.getRecord(), OlioFieldNames.FIELD_EYE_COLOR);
-		
+
 		buff.append(" with ((" + hairStyle + ") (" + hairColor + " hair)) and (" + eyeColor + " eyes).");
-
-		String buildDesc = describeBuild(pp.getRecord());
-		String shapeDesc = describeBodyShape(pp.getRecord());
-		if(buildDesc.length() > 0 || shapeDesc.length() > 0) {
-			buff.append(" " + cpro + " has a");
-			if(buildDesc.length() > 0) buff.append(" ((" + buildDesc + "))");
-			if(shapeDesc.length() > 0) buff.append(" ((" + shapeDesc + "))");
-			buff.append(" build.");
-		}
-
 		buff.append(" " + cpro + " is (((" + describeOutfit(pp, false) + "))).");
 
 		return buff.toString();
