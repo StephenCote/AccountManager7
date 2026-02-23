@@ -5706,18 +5706,21 @@
         return shape;
     }
 
-    function floorStat(stats, field, floor) {
-        let current = stats[field] || 0;
+    function floorStat(statInst, field, floor) {
+        let current = statInst.api[field]() || 0;
         if (current < floor) {
-            stats[field] = floor;
+            statInst.api[field](floor);
             return true;
         }
         return false;
     }
 
     function applyBodyShapeFloors(inst) {
-        let stats = inst.entity.statistics;
-        if (!stats) return;
+        let op = inst.observers.find(o => o.pinst);
+        if (!op) return;
+        let statInst = op.pinst().statistics;
+        if (!statInst) return;
+
         let shape = inst.entity.bodyShape;
         let gender = inst.entity.gender;
         if (!shape || !gender) return;
@@ -5725,44 +5728,37 @@
         let isMale = gender === 'male';
         shape = mapShapeForGender(shape, isMale);
 
-        let modified = false;
         switch (shape) {
             case 'V_TAPER':
-                modified = floorStat(stats, 'physicalStrength', 14) || modified;
-                modified = floorStat(stats, 'physicalEndurance', 12) || modified;
+                floorStat(statInst, 'physicalStrength', 14);
+                floorStat(statInst, 'physicalEndurance', 12);
                 break;
             case 'HOURGLASS':
-                modified = floorStat(stats, 'physicalStrength', 12) || modified;
-                modified = floorStat(stats, 'agility', 14) || modified;
+                floorStat(statInst, 'physicalStrength', 12);
+                floorStat(statInst, 'agility', 14);
                 break;
             case 'RECTANGLE':
-                modified = floorStat(stats, 'speed', 14) || modified;
-                modified = floorStat(stats, 'agility', 14) || modified;
-                modified = floorStat(stats, 'manualDexterity', 14) || modified;
+                floorStat(statInst, 'speed', 14);
+                floorStat(statInst, 'agility', 14);
+                floorStat(statInst, 'manualDexterity', 14);
                 break;
             case 'ROUND':
-                modified = floorStat(stats, 'physicalEndurance', 14) || modified;
-                modified = floorStat(stats, 'mentalEndurance', 14) || modified;
-                if ((stats.potential || 0) < 90) { stats.potential = 90; modified = true; }
+                floorStat(statInst, 'physicalEndurance', 14);
+                floorStat(statInst, 'mentalEndurance', 14);
+                if ((statInst.api.potential() || 0) < 90) statInst.api.potential(90);
                 break;
             case 'INVERTED_TRIANGLE':
-                modified = floorStat(stats, 'physicalStrength', 16) || modified;
-                modified = floorStat(stats, 'physicalEndurance', 12) || modified;
+                floorStat(statInst, 'physicalStrength', 16);
+                floorStat(statInst, 'physicalEndurance', 12);
                 break;
             case 'PEAR':
-                modified = floorStat(stats, 'physicalEndurance', 12) || modified;
-                modified = floorStat(stats, 'mentalEndurance', 12) || modified;
-                modified = floorStat(stats, 'charisma', 12) || modified;
-                if ((stats.potential || 0) < 98) { stats.potential = 98; modified = true; }
+                floorStat(statInst, 'physicalEndurance', 12);
+                floorStat(statInst, 'mentalEndurance', 12);
+                floorStat(statInst, 'charisma', 12);
+                if ((statInst.api.potential() || 0) < 98) statInst.api.potential(98);
                 break;
         }
-
-        if (modified) {
-            if (!inst.changes.includes('statistics')) {
-                inst.changes.push('statistics');
-            }
-            m.redraw();
-        }
+        m.redraw();
     }
 
 
