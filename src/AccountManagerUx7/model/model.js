@@ -928,6 +928,11 @@
 				inst.decorate(f.name, numberDecorator);
 			}
 
+			if (field && field.viewProperties) {
+				let vp = typeof field.viewProperties === 'function' ? field.viewProperties(inst) : field.viewProperties;
+				inst.viewProperties(f.name, vp);
+			}
+
 			inst.validateField[f.name] = (applyReplacement) => {
 				if (field?.skipValidation) {
 					return true;

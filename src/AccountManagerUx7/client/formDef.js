@@ -3901,6 +3901,11 @@
             },
             bodyShape: {
                 layout: 'one',
+                viewProperties: function(inst) {
+                    return {
+                        oninput: inst.handleChange("bodyShape", function() { applyBodyShapeFloors(inst); })
+                    };
+                },
                 field: {
                     label: 'Body Shape',
                     type: 'list',
@@ -5688,7 +5693,7 @@
     };
     am7model.forms = forms;
 
-    /// Body shape stat adjustment observer
+    /// Body shape stat adjustment
     /// When user selects a body shape, raise driver stats to minimum thresholds
     ///
     function mapShapeForGender(shape, isMale) {

@@ -84,6 +84,10 @@
             name: ctx.useName,
             oninput: ctx.fHandler
         };
+        let fprops = ctx.inst.viewProperties(ctx.name);
+        if (fprops) {
+            Object.assign(selectAttrs, fprops);
+        }
 
         let options = vals.map(function(v) {
             let vs = String(v);
