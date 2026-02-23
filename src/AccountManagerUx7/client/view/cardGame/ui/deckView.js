@@ -251,6 +251,15 @@
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "science"),
                             "Test"
+                        ]),
+                        m("button", {
+                            class: "cg2-btn cg2-btn-sm",
+                            style: { fontSize: "11px", marginLeft: "4px" },
+                            title: "Print cards and rules (use Save as PDF for digital export)",
+                            onclick() { window.print(); }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "print"),
+                            "Print / PDF"
                         ])
                     ]),
                     // SD Config panel (per-type)
@@ -785,22 +794,18 @@
                             let isGenerating = artJob && artJob.status === "processing";
                             let hasArt = card.imageUrl || (card.type === "character" && card.portraitUrl);
                             let isChar = card.type === "character";
-                            let isFlipped = isChar && flippedCards[i];
-
-                            let cardFront = m("div", {
-                                class: isChar ? "cg2-card-flip-front" : ""
-                            }, m(R.CardFace, { card, bgImage: cardFrontImageUrl }));
-
-                            let cardBack = isChar ? m("div", { class: "cg2-card-flip-back" }, R.renderCharacterBackBody(card, cardBackImageUrl)) : null;
-
+                            // v3.1: Use CardFlipContainer for character cards (handles flip internally)
                             let cardContent;
                             if (isChar) {
-                                cardContent = m("div", {
-                                    class: "cg2-card-flipper" + (isFlipped ? " cg2-flipped" : ""),
-                                    onclick() { flippedCards[i] = !flippedCards[i]; }
-                                }, m("div", { class: "cg2-card-flipper-inner" }, [cardFront, cardBack]));
+                                cardContent = m(R.CardFlipContainer, {
+                                    card,
+                                    bgImage: cardFrontImageUrl,
+                                    bgImageBack: cardBackImageUrl,
+                                    flipped: flippedCards[i],
+                                    onFlip(v) { flippedCards[i] = v; }
+                                });
                             } else {
-                                cardContent = cardFront;
+                                cardContent = m(R.CardFace, { card, bgImage: cardFrontImageUrl });
                             }
 
                             return m("div", { class: "cg2-card-art-wrapper", key: card.name + "-" + i }, [
@@ -906,7 +911,168 @@
                         })
                     ]),
                     m(R.ImagePreviewOverlay),
-                    m(R.GalleryPickerOverlay)
+                    m(R.GalleryPickerOverlay),
+
+                    // Printable instruction sheet — hidden on screen, visible in print
+                    m(PrintRulesSheet, { deckName: viewingDeck.deckName })
+                ]);
+            }
+        };
+    }
+
+    // ── Printable Rules / Quick-Reference Sheet ───────────────────────
+    function PrintRulesSheet() {
+        return {
+            view(vnode) {
+                let deckName = vnode.attrs.deckName || "Card Game";
+                let AD = window.CardGame.Constants.ACTION_DEFINITIONS || {};
+                let commonActions = window.CardGame.Constants.COMMON_ACTIONS || [];
+
+                return m("div", { class: "cg2-print-rules" }, [
+                    m("h1", { class: "cg2-print-rules-title" }, deckName + " — Quick Rules"),
+
+                    // ── Overview
+                    m("h2", "Overview"),
+                    m("p", "A 1v1 card game played in rounds. Each round has four phases: Initiative, Placement, Resolution, and Cleanup. " +
+                        "Reduce your opponent's HP to 0 to win. Characters also have Energy (for spells and abilities) and Morale (affected by Talk actions)."),
+
+                    // ── Setup
+                    m("h2", "Setup"),
+                    m("ol", [
+                        m("li", "Each player picks a Character card. Your character's stats determine your combat abilities."),
+                        m("li", "Shuffle all remaining cards (items, skills, magic, encounters, scenarios, loot) into a shared deck."),
+                        m("li", "Each player draws 5 cards to form their starting hand."),
+                        m("li", "Equip any Apparel or Weapon cards from your hand onto your character (free action before the game starts).")
+                    ]),
+
+                    // ── Stats
+                    m("h2", "Character Stats"),
+                    m("table", { class: "cg2-print-table" }, [
+                        m("thead", m("tr", [m("th", "Stat"), m("th", "Abbr"), m("th", "Effect")])),
+                        m("tbody", [
+                            m("tr", [m("td", "Strength"),     m("td", "STR"), m("td", "Melee attack damage bonus")]),
+                            m("tr", [m("td", "Agility"),      m("td", "AGI"), m("td", "Initiative rolls, dodge, flee checks")]),
+                            m("tr", [m("td", "Endurance"),    m("td", "END"), m("td", "Action Points per round = floor(END/5)+1, min 2")]),
+                            m("tr", [m("td", "Intelligence"), m("td", "INT"), m("td", "Skill effects, investigate, craft checks")]),
+                            m("tr", [m("td", "Magic"),        m("td", "MAG"), m("td", "Energy pool (for spells), spell power")]),
+                            m("tr", [m("td", "Charisma"),     m("td", "CHA"), m("td", "Talk actions, morale effects, trade prices")])
+                        ])
+                    ]),
+
+                    // ── Resources
+                    m("h2", "Resources"),
+                    m("ul", [
+                        m("li", [m("strong", "HP"), " — Hit Points (default max 20). Reach 0 = defeat."]),
+                        m("li", [m("strong", "Energy"), " — Powers spells and special abilities. Based on MAG stat. Regenerates +3 on Rest."]),
+                        m("li", [m("strong", "Morale"), " — Affected by Talk actions and combat outcomes (default max 20)."]),
+                        m("li", [m("strong", "AP"), " — Action Points. Spent to place cards each round. Resets every round."])
+                    ]),
+
+                    // ── Round Phases
+                    m("h2", "Round Phases"),
+
+                    m("h3", "1. Initiative"),
+                    m("p", "Both players roll 1d20 + AGI modifier. Winner places cards on odd positions (1, 3, 5...), loser on even positions (2, 4, 6...). " +
+                        "Actions resolve left-to-right, so odd positions act first."),
+                    m("p", [m("em", "Nat 1 Warning: "), "Rolling a natural 1 triggers a Threat — a hostile encounter drawn from the encounter deck that you must fight immediately."]),
+
+                    m("h3", "2. Placement"),
+                    m("p", "Players take turns placing cards from their hand onto the Action Bar. Each card costs 1 AP. " +
+                        "A placement consists of a core action (Attack, Channel, Talk, etc.) plus optional modifier cards (weapons, skills, magic) stacked on top."),
+                    m("ul", [
+                        m("li", "Draw 2 cards at the start of placement."),
+                        m("li", "You may only place one Attack action per round."),
+                        m("li", "Some actions cost Energy in addition to AP."),
+                        m("li", "When both players are out of AP (or pass), placement ends.")
+                    ]),
+
+                    m("h3", "3. Resolution"),
+                    m("p", "Actions resolve left-to-right across the Action Bar. Each action is resolved with dice rolls:"),
+                    m("ul", [
+                        m("li", [m("strong", "Attack: "), "1d20 + STR + weapon ATK vs opponent's DEF. Damage based on margin of success."]),
+                        m("li", [m("strong", "Channel: "), "1d20 + MAG. Casts a spell from stacked Magic Effect cards. Costs Energy."]),
+                        m("li", [m("strong", "Talk: "), "1d20 + CHA vs opponent CHA. Success affects opponent morale. Costs 5 Energy."]),
+                        m("li", [m("strong", "Guard: "), "+3 DEF for this round (automatic, no roll needed)."]),
+                        m("li", [m("strong", "Rest: "), "Restore +2 HP, +3 Energy, +2 Morale. Skips your attack."]),
+                        m("li", [m("strong", "Flee: "), "1d20 + AGI vs difficulty. Success ends combat (forfeit pot). Threat carries to next round on failure."])
+                    ]),
+
+                    // Combat outcomes
+                    m("h3", "Combat Outcomes"),
+                    m("table", { class: "cg2-print-table" }, [
+                        m("thead", m("tr", [m("th", "Result"), m("th", "Condition"), m("th", "Effect")])),
+                        m("tbody", [
+                            m("tr", [m("td", "Critical Hit"),    m("td", "Nat 20"),     m("td", "Double damage + bonus loot card")]),
+                            m("tr", [m("td", "Devastating"),     m("td", "Win by 10+"), m("td", "1.5x damage")]),
+                            m("tr", [m("td", "Strong Hit"),      m("td", "Win by 5+"),  m("td", "Full damage")]),
+                            m("tr", [m("td", "Glancing Hit"),    m("td", "Win by 1-4"), m("td", "Half damage")]),
+                            m("tr", [m("td", "Clash"),           m("td", "Tie"),        m("td", "Both take 1 damage")]),
+                            m("tr", [m("td", "Deflected"),       m("td", "Lose by 1-4"),m("td", "No damage")]),
+                            m("tr", [m("td", "Parried"),         m("td", "Lose by 5+"), m("td", "Defender may counter")]),
+                            m("tr", [m("td", "Perfect Parry"),   m("td", "Nat 20 DEF"), m("td", "Counter attack + bonus loot")]),
+                            m("tr", [m("td", "Critical Miss"),   m("td", "Nat 1 ATK"),  m("td", "Attacker takes damage + stunned")])
+                        ])
+                    ]),
+
+                    m("h3", "4. Cleanup"),
+                    m("p", "After all actions resolve: discard used consumables, check for broken equipment (durability), " +
+                        "draw an end-of-round Scenario card (may trigger a bonus or a Threat). " +
+                        "Round winner claims the pot (anted cards). Start next round."),
+
+                    // ── Card Types
+                    m("h2", "Card Types"),
+                    m("table", { class: "cg2-print-table" }, [
+                        m("thead", m("tr", [m("th", "Type"), m("th", "Color"), m("th", "Description")])),
+                        m("tbody", [
+                            m("tr", [m("td", "Character"),  m("td", { style: { color: "#B8860B" } }, "\u25A0"), m("td", "Your avatar. Has 6 stats, HP, Energy, Morale.")]),
+                            m("tr", [m("td", "Action"),     m("td", { style: { color: "#C62828" } }, "\u25A0"), m("td", "Core actions (Attack, Guard, Rest, etc.) placed on the Action Bar.")]),
+                            m("tr", [m("td", "Item"),       m("td", { style: { color: "#2E7D32" } }, "\u25A0"), m("td", "Weapons (stack with Attack) and Consumables (one-time use).")]),
+                            m("tr", [m("td", "Apparel"),    m("td", { style: { color: "#808080" } }, "\u25A0"), m("td", "Armor and gear. Equip to boost DEF and HP. Has durability.")]),
+                            m("tr", [m("td", "Skill"),      m("td", { style: { color: "#E65100" } }, "\u25A0"), m("td", "Passive modifiers. Stack with actions for roll bonuses.")]),
+                            m("tr", [m("td", "Magic"),      m("td", { style: { color: "#00695C" } }, "\u25A0"), m("td", "Spells. Stack with Channel action. Costs Energy.")]),
+                            m("tr", [m("td", "Talk"),       m("td", { style: { color: "#1565C0" } }, "\u25A0"), m("td", "Social action. Roll CHA vs CHA to affect morale. Costs 5 Energy.")]),
+                            m("tr", [m("td", "Encounter"),  m("td", { style: { color: "#6A1B9A" } }, "\u25A0"), m("td", "Hostile threats with ATK/DEF/HP. Must be fought when drawn.")]),
+                            m("tr", [m("td", "Scenario"),   m("td", { style: { color: "#1B5E20" } }, "\u25A0"), m("td", "Random events — boons or threats drawn at end of round.")]),
+                            m("tr", [m("td", "Loot"),       m("td", { style: { color: "#F57F17" } }, "\u25A0"), m("td", "Rewards from defeating encounters or critical hits.")])
+                        ])
+                    ]),
+
+                    // ── Status Effects
+                    m("h2", "Status Effects"),
+                    m("div", { class: "cg2-print-effects" }, [
+                        m("span", [m("strong", "Stunned"), " — Skip next action"]),
+                        m("span", [m("strong", "Poisoned"), " — -2 HP/turn (3 turns)"]),
+                        m("span", [m("strong", "Burning"), " — -3 HP/turn (2 turns)"]),
+                        m("span", [m("strong", "Bleeding"), " — -1 HP/turn (4 turns)"]),
+                        m("span", [m("strong", "Shielded"), " — +3 DEF (until hit)"]),
+                        m("span", [m("strong", "Weakened"), " — -2 to all rolls (2 turns)"]),
+                        m("span", [m("strong", "Enraged"), " — +3 ATK, -2 DEF (2 turns)"]),
+                        m("span", [m("strong", "Fortified"), " — +2 DEF, +1 ATK (2 turns)"]),
+                        m("span", [m("strong", "Inspired"), " — +2 to all rolls (2 turns)"]),
+                        m("span", [m("strong", "Regenerating"), " — +2 HP/turn (3 turns)"])
+                    ]),
+
+                    // ── Threats
+                    m("h2", "Threats"),
+                    m("p", "Threats are hostile encounters that interrupt normal play. They trigger from:"),
+                    m("ul", [
+                        m("li", "Rolling a natural 1 on initiative"),
+                        m("li", "End-of-round scenario cards with a \"threat\" effect"),
+                        m("li", "Failed flee attempts (threat carries to next round)")
+                    ]),
+                    m("p", "When a threat appears, the targeted player gets bonus AP to place defensive cards (Block, Dodge, armor) before combat resolves. " +
+                        "You can also attempt to Flee (1d20 + AGI vs threat difficulty)."),
+
+                    // ── Offline Dice
+                    m("h2", "Playing Offline"),
+                    m("p", "To play with physical cards and dice, you need:"),
+                    m("ul", [
+                        m("li", "This printed card set"),
+                        m("li", "1d20 (twenty-sided die) per player"),
+                        m("li", "Paper to track HP, Energy, Morale, and AP per round"),
+                        m("li", "Tokens or coins to mark the pot (anted cards each round)")
+                    ]),
+                    m("p", { class: "cg2-print-footer" }, "Printed from Account Manager Card Game")
                 ]);
             }
         };

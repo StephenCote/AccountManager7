@@ -44,8 +44,7 @@
             headerField: { field: "slot", default: "Body", icon: "back_hand", showRarity: true },
             details: [
                 { type: "stats", fields: ["def", "hpBonus"], labels: { def: "DEF +", hpBonus: "HP +" } },
-                { field: "special", icon: "auto_awesome" },
-                { field: "flavor", type: "flavor" }
+                { field: "special", icon: "auto_awesome" }
             ],
             footer: [{ field: "durability", icon: "build", suffix: " Dur", default: "\u221E" }]
         },
@@ -119,8 +118,7 @@
             placeholderColor: "#F57F17",
             headerField: { field: "source", default: "Spoils", icon: "inventory_2", showRarity: true },
             details: [
-                { field: "effect", icon: "auto_awesome" },
-                { field: "flavor", type: "flavor" }
+                { field: "effect", icon: "auto_awesome" }
             ],
             footer: []
         },

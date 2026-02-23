@@ -1,16 +1,48 @@
 // Card Game v2 — Rendering: Card Face Renderers
-// Extracted from cardGame-v2.js: renderCharacterBody, renderCharacterBackBody, renderCardBody,
-// renderCompactStats, isCardIncomplete, CardFace, CardBack
+// Updated for v3.1: stacking borders, simplified stats, character back extended info, CardFlipContainer
 (function() {
     "use strict";
     const C = window.CardGame.Constants;
     const R = window.CardGame.Rendering;
 
+    // ── Helpers ──────────────────────────────────────────────────────
+
+    function abbreviateName(name, maxLen) {
+        if (!name || name.length <= maxLen) return name || "";
+        return name.substring(0, maxLen - 1) + "\u2026";
+    }
+
+    /** Render the two stacking border elements (top + right) for a card type */
+    function stackingBorders(cfg, cardName) {
+        return [
+            m("div", {
+                class: "cg2-stack-top",
+                style: { background: cfg.color, color: "#fff" }
+            }, [
+                m("span", { class: "material-symbols-outlined cg2-stack-top-icon" }, cfg.icon),
+                m("span", { class: "cg2-stack-top-name" }, abbreviateName(cardName, 18))
+            ]),
+            m("div", {
+                class: "cg2-stack-right",
+                style: { background: cfg.color, color: "#fff" }
+            }, [
+                m("span", { class: "material-symbols-outlined cg2-stack-right-icon" }, cfg.icon)
+            ])
+        ];
+    }
+
     // ── Card Face Renderers (per type) ───────────────────────────────
 
     function renderCharacterBody(card, options) {
         let stats = card.stats || {};
+        let needs = card.needs || {};
         let noPreview = options?.noPreview;
+        // Derive game-relevant values from raw stats
+        let atk = stats.STR || stats.str || 0;
+        let agi = stats.AGI || stats.agi || 0;
+        let rawEnd = stats.END || stats.end || 0;
+        let ap = Math.max(2, Math.floor(rawEnd / 5) + 1);
+        let cha = stats.CHA || stats.cha || 0;
         return [
             m("div", { class: "cg2-card-image-area" },
                 card.portraitUrl
@@ -22,23 +54,28 @@
                     : m("span", { class: "material-symbols-outlined cg2-placeholder-icon", style: { color: "#B8860B" } }, "person")
             ),
             m("div", { class: "cg2-card-details" }, [
+                // Race + Class + Level
                 m("div", { class: "cg2-card-detail cg2-icon-detail" }, [
                     m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "badge"),
-                    m("span", (card.gender ? card.gender.charAt(0).toUpperCase() + " " : "") + (card.race || "")),
-                    card.age ? m("span", { style: { marginLeft: "auto", opacity: 0.7 } }, card.age + " yrs") : null
+                    m("span", [card.race || "", card._templateClass ? " " + card._templateClass : ""].join("")),
+                    card.level ? m("span", { style: { marginLeft: "auto", opacity: 0.7 } }, "Lv." + card.level) : null
                 ]),
-                card.alignment ? R.iconDetail("balance", card.alignment.replace(/_/g, " ")) : null,
-                m(R.StatBlock, { stats })
-            ]),
-            m("div", { class: "cg2-card-footer", style: { borderTop: "none" } }, [
-                m("span", { style: { fontSize: "9px", color: "#999", fontStyle: "italic" } }, "click to flip")
+                // 4 game stats in a single row
+                m("div", { class: "cg2-game-stats" }, [
+                    m("div", { class: "cg2-game-stat" }, [m("span", { class: "cg2-game-stat-val" }, "+" + atk), m("span", { class: "cg2-game-stat-label" }, "ATK")]),
+                    m("div", { class: "cg2-game-stat" }, [m("span", { class: "cg2-game-stat-val" }, "+" + agi), m("span", { class: "cg2-game-stat-label" }, "INIT")]),
+                    m("div", { class: "cg2-game-stat" }, [m("span", { class: "cg2-game-stat-val" }, String(ap)), m("span", { class: "cg2-game-stat-label" }, "AP")]),
+                    m("div", { class: "cg2-game-stat" }, [m("span", { class: "cg2-game-stat-val" }, "+" + cha), m("span", { class: "cg2-game-stat-label" }, "CHA")])
+                ]),
+                // 3 need bars
+                m(R.NeedBar, { label: "Health", abbrev: "HP", current: needs.hp != null ? needs.hp : 20, max: 20, color: "#e53935" }),
+                m(R.NeedBar, { label: "Energy", abbrev: "NRG", current: needs.energy != null ? needs.energy : 14, max: stats.MAG || 14, color: "#1E88E5" }),
+                m(R.NeedBar, { label: "Morale", abbrev: "MRL", current: needs.morale != null ? needs.morale : 20, max: 20, color: "#43A047" })
             ])
         ];
     }
 
     function renderCharacterBackBody(card, bgImage) {
-        let stats = card.stats || {};
-        let needs = card.needs || {};
         let equip = card.equipped || {};
         let skills = card.activeSkills || [];
         let backStyle = { borderColor: "#B8860B" };
@@ -47,19 +84,43 @@
             backStyle.backgroundSize = "cover";
             backStyle.backgroundPosition = "center";
         }
+        let cfg = C.CARD_TYPES.character;
         return m("div", { class: "cg2-card cg2-card-front cg2-char-back", style: backStyle }, [
+            // Stacking borders on back too
+            stackingBorders(cfg, card.name)[0],
+            stackingBorders(cfg, card.name)[1],
             R.cornerIcon("character", "top-left"),
             R.cornerIcon("character", "top-right"),
             m("div", { class: "cg2-char-back-title" }, card.name || "Unknown"),
             m("div", { class: "cg2-card-body" }, [
-                m(R.NeedBar, { label: "Health", abbrev: "HP", current: needs.hp || 20, max: 20, color: "#e53935" }),
-                m(R.NeedBar, { label: "Energy", abbrev: "NRG", current: needs.energy || 14, max: stats.MAG || 14, color: "#1E88E5" }),
-                m(R.NeedBar, { label: "Morale", abbrev: "MRL", current: needs.morale || 20, max: 20, color: "#43A047" }),
+                // Alignment
+                card.alignment ? R.iconDetail("balance", card.alignment.replace(/_/g, " ")) : null,
+                // Body info (height, weight, body type/shape)
+                (card.height || card.bodyType || card.bodyShape) ? m("div", { class: "cg2-char-back-body-info" }, [
+                    card.height ? (function() {
+                        let feet = Math.floor(card.height);
+                        let inches = Math.round((card.height - feet) * 100);
+                        let htStr = feet + "'" + inches + '"';
+                        let wtStr = card.weight ? Math.round(card.weight) + " lbs" : "";
+                        return R.iconDetail("straighten", htStr + (wtStr ? ", " + wtStr : ""));
+                    })() : null,
+                    card.bodyType ? R.iconDetail("fitness_center", card.bodyType.toLowerCase()) : null,
+                    card.bodyShape ? R.iconDetail("accessibility_new", card.bodyShape.replace(/_/g, " ").toLowerCase()) : null
+                ]) : null,
+                // Description
+                card.description ? m("div", { class: "cg2-char-back-desc" }, card.description) : null,
+                // Personality
+                card.personality ? m("div", { class: "cg2-char-back-personality" }, [
+                    m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "psychology"),
+                    m("span", { style: { fontStyle: "italic" } }, card.personality)
+                ]) : null,
                 m("div", { class: "cg2-divider" }),
+                // Skill slots
                 m("div", { class: "cg2-equip-row" }, [
-                    m("span", { class: "cg2-section-label" }, "Skill Slots:"),
+                    m("span", { class: "cg2-section-label" }, "Skills:"),
                     m("span", skills.map(s => m("span", { class: "cg2-slot" + (s ? " cg2-slot-filled" : "") }, s ? s.name : "\u2013")))
                 ]),
+                // Equipment slots
                 m("div", { class: "cg2-equip-row" }, [
                     m("span", { class: "cg2-section-label" }, "Equip:"),
                     m("span", ["head", "body", "handL", "handR", "feet", "ring", "back"].map(slot =>
@@ -69,7 +130,11 @@
                         }, equip[slot] ? equip[slot].name : slot.charAt(0).toUpperCase())
                     ))
                 ]),
-                m("div", { style: { marginTop: "auto", textAlign: "center", fontSize: "10px", color: "#999", fontStyle: "italic" } }, "click to flip")
+                // XP / Record (campaign data)
+                card.xp != null || card.wins != null ? m("div", { class: "cg2-char-back-record" }, [
+                    card.xp != null ? m("span", "XP: " + card.xp + (card.xpMax ? "/" + card.xpMax : "")) : null,
+                    card.wins != null ? m("span", "W:" + card.wins + " L:" + (card.losses || 0)) : null
+                ]) : null
             ]),
             R.cornerIcon("character", "bottom-right")
         ]);
@@ -136,8 +201,7 @@
                     m("span", { class: "material-symbols-outlined cg2-detail-icon" }, "star"),
                     m("span", R.rarityStars(card.rarity))
                 ]) : null,
-                card.effect ? R.iconDetail("auto_awesome", card.effect) : null,
-                card.flavor ? m("div", { class: "cg2-flavor" }, "\u201C" + card.flavor + "\u201D") : null
+                card.effect ? R.iconDetail("auto_awesome", card.effect) : null
             ])
         ];
     }
@@ -327,9 +391,14 @@
                 break;
             case "character":
                 let s = card.stats || {};
-                if (s.STR) stats.push(m("span", { class: "cg2-compact-stat" }, "STR " + s.STR));
-                if (s.AGI) stats.push(m("span", { class: "cg2-compact-stat" }, "AGI " + s.AGI));
-                if (s.END) stats.push(m("span", { class: "cg2-compact-stat" }, "END " + s.END));
+                let cAtk = s.STR || s.str || 0;
+                let cAgi = s.AGI || s.agi || 0;
+                let cEnd = s.END || s.end || 0;
+                let cCha = s.CHA || s.cha || 0;
+                stats.push(m("span", { class: "cg2-compact-stat" }, "ATK +" + cAtk));
+                stats.push(m("span", { class: "cg2-compact-stat" }, "INIT +" + cAgi));
+                stats.push(m("span", { class: "cg2-compact-stat" }, "AP " + Math.max(2, Math.floor(cEnd / 5) + 1)));
+                stats.push(m("span", { class: "cg2-compact-stat" }, "CHA +" + cCha));
                 break;
         }
 
@@ -445,11 +514,12 @@
                 // For compact cards, render a minimal body with image and key stats
                 let compactBody = null;
                 if (compact) {
-                    let hasImage = !!card.imageUrl;
+                    let imgUrl = card.imageUrl || card.portraitUrl;
+                    let hasImage = !!imgUrl;
                     compactBody = m("div", { class: "cg2-card-body cg2-card-body-compact" }, [
                         // Show image if available, otherwise show type icon as placeholder
                         hasImage ? m("div", { class: "cg2-card-image-area cg2-compact-image" },
-                            m("img", { src: card.imageUrl, class: "cg2-card-img" })
+                            m("img", { src: imgUrl, class: "cg2-card-img" })
                         ) : m("div", { class: "cg2-compact-icon-placeholder" }, [
                             m("span", {
                                 class: "material-symbols-outlined",
@@ -465,6 +535,9 @@
                     class: cardClass,
                     style: cardStyle
                 }, [
+                    // Stacking borders (v3.1 print-first)
+                    stackingBorders(cfg, card.name)[0],
+                    stackingBorders(cfg, card.name)[1],
                     R.cornerIcon(type, "top-left"),
                     R.cornerIcon(type, "top-right"),
                     // Incomplete indicator (yellow asterisk)
@@ -490,6 +563,9 @@
                     class: "cg2-card cg2-card-back",
                     style: { background: cfg.color, borderColor: cfg.color }
                 }, [
+                    // Stacking borders on back too (v3.1)
+                    stackingBorders(cfg, cfg.label)[0],
+                    stackingBorders(cfg, cfg.label)[1],
                     m("div", { class: "cg2-back-pattern" }),
                     m("span", { class: "material-symbols-outlined cg2-back-icon" }, cfg.icon),
                     m("div", { class: "cg2-back-label" }, cfg.label)
@@ -498,10 +574,60 @@
         };
     }
 
+    // ── CardFlipContainer Component (v3.1) ──────────────────────────
+    // Wraps character cards with inline flip. Non-character cards pass through to CardFace.
+    // Supports external flip state via flipped/onFlip props, or manages its own state.
+    function CardFlipContainer() {
+        let localFlipped = false;
+        return {
+            view(vnode) {
+                let card = vnode.attrs.card;
+                let bgImage = vnode.attrs.bgImage;
+                let bgImageBack = vnode.attrs.bgImageBack;
+                let compact = vnode.attrs.compact;
+                let full = vnode.attrs.full;
+                let noFlip = vnode.attrs.noFlip;
+
+                // Only character cards flip inline
+                if (!card || card.type !== "character" || noFlip) {
+                    return m(CardFace, vnode.attrs);
+                }
+
+                // Support external or internal flip state
+                let externalFlipped = vnode.attrs.flipped;
+                let onFlip = vnode.attrs.onFlip;
+                let isFlipped = externalFlipped != null ? externalFlipped : localFlipped;
+
+                let sizeClass = compact ? " cg2-card-compact" : (full ? " cg2-card-full" : "");
+
+                return m("div", {
+                    class: "cg2-card-flipper" + sizeClass + (isFlipped ? " cg2-flipped" : ""),
+                    ondblclick(e) {
+                        e.stopPropagation();
+                        if (onFlip) {
+                            onFlip(!isFlipped);
+                        } else {
+                            localFlipped = !localFlipped;
+                        }
+                    },
+                    title: "Double-click to flip"
+                }, m("div", { class: "cg2-card-flipper-inner" }, [
+                    m("div", { class: "cg2-card-flip-front" },
+                        m(CardFace, { card, bgImage, compact, full, noPreview: vnode.attrs.noPreview })
+                    ),
+                    m("div", { class: "cg2-card-flip-back" },
+                        renderCharacterBackBody(card, bgImageBack)
+                    )
+                ]));
+            }
+        };
+    }
+
     window.CardGame.Rendering = window.CardGame.Rendering || {};
     Object.assign(window.CardGame.Rendering, {
         renderCharacterBody, renderCharacterBackBody, renderCardBody,
         renderScenarioBody, renderLootBody,
-        renderCompactStats, getCardStatLabel, isCardIncomplete, CardFace, CardBack
+        renderCompactStats, getCardStatLabel, isCardIncomplete,
+        CardFace, CardBack, CardFlipContainer
     });
 })();

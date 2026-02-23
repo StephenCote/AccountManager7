@@ -216,6 +216,7 @@
         // Rendering
         get CardFace() { return NS.Rendering ? NS.Rendering.CardFace : null; },
         get CardBack() { return NS.Rendering ? NS.Rendering.CardBack : null; },
+        get CardFlipContainer() { return NS.Rendering ? NS.Rendering.CardFlipContainer : null; },
         get NeedBar() { return NS.Rendering ? NS.Rendering.NeedBar : null; },
         get StatBlock() { return NS.Rendering ? NS.Rendering.StatBlock : null; },
 

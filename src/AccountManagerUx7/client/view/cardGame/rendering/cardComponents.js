@@ -60,9 +60,10 @@
             position: "absolute", color: cfg.color,
             lineHeight: "1"
         };
-        if (position === "top-left")     { style.top = "6px"; style.left = "8px"; }
-        if (position === "top-right")    { style.top = "6px"; style.right = "8px"; }
-        if (position === "bottom-right") { style.bottom = "6px"; style.right = "8px"; style.transform = "rotate(180deg)"; }
+        // Offset below top stacking border and left of right stacking border (v3.1)
+        if (position === "top-left")     { style.top = "calc(var(--card-stack-top) + 4px)"; style.left = "8px"; }
+        if (position === "top-right")    { style.top = "calc(var(--card-stack-top) + 4px)"; style.right = "calc(var(--card-stack-right) + 6px)"; }
+        if (position === "bottom-right") { style.bottom = "6px"; style.right = "calc(var(--card-stack-right) + 6px)"; style.transform = "rotate(180deg)"; }
         return m("span", { class: "material-symbols-outlined cg2-corner-icon", style }, icon);
     }
 
