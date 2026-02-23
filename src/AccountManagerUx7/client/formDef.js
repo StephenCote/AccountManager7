@@ -3901,9 +3901,10 @@
             },
             bodyShape: {
                 layout: 'one',
-                readOnly: true,
                 field: {
-                    label: 'Body Shape'
+                    label: 'Body Shape',
+                    type: 'list',
+                    limit: ['V_TAPER', 'HOURGLASS', 'RECTANGLE', 'ROUND', 'INVERTED_TRIANGLE', 'PEAR']
                 }
             },
             bmi: {
@@ -5686,6 +5687,86 @@
         narrate
     };
     am7model.forms = forms;
+
+    /// Body shape stat adjustment observer
+    /// When user selects a body shape, raise driver stats to minimum thresholds
+    ///
+    function mapShapeForGender(shape, isMale) {
+        if (isMale) {
+            if (shape === 'HOURGLASS' || shape === 'INVERTED_TRIANGLE') return 'V_TAPER';
+            if (shape === 'PEAR') return 'ROUND';
+        } else {
+            if (shape === 'V_TAPER') return 'INVERTED_TRIANGLE';
+        }
+        return shape;
+    }
+
+    function floorStat(stats, field, floor) {
+        let current = stats[field] || 0;
+        if (current < floor) {
+            stats[field] = floor;
+            return true;
+        }
+        return false;
+    }
+
+    function applyBodyShapeFloors(inst) {
+        let stats = inst.entity.statistics;
+        if (!stats) return;
+        let shape = inst.entity.bodyShape;
+        let gender = inst.entity.gender;
+        if (!shape || !gender) return;
+
+        let isMale = gender === 'male';
+        shape = mapShapeForGender(shape, isMale);
+
+        let modified = false;
+        switch (shape) {
+            case 'V_TAPER':
+                modified = floorStat(stats, 'physicalStrength', 14) || modified;
+                modified = floorStat(stats, 'physicalEndurance', 12) || modified;
+                break;
+            case 'HOURGLASS':
+                modified = floorStat(stats, 'physicalStrength', 12) || modified;
+                modified = floorStat(stats, 'agility', 14) || modified;
+                break;
+            case 'RECTANGLE':
+                modified = floorStat(stats, 'speed', 14) || modified;
+                modified = floorStat(stats, 'agility', 14) || modified;
+                modified = floorStat(stats, 'manualDexterity', 14) || modified;
+                break;
+            case 'ROUND':
+                modified = floorStat(stats, 'physicalEndurance', 14) || modified;
+                modified = floorStat(stats, 'mentalEndurance', 14) || modified;
+                if ((stats.potential || 0) < 90) { stats.potential = 90; modified = true; }
+                break;
+            case 'INVERTED_TRIANGLE':
+                modified = floorStat(stats, 'physicalStrength', 16) || modified;
+                modified = floorStat(stats, 'physicalEndurance', 12) || modified;
+                break;
+            case 'PEAR':
+                modified = floorStat(stats, 'physicalEndurance', 12) || modified;
+                modified = floorStat(stats, 'mentalEndurance', 12) || modified;
+                modified = floorStat(stats, 'charisma', 12) || modified;
+                if ((stats.potential || 0) < 98) { stats.potential = 98; modified = true; }
+                break;
+        }
+
+        if (modified) {
+            if (!inst.changes.includes('statistics')) {
+                inst.changes.push('statistics');
+            }
+            m.redraw();
+        }
+    }
+
+    am7model.observe({
+        report: function(action, fieldName, inst) {
+            if (action === 'update' && fieldName === 'bodyShape') {
+                applyBodyShapeFloors(inst);
+            }
+        }
+    }, "olio.charPerson");
 
     am7model.policyTemplates = [
         {
