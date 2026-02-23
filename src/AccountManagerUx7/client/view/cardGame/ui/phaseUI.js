@@ -155,17 +155,22 @@
                         renderInitCard("opponent", opponent.character, init.opponentRoll, init.winner === "opponent", anim.opponentDiceFace, opponentFlipped)
                     ]),
 
-                    // Nat 1 warning
+                    // Threat warning (Nat 1 or carried from previous round)
                     anim.rollComplete && gameState.beginningThreats && gameState.beginningThreats.length > 0
                         ? m("div", { class: "cg2-threat-warning" }, [
                             m("div", { class: "cg2-threat-warning-header" }, [
                                 m("span", { class: "material-symbols-outlined" }, "warning"),
-                                " CRITICAL FAILURE - THREAT TRIGGERED!"
+                                gameState.beginningThreats.some(t => t.carried)
+                                    ? " THREAT CARRIED FROM PREVIOUS ROUND!"
+                                    : " CRITICAL FAILURE - THREAT TRIGGERED!"
                             ]),
-                            m("div", { class: "cg2-threat-rolls", style: { fontSize: "11px", color: "#c62828", marginBottom: "8px" } }, [
-                                "Rolls: You (", init.playerRoll ? init.playerRoll.raw : "?", ") vs Opp (",
-                                init.opponentRoll ? init.opponentRoll.raw : "?", ")"
-                            ]),
+                            // Only show initiative rolls if at least one is Nat 1
+                            (init.playerRoll && init.playerRoll.raw === 1) || (init.opponentRoll && init.opponentRoll.raw === 1)
+                                ? m("div", { class: "cg2-threat-rolls", style: { fontSize: "11px", color: "#c62828", marginBottom: "8px" } }, [
+                                    "Rolls: You (", init.playerRoll ? init.playerRoll.raw : "?", ") vs Opp (",
+                                    init.opponentRoll ? init.opponentRoll.raw : "?", ")"
+                                ])
+                                : null,
                             gameState.beginningThreats.map((threat, i) =>
                                 m("div", { class: "cg2-threat-warning-item" }, [
                                     m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle" }, threat.imageIcon || "pets"),
@@ -173,7 +178,7 @@
                                     " (Diff ", threat.difficulty, ") attacks ",
                                     m("span", { class: threat.target === "player" ? "cg2-threat-target-you" : "cg2-threat-target-opp" },
                                         threat.target === "player" ? "YOU" : "Opponent"),
-                                    " (rolled Nat 1)"
+                                    threat.carried ? " (carried threat)" : " (rolled Nat 1)"
                                 ])
                             )
                         ])
@@ -968,33 +973,34 @@
                         gameState.narrationText
                             ? [
                                 m("span", { class: "material-symbols-outlined", style: "font-size:16px;vertical-align:middle;margin-right:4px;color:#B8860B" }, "campaign"),
-                                m("span", { class: "cg2-cleanup-narration-text" }, gameState.narrationText)
+                                m("span", { class: "cg2-cleanup-narration-text" }, gameState.narrationText),
+                                m("button", {
+                                    class: "cg2-narration-skip-btn",
+                                    title: "Skip narration",
+                                    onclick(e) { e.stopPropagation(); GS().skipNarration(); }
+                                }, m("span", { class: "material-symbols-outlined" }, "skip_next"))
                             ]
-                            : m("span", { style: "opacity:0.3;font-size:12px" }, "Awaiting narration...")
+                            : null
                     ),
 
-                    // Button - face threat or start next round (disabled while narration plays)
+                    // Button - face threat or start next round (never disabled — user can always proceed)
                     gameState.endThreatResult && gameState.endThreatResult.threat && !gameState.endThreatResult.responded
                         ? m("button", {
                             class: "cg2-btn cg2-btn-primary cg2-btn-threat",
-                            disabled: !!gameState.narrationBusy,
                             onclick() {
+                                GS().skipNarration();
                                 gameState.cleanupApplied = false;
                                 GS().advancePhase();
                             }
-                        }, gameState.narrationBusy
-                            ? [m("span", { class: "material-symbols-outlined cg2-spin", style: "vertical-align:middle;margin-right:4px;font-size:14px" }, "sync"), "Narrating..."]
-                            : [m("span", { class: "material-symbols-outlined", style: "vertical-align:middle;margin-right:4px" }, "shield"), "Face the Threat"])
+                        }, [m("span", { class: "material-symbols-outlined", style: "vertical-align:middle;margin-right:4px" }, "shield"), "Face the Threat"])
                         : m("button", {
                             class: "cg2-btn cg2-btn-primary",
-                            disabled: !!gameState.narrationBusy,
                             onclick() {
+                                GS().skipNarration();
                                 gameState.cleanupApplied = false;
                                 GS().advancePhase();
                             }
-                        }, gameState.narrationBusy
-                            ? [m("span", { class: "material-symbols-outlined cg2-spin", style: "vertical-align:middle;margin-right:4px;font-size:14px" }, "sync"), "Narrating..."]
-                            : "Start Round " + (gameState.round + 1))
+                        }, "Start Round " + (gameState.round + 1))
                 ]);
             }
         };

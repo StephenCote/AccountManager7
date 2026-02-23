@@ -419,6 +419,7 @@ public class CharacterUtil {
 					person.set(FieldNames.FIELD_AGE, (int)years);
 					
 					StatisticsUtil.rollStatistics(person.get(OlioFieldNames.FIELD_STATISTICS), (int)years);
+					StatisticsUtil.rollHeight(person.get(OlioFieldNames.FIELD_STATISTICS), person.get(OlioFieldNames.FIELD_RACE), person.get(FieldNames.FIELD_GENDER), (int)years);
 					ProfileUtil.rollPersonality(person.get(FieldNames.FIELD_PERSONALITY));
 
 					totalAbsoluteAlignment += (alignment + 4);

@@ -423,34 +423,7 @@
         autoEquipFromStack(state.player);
         autoEquipFromStack(state.opponent);
 
-        // Apply campaign stat gains to player character (persistent level-up bonuses)
-        try {
-            let campaign = await St().campaignStorage.load(state.deckName);
-            if (campaign && campaign.statGains) {
-                St().migrateCampaign(campaign);
-                let charStats = state.player.character.stats || {};
-                for (let stat in campaign.statGains) {
-                    if (campaign.statGains[stat] > 0 && charStats[stat] !== undefined) {
-                        charStats[stat] += campaign.statGains[stat];
-                    }
-                }
-                console.log("[CardGame v2] Applied campaign stat gains:", JSON.stringify(campaign.statGains), "→ level", campaign.level);
-                // Recalculate derived values from updated stats
-                let updatedEnd = charStats.END || charStats.end || playerEnd;
-                let updatedAp = Math.max(2, Math.floor(updatedEnd / 5) + 1);
-                if (updatedAp > state.player.ap) {
-                    state.player.ap = updatedAp;
-                    state.player.maxAp = updatedAp;
-                }
-                let updatedMag = charStats.MAG || charStats.mag || playerMag;
-                if (updatedMag > state.player.energy) {
-                    state.player.energy = updatedMag;
-                    state.player.maxEnergy = updatedMag;
-                }
-            }
-        } catch (e) {
-            console.warn("[CardGame v2] Could not apply campaign stat gains:", e);
-        }
+        // v3: Campaign stat gains removed — stat changes come from card effects only
 
         // Reset initiative animation so it replays for the new game
         resetInitAnimState();
@@ -1217,15 +1190,14 @@
         const GAME_PHASES = C().GAME_PHASES;
 
         // Handle phase-specific transitions
+        // v3: EQUIP phase removed — equipment changes are "Use Item" actions during placement
         if (gameState.phase === GAME_PHASES.INITIATIVE) {
             // Check if there are beginning threats that need response
             if (gameState.beginningThreats && gameState.beginningThreats.length > 0) {
                 enterThreatResponsePhase("beginning");
             } else {
-                enterEquipPhase();
+                enterDrawPlacementPhase();
             }
-        } else if (gameState.phase === GAME_PHASES.EQUIP) {
-            enterDrawPlacementPhase();
         } else if (gameState.phase === GAME_PHASES.THREAT_RESPONSE) {
             // Threat response complete - resolve the threat combat, then continue to placement
             resolveThreatCombat();
@@ -1243,6 +1215,7 @@
             }, 500);
         } else if (gameState.phase === GAME_PHASES.RESOLUTION) {
             gameState.phase = GAME_PHASES.CLEANUP;
+            resolutionFastForward = false;  // Reset fast-forward for next round
             console.log("[CardGame v2] Phase advanced to:", gameState.phase);
         } else if (gameState.phase === GAME_PHASES.CLEANUP) {
             // Check for end-of-round threat before starting next round
@@ -1263,9 +1236,12 @@
         const aiPlaceCards = AI()?.aiPlaceCards;
         const hasStatusEffect = E().hasStatusEffect;
 
+        // v3: AI auto-equips at start of placement (EQUIP phase removed)
+        aiAutoEquip(gameState.opponent);
+
         gameState.phase = GAME_PHASES.DRAW_PLACEMENT;
         gameState.currentTurn = gameState.initiative.winner;
-        console.log("[CardGame v2] Phase advanced to:", gameState.phase, "- Current turn:", gameState.currentTurn);
+        console.log("[CardGame v3] Phase advanced to:", gameState.phase, "- Current turn:", gameState.currentTurn);
 
         // Enforce stun: stunned actors lose their AP for this round
         if (hasStatusEffect) {
@@ -1379,7 +1355,7 @@
             gameState.threatResponse.active = false;
             gameState.player.threatResponseAP = 0;
             gameState.opponent.threatResponseAP = 0;
-            enterEquipPhase();
+            enterDrawPlacementPhase();
             return;
         }
 
@@ -1496,8 +1472,8 @@
             return;
         }
 
-        // Continue to equip phase (then draw/placement)
-        enterEquipPhase();
+        // v3: Skip EQUIP phase, go directly to draw/placement
+        enterDrawPlacementPhase();
         m.redraw();
     }
 
@@ -1869,13 +1845,7 @@
             return;
         }
 
-        // Calculate round XP before resetting: 10 base + damage dealt + 25 if round winner
-        let roundXp = 10;
-        roundXp += gameState.player.roundPoints || 0;
-        if (gameState.roundWinner === "player") roundXp += 25;
-        gameState.player.roundXp = roundXp;
-        gameState.player.totalGameXp += roundXp;
-        console.log("[CardGame v2] Round", gameState.round, "XP:", roundXp, "(total:", gameState.player.totalGameXp + ")");
+        // v3: XP/level-up removed — stat changes come from card effects only
 
         gameState.round++;
         gameState.phase = GAME_PHASES.INITIATIVE;
@@ -1905,6 +1875,7 @@
         // Inject carried-over threats from previous round as beginning threats
         if (gameState.carriedThreats && gameState.carriedThreats.length > 0) {
             gameState.carriedThreats.forEach(function(ct) {
+                ct.carried = true;  // Mark as carried so UI can differentiate from Nat 1
                 gameState.beginningThreats.push(ct);
             });
             console.log("[CardGame v2] Carried", gameState.carriedThreats.length, "threats to round", gameState.round);
@@ -1968,12 +1939,23 @@
     let resolutionDiceInterval = null;
     let currentCombatResult = null;
     let currentMagicResult = null;
+    let resolutionFastForward = false;  // When true, skip animation delays
     let resolutionTotals = {
         playerDamageDealt: 0,
         playerDamageTaken: 0,
         opponentDamageDealt: 0,
         opponentDamageTaken: 0
     };
+
+    // Resolution delay helper — returns 0 when fast-forwarding
+    function rDelay(ms) { return resolutionFastForward ? 0 : ms; }
+
+    function toggleFastForward() {
+        resolutionFastForward = !resolutionFastForward;
+        // Also skip narration when fast-forwarding
+        if (resolutionFastForward) skipNarration();
+        m.redraw();
+    }
 
     // ── Resolution Driver ───────────────────────────────────────────────
     // The main resolution phase driver — handles combat, rest, guard, flee,
@@ -2103,6 +2085,10 @@
 
                 // Resolve combat (pass stack for skill modifiers)
                 currentCombatResult = resolveCombat(attacker, defender, pos.stack);
+
+                // Set final dice faces to actual roll values (fixes animation showing wrong number)
+                resolutionDiceFaces.attack = currentCombatResult.attackRoll.raw;
+                resolutionDiceFaces.defense = currentCombatResult.defenseRoll.raw;
                 resolutionPhase = "result";
 
                 // Update resolution totals
@@ -2275,12 +2261,12 @@
 
                     // Auto-advance after 3 seconds total between actions
                     if (bar.resolveIndex < bar.positions.length) {
-                        setTimeout(() => advanceResolution(), 1500);  // 1.5s after result shown
+                        setTimeout(() => advanceResolution(), rDelay(1500));
                     } else {
-                        setTimeout(() => advancePhase(), 1000);
+                        setTimeout(() => advancePhase(), rDelay(1000));
                     }
-                }, 2500);  // Show result for 2.5 seconds
-            }, 1500);  // Roll dice for 1.5 seconds
+                }, rDelay(2500));  // Show result for 2.5 seconds
+            }, rDelay(1500));  // Roll dice for 1.5 seconds
         } else if (isMagicAction) {
             // ── Magic / Channel resolution with casting animation ──
             resolutionAnimating = true;
@@ -2478,12 +2464,12 @@
 
                     // Auto-advance
                     if (bar.resolveIndex < bar.positions.length) {
-                        setTimeout(() => advanceResolution(), 1500);
+                        setTimeout(() => advanceResolution(), rDelay(1500));
                     } else {
-                        setTimeout(() => advancePhase(), 1000);
+                        setTimeout(() => advancePhase(), rDelay(1000));
                     }
-                }, 2000);  // Hold magic result for 2 seconds
-            }, 1200);  // Cast animation for 1.2 seconds
+                }, rDelay(2000));  // Hold magic result for 2 seconds
+            }, rDelay(1200));  // Cast animation for 1.2 seconds
         } else {
             // Non-combat action (Rest, Flee, etc.) - simple resolution
             resolutionAnimating = true;
@@ -2813,11 +2799,11 @@
 
                 // Auto-advance after ~3 seconds total
                 if (bar.resolveIndex < bar.positions.length) {
-                    setTimeout(() => advanceResolution(), 2000);
+                    setTimeout(() => advanceResolution(), rDelay(2000));
                 } else {
-                    setTimeout(() => advancePhase(), 1000);
+                    setTimeout(() => advancePhase(), rDelay(1000));
                 }
-            }, 1000);  // Show action result for 1 second
+            }, rDelay(1000));  // Show action result for 1 second
         }
 
         m.redraw();
@@ -2851,7 +2837,8 @@
         console.log("[CardGame v2] checkAutoEndTurn:", currentTurn, "AP remaining:", apRemaining);
 
         // Check if current player can actually place any cards
-        if (apRemaining > 0) {
+        // AI uses the action picker (not hand cards), so skip this check for opponent
+        if (apRemaining > 0 && currentTurn === "player") {
             let isCoreCardType = E().isCoreCardType;
             let coreCards = current.hand.filter(c => isCoreCardType(c.type));
             let playableCores = coreCards.filter(c => !c.energyCost || c.energyCost <= current.energy);
@@ -2991,6 +2978,8 @@
 
         // Resolution driver
         advanceResolution,
+        toggleFastForward,
+        get resolutionFastForward() { return resolutionFastForward; },
 
         // Turn management
         endTurn,

@@ -12,6 +12,27 @@
 	"description": "This model represents the statistical attributes of a character in a realm, including physical and mental attributes, derived statistics, and overall potential. It is used to define how characters perform in various aspects of the game world.",
 	"fields": [
 		{
+			"name": "unit",
+			"type": "string",
+			"maxLength": 6,
+			"default": "us",
+			"description": "Unit of measurement: 'us' (height in feet.inches, weight in lbs) or 'metric' (height in cm, weight in kg)"
+		},
+		{
+			"name": "height",
+			"type": "double",
+			"default": 5.10,
+			"description": "Height in feet.inches for US (e.g. 5.10 = 5ft 10in) or centimeters for metric. Set during charGen based on race/gender."
+		},
+		{
+			"name": "weight",
+			"type": "double",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.BodyStatsProvider",
+			"description": "Weight in lbs (US) or kg (metric). Derived from BMI and height.",
+			"priority": 35
+		},
+		{
 			"name": "physicalStrength",
 			"type": "int",
 			"minValue": 0,

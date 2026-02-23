@@ -90,54 +90,26 @@
 
                     // Two-card layout like initiative phase
                     m("div", { class: "cg2-init-cards cg2-threat-encounter" }, [
-                        // Threat card (left) — full card-like display
+                        // Threat card (left) — rendered using CardFace for consistency
                         threat ? m("div", { class: "cg2-init-card-wrap cg2-threat-card-wrap" }, [
-                            m("div", { class: "cg2-threat-encounter-card cg2-threat-type-" + (threat.creatureType || "monster") }, [
-                                // Creature type badge
-                                m("div", { class: "cg2-threat-type-badge" },
-                                    (threat.creatureType || "monster").toUpperCase()),
-                                // Icon/portrait area
-                                m("div", { class: "cg2-threat-encounter-icon" }, [
-                                    m("span", { class: "material-symbols-outlined" }, threat.imageIcon || "pets")
-                                ]),
-                                m("div", { class: "cg2-threat-encounter-name" }, threat.name),
-                                // Stats row
-                                m("div", { class: "cg2-threat-encounter-stats" }, [
-                                    m("div", { class: "cg2-threat-stat-row" }, [
-                                        m("span", { class: "material-symbols-outlined" }, "swords"),
-                                        m("span", "ATK " + threat.atk)
-                                    ]),
-                                    m("div", { class: "cg2-threat-stat-row" }, [
-                                        m("span", { class: "material-symbols-outlined" }, "shield"),
-                                        m("span", "DEF " + threat.def)
-                                    ]),
-                                    m("div", { class: "cg2-threat-stat-row" }, [
-                                        m("span", { class: "material-symbols-outlined" }, "favorite"),
-                                        m("span", "HP " + threat.hp + "/" + (threat.maxHp || threat.hp))
-                                    ])
-                                ]),
-                                // Behavior text
-                                threat.behavior ? m("div", { class: "cg2-threat-behavior" }, [
-                                    m("span", { class: "material-symbols-outlined", style: "font-size:12px" }, "psychology"),
-                                    " ", threat.behavior
-                                ]) : null,
-                                // Action stack display
-                                threat.actionStack ? m("div", { class: "cg2-threat-action-stack" }, [
-                                    m("span", { class: "cg2-threat-action-label" }, "Action: "),
-                                    m("span", { class: "cg2-threat-action-name" }, threat.actionStack.coreAction),
-                                    threat.actionStack.modifiers.length > 0
-                                        ? m("span", { class: "cg2-threat-action-mods" },
-                                            " +" + threat.actionStack.modifiers.map(mod => mod.name).join(", "))
-                                        : null
-                                ]) : null,
-                                // Loot preview
-                                m("div", { class: "cg2-threat-encounter-loot" }, [
-                                    m("span", { class: "material-symbols-outlined" }, "inventory_2"),
-                                    threat.lootItems && threat.lootItems.length > 0
-                                        ? " " + threat.lootItems.map(l => l.name).join(", ")
-                                        : " " + (threat.lootRarity || "COMMON") + " Loot"
-                                ])
-                            ])
+                            m(CardGame.Rendering.CardFace, {
+                                compact: true,
+                                card: {
+                                    type: "encounter",
+                                    name: threat.name,
+                                    subtype: (threat.creatureType || "Threat"),
+                                    atk: threat.atk,
+                                    def: threat.def,
+                                    hp: threat.hp,
+                                    rarity: threat.lootRarity || "COMMON",
+                                    behavior: threat.behavior,
+                                    loot: threat.lootItems
+                                        ? threat.lootItems.map(l => l.name)
+                                        : [(threat.lootRarity || "COMMON") + " Loot"],
+                                    icon: threat.imageIcon || "pets",
+                                    imageUrl: threat.imageUrl || null
+                                }
+                            })
                         ]) : null,
 
                         // VS indicator
@@ -146,22 +118,13 @@
                             m("div", "VS")
                         ]),
 
-                        // Defender card (right)
+                        // Defender card (right) — use character's actual card
                         m("div", { class: "cg2-init-card-wrap cg2-defender-card-wrap" }, [
-                            m("div", { class: "cg2-defender-card" + (isPlayerResponder ? " cg2-defender-you" : "") }, [
-                                m("div", { class: "cg2-defender-label" }, defenderName),
-                                m("div", { class: "cg2-defender-stats" }, [
-                                    m("div", { class: "cg2-defender-stat" }, [
-                                        m("span", { class: "material-symbols-outlined" }, "favorite"),
-                                        " HP: ", defenderActor?.hp || 0
-                                    ]),
-                                    m("div", { class: "cg2-defender-stat" }, [
-                                        m("span", { class: "material-symbols-outlined" }, "shield"),
-                                        " END: ", defenderActor?.character?.stats?.END || 0
-                                    ])
-                                ]),
-
-                                // Defense stack display
+                            defenderActor?.character
+                                ? m(CardGame.Rendering.CardFace, { card: defenderActor.character, compact: true })
+                                : m("div", { class: "cg2-defender-card" }, defenderName),
+                            // Defense stack & AP indicator overlay
+                            m("div", { class: "cg2-defender-overlay" }, [
                                 m("div", { class: "cg2-defender-stack-area" }, [
                                     m("div", { class: "cg2-defender-stack-label" }, "Defense Stack"),
                                     defenseStack.length > 0
@@ -170,10 +133,8 @@
                                                 m("div", { class: "cg2-defender-stack-card" }, card.name)
                                             )
                                         )
-                                        : m("div", { class: "cg2-defender-stack-empty" }, "Empty - click cards below")
+                                        : m("div", { class: "cg2-defender-stack-empty" }, isPlayerResponder ? "Click cards below" : "")
                                 ]),
-
-                                // AP indicator
                                 isPlayerResponder ? m("div", { class: "cg2-defender-ap" }, [
                                     m("span", { class: "material-symbols-outlined" }, "bolt"),
                                     " ", apRemaining, " / ", tr.bonusAP, " AP"

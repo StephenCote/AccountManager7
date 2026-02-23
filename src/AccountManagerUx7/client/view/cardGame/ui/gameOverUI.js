@@ -37,28 +37,13 @@
                     CardGame.GameState.narrateGameEnd(gameState.winner);
                 }
 
-                // Tally final round XP before saving campaign
-                if (!campaignSaved && gameState && gameState.winner) {
-                    let finalRoundXp = 10 + (gameState.player.roundPoints || 0);
-                    if (gameState.roundWinner === "player") finalRoundXp += 25;
-                    gameState.player.roundXp = finalRoundXp;
-                    gameState.player.totalGameXp += finalRoundXp;
-                }
-
-                // Save campaign W/L record + XP once
+                // Save campaign W/L record once
                 if (!campaignSaved && gameState && gameState.winner) {
                     campaignSaved = true;
                     let isVictory = gameState.winner === "player";
                     ctx.activeCampaign = await CardGame.Storage.saveCampaignProgress(gameState, isVictory);
 
-                    // Trigger level-up UI if pending
-                    if (ctx.activeCampaign && ctx.activeCampaign.pendingLevelUps > 0) {
-                        ctx.levelUpState = {
-                            campaign: ctx.activeCampaign,
-                            statsSelected: [],
-                            remaining: 2
-                        };
-                    }
+                    // v3: Level-up removed — stat changes come from card effects only
 
                     // Delete game saves on game end
                     console.log("[CardGame v2] Game over: deleting saves for", gameState.deckName);
@@ -75,11 +60,6 @@
                 let player = gameState.player;
                 let opponent = gameState.opponent;
                 let rounds = gameState.round;
-
-                // If level-up is pending, show that overlay instead
-                if (ctx.levelUpState) {
-                    return m(LevelUpUI);
-                }
 
                 // Overlay on top of current game view
                 return m("div", { class: "cg2-game-over-overlay" }, [
@@ -106,31 +86,12 @@
                                 m("div", { class: "cg2-game-over-stat-value" }, opponent.hp + "/" + opponent.maxHp),
                                 m("div", { class: "cg2-game-over-stat-label" }, "Opponent HP")
                             ]),
-                            // XP earned this game
-                            m("div", { class: "cg2-game-over-stat cg2-stat-xp" }, [
-                                m("div", { class: "cg2-game-over-stat-value" }, "+" + (activeCampaign?._lastGameXp || player.totalGameXp || 0)),
-                                m("div", { class: "cg2-game-over-stat-label" }, "XP Earned")
-                            ]),
                         ]),
 
-                        // Campaign W/L record + level
+                        // Campaign W/L record
                         activeCampaign ? m("div", { class: "cg2-game-over-campaign" }, [
-                            m("div", { class: "cg2-campaign-record-line" }, [
-                                m("span", { class: "cg2-campaign-level-badge" }, "Lv." + (activeCampaign.level || 1)),
-                                " ",
-                                activeCampaign.wins + "W / " + activeCampaign.losses + "L (" + activeCampaign.totalGamesPlayed + " games)"
-                            ]),
-                            // XP progress bar
-                            m("div", { class: "cg2-xp-bar-container cg2-xp-bar-gameover" }, [
-                                m("div", { class: "cg2-xp-bar" }, [
-                                    m("div", {
-                                        class: "cg2-xp-fill",
-                                        style: { width: Math.min(100, ((activeCampaign.xp || 0) / ((activeCampaign.level || 1) * 100)) * 100) + "%" }
-                                    })
-                                ]),
-                                m("span", { class: "cg2-xp-text" },
-                                    (activeCampaign.xp || 0) + " / " + ((activeCampaign.level || 1) * 100) + " XP")
-                            ])
+                            m("div", { class: "cg2-campaign-record-line" },
+                                activeCampaign.wins + "W / " + activeCampaign.losses + "L (" + activeCampaign.totalGamesPlayed + " games)")
                         ]) : null,
 
                         m("div", { class: "cg2-game-over-actions" }, [

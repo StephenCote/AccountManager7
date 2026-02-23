@@ -123,6 +123,7 @@ public class EvolutionUtil {
 					BaseRecord partner = partners.isEmpty() ? null : partners.get(0);
 					BaseRecord baby = CharacterUtil.randomPerson(ctx, (Rules.IS_PATRIARCHAL && partner != null ? partner : per).get(FieldNames.FIELD_LAST_NAME));
 					StatisticsUtil.rollStatistics(baby.get(OlioFieldNames.FIELD_STATISTICS), 0);
+					StatisticsUtil.rollHeight(baby.get(OlioFieldNames.FIELD_STATISTICS), baby.get(OlioFieldNames.FIELD_RACE), baby.get(FieldNames.FIELD_GENDER), 0);
 					baby.set(FieldNames.FIELD_BIRTH_DATE, now);
 					// queueAdd(queue, baby);
 					AddressUtil.randomAddressPerson(ctx.getOlioUser(), ctx.getWorld(), baby, ctx.getCurrentEvent().get(FieldNames.FIELD_LOCATION));

@@ -124,13 +124,18 @@ Address ${pName} by name when appropriate.
 ${personality.tone === "hostile" ? "You are hostile but can be swayed by a convincing argument." : ""}
 ${personality.tone === "friendly" ? "You are open to conversation and willing to listen." : ""}
 
+CRITICAL RULES:
+- You ARE ${name}. Output ONLY your spoken words.
+- NEVER narrate actions (*does something*), stage directions, or third-person descriptions.
+- NEVER write dialogue or actions for ${pName} — they speak for themselves.
+- NEVER use asterisks, quotation marks around your speech, or "he said" narration.
+- Just speak directly as ${name} would, addressing ${pName}.
+
 React naturally based on what ${pName} says:
 - Taunt: React according to your personality (angry, amused, dismissive)
 - Persuade: Consider their words but stay in character
 - Intimidate: Show fear or defiance based on your traits
-- Negotiate: Be open or closed depending on your alignment
-
-Respond naturally in character. No game mechanics or meta-commentary, just dialogue.`;
+- Negotiate: Be open or closed depending on your alignment`;
             return prompt;
         }
 
@@ -233,7 +238,7 @@ Respond naturally in character. No game mechanics or meta-commentary, just dialo
                     }
                     // subtle: don't include emotion at all
                 }
-                parts.push(`\nAs ${this.npcName}, say ONE very short quip or taunt (max 10 words). Stay in character. This is spoken aloud so brevity is critical.`);
+                parts.push(`\nYou ARE ${this.npcName}. Speak ONE short quip or taunt (max 10 words) directly to ${this.playerName}. Output ONLY your spoken words — no narration, no actions, no asterisks, no stage directions, no describing what ${this.playerName} does. Just your words.`);
 
                 const prompt = parts.join("\n");
                 const response = await this.chat(prompt);

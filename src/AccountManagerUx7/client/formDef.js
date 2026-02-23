@@ -3892,6 +3892,27 @@
                     "limit": ["neutralevil", "lawfulevil", "chaoticevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"]
                 }
             },
+            bodyType: {
+                layout: 'one',
+                readOnly: true,
+                field: {
+                    label: 'Body Type'
+                }
+            },
+            bodyShape: {
+                layout: 'one',
+                readOnly: true,
+                field: {
+                    label: 'Body Shape'
+                }
+            },
+            bmi: {
+                layout: 'one',
+                readOnly: true,
+                field: {
+                    label: 'BMI'
+                }
+            },
 
             /*
             blank : {
@@ -4404,6 +4425,19 @@
                 layout: 'one',
                 format: 'range',
                 readOnly: true
+            },
+            height: {
+                layout: 'one',
+                field: {
+                    label: 'Height'
+                }
+            },
+            weight: {
+                layout: 'one',
+                readOnly: true,
+                field: {
+                    label: 'Weight'
+                }
             }
 
         }

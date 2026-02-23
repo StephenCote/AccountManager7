@@ -6024,7 +6024,10 @@
       "factory": "org.cote.accountmanager.olio.CharPersonFactory",
       "vector": "org.cote.accountmanager.olio.VectorProvider",
       "query": [
-        "profile"
+        "profile",
+        "bodyType",
+        "bodyShape",
+        "bmi"
       ],
       "description": "A character person is a specific type of person that has attributes such as appearance, traits, and statistics. They can be involved in various interactions and actions within the system, and they may have specific roles or functions.",
       "fields": [
@@ -6092,6 +6095,33 @@
           "baseModel": "olio.state",
           "foreign": true,
           "shortName": "st"
+        },
+        {
+          "name": "bodyType",
+          "type": "string",
+          "maxLength": 16,
+          "virtual": true,
+          "provider": "org.cote.accountmanager.olio.BodyStatsProvider",
+          "description": "Somatotype: ECTOMORPH, MESOMORPH, or ENDOMORPH",
+          "priority": 30
+        },
+        {
+          "name": "bodyShape",
+          "type": "string",
+          "maxLength": 32,
+          "virtual": true,
+          "provider": "org.cote.accountmanager.olio.BodyStatsProvider",
+          "description": "Body shape: V_TAPER, HOURGLASS, RECTANGLE, ROUND, INVERTED_TRIANGLE, or PEAR",
+          "priority": 31
+        },
+        {
+          "name": "bmi",
+          "type": "double",
+          "virtual": true,
+          "provider": "org.cote.accountmanager.olio.BodyStatsProvider",
+          "description": "Body Mass Index derived from character statistics",
+          "default": 22.0,
+          "priority": 30
         }
       ]
     },
@@ -6902,6 +6932,27 @@
       ],
       "description": "This model represents the statistical attributes of a character in a realm, including physical and mental attributes, derived statistics, and overall potential. It is used to define how characters perform in various aspects of the game world.",
       "fields": [
+        {
+          "name": "unit",
+          "type": "string",
+          "maxLength": 6,
+          "default": "us",
+          "description": "Unit of measurement: 'us' or 'metric'"
+        },
+        {
+          "name": "height",
+          "type": "double",
+          "default": 5.10,
+          "description": "Height in feet.inches for US or centimeters for metric"
+        },
+        {
+          "name": "weight",
+          "type": "double",
+          "virtual": true,
+          "provider": "org.cote.accountmanager.olio.BodyStatsProvider",
+          "description": "Weight in lbs (US) or kg (metric). Derived from BMI and height.",
+          "priority": 35
+        },
         {
           "name": "physicalStrength",
           "type": "int",

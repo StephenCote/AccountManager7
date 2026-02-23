@@ -978,6 +978,16 @@ public class NarrativeUtil {
 		String eyeColor =  getColor(pp.getRecord(), OlioFieldNames.FIELD_EYE_COLOR);
 		
 		buff.append(" with ((" + hairStyle + ") (" + hairColor + " hair)) and (" + eyeColor + " eyes).");
+
+		String buildDesc = describeBuild(pp.getRecord());
+		String shapeDesc = describeBodyShape(pp.getRecord());
+		if(buildDesc.length() > 0 || shapeDesc.length() > 0) {
+			buff.append(" " + cpro + " has a");
+			if(buildDesc.length() > 0) buff.append(" ((" + buildDesc + "))");
+			if(shapeDesc.length() > 0) buff.append(" ((" + shapeDesc + "))");
+			buff.append(" build.");
+		}
+
 		buff.append(" " + cpro + " is (((" + describeOutfit(pp, false) + "))).");
 
 		return buff.toString();
@@ -1007,7 +1017,10 @@ public class NarrativeUtil {
 		
 		String raceDesc = getRaceDescription(person.get(OlioFieldNames.FIELD_RACE));
 		String magicStr = (describeMagic ? ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) : "");
-		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + magicStr + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + ".");
+		String bodyDesc = describeBodyShape(pp.getRecord());
+		String buildDesc = describeBuild(pp.getRecord());
+		String bodyInfo = (buildDesc.length() > 0 ? ", " + buildDesc : "") + (bodyDesc.length() > 0 ? " and " + bodyDesc : "");
+		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + bodyInfo + magicStr + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + ".");
 		if(includePersonality) {
 			buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
 			buff.append(" Morally, " + pro + " " + getActsLikeSatan(pp) + ".");
@@ -1029,7 +1042,10 @@ public class NarrativeUtil {
 	public static String describeStatistics(PersonalityProfile pp) {
 		StringBuilder buff = new StringBuilder();
 		String magicStr = (describeMagic ? "magic-wise " + getIsPrettyMagic(pp) + ", " : "");
-		buff.append(getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + " and " + getIsPrettyEndurable(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, " + magicStr + getIsPrettyLucky(pp) + ", and is " + getLooksPrettyUgly(pp) + " looking.");
+		String bodyDesc = describeBodyShape(pp.getRecord());
+		String buildDesc = describeBuild(pp.getRecord());
+		String bodyInfo = (buildDesc.length() > 0 ? ", " + buildDesc : "") + (bodyDesc.length() > 0 ? " and " + bodyDesc : "");
+		buff.append(getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + " and " + getIsPrettyEndurable(pp) + bodyInfo + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, " + magicStr + getIsPrettyLucky(pp) + ", and is " + getLooksPrettyUgly(pp) + " looking.");
 		return buff.toString();
 	}
 	
@@ -1105,10 +1121,14 @@ public class NarrativeUtil {
 		String hairColor =  getColor(pp.getRecord(), OlioFieldNames.FIELD_HAIR_COLOR);
 		String hairStyle = pp.getRecord().get(OlioFieldNames.FIELD_HAIR_STYLE);
 		String eyeColor =  getColor(pp.getRecord(), OlioFieldNames.FIELD_EYE_COLOR);
-		
+
 		String gender = pp.getGender();
-		
+
 		String raceDesc = getRaceDescription(pp.getRace());
+		String bodyDesc = describeBodyShape(pp.getRecord());
+		String buildDesc = describeBuild(pp.getRecord());
+		buff.append(buildDesc.length() > 0 ? buildDesc + ", " : "");
+		buff.append(bodyDesc.length() > 0 ? bodyDesc + " " : "");
 		buff.append(age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + " with " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		return buff.toString();
 	}
@@ -1360,36 +1380,57 @@ public class NarrativeUtil {
 		return desc;
 	}
 	public static String getLooksPrettyUgly(PersonalityProfile prof) {
-		/// TODO: Aesthetic/Appearance determination is currently simplified to the charisma statistic
-		/// However, it could be better described as: charisma + symmetry + physical genetics + personality + fitness/health
-		/// personality, and fitness and health can be pulled from the other stats; at the moment there isn't a way to capture symmetry.
-		/// physical genetics could be determined given a suitable ancestry (eg: (charisma + symmetric + personality + fitness/health) / 4 -> physical genetics)
-		
+		/// Uses the computed 'beauty' stat which is AVG(physicalAppearance, charm, manualDexterity, mentalHealth, perception)
+		/// This replaces the previous charisma-only calculation with a comprehensive beauty score
+
 		String desc = "indescribable";
-		HighEnumType charm = prof.getCharisma();
-		if(HighEnumType.compare(charm, HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		HighEnumType beautyLevel = prof.getBeauty();
+		if(HighEnumType.compare(beautyLevel, HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "hideous";
 		}
-		else if(HighEnumType.compare(charm, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "homely";
 		}
-		else if(HighEnumType.compare(charm, HighEnumType.FAIR, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.FAIR, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "bland";
 		}
-		else if(HighEnumType.compare(charm, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "comely";
 		}
-		else if(HighEnumType.compare(charm, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "pretty";
 		}
-		else if(HighEnumType.compare(charm, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "beautiful";
 		}
 		else {
-			// desc = "pulchritudinous"
 			desc = "gorgeous";
 		}
 		return desc;
+	}
+
+	/// Describe a character's body shape for narrative purposes.
+	///
+	public static String describeBodyShape(BaseRecord person) {
+		if(person == null) return "";
+		String bodyShape = null;
+		String gender = person.get(FieldNames.FIELD_GENDER);
+		if(person.hasField("bodyShape")) {
+			bodyShape = person.get("bodyShape");
+		}
+		if(bodyShape == null || bodyShape.isEmpty()) return "";
+		return BodyStatsProvider.getBodyShapeDescriptor(bodyShape, gender);
+	}
+
+	/// Describe a character's build using BMI-derived descriptors.
+	///
+	public static String describeBuild(BaseRecord person) {
+		if(person == null) return "";
+		double bmi = 22.0;
+		if(person.hasField("bmi")) {
+			bmi = person.get("bmi");
+		}
+		return BodyStatsProvider.getBmiDescriptor(bmi);
 	}
 	public static String describeAsthetics(PersonalityProfile prof) {
 		StringBuilder buff = new StringBuilder();

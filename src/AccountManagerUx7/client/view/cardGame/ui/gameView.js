@@ -269,7 +269,7 @@
 
                 // Resolve UI components from namespace
                 let InitiativePhaseUI = CardGame.UI.InitiativePhaseUI;
-                let EquipPhaseUI = CardGame.UI.EquipPhaseUI;
+                // v3: EquipPhaseUI removed — equipment changes are "Use Item" actions
                 let ThreatResponseUI = CardGame.UI.ThreatResponseUI;
                 let CleanupPhaseUI = CardGame.UI.CleanupPhaseUI;
                 let TalkChatUI = CardGame.UI.TalkChatUI;
@@ -331,7 +331,7 @@
                             // Phase-specific content
                             m("div", { class: "cg2-phase-content" }, [
                                 gameState.phase === GAME_PHASES.INITIATIVE && InitiativePhaseUI ? m(InitiativePhaseUI) : null,
-                                gameState.phase === GAME_PHASES.EQUIP && EquipPhaseUI ? m(EquipPhaseUI) : null,
+                                // v3: EQUIP phase removed — equipment changes are "Use Item" actions
                                 // Threat response phases
                                 (gameState.phase === GAME_PHASES.THREAT_RESPONSE || gameState.phase === GAME_PHASES.END_THREAT) && ThreatResponseUI
                                     ? m(ThreatResponseUI)
@@ -349,6 +349,18 @@
                                             title: "Skip",
                                             onclick(e) { e.stopPropagation(); CardGame.GameState.skipNarration(); }
                                         }, m("span", { class: "material-symbols-outlined" }, "skip_next"))
+                                    ])
+                                    : null,
+
+                                // Fast-forward toggle (resolution only)
+                                gameState.phase === GAME_PHASES.RESOLUTION
+                                    ? m("button", {
+                                        class: "cg2-fast-forward-btn" + (GS().resolutionFastForward ? " cg2-ff-active" : ""),
+                                        title: GS().resolutionFastForward ? "Normal speed" : "Fast forward",
+                                        onclick() { GS().toggleFastForward(); }
+                                    }, [
+                                        m("span", { class: "material-symbols-outlined" }, GS().resolutionFastForward ? "speed" : "fast_forward"),
+                                        GS().resolutionFastForward ? " Fast" : " Skip"
                                     ])
                                     : null,
 
@@ -443,7 +455,6 @@
 
                             // Hand Tray (inside center column for compact layout)
                             (gameState.phase === GAME_PHASES.INITIATIVE ||
-                             gameState.phase === GAME_PHASES.EQUIP ||
                              gameState.phase === GAME_PHASES.DRAW_PLACEMENT ||
                              gameState.phase === GAME_PHASES.THREAT_RESPONSE ||
                              gameState.phase === GAME_PHASES.END_THREAT)
@@ -547,84 +558,45 @@
                 let activeCampaign = ctx().activeCampaign;
                 let showCardPreview = rendering().showCardPreview || ctx().showCardPreview;
 
-                // HP/Energy/Morale percentages
+                // HP/Energy percentages for live bars
                 let hpPct = Math.max(0, Math.min(100, (actor.hp / actor.maxHp) * 100));
                 let energyPct = Math.max(0, Math.min(100, (actor.energy / actor.maxEnergy) * 100));
 
-                // Character stats from the character card
-                let stats = char.stats || {};
+                let CardFace = rendering().CardFace;
 
                 return m("div", { class: "cg2-char-sidebar" + (isOpponent ? " cg2-opponent" : "") }, [
 
-                    // Large portrait filling sidebar width, with name overlay
+                    // Character card — standard CardFace, sized by sidebar CSS
                     m("div", {
-                        class: "cg2-sidebar-portrait-lg",
+                        class: "cg2-sidebar-card-wrap",
                         onclick() { if (showCardPreview) showCardPreview(char); },
                         title: "Click to view full card"
                     }, [
-                        char.portraitUrl
-                            ? m("img", { src: char.portraitUrl, class: "cg2-portrait-img-lg" })
-                            : m("div", { class: "cg2-portrait-placeholder-lg" },
-                                m("span", { class: "material-symbols-outlined" }, "person")),
-                        // Name overlay at bottom of image
-                        m("div", { class: "cg2-sidebar-name-overlay" }, [
-                            m("span", { class: "cg2-sidebar-charname" }, char.name || "Unknown"),
-                            char._templateClass ? m("span", { class: "cg2-sidebar-charclass" }, char._templateClass) : null
-                        ])
+                        CardFace ? m(CardFace, { card: char }) : null
                     ]),
 
-                    // Compact stat grid (2x3)
-                    m("div", { class: "cg2-sidebar-stat-grid" }, [
-                        ["STR", "AGI", "END", "INT", "MAG", "CHA"].map(stat =>
-                            m("div", { key: stat, class: "cg2-stat-cell" }, [
-                                m("span", { class: "cg2-stat-label" }, stat),
-                                m("span", { class: "cg2-stat-num" }, stats[stat] || "?")
-                            ])
-                        )
-                    ]),
-
-                    // HP and Energy bars
-                    m("div", { class: "cg2-sidebar-bars" }, [
-                        m("div", { class: "cg2-sidebar-stat cg2-stat-hp" }, [
-                            m("span", { class: "cg2-stat-icon" }, "\u2665"),
-                            m("div", { class: "cg2-stat-bar" }, [
-                                m("div", { class: "cg2-stat-fill cg2-hp-fill", style: { width: hpPct + "%" } })
-                            ]),
-                            m("span", { class: "cg2-stat-val" }, actor.hp + "/" + actor.maxHp)
+                    // Status bars (HP, Energy, AP) — below the card
+                    m("div", { class: "cg2-sidebar-status-bars" }, [
+                        m("div", { class: "cg2-live-bar cg2-live-hp" }, [
+                            m("div", { class: "cg2-live-bar-fill", style: { width: hpPct + "%", background: "#c62828" } }),
+                            m("span", { class: "cg2-live-bar-text" }, "\u2665 " + actor.hp + "/" + actor.maxHp)
                         ]),
-                        m("div", { class: "cg2-sidebar-stat cg2-stat-energy" }, [
-                            m("span", { class: "cg2-stat-icon" }, "\u26A1"),
-                            m("div", { class: "cg2-stat-bar" }, [
-                                m("div", { class: "cg2-stat-fill cg2-energy-fill", style: { width: energyPct + "%" } })
-                            ]),
-                            m("span", { class: "cg2-stat-val" }, actor.energy + "/" + actor.maxEnergy)
+                        m("div", { class: "cg2-live-bar cg2-live-nrg" }, [
+                            m("div", { class: "cg2-live-bar-fill", style: { width: energyPct + "%", background: "#1565C0" } }),
+                            m("span", { class: "cg2-live-bar-text" }, "\u26A1 " + actor.energy + "/" + actor.maxEnergy)
+                        ]),
+                        m("div", { class: "cg2-live-bar cg2-live-ap" }, [
+                            m("div", { class: "cg2-live-bar-fill", style: {
+                                width: (actor.ap > 0 ? ((actor.ap - actor.apUsed) / actor.ap) * 100 : 0) + "%",
+                                background: "#B8860B"
+                            } }),
+                            m("span", { class: "cg2-live-bar-text" }, "AP " + (actor.ap - actor.apUsed) + "/" + actor.ap)
                         ])
                     ]),
 
-                    // AP indicator
-                    m("div", { class: "cg2-ap-indicator" }, [
-                        m("span", "AP: "),
-                        m("span", { class: "cg2-ap-value" }, (actor.ap - actor.apUsed) + "/" + actor.ap)
-                    ]),
-
-                    // Campaign record + XP bar (player only)
+                    // Campaign record (player only, no XP/level — v3)
                     !isOpponent && activeCampaign ? m("div", { class: "cg2-campaign-badge" }, [
-                        m("span", { class: "cg2-campaign-level-badge" }, "Lv." + (activeCampaign.level || 1)),
-                        m("span", { class: "cg2-campaign-record" }, activeCampaign.wins + "W/" + activeCampaign.losses + "L"),
-                        // XP progress bar
-                        (function() {
-                            let xp = activeCampaign.xp || 0;
-                            let gameXp = gameState?.player?.totalGameXp || 0;
-                            let totalXp = xp + gameXp;
-                            let threshold = (activeCampaign.level || 1) * 100;
-                            let pct = Math.min(100, (totalXp / threshold) * 100);
-                            return m("div", { class: "cg2-xp-bar-container" }, [
-                                m("div", { class: "cg2-xp-bar" }, [
-                                    m("div", { class: "cg2-xp-fill", style: { width: pct + "%" } })
-                                ]),
-                                m("span", { class: "cg2-xp-text" }, totalXp + "/" + threshold)
-                            ]);
-                        })()
+                        m("span", { class: "cg2-campaign-record" }, activeCampaign.wins + "W/" + activeCampaign.losses + "L")
                     ]) : null,
 
                     // Chat button (Silence Rule: locked unless Talk card active)
@@ -1227,22 +1199,6 @@
                                             : "Tap to select, then tap action bar position to place"
                                 }, [
                                     m(CardFace, { card, bgImage: cardFrontBg, compact: true }),
-                                    // Role badge overlay
-                                    m("div", { class: "cg2-card-role-badge cg2-badge-" + cardRole },
-                                        cardRole === "equip" ? "EQUIP"
-                                        : cardRole === "magic" ? "SPELL"
-                                        : cardRole === "action" ? "ACTION"
-                                        : cardRole === "talk" ? "TALK"
-                                        : cardRole === "loot" ? "LOOT"
-                                        : cardRole === "item" ? "ITEM"
-                                        : cardRole === "skill" ? "SKILL"
-                                        : "CARD"),
-                                    // Stat badge overlay (bottom-left, shows primary adjustment)
-                                    (function() {
-                                        let getLabel = rendering().getCardStatLabel;
-                                        let label = getLabel ? getLabel(card) : null;
-                                        return label ? m("div", { class: "cg2-card-stat-badge" }, label) : null;
-                                    })(),
                                     // Preview button (always available, doesn't affect selection)
                                     m("button", {
                                         class: "cg2-hand-preview-btn",

@@ -268,6 +268,13 @@ public class OlioFieldNames {
 	public static final String FIELD_WILLPOWER = "willpower";
 	public static final String FIELD_STATE = "state";
 
+	public static final String FIELD_UNIT = "unit";
+	public static final String FIELD_HEIGHT = "height";
+	public static final String FIELD_WEIGHT = "weight";
+	public static final String FIELD_BODY_TYPE = "bodyType";
+	public static final String FIELD_BODY_SHAPE = "bodyShape";
+	public static final String FIELD_BMI = "bmi";
+
 
 
 }

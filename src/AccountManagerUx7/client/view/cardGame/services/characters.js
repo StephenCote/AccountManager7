@@ -167,6 +167,13 @@
         card.age = fresh.age || card.age;
         card.stats = stats;
         card.needs = { hp: 20, energy: stats.MAG, morale: 20 };
+        // Body stats
+        let s = fresh.statistics || {};
+        card.height = statVal(s.height, 0);
+        card.weight = statVal(s.weight, 0);
+        card.bmi = statVal(fresh.bmi, 0);
+        card.bodyType = str(fresh.bodyType) || null;
+        card.bodyShape = str(fresh.bodyShape) || null;
         // Preserve custom/generated portrait URLs (identified by artObjectId)
         let hasCustomPortrait = !!card.artObjectId;
         if (!hasCustomPortrait) {
@@ -189,6 +196,14 @@
         let Constants = window.CardGame.Constants;
         let classActions = templateActions || Constants.COMMON_ACTIONS;
 
+        // Body stats from charPerson (virtual) and statistics
+        let s = char.statistics || {};
+        let height = statVal(s.height, 0);
+        let weight = statVal(s.weight, 0);
+        let bmi = statVal(char.bmi, 0);
+        let bodyType = str(char.bodyType) || null;
+        let bodyShape = str(char.bodyShape) || null;
+
         return {
             type: "character", name: shortName(char.name),
             gender: str(char.gender) || null,
@@ -197,6 +212,7 @@
             age: char.age || null,
             level: 1,
             stats,
+            height, weight, bmi, bodyType, bodyShape,
             needs: { hp: 20, energy: stats.MAG, morale: 20 },
             equipped: { head: null, body: null, handL: null, handR: null, feet: null, ring: null, back: null },
             activeSkills: [null, null, null, null],
@@ -710,6 +726,11 @@
             age: charPerson.age,
             alignment: charPerson.alignment,
             trade: charPerson.trades?.[0] || "",
+            height: stats.height || 0,
+            weight: stats.weight || 0,
+            bmi: charPerson.bmi || 0,
+            bodyType: charPerson.bodyType || null,
+            bodyShape: charPerson.bodyShape || null,
             portraitUrl: charPerson.profile?.portrait?.groupPath && charPerson.profile?.portrait?.name ?
                 g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) +
                 "/data.data" + charPerson.profile.portrait.groupPath + "/" + encodeURIComponent(charPerson.profile.portrait.name) + "/256x256" : null,

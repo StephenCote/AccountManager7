@@ -10,7 +10,7 @@
 	"dedicatedParticipation": true,
 	"factory": "org.cote.accountmanager.olio.CharPersonFactory",
 	"vector": "org.cote.accountmanager.olio.VectorProvider",
-	"query": ["profile"],
+	"query": ["profile", "bodyType", "bodyShape", "bmi"],
 	"description": "A character person is a specific type of person that has attributes such as appearance, traits, and statistics. They can be involved in various interactions and actions within the system, and they may have specific roles or functions.",
 	"fields": [
 		{
@@ -79,6 +79,33 @@
 			"baseModel": "olio.state",
 			"foreign": true,
 			"shortName": "st"
+		},
+		{
+			"name": "bodyType",
+			"type": "string",
+			"maxLength": 16,
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.BodyStatsProvider",
+			"description": "Somatotype: ECTOMORPH, MESOMORPH, or ENDOMORPH. Derived from statistics.",
+			"priority": 30
+		},
+		{
+			"name": "bodyShape",
+			"type": "string",
+			"maxLength": 32,
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.BodyStatsProvider",
+			"description": "Body shape: V_TAPER, HOURGLASS, RECTANGLE, ROUND, INVERTED_TRIANGLE, or PEAR. Derived from statistics and gender.",
+			"priority": 31
+		},
+		{
+			"name": "bmi",
+			"type": "double",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.BodyStatsProvider",
+			"description": "Body Mass Index derived from character statistics. Drives weight calculation and body descriptors.",
+			"default": 22.0,
+			"priority": 30
 		}
 	]
 }
