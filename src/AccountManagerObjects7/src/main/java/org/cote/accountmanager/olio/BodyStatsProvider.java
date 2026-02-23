@@ -9,6 +9,7 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.provider.IProvider;
@@ -74,11 +75,33 @@ public class BodyStatsProvider implements IProvider {
 		stats.setValue(OlioFieldNames.FIELD_WEIGHT, Double.parseDouble(df.format(weight)));
 	}
 
+	/// Resolve the statistics sub-record on a charPerson.
+	/// If not already populated, attempt to load via IOSystem reader.
+	///
+	private BaseRecord resolveStatistics(BaseRecord person) {
+		BaseRecord stats = person.get(OlioFieldNames.FIELD_STATISTICS);
+		if (stats == null || !stats.hasField(OlioFieldNames.FIELD_PHYSICAL_STRENGTH)) {
+			try {
+				IOSystem.getActiveContext().getReader().populate(person, new String[] { OlioFieldNames.FIELD_STATISTICS });
+				stats = person.get(OlioFieldNames.FIELD_STATISTICS);
+				if (stats != null) {
+					IOSystem.getActiveContext().getReader().populate(stats);
+				}
+			} catch (Exception e) {
+				logger.debug("Unable to resolve statistics: " + e.getMessage());
+			}
+		}
+		if (stats == null || !stats.hasField(OlioFieldNames.FIELD_PHYSICAL_STRENGTH)) {
+			return null;
+		}
+		return stats;
+	}
+
 	/// Compute BMI on charPerson model from statistics.
 	///
 	private void provideBmi(BaseRecord person) {
-		BaseRecord stats = person.get(OlioFieldNames.FIELD_STATISTICS);
-		if (stats == null || !stats.hasField(OlioFieldNames.FIELD_PHYSICAL_STRENGTH)) {
+		BaseRecord stats = resolveStatistics(person);
+		if (stats == null) {
 			return;
 		}
 		double bmi = computeBmi(stats);
@@ -89,8 +112,8 @@ public class BodyStatsProvider implements IProvider {
 	/// Determines somatotype: ECTOMORPH, MESOMORPH, or ENDOMORPH.
 	///
 	private void provideBodyType(BaseRecord person) {
-		BaseRecord stats = person.get(OlioFieldNames.FIELD_STATISTICS);
-		if (stats == null || !stats.hasField(OlioFieldNames.FIELD_PHYSICAL_STRENGTH)) {
+		BaseRecord stats = resolveStatistics(person);
+		if (stats == null) {
 			return;
 		}
 
@@ -115,8 +138,8 @@ public class BodyStatsProvider implements IProvider {
 	/// Uses stat patterns and gender to determine shape.
 	///
 	private void provideBodyShape(BaseRecord person) {
-		BaseRecord stats = person.get(OlioFieldNames.FIELD_STATISTICS);
-		if (stats == null || !stats.hasField(OlioFieldNames.FIELD_PHYSICAL_STRENGTH)) {
+		BaseRecord stats = resolveStatistics(person);
+		if (stats == null) {
 			return;
 		}
 
