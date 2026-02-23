@@ -3903,7 +3903,7 @@
                 layout: 'one',
                 viewProperties: function(inst) {
                     return {
-                        oninput: inst.handleChange("bodyShape", function() { applyBodyShapeFloors(inst); })
+                        onchange: function() { applyBodyShapeFloors(inst); }
                     };
                 },
                 field: {
