@@ -5760,13 +5760,6 @@
         }
     }
 
-    am7model.observe({
-        report: function(action, fieldName, inst) {
-            if (action === 'update' && fieldName === 'bodyShape') {
-                applyBodyShapeFloors(inst);
-            }
-        }
-    }, "olio.charPerson");
 
     am7model.policyTemplates = [
         {
