@@ -6983,6 +6983,34 @@
     overflow: auto;
     padding: 16px;
 }
+.cg2-dz-size-info {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 8px;
+}
+.cg2-dz-design-split {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.cg2-dz-live-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.cg2-dz-live-label {
+    font-size: 10px;
+    color: #B8860B;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
 .cg2-dz-preview-wrap,
 .cg2-dz-edit-wrap {
     position: relative;
@@ -6992,10 +7020,15 @@
     box-shadow: 0 4px 24px rgba(0,0,0,0.5);
     background: #fff;
 }
+.cg2-dz-preview-wrap .cg2-card {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 10px;
+}
 .cg2-dz-edit-wrap {
     border-color: rgba(184,134,11,0.6);
-    min-width: 180px;
-    min-height: 252px;
+    display: flex;
+    flex-direction: column;
 }
 .cg2-dz-card-picker {
     display: flex;

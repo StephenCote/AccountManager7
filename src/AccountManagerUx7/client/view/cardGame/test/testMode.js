@@ -3140,6 +3140,12 @@
     // ── Test Mode UI Component (uses shared TestFramework components) ──
     function TestModeUI() {
         return {
+            oninit: function() {
+                // Ensure the cardGame suite is selected when entering from card game UI
+                if (TF && TF.testState && TF.testState.selectedSuite !== "cardGame") {
+                    TF.selectSuite("cardGame");
+                }
+            },
             view: function() {
                 let context = ctx();
 
