@@ -41,15 +41,24 @@
             let gameStorage = storage().gameStorage;
             let campaignStorage = storage().campaignStorage;
             let names = await deckStorage.list();
+            console.log("[CardGame v2] deckStorage.list returned:", names);
             let decks = [];
+            let seenDeckNames = new Set();
             for (let name of names) {
                 let data = await deckStorage.load(name);
                 if (data) {
+                    // Deduplicate by deckName (server may have duplicate groups)
+                    let dn = data.deckName || name;
+                    if (seenDeckNames.has(dn)) {
+                        console.warn("[CardGame v2] Skipping duplicate deck:", dn, "storageName:", name);
+                        continue;
+                    }
+                    seenDeckNames.add(dn);
                     // Check for saved games and campaign data
                     let savesList = await gameStorage.list(name);
                     let campaign = await campaignStorage.load(name);
                     decks.push({
-                        deckName: data.deckName || name,
+                        deckName: dn,
                         themeId: data.themeId || null,
                         characterNames: data.characterNames || (data.characterName ? [data.characterName] : ["Unknown"]),
                         portraitUrl: data.portraitUrl || null,

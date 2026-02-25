@@ -108,7 +108,9 @@
                 q.field("parentId", grp.id);
                 q.range(0, 200);
                 let qr = await page.search(q);
-                return (qr?.results || []).map(g => g.name);
+                let names = (qr?.results || []).map(g => g.name);
+                // Deduplicate (server may return multiple groups with same name)
+                return [...new Set(names)];
             } catch (e) {
                 console.error("[CardGame v2] Failed to list decks:", e);
                 return [];

@@ -267,9 +267,11 @@
     function renderCornerIcon(el, card, typeCfg, scale) {
         let type = card?.type || "item";
         let cfg = C().CARD_TYPES[type] || C().CARD_TYPES.item;
-        let icon = cfg.icon;
+        // Use element icon override if set, otherwise fall back to card type icon
+        let icon = el.icon || cfg.icon;
+        let elStyle = el.style || {};
         let style = {
-            position: "absolute", color: cfg.color, lineHeight: "1"
+            position: "absolute", color: elStyle.color || cfg.color, lineHeight: "1"
         };
         if (el.position === "top-left") {
             style.top = "calc(var(--card-stack-top) + 4px)";

@@ -132,8 +132,7 @@
 
                 return m("div", {
                     class: "cg2-dz-zone" + (designMode ? " cg2-dz-zone-edit" : ""),
-                    "data-zone": zoneName,
-                    style: { flex: "0 0 " + zone.height + "%" }
+                    "data-zone": zoneName
                 }, [
                     // Zone label (edit mode only)
                     designMode ? m("div", { class: "cg2-dz-zone-label" }, [
@@ -257,25 +256,43 @@
                         })
                     ]),
 
-                    // Content (for labels, iconDetails, custom)
-                    (el.type === "label" || el.type === "iconDetail" || el.type === "custom" || el.type === "emoji") ?
+                    // Content (for labels, iconDetails, stackBorder, custom)
+                    (el.type === "label" || el.type === "iconDetail" || el.type === "custom" || el.type === "emoji" || el.type === "stackBorder") ?
                         m("div", { class: "cg2-dz-prop-row" }, [
                             m("label", "Content"),
                             m("input", {
                                 type: "text", value: el.content || "",
+                                placeholder: el.type === "stackBorder" ? "{{cardName}} or custom text" : "",
                                 oninput: function(e) { updateField("content", e.target.value); }
                             })
                         ]) : null,
 
-                    // Icon
-                    (el.type === "iconDetail" || el.type === "icon" || el.type === "label") ?
+                    // Icon (for all types that can show icons)
+                    (el.type === "iconDetail" || el.type === "icon" || el.type === "label" || el.type === "stackBorder" || el.type === "cornerIcon") ?
                         m("div", { class: "cg2-dz-prop-row" }, [
                             m("label", "Icon"),
                             m(IP().IconPickerButton, {
                                 value: el.icon || "",
                                 onchange: function(icon) { updateField("icon", icon); }
-                            })
+                            }),
+                            el.type === "cornerIcon" ? m("div", { style: { fontSize: "9px", color: "#888", marginTop: "2px" } },
+                                "Leave empty to use card type icon"
+                            ) : null
                         ]) : null,
+
+                    // Position (for overlay elements)
+                    el.position ? m("div", { class: "cg2-dz-prop-row" }, [
+                        m("label", "Position"),
+                        m("select", {
+                            value: el.position,
+                            onchange: function(e) { updateField("position", e.target.value); }
+                        }, [
+                            m("option", { value: "top-left" }, "Top Left"),
+                            m("option", { value: "top-right" }, "Top Right"),
+                            m("option", { value: "bottom-right" }, "Bottom Right"),
+                            m("option", { value: "right" }, "Right Border")
+                        ])
+                    ]) : null,
 
                     // Emoji picker integration
                     el.type === "emoji" ? m("div", { class: "cg2-dz-prop-row" }, [
@@ -625,7 +642,39 @@
                                     }),
                                     m(AddElementMenu, { zoneName: zn })
                                 ]);
-                            })
+                            }),
+                            // Overlays section (corner icons, stack borders)
+                            (workingLayout?.overlays && workingLayout.overlays.length > 0) ?
+                                m("div", { class: "cg2-dz-zone-tree" }, [
+                                    m("div", { class: "cg2-dz-zone-tree-header" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "12px", marginRight: "3px" } }, "layers"),
+                                        m("span", "Overlays"),
+                                        m("span", { style: { fontSize: "10px", color: "#888", marginLeft: "auto" } }, "abs")
+                                    ]),
+                                    workingLayout.overlays.map(function(el) {
+                                        let isSelected = designerState.selectedElementId === el.id;
+                                        return m("div", {
+                                            class: "cg2-dz-tree-el" + (isSelected ? " cg2-dz-tree-el-selected" : "") + (!el.visible ? " cg2-dz-tree-el-hidden" : ""),
+                                            onclick: function() {
+                                                designerState.selectedElementId = el.id;
+                                                m.redraw();
+                                            }
+                                        }, [
+                                            m("span", {
+                                                class: "material-symbols-outlined",
+                                                style: { fontSize: "12px", marginRight: "4px", cursor: "pointer", color: el.visible ? "#666" : "#ccc" },
+                                                onclick: function(e) {
+                                                    e.stopPropagation();
+                                                    el.visible = !el.visible;
+                                                    designerState.dirty = true;
+                                                    m.redraw();
+                                                }
+                                            }, el.visible ? "visibility" : "visibility_off"),
+                                            m("span", { style: { fontSize: "11px" } }, el.id),
+                                            el.position ? m("span", { style: { fontSize: "9px", color: "#888", marginLeft: "4px" } }, el.position) : null
+                                        ]);
+                                    })
+                                ]) : null
                         ]) : null,
 
                         // Center: canvas area
@@ -676,39 +725,40 @@
                                     ])
                                 ]),
 
-                                // Card display area — zoomed
-                                m("div", {
-                                    class: "cg2-dz-zoom-wrap",
-                                    style: { transform: "scale(" + zoom + ")", marginBottom: Math.round((zoom - 1) * dim.height) + "px" }
-                                }, [
-                                    // Side by side in design mode
-                                    designerState.designMode ?
-                                        m("div", { class: "cg2-dz-design-split" }, [
-                                            // Zone editor
+                                // Design mode: zone editor panel + zoomed live preview
+                                // Preview mode: single zoomed card
+                                designerState.designMode ?
+                                    m("div", { class: "cg2-dz-design-split" }, [
+                                        // Zone editor — scrollable panel, not card-shaped
+                                        m("div", { class: "cg2-dz-edit-wrap" }, [
+                                            C().LAYOUT_ZONES.map(function(zn) {
+                                                let zone = workingLayout?.zones?.[zn];
+                                                return m(ZoneContainer, { zoneName: zn, zone: zone, key: zn });
+                                            })
+                                        ]),
+                                        // Live preview — zoomed card
+                                        m("div", { class: "cg2-dz-live-preview" }, [
+                                            m("div", { class: "cg2-dz-live-label" }, "Live Preview"),
                                             m("div", {
-                                                class: "cg2-dz-edit-wrap",
-                                                style: { width: dim.width + "px", height: dim.height + "px" }
-                                            }, [
-                                                C().LAYOUT_ZONES.map(function(zn) {
-                                                    let zone = workingLayout?.zones?.[zn];
-                                                    return m(ZoneContainer, { zoneName: zn, zone: zone, key: zn });
-                                                })
-                                            ]),
-                                            // Live preview
-                                            m("div", { class: "cg2-dz-live-preview" }, [
-                                                m("div", { class: "cg2-dz-live-label" }, "Live Preview"),
-                                                m("div", {
-                                                    class: "cg2-dz-preview-wrap",
-                                                    style: { width: dim.width + "px", height: dim.height + "px" }
-                                                }, renderCardFace())
-                                            ])
-                                        ]) :
-                                        // Preview-only mode: single card
-                                        m("div", {
-                                            class: "cg2-dz-preview-wrap",
-                                            style: { width: dim.width + "px", height: dim.height + "px" }
-                                        }, renderCardFace())
-                                ]),
+                                                class: "cg2-dz-preview-wrap cg2-dz-zoom-wrap",
+                                                style: {
+                                                    width: dim.width + "px", height: dim.height + "px",
+                                                    transform: "scale(" + zoom + ")",
+                                                    marginBottom: Math.round((zoom - 1) * dim.height) + "px",
+                                                    marginRight: Math.round((zoom - 1) * dim.width) + "px"
+                                                }
+                                            }, renderCardFace())
+                                        ])
+                                    ]) :
+                                    // Preview-only mode: single zoomed card
+                                    m("div", {
+                                        class: "cg2-dz-preview-wrap cg2-dz-zoom-wrap",
+                                        style: {
+                                            width: dim.width + "px", height: dim.height + "px",
+                                            transform: "scale(" + zoom + ")",
+                                            marginBottom: Math.round((zoom - 1) * dim.height) + "px"
+                                        }
+                                    }, renderCardFace()),
 
                                 // Card type prev/next (cycles through types, one card per type)
                                 m("div", { class: "cg2-dz-card-picker" }, [

@@ -451,6 +451,15 @@
     margin-bottom: 4px;
     background: linear-gradient(135deg, #2a2a3a 0%, #1a1a2e 100%);  /* Solid bg prevents card bg bleeding through */
 }
+/* Layout renderer: card name flows in zone (not absolutely positioned) */
+.cg2-layout-body .cg2-card-name {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    max-width: 100%;
+    z-index: auto;
+}
 /* Layout renderer: image fills its zone completely */
 .cg2-layout-body .cg2-card-image-area {
     flex: 1 1 100%;
@@ -6994,7 +7003,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     background: #0f0f23;
     position: relative;
     overflow: auto;
@@ -7010,30 +7019,33 @@
 }
 .cg2-dz-design-split {
     display: flex;
-    gap: 24px;
+    gap: 16px;
     align-items: flex-start;
     justify-content: center;
-    flex-wrap: wrap;
+    width: 100%;
 }
 .cg2-dz-live-preview {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
+    flex-shrink: 0;
 }
 .cg2-dz-live-label {
     font-size: 10px;
     color: #B8860B;
     text-transform: uppercase;
     letter-spacing: 1px;
-    height: 0; /* Collapse so it doesn't push card out of alignment */
-    overflow: visible;
-    margin-top: -16px; /* Float above the card */
-    margin-bottom: 4px;
     font-weight: 600;
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
 }
 /* Zoom wrapper scales the card area */
 .cg2-dz-zoom-wrap {
-    transform-origin: top center;
+    transform-origin: top left;
 }
 .cg2-dz-zoom-controls {
     display: flex;
@@ -7052,8 +7064,8 @@
     font-weight: 600;
     color: #B8860B;
 }
-.cg2-dz-preview-wrap,
-.cg2-dz-edit-wrap {
+/* Preview wrap — card-shaped container */
+.cg2-dz-preview-wrap {
     position: relative;
     border: 2px dashed rgba(184,134,11,0.3);
     border-radius: 10px;
@@ -7066,10 +7078,21 @@
     height: 100% !important;
     border-radius: 10px;
 }
+/* Edit wrap — scrollable zone list panel, NOT card-shaped */
 .cg2-dz-edit-wrap {
-    border-color: rgba(184,134,11,0.6);
+    flex: 1;
+    min-width: 240px;
+    max-width: 360px;
+    max-height: 600px;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
+    gap: 2px;
+    background: #1a1a2e;
+    border: 1px solid rgba(184,134,11,0.4);
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
 }
 .cg2-dz-card-picker {
     display: flex;
@@ -7083,83 +7106,99 @@
     position: relative;
     width: 100%;
     box-sizing: border-box;
-    padding: 4px;
+    padding: 2px 4px;
 }
 .cg2-dz-zone-edit {
-    outline: 1px dashed rgba(184,134,11,0.25);
-    min-height: 20px;
+    border: 1px solid rgba(184,134,11,0.25);
+    border-radius: 4px;
+    min-height: 28px;
+    margin-bottom: 2px;
+    background: rgba(255,255,255,0.02);
 }
 .cg2-dz-zone-edit:hover {
-    outline-color: rgba(184,134,11,0.5);
-    background: rgba(184,134,11,0.03);
+    border-color: rgba(184,134,11,0.5);
+    background: rgba(184,134,11,0.04);
 }
+/* Zone label bar — normal flow, acts as section header */
 .cg2-dz-zone-label {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     font-size: 9px;
-    color: #B8860B;
-    padding: 2px 4px;
-    background: rgba(0,0,0,0.05);
-    border-radius: 3px;
-    margin-bottom: 2px;
+    font-weight: 700;
+    color: #E8C547;
+    padding: 3px 6px;
+    background: rgba(10,10,30,0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(184,134,11,0.2);
+    border-radius: 3px 3px 0 0;
 }
 .cg2-dz-zone-pct {
-    font-size: 8px;
-    color: #888;
+    font-size: 7px;
+    color: #aaa;
     margin-left: auto;
 }
 .cg2-dz-zone-btn {
-    background: none;
-    border: 1px solid rgba(184,134,11,0.3);
-    border-radius: 3px;
-    color: #B8860B;
-    font-size: 10px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(184,134,11,0.5);
+    border-radius: 2px;
+    color: #E8C547;
+    font-size: 9px;
     cursor: pointer;
-    padding: 1px 4px;
+    padding: 0 3px;
+    line-height: 1.2;
 }
 .cg2-dz-zone-btn:hover {
-    background: rgba(184,134,11,0.1);
+    background: rgba(184,134,11,0.25);
 }
 
 /* ── Element Rendering in Design Mode ────────────────── */
 .cg2-dz-element {
     position: relative;
     box-sizing: border-box;
-    padding: 2px 4px;
+    padding: 3px 6px;
     margin: 1px 0;
     border-radius: 3px;
     cursor: pointer;
     transition: background 0.1s;
+    display: flex;
+    align-items: center;
+    min-height: 20px;
+    z-index: 1;
 }
 .cg2-dz-element:hover {
-    background: rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.1);
 }
 .cg2-dz-selected {
-    outline: 2px solid #B8860B;
-    background: rgba(184,134,11,0.08);
+    outline: 2px solid #E8C547;
+    background: rgba(184,134,11,0.2);
+    z-index: 2;
 }
 .cg2-dz-hidden {
     opacity: 0.25;
 }
 .cg2-dz-drag-handle {
     cursor: grab;
-    color: #666;
+    color: #aaa;
     font-size: 14px;
     margin-right: 4px;
+    flex-shrink: 0;
 }
+/* Element label — inline on the right */
 .cg2-dz-el-label {
     font-size: 9px;
-    color: rgba(184,134,11,0.6);
+    font-weight: 600;
+    color: #E8C547;
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    position: absolute;
-    top: 0;
-    right: 2px;
+    margin-left: auto;
     background: rgba(0,0,0,0.4);
-    padding: 0 3px;
+    padding: 1px 5px;
     border-radius: 2px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* ── Right Sidebar: Property Panel ───────────────────── */
@@ -7295,12 +7334,13 @@
     justify-content: center;
     z-index: 1000;
 }
-.cg2-icon-picker {
+.cg2-icon-picker,
+.cg2-icon-picker-panel {
     background: #1a1a2e;
     border: 1px solid #444;
     border-radius: 10px;
-    width: 420px;
-    max-height: 500px;
+    width: 480px;
+    max-height: 560px;
     display: flex;
     flex-direction: column;
     box-shadow: 0 8px 32px rgba(0,0,0,0.6);
@@ -7311,46 +7351,86 @@
     gap: 8px;
     padding: 10px 14px;
     border-bottom: 1px solid #333;
+    color: #eee;
 }
+/* Search wrapper */
 .cg2-icon-picker-search {
-    flex: 1;
+    padding: 8px 14px;
+}
+.cg2-icon-picker-search input {
+    width: 100%;
+    box-sizing: border-box;
     background: #16213e;
-    border: 1px solid #444;
+    border: 1px solid #555;
     border-radius: 6px;
-    color: #ddd;
-    padding: 6px 10px;
-    font-size: 12px;
+    color: #eee;
+    padding: 8px 12px;
+    font-size: 13px;
 }
-.cg2-icon-picker-search:focus {
-    border-color: #B8860B;
+.cg2-icon-picker-search input:focus {
+    border-color: #E8C547;
     outline: none;
+    box-shadow: 0 0 0 2px rgba(232,197,71,0.2);
 }
+.cg2-icon-picker-search input::placeholder {
+    color: #777;
+}
+/* Category filter tabs */
+.cg2-icon-picker-cats {
+    display: flex;
+    gap: 2px;
+    padding: 0 14px 6px;
+    flex-wrap: wrap;
+}
+.cg2-icon-picker-cat {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid #444;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+}
+.cg2-icon-picker-cat:hover { color: #ccc; background: rgba(255,255,255,0.05); }
+.cg2-icon-picker-cat-active { background: #B8860B !important; color: #fff !important; border-color: #B8860B; }
 .cg2-icon-picker-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
     gap: 4px;
-    padding: 10px;
+    padding: 8px 14px;
     overflow-y: auto;
     flex: 1;
 }
 .cg2-icon-picker-item {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    padding: 6px 2px 4px;
     border-radius: 6px;
     cursor: pointer;
     color: #aaa;
     transition: all 0.1s;
-    font-size: 11px;
 }
 .cg2-icon-picker-item:hover {
     background: rgba(184,134,11,0.2);
     color: #fff;
 }
 .cg2-icon-picker-item .material-symbols-outlined {
-    font-size: 22px;
+    font-size: 24px;
+}
+.cg2-icon-picker-name {
+    font-size: 8px;
+    color: #666;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60px;
+    margin-top: 2px;
+}
+.cg2-icon-picker-item:hover .cg2-icon-picker-name {
+    color: #ccc;
 }
 
 /* ── Export Dialog ────────────────────────────────────── */

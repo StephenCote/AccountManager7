@@ -94,7 +94,7 @@
             version: C().DEFAULT_LAYOUT_VERSION,
             zones: {
                 header: {
-                    height: 8,
+                    height: 5,
                     elements: [
                         createElement("stackBorder", {
                             id: "stackTop", content: "{{cardName}}", icon: "{{typeIcon}}",
@@ -107,7 +107,7 @@
                     ]
                 },
                 image: {
-                    height: isTiny ? 40 : 45,
+                    height: isTiny ? 43 : 48,
                     elements: [
                         createElement("image", {
                             id: "portrait", source: "{{imageUrl}}",
@@ -276,7 +276,7 @@
             version: C().DEFAULT_LAYOUT_VERSION,
             zones: {
                 header: {
-                    height: 8,
+                    height: 5,
                     elements: [
                         createElement("stackBorder", {
                             id: "stackTop", content: "{{cardName}}", icon: "{{typeIcon}}",
@@ -289,7 +289,7 @@
                     ]
                 },
                 image: {
-                    height: isTiny ? 35 : 42,
+                    height: isTiny ? 38 : 45,
                     elements: [
                         createElement("image", {
                             id: "cardImage", source: "{{imageUrl}}",
