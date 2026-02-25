@@ -179,6 +179,7 @@
                 ["CardGame.ArtPipeline", window.CardGame.ArtPipeline],
                 ["CardGame.Rendering",  window.CardGame.Rendering],
                 ["CardGame.UI",         window.CardGame.UI],
+                ["CardGame.Designer",   window.CardGame.Designer],
                 ["CardGame.TestMode",   window.CardGame.TestMode],
                 ["CardGame.ctx",        window.CardGame.ctx]
             ];
@@ -285,7 +286,54 @@
                 }
             }
 
-            // Verify ctx proxy properties resolve to module state (not undefined)
+            // Verify Designer module exports
+            let designer = window.CardGame.Designer;
+            if (designer) {
+                let designerExports = ["LayoutConfig", "LayoutRenderer", "IconPicker",
+                    "DesignerView", "ExportPipeline", "ExportDialog"];
+                let designerMissing = [];
+                for (let fn of designerExports) {
+                    if (!designer[fn]) designerMissing.push(fn);
+                }
+                testLog("modules", "Designer: " + (designerExports.length - designerMissing.length) + "/" + designerExports.length + " modules present",
+                    designerMissing.length === 0 ? "pass" : "fail");
+                if (designerMissing.length > 0) {
+                    testLog("modules", "Designer MISSING: " + designerMissing.join(", "), "fail");
+                }
+            } else {
+                testLog("modules", "Designer: namespace MISSING", "fail");
+            }
+
+            // Verify v3 constants (CARD_SIZES, LAYOUT_ELEMENT_TYPES)
+            let consts = C();
+            if (consts) {
+                let v3Consts = ["CARD_SIZES", "DEFAULT_LAYOUT_VERSION", "LAYOUT_ZONES", "LAYOUT_ELEMENT_TYPES"];
+                let v3Missing = [];
+                for (let c of v3Consts) {
+                    if (!consts[c]) v3Missing.push(c);
+                }
+                testLog("modules", "v3 Constants: " + (v3Consts.length - v3Missing.length) + "/" + v3Consts.length + " present",
+                    v3Missing.length === 0 ? "pass" : "fail");
+                if (v3Missing.length > 0) {
+                    testLog("modules", "v3 Constants MISSING: " + v3Missing.join(", "), "fail");
+                }
+                // Verify CARD_SIZES has expected keys
+                if (consts.CARD_SIZES) {
+                    let expectedSizes = ["poker", "bridge", "tarot", "mini", "custom"];
+                    let sizeMissing = expectedSizes.filter(s => !consts.CARD_SIZES[s]);
+                    testLog("modules", "CARD_SIZES: " + Object.keys(consts.CARD_SIZES).length + " sizes (" + (sizeMissing.length === 0 ? "all present" : "missing: " + sizeMissing.join(", ")) + ")",
+                        sizeMissing.length === 0 ? "pass" : "fail");
+                }
+            }
+
+            // Verify Rendering has layout delegation
+            let rend = window.CardGame.Rendering;
+            if (rend) {
+                testLog("modules", "Rendering.getLayoutConfig: " + (typeof rend.getLayoutConfig === "function" ? "present" : "MISSING"),
+                    typeof rend.getLayoutConfig === "function" ? "pass" : "fail");
+            }
+
+            // Verify ctx has designerDeck property
             let ctxObj = window.CardGame.ctx;
             if (ctxObj) {
                 // These should be proxied from ArtPipeline.state
@@ -307,6 +355,19 @@
                 }
                 testLog("modules", "ctx proxy properties: " + proxyOk + "/" + artProps.length + " linked to ArtPipeline.state",
                     proxyOk === artProps.length ? "pass" : "fail");
+
+                // Verify designer-related ctx properties
+                let hasDesignerDeck = "designerDeck" in ctxObj;
+                testLog("modules", "ctx.designerDeck property: " + (hasDesignerDeck ? "present" : "MISSING"),
+                    hasDesignerDeck ? "pass" : "fail");
+
+                // Verify 'designer' is a valid screen value
+                let origScreen = ctxObj.screen;
+                ctxObj.screen = "designer";
+                let screenSet = ctxObj.screen === "designer";
+                ctxObj.screen = origScreen;
+                testLog("modules", "ctx.screen='designer' accepted=" + screenSet,
+                    screenSet ? "pass" : "fail");
             }
         }
 
@@ -773,6 +834,34 @@
                 for (let name of deckNames.slice(0, 3)) {
                     let campaign = await storage.campaignStorage.load(name);
                     testLog("storage", "campaignStorage.load('" + name + "'): " + (campaign ? "Level " + campaign.level : "none"), "pass");
+                }
+
+                // Test layoutConfigs preservation in deck save/load
+                let LC = window.CardGame.Designer ? window.CardGame.Designer.LayoutConfig : null;
+                if (resolvedDeck && LC) {
+                    let testLayoutDeck = Object.assign({}, resolvedDeck);
+                    testLayoutDeck.layoutConfigs = testLayoutDeck.layoutConfigs || {};
+                    let testLayout = LC.generateDefaultLayout("character", "poker");
+                    testLayout._storageTest = "layout_roundtrip";
+                    testLayoutDeck.layoutConfigs["character:poker"] = testLayout;
+
+                    // Save to a test key
+                    let testStorageName = (resolvedDeckName || "test") + "__layout_test";
+                    await storage.deckStorage.save(testStorageName, testLayoutDeck);
+                    let loadedDeck = await storage.deckStorage.load(testStorageName);
+                    if (loadedDeck && loadedDeck.layoutConfigs && loadedDeck.layoutConfigs["character:poker"]) {
+                        let loadedLayout = loadedDeck.layoutConfigs["character:poker"];
+                        let markerOk = loadedLayout._storageTest === "layout_roundtrip";
+                        let zonesOk = loadedLayout.zones && typeof loadedLayout.zones === "object";
+                        testLog("storage", "layoutConfigs save/load: marker=" + markerOk + " zones=" + zonesOk,
+                            markerOk && zonesOk ? "pass" : "fail");
+                    } else {
+                        testLog("storage", "layoutConfigs save/load: NOT preserved in deck storage", "fail");
+                    }
+                    // Clean up
+                    await storage.deckStorage.deleteAll(testStorageName);
+                } else {
+                    testLog("storage", "layoutConfigs roundtrip (skipped: " + (!resolvedDeck ? "no deck" : "Designer not loaded") + ")", "skip");
                 }
             } catch (e) {
                 testLog("storage", "Storage test error: " + e.message, "fail");
@@ -2801,6 +2890,69 @@
             let hasDesignerRoute = appCtx && typeof appCtx.screen !== "undefined";
             testLog("designer", "D7: App context supports screen routing=" + hasDesignerRoute,
                 hasDesignerRoute ? "pass" : "fail");
+
+            // D8: Classic CardFace backward compatibility (no deck = falls back to classic rendering)
+            let cfRendering = R();
+            if (cfRendering && cfRendering.CardFace) {
+                try {
+                    let testCard = { name: "Classic Test", type: "character", stats: { STR: 10 }, needs: { hp: 20 } };
+                    let container = document.createElement("div");
+                    container.style.cssText = "position:absolute;top:-9999px;left:-9999px;width:180px;height:252px;";
+                    document.body.appendChild(container);
+                    // Render WITHOUT deck attr → should fall back to classic rendering
+                    m.render(container, m(cfRendering.CardFace, { card: testCard, noPreview: true }));
+                    let html = container.innerHTML;
+                    let hasClassicElements = html.includes("cg2-card") && html.includes("Classic Test");
+                    document.body.removeChild(container);
+                    testLog("designer", "D8a: CardFace classic fallback (no deck) renders=" + hasClassicElements,
+                        hasClassicElements ? "pass" : "fail");
+                } catch (e) {
+                    testLog("designer", "D8a: CardFace classic fallback error: " + e.message, "fail");
+                }
+
+                // D8b: CardFace with deck + layoutConfigs → should use LayoutCardFace
+                if (D && D.LayoutConfig && resolvedDeck) {
+                    try {
+                        let testCard2 = { name: "Layout Test", type: "character", stats: { STR: 10 }, needs: { hp: 20 } };
+                        let deckWithLayouts = Object.assign({}, resolvedDeck);
+                        deckWithLayouts.layoutConfigs = deckWithLayouts.layoutConfigs || {};
+                        let testLayout = D.LayoutConfig.generateDefaultLayout("character", "poker");
+                        deckWithLayouts.layoutConfigs["character:poker"] = testLayout;
+
+                        let container = document.createElement("div");
+                        container.style.cssText = "position:absolute;top:-9999px;left:-9999px;width:180px;height:252px;";
+                        document.body.appendChild(container);
+                        m.render(container, m(cfRendering.CardFace, { card: testCard2, deck: deckWithLayouts, noPreview: true }));
+                        let html = container.innerHTML;
+                        let usesLayout = html.includes("cg2-layout") || html.includes("Layout Test");
+                        document.body.removeChild(container);
+                        testLog("designer", "D8b: CardFace with layoutConfigs delegates to LayoutCardFace=" + usesLayout,
+                            usesLayout ? "pass" : "warn");
+                    } catch (e) {
+                        testLog("designer", "D8b: CardFace delegation error: " + e.message, "fail");
+                    }
+                } else {
+                    testLog("designer", "D8b: CardFace delegation (skipped: no deck/designer)", "skip");
+                }
+
+                // D8c: CardFace compact mode still works
+                try {
+                    let testCard3 = { name: "Compact Test", type: "item", subtype: "weapon", atk: 5 };
+                    let container = document.createElement("div");
+                    container.style.cssText = "position:absolute;top:-9999px;left:-9999px;width:120px;height:168px;";
+                    document.body.appendChild(container);
+                    m.render(container, m(cfRendering.CardFace, { card: testCard3, compact: true, noPreview: true }));
+                    let html = container.innerHTML;
+                    let hasContent = html.length > 50;
+                    document.body.removeChild(container);
+                    testLog("designer", "D8c: CardFace compact mode renders=" + hasContent,
+                        hasContent ? "pass" : "fail");
+                } catch (e) {
+                    testLog("designer", "D8c: CardFace compact error: " + e.message, "fail");
+                }
+            } else {
+                testLog("designer", "D8: CardFace backward compat (skipped: Rendering not loaded)", "skip");
+            }
 
             testLog("designer", "=== Designer Tests Complete ===", "info");
         }

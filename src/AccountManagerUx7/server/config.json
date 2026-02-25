@@ -49,6 +49,8 @@
         "/node_modules/material-symbols",
         "/node_modules/material-icons/css",
         "/node_modules/material-icons/iconfont",
+        "/node_modules/jszip/dist",
+        "/node_modules/html2canvas/dist",
         "/node_modules/pdfjs-dist",
         "/node_modules/pdfjs-dist/web",
         "/node_modules/pdfjs-dist/web/images",

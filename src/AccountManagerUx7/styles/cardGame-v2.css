@@ -6862,7 +6862,7 @@
    Card Designer v3 — Layout Editor, Export, Icon Picker
    ═══════════════════════════════════════════════════════ */
 
-/* ── Designer Layout ─────────────────────────────────── */
+/* ── Designer Top-Level Container ────────────────────── */
 .cg2-designer {
     display: flex;
     flex-direction: column;
@@ -6871,77 +6871,57 @@
     border-radius: 8px;
     overflow: hidden;
 }
-.cg2-designer-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    background: #16213e;
-    border-bottom: 1px solid #333;
-    flex-wrap: wrap;
-}
-.cg2-designer-toolbar .cg2-btn {
-    font-size: 11px;
-}
-.cg2-designer-body {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-}
 
-/* ── Designer Tabs ───────────────────────────────────── */
-.cg2-designer-tabs {
+/* ── Designer Tabs (type + size) ─────────────────────── */
+.cg2-dz-type-tabs,
+.cg2-dz-size-tabs {
     display: flex;
     gap: 2px;
-    margin-left: 8px;
+    padding: 4px 12px;
+    flex-wrap: wrap;
+    background: #16213e;
+    border-bottom: 1px solid #333;
 }
-.cg2-designer-tab {
-    padding: 3px 10px;
+.cg2-dz-tab {
+    padding: 4px 10px;
     border-radius: 12px;
     font-size: 11px;
     cursor: pointer;
     background: transparent;
     color: #888;
+    border: none;
     transition: all 0.15s;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
 }
-.cg2-designer-tab:hover {
+.cg2-dz-tab:hover {
     color: #ccc;
     background: rgba(255,255,255,0.05);
 }
-.cg2-designer-tab-active {
-    background: #B8860B;
-    color: #fff;
+.cg2-dz-tab-active {
+    background: #B8860B !important;
+    color: #fff !important;
     font-weight: 700;
 }
-.cg2-designer-size-tabs {
-    display: flex;
-    gap: 2px;
-    margin-left: auto;
-}
-.cg2-designer-size-tab {
-    padding: 2px 8px;
-    border-radius: 10px;
+.cg2-dz-tab-sm {
     font-size: 10px;
-    cursor: pointer;
-    background: transparent;
-    color: #888;
+    padding: 2px 8px;
     border: 1px solid #444;
-    transition: all 0.15s;
 }
-.cg2-designer-size-tab:hover {
-    color: #ccc;
-    border-color: #888;
-}
-.cg2-designer-size-tab-active {
-    background: #2E7D32;
-    color: #fff;
-    border-color: #2E7D32;
-    font-weight: 600;
+.cg2-dz-tab-sm.cg2-dz-tab-active {
+    border-color: #B8860B;
 }
 
-/* ── Element Tree (Left Panel) ───────────────────────── */
-.cg2-designer-tree {
+/* ── 3-Column Main Layout ────────────────────────────── */
+.cg2-dz-main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* ── Left Sidebar: Zone/Element Tree ─────────────────── */
+.cg2-dz-sidebar-left {
     width: 200px;
     min-width: 160px;
     background: #16213e;
@@ -6950,138 +6930,166 @@
     padding: 8px 0;
     font-size: 11px;
 }
-.cg2-designer-zone-group {
-    margin-bottom: 4px;
-}
-.cg2-designer-zone-label {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
+.cg2-dz-sidebar-title {
+    padding: 4px 12px;
     font-weight: 700;
     font-size: 10px;
     color: #B8860B;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    cursor: pointer;
 }
-.cg2-designer-zone-label:hover {
-    background: rgba(255,255,255,0.03);
+.cg2-dz-zone-tree {
+    margin-bottom: 4px;
 }
-.cg2-designer-element-item {
+.cg2-dz-zone-tree-header {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 3px 10px 3px 20px;
+    padding: 4px 12px;
+    font-weight: 600;
+    font-size: 10px;
+    color: #aaa;
+    text-transform: uppercase;
+}
+.cg2-dz-tree-el {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 12px 3px 20px;
     cursor: pointer;
     color: #aaa;
     transition: background 0.1s;
 }
-.cg2-designer-element-item:hover {
+.cg2-dz-tree-el:hover {
     background: rgba(255,255,255,0.05);
 }
-.cg2-designer-element-item.selected {
+.cg2-dz-tree-el-selected {
     background: rgba(184,134,11,0.2);
     color: #fff;
 }
-.cg2-designer-element-item .material-symbols-outlined {
-    font-size: 14px;
-    opacity: 0.6;
-}
-.cg2-designer-element-item .cg2-vis-toggle {
-    margin-left: auto;
-    cursor: pointer;
-    font-size: 14px;
+.cg2-dz-tree-el-hidden {
     opacity: 0.4;
 }
-.cg2-designer-element-item .cg2-vis-toggle:hover {
-    opacity: 1;
-}
 
-/* ── Canvas Area (Center) ────────────────────────────── */
-.cg2-designer-canvas-area {
+/* ── Center: Canvas Area ─────────────────────────────── */
+.cg2-dz-canvas {
     flex: 1;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     background: #0f0f23;
     position: relative;
     overflow: auto;
+    padding: 16px;
 }
-.cg2-designer-canvas-wrapper {
+.cg2-dz-preview-wrap,
+.cg2-dz-edit-wrap {
     position: relative;
     border: 2px dashed rgba(184,134,11,0.3);
     border-radius: 10px;
     overflow: hidden;
     box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    background: #fff;
 }
-.cg2-designer-canvas-wrapper.design-mode {
+.cg2-dz-edit-wrap {
     border-color: rgba(184,134,11,0.6);
+    min-width: 180px;
+    min-height: 252px;
+}
+.cg2-dz-card-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
 }
 
 /* ── Zone Rendering in Design Mode ───────────────────── */
-.cg2-layout-zone {
+.cg2-dz-zone {
     position: relative;
     width: 100%;
     box-sizing: border-box;
+    padding: 4px;
 }
-.cg2-layout-zone.design-mode {
+.cg2-dz-zone-edit {
     outline: 1px dashed rgba(184,134,11,0.25);
+    min-height: 20px;
 }
-.cg2-layout-zone.design-mode:hover {
+.cg2-dz-zone-edit:hover {
     outline-color: rgba(184,134,11,0.5);
     background: rgba(184,134,11,0.03);
 }
-.cg2-layout-zone-label {
-    position: absolute;
-    top: 0;
-    left: 0;
-    font-size: 8px;
-    color: rgba(184,134,11,0.5);
-    background: rgba(0,0,0,0.4);
-    padding: 1px 4px;
-    border-radius: 0 0 4px 0;
-    z-index: 5;
-    pointer-events: none;
+.cg2-dz-zone-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9px;
+    color: #B8860B;
+    padding: 2px 4px;
+    background: rgba(0,0,0,0.05);
+    border-radius: 3px;
+    margin-bottom: 2px;
 }
-.cg2-layout-element {
+.cg2-dz-zone-pct {
+    font-size: 8px;
+    color: #888;
+    margin-left: auto;
+}
+.cg2-dz-zone-btn {
+    background: none;
+    border: 1px solid rgba(184,134,11,0.3);
+    border-radius: 3px;
+    color: #B8860B;
+    font-size: 10px;
+    cursor: pointer;
+    padding: 1px 4px;
+}
+.cg2-dz-zone-btn:hover {
+    background: rgba(184,134,11,0.1);
+}
+
+/* ── Element Rendering in Design Mode ────────────────── */
+.cg2-dz-element {
     position: relative;
     box-sizing: border-box;
-}
-.cg2-layout-element.design-mode {
-    outline: 1px dotted rgba(255,255,255,0.15);
+    padding: 2px 4px;
+    margin: 1px 0;
+    border-radius: 3px;
     cursor: pointer;
+    transition: background 0.1s;
 }
-.cg2-layout-element.design-mode:hover {
-    outline-color: rgba(255,255,255,0.4);
-    background: rgba(255,255,255,0.02);
+.cg2-dz-element:hover {
+    background: rgba(255,255,255,0.05);
 }
-.cg2-layout-element.design-mode.selected {
+.cg2-dz-selected {
     outline: 2px solid #B8860B;
     background: rgba(184,134,11,0.08);
 }
-.cg2-layout-element.hidden-element {
+.cg2-dz-hidden {
     opacity: 0.25;
 }
-
-/* ── Zone Height Drag Handle ─────────────────────────── */
-.cg2-zone-drag-handle {
+.cg2-dz-drag-handle {
+    cursor: grab;
+    color: #666;
+    font-size: 14px;
+    margin-right: 4px;
+}
+.cg2-dz-el-label {
+    font-size: 9px;
+    color: rgba(184,134,11,0.6);
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
     position: absolute;
-    bottom: -3px;
-    left: 0;
-    right: 0;
-    height: 6px;
-    cursor: row-resize;
-    z-index: 10;
-    background: transparent;
-}
-.cg2-zone-drag-handle:hover,
-.cg2-zone-drag-handle.dragging {
-    background: rgba(184,134,11,0.3);
+    top: 0;
+    right: 2px;
+    background: rgba(0,0,0,0.4);
+    padding: 0 3px;
+    border-radius: 2px;
 }
 
-/* ── Property Panel (Right) ──────────────────────────── */
-.cg2-designer-props {
+/* ── Right Sidebar: Property Panel ───────────────────── */
+.cg2-dz-sidebar-right {
     width: 240px;
     min-width: 200px;
     background: #16213e;
@@ -7090,28 +7098,41 @@
     padding: 10px;
     font-size: 11px;
 }
-.cg2-designer-props-title {
+.cg2-dz-props {
+    padding: 4px;
+}
+.cg2-dz-props-empty {
+    color: #666;
+    font-size: 11px;
+    text-align: center;
+    padding: 20px 10px;
+}
+.cg2-dz-props-header {
     font-weight: 700;
     font-size: 12px;
     color: #B8860B;
     margin-bottom: 8px;
     padding-bottom: 4px;
     border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
-.cg2-designer-prop-row {
+.cg2-dz-prop-row {
     display: flex;
     align-items: center;
     margin-bottom: 6px;
     gap: 6px;
 }
-.cg2-designer-prop-label {
+.cg2-dz-prop-row label {
     width: 70px;
     min-width: 70px;
     color: #888;
     font-size: 10px;
-    text-transform: uppercase;
 }
-.cg2-designer-prop-input {
+.cg2-dz-prop-row input,
+.cg2-dz-prop-row select,
+.cg2-dz-prop-row textarea {
     flex: 1;
     background: #1a1a2e;
     border: 1px solid #444;
@@ -7121,29 +7142,22 @@
     font-size: 11px;
     font-family: inherit;
 }
-.cg2-designer-prop-input:focus {
+.cg2-dz-prop-row input:focus,
+.cg2-dz-prop-row select:focus,
+.cg2-dz-prop-row textarea:focus {
     border-color: #B8860B;
     outline: none;
 }
-.cg2-designer-prop-input[type="color"] {
+.cg2-dz-prop-row input[type="color"] {
     width: 32px;
     height: 24px;
     padding: 1px;
     cursor: pointer;
 }
-.cg2-designer-prop-input[type="number"] {
+.cg2-dz-prop-row input[type="number"] {
     width: 60px;
 }
-.cg2-designer-prop-select {
-    flex: 1;
-    background: #1a1a2e;
-    border: 1px solid #444;
-    border-radius: 4px;
-    color: #ddd;
-    padding: 3px 6px;
-    font-size: 11px;
-}
-.cg2-designer-prop-section {
+.cg2-dz-props-section {
     font-weight: 600;
     color: #aaa;
     font-size: 10px;
@@ -7154,7 +7168,10 @@
 }
 
 /* ── Add Element Menu ────────────────────────────────── */
-.cg2-add-element-menu {
+.cg2-dz-add-wrap {
+    padding: 2px 4px;
+}
+.cg2-dz-add-menu {
     position: absolute;
     background: #16213e;
     border: 1px solid #444;
@@ -7164,7 +7181,7 @@
     z-index: 100;
     min-width: 160px;
 }
-.cg2-add-element-item {
+.cg2-dz-add-item {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -7172,15 +7189,26 @@
     cursor: pointer;
     color: #ccc;
     font-size: 11px;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
     transition: background 0.1s;
 }
-.cg2-add-element-item:hover {
+.cg2-dz-add-item:hover {
     background: rgba(184,134,11,0.15);
     color: #fff;
 }
-.cg2-add-element-item .material-symbols-outlined {
+.cg2-dz-add-item .material-symbols-outlined {
     font-size: 16px;
     color: #B8860B;
+}
+
+/* ── Layout Zone Wrapper (used by layoutRenderer) ────── */
+.cg2-layout-zone {
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* ── Icon Picker ─────────────────────────────────────── */
