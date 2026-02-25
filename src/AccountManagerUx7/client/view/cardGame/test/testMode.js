@@ -2685,19 +2685,27 @@
                     testLog("layouts", "L6a: createElement returns object=" + !!newEl, newEl ? "pass" : "fail");
 
                     if (newEl) {
-                        LC.addElement(testLayout, "details", newEl);
-                        let found = LC.findElement(testLayout, newEl.id);
+                        // addElement API: (layout, zoneName, elementType, overrides) — returns the new element
+                        let addedEl = LC.addElement(testLayout, "details", "label", { content: "Test Label" });
+                        let found = addedEl ? LC.findElement(testLayout, addedEl.id) : null;
                         testLog("layouts", "L6b: addElement + findElement=" + !!found, found ? "pass" : "fail");
 
-                        LC.updateElementStyle(testLayout, newEl.id, "fontSize", 14);
-                        let updated = LC.findElement(testLayout, newEl.id);
-                        testLog("layouts", "L6c: updateElementStyle fontSize=" + (updated ? updated.style.fontSize : "?"),
-                            updated && updated.style.fontSize === 14 ? "pass" : "fail");
+                        if (addedEl) {
+                            // updateElementStyle API: (layout, elementId, styleUpdatesObject)
+                            LC.updateElementStyle(testLayout, addedEl.id, { fontSize: 14 });
+                            let updated = LC.findElement(testLayout, addedEl.id);
+                            testLog("layouts", "L6c: updateElementStyle fontSize=" + (updated ? updated.element.style.fontSize : "?"),
+                                updated && updated.element.style.fontSize === 14 ? "pass" : "fail");
 
-                        LC.removeElement(testLayout, newEl.id);
-                        let removed = LC.findElement(testLayout, newEl.id);
-                        testLog("layouts", "L6d: removeElement found after remove=" + !!removed,
-                            !removed ? "pass" : "fail");
+                            // removeElement API: (layout, zoneName, elementId)
+                            LC.removeElement(testLayout, "details", addedEl.id);
+                            let removed = LC.findElement(testLayout, addedEl.id);
+                            testLog("layouts", "L6d: removeElement found after remove=" + !!removed,
+                                !removed ? "pass" : "fail");
+                        } else {
+                            testLog("layouts", "L6c: addElement returned null", "fail");
+                            testLog("layouts", "L6d: skipped (no element)", "skip");
+                        }
                     }
                 }
 

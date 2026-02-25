@@ -168,9 +168,9 @@
         };
     }
 
-    function defaultGenericLayout(cardType, sizeKey) {
+    function defaultGenericLayout(cardType, configKey, sizeKey) {
         let config = C().CARD_RENDER_CONFIG;
-        let renderCfg = config[cardType] || config.action;
+        let renderCfg = config[configKey] || config[cardType] || config.action;
         let sz = C().CARD_SIZES[sizeKey] || C().CARD_SIZES.poker;
         let isSmall = sz.px[0] < 600;
         let isTiny = sz.px[0] < 550;
@@ -417,15 +417,15 @@
         if (sizeKey === "_compact") return defaultCompactLayout(cardType);
         if (sizeKey === "_mini") return defaultMiniLayout(cardType);
 
-        // Item subtypes map to their render config keys
-        let renderType = cardType;
-        if (cardType === "item") renderType = "weapon"; // default item subtype
-
         // Character has its own generator
         if (cardType === "character") return defaultCharacterLayout(sizeKey);
 
+        // Item subtypes map to their render config keys
+        let configKey = cardType;
+        if (cardType === "item") configKey = "weapon"; // default item subtype uses weapon render config
+
         // Scenario, loot have custom renderers in current code but can use generic with their render configs
-        return defaultGenericLayout(renderType, sizeKey);
+        return defaultGenericLayout(cardType, configKey, sizeKey);
     }
 
     // ── Generate all default layouts for a deck ─────────────────────

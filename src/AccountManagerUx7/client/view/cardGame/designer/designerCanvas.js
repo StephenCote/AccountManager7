@@ -32,7 +32,8 @@
         selectedElementId: null,
         designMode: true,     // true = edit mode, false = preview mode
         previewCardIndex: 0,  // which test card to preview with
-        dirty: false          // unsaved changes
+        dirty: false,         // unsaved changes
+        zoom: 1.5             // canvas zoom level (1.0 = base, up to 2.5)
     };
 
     // ── Get the current working layout (cloned for editing) ─────────
@@ -51,14 +52,29 @@
         return LC().findElement(workingLayout, designerState.selectedElementId);
     }
 
-    // ── Get a sample card for the current type ──────────────────────
+    // ── Get one sample card per type for preview cycling ────────────
+    // Returns { card, typeList, typeIndex } where typeList is available types
     function getSampleCard(deck) {
-        let type = designerState.cardType;
         let cards = deck?.cards || [];
-        let matching = cards.filter(function(c) { return c.type === type; });
-        let idx = Math.min(designerState.previewCardIndex, matching.length - 1);
-        return matching[idx] || matching[0] || {
-            type: type, name: "Sample " + type,
+        // Build one sample per card type (first card of each type)
+        let typeMap = {};
+        let typeOrder = [];
+        for (let c of cards) {
+            if (!typeMap[c.type]) {
+                typeMap[c.type] = c;
+                typeOrder.push(c.type);
+            }
+        }
+        // Ensure current cardType is in the list even if no card exists
+        if (!typeMap[designerState.cardType]) {
+            typeOrder.push(designerState.cardType);
+        }
+
+        let idx = typeOrder.indexOf(designerState.cardType);
+        if (idx < 0) idx = 0;
+
+        return typeMap[designerState.cardType] || {
+            type: designerState.cardType, name: "Sample " + designerState.cardType,
             stats: { STR: 12, AGI: 10, END: 14, INT: 8, MAG: 6, CHA: 11 },
             needs: { hp: 18, energy: 8, morale: 16 },
             race: "Human", _templateClass: "Fighter", level: 3,
@@ -66,6 +82,20 @@
             atk: 5, def: 3, subtype: "weapon", damageType: "Slashing",
             description: "A sample card for layout preview."
         };
+    }
+
+    // Get the ordered list of types that have cards in the deck
+    function getPreviewTypeList(deck) {
+        let cards = deck?.cards || [];
+        let seen = {};
+        let typeOrder = [];
+        for (let c of cards) {
+            if (!seen[c.type]) {
+                seen[c.type] = true;
+                typeOrder.push(c.type);
+            }
+        }
+        return typeOrder;
     }
 
     // ── Compute screen-display dimensions for a card size key ─────
@@ -601,86 +631,113 @@
                         // Center: canvas area
                         (function() {
                             let dim = getPreviewDimensions(designerState.sizeKey);
+                            let zoom = designerState.zoom;
                             let sizeInfo = sizes[designerState.sizeKey];
                             let sizeLabel = sizeInfo ? (sizeInfo.px[0] + " \u00d7 " + sizeInfo.px[1] + " px") :
                                 (designerState.sizeKey === "_compact" ? "120 \u00d7 168 px (Hand)" :
                                  designerState.sizeKey === "_mini" ? "70 \u00d7 98 px (Action Bar)" :
                                  designerState.sizeKey === "_full" ? "280 \u00d7 392 px (Full)" : "");
 
+                            let typeList = getPreviewTypeList(deck);
+
+                            function renderCardFace() {
+                                return m(LR().LayoutCardFace, {
+                                    card: sampleCard,
+                                    deck: deck,
+                                    sizeKey: designerState.sizeKey,
+                                    layoutConfig: workingLayout,
+                                    bgImage: deck.cardFrontImageUrl || null,
+                                    compact: designerState.sizeKey === "_compact",
+                                    mini: designerState.sizeKey === "_mini",
+                                    full: designerState.sizeKey === "_full",
+                                    noPreview: true
+                                });
+                            }
+
                             return m("div", { class: "cg2-dz-canvas" }, [
-                                // Size indicator
+                                // Top bar: size indicator + zoom controls
                                 m("div", { class: "cg2-dz-size-info" }, [
                                     m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", marginRight: "4px" } }, "straighten"),
-                                    sizeLabel
+                                    sizeLabel,
+                                    m("span", { style: { margin: "0 12px", color: "#444" } }, "|"),
+                                    // Zoom controls
+                                    m("div", { class: "cg2-dz-zoom-controls" }, [
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "zoom_out"),
+                                        m("input", {
+                                            type: "range", min: "0.75", max: "2.5", step: "0.25",
+                                            value: zoom,
+                                            oninput: function(e) {
+                                                designerState.zoom = parseFloat(e.target.value);
+                                                m.redraw();
+                                            }
+                                        }),
+                                        m("span", { class: "material-symbols-outlined", style: { fontSize: "14px" } }, "zoom_in"),
+                                        m("span", { class: "cg2-dz-zoom-pct" }, Math.round(zoom * 100) + "%")
+                                    ])
                                 ]),
 
-                                // Card display area — side by side in design mode
-                                designerState.designMode ?
-                                    m("div", { class: "cg2-dz-design-split" }, [
-                                        // Zone editor
-                                        m("div", {
-                                            class: "cg2-dz-edit-wrap",
-                                            style: { width: dim.width + "px", height: dim.height + "px" }
-                                        }, [
-                                            C().LAYOUT_ZONES.map(function(zn) {
-                                                let zone = workingLayout?.zones?.[zn];
-                                                return m(ZoneContainer, { zoneName: zn, zone: zone, key: zn });
-                                            })
-                                        ]),
-                                        // Live preview
-                                        m("div", { class: "cg2-dz-live-preview" }, [
-                                            m("div", { class: "cg2-dz-live-label" }, "Live Preview"),
+                                // Card display area — zoomed
+                                m("div", {
+                                    class: "cg2-dz-zoom-wrap",
+                                    style: { transform: "scale(" + zoom + ")", marginBottom: Math.round((zoom - 1) * dim.height) + "px" }
+                                }, [
+                                    // Side by side in design mode
+                                    designerState.designMode ?
+                                        m("div", { class: "cg2-dz-design-split" }, [
+                                            // Zone editor
                                             m("div", {
-                                                class: "cg2-dz-preview-wrap",
+                                                class: "cg2-dz-edit-wrap",
                                                 style: { width: dim.width + "px", height: dim.height + "px" }
-                                            },
-                                                m(LR().LayoutCardFace, {
-                                                    card: sampleCard,
-                                                    deck: deck,
-                                                    sizeKey: designerState.sizeKey,
-                                                    layoutConfig: workingLayout,
-                                                    bgImage: deck.cardFrontImageUrl || null,
-                                                    compact: designerState.sizeKey === "_compact",
-                                                    mini: designerState.sizeKey === "_mini",
-                                                    full: designerState.sizeKey === "_full",
-                                                    noPreview: true
+                                            }, [
+                                                C().LAYOUT_ZONES.map(function(zn) {
+                                                    let zone = workingLayout?.zones?.[zn];
+                                                    return m(ZoneContainer, { zoneName: zn, zone: zone, key: zn });
                                                 })
-                                            )
-                                        ])
-                                    ]) :
-                                    // Preview-only mode: single card
-                                    m("div", {
-                                        class: "cg2-dz-preview-wrap",
-                                        style: { width: dim.width + "px", height: dim.height + "px" }
-                                    },
-                                        m(LR().LayoutCardFace, {
-                                            card: sampleCard,
-                                            deck: deck,
-                                            sizeKey: designerState.sizeKey,
-                                            layoutConfig: workingLayout,
-                                            bgImage: deck.cardFrontImageUrl || null,
-                                            compact: designerState.sizeKey === "_compact",
-                                            mini: designerState.sizeKey === "_mini",
-                                            full: designerState.sizeKey === "_full",
-                                            noPreview: true
-                                        })
-                                    ),
+                                            ]),
+                                            // Live preview
+                                            m("div", { class: "cg2-dz-live-preview" }, [
+                                                m("div", { class: "cg2-dz-live-label" }, "Live Preview"),
+                                                m("div", {
+                                                    class: "cg2-dz-preview-wrap",
+                                                    style: { width: dim.width + "px", height: dim.height + "px" }
+                                                }, renderCardFace())
+                                            ])
+                                        ]) :
+                                        // Preview-only mode: single card
+                                        m("div", {
+                                            class: "cg2-dz-preview-wrap",
+                                            style: { width: dim.width + "px", height: dim.height + "px" }
+                                        }, renderCardFace())
+                                ]),
 
-                                // Sample card selector
+                                // Card type prev/next (cycles through types, one card per type)
                                 m("div", { class: "cg2-dz-card-picker" }, [
-                                    m("span", { style: { fontSize: "11px", color: "#888" } }, "Preview card:"),
                                     m("button", {
                                         class: "cg2-btn cg2-btn-sm",
+                                        disabled: typeList.length < 2,
                                         onclick: function() {
-                                            designerState.previewCardIndex = Math.max(0, designerState.previewCardIndex - 1);
+                                            let idx = typeList.indexOf(designerState.cardType);
+                                            let prev = (idx - 1 + typeList.length) % typeList.length;
+                                            designerState.cardType = typeList[prev];
+                                            loadWorkingLayout(deck);
                                             m.redraw();
                                         }
                                     }, "\u25C0"),
-                                    m("span", { style: { fontSize: "11px", fontWeight: 600 } }, sampleCard.name || "Sample"),
+                                    m("span", { style: { fontSize: "11px", fontWeight: 600, minWidth: "100px", textAlign: "center" } }, [
+                                        m("span", {
+                                            class: "material-symbols-outlined",
+                                            style: { fontSize: "12px", marginRight: "4px", verticalAlign: "middle", color: (types[designerState.cardType] || {}).color || "#888" }
+                                        }, (types[designerState.cardType] || {}).icon || "help"),
+                                        sampleCard.name || ("Sample " + designerState.cardType)
+                                    ]),
                                     m("button", {
                                         class: "cg2-btn cg2-btn-sm",
+                                        disabled: typeList.length < 2,
                                         onclick: function() {
-                                            designerState.previewCardIndex++;
+                                            let idx = typeList.indexOf(designerState.cardType);
+                                            let next = (idx + 1) % typeList.length;
+                                            designerState.cardType = typeList[next];
+                                            loadWorkingLayout(deck);
                                             m.redraw();
                                         }
                                     }, "\u25B6")

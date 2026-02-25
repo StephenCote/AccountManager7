@@ -333,6 +333,13 @@
     margin-top: 0;
     flex: 1;
 }
+/* Layout renderer: no padding so background image fills edge-to-edge */
+.cg2-card-front .cg2-layout-body {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: calc(var(--card-stack-top) + 2px) calc(var(--card-stack-right) + 2px) 4px 4px;
+}
 .cg2-card-name {
     font-size: 14px; font-weight: 800;
     text-align: center;
@@ -444,8 +451,18 @@
     margin-bottom: 4px;
     background: linear-gradient(135deg, #2a2a3a 0%, #1a1a2e 100%);  /* Solid bg prevents card bg bleeding through */
 }
+/* Layout renderer: image fills its zone completely */
+.cg2-layout-body .cg2-card-image-area {
+    flex: 1 1 100%;
+    min-height: 0;
+    margin-bottom: 0;
+    border-radius: 0;
+}
 .cg2-card-img {
     width: 100%; height: 100%; object-fit: cover; border-radius: 6px;
+}
+.cg2-layout-body .cg2-card-img {
+    border-radius: 0;
 }
 .cg2-placeholder-icon {
     font-size: 56px !important; opacity: 0.35;
@@ -7008,8 +7025,32 @@
     color: #B8860B;
     text-transform: uppercase;
     letter-spacing: 1px;
-    margin-bottom: 6px;
+    height: 0; /* Collapse so it doesn't push card out of alignment */
+    overflow: visible;
+    margin-top: -16px; /* Float above the card */
+    margin-bottom: 4px;
     font-weight: 600;
+}
+/* Zoom wrapper scales the card area */
+.cg2-dz-zoom-wrap {
+    transform-origin: top center;
+}
+.cg2-dz-zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #888;
+}
+.cg2-dz-zoom-controls input[type="range"] {
+    width: 80px;
+    accent-color: #B8860B;
+}
+.cg2-dz-zoom-pct {
+    min-width: 32px;
+    text-align: center;
+    font-weight: 600;
+    color: #B8860B;
 }
 .cg2-dz-preview-wrap,
 .cg2-dz-edit-wrap {
