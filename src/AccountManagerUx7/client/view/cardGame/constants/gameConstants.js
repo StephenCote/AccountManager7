@@ -465,6 +465,37 @@
         }
     }
 
+    // ── Card Print Sizes ────────────────────────────────────────────
+    const CARD_SIZES = {
+        poker:   { label: "Poker (2.5\u00d73.5\")",   w: 2.5,  h: 3.5,  dpi: 300, px: [750, 1050] },
+        bridge:  { label: "Bridge (2.25\u00d73.5\")",  w: 2.25, h: 3.5,  dpi: 300, px: [675, 1050] },
+        tarot:   { label: "Tarot (2.75\u00d74.75\")",  w: 2.75, h: 4.75, dpi: 300, px: [825, 1425] },
+        mini:    { label: "Mini (1.75\u00d72.5\")",    w: 1.75, h: 2.5,  dpi: 300, px: [525, 750]  },
+        custom:  { label: "Custom",                     w: 2.5,  h: 3.5,  dpi: 300, px: [750, 1050] }
+    };
+
+    // ── Layout Designer Constants ────────────────────────────────────
+    const DEFAULT_LAYOUT_VERSION = 1;
+
+    // Zone definitions — vertical regions of a card
+    const LAYOUT_ZONES = ["header", "image", "stats", "details", "footer"];
+
+    // Element types available in the designer
+    const LAYOUT_ELEMENT_TYPES = {
+        stackBorder: { label: "Stack Border", icon: "view_agenda",    canAdd: false },
+        image:       { label: "Image",        icon: "image",          canAdd: false },
+        label:       { label: "Label",        icon: "text_fields",    canAdd: true  },
+        statRow:     { label: "Stat Row",     icon: "analytics",      canAdd: true  },
+        needBar:     { label: "Need Bar",     icon: "battery_full",   canAdd: true  },
+        iconDetail:  { label: "Icon Detail",  icon: "info",           canAdd: true  },
+        icon:        { label: "Icon",         icon: "emoji_symbols",  canAdd: true  },
+        cornerIcon:  { label: "Corner Icon",  icon: "picture_in_picture", canAdd: false },
+        divider:     { label: "Divider",      icon: "horizontal_rule", canAdd: true },
+        rarity:      { label: "Rarity Stars", icon: "star",           canAdd: true  },
+        emoji:       { label: "Emoji",        icon: "add_reaction",   canAdd: true  },
+        custom:      { label: "Custom Text",  icon: "edit_note",      canAdd: true  }
+    };
+
     // ── Stat Descriptions ────────────────────────────────────────────
     const STAT_DESCRIPTIONS = {
         STR: "Strength \u2014 melee damage",
@@ -492,6 +523,10 @@
         COMMON_ACTIONS,
         ACTION_ART_PROMPTS,
         STAT_DESCRIPTIONS,
+        CARD_SIZES,
+        DEFAULT_LAYOUT_VERSION,
+        LAYOUT_ZONES,
+        LAYOUT_ELEMENT_TYPES,
         loadActionDefinitions
     };
 

@@ -24,6 +24,8 @@
     "express": "^4.17.3",
     "express-session": "^1.17.2",
     "file-icon-vectors": "^1.0.0",
+    "html2canvas": "^1.4.1",
+    "jszip": "^3.10.1",
     "material-icons": "^1.13.14",
     "material-symbols": "^0.28.2",
     "mithril": "^2.2.8",
