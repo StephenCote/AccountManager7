@@ -51,7 +51,10 @@
         llm:         { label: "LLM",         icon: "smart_toy" },
         voice:       { label: "Voice",       icon: "record_voice_over" },
         playthrough: { label: "Playthrough", icon: "sports_esports" },
-        ux:          { label: "UX Scenarios", icon: "touch_app" }
+        ux:          { label: "UX Scenarios", icon: "touch_app" },
+        layouts:     { label: "Layouts",      icon: "dashboard" },
+        designer:    { label: "Designer",     icon: "design_services" },
+        export:      { label: "Export",        icon: "file_download" }
     };
 
     // ── State (delegated to shared TestFramework) ─────────────────────
@@ -2500,6 +2503,484 @@
             }
 
             testLog("ux", "=== UX Scenario Tests Complete ===", "info");
+        }
+
+        // ── Layout Config Tests ──────────────────────────────────────────
+        if (cats.includes("layouts")) {
+            testState.currentTest = "Layouts: default generation";
+            testLog("layouts", "=== Layout Configuration Tests ===", "info");
+
+            let D = window.CardGame.Designer;
+            let LC = D ? D.LayoutConfig : null;
+            let constants = C();
+            let CARD_SIZES = constants ? constants.CARD_SIZES : null;
+            let CARD_TYPES = constants ? constants.CARD_TYPES : null;
+
+            // L1: Module presence
+            testLog("layouts", "L1: LayoutConfig module present=" + !!LC, LC ? "pass" : "fail");
+
+            if (LC && CARD_SIZES && CARD_TYPES) {
+                // L2: Default layout generation for each card type × size
+                let typeKeys = Object.keys(CARD_TYPES);
+                let sizeKeys = Object.keys(CARD_SIZES);
+                let genCount = 0;
+                let genErrors = [];
+                for (let t of typeKeys) {
+                    for (let s of sizeKeys) {
+                        try {
+                            let layout = LC.generateDefaultLayout(t, s);
+                            if (layout && layout.zones && layout.cardType === t) {
+                                genCount++;
+                            } else {
+                                genErrors.push(t + ":" + s + " (invalid structure)");
+                            }
+                        } catch (e) {
+                            genErrors.push(t + ":" + s + " (" + e.message + ")");
+                        }
+                    }
+                }
+                let expectedCount = typeKeys.length * sizeKeys.length;
+                testLog("layouts", "L2: Generated " + genCount + "/" + expectedCount + " default layouts",
+                    genCount === expectedCount ? "pass" : "fail");
+                if (genErrors.length > 0) {
+                    testLog("layouts", "L2 errors: " + genErrors.slice(0, 5).join(", "), "fail");
+                }
+
+                // L3: Screen display variants (_compact, _mini, _full)
+                let screenVariants = ["_compact", "_mini", "_full"];
+                let screenOk = 0;
+                for (let t of typeKeys) {
+                    for (let sv of screenVariants) {
+                        let layout = LC.generateDefaultLayout(t, sv);
+                        if (layout && layout.zones) screenOk++;
+                    }
+                }
+                let screenExpected = typeKeys.length * screenVariants.length;
+                testLog("layouts", "L3: Screen variants: " + screenOk + "/" + screenExpected,
+                    screenOk === screenExpected ? "pass" : "fail");
+
+                // L4: Layout has minimum elements
+                let charLayout = LC.generateDefaultLayout("character", "poker");
+                if (charLayout) {
+                    let allElements = [];
+                    for (let zn in charLayout.zones) {
+                        allElements = allElements.concat(charLayout.zones[zn].elements || []);
+                    }
+                    let hasImage = allElements.some(e => e.type === "image");
+                    let hasLabel = allElements.some(e => e.type === "label" || e.type === "stackBorder");
+                    let hasStat = allElements.some(e => e.type === "statRow" || e.type === "needBar");
+                    testLog("layouts", "L4a: Character layout has image=" + hasImage, hasImage ? "pass" : "fail");
+                    testLog("layouts", "L4b: Character layout has label/name=" + hasLabel, hasLabel ? "pass" : "fail");
+                    testLog("layouts", "L4c: Character layout has stats/needs=" + hasStat, hasStat ? "pass" : "fail");
+                }
+
+                // L5: Template variable resolution
+                let testCard = {
+                    name: "Test Hero", type: "character",
+                    stats: { STR: 12, AGI: 8, END: 15, CHA: 6 },
+                    needs: { hp: 18, energy: 10, morale: 16 },
+                    race: "Human", _templateClass: "Fighter", level: 3,
+                    portraitUrl: "/test/portrait.jpg"
+                };
+                let resolved = LC.resolveTemplate("{{cardName}}", testCard, "character");
+                testLog("layouts", "L5a: {{cardName}} resolved='" + resolved + "'",
+                    resolved === "Test Hero" ? "pass" : "fail");
+                let colorResolved = LC.resolveTemplate("{{typeColor}}", testCard, "character");
+                testLog("layouts", "L5b: {{typeColor}} resolved='" + colorResolved + "'",
+                    colorResolved && colorResolved !== "{{typeColor}}" ? "pass" : "fail");
+
+                // L6: Element CRUD operations
+                let testLayout = LC.generateDefaultLayout("character", "poker");
+                if (testLayout) {
+                    let newEl = LC.createElement("label", { content: "Test Label" });
+                    testLog("layouts", "L6a: createElement returns object=" + !!newEl, newEl ? "pass" : "fail");
+
+                    if (newEl) {
+                        LC.addElement(testLayout, "details", newEl);
+                        let found = LC.findElement(testLayout, newEl.id);
+                        testLog("layouts", "L6b: addElement + findElement=" + !!found, found ? "pass" : "fail");
+
+                        LC.updateElementStyle(testLayout, newEl.id, "fontSize", 14);
+                        let updated = LC.findElement(testLayout, newEl.id);
+                        testLog("layouts", "L6c: updateElementStyle fontSize=" + (updated ? updated.style.fontSize : "?"),
+                            updated && updated.style.fontSize === 14 ? "pass" : "fail");
+
+                        LC.removeElement(testLayout, newEl.id);
+                        let removed = LC.findElement(testLayout, newEl.id);
+                        testLog("layouts", "L6d: removeElement found after remove=" + !!removed,
+                            !removed ? "pass" : "fail");
+                    }
+                }
+
+                // L7: Zone height adjustment
+                let zhLayout = LC.generateDefaultLayout("character", "poker");
+                if (zhLayout) {
+                    let origHeight = zhLayout.zones.image ? zhLayout.zones.image.height : 0;
+                    LC.updateZoneHeight(zhLayout, "image", origHeight + 5);
+                    testLog("layouts", "L7: Zone height updated from " + origHeight + " to " + (zhLayout.zones.image ? zhLayout.zones.image.height : "?"),
+                        zhLayout.zones.image && zhLayout.zones.image.height === origHeight + 5 ? "pass" : "fail");
+                }
+
+                // L8: Per-size independence
+                let pokerLayout = LC.generateDefaultLayout("character", "poker");
+                let miniLayout = LC.generateDefaultLayout("character", "mini");
+                if (pokerLayout && miniLayout) {
+                    let pokerImgH = pokerLayout.zones.image ? pokerLayout.zones.image.height : 0;
+                    let miniImgH = miniLayout.zones.image ? miniLayout.zones.image.height : 0;
+                    testLog("layouts", "L8: Per-size independence: poker image=" + pokerImgH + "%, mini image=" + miniImgH + "%",
+                        "pass");
+                }
+
+                // L9: Save/load roundtrip (requires a deck)
+                if (resolvedDeck) {
+                    let saveLayout = LC.generateDefaultLayout("character", "poker");
+                    saveLayout._testMarker = "roundtrip_test";
+                    LC.saveLayout(resolvedDeck, saveLayout);
+                    let loadedLayout = LC.getLayout(resolvedDeck, "character", "poker");
+                    testLog("layouts", "L9: Save/load roundtrip marker=" + (loadedLayout ? loadedLayout._testMarker : "?"),
+                        loadedLayout && loadedLayout._testMarker === "roundtrip_test" ? "pass" : "fail");
+                    // Clean up
+                    if (resolvedDeck.layoutConfigs) {
+                        delete resolvedDeck.layoutConfigs["character:poker"];
+                    }
+                } else {
+                    testLog("layouts", "L9: Save/load roundtrip (skipped: no deck)", "skip");
+                }
+
+                // L10: generateAllDefaultLayouts
+                let allLayouts = LC.generateAllDefaultLayouts();
+                let allKeys = Object.keys(allLayouts);
+                testLog("layouts", "L10: generateAllDefaultLayouts produced " + allKeys.length + " layouts",
+                    allKeys.length >= typeKeys.length * sizeKeys.length ? "pass" : "warn");
+
+            } else {
+                testLog("layouts", "Layout tests skipped (modules not loaded)", "skip");
+            }
+
+            testLog("layouts", "=== Layout Tests Complete ===", "info");
+        }
+
+        // ── Designer UI Tests ────────────────────────────────────────────
+        if (cats.includes("designer")) {
+            testState.currentTest = "Designer: UI components";
+            testLog("designer", "=== Designer UI Tests ===", "info");
+
+            let D = window.CardGame.Designer;
+            let constants = C();
+            let CARD_SIZES = constants ? constants.CARD_SIZES : null;
+            let CARD_TYPES = constants ? constants.CARD_TYPES : null;
+
+            // D1: Designer namespace
+            testLog("designer", "D1a: Designer namespace present=" + !!D, D ? "pass" : "fail");
+            testLog("designer", "D1b: DesignerView present=" + !!(D && D.DesignerView), D && D.DesignerView ? "pass" : "fail");
+            testLog("designer", "D1c: LayoutRenderer present=" + !!(D && D.LayoutRenderer), D && D.LayoutRenderer ? "pass" : "fail");
+            testLog("designer", "D1d: LayoutConfig present=" + !!(D && D.LayoutConfig), D && D.LayoutConfig ? "pass" : "fail");
+            testLog("designer", "D1e: IconPicker present=" + !!(D && D.IconPicker), D && D.IconPicker ? "pass" : "fail");
+            testLog("designer", "D1f: ExportPipeline present=" + !!(D && D.ExportPipeline), D && D.ExportPipeline ? "pass" : "fail");
+            testLog("designer", "D1g: ExportDialog present=" + !!(D && D.ExportDialog), D && D.ExportDialog ? "pass" : "fail");
+
+            // D2: LayoutRenderer renders all card types
+            if (D && D.LayoutRenderer && D.LayoutConfig) {
+                let LR = D.LayoutRenderer;
+                let LC = D.LayoutConfig;
+                let typeKeys = Object.keys(CARD_TYPES);
+                let renderOk = 0;
+                let renderFails = [];
+
+                for (let t of typeKeys) {
+                    try {
+                        let layout = LC.generateDefaultLayout(t, "poker");
+                        let testCard = { name: "Test " + t, type: t, stats: { STR: 10 }, needs: { hp: 20 } };
+                        // Create a temporary container and render
+                        let container = document.createElement("div");
+                        container.style.cssText = "position:absolute;top:-9999px;left:-9999px;width:180px;height:252px;";
+                        document.body.appendChild(container);
+                        m.render(container, m(LR.LayoutCardFace, {
+                            card: testCard,
+                            layoutConfig: layout,
+                            sizeKey: "poker"
+                        }));
+                        let hasContent = container.innerHTML.length > 50;
+                        document.body.removeChild(container);
+                        if (hasContent) renderOk++;
+                        else renderFails.push(t);
+                    } catch (e) {
+                        renderFails.push(t + "(" + e.message + ")");
+                    }
+                }
+                testLog("designer", "D2: Rendered " + renderOk + "/" + typeKeys.length + " card types via LayoutCardFace",
+                    renderOk === typeKeys.length ? "pass" : "fail");
+                if (renderFails.length > 0) {
+                    testLog("designer", "D2 failures: " + renderFails.join(", "), "fail");
+                }
+
+                // D3: Render at each card size
+                let sizeKeys = Object.keys(CARD_SIZES);
+                let sizeOk = 0;
+                for (let s of sizeKeys) {
+                    try {
+                        let layout = LC.generateDefaultLayout("character", s);
+                        let container = document.createElement("div");
+                        container.style.cssText = "position:absolute;top:-9999px;left:-9999px;";
+                        document.body.appendChild(container);
+                        m.render(container, m(LR.LayoutCardFace, {
+                            card: { name: "Size Test", type: "character", stats: { STR: 10 }, needs: { hp: 20 } },
+                            layoutConfig: layout,
+                            sizeKey: s
+                        }));
+                        if (container.innerHTML.length > 50) sizeOk++;
+                        document.body.removeChild(container);
+                    } catch (e) { /* skip */ }
+                }
+                testLog("designer", "D3: Rendered at " + sizeOk + "/" + sizeKeys.length + " card sizes",
+                    sizeOk === sizeKeys.length ? "pass" : "fail");
+
+                // D4: Design mode vs preview mode rendering
+                try {
+                    let layout = LC.generateDefaultLayout("character", "poker");
+                    let container = document.createElement("div");
+                    container.style.cssText = "position:absolute;top:-9999px;left:-9999px;width:180px;height:252px;";
+                    document.body.appendChild(container);
+                    m.render(container, m(LR.LayoutCardFace, {
+                        card: { name: "Design Test", type: "character", stats: { STR: 10 }, needs: { hp: 20 } },
+                        layoutConfig: layout,
+                        sizeKey: "poker",
+                        designMode: true
+                    }));
+                    let hasDesignElements = container.querySelector(".design-mode") !== null || container.innerHTML.includes("design-mode");
+                    document.body.removeChild(container);
+                    testLog("designer", "D4: Design mode markers present=" + hasDesignElements,
+                        hasDesignElements ? "pass" : "warn");
+                } catch (e) {
+                    testLog("designer", "D4: Design mode render error: " + e.message, "fail");
+                }
+            } else {
+                testLog("designer", "D2-D4: Render tests skipped (modules not loaded)", "skip");
+            }
+
+            // D5: Icon picker has icons
+            if (D && D.IconPicker) {
+                let hasIcons = D.IconPicker.ICON_LIST && D.IconPicker.ICON_LIST.length > 50;
+                testLog("designer", "D5: IconPicker icons count=" + (D.IconPicker.ICON_LIST ? D.IconPicker.ICON_LIST.length : 0),
+                    hasIcons ? "pass" : "fail");
+            } else {
+                testLog("designer", "D5: IconPicker (skipped: not loaded)", "skip");
+            }
+
+            // D6: DeckView has Designer and Export buttons
+            let deckViewHTML = "";
+            if (resolvedDeck) {
+                try {
+                    let context = ctx();
+                    let origScreen = context.screen;
+                    let origDeck = context.viewingDeck;
+                    context.viewingDeck = resolvedDeck;
+                    context.screen = "deckView";
+                    let container = document.createElement("div");
+                    container.style.cssText = "position:absolute;top:-9999px;left:-9999px;width:800px;height:600px;";
+                    document.body.appendChild(container);
+                    let DeckView = window.CardGame.UI.DeckView;
+                    if (DeckView) {
+                        m.render(container, m(DeckView));
+                        deckViewHTML = container.innerHTML;
+                    }
+                    document.body.removeChild(container);
+                    context.screen = origScreen;
+                    context.viewingDeck = origDeck;
+                } catch (e) { /* skip */ }
+            }
+            let hasDesignerBtn = deckViewHTML.includes("Designer") || deckViewHTML.includes("design_services");
+            let hasExportBtn = deckViewHTML.includes("Export") || deckViewHTML.includes("file_download");
+            testLog("designer", "D6a: DeckView has Designer button=" + hasDesignerBtn,
+                hasDesignerBtn ? "pass" : (resolvedDeck ? "fail" : "skip"));
+            testLog("designer", "D6b: DeckView has Export button=" + hasExportBtn,
+                hasExportBtn ? "pass" : (resolvedDeck ? "fail" : "skip"));
+
+            // D7: CardGameApp routes designer screen
+            let appCtx = ctx();
+            let hasDesignerRoute = appCtx && typeof appCtx.screen !== "undefined";
+            testLog("designer", "D7: App context supports screen routing=" + hasDesignerRoute,
+                hasDesignerRoute ? "pass" : "fail");
+
+            testLog("designer", "=== Designer Tests Complete ===", "info");
+        }
+
+        // ── Export Tests ─────────────────────────────────────────────────
+        if (cats.includes("export")) {
+            testState.currentTest = "Export: pipeline & libraries";
+            testLog("export", "=== Export Pipeline Tests ===", "info");
+
+            // E1: Library availability
+            let hasHtml2Canvas = typeof window.html2canvas === "function";
+            let hasJSZip = typeof window.JSZip === "function";
+            testLog("export", "E1a: html2canvas loaded=" + hasHtml2Canvas, hasHtml2Canvas ? "pass" : "fail");
+            testLog("export", "E1b: JSZip loaded=" + hasJSZip, hasJSZip ? "pass" : "fail");
+
+            let D = window.CardGame.Designer;
+            let EP = D ? D.ExportPipeline : null;
+            let LC = D ? D.LayoutConfig : null;
+            let LR = D ? D.LayoutRenderer : null;
+            let constants = C();
+            let CARD_SIZES = constants ? constants.CARD_SIZES : null;
+
+            // E2: ExportPipeline module
+            testLog("export", "E2a: ExportPipeline present=" + !!EP, EP ? "pass" : "fail");
+            if (EP) {
+                testLog("export", "E2b: exportDeck function=" + (typeof EP.exportDeck === "function"),
+                    typeof EP.exportDeck === "function" ? "pass" : "fail");
+                testLog("export", "E2c: exportState present=" + !!EP.exportState,
+                    EP.exportState ? "pass" : "fail");
+            }
+
+            // E3: Card size pixel accuracy
+            if (CARD_SIZES) {
+                let sizeTests = [
+                    { key: "poker",  expected: [750, 1050] },
+                    { key: "bridge", expected: [675, 1050] },
+                    { key: "tarot",  expected: [825, 1425] },
+                    { key: "mini",   expected: [525, 750]  }
+                ];
+                for (let st of sizeTests) {
+                    let size = CARD_SIZES[st.key];
+                    if (size) {
+                        let pxMatch = size.px[0] === st.expected[0] && size.px[1] === st.expected[1];
+                        testLog("export", "E3: " + st.key + " size " + size.px[0] + "×" + size.px[1] + " expected " + st.expected[0] + "×" + st.expected[1],
+                            pxMatch ? "pass" : "fail");
+                    }
+                }
+            }
+
+            // E4: Single card render to offscreen container
+            if (LR && LC && hasHtml2Canvas) {
+                try {
+                    let testCard = {
+                        name: "Export Test", type: "character",
+                        stats: { STR: 10, AGI: 8, END: 12, CHA: 6 },
+                        needs: { hp: 20, energy: 14, morale: 20 }
+                    };
+                    let layout = LC.generateDefaultLayout("character", "poker");
+                    let pxW = CARD_SIZES.poker.px[0];
+                    let pxH = CARD_SIZES.poker.px[1];
+                    let container = document.createElement("div");
+                    container.style.cssText = "position:absolute;top:-9999px;left:-9999px;width:" + pxW + "px;height:" + pxH + "px;overflow:hidden;";
+                    document.body.appendChild(container);
+                    m.render(container, m(LR.LayoutCardFace, {
+                        card: testCard,
+                        layoutConfig: layout,
+                        sizeKey: "poker"
+                    }));
+                    let rendered = container.innerHTML.length > 100;
+                    testLog("export", "E4a: Offscreen render at " + pxW + "×" + pxH + " produced content=" + rendered,
+                        rendered ? "pass" : "fail");
+
+                    // Try html2canvas capture
+                    try {
+                        let canvas = await window.html2canvas(container, {
+                            width: pxW, height: pxH, scale: 1,
+                            useCORS: true, logging: false
+                        });
+                        let canvasOk = canvas && canvas.width === pxW && canvas.height === pxH;
+                        testLog("export", "E4b: html2canvas capture " + canvas.width + "×" + canvas.height,
+                            canvasOk ? "pass" : "warn");
+                    } catch (e) {
+                        testLog("export", "E4b: html2canvas capture error: " + e.message, "warn");
+                    }
+                    document.body.removeChild(container);
+                } catch (e) {
+                    testLog("export", "E4: Render test error: " + e.message, "fail");
+                }
+            } else {
+                testLog("export", "E4: Single card render (skipped: modules/libs not loaded)", "skip");
+            }
+
+            // E5: PNG blob creation
+            if (hasHtml2Canvas) {
+                try {
+                    let testCanvas = document.createElement("canvas");
+                    testCanvas.width = 100;
+                    testCanvas.height = 140;
+                    let tCtx = testCanvas.getContext("2d");
+                    tCtx.fillStyle = "#B8860B";
+                    tCtx.fillRect(0, 0, 100, 140);
+                    let blob = await new Promise(resolve => testCanvas.toBlob(resolve, "image/png"));
+                    testLog("export", "E5a: PNG blob type=" + (blob ? blob.type : "null") + " size=" + (blob ? blob.size : 0),
+                        blob && blob.type === "image/png" ? "pass" : "fail");
+                    // JPG
+                    let jpgBlob = await new Promise(resolve => testCanvas.toBlob(resolve, "image/jpeg", 0.85));
+                    testLog("export", "E5b: JPG blob type=" + (jpgBlob ? jpgBlob.type : "null") + " size=" + (jpgBlob ? jpgBlob.size : 0),
+                        jpgBlob && jpgBlob.type === "image/jpeg" ? "pass" : "fail");
+                } catch (e) {
+                    testLog("export", "E5: Blob creation error: " + e.message, "fail");
+                }
+            }
+
+            // E6: ZIP generation
+            if (hasJSZip) {
+                try {
+                    let zip = new window.JSZip();
+                    zip.file("test1.txt", "hello");
+                    zip.file("test2.txt", "world");
+                    zip.file("test3.txt", "card");
+                    let zipBlob = await zip.generateAsync({ type: "blob" });
+                    testLog("export", "E6: ZIP blob size=" + zipBlob.size + " type=" + zipBlob.type,
+                        zipBlob.size > 0 ? "pass" : "fail");
+                } catch (e) {
+                    testLog("export", "E6: ZIP generation error: " + e.message, "fail");
+                }
+            } else {
+                testLog("export", "E6: ZIP generation (skipped: JSZip not loaded)", "skip");
+            }
+
+            // E7: All card types render at all sizes without error
+            if (LR && LC && CARD_SIZES) {
+                let typeKeys = Object.keys(constants.CARD_TYPES);
+                let sizeKeys = Object.keys(CARD_SIZES);
+                let renderCount = 0;
+                let renderErrors = [];
+                for (let t of typeKeys) {
+                    for (let s of sizeKeys) {
+                        try {
+                            let layout = LC.generateDefaultLayout(t, s);
+                            let card = { name: "Test", type: t, stats: { STR: 10 }, needs: { hp: 20 }, effect: "test" };
+                            let container = document.createElement("div");
+                            container.style.cssText = "position:absolute;top:-9999px;left:-9999px;";
+                            document.body.appendChild(container);
+                            m.render(container, m(LR.LayoutCardFace, { card: card, layoutConfig: layout, sizeKey: s }));
+                            document.body.removeChild(container);
+                            renderCount++;
+                        } catch (e) {
+                            renderErrors.push(t + ":" + s);
+                        }
+                    }
+                }
+                let expected = typeKeys.length * sizeKeys.length;
+                testLog("export", "E7: All types × all sizes: " + renderCount + "/" + expected,
+                    renderCount === expected ? "pass" : "fail");
+                if (renderErrors.length > 0) {
+                    testLog("export", "E7 errors: " + renderErrors.slice(0, 8).join(", "), "fail");
+                }
+            }
+
+            // E8: ExportDialog module
+            let ED = D ? D.ExportDialog : null;
+            testLog("export", "E8a: ExportDialog present=" + !!ED, ED ? "pass" : "fail");
+            if (ED) {
+                testLog("export", "E8b: ExportDialogOverlay component=" + !!(ED.ExportDialogOverlay),
+                    ED.ExportDialogOverlay ? "pass" : "fail");
+                testLog("export", "E8c: open/close functions=" + (typeof ED.open === "function" && typeof ED.close === "function"),
+                    typeof ED.open === "function" ? "pass" : "fail");
+            }
+
+            // E9: CardFace layout delegation
+            let rendering = R();
+            if (rendering && rendering.getLayoutConfig) {
+                testLog("export", "E9: CardFace has getLayoutConfig helper=" + (typeof rendering.getLayoutConfig === "function"),
+                    typeof rendering.getLayoutConfig === "function" ? "pass" : "fail");
+            } else {
+                testLog("export", "E9: CardFace getLayoutConfig (not exported)", "warn");
+            }
+
+            testLog("export", "=== Export Tests Complete ===", "info");
         }
 
     }

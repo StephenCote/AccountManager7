@@ -9,7 +9,7 @@
     // All modules access shared state through NS.ctx
     let ctx = NS.ctx = {
         // Screen routing
-        screen: "deckList",    // "deckList" | "builder" | "deckView" | "game" | "test" | "themeEditor"
+        screen: "deckList",    // "deckList" | "builder" | "deckView" | "game" | "test" | "themeEditor" | "designer"
         builderStep: 1,        // 1=theme, 2=character, 3=review/build
         fullMode: false,
 
@@ -33,7 +33,10 @@
 
         // Test state
         testDeck: null,
-        testDeckName: null
+        testDeckName: null,
+
+        // Designer state
+        designerDeck: null
     };
 
     // ── State Proxies ────────────────────────────────────────────────
@@ -145,6 +148,7 @@
             let GameView = NS.UI.GameView;
             let TestModeUI = NS.TestMode ? NS.TestMode.TestModeUI : null;
             let ThemeEditorUI = NS.Themes ? NS.Themes.ThemeEditorUI : null;
+            let DesignerView = NS.Designer ? NS.Designer.DesignerView : null;
 
             return m("div", { class: "content-outer" }, [
                 ctx.fullMode ? "" : m(page.components.navigation),
@@ -191,7 +195,8 @@
                         ctx.screen === "deckView" && DeckView ? m(DeckView) : null,
                         ctx.screen === "game" && GameView ? m(GameView) : null,
                         ctx.screen === "test" && TestModeUI ? m(TestModeUI) : null,
-                        ctx.screen === "themeEditor" && ThemeEditorUI ? m(ThemeEditorUI) : null
+                        ctx.screen === "themeEditor" && ThemeEditorUI ? m(ThemeEditorUI) : null,
+                        ctx.screen === "designer" && DesignerView ? m(DesignerView) : null
                     ])
                 ]),
                 page.components.dialog.loadDialog(),

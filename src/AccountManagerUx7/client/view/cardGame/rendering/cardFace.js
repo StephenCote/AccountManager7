@@ -467,12 +467,56 @@
         return false;
     }
 
+    // ── Layout-aware rendering helper ───────────────────────────────
+    // Check if a layout config exists for this card in the current deck context
+    function getLayoutConfig(card, attrs) {
+        let D = window.CardGame.Designer;
+        if (!D || !D.LayoutConfig) return null;
+
+        // Determine deck: explicit attr, or from viewing context
+        let deck = attrs.deck || (window.CardGame.ctx ? window.CardGame.ctx.viewingDeck : null);
+        // Also check game state for in-game rendering
+        if (!deck && window.CardGame.ctx && window.CardGame.ctx.gameState) {
+            deck = window.CardGame.ctx.gameState.deck;
+        }
+        if (!deck) return null;
+
+        // Determine size key based on rendering context
+        let sizeKey = attrs.sizeKey || "poker";
+        if (attrs.compact) sizeKey = "_compact";
+        else if (attrs.mini) sizeKey = "_mini";
+        else if (attrs.full) sizeKey = "_full";
+        else sizeKey = "poker"; // standard screen display uses poker layout
+
+        let layout = D.LayoutConfig.getLayout(deck, card.type, sizeKey);
+        return layout;
+    }
+
     // ── CardFace Component ───────────────────────────────────────────
     function CardFace() {
         return {
             view(vnode) {
                 let card = vnode.attrs.card;
                 if (!card || !card.type) return m("div.cg2-card.cg2-card-empty", "No card");
+
+                // Try layout-driven rendering first
+                let layoutConfig = getLayoutConfig(card, vnode.attrs);
+                if (layoutConfig && window.CardGame.Designer && window.CardGame.Designer.LayoutRenderer) {
+                    let LR = window.CardGame.Designer.LayoutRenderer;
+                    return m(LR.LayoutCardFace, {
+                        card: card,
+                        deck: vnode.attrs.deck,
+                        sizeKey: vnode.attrs.compact ? "_compact" : (vnode.attrs.mini ? "_mini" : (vnode.attrs.full ? "_full" : "poker")),
+                        layoutConfig: layoutConfig,
+                        bgImage: vnode.attrs.bgImage,
+                        compact: vnode.attrs.compact,
+                        mini: vnode.attrs.mini,
+                        full: vnode.attrs.full,
+                        noPreview: vnode.attrs.noPreview
+                    });
+                }
+
+                // ── Classic rendering fallback ──────────────────────────
                 let type = card.type;
                 let cfg = C.CARD_TYPES[type] || C.CARD_TYPES.item;
                 let compact = vnode.attrs.compact;
@@ -628,6 +672,7 @@
         renderCharacterBody, renderCharacterBackBody, renderCardBody,
         renderScenarioBody, renderLootBody,
         renderCompactStats, getCardStatLabel, isCardIncomplete,
+        getLayoutConfig,
         CardFace, CardBack, CardFlipContainer
     });
 })();

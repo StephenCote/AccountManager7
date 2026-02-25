@@ -260,6 +260,32 @@
                         }, [
                             m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "print"),
                             "Print / PDF"
+                        ]),
+                        m("button", {
+                            class: "cg2-btn cg2-btn-sm",
+                            style: { fontSize: "11px", marginLeft: "4px" },
+                            title: "Open card layout designer",
+                            onclick() {
+                                ctx.designerDeck = viewingDeck;
+                                ctx.screen = "designer";
+                                m.redraw();
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "design_services"),
+                            "Designer"
+                        ]),
+                        m("button", {
+                            class: "cg2-btn cg2-btn-sm",
+                            style: { fontSize: "11px", marginLeft: "4px" },
+                            title: "Export cards as images (ZIP)",
+                            onclick() {
+                                if (CardGame.Designer && CardGame.Designer.ExportDialog) {
+                                    CardGame.Designer.ExportDialog.open(viewingDeck);
+                                }
+                            }
+                        }, [
+                            m("span", { class: "material-symbols-outlined", style: { fontSize: "14px", verticalAlign: "middle", marginRight: "3px" } }, "file_download"),
+                            "Export"
                         ])
                     ]),
                     // SD Config panel (per-type)
@@ -912,6 +938,11 @@
                     ]),
                     m(R.ImagePreviewOverlay),
                     m(R.GalleryPickerOverlay),
+
+                    // Export dialog overlay
+                    CardGame.Designer && CardGame.Designer.ExportDialog
+                        ? m(CardGame.Designer.ExportDialog.ExportDialogOverlay, { deck: viewingDeck })
+                        : null,
 
                     // Printable instruction sheet — hidden on screen, visible in print
                     m(PrintRulesSheet, { deckName: viewingDeck.deckName })

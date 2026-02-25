@@ -13,6 +13,7 @@
         "/client/view/cardGame",
         "/client/view/cardGame/ai",
         "/client/view/cardGame/constants",
+        "/client/view/cardGame/designer",
         "/client/view/cardGame/engine",
         "/client/view/cardGame/rendering",
         "/client/view/cardGame/services",

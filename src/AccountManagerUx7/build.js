@@ -73,6 +73,12 @@ const jsFiles = [
     'client/view/cardGame/ui/gameOverUI.js',
     'client/view/cardGame/ui/gameView.js',
     'client/view/cardGame/test/testMode.js',
+    'client/view/cardGame/designer/layoutConfig.js',
+    'client/view/cardGame/designer/layoutRenderer.js',
+    'client/view/cardGame/designer/iconPicker.js',
+    'client/view/cardGame/designer/designerCanvas.js',
+    'client/view/cardGame/designer/exportPipeline.js',
+    'client/view/cardGame/designer/exportDialog.js',
     'client/view/cardGame/CardGameApp.js',
     'client/view/cardGame/index.js',
 

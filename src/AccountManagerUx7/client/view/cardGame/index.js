@@ -30,8 +30,14 @@
  *  25. ui/gameOverUI.js
  *  26. ui/gameView.js
  *  27. test/testMode.js
- *  28. CardGameApp.js
- *  29. index.js (this file)
+ *  28. designer/layoutConfig.js
+ *  29. designer/layoutRenderer.js
+ *  30. designer/iconPicker.js
+ *  31. designer/designerCanvas.js
+ *  32. designer/exportPipeline.js
+ *  33. designer/exportDialog.js
+ *  34. CardGameApp.js
+ *  35. index.js (this file)
  */
 (function() {
 
@@ -73,6 +79,12 @@
             `${base}/ui/gameOverUI.js`,
             `${base}/ui/gameView.js`,
             `${base}/test/testMode.js`,
+            `${base}/designer/layoutConfig.js`,
+            `${base}/designer/layoutRenderer.js`,
+            `${base}/designer/iconPicker.js`,
+            `${base}/designer/designerCanvas.js`,
+            `${base}/designer/exportPipeline.js`,
+            `${base}/designer/exportDialog.js`,
             `${base}/CardGameApp.js`,
             `${base}/index.js`
         ];
