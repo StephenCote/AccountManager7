@@ -38,7 +38,8 @@
       "Bash(\"c:/Projects/GitHub/AccountManager7/src/chatRefactor.md\":*)",
       "Read(//c/Projects/GitHub/**)",
       "WebFetch(domain:192.168.1.42)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(jar tf:*)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"
