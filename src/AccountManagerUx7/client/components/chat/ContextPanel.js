@@ -1,8 +1,11 @@
 /**
  * ContextPanel — Session context bindings display and management
  * Phase 10c: Shows chatConfig, promptConfig, characters, and generic context
- * object associated with the current chat session. Supports attach/detach
+ * objects associated with the current chat session. Supports attach/detach
  * via REST endpoints and drag-and-drop from dnd.workingSet.
+ *
+ * Phase 15: Multi-ref contextRefs support — multiple context objects and tags
+ * are persisted to chatRequest.contextRefs for automatic RAG injection.
  *
  * Resolves: OI-49 (generic object association API)
  *
@@ -48,7 +51,7 @@
 
     /**
      * Attach an object to the current session.
-     * @param {string} attachType - chatConfig, promptConfig, systemCharacter, userCharacter, context
+     * @param {string} attachType - chatConfig, promptConfig, systemCharacter, userCharacter, context, tag
      * @param {string} objectId - objectId of the object to attach
      * @param {string} [objectType] - required when attachType is 'context'
      */
@@ -77,19 +80,23 @@
 
     /**
      * Detach an object from the current session.
-     * @param {string} detachType - systemCharacter, userCharacter, context
+     * @param {string} detachType - systemCharacter, userCharacter, context, tag
+     * @param {string} [objectId] - specific objectId to remove from contextRefs
      */
-    async function detach(detachType) {
+    async function detach(detachType, objectId) {
         if (!_sessionId) return;
         try {
+            let body = {
+                sessionId: _sessionId,
+                detachType: detachType
+            };
+            if (objectId) body.objectId = objectId;
+
             await m.request({
                 method: 'POST',
                 url: g_application_path + "/rest/chat/context/detach",
                 withCredentials: true,
-                body: {
-                    sessionId: _sessionId,
-                    detachType: detachType
-                }
+                body: body
             });
             await loadContext(_sessionId);
             if (_onContextChange) _onContextChange(_contextData);
@@ -120,6 +127,8 @@
             attach("promptConfig", oid);
         } else if (schema === "olio.charPerson") {
             attach("systemCharacter", oid);
+        } else if (schema === "data.tag") {
+            attach("tag", oid);
         } else {
             attach("context", oid, schema);
         }
@@ -127,7 +136,6 @@
 
     // ── Mithril Views ──────────────────────────────────────────────────
 
-    // Phase 12: OI-54 — binding count for collapsed header badge
     function getBindingCount() {
         if (!_contextData) return 0;
         let count = 0;
@@ -135,11 +143,35 @@
         if (_contextData.promptConfig) count++;
         if (_contextData.systemCharacter) count++;
         if (_contextData.userCharacter) count++;
-        if (_contextData.context) count++;
+        /// Count contextRefs (replaces single context count)
+        if (_contextData.contextRefs && _contextData.contextRefs.length > 0) {
+            count += _contextData.contextRefs.length;
+        } else if (_contextData.context) {
+            count++;
+        }
         return count;
     }
 
-    // Phase 12: OI-55 — schema-type icon mapping
+    function refSchemaIcon(schema) {
+        if (!schema) return "link";
+        if (schema === "data.tag") return "label";
+        if (schema.indexOf("charPerson") !== -1) return "person";
+        if (schema.indexOf("chatRequest") !== -1) return "chat";
+        if (schema.indexOf("data.data") !== -1 || schema.indexOf("data.") === 0) return "description";
+        return "link";
+    }
+
+    function refSchemaLabel(schema) {
+        if (!schema) return "Object";
+        if (schema === "data.tag") return "Tag";
+        if (schema.indexOf("charPerson") !== -1) return "Character";
+        if (schema.indexOf("chatRequest") !== -1) return "Chat Session";
+        if (schema.indexOf("data.data") !== -1) return "Document";
+        // Shorten schema for display: "olio.narrative" -> "Narrative"
+        let parts = schema.split(".");
+        return parts[parts.length - 1].charAt(0).toUpperCase() + parts[parts.length - 1].slice(1);
+    }
+
     function schemaIcon(label) {
         if (label === "Config") return "settings";
         if (label === "Prompt") return "description";
@@ -147,7 +179,7 @@
         return "link";
     }
 
-    function contextRowView(label, data, detachType) {
+    function contextRowView(label, data, detachType, detachObjectId) {
         if (!data) return "";
         return m("div", { class: "flex items-center justify-between text-xs py-0.5" }, [
             m("span", { class: "flex items-center text-gray-400 truncate flex-1 min-w-0", title: data.name || data.objectId || "" }, [
@@ -159,9 +191,32 @@
                 title: "Detach " + label,
                 onclick: function(e) {
                     e.stopPropagation();
-                    detach(detachType);
+                    detach(detachType, detachObjectId);
                 }
             }, m("span", { class: "material-symbols-outlined", style: "font-size: 16px;" }, "link_off")) : ""
+        ]);
+    }
+
+    function contextRefRowView(ref) {
+        if (!ref) return "";
+        let icon = refSchemaIcon(ref.schema);
+        let label = refSchemaLabel(ref.schema);
+        let displayName = ref.name || ref.objectId || "\u2014";
+        let detachType = ref.schema === "data.tag" ? "tag" : "context";
+
+        return m("div", { class: "flex items-center justify-between text-xs py-0.5" }, [
+            m("span", { class: "flex items-center text-gray-400 truncate flex-1 min-w-0", title: ref.schema + " " + displayName }, [
+                m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 14px;" }, icon),
+                label + ": " + displayName
+            ]),
+            m("button", {
+                class: "menu-button ml-1 flex-shrink-0",
+                title: "Detach " + label,
+                onclick: function(e) {
+                    e.stopPropagation();
+                    detach(detachType, ref.objectId);
+                }
+            }, m("span", { class: "material-symbols-outlined", style: "font-size: 16px;" }, "link_off"))
         ]);
     }
 
@@ -191,7 +246,14 @@
         if (_contextData.userCharacter) {
             rows.push(contextRowView("User Char", _contextData.userCharacter, "userCharacter"));
         }
-        if (_contextData.context) {
+
+        /// Display persisted contextRefs (multi-ref: documents, tags, objects)
+        if (_contextData.contextRefs && _contextData.contextRefs.length > 0) {
+            for (let i = 0; i < _contextData.contextRefs.length; i++) {
+                rows.push(contextRefRowView(_contextData.contextRefs[i]));
+            }
+        } else if (_contextData.context) {
+            /// Fallback: display legacy single context
             let ctx = _contextData.context;
             let label = (ctx.type || "object");
             rows.push(contextRowView("Context (" + label + ")", ctx, "context"));
@@ -229,6 +291,11 @@
          * Get current context data.
          */
         getData: function() { return _contextData; },
+
+        /**
+         * Get current session ID.
+         */
+        getSessionId: function() { return _sessionId; },
 
         /**
          * Set callback for context changes.

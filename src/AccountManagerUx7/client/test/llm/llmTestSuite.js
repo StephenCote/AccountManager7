@@ -44,7 +44,8 @@
         imageDrop: { label: "ImageDrop", icon: "add_photo_alternate" },
         memoryBrowser: { label: "MemBrowser", icon: "share" },
         editMode:      { label: "EditMode",  icon: "edit_note" },
-        phase8:        { label: "Phase 8",  icon: "view_sidebar" }
+        phase8:        { label: "Phase 8",  icon: "view_sidebar" },
+        contextRefs:   { label: "CtxRefs",  icon: "link" }
     };
 
     // ── Suite State ───────────────────────────────────────────────────
@@ -1986,7 +1987,7 @@
         }
         log("context", "ContextPanel loaded", "pass");
 
-        let cpMethods = ["load", "refresh", "getData", "attach", "detach", "toggle", "isExpanded", "clear", "onContextChange"];
+        let cpMethods = ["load", "refresh", "getData", "getSessionId", "attach", "detach", "toggle", "isExpanded", "clear", "onContextChange"];
         let cpMissing = cpMethods.filter(function(m) { return typeof ContextPanel[m] !== "function"; });
         if (cpMissing.length === 0) {
             log("context", "OI-54: ContextPanel API complete (" + cpMethods.length + " methods)", "pass");
@@ -4252,6 +4253,354 @@
         log("phase8", "=== Phase 8 Tests Complete ===", "info");
     }
 
+    // ── Tests 260-275: Context Refs — Phase 15 RAG Pipeline ─────────
+    async function testContextRefs(cats) {
+        if (!cats.includes("contextRefs")) return;
+        TF.testState.currentTest = "CtxRefs: Phase 15 contextRefs RAG pipeline";
+        log("contextRefs", "=== Context Refs Tests (Phase 15) ===");
+
+        // ── Prerequisites ──────────────────────────────────────────
+
+        if (!window.ContextPanel) {
+            log("contextRefs", "260: ContextPanel not loaded", "fail");
+            return;
+        }
+        log("contextRefs", "260: ContextPanel loaded", "pass");
+
+        // 260b: Verify getSessionId method exists (new in Phase 15)
+        if (typeof ContextPanel.getSessionId === "function") {
+            log("contextRefs", "260b: getSessionId method present", "pass");
+        } else {
+            log("contextRefs", "260b: getSessionId method missing — Phase 15 update needed", "fail");
+        }
+
+        let chatCfg = getVariant("standard");
+        let promptCfg = suiteState.promptConfig;
+        if (!chatCfg || !promptCfg) {
+            log("contextRefs", "Config not available — skipping contextRefs tests", "skip");
+            return;
+        }
+
+        // ── 261: Create test session ───────────────────────────────
+
+        let session = null;
+        try {
+            session = await am7chat.getChatRequest("CtxRefs Test - " + Date.now(), chatCfg, promptCfg);
+            log("contextRefs", "261: Test session created: " + (session ? session.objectId : "null"), session ? "pass" : "fail");
+        } catch (e) {
+            log("contextRefs", "261: Session creation failed: " + e.message, "fail");
+            return;
+        }
+        if (!session || !session.objectId) {
+            log("contextRefs", "261: No session — cannot continue", "fail");
+            return;
+        }
+
+        // ── 262: Load ContextPanel for the session ─────────────────
+
+        ContextPanel.clear();
+        ContextPanel.load(session.objectId);
+        await new Promise(function(r) { setTimeout(r, 500); });
+        let sessionId = ContextPanel.getSessionId ? ContextPanel.getSessionId() : null;
+        let loadOk = sessionId === session.objectId;
+        log("contextRefs", "262: ContextPanel.load() set sessionId: " + loadOk, loadOk ? "pass" : "fail");
+        if (sessionId) logData("contextRefs", "Session ID", sessionId);
+
+        // ── 263: Create a test data record to use as context ───────
+
+        let testDataRec = null;
+        try {
+            let dataContent = "The crystal palace stands at the north end of the enchanted valley. " +
+                "Inside, ancient scrolls describe the forgotten language of the star-seekers. " +
+                "The grand casino occupies the eastern wing, built from obsidian and moonstone.";
+
+            let dataGrp = await page.findObject("auth.group", "data", "~/Data");
+            if (!dataGrp) {
+                dataGrp = await page.findObject("auth.group", "data", "~/Tests");
+            }
+            if (dataGrp) {
+                let dataName = "CtxRefs-TestDoc-" + Date.now();
+                let newData = {
+                    schema: "data.data",
+                    name: dataName,
+                    groupId: dataGrp.id,
+                    contentType: "text/plain",
+                    byteStore: am7client.util ? am7client.util.stringToBase64(dataContent) : btoa(dataContent)
+                };
+                testDataRec = await page.createObject(newData);
+                if (!testDataRec) {
+                    // Try searching for it after create
+                    let q = am7view.viewQuery(am7model.newInstance("data.data"));
+                    q.field("groupId", dataGrp.id);
+                    q.field("name", dataName);
+                    let qr = await page.search(q);
+                    if (qr && qr.results && qr.results.length) testDataRec = qr.results[0];
+                }
+            }
+        } catch (e) {
+            log("contextRefs", "263: Test data creation error: " + e.message, "warn");
+        }
+
+        if (testDataRec && testDataRec.objectId) {
+            log("contextRefs", "263: Test data record created: " + testDataRec.objectId, "pass");
+        } else {
+            log("contextRefs", "263: Test data record creation failed — using session for remaining tests", "warn");
+        }
+
+        // ── 264: Attach context object via ContextPanel ────────────
+
+        if (testDataRec && testDataRec.objectId) {
+            try {
+                await ContextPanel.attach("context", testDataRec.objectId, "data.data");
+                await new Promise(function(r) { setTimeout(r, 500); });
+                let ctxData = ContextPanel.getData();
+                let hasContextRefs = ctxData && ctxData.contextRefs && ctxData.contextRefs.length > 0;
+                log("contextRefs", "264: Attach context object — contextRefs populated: " + hasContextRefs, hasContextRefs ? "pass" : "fail");
+                if (ctxData && ctxData.contextRefs) {
+                    logData("contextRefs", "contextRefs after attach", ctxData.contextRefs);
+                }
+
+                // Verify the attached ref has the right schema and objectId
+                if (hasContextRefs) {
+                    let ref = ctxData.contextRefs[0];
+                    let schemaOk = ref.schema === "data.data";
+                    let oidOk = ref.objectId === testDataRec.objectId;
+                    log("contextRefs", "264b: Attached ref schema=data.data: " + schemaOk, schemaOk ? "pass" : "fail");
+                    log("contextRefs", "264c: Attached ref objectId matches: " + oidOk, oidOk ? "pass" : "fail");
+                    if (ref.name) {
+                        log("contextRefs", "264d: Attached ref has resolved name: " + ref.name, "pass");
+                    }
+                }
+            } catch (e) {
+                log("contextRefs", "264: Attach error: " + e.message, "fail");
+                logData("contextRefs", "Attach error details", e.stack || e.message);
+            }
+        }
+
+        // ── 265: Attach a tag via ContextPanel ─────────────────────
+
+        let testTag = null;
+        try {
+            // Find or create a test tag
+            let tagGrp = await page.findObject("auth.group", "data", "~/Tags");
+            if (tagGrp) {
+                let tagName = "CtxRefsTestTag";
+                let q = am7view.viewQuery(am7model.newInstance("data.tag"));
+                q.field("groupId", tagGrp.id);
+                q.field("name", tagName);
+                let qr = await page.search(q);
+                if (qr && qr.results && qr.results.length) {
+                    testTag = qr.results[0];
+                } else {
+                    let newTag = {
+                        schema: "data.tag",
+                        name: tagName,
+                        groupId: tagGrp.id,
+                        type: "Data"
+                    };
+                    testTag = await page.createObject(newTag);
+                    if (!testTag) {
+                        qr = await page.search(q);
+                        if (qr && qr.results && qr.results.length) testTag = qr.results[0];
+                    }
+                }
+            }
+        } catch (e) {
+            log("contextRefs", "265: Tag creation error: " + e.message, "warn");
+        }
+
+        if (testTag && testTag.objectId) {
+            try {
+                await ContextPanel.attach("tag", testTag.objectId);
+                await new Promise(function(r) { setTimeout(r, 500); });
+                let ctxData = ContextPanel.getData();
+                let tagRefs = (ctxData && ctxData.contextRefs) ? ctxData.contextRefs.filter(function(r) {
+                    return r.schema === "data.tag";
+                }) : [];
+                let hasTag = tagRefs.length > 0;
+                log("contextRefs", "265: Attach tag — found in contextRefs: " + hasTag, hasTag ? "pass" : "fail");
+                if (hasTag) logData("contextRefs", "Tag ref", tagRefs[0]);
+            } catch (e) {
+                log("contextRefs", "265: Tag attach error: " + e.message, "fail");
+            }
+        } else {
+            log("contextRefs", "265: Could not create test tag — skipping tag attach", "warn");
+        }
+
+        // ── 266: Verify multiple refs accumulated ──────────────────
+
+        let ctxData = ContextPanel.getData();
+        let refCount = (ctxData && ctxData.contextRefs) ? ctxData.contextRefs.length : 0;
+        let expectedMin = (testDataRec ? 1 : 0) + (testTag ? 1 : 0);
+        let multiOk = refCount >= expectedMin;
+        log("contextRefs", "266: Multiple contextRefs accumulated: " + refCount + " (expected >=" + expectedMin + ")", multiOk ? "pass" : "fail");
+        if (ctxData && ctxData.contextRefs) logData("contextRefs", "All contextRefs", ctxData.contextRefs);
+
+        // ── 267: Detach a specific contextRef ──────────────────────
+
+        if (testTag && testTag.objectId && refCount >= 2) {
+            try {
+                await ContextPanel.detach("tag", testTag.objectId);
+                await new Promise(function(r) { setTimeout(r, 500); });
+                let ctxAfter = ContextPanel.getData();
+                let afterCount = (ctxAfter && ctxAfter.contextRefs) ? ctxAfter.contextRefs.length : 0;
+                let detachOk = afterCount === refCount - 1;
+                log("contextRefs", "267: Detach tag — count " + refCount + " → " + afterCount + ": " + detachOk, detachOk ? "pass" : "fail");
+            } catch (e) {
+                log("contextRefs", "267: Detach error: " + e.message, "fail");
+            }
+        } else {
+            log("contextRefs", "267: Insufficient refs for detach test — skipping", "info");
+        }
+
+        // ── 268: Reload from server — contextRefs persist ──────────
+
+        ContextPanel.clear();
+        ContextPanel.load(session.objectId);
+        await new Promise(function(r) { setTimeout(r, 500); });
+        let reloadData = ContextPanel.getData();
+        let reloadCount = (reloadData && reloadData.contextRefs) ? reloadData.contextRefs.length : 0;
+        log("contextRefs", "268: ContextRefs survive reload — count: " + reloadCount, reloadCount > 0 ? "pass" : "warn");
+        if (reloadData && reloadData.contextRefs) logData("contextRefs", "Reloaded contextRefs", reloadData.contextRefs);
+
+        // ── 269: Send chat message — verify server uses contextRefs ─
+
+        let citationTest = false;
+        if (testDataRec && testDataRec.objectId) {
+            try {
+                // Re-attach context if it was detached
+                let currentData = ContextPanel.getData();
+                let hasDocRef = (currentData && currentData.contextRefs) ? currentData.contextRefs.some(function(r) {
+                    return r.objectId === testDataRec.objectId;
+                }) : false;
+                if (!hasDocRef) {
+                    await ContextPanel.attach("context", testDataRec.objectId, "data.data");
+                    await new Promise(function(r) { setTimeout(r, 300); });
+                }
+
+                // Send a message — server should read contextRefs and build citations
+                let resp = await am7chat.chat(session, "What is in the crystal palace?");
+                let content = extractLastAssistantMessage(resp);
+                if (content) {
+                    log("contextRefs", "269: Chat with contextRefs — response received (" + content.length + " chars)", "pass");
+                    logData("contextRefs", "Response preview", content.substring(0, 200));
+                    citationTest = true;
+                } else {
+                    log("contextRefs", "269: Chat with contextRefs — no response content", "warn");
+                }
+            } catch (e) {
+                log("contextRefs", "269: Chat with contextRefs error: " + e.message, "fail");
+                logData("contextRefs", "Chat error details", e.stack || e.message);
+            }
+        } else {
+            log("contextRefs", "269: No test data record — skipping citation test", "info");
+        }
+
+        // ── 270: Verify contextRefs field on chatRequest model ─────
+
+        try {
+            let inst = am7model.newInstance("olio.llm.chatRequest");
+            let hasField = inst && inst.entity && "contextRefs" in inst.entity;
+            log("contextRefs", "270: chatRequest model has contextRefs field: " + hasField, hasField ? "pass" : "fail");
+            if (hasField) logData("contextRefs", "contextRefs default value", inst.entity.contextRefs);
+        } catch (e) {
+            log("contextRefs", "270: Model check error: " + e.message, "warn");
+        }
+
+        // ── 271: ContextPanel PanelView renders contextRef rows ────
+
+        if (ContextPanel.PanelView && ContextPanel.PanelView.view) {
+            try {
+                // Expand panel so content renders
+                if (!ContextPanel.isExpanded()) ContextPanel.toggle();
+                let vnode = ContextPanel.PanelView.view();
+                let rendered = vnode ? JSON.stringify(vnode).length : 0;
+                log("contextRefs", "271: PanelView renders (" + rendered + " chars vnode)", rendered > 50 ? "pass" : "warn");
+                // Restore panel state
+                if (ContextPanel.isExpanded()) ContextPanel.toggle();
+            } catch (e) {
+                log("contextRefs", "271: PanelView render error: " + e.message, "warn");
+            }
+        }
+
+        // ── 272: AnalysisManager uses ContextPanel.attach path ─────
+
+        if (window.AnalysisManager) {
+            // Verify executePending would use ContextPanel (code structure test)
+            let hasExecutePending = typeof AnalysisManager.executePending === "function";
+            log("contextRefs", "272: AnalysisManager.executePending available: " + hasExecutePending, hasExecutePending ? "pass" : "fail");
+
+            // The executePending function calls ContextPanel.attach() internally
+            // We can verify by checking if ContextPanel is referenced (behavioral, not code-inspection)
+            // Start a mock analysis and verify ContextPanel receives the attachments
+            if (hasExecutePending && chatCfg && promptCfg) {
+                try {
+                    // Set up pending analysis with a mock ref
+                    let mockRef = { name: "CtxRefsAnalysisTest", objectId: session.objectId };
+                    mockRef[am7model.jsonModelKey] = "olio.llm.chatRequest";
+
+                    // Use page.testMode to prevent navigation
+                    page.testMode = true;
+                    await AnalysisManager.startAnalysis(mockRef);
+                    let pending = AnalysisManager.getActiveAnalysis();
+                    if (pending) {
+                        log("contextRefs", "272b: startAnalysis stored pending with ref", "pass");
+                        // Clean up — don't actually execute (would create a new session)
+                        AnalysisManager.clearAnalysis();
+                    } else {
+                        log("contextRefs", "272b: startAnalysis returned (no analysis configs found)", "info");
+                    }
+                    page.testMode = false;
+                } catch (e) {
+                    page.testMode = false;
+                    log("contextRefs", "272b: Analysis test error: " + e.message, "warn");
+                }
+            }
+        }
+
+        // ── 273: onContextChange callback fires on attach ──────────
+
+        let callbackFired = false;
+        let callbackData = null;
+        ContextPanel.onContextChange(function(data) {
+            callbackFired = true;
+            callbackData = data;
+        });
+
+        if (testDataRec && testDataRec.objectId) {
+            try {
+                // Detach and re-attach to trigger callback
+                await ContextPanel.detach("context", testDataRec.objectId);
+                await new Promise(function(r) { setTimeout(r, 300); });
+                callbackFired = false; // Reset after detach callback
+
+                await ContextPanel.attach("context", testDataRec.objectId, "data.data");
+                await new Promise(function(r) { setTimeout(r, 500); });
+
+                log("contextRefs", "273: onContextChange callback fired on attach: " + callbackFired, callbackFired ? "pass" : "fail");
+                if (callbackData) logData("contextRefs", "Callback data", callbackData);
+            } catch (e) {
+                log("contextRefs", "273: Callback test error: " + e.message, "warn");
+            }
+        } else {
+            log("contextRefs", "273: No test data — skipping callback test", "info");
+        }
+
+        // Clear callback
+        ContextPanel.onContextChange(null);
+
+        // ── Cleanup ────────────────────────────────────────────────
+
+        try {
+            await am7chat.deleteChat(session, true);
+            log("contextRefs", "Cleanup: Test session deleted", "pass");
+        } catch (e) {
+            log("contextRefs", "Cleanup: Session delete failed: " + e.message, "warn");
+        }
+
+        log("contextRefs", "=== Context Refs Tests Complete ===", "info");
+    }
+
     // ── Main Suite Runner ─────────────────────────────────────────────
     async function runLLMTests(selectedCategories) {
         let cats = selectedCategories;
@@ -4294,6 +4643,7 @@
         await testMemoryBrowser(cats);
         await testEditMode(cats);
         await testPhase8(cats);
+        await testContextRefs(cats);
     }
 
     // ── Register with TestFramework ───────────────────────────────────

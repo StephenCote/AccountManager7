@@ -722,10 +722,8 @@ public class ChatUtil {
 	public static BaseRecord getSummary(BaseRecord user, BaseRecord ref) {
 
 		String name = getSummaryName(ref) + summarySuffix;
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, ref.get(FieldNames.FIELD_GROUP_ID));
-		q.field(FieldNames.FIELD_NAME, name);
-		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
-		
+		return DocumentUtil.getNote(user, name, notePath);
+
 	}
 
 	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean recreate) {
@@ -1044,9 +1042,38 @@ public class ChatUtil {
 		String msg = creq.getMessage();
 		List<BaseRecord> tags = new ArrayList<>();
 		List<BaseRecord> frecs = new ArrayList<>();
-		
-		// boolean findSummaryNote = false;
-		for(String dataR : dataRef) {
+
+		/// Merge persisted contextRefs into the working set alongside ephemeral data
+		List<String> contextRefs = creq.get("contextRefs");
+		List<String> allRefs = new ArrayList<>();
+		if (dataRef != null) allRefs.addAll(dataRef);
+		if (contextRefs != null && !contextRefs.isEmpty()) {
+			Set<String> seen = new HashSet<>();
+			for (String d : allRefs) {
+				try {
+					BaseRecord r = RecordFactory.importRecord(d);
+					String oid = r.get(FieldNames.FIELD_OBJECT_ID);
+					if (oid != null) seen.add(oid);
+				} catch (Exception e) {
+					// skip malformed refs
+				}
+			}
+			for (String cr : contextRefs) {
+				try {
+					BaseRecord r = RecordFactory.importRecord(cr);
+					String oid = r.get(FieldNames.FIELD_OBJECT_ID);
+					if (oid != null && !seen.contains(oid)) {
+						allRefs.add(cr);
+						seen.add(oid);
+					}
+				} catch (Exception e) {
+					logger.warn("Skipping malformed contextRef: " + cr);
+				}
+			}
+			logger.info("Merged " + contextRefs.size() + " persisted contextRefs with " + (dataRef != null ? dataRef.size() : 0) + " ephemeral data refs -> " + allRefs.size() + " total");
+		}
+
+		for(String dataR : allRefs) {
 			BaseRecord recRef = RecordFactory.importRecord(dataR);
 			String objId = recRef.get(FieldNames.FIELD_OBJECT_ID);
 			Query rq = QueryUtil.createQuery(recRef.getSchema(), FieldNames.FIELD_OBJECT_ID, objId);
@@ -1092,7 +1119,6 @@ public class ChatUtil {
 				}
 				
 				else if(msg != null && msg.length() > 0) {
-					//  + (findSummaryNote ? " and include any summary note" : "")
 					logger.info("Building citations with " + frecs.size() + " references of which " + tags.size() + " are tags");
 					if(
 						frec.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)
@@ -1102,10 +1128,7 @@ public class ChatUtil {
 					vects.addAll(vu.find(frec, frec.getSchema(), tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6, false));
 					//if(findSummaryNote) {
 					if(!frec.getSchema().equals(ModelNames.MODEL_TAG)) {
-						String uname = frec.get(FieldNames.FIELD_OBJECT_ID);
-						if(frec.hasField(FieldNames.FIELD_NAME)) {
-							uname = frec.get(FieldNames.FIELD_NAME);
-						}
+						String uname = getSummaryName(frec);
 						BaseRecord summaryNote = DocumentUtil.getNote(user, uname + summarySuffix, notePath);
 						if(summaryNote != null) {
 							List<BaseRecord> chunks = vu.getVectorStore(summaryNote, new String[] {FieldNames.FIELD_CONTENT, FieldNames.FIELD_CHUNK, FieldNames.FIELD_CHUNK_COUNT, FieldNames.FIELD_VECTOR_REFERENCE, FieldNames.FIELD_VECTOR_REFERENCE_TYPE, FieldNames.FIELD_ID});

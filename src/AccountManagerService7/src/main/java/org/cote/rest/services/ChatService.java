@@ -1,5 +1,6 @@
 package org.cote.rest.services;
 
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -30,8 +31,13 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.VectorUtil;
+import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.service.util.ServiceUtil;
 import org.cote.sockets.WebSocketService;
 
@@ -392,8 +398,34 @@ public class ChatService {
 					}
 					BaseRecord contextObj = findByObjectId(user, objectType, objectId);
 					if (contextObj == null) return Response.status(404).entity("{\"error\":\"Context object not found\"}").build();
+
+					/// Backward compat: set single context/contextType for primary display
 					chatReq.set("contextType", objectType);
 					chatReq.set("context", contextObj);
+
+					/// Append to persisted contextRefs list (deduplicated)
+					appendContextRef(chatReq, objectType, objectId);
+
+					/// Verify contextRefs was set before update
+					List<String> preUpdateRefs = chatReq.get("contextRefs");
+					logger.info("Pre-update contextRefs count: " + (preUpdateRefs != null ? preUpdateRefs.size() : "null"));
+
+					BaseRecord updateResult = IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
+					logger.info("Update result: " + (updateResult != null ? "success" : "FAILED"));
+
+					/// Auto-vectorize if no vectors exist for this object
+					autoVectorize(user, contextObj, objectType);
+
+					/// Auto-summarize if no summary exists and object has content
+					autoSummarize(user, chatReq, contextObj);
+					break;
+				}
+				case "tag": {
+					BaseRecord tagObj = findByObjectId(user, ModelNames.MODEL_TAG, objectId);
+					if (tagObj == null) return Response.status(404).entity("{\"error\":\"Tag not found\"}").build();
+
+					/// Append tag to persisted contextRefs list
+					appendContextRef(chatReq, ModelNames.MODEL_TAG, objectId);
 					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
 					break;
 				}
@@ -436,6 +468,8 @@ public class ChatService {
 				return Response.status(404).entity("{\"error\":\"Session not found\"}").build();
 			}
 
+			String objectId = body.get("objectId");
+
 			switch (detachType) {
 				case "systemCharacter":
 				case "userCharacter": {
@@ -445,9 +479,24 @@ public class ChatService {
 					IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig);
 					break;
 				}
-				case "context": {
-					chatReq.set("contextType", null);
-					chatReq.set("context", null);
+				case "context":
+				case "tag": {
+					if (objectId != null && !objectId.isEmpty()) {
+						/// Remove specific ref from contextRefs by objectId
+						removeContextRef(chatReq, objectId);
+					}
+					/// If removing the primary context, also clear context/contextType
+					if ("context".equals(detachType)) {
+						String primaryCtxType = chatReq.get("contextType");
+						if (primaryCtxType != null) {
+							BaseRecord primaryCtx = chatReq.get("context");
+							String primaryOid = primaryCtx != null ? (String) primaryCtx.get(FieldNames.FIELD_OBJECT_ID) : null;
+							if (objectId == null || objectId.equals(primaryOid)) {
+								chatReq.set("contextType", null);
+								chatReq.set("context", null);
+							}
+						}
+					}
 					IOSystem.getActiveContext().getAccessPoint().update(user, chatReq);
 					break;
 				}
@@ -526,6 +575,34 @@ public class ChatService {
 				hasField = true;
 			}
 
+			/// Include persisted contextRefs with resolved names
+			List<String> contextRefs = chatReq.get("contextRefs");
+			if (contextRefs != null && !contextRefs.isEmpty()) {
+				if (hasField) sb.append(",");
+				sb.append("\"contextRefs\":[");
+				boolean firstRef = true;
+				for (String ref : contextRefs) {
+					try {
+						BaseRecord refRec = RecordFactory.importRecord(ref);
+						String refSchema = refRec.getSchema();
+						String refOid = refRec.get(FieldNames.FIELD_OBJECT_ID);
+						BaseRecord resolved = findByObjectId(user, refSchema, refOid);
+						if (!firstRef) sb.append(",");
+						sb.append("{\"schema\":\"").append(escJson(refSchema));
+						sb.append("\",\"objectId\":\"").append(escJson(refOid));
+						if (resolved != null && resolved.hasField(FieldNames.FIELD_NAME)) {
+							sb.append("\",\"name\":\"").append(escJson((String)resolved.get(FieldNames.FIELD_NAME)));
+						}
+						sb.append("\"}");
+						firstRef = false;
+					} catch (Exception e) {
+						logger.warn("Error resolving contextRef: " + ref, e);
+					}
+				}
+				sb.append("]");
+				hasField = true;
+			}
+
 			sb.append("}");
 			return Response.status(200).entity(sb.toString()).build();
 		}
@@ -551,6 +628,105 @@ public class ChatService {
 	private static String escJson(String s) {
 		if (s == null) return "";
 		return s.replace("\\", "\\\\").replace("\"", "\\\"");
+	}
+
+	/// Append a serialized {schema, objectId} ref to chatRequest.contextRefs, deduplicating by objectId
+	private void appendContextRef(BaseRecord chatReq, String schema, String objectId) {
+		try {
+			List<String> existingRefs = chatReq.get("contextRefs");
+			/// Always create a new list to ensure the field is marked dirty for the update mechanism
+			List<String> refs = new ArrayList<>();
+			if (existingRefs != null) {
+				refs.addAll(existingRefs);
+			}
+			/// Check for existing ref with same objectId
+			for (String existing : refs) {
+				try {
+					BaseRecord r = RecordFactory.importRecord(existing);
+					if (objectId.equals(r.get(FieldNames.FIELD_OBJECT_ID))) {
+						logger.info("contextRef already attached for objectId: " + objectId);
+						return; /// Already attached
+					}
+				} catch (Exception e) {
+					logger.warn("Malformed contextRef entry: " + existing, e);
+				}
+			}
+			String newRef = "{\"schema\":\"" + escJson(schema) + "\",\"objectId\":\"" + escJson(objectId) + "\"}";
+			refs.add(newRef);
+			chatReq.set("contextRefs", refs);
+			logger.info("Appended contextRef: " + newRef + " (total: " + refs.size() + ")");
+		} catch (Exception e) {
+			logger.error("Failed to append contextRef", e);
+		}
+	}
+
+	/// Remove a ref from contextRefs by objectId
+	private void removeContextRef(BaseRecord chatReq, String objectId) {
+		try {
+			List<String> refs = chatReq.get("contextRefs");
+			if (refs == null || refs.isEmpty()) return;
+			refs.removeIf(ref -> {
+				try {
+					BaseRecord r = RecordFactory.importRecord(ref);
+					return objectId.equals(r.get(FieldNames.FIELD_OBJECT_ID));
+				} catch (Exception e) {
+					return false;
+				}
+			});
+			chatReq.set("contextRefs", refs);
+		} catch (Exception e) {
+			logger.warn("Failed to remove contextRef", e);
+		}
+	}
+
+	/// Auto-vectorize a context object if no vector store exists for it
+	private void autoVectorize(BaseRecord user, BaseRecord contextObj, String objectType) {
+		try {
+			VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+			if (vu == null) {
+				logger.warn("VectorUtil not available — skipping auto-vectorize");
+				return;
+			}
+			if (vu.countVectorStore(contextObj) > 0) {
+				logger.info("Vectors already exist for " + objectType + " " + contextObj.get(FieldNames.FIELD_OBJECT_ID) + " — skipping auto-vectorize");
+				return;
+			}
+			String content = DocumentUtil.getStringContent(contextObj);
+			if (content == null || content.isEmpty()) {
+				logger.info("No string content for " + objectType + " — skipping auto-vectorize");
+				return;
+			}
+			logger.info("Auto-vectorizing " + objectType + " " + contextObj.get(FieldNames.FIELD_OBJECT_ID));
+			vu.createVectorStore(contextObj, ChunkEnumType.WORD, 500);
+		} catch (Exception e) {
+			logger.warn("Auto-vectorize failed for " + objectType + ": " + e.getMessage());
+		}
+	}
+
+	/// Auto-summarize a context object if no summary exists (runs synchronously for now)
+	private void autoSummarize(BaseRecord user, BaseRecord chatReq, BaseRecord contextObj) {
+		try {
+			String content = DocumentUtil.getStringContent(contextObj);
+			if (content == null || content.isEmpty()) {
+				return; /// Not summarizable
+			}
+			BaseRecord existingSummary = ChatUtil.getSummary(user, contextObj);
+			if (existingSummary != null) {
+				logger.info("Summary already exists for " + contextObj.get(FieldNames.FIELD_OBJECT_ID) + " — skipping auto-summarize");
+				return;
+			}
+			/// Resolve chatConfig and promptConfig from the chatRequest for the summarization LLM call
+			BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
+			BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.get("promptConfig"));
+			if (chatConfig == null || promptConfig == null) {
+				logger.warn("Cannot auto-summarize: chatConfig or promptConfig not available on session");
+				return;
+			}
+			logger.info("Auto-summarizing " + contextObj.get(FieldNames.FIELD_OBJECT_ID));
+			ChatUtil.createSummary(user, chatConfig, promptConfig, contextObj, false);
+		} catch (Exception e) {
+			logger.warn("Auto-summarize failed: " + e.getMessage());
+		}
 	}
 
 	@RolesAllowed({"admin","user"})

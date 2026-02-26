@@ -229,18 +229,33 @@
                 return null;
             }
 
-            // Attach reference to context panel
-            if (window.ContextPanel && pa.ref && pa.ref.objectId) {
-                let schema = pa.ref[am7model.jsonModelKey] || pa.ref.schema || "";
-                ContextPanel.attach("context", pa.ref.objectId, schema);
-            }
+            // Attach all context objects via ContextPanel (persisted to contextRefs)
+            // Server auto-vectorizes and auto-summarizes on attach
+            if (window.ContextPanel) {
+                // Load ContextPanel for the new session
+                ContextPanel.load(obj.objectId);
+                // Wait briefly for the session to register
+                await new Promise(function(r) { setTimeout(r, 100); });
 
-            // Populate working set
-            if (page.components.dnd && page.components.dnd.workingSet) {
-                page.components.dnd.workingSet.push(...wset);
-            }
-            if (wset.length && page.components.topMenu && typeof page.components.topMenu.activeShuffle === "function") {
-                page.components.topMenu.activeShuffle(wset[0]);
+                for (let i = 0; i < wset.length; i++) {
+                    let item = wset[i];
+                    let schema = item[am7model.jsonModelKey] || item.schema || "";
+                    let oid = item.objectId;
+                    if (!schema || !oid) continue;
+                    if (schema === "data.tag") {
+                        await ContextPanel.attach("tag", oid);
+                    } else {
+                        await ContextPanel.attach("context", oid, schema);
+                    }
+                }
+                // Also attach the primary reference object if not already in wset
+                if (pa.ref && pa.ref.objectId) {
+                    let refSchema = pa.ref[am7model.jsonModelKey] || pa.ref.schema || "";
+                    let alreadyInSet = wset.some(function(w) { return w.objectId === pa.ref.objectId; });
+                    if (!alreadyInSet && refSchema) {
+                        await ContextPanel.attach("context", pa.ref.objectId, refSchema);
+                    }
+                }
             }
 
             // Refresh conversation manager to show new session

@@ -6,7 +6,7 @@
 	"group": "ChatRequests",
 	"icon": "chat",
 	"label": "Requests",
-	"query": ["id", "groupId", "chatConfig", "promptConfig", "promptTemplate", "session", "sessionType", "setting", "contextType"],
+	"query": ["id", "groupId", "chatConfig", "promptConfig", "promptTemplate", "session", "sessionType", "setting", "contextType", "contextRefs"],
 	"description": "Used for proxying chat requests",
 	"fields": [
 		{
@@ -75,6 +75,12 @@
 			"foreign": true,
 			"foreignType": "contextType",
 			"description": "Generic context object associated with this chat session. Type determined by contextType field."
+		},
+		{
+			"name": "contextRefs",
+			"type": "list",
+			"baseType": "string",
+			"description": "Persisted context references (serialized {schema,objectId} JSON). Unlike ephemeral 'data', these survive across messages. Supports tags (schema=data.tag) for scoped vector queries."
 		},
 		{
 			"name": "chatTitle",

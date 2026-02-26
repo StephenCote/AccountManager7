@@ -10219,7 +10219,8 @@
         "session",
         "sessionType",
         "setting",
-        "contextType"
+        "contextType",
+        "contextRefs"
       ],
       "description": "Used for proxying chat requests",
       "fields": [
@@ -10285,6 +10286,11 @@
           "type": "model",
           "foreign": true,
           "foreignType": "contextType"
+        },
+        {
+          "name": "contextRefs",
+          "type": "list",
+          "baseType": "string"
         },
         {
           "name": "chatTitle",
