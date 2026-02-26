@@ -5,6 +5,9 @@ import java.util.Base64;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
@@ -344,15 +347,22 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response attachContext(String json, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord body = JSONUtil.importObject(json, org.cote.accountmanager.record.LooseRecord.class, org.cote.accountmanager.record.RecordDeserializerConfig.getUnfilteredModule());
-		if (body == null) {
+
+		String sessionId = null;
+		String attachType = null;
+		String objectId = null;
+		String objectType = null;
+		try {
+			ObjectMapper om = new ObjectMapper();
+			JsonNode body = om.readTree(json);
+			sessionId = body.has("sessionId") ? body.get("sessionId").asText() : null;
+			attachType = body.has("attachType") ? body.get("attachType").asText() : null;
+			objectId = body.has("objectId") ? body.get("objectId").asText() : null;
+			objectType = body.has("objectType") ? body.get("objectType").asText() : null;
+		} catch (Exception e) {
+			logger.error("Failed to parse attach request body", e);
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
-
-		String sessionId = body.get("sessionId");
-		String attachType = body.get("attachType");
-		String objectId = body.get("objectId");
-		String objectType = body.get("objectType");
 
 		if (sessionId == null || attachType == null || objectId == null) {
 			return Response.status(400).entity("{\"error\":\"sessionId, attachType, and objectId are required\"}").build();
@@ -447,13 +457,20 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response detachContext(String json, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord body = JSONUtil.importObject(json, org.cote.accountmanager.record.LooseRecord.class, org.cote.accountmanager.record.RecordDeserializerConfig.getUnfilteredModule());
-		if (body == null) {
+
+		String sessionId = null;
+		String detachType = null;
+		String objectId = null;
+		try {
+			ObjectMapper om = new ObjectMapper();
+			JsonNode body = om.readTree(json);
+			sessionId = body.has("sessionId") ? body.get("sessionId").asText() : null;
+			detachType = body.has("detachType") ? body.get("detachType").asText() : null;
+			objectId = body.has("objectId") ? body.get("objectId").asText() : null;
+		} catch (Exception e) {
+			logger.error("Failed to parse detach request body", e);
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
-
-		String sessionId = body.get("sessionId");
-		String detachType = body.get("detachType");
 
 		if (sessionId == null || detachType == null) {
 			return Response.status(400).entity("{\"error\":\"sessionId and detachType are required\"}").build();
@@ -467,8 +484,6 @@ public class ChatService {
 			if (chatReq == null) {
 				return Response.status(404).entity("{\"error\":\"Session not found\"}").build();
 			}
-
-			String objectId = body.get("objectId");
 
 			switch (detachType) {
 				case "systemCharacter":
@@ -663,17 +678,22 @@ public class ChatService {
 	/// Remove a ref from contextRefs by objectId
 	private void removeContextRef(BaseRecord chatReq, String objectId) {
 		try {
-			List<String> refs = chatReq.get("contextRefs");
-			if (refs == null || refs.isEmpty()) return;
-			refs.removeIf(ref -> {
+			List<String> existingRefs = chatReq.get("contextRefs");
+			if (existingRefs == null || existingRefs.isEmpty()) return;
+			/// Always create a new list to ensure the field is marked dirty
+			List<String> newRefs = new ArrayList<>();
+			for (String ref : existingRefs) {
 				try {
 					BaseRecord r = RecordFactory.importRecord(ref);
-					return objectId.equals(r.get(FieldNames.FIELD_OBJECT_ID));
+					if (!objectId.equals(r.get(FieldNames.FIELD_OBJECT_ID))) {
+						newRefs.add(ref);
+					}
 				} catch (Exception e) {
-					return false;
+					newRefs.add(ref); /// Keep malformed entries
 				}
-			});
-			chatReq.set("contextRefs", refs);
+			}
+			chatReq.set("contextRefs", newRefs);
+			logger.info("Removed contextRef for objectId: " + objectId + " (remaining: " + newRefs.size() + ")");
 		} catch (Exception e) {
 			logger.warn("Failed to remove contextRef", e);
 		}
@@ -735,12 +755,24 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response chain(String json, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord chainReq = JSONUtil.importObject(json, org.cote.accountmanager.record.LooseRecord.class, org.cote.accountmanager.record.RecordDeserializerConfig.getUnfilteredModule());
-		if (chainReq == null) {
+
+		String planQuery = null;
+		String chatConfigObjectId = null;
+		String planJson = null;
+		try {
+			ObjectMapper om = new ObjectMapper();
+			JsonNode body = om.readTree(json);
+			planQuery = body.has("planQuery") ? body.get("planQuery").asText() : null;
+			chatConfigObjectId = body.has("chatConfigObjectId") ? body.get("chatConfigObjectId").asText() : null;
+			if (body.has("plan") && !body.get("plan").isNull()) {
+				JsonNode planNode = body.get("plan");
+				planJson = planNode.isTextual() ? planNode.asText() : planNode.toString();
+			}
+		} catch (Exception e) {
+			logger.error("Failed to parse chain request body", e);
 			return Response.status(400).entity("{\"error\":\"Invalid chain request\"}").build();
 		}
 
-		String planQuery = chainReq.get("planQuery");
 		if (planQuery == null || planQuery.isEmpty()) {
 			return Response.status(400).entity("{\"error\":\"planQuery is required\"}").build();
 		}
@@ -748,14 +780,12 @@ public class ChatService {
 		logger.info("Synchronous chain execution for user " + user.get("name") + ": " + planQuery);
 
 		/// Resolve chatConfig if provided (needed for AgentToolManager context)
-		String chatConfigObjectId = chainReq.get("chatConfigObjectId");
 		BaseRecord chatConfig = null;
 		if (chatConfigObjectId != null && !chatConfigObjectId.isEmpty()) {
 			chatConfig = OlioUtil.getFullRecord(findByObjectId(user, "olio.llm.chatConfig", chatConfigObjectId));
 		}
 
 		/// Check for pre-built plan JSON
-		String planJson = chainReq.get("plan");
 
 		try {
 			AM7AgentTool agentTool = new AM7AgentTool(user);

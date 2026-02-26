@@ -74,7 +74,8 @@
             await loadContext(_sessionId);
             if (_onContextChange) _onContextChange(_contextData);
         } catch (e) {
-            console.error("[ContextPanel] attach failed:", e);
+            let errMsg = (e && typeof e === 'object') ? JSON.stringify(e) : String(e);
+            console.error("[ContextPanel] attach failed:", errMsg, e);
         }
     }
 
@@ -101,7 +102,8 @@
             await loadContext(_sessionId);
             if (_onContextChange) _onContextChange(_contextData);
         } catch (e) {
-            console.error("[ContextPanel] detach failed:", e);
+            let errMsg = (e && typeof e === 'object') ? JSON.stringify(e) : String(e);
+            console.error("[ContextPanel] detach failed:", errMsg, e);
         }
     }
 
