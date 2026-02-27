@@ -341,6 +341,11 @@
 			"type": "string",
 			"default": "simple",
 			"description": "Scheduler for FLUX Kontext generation."
+		},
+		{
+			"name": "landscapeSetting",
+			"type": "string",
+			"description": "Transient landscape setting description passed from client for landscape reference generation."
 		}
 	]
 }

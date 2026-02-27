@@ -557,15 +557,21 @@ public class ChatService {
 				sb.append("\",\"model\":\"").append(escJson((String)chatConfig.get("model"))).append("\"}");
 				hasField = true;
 
-				BaseRecord sysCh = OlioUtil.getFullRecord(chatConfig.get("systemCharacter"));
-				if (sysCh != null) {
-					sb.append(",\"systemCharacter\":{\"name\":\"").append(escJson((String)sysCh.get(FieldNames.FIELD_NAME)));
-					sb.append("\",\"objectId\":\"").append((String)sysCh.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+				BaseRecord sysChRef = chatConfig.get("systemCharacter");
+				if (sysChRef != null) {
+					BaseRecord sysCh = OlioUtil.getFullRecord(sysChRef);
+					if (sysCh != null) {
+						sb.append(",\"systemCharacter\":{\"name\":\"").append(escJson((String)sysCh.get(FieldNames.FIELD_NAME)));
+						sb.append("\",\"objectId\":\"").append((String)sysCh.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+					}
 				}
-				BaseRecord usrCh = OlioUtil.getFullRecord(chatConfig.get("userCharacter"));
-				if (usrCh != null) {
-					sb.append(",\"userCharacter\":{\"name\":\"").append(escJson((String)usrCh.get(FieldNames.FIELD_NAME)));
-					sb.append("\",\"objectId\":\"").append((String)usrCh.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+				BaseRecord usrChRef = chatConfig.get("userCharacter");
+				if (usrChRef != null) {
+					BaseRecord usrCh = OlioUtil.getFullRecord(usrChRef);
+					if (usrCh != null) {
+						sb.append(",\"userCharacter\":{\"name\":\"").append(escJson((String)usrCh.get(FieldNames.FIELD_NAME)));
+						sb.append("\",\"objectId\":\"").append((String)usrCh.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+					}
 				}
 			}
 

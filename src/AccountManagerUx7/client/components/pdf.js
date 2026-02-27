@@ -69,9 +69,8 @@ function pdfViewer(inInst){
         if(!eventBus){
             eventBus = new pdfjsViewer.EventBus();
         }
-        if(!pdfjsLib.GlobalWorkerOptions.workerSrc){
-            pdfjsLib.GlobalWorkerOptions.workerSrc = "/node_modules/pdfjs-dist/build/webpack/pdf.worker.bundle.js";
-        }
+        // Worker is auto-configured by webpack.mjs (loaded via <script> in index.html)
+        // which sets GlobalWorkerOptions.workerPort to a module Worker.
 
         let bits = am7model.base64ToUint8(inst.entity.dataBytesStore);
         let loadingTask = pdfjsLib.getDocument(bits);

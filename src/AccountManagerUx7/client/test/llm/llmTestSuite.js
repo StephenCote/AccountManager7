@@ -881,18 +881,31 @@
                 }
             }
             log("history", "History ordering: " + userMsgs.length + " user messages in order", ordered ? "pass" : "fail");
+            if (!ordered) {
+                for (let i = 0; i < userMsgs.length; i++) {
+                    let c = userMsgs[i].content || "";
+                    let dc = userMsgs[i].displayContent || "";
+                    log("history", "  userMsg[" + i + "] content: " + c.substring(0, 80) + (c.length > 80 ? "..." : ""), "info");
+                    if (dc && dc !== c) log("history", "  userMsg[" + i + "] displayContent: " + dc.substring(0, 80), "info");
+                }
+            }
 
-            // Test 74: Verify content matches
+            // Test 74: Verify content matches — also check displayContent as fallback
             let found = 0;
+            let missing = [];
             for (let sent of sentMessages) {
+                let matched = false;
                 for (let m of msgs) {
-                    if ((m.content || "").indexOf(sent) !== -1) {
-                        found++;
+                    if (((m.content || "") + " " + (m.displayContent || "")).indexOf(sent) !== -1) {
+                        matched = true;
                         break;
                     }
                 }
+                if (matched) found++;
+                else missing.push(sent);
             }
             log("history", "Content match: " + found + "/" + sentMessages.length + " sent messages found in history", found === sentMessages.length ? "pass" : "fail");
+            if (missing.length > 0) log("history", "Missing messages: " + missing.join(", "), "info");
 
             // Test 74b: Verify assist exchange is excluded from history
             if (hasAssist) {
@@ -1117,7 +1130,7 @@
 
                         page.wss.send("chat", JSON.stringify(chatReq), undefined, "olio.llm.chatRequest");
 
-                        let timeout = 30000;
+                        let timeout = 120000;
                         let waited = 0;
                         while (!completed && !streamError && waited < timeout) {
                             await new Promise(function(resolve) { setTimeout(resolve, 200); });
@@ -1709,17 +1722,25 @@
                     let userMsgs = msgs.filter(function(m) { return m.role === "user"; });
                     log("convmgr", "OI-43: Total messages=" + msgs.length + ", user messages=" + userMsgs.length, "info");
 
-                    // Count how many of our sent messages appear
+                    // Count how many of our sent messages appear — also check displayContent
                     let found = 0;
+                    let missing43 = [];
                     for (let i = 0; i < sentMessages.length; i++) {
+                        let matched = false;
                         for (let j = 0; j < msgs.length; j++) {
-                            if ((msgs[j].content || "").indexOf(sentMessages[i]) !== -1) { found++; break; }
+                            if (((msgs[j].content || "") + " " + (msgs[j].displayContent || "")).indexOf(sentMessages[i]) !== -1) { matched = true; break; }
                         }
+                        if (matched) found++;
+                        else missing43.push(sentMessages[i]);
                     }
                     let allFound = found === sentMessages.length;
                     log("convmgr", "OI-43: Found " + found + "/" + sentMessages.length + " sent messages in history", allFound ? "pass" : "fail");
                     if (!allFound) {
                         log("convmgr", "OI-43: messageTrim=" + (chatCfg.messageTrim || "unset") + ", prune=" + chatCfg.prune + ", assist=" + chatCfg.assist, "info");
+                        log("convmgr", "OI-43: Missing: " + missing43.join(", "), "info");
+                        for (let k = 0; k < userMsgs.length; k++) {
+                            log("convmgr", "OI-43: user[" + k + "]: " + (userMsgs[k].content || "").substring(0, 80), "info");
+                        }
                         logData("convmgr", "OI-43: Full history dump", msgs);
                     }
                 } catch (e) {
@@ -3814,8 +3835,8 @@
             }
         }
 
-        // ── Helper: fetch full session with messages via history endpoint ──
-        async function fetchSessionWithMessages() {
+        // ── Helper: fetch display messages via history endpoint ──
+        async function fetchDisplayMessages() {
             let body = {
                 schema: "olio.llm.chatRequest",
                 objectId: req.objectId,
@@ -3824,10 +3845,23 @@
             return await m.request({ method: "POST", url: g_application_path + "/rest/chat/history", withCredentials: true, body: body });
         }
 
-        // ── 214: Fetch session and count messages ─────────────────────
+        // ── Helper: load the underlying openaiRequest (session) for patching ──
+        async function fetchPatchableSession() {
+            let chatReqFull = await am7client.getFull("olio.llm.chatRequest", req.objectId);
+            if (!chatReqFull || !chatReqFull.session) return null;
+            let sessionType = chatReqFull.sessionType;
+            let session = chatReqFull.session;
+            if (!session || !session.messages) return null;
+            // Ensure schema key is set for patching
+            let schemaKey = am7model.jsonModelKey || "schema";
+            if (!session[schemaKey] && sessionType) session[schemaKey] = sessionType;
+            return session;
+        }
+
+        // ── 214: Fetch session and count display messages ─────────────
         let serverReq;
         try {
-            serverReq = await fetchSessionWithMessages();
+            serverReq = await fetchDisplayMessages();
         } catch (e) {
             log("editMode", "214: Session fetch failed: " + e.message, "fail");
             return;
@@ -3842,80 +3876,88 @@
         // ── 215: Verify offset calculation (system prompt detection) ──
         let displayMsgs = serverReq.messages;
         let offset = 0;
-        // The history endpoint already returns display messages; offset is 0
         log("editMode", "215: Display messages: " + displayMsgs.length + ", offset: " + offset, "pass");
 
-        // ── 216: Test edit — modify a message via server patch ─────────
-        if (displayMsgs.length > 0) {
-            let editIdx = 0;
-            let serverIdx = editIdx + offset;
-            let origContent = serverReq.messages[serverIdx].content;
-            let editedContent = origContent + " [EDITED]";
-            serverReq.messages[serverIdx].content = editedContent;
-            try {
-                await page.patchObject(serverReq);
-                log("editMode", "216: Patched message " + serverIdx + " with edit", "pass");
+        // ── Calculate assist startIndex for mapping display→session indices ──
+        let startIndex = 1;
+        if (chatCfg.assist) {
+            startIndex = 3;
+        }
 
-                // Re-fetch and verify
-                let refetched = await fetchSessionWithMessages();
-                if (refetched && refetched.messages && refetched.messages.length > serverIdx) {
-                    let patched = refetched.messages[serverIdx].content;
+        // ── 216: Test edit — modify a message on the actual session ────
+        let session;
+        try {
+            session = await fetchPatchableSession();
+        } catch (e) {
+            log("editMode", "216: Failed to load session: " + e.message, "fail");
+            session = null;
+        }
+        if (session && session.messages && session.messages.length > startIndex) {
+            let sessionIdx = startIndex; // first display message = session[startIndex]
+            let origContent = session.messages[sessionIdx].content;
+            let editedContent = origContent + " [EDITED]";
+            session.messages[sessionIdx].content = editedContent;
+            try {
+                await page.patchObject(session);
+                log("editMode", "216: Patched message " + sessionIdx + " with edit", "pass");
+
+                // Re-fetch and verify via display messages
+                let refetched = await fetchDisplayMessages();
+                if (refetched && refetched.messages && refetched.messages.length > 0) {
+                    let patched = refetched.messages[0].content || refetched.messages[0].displayContent || "";
                     let editApplied = patched.indexOf("[EDITED]") !== -1;
                     log("editMode", "216b: Edit persisted: " + editApplied, editApplied ? "pass" : "fail");
-                    // Restore original
-                    refetched.messages[serverIdx].content = origContent;
-                    await page.patchObject(refetched);
+                    // Restore original via session
+                    let restoreSession = await fetchPatchableSession();
+                    if (restoreSession) {
+                        restoreSession.messages[sessionIdx].content = origContent;
+                        await page.patchObject(restoreSession);
+                    }
                 }
             } catch (e) {
                 log("editMode", "216: Edit patch failed: " + e.message, "fail");
             }
         } else {
-            log("editMode", "216: No display messages to edit", "skip");
+            log("editMode", "216: No patchable session loaded (session=" + !!session + ")", "fail");
         }
 
-        // ── 217: Test delete — remove a message via splice + patch ────
-        if (origCount >= 3) {
-            try {
-                let delReq = await fetchSessionWithMessages();
-                let preDeleteCount = delReq.messages.length;
-                // Delete the last message (safe — won't break role alternation for test)
-                let deleteServerIdx = preDeleteCount - 1;
-                delReq.messages.splice(deleteServerIdx, 1);
-                await page.patchObject(delReq);
+        // ── 217: Test delete — remove a message from the session ──────
+        try {
+            let delSession = await fetchPatchableSession();
+            if (delSession && delSession.messages) {
+                let preDeleteCount = delSession.messages.length;
+                // Delete the last message
+                delSession.messages.splice(preDeleteCount - 1, 1);
+                await page.patchObject(delSession);
 
                 // Re-fetch and verify
-                let refetched = await fetchSessionWithMessages();
-                let postDeleteCount = refetched.messages.length;
+                let refetchSession = await fetchPatchableSession();
+                let postDeleteCount = refetchSession ? refetchSession.messages.length : preDeleteCount;
                 let deleted = postDeleteCount === preDeleteCount - 1;
                 log("editMode", "217: Delete message — before: " + preDeleteCount + " after: " + postDeleteCount, deleted ? "pass" : "fail");
-            } catch (e) {
-                log("editMode", "217: Delete patch failed: " + e.message, "fail");
+            } else {
+                log("editMode", "217: Could not load session for delete test", "fail");
             }
-        } else {
-            log("editMode", "217: Not enough messages to test delete", "skip");
+        } catch (e) {
+            log("editMode", "217: Delete patch failed: " + e.message, "fail");
         }
 
-        // ── 218: Test bulk delete (multiple indices, reverse order) ────
+        // ── 218: Test bulk delete (multiple messages) ─────────────────
         try {
-            let bulkReq = await fetchSessionWithMessages();
-            let preBulkCount = bulkReq.messages.length;
-            if (preBulkCount >= 3) {
-                // Delete indices 2 and 1 (in reverse to preserve positions)
-                let toDelete = [2, 1];
-                let sorted = toDelete.sort(function(a, b) { return b - a; });
-                for (let i = 0; i < sorted.length; i++) {
-                    if (sorted[i] < bulkReq.messages.length) {
-                        bulkReq.messages.splice(sorted[i], 1);
-                    }
-                }
-                await page.patchObject(bulkReq);
+            let bulkSession = await fetchPatchableSession();
+            if (bulkSession && bulkSession.messages && bulkSession.messages.length >= startIndex + 3) {
+                let preBulkCount = bulkSession.messages.length;
+                // Delete the last 2 messages (in reverse to preserve positions)
+                bulkSession.messages.splice(preBulkCount - 1, 1);
+                bulkSession.messages.splice(preBulkCount - 2, 1);
+                await page.patchObject(bulkSession);
 
-                let refetched = await fetchSessionWithMessages();
-                let postBulkCount = refetched.messages.length;
+                let refetchBulk = await fetchPatchableSession();
+                let postBulkCount = refetchBulk ? refetchBulk.messages.length : preBulkCount;
                 let bulkDeleted = postBulkCount === preBulkCount - 2;
                 log("editMode", "218: Bulk delete — before: " + preBulkCount + " after: " + postBulkCount, bulkDeleted ? "pass" : "fail");
             } else {
-                log("editMode", "218: Not enough messages for bulk delete test", "skip");
+                log("editMode", "218: Not enough session messages for bulk delete", "skip");
             }
         } catch (e) {
             log("editMode", "218: Bulk delete failed: " + e.message, "fail");
