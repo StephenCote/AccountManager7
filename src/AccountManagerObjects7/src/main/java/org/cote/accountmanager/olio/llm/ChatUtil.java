@@ -1203,8 +1203,8 @@ public class ChatUtil {
 
 	/// Resolve a config using a fallback chain:
 	/// 1. User's specified group (if groupPath provided)
-	/// 2. Shared library
-	/// 3. User's ~/Chat
+	/// 2. User's ~/Chat
+	/// 3. Shared library
 	///
 	public static BaseRecord resolveConfig(BaseRecord user, String modelName, String name, String groupPath) {
 		/// 1. Try specified group first
@@ -1214,13 +1214,13 @@ public class ChatUtil {
 				return cfg;
 			}
 		}
-		/// 2. Try shared library (no owner filter)
-		BaseRecord cfg = getLibraryConfig(user, modelName, name);
+		/// 2. Try user's ~/Chat
+		BaseRecord cfg = getConfig(user, modelName, null, name);
 		if (cfg != null) {
 			return cfg;
 		}
-		/// 3. Fallback to user's ~/Chat
-		return getConfig(user, modelName, null, name);
+		/// 3. Fallback to shared library (no owner filter)
+		return getLibraryConfig(user, modelName, name);
 	}
 
 	public static ChatResponse getChatResponse(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
