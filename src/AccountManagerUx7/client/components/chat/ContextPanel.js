@@ -20,6 +20,7 @@
     let _loading = false;
     let _expanded = false;
     let _onContextChange = null;
+    let _summarizePoller = null;
 
     /**
      * Load context bindings from server for a session.
@@ -41,6 +42,13 @@
                 }
             });
             _contextData = resp && Object.keys(resp).length > 0 ? resp : null;
+
+            /// If any contextRef is still being summarized, poll until done
+            if (_contextData && _contextData.summarizing) {
+                startSummarizePoller();
+            } else {
+                stopSummarizePoller();
+            }
         } catch (e) {
             console.warn("[ContextPanel] Failed to load context:", e);
             _contextData = null;
@@ -65,13 +73,17 @@
             };
             if (objectType) body.objectType = objectType;
 
-            await m.request({
+            let result = await m.request({
                 method: 'POST',
                 url: g_application_path + "/rest/chat/context/attach",
                 withCredentials: true,
                 body: body
             });
             await loadContext(_sessionId);
+            /// If server kicked off async summarization, start polling immediately
+            if (result && result.summarizing) {
+                startSummarizePoller();
+            }
             if (_onContextChange) _onContextChange(_contextData);
         } catch (e) {
             let errMsg = (e && typeof e === 'object') ? JSON.stringify(e) : String(e);
@@ -104,6 +116,20 @@
         } catch (e) {
             let errMsg = (e && typeof e === 'object') ? JSON.stringify(e) : String(e);
             console.error("[ContextPanel] detach failed:", errMsg, e);
+        }
+    }
+
+    function startSummarizePoller() {
+        if (_summarizePoller) return;
+        _summarizePoller = setInterval(function() {
+            if (_sessionId) loadContext(_sessionId);
+        }, 3000);
+    }
+
+    function stopSummarizePoller() {
+        if (_summarizePoller) {
+            clearInterval(_summarizePoller);
+            _summarizePoller = null;
         }
     }
 
@@ -205,11 +231,15 @@
         let label = refSchemaLabel(ref.schema);
         let displayName = ref.name || ref.objectId || "\u2014";
         let detachType = ref.schema === "data.tag" ? "tag" : "context";
+        let isSummarizing = ref.summarizing === true;
 
         return m("div", { class: "flex items-center justify-between text-xs py-0.5" }, [
-            m("span", { class: "flex items-center text-gray-400 truncate flex-1 min-w-0", title: ref.schema + " " + displayName }, [
-                m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 14px;" }, icon),
-                label + ": " + displayName
+            m("span", { class: "flex items-center truncate flex-1 min-w-0" + (isSummarizing ? " text-yellow-400" : " text-gray-400"), title: ref.schema + " " + displayName }, [
+                isSummarizing
+                    ? m("span", { class: "material-symbols-outlined mr-1 animate-spin", style: "font-size: 14px;" }, "progress_activity")
+                    : m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 14px;" }, icon),
+                label + ": " + displayName,
+                isSummarizing ? m("span", { class: "ml-1 text-yellow-500 italic" }, "summarizing...") : ""
             ]),
             m("button", {
                 class: "menu-button ml-1 flex-shrink-0",
@@ -235,8 +265,10 @@
         if (_contextData.chatConfig) {
             let cc = _contextData.chatConfig;
             rows.push(contextRowView("Config", cc, null));
-            if (cc.model) {
-                rows.push(m("div", { class: "text-xs text-gray-500 pl-3" }, "Model: " + cc.model));
+            /// schema field carries the LLM model name for chatConfig refs
+            let modelName = cc.model || cc.schema;
+            if (modelName) {
+                rows.push(m("div", { class: "text-xs text-gray-500 pl-3" }, "Model: " + modelName));
             }
         }
         if (_contextData.promptConfig) {
@@ -257,7 +289,7 @@
         } else if (_contextData.context) {
             /// Fallback: display legacy single context
             let ctx = _contextData.context;
-            let label = (ctx.type || "object");
+            let label = (ctx.type || ctx.schema || "object");
             rows.push(contextRowView("Context (" + label + ")", ctx, "context"));
         }
 
@@ -331,6 +363,7 @@
         clear: function() {
             _contextData = null;
             _sessionId = null;
+            stopSummarizePoller();
         },
 
         /**

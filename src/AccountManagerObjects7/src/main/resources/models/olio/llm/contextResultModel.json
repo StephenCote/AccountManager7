@@ -1,0 +1,37 @@
+{
+	"name": "olio.llm.contextResult",
+	"ioConstraints": ["unknown"],
+	"description": "Ephemeral response DTO for attach/detach context operations.",
+	"fields": [
+		{
+			"name": "attached",
+			"type": "boolean",
+			"description": "True when an attach operation succeeded."
+		},
+		{
+			"name": "detached",
+			"type": "boolean",
+			"description": "True when a detach operation succeeded."
+		},
+		{
+			"name": "attachType",
+			"type": "string",
+			"description": "The type of attachment (chatConfig, promptConfig, systemCharacter, userCharacter, context, tag)."
+		},
+		{
+			"name": "detachType",
+			"type": "string",
+			"description": "The type of detachment."
+		},
+		{
+			"name": "summarizing",
+			"type": "boolean",
+			"description": "True when an auto-summarize was kicked off for the attached object."
+		},
+		{
+			"name": "error",
+			"type": "string",
+			"description": "Error message if the operation failed."
+		}
+	]
+}

@@ -1953,7 +1953,7 @@
 
       view: function (vnode) {
         let v = getChatView(vnode);
-        return [v, page.components.dialog.loadDialog(), page.loadToast()];
+        return [v, page.components.dialog.loadDialog(), page.loadToast(), (typeof ChatSetupWizard !== "undefined" ? ChatSetupWizard.view() : null)];
       }
     };
     return chat;

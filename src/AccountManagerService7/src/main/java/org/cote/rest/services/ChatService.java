@@ -2,7 +2,12 @@ package org.cote.rest.services;
 
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,6 +26,7 @@ import org.cote.accountmanager.agent.ChainExecutor;
 import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatResponse;
+import org.cote.accountmanager.olio.llm.ChatLibraryUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.PromptBuilderContext;
@@ -64,7 +70,10 @@ import jakarta.ws.rs.core.Response;
 public class ChatService {
 	
 	private static final Logger logger = LogManager.getLogger(ChatService.class);
-	
+
+	/// Track in-flight async summarizations: sessionId → set of objectIds being summarized
+	private static final Map<String, Set<String>> summarizingRefs = new ConcurrentHashMap<>();
+
 	@Context
 	ServletContext context;
 	
@@ -185,6 +194,81 @@ public class ChatService {
 	public Response getChatConfigById(@PathParam("objectId") String objectId, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord cfg = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, objectId, null);
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/library/status")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getLibraryStatus(@Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		boolean populated = ChatLibraryUtil.isLibraryPopulated(user);
+		boolean promptPopulated = ChatLibraryUtil.isPromptLibraryPopulated(user);
+		String json = "{\"initialized\":" + populated
+			+ ",\"promptInitialized\":" + promptPopulated
+			+ ",\"chatLibraryPath\":\"" + ChatLibraryUtil.LIBRARY_PATH_CHAT + "\""
+			+ ",\"promptLibraryPath\":\"" + ChatLibraryUtil.LIBRARY_PATH_PROMPT + "\"}";
+		return Response.status(200).entity(json).build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/library/init")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response initializeLibrary(String json, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		if(params == null) {
+			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		}
+		String serverUrl = params.get("serverUrl");
+		String model = params.get("model");
+		String serviceType = params.get("serviceType");
+		ChatLibraryUtil.populateDefaults(user, serverUrl, model, serviceType);
+		return Response.status(200).entity("{\"status\":\"ok\"}").build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/library/prompt/init")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response initializePromptLibrary(@Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		ChatLibraryUtil.populatePromptDefaults(user);
+		return Response.status(200).entity("{\"status\":\"ok\"}").build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/library/dir/{type:chat|prompt}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getLibraryDir(@PathParam("type") String type, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		String libName = "chat".equals(type) ? ChatLibraryUtil.LIBRARY_CHAT_CONFIGS : ChatLibraryUtil.LIBRARY_PROMPT_CONFIGS;
+		BaseRecord dir = ChatLibraryUtil.findLibraryDir(user, libName);
+		return Response.status((dir != null ? 200 : 404)).entity((dir != null ? dir.toFullString() : null)).build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/library/chat/{name:[\\.A-Za-z0-9%\\s]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getLibraryChatConfig(@PathParam(FieldNames.FIELD_NAME) String name, @QueryParam("group") String group, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		String groupPath = (group != null && !group.isEmpty()) ? group : null;
+		BaseRecord cfg = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, name, groupPath);
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/library/prompt/{name:[\\.A-Za-z0-9%\\s]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getLibraryPromptConfig(@PathParam(FieldNames.FIELD_NAME) String name, @QueryParam("group") String group, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		String groupPath = (group != null && !group.isEmpty()) ? group : null;
+		BaseRecord cfg = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, name, groupPath);
 		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
 	}
 
@@ -427,8 +511,8 @@ public class ChatService {
 					autoVectorize(user, contextObj, objectType);
 
 					/// Auto-summarize if no summary exists and object has content
-					autoSummarize(user, chatReq, contextObj);
-					break;
+					boolean summarizeStarted = autoSummarize(user, chatReq, contextObj);
+					return contextResult(true, attachType, null, summarizeStarted);
 				}
 				case "tag": {
 					BaseRecord tagObj = findByObjectId(user, ModelNames.MODEL_TAG, objectId);
@@ -443,11 +527,11 @@ public class ChatService {
 					return Response.status(400).entity("{\"error\":\"Invalid attachType: " + attachType + "\"}").build();
 			}
 
-			return Response.status(200).entity("{\"attached\":true,\"attachType\":\"" + attachType + "\"}").build();
+			return contextResult(true, attachType, null, false);
 		}
 		catch (Exception e) {
 			logger.error("Error attaching context", e);
-			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+			return contextResultError(e.getMessage());
 		}
 	}
 
@@ -519,11 +603,11 @@ public class ChatService {
 					return Response.status(400).entity("{\"error\":\"Cannot detach " + detachType + "\"}").build();
 			}
 
-			return Response.status(200).entity("{\"detached\":true,\"detachType\":\"" + detachType + "\"}").build();
+			return contextResult(false, null, detachType, false);
 		}
 		catch (Exception e) {
 			logger.error("Error detaching context", e);
-			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+			return contextResultError(e.getMessage());
 		}
 	}
 
@@ -537,99 +621,113 @@ public class ChatService {
 		try {
 			Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, sessionId);
 			sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-			/// No recursion — sub-records are loaded individually via getFullRecord below
 			sq.planMost(false);
 			BaseRecord chatReq = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
 			if (chatReq == null) {
 				return Response.status(200).entity("{}").build();
 			}
 
-			/// Build a summary of all context bindings using comma-safe approach
-			StringBuilder sb = new StringBuilder();
-			sb.append("{");
-			boolean hasField = false;
+			BaseRecord ctx = RecordFactory.newInstance(OlioModelNames.MODEL_SESSION_CONTEXT);
 
 			BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
 			if (chatConfig != null) {
-				if (hasField) sb.append(",");
-				sb.append("\"chatConfig\":{\"name\":\"").append(escJson((String)chatConfig.get(FieldNames.FIELD_NAME)));
-				sb.append("\",\"objectId\":\"").append((String)chatConfig.get(FieldNames.FIELD_OBJECT_ID));
-				sb.append("\",\"model\":\"").append(escJson((String)chatConfig.get("model"))).append("\"}");
-				hasField = true;
+				BaseRecord ccRef = newContextRef(null,
+					(String) chatConfig.get(FieldNames.FIELD_OBJECT_ID),
+					(String) chatConfig.get(FieldNames.FIELD_NAME));
+				/// chatConfig ref carries the model name for display
+				ccRef.set("schema", (String) chatConfig.get("model"));
+				ctx.set("chatConfig", ccRef);
 
 				BaseRecord sysChRef = chatConfig.get("systemCharacter");
 				if (sysChRef != null) {
 					BaseRecord sysCh = OlioUtil.getFullRecord(sysChRef);
 					if (sysCh != null) {
-						sb.append(",\"systemCharacter\":{\"name\":\"").append(escJson((String)sysCh.get(FieldNames.FIELD_NAME)));
-						sb.append("\",\"objectId\":\"").append((String)sysCh.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+						ctx.set("systemCharacter", newContextRef(null,
+							(String) sysCh.get(FieldNames.FIELD_OBJECT_ID),
+							(String) sysCh.get(FieldNames.FIELD_NAME)));
 					}
 				}
 				BaseRecord usrChRef = chatConfig.get("userCharacter");
 				if (usrChRef != null) {
 					BaseRecord usrCh = OlioUtil.getFullRecord(usrChRef);
 					if (usrCh != null) {
-						sb.append(",\"userCharacter\":{\"name\":\"").append(escJson((String)usrCh.get(FieldNames.FIELD_NAME)));
-						sb.append("\",\"objectId\":\"").append((String)usrCh.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+						ctx.set("userCharacter", newContextRef(null,
+							(String) usrCh.get(FieldNames.FIELD_OBJECT_ID),
+							(String) usrCh.get(FieldNames.FIELD_NAME)));
 					}
 				}
 			}
 
 			BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.get("promptConfig"));
 			if (promptConfig != null) {
-				if (hasField) sb.append(",");
-				sb.append("\"promptConfig\":{\"name\":\"").append(escJson((String)promptConfig.get(FieldNames.FIELD_NAME)));
-				sb.append("\",\"objectId\":\"").append((String)promptConfig.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
-				hasField = true;
+				ctx.set("promptConfig", newContextRef(null,
+					(String) promptConfig.get(FieldNames.FIELD_OBJECT_ID),
+					(String) promptConfig.get(FieldNames.FIELD_NAME)));
 			}
 
 			String contextType = chatReq.get("contextType");
 			if (contextType != null && !contextType.isEmpty()) {
-				if (hasField) sb.append(",");
 				BaseRecord contextObj = OlioUtil.getFullRecord(chatReq.get("context"));
-				sb.append("\"context\":{\"type\":\"").append(contextType).append("\"");
+				BaseRecord legacyRef = newContextRef(contextType, null, null);
 				if (contextObj != null) {
-					sb.append(",\"name\":\"").append(escJson((String)contextObj.get(FieldNames.FIELD_NAME)));
-					sb.append("\",\"objectId\":\"").append((String)contextObj.get(FieldNames.FIELD_OBJECT_ID)).append("\"");
+					legacyRef.set("objectId", (String) contextObj.get(FieldNames.FIELD_OBJECT_ID));
+					legacyRef.set("name", (String) contextObj.get(FieldNames.FIELD_NAME));
 				}
-				sb.append("}");
-				hasField = true;
+				ctx.set("context", legacyRef);
 			}
 
-			/// Include persisted contextRefs with resolved names
+			/// Build contextRefs list with summarizing status
 			List<String> contextRefs = chatReq.get("contextRefs");
+			Set<String> inFlightSet = summarizingRefs.getOrDefault(sessionId, Collections.emptySet());
+			boolean anySummarizing = false;
 			if (contextRefs != null && !contextRefs.isEmpty()) {
-				if (hasField) sb.append(",");
-				sb.append("\"contextRefs\":[");
-				boolean firstRef = true;
+				List<BaseRecord> refList = new ArrayList<>();
 				for (String ref : contextRefs) {
 					try {
 						BaseRecord refRec = RecordFactory.importRecord(ref);
 						String refSchema = refRec.getSchema();
 						String refOid = refRec.get(FieldNames.FIELD_OBJECT_ID);
 						BaseRecord resolved = findByObjectId(user, refSchema, refOid);
-						if (!firstRef) sb.append(",");
-						sb.append("{\"schema\":\"").append(escJson(refSchema));
-						sb.append("\",\"objectId\":\"").append(escJson(refOid));
-						if (resolved != null && resolved.hasField(FieldNames.FIELD_NAME)) {
-							sb.append("\",\"name\":\"").append(escJson((String)resolved.get(FieldNames.FIELD_NAME)));
+						String resolvedName = (resolved != null && resolved.hasField(FieldNames.FIELD_NAME))
+							? (String) resolved.get(FieldNames.FIELD_NAME) : null;
+
+						BaseRecord entry = newContextRef(refSchema, refOid, resolvedName);
+						boolean isSummarizing = inFlightSet.contains(refOid);
+						if (isSummarizing) {
+							entry.set("summarizing", true);
+							anySummarizing = true;
 						}
-						sb.append("\"}");
-						firstRef = false;
+						refList.add(entry);
 					} catch (Exception e) {
 						logger.warn("Error resolving contextRef: " + ref, e);
 					}
 				}
-				sb.append("]");
-				hasField = true;
+				ctx.set("contextRefs", refList);
 			}
 
-			sb.append("}");
-			return Response.status(200).entity(sb.toString()).build();
+			if (anySummarizing) {
+				ctx.set("summarizing", true);
+			}
+
+			return Response.status(200).entity(ctx.toFullString()).build();
 		}
 		catch (Exception e) {
 			logger.error("Error reading session context", e);
 			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	/// Create a new contextRef model instance with optional fields
+	private BaseRecord newContextRef(String schema, String objectId, String name) {
+		try {
+			BaseRecord ref = RecordFactory.newInstance(OlioModelNames.MODEL_CONTEXT_REF);
+			if (schema != null) ref.set("schema", schema);
+			if (objectId != null) ref.set("objectId", objectId);
+			if (name != null) ref.set("name", name);
+			return ref;
+		} catch (Exception e) {
+			logger.error("Failed to create contextRef instance", e);
+			return null;
 		}
 	}
 
@@ -649,6 +747,36 @@ public class ChatService {
 	private static String escJson(String s) {
 		if (s == null) return "";
 		return s.replace("\\", "\\\\").replace("\"", "\\\"");
+	}
+
+	/// Build a contextResult response for attach/detach operations
+	private Response contextResult(boolean attached, String attachType, String detachType, boolean summarizing) {
+		try {
+			BaseRecord result = RecordFactory.newInstance(OlioModelNames.MODEL_CONTEXT_RESULT);
+			if (attached) {
+				result.set("attached", true);
+				if (attachType != null) result.set("attachType", attachType);
+			} else {
+				result.set("detached", true);
+				if (detachType != null) result.set("detachType", detachType);
+			}
+			if (summarizing) result.set("summarizing", true);
+			return Response.status(200).entity(result.toFullString()).build();
+		} catch (Exception e) {
+			logger.error("Failed to build contextResult", e);
+			return Response.status(200).entity("{\"attached\":" + attached + "}").build();
+		}
+	}
+
+	private Response contextResultError(String message) {
+		try {
+			BaseRecord result = RecordFactory.newInstance(OlioModelNames.MODEL_CONTEXT_RESULT);
+			result.set("error", message);
+			return Response.status(500).entity(result.toFullString()).build();
+		} catch (Exception e) {
+			logger.error("Failed to build contextResult error", e);
+			return Response.status(500).entity("{\"error\":\"" + message + "\"}").build();
+		}
 	}
 
 	/// Append a serialized {schema, objectId} ref to chatRequest.contextRefs, deduplicating by objectId
@@ -729,29 +857,56 @@ public class ChatService {
 		}
 	}
 
-	/// Auto-summarize a context object if no summary exists (runs synchronously for now)
-	private void autoSummarize(BaseRecord user, BaseRecord chatReq, BaseRecord contextObj) {
+	/// Auto-summarize a context object if no summary exists.
+	/// Returns true if async summarization was started.
+	private boolean autoSummarize(BaseRecord user, BaseRecord chatReq, BaseRecord contextObj) {
 		try {
 			String content = DocumentUtil.getStringContent(contextObj);
 			if (content == null || content.isEmpty()) {
-				return; /// Not summarizable
+				return false;
 			}
 			BaseRecord existingSummary = ChatUtil.getSummary(user, contextObj);
 			if (existingSummary != null) {
 				logger.info("Summary already exists for " + contextObj.get(FieldNames.FIELD_OBJECT_ID) + " — skipping auto-summarize");
-				return;
+				return false;
 			}
 			/// Resolve chatConfig and promptConfig from the chatRequest for the summarization LLM call
 			BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
 			BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.get("promptConfig"));
 			if (chatConfig == null || promptConfig == null) {
 				logger.warn("Cannot auto-summarize: chatConfig or promptConfig not available on session");
-				return;
+				return false;
 			}
-			logger.info("Auto-summarizing " + contextObj.get(FieldNames.FIELD_OBJECT_ID));
-			ChatUtil.createSummary(user, chatConfig, promptConfig, contextObj, false);
+
+			String sessionId = chatReq.get(FieldNames.FIELD_OBJECT_ID);
+			String objectId = contextObj.get(FieldNames.FIELD_OBJECT_ID);
+
+			/// Mark as in-flight so the context endpoint can report summarizing status
+			summarizingRefs.computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet()).add(objectId);
+			logger.info("Auto-summarizing " + objectId + " (async)");
+
+			/// Run summarization asynchronously so the attach response returns immediately
+			CompletableFuture.runAsync(() -> {
+				try {
+					ChatUtil.createSummary(user, chatConfig, promptConfig, contextObj, false);
+					logger.info("Auto-summarize complete for " + objectId);
+				} catch (Exception e) {
+					logger.warn("Auto-summarize failed for " + objectId + ": " + e.getMessage());
+				} finally {
+					/// Remove from in-flight set
+					Set<String> refs = summarizingRefs.get(sessionId);
+					if (refs != null) {
+						refs.remove(objectId);
+						if (refs.isEmpty()) {
+							summarizingRefs.remove(sessionId);
+						}
+					}
+				}
+			});
+			return true;
 		} catch (Exception e) {
 			logger.warn("Auto-summarize failed: " + e.getMessage());
+			return false;
 		}
 	}
 

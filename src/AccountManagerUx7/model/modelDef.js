@@ -10335,6 +10335,44 @@
       ]
     },
     {
+      "name": "olio.llm.contextRef",
+      "ioConstraints": ["unknown"],
+      "description": "A single context reference entry within a chat session.",
+      "fields": [
+        { "name": "schema", "type": "string" },
+        { "name": "objectId", "type": "string" },
+        { "name": "name", "type": "string" },
+        { "name": "summarizing", "type": "boolean" }
+      ]
+    },
+    {
+      "name": "olio.llm.sessionContext",
+      "ioConstraints": ["unknown"],
+      "description": "Response DTO for GET /chat/context/{sessionId}.",
+      "fields": [
+        { "name": "chatConfig", "type": "model", "baseModel": "olio.llm.contextRef" },
+        { "name": "promptConfig", "type": "model", "baseModel": "olio.llm.contextRef" },
+        { "name": "systemCharacter", "type": "model", "baseModel": "olio.llm.contextRef" },
+        { "name": "userCharacter", "type": "model", "baseModel": "olio.llm.contextRef" },
+        { "name": "context", "type": "model", "baseModel": "olio.llm.contextRef" },
+        { "name": "contextRefs", "type": "list", "baseType": "model", "baseModel": "olio.llm.contextRef" },
+        { "name": "summarizing", "type": "boolean" }
+      ]
+    },
+    {
+      "name": "olio.llm.contextResult",
+      "ioConstraints": ["unknown"],
+      "description": "Response DTO for attach/detach context operations.",
+      "fields": [
+        { "name": "attached", "type": "boolean" },
+        { "name": "detached", "type": "boolean" },
+        { "name": "attachType", "type": "string" },
+        { "name": "detachType", "type": "string" },
+        { "name": "summarizing", "type": "boolean" },
+        { "name": "error", "type": "string" }
+      ]
+    },
+    {
       "name": "olio.llm.message",
       "ioConstraints": [
         "unknown"

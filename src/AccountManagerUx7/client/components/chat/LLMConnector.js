@@ -54,14 +54,24 @@
          * @returns {Object|null} full chatConfig
          */
         getOpenChatTemplate: async function(chatDir) {
-            if (!chatDir) return null;
-            let chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 50);
-            let templateCfg = chatConfigs.find(function(c) { return c.name === "Open Chat"; });
-            if (!templateCfg) {
-                console.warn("[LLMConnector] 'Open Chat' config not found");
-                return null;
+            // 1. Try user's chatDir first (backward compat)
+            if (chatDir) {
+                let chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 50);
+                let templateCfg = chatConfigs.find(function(c) { return c.name === "Open Chat"; });
+                if (templateCfg) {
+                    return am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
+                }
             }
-            return am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
+            // 2. Try library fallback via resolve endpoint
+            let resolved = await LLMConnector.resolveConfig("Open Chat");
+            if (resolved) return resolved;
+
+            // 3. Final fallback: try generalChat
+            resolved = await LLMConnector.resolveConfig("generalChat");
+            if (resolved) return resolved;
+
+            console.warn("[LLMConnector] No chat template found");
+            return null;
         },
 
         /**
@@ -735,6 +745,168 @@
             if (LLMConnector._bgActivityLock === token) {
                 LLMConnector._bgActivityLock = 0;
             }
+        },
+
+        // ── Shared Library Support ────────────────────────────────────────
+
+        /** Cached library status */
+        _libraryStatus: null,
+        _libraryStatusChecked: false,
+
+        /**
+         * Check if the shared chat config library has been initialized.
+         * @returns {Object} {initialized: bool, chatLibraryPath, promptLibraryPath}
+         */
+        checkLibrary: async function() {
+            try {
+                return await m.request({
+                    method: 'GET',
+                    url: g_application_path + "/rest/chat/library/status",
+                    withCredentials: true
+                });
+            } catch (err) {
+                console.error("[LLMConnector] checkLibrary failed:", err);
+                return { initialized: false };
+            }
+        },
+
+        /**
+         * Initialize the shared library with default configs.
+         * @param {string} serverUrl - LLM server URL
+         * @param {string} model - model name
+         * @param {string} serviceType - service type (ollama, openai, etc.)
+         * @returns {Object|null} status response
+         */
+        initLibrary: async function(serverUrl, model, serviceType) {
+            try {
+                return await m.request({
+                    method: 'POST',
+                    url: g_application_path + "/rest/chat/library/init",
+                    withCredentials: true,
+                    body: { serverUrl: serverUrl, model: model, serviceType: serviceType }
+                });
+            } catch (err) {
+                console.error("[LLMConnector] initLibrary failed:", err);
+                return null;
+            }
+        },
+
+        /**
+         * Initialize the shared prompt library with default configs.
+         * No wizard needed — prompts don't require server/model settings.
+         * @returns {Object|null} status response
+         */
+        initPromptLibrary: async function() {
+            try {
+                return await m.request({
+                    method: 'POST',
+                    url: g_application_path + "/rest/chat/library/prompt/init",
+                    withCredentials: true
+                });
+            } catch (err) {
+                console.error("[LLMConnector] initPromptLibrary failed:", err);
+                return null;
+            }
+        },
+
+        /**
+         * Get the library group directory via REST endpoint.
+         * @param {string} type - "chat" or "prompt"
+         * @returns {Object|null} group record with objectId for navigation
+         */
+        getLibraryGroup: async function(type) {
+            try {
+                return await m.request({
+                    method: 'GET',
+                    url: g_application_path + "/rest/chat/library/dir/"
+                        + encodeURIComponent(type),
+                    withCredentials: true
+                });
+            } catch (err) {
+                console.warn("[LLMConnector] getLibraryGroup failed for '" + type + "':", err);
+                return null;
+            }
+        },
+
+        /**
+         * Find the shared /Library/ChatConfigs directory.
+         * @returns {Object|null} group object
+         */
+        findLibraryChatDir: async function() {
+            let dir = await page.findObject("auth.group", "DATA", "/Library/ChatConfigs");
+            if (!dir) {
+                console.warn("[LLMConnector] /Library/ChatConfigs not found");
+            }
+            return dir;
+        },
+
+        /**
+         * Resolve a chat config by name using the server-side fallback chain
+         * (user local -> shared library -> user ~/Chat).
+         * @param {string} name - config name
+         * @param {string} [group] - optional group path override
+         * @returns {Object|null} chatConfig
+         */
+        resolveConfig: async function(name, group) {
+            try {
+                let url = g_application_path + "/rest/chat/library/chat/"
+                    + encodeURIComponent(name);
+                if (group) url += "?group=" + encodeURIComponent(group);
+                return await m.request({
+                    method: 'GET',
+                    url: url,
+                    withCredentials: true
+                });
+            } catch (err) {
+                console.warn("[LLMConnector] resolveConfig failed for '" + name + "':", err);
+                return null;
+            }
+        },
+
+        /**
+         * Resolve a prompt config by name using the server-side fallback chain.
+         * @param {string} name - config name
+         * @param {string} [group] - optional group path override
+         * @returns {Object|null} promptConfig
+         */
+        resolvePrompt: async function(name, group) {
+            try {
+                let url = g_application_path + "/rest/chat/library/prompt/"
+                    + encodeURIComponent(name);
+                if (group) url += "?group=" + encodeURIComponent(group);
+                return await m.request({
+                    method: 'GET',
+                    url: url,
+                    withCredentials: true
+                });
+            } catch (err) {
+                console.warn("[LLMConnector] resolvePrompt failed for '" + name + "':", err);
+                return null;
+            }
+        },
+
+        /**
+         * Ensure the shared library is initialized.
+         * Caches the result so subsequent calls don't hit the server.
+         * @returns {boolean} true if library is ready
+         */
+        ensureLibrary: async function() {
+            if (LLMConnector._libraryStatusChecked && LLMConnector._libraryStatus
+                && LLMConnector._libraryStatus.initialized) {
+                return true;
+            }
+            let status = await LLMConnector.checkLibrary();
+            LLMConnector._libraryStatus = status;
+            LLMConnector._libraryStatusChecked = true;
+            return status && status.initialized;
+        },
+
+        /**
+         * Reset the library status cache (call after wizard completes).
+         */
+        resetLibraryCache: function() {
+            LLMConnector._libraryStatus = null;
+            LLMConnector._libraryStatusChecked = false;
         },
 
         setBgActivity: function(icon, label) {

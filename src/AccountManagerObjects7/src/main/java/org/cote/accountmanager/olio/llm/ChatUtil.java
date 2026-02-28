@@ -1179,7 +1179,50 @@ public class ChatUtil {
 		cfg = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		return cfg;
 	}
-	
+
+	/// Query the shared library for a config by name.
+	/// Unlike getConfig(), this does NOT filter by OWNER_ID, since library objects
+	/// are owned by the admin user. PBAC is still enforced via AccessPoint.find().
+	///
+	public static BaseRecord getLibraryConfig(BaseRecord user, String modelName, String name) {
+		String libraryName = OlioModelNames.MODEL_CHAT_CONFIG.equals(modelName)
+			? ChatLibraryUtil.LIBRARY_CHAT_CONFIGS
+			: ChatLibraryUtil.LIBRARY_PROMPT_CONFIGS;
+		BaseRecord libDir = ChatLibraryUtil.findLibraryDir(user, libraryName);
+		if (libDir == null) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(modelName);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.field(FieldNames.FIELD_GROUP_ID, libDir.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_NAME, name);
+		q.setContextUser(user);
+		q.planMost(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/// Resolve a config using a fallback chain:
+	/// 1. User's specified group (if groupPath provided)
+	/// 2. Shared library
+	/// 3. User's ~/Chat
+	///
+	public static BaseRecord resolveConfig(BaseRecord user, String modelName, String name, String groupPath) {
+		/// 1. Try specified group first
+		if (groupPath != null && !groupPath.isEmpty()) {
+			BaseRecord cfg = getConfig(user, modelName, null, name, groupPath);
+			if (cfg != null) {
+				return cfg;
+			}
+		}
+		/// 2. Try shared library (no owner filter)
+		BaseRecord cfg = getLibraryConfig(user, modelName, name);
+		if (cfg != null) {
+			return cfg;
+		}
+		/// 3. Fallback to user's ~/Chat
+		return getConfig(user, modelName, null, name);
+	}
+
 	public static ChatResponse getChatResponse(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
 		if(req == null || creq == null) {
 			return null;

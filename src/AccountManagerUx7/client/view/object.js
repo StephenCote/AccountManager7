@@ -315,6 +315,23 @@
             delete entity.vaultId;
             delete entity.vaulted;
             delete entity.keyId;
+
+            /// When copying from a /Library/ group, redirect to the user's local group
+            if(entity.groupPath && entity.groupPath.match(/^\/Library\//i)){
+                let localPath = "~/Chat";
+                if(!entity.groupPath.match(/ChatConfigs|PromptConfigs/i)){
+                    localPath = "~/" + entity.groupPath.replace(/^\/Library\//i, "");
+                }
+                let userGroup = await page.makePath("auth.group", "DATA", localPath);
+                if(userGroup){
+                    entity.groupId = userGroup.id;
+                    entity.groupPath = userGroup.path;
+                }
+            }
+
+            /// Mark as new so doUpdate() navigates to the copy after save
+            objectNew = true;
+
             resetEntity(entity);
             m.redraw();
         }

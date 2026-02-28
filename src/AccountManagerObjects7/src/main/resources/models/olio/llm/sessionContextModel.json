@@ -1,0 +1,49 @@
+{
+	"name": "olio.llm.sessionContext",
+	"ioConstraints": ["unknown"],
+	"description": "Ephemeral response DTO for GET /chat/context/{sessionId} — aggregates all context bindings for a chat session.",
+	"fields": [
+		{
+			"name": "chatConfig",
+			"type": "model",
+			"baseModel": "olio.llm.contextRef",
+			"description": "Resolved chatConfig binding (name, objectId, model)."
+		},
+		{
+			"name": "promptConfig",
+			"type": "model",
+			"baseModel": "olio.llm.contextRef",
+			"description": "Resolved promptConfig binding."
+		},
+		{
+			"name": "systemCharacter",
+			"type": "model",
+			"baseModel": "olio.llm.contextRef",
+			"description": "Resolved system character binding."
+		},
+		{
+			"name": "userCharacter",
+			"type": "model",
+			"baseModel": "olio.llm.contextRef",
+			"description": "Resolved user character binding."
+		},
+		{
+			"name": "context",
+			"type": "model",
+			"baseModel": "olio.llm.contextRef",
+			"description": "Legacy single-context binding (backward compat)."
+		},
+		{
+			"name": "contextRefs",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.contextRef",
+			"description": "Persisted multi-ref context references (documents, tags, objects)."
+		},
+		{
+			"name": "summarizing",
+			"type": "boolean",
+			"description": "True when any contextRef is currently being auto-summarized."
+		}
+	]
+}

@@ -9,7 +9,9 @@
 
 	am7model.system = {
 		library: {
-			"data.color": "/Library/Colors"
+			"data.color": "/Library/Colors",
+			"olio.llm.chatConfig": "/Library/ChatConfigs",
+			"olio.llm.promptConfig": "/Library/PromptConfigs"
 		}
 	};
 

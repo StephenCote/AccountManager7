@@ -43,13 +43,17 @@
             if (qr && qr.results) promptConfigs = qr.results;
         }
 
-        // Purpose-based filtering with fallback
+        // Purpose-based filtering with fallback chain (library-aware)
         let cc = chatConfigs.filter(function(c) { return c.purpose === "analysis"; });
-        if (!cc.length) cc = chatConfigs.filter(function(c) { return c.name && c.name.match(/^(Analyze|Object)/i); });
+        if (!cc.length) {
+            let libCfg = (typeof LLMConnector !== "undefined") ? await LLMConnector.resolveConfig("contentAnalysis") : null;
+            if (libCfg) cc = [libCfg];
+        }
+        if (!cc.length) cc = chatConfigs.filter(function(c) { return c.name && c.name.match(/^(Analyze|Object|contentAnalysis)/i); });
         if (!cc.length) cc = chatConfigs;
 
         let pc = promptConfigs.filter(function(c) { return c.purpose === "analysis"; });
-        if (!pc.length) pc = promptConfigs.filter(function(c) { return c.name && c.name.match(/^(Analyze|Object)/i); });
+        if (!pc.length) pc = promptConfigs.filter(function(c) { return c.name && c.name.match(/^(Analyze|Object|contentAnalysis)/i); });
         if (!pc.length) pc = promptConfigs;
 
         return {

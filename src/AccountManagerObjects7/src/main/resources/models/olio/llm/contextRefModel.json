@@ -1,0 +1,27 @@
+{
+	"name": "olio.llm.contextRef",
+	"ioConstraints": ["unknown"],
+	"description": "A single context reference entry within a chat session — document, tag, or other object.",
+	"fields": [
+		{
+			"name": "schema",
+			"type": "string",
+			"description": "Model schema of the referenced object (e.g. data.data, data.tag, olio.charPerson)."
+		},
+		{
+			"name": "objectId",
+			"type": "string",
+			"description": "Object ID of the referenced object."
+		},
+		{
+			"name": "name",
+			"type": "string",
+			"description": "Resolved display name of the referenced object."
+		},
+		{
+			"name": "summarizing",
+			"type": "boolean",
+			"description": "True when an auto-summarize operation is in progress for this reference."
+		}
+	]
+}

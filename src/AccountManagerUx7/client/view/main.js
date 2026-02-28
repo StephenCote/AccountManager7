@@ -21,7 +21,7 @@
                 m("div",{class : "content-main"},[
                     page.contentRouter()
                 ])
-            ]), page.components.dialog.loadDialog(), page.loadToast()];
+            ]), page.components.dialog.loadDialog(), page.loadToast(), (typeof ChatSetupWizard !== "undefined" ? ChatSetupWizard.view() : null)];
             return vnode;
         }
     };

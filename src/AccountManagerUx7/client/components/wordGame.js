@@ -308,6 +308,11 @@ async function handleEndOfRound() {
     //let chatName = "WordBattle.chat";
     let chatName = "A1 Mini";
     async function prepareChatConfig() {
+        // Try library-resolved config first, fall back to legacy hardcoded
+        if (typeof LLMConnector !== "undefined") {
+            let libCfg = await LLMConnector.resolveConfig("generalChat");
+            if (libCfg) return libCfg;
+        }
         return am7chat.makeChat(chatName, "herm-local", "http://localhost:11434", "ollama");
     }
 

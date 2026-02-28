@@ -60,6 +60,16 @@
             try {
                 this._setStatus('initializing');
 
+                // Ensure shared library is initialized; show wizard if not
+                let libReady = await LLMConnector.ensureLibrary();
+                if (!libReady && typeof ChatSetupWizard !== "undefined") {
+                    let self = this;
+                    ChatSetupWizard.show(function() {
+                        self.initialize(command, intervalMs, sessionName, options);
+                    });
+                    return;
+                }
+
                 // 1. Find ~/Chat directory (Phase 10: LLMConnector)
                 const chatDir = await LLMConnector.findChatDir();
                 if (!chatDir) {

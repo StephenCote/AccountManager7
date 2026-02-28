@@ -38,6 +38,7 @@ const jsFiles = [
     'client/components/chat/ConversationManager.js',
     'client/components/chat/ContextPanel.js',
     'client/components/chat/AnalysisManager.js',
+    'client/components/chat/ChatSetupWizard.js',
     'client/components/chat/MemoryPanel.js',
 
     // Shared Test Framework (Phase 6)

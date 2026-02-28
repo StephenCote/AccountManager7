@@ -265,6 +265,29 @@
 
     async function openSystemLibrary() {
       let grp = await page.systemLibrary(baseListType);
+      if (!grp) {
+        if (baseListType === "olio.llm.promptConfig" && typeof LLMConnector !== "undefined") {
+          // Prompt library auto-creates without wizard
+          page.toast("info", "Initializing prompt library...");
+          let result = await LLMConnector.initPromptLibrary();
+          if (result && result.status === "ok") {
+            LLMConnector.resetLibraryCache();
+            grp = await page.systemLibrary(baseListType);
+            if (grp) {
+              navigateToPathId(grp);
+              return;
+            }
+          }
+          page.toast("error", "Failed to initialize prompt library");
+        } else if (baseListType && baseListType.match(/^olio\.llm\./) && typeof ChatSetupWizard !== "undefined") {
+          ChatSetupWizard.show(function() {
+            openSystemLibrary();
+          });
+        } else {
+          page.toast("info", "System library not initialized");
+        }
+        return;
+      }
       navigateToPathId(grp);
     }
 
@@ -807,7 +830,7 @@
         }
         else v = getListView();
         if (vnode.attrs.pickerMode || vnode.attrs.embeddedMode) return v;
-        return [v, page.components.dialog.loadDialog(), page.loadToast()];
+        return [v, page.components.dialog.loadDialog(), page.loadToast(), (typeof ChatSetupWizard !== "undefined" ? ChatSetupWizard.view() : null)];
       }
     };
     window.dbgList = listPage;

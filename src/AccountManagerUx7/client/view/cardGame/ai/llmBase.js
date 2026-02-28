@@ -80,6 +80,16 @@
                     return false;
                 }
 
+                // Ensure shared library is initialized; show wizard if not
+                let libReady = await LLMConnector.ensureLibrary();
+                if (!libReady && typeof ChatSetupWizard !== "undefined") {
+                    let self = this;
+                    ChatSetupWizard.show(function() {
+                        self.initializeLLM(chatName, promptName, systemPrompt, temperature);
+                    });
+                    return false;
+                }
+
                 const chatDir = await LLMConnector.findChatDir();
                 if (!chatDir) {
                     this.lastError = "~/Chat directory not found";
