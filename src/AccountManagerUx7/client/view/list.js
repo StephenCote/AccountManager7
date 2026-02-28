@@ -264,28 +264,40 @@
     }
 
     async function openSystemLibrary() {
-      let grp = await page.systemLibrary(baseListType);
-      if (!grp) {
-        if (baseListType === "olio.llm.promptConfig" && typeof LLMConnector !== "undefined") {
-          // Prompt library auto-creates without wizard
+      // For chat/prompt library types, use REST endpoint for reliable lookup
+      if (baseListType && baseListType.match(/^olio\.llm\./) && typeof LLMConnector !== "undefined") {
+        let libType = baseListType.match(/promptConfig/) ? "prompt" : "chat";
+        let grp = await LLMConnector.getLibraryGroup(libType);
+        if (grp) {
+          navigateToPathId(grp);
+          return;
+        }
+        // Library doesn't exist — prompt auto-creates, chat needs wizard
+        if (libType === "prompt") {
           page.toast("info", "Initializing prompt library...");
           let result = await LLMConnector.initPromptLibrary();
           if (result && result.status === "ok") {
             LLMConnector.resetLibraryCache();
-            grp = await page.systemLibrary(baseListType);
+            grp = await LLMConnector.getLibraryGroup("prompt");
             if (grp) {
               navigateToPathId(grp);
               return;
             }
           }
           page.toast("error", "Failed to initialize prompt library");
-        } else if (baseListType && baseListType.match(/^olio\.llm\./) && typeof ChatSetupWizard !== "undefined") {
+        } else if (typeof ChatSetupWizard !== "undefined") {
           ChatSetupWizard.show(function() {
             openSystemLibrary();
           });
         } else {
-          page.toast("info", "System library not initialized");
+          page.toast("info", "Chat library not initialized");
         }
+        return;
+      }
+      // Fallback for non-chat library types (e.g., Colors)
+      let grp = await page.systemLibrary(baseListType);
+      if (!grp) {
+        page.toast("info", "System library not initialized");
         return;
       }
       navigateToPathId(grp);
