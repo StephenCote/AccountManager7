@@ -635,7 +635,7 @@ public class ChatService {
 					(String) chatConfig.get(FieldNames.FIELD_OBJECT_ID),
 					(String) chatConfig.get(FieldNames.FIELD_NAME));
 				/// chatConfig ref carries the model name for display
-				ccRef.set("schema", (String) chatConfig.get("model"));
+				ccRef.set("refSchema", (String) chatConfig.get("model"));
 				ctx.set("chatConfig", ccRef);
 
 				BaseRecord sysChRef = chatConfig.get("systemCharacter");
@@ -721,7 +721,7 @@ public class ChatService {
 	private BaseRecord newContextRef(String schema, String objectId, String name) {
 		try {
 			BaseRecord ref = RecordFactory.newInstance(OlioModelNames.MODEL_CONTEXT_REF);
-			if (schema != null) ref.set("schema", schema);
+			if (schema != null) ref.set("refSchema", schema);
 			if (objectId != null) ref.set("objectId", objectId);
 			if (name != null) ref.set("name", name);
 			return ref;

@@ -227,14 +227,15 @@
 
     function contextRefRowView(ref) {
         if (!ref) return "";
-        let icon = refSchemaIcon(ref.schema);
-        let label = refSchemaLabel(ref.schema);
+        let rSchema = ref.refSchema || ref.schema;
+        let icon = refSchemaIcon(rSchema);
+        let label = refSchemaLabel(rSchema);
         let displayName = ref.name || ref.objectId || "\u2014";
-        let detachType = ref.schema === "data.tag" ? "tag" : "context";
+        let detachType = rSchema === "data.tag" ? "tag" : "context";
         let isSummarizing = ref.summarizing === true;
 
         return m("div", { class: "flex items-center justify-between text-xs py-0.5" }, [
-            m("span", { class: "flex items-center truncate flex-1 min-w-0" + (isSummarizing ? " text-yellow-400" : " text-gray-400"), title: ref.schema + " " + displayName }, [
+            m("span", { class: "flex items-center truncate flex-1 min-w-0" + (isSummarizing ? " text-yellow-400" : " text-gray-400"), title: rSchema + " " + displayName }, [
                 isSummarizing
                     ? m("span", { class: "material-symbols-outlined mr-1 animate-spin", style: "font-size: 14px;" }, "progress_activity")
                     : m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 14px;" }, icon),
@@ -265,8 +266,8 @@
         if (_contextData.chatConfig) {
             let cc = _contextData.chatConfig;
             rows.push(contextRowView("Config", cc, null));
-            /// schema field carries the LLM model name for chatConfig refs
-            let modelName = cc.model || cc.schema;
+            /// refSchema field carries the LLM model name for chatConfig refs
+            let modelName = cc.model || cc.refSchema;
             if (modelName) {
                 rows.push(m("div", { class: "text-xs text-gray-500 pl-3" }, "Model: " + modelName));
             }
@@ -289,7 +290,7 @@
         } else if (_contextData.context) {
             /// Fallback: display legacy single context
             let ctx = _contextData.context;
-            let label = (ctx.type || ctx.schema || "object");
+            let label = (ctx.type || ctx.refSchema || "object");
             rows.push(contextRowView("Context (" + label + ")", ctx, "context"));
         }
 

@@ -4,7 +4,7 @@
 	"description": "A single context reference entry within a chat session — document, tag, or other object.",
 	"fields": [
 		{
-			"name": "schema",
+			"name": "refSchema",
 			"type": "string",
 			"description": "Model schema of the referenced object (e.g. data.data, data.tag, olio.charPerson)."
 		},
