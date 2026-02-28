@@ -218,13 +218,19 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response initializeLibrary(String json, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-		if(params == null) {
+		String serverUrl = null;
+		String model = null;
+		String serviceType = null;
+		try {
+			ObjectMapper om = new ObjectMapper();
+			JsonNode body = om.readTree(json);
+			serverUrl = body.has("serverUrl") ? body.get("serverUrl").asText() : null;
+			model = body.has("model") ? body.get("model").asText() : null;
+			serviceType = body.has("serviceType") ? body.get("serviceType").asText() : null;
+		} catch (Exception e) {
+			logger.error("Failed to parse library init request body", e);
 			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
 		}
-		String serverUrl = params.get("serverUrl");
-		String model = params.get("model");
-		String serviceType = params.get("serviceType");
 		ChatLibraryUtil.populateDefaults(user, serverUrl, model, serviceType);
 		return Response.status(200).entity("{\"status\":\"ok\"}").build();
 	}

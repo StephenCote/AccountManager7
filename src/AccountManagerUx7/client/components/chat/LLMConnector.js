@@ -786,7 +786,8 @@
                     body: { serverUrl: serverUrl, model: model, serviceType: serviceType }
                 });
             } catch (err) {
-                console.error("[LLMConnector] initLibrary failed:", err);
+                let msg = (err && err.error) ? err.error : (err && err.message) ? err.message : String(err);
+                console.error("[LLMConnector] initLibrary failed:", msg);
                 return null;
             }
         },

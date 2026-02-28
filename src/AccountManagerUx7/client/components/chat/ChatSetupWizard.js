@@ -65,7 +65,7 @@
                 _error = "Setup failed. Please check your settings.";
             }
         } catch (e) {
-            _error = e.message || "Setup failed";
+            _error = (e && e.error) ? e.error : (e && e.message) ? e.message : "Setup failed";
         }
         _saving = false;
         m.redraw();
