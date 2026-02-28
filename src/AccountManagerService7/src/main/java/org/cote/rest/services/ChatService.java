@@ -247,7 +247,7 @@ public class ChatService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		String libName = "chat".equals(type) ? ChatLibraryUtil.LIBRARY_CHAT_CONFIGS : ChatLibraryUtil.LIBRARY_PROMPT_CONFIGS;
 		BaseRecord dir = ChatLibraryUtil.findLibraryDir(user, libName);
-		return Response.status((dir != null ? 200 : 404)).entity((dir != null ? dir.toFullString() : null)).build();
+		return Response.status((dir != null ? 200 : 404)).entity((dir != null ? dir.toFullString() : "{\"error\":\"not found\"}")).build();
 	}
 
 	@RolesAllowed({"admin","user"})

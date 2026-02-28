@@ -816,14 +816,20 @@
          */
         getLibraryGroup: async function(type) {
             try {
-                return await m.request({
+                let result = await m.request({
                     method: 'GET',
                     url: g_application_path + "/rest/chat/library/dir/"
                         + encodeURIComponent(type),
-                    withCredentials: true
+                    withCredentials: true,
+                    extract: function(xhr) {
+                        if (xhr.status === 404) return null;
+                        try { return JSON.parse(xhr.responseText); } catch(e) { return null; }
+                    }
                 });
+                if (result && result.error) return null;
+                return result;
             } catch (err) {
-                console.warn("[LLMConnector] getLibraryGroup failed for '" + type + "':", err);
+                console.log("[LLMConnector] Library group not found for '" + type + "'");
                 return null;
             }
         },

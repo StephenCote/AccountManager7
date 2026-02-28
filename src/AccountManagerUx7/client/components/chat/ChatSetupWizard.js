@@ -172,9 +172,9 @@
                     m("div", { class: "screen-glass-gray" })
                 ]),
                 m("div", { class: "page-dialog-container" }, [
-                    m("div", { class: "page-dialog page-dialog-50" }, [
+                    m("div", { class: "page-dialog page-dialog-75", style: "overflow-y: auto;" }, [
                         m("div", { class: "list-results-container" }, [
-                            m("div", { class: "list-results" }, [
+                            m("div", { class: "list-results", style: "overflow-y: auto;" }, [
                                 m("div", { class: "result-nav-outer" }, [
                                     m("div", { class: "result-nav-inner" }, [
                                         m("nav", { class: "result-nav" }, [
