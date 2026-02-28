@@ -27,6 +27,7 @@ import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatResponse;
 import org.cote.accountmanager.olio.llm.ChatLibraryUtil;
+import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.PromptBuilderContext;
@@ -161,7 +162,7 @@ public class ChatService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		String groupPath = (group != null && !group.isEmpty()) ? group : null;
 		BaseRecord cfg = ChatUtil.getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, null, name, groupPath);
-		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : "{\"error\":\"not found\"}")).build();
 	}
 
 
@@ -174,7 +175,7 @@ public class ChatService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		String groupPath = (group != null && !group.isEmpty()) ? group : null;
 		BaseRecord cfg = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, name, groupPath);
-		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : "{\"error\":\"not found\"}")).build();
 	}
 	
 	@RolesAllowed({"admin","user"})
@@ -184,7 +185,7 @@ public class ChatService {
 	public Response getPromptConfigById(@PathParam("objectId") String objectId, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord cfg = ChatUtil.getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, objectId, null);
-		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : "{\"error\":\"not found\"}")).build();
 	}
 
 	@RolesAllowed({"admin","user"})
@@ -194,7 +195,7 @@ public class ChatService {
 	public Response getChatConfigById(@PathParam("objectId") String objectId, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord cfg = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, objectId, null);
-		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : "{\"error\":\"not found\"}")).build();
 	}
 
 	@RolesAllowed({"admin","user"})
@@ -205,10 +206,13 @@ public class ChatService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		boolean populated = ChatLibraryUtil.isLibraryPopulated(user);
 		boolean promptPopulated = ChatLibraryUtil.isPromptLibraryPopulated(user);
+		boolean policyPopulated = PolicyUtil.isPolicyLibraryPopulated(user);
 		String json = "{\"initialized\":" + populated
 			+ ",\"promptInitialized\":" + promptPopulated
+			+ ",\"policyInitialized\":" + policyPopulated
 			+ ",\"chatLibraryPath\":\"" + ChatLibraryUtil.LIBRARY_PATH_CHAT + "\""
-			+ ",\"promptLibraryPath\":\"" + ChatLibraryUtil.LIBRARY_PATH_PROMPT + "\"}";
+			+ ",\"promptLibraryPath\":\"" + ChatLibraryUtil.LIBRARY_PATH_PROMPT + "\""
+			+ ",\"policyLibraryPath\":\"" + PolicyUtil.LIBRARY_PATH_POLICIES + "\"}";
 		return Response.status(200).entity(json).build();
 	}
 
@@ -247,13 +251,26 @@ public class ChatService {
 
 	@RolesAllowed({"admin","user"})
 	@GET
-	@Path("/library/dir/{type:chat|prompt}")
+	@Path("/library/dir/{type:[a-z]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getLibraryDir(@PathParam("type") String type, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		String libName = "chat".equals(type) ? ChatLibraryUtil.LIBRARY_CHAT_CONFIGS : ChatLibraryUtil.LIBRARY_PROMPT_CONFIGS;
+		String libName = ChatLibraryUtil.resolveLibraryName(type);
+		if (libName == null) {
+			return Response.status(400).entity("{\"error\":\"Unknown library type: " + type + "\"}").build();
+		}
 		BaseRecord dir = ChatLibraryUtil.findLibraryDir(user, libName);
 		return Response.status((dir != null ? 200 : 404)).entity((dir != null ? dir.toFullString() : "{\"error\":\"not found\"}")).build();
+	}
+
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/library/policy/init")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response initializePolicyLibrary(@Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		PolicyUtil.populatePolicyDefaults(user);
+		return Response.status(200).entity("{\"status\":\"ok\"}").build();
 	}
 
 	@RolesAllowed({"admin","user"})
@@ -264,7 +281,7 @@ public class ChatService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		String groupPath = (group != null && !group.isEmpty()) ? group : null;
 		BaseRecord cfg = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, name, groupPath);
-		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : "{\"error\":\"not found\"}")).build();
 	}
 
 	@RolesAllowed({"admin","user"})
@@ -275,7 +292,7 @@ public class ChatService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		String groupPath = (group != null && !group.isEmpty()) ? group : null;
 		BaseRecord cfg = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, name, groupPath);
-		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : "{\"error\":\"not found\"}")).build();
 	}
 
 	@RolesAllowed({"admin","user"})

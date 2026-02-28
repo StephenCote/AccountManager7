@@ -11,7 +11,13 @@
 		library: {
 			"data.color": "/Library/Colors",
 			"olio.llm.chatConfig": "/Library/ChatConfigs",
-			"olio.llm.promptConfig": "/Library/PromptConfigs"
+			"olio.llm.promptConfig": "/Library/PromptConfigs",
+			"policy.policy": "/Library/Policies",
+			"policy.rule": "/Library/Rules",
+			"policy.pattern": "/Library/Patterns",
+			"policy.fact": "/Library/Facts",
+			"policy.operation": "/Library/Operations",
+			"policy.function": "/Library/Functions"
 		}
 	};
 

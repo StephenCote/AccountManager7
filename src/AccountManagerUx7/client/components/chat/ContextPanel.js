@@ -49,6 +49,9 @@
             } else {
                 stopSummarizePoller();
             }
+
+            /// Notify listeners (drives bgActivity banner in chat view)
+            if (_onContextChange) _onContextChange(_contextData);
         } catch (e) {
             console.warn("[ContextPanel] Failed to load context:", e);
             _contextData = null;
@@ -262,6 +265,14 @@
         }
 
         let rows = [];
+
+        /// Prominent summarizing banner when any context ref is being summarized
+        if (_contextData.summarizing) {
+            rows.push(m("div", { class: "flex items-center gap-1 px-2 py-1.5 mb-1 rounded bg-yellow-900/40 border border-yellow-700/50 text-yellow-300 text-xs" }, [
+                m("span", { class: "material-symbols-outlined animate-spin", style: "font-size: 16px;" }, "progress_activity"),
+                m("span", "Creating summary for attached document(s)...")
+            ]));
+        }
 
         if (_contextData.chatConfig) {
             let cc = _contextData.chatConfig;

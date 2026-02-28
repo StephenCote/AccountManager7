@@ -2402,7 +2402,7 @@
             description: {
                 layout: "full"
             },
-            ruleType: {
+            type: {
                 layout: "third"
             },
             condition: {

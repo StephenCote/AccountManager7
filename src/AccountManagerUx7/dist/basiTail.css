@@ -9730,6 +9730,10 @@ button.button-tab-active:hover:is(.dark *) {
   border-color: rgb(255 255 255 / var(--tw-border-opacity, 1));
 }
 
+.border-yellow-700\/50 {
+  border-color: rgb(161 98 7 / 0.5);
+}
+
 .border-t-transparent {
   border-top-color: transparent;
 }
@@ -10019,6 +10023,10 @@ button.button-tab-active:hover:is(.dark *) {
 .bg-yellow-900 {
   --tw-bg-opacity: 1;
   background-color: rgb(113 63 18 / var(--tw-bg-opacity, 1));
+}
+
+.bg-yellow-900\/40 {
+  background-color: rgb(113 63 18 / 0.4);
 }
 
 .bg-opacity-20 {
@@ -10523,6 +10531,11 @@ button.button-tab-active:hover:is(.dark *) {
 .text-yellow-800 {
   --tw-text-opacity: 1;
   color: rgb(133 77 14 / var(--tw-text-opacity, 1));
+}
+
+.text-yellow-300 {
+  --tw-text-opacity: 1;
+  color: rgb(253 224 71 / var(--tw-text-opacity, 1));
 }
 
 .line-through {

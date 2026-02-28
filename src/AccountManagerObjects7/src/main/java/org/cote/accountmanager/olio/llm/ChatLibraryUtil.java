@@ -28,6 +28,12 @@ public class ChatLibraryUtil {
 	public static final String LIBRARY_PATH_CHAT = LibraryUtil.basePath + "/" + LIBRARY_CHAT_CONFIGS;
 	public static final String LIBRARY_PATH_PROMPT = LibraryUtil.basePath + "/" + LIBRARY_PROMPT_CONFIGS;
 
+	/// Map library type keys to directory names (chat/prompt only)
+	private static final java.util.Map<String, String> LIBRARY_TYPE_MAP = java.util.Map.of(
+		"chat", LIBRARY_CHAT_CONFIGS,
+		"prompt", LIBRARY_PROMPT_CONFIGS
+	);
+
 	public static BaseRecord getCreateChatConfigLibrary(BaseRecord user) {
 		LibraryUtil.configureLibraryRootReader(user);
 		return LibraryUtil.getCreateSharedLibrary(user, LIBRARY_CHAT_CONFIGS, true);
@@ -36,6 +42,16 @@ public class ChatLibraryUtil {
 	public static BaseRecord getCreatePromptConfigLibrary(BaseRecord user) {
 		LibraryUtil.configureLibraryRootReader(user);
 		return LibraryUtil.getCreateSharedLibrary(user, LIBRARY_PROMPT_CONFIGS, true);
+	}
+
+	/// Resolve a library type key to the directory name.
+	/// Checks chat/prompt types first, then delegates to PolicyUtil.
+	public static String resolveLibraryName(String typeKey) {
+		String name = LIBRARY_TYPE_MAP.get(typeKey);
+		if (name == null) {
+			name = org.cote.accountmanager.policy.PolicyUtil.resolveLibraryName(typeKey);
+		}
+		return name;
 	}
 
 	public static BaseRecord findLibraryDir(BaseRecord user, String name) {

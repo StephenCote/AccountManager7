@@ -28,6 +28,8 @@ import org.cote.accountmanager.io.IPath;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
+import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
@@ -59,6 +61,7 @@ import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.LibraryUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -998,8 +1001,225 @@ public class PolicyUtil {
 		}
 		return buff.toString();
 	}
-	
 
-	
-	
+	// ── Shared Library Support ─────────────────────────────────────────
+
+	public static final String LIBRARY_POLICIES = "Policies";
+	public static final String LIBRARY_RULES = "Rules";
+	public static final String LIBRARY_PATTERNS = "Patterns";
+	public static final String LIBRARY_FACTS = "Facts";
+	public static final String LIBRARY_OPERATIONS = "Operations";
+	public static final String LIBRARY_FUNCTIONS = "Functions";
+
+	public static final String LIBRARY_PATH_POLICIES = LibraryUtil.basePath + "/" + LIBRARY_POLICIES;
+	public static final String LIBRARY_PATH_RULES = LibraryUtil.basePath + "/" + LIBRARY_RULES;
+	public static final String LIBRARY_PATH_PATTERNS = LibraryUtil.basePath + "/" + LIBRARY_PATTERNS;
+	public static final String LIBRARY_PATH_FACTS = LibraryUtil.basePath + "/" + LIBRARY_FACTS;
+	public static final String LIBRARY_PATH_OPERATIONS = LibraryUtil.basePath + "/" + LIBRARY_OPERATIONS;
+	public static final String LIBRARY_PATH_FUNCTIONS = LibraryUtil.basePath + "/" + LIBRARY_FUNCTIONS;
+
+	private static final Map<String, String> LIBRARY_TYPE_MAP = Map.ofEntries(
+		Map.entry("policy", LIBRARY_POLICIES),
+		Map.entry("rule", LIBRARY_RULES),
+		Map.entry("pattern", LIBRARY_PATTERNS),
+		Map.entry("fact", LIBRARY_FACTS),
+		Map.entry("operation", LIBRARY_OPERATIONS),
+		Map.entry("function", LIBRARY_FUNCTIONS)
+	);
+
+	public static String resolveLibraryName(String typeKey) {
+		return LIBRARY_TYPE_MAP.get(typeKey);
+	}
+
+	public static BaseRecord getCreateLibrary(BaseRecord user, String libraryName) {
+		LibraryUtil.configureLibraryRootReader(user);
+		return LibraryUtil.getCreateSharedLibrary(user, libraryName, true);
+	}
+
+	public static BaseRecord findPolicyLibraryDir(BaseRecord user, String name) {
+		IOContext ctx = IOSystem.getActiveContext();
+		OrganizationContext octx = ctx.getOrganizationContext(user.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
+		if (octx == null) {
+			return null;
+		}
+		return ctx.getPathUtil().findPath(octx.getAdminUser(), ModelNames.MODEL_GROUP, LibraryUtil.basePath + "/" + name, GroupEnumType.DATA.toString(), octx.getOrganizationId());
+	}
+
+	public static boolean isPolicyLibraryPopulated(BaseRecord user) {
+		BaseRecord dir = findPolicyLibraryDir(user, LIBRARY_POLICIES);
+		if (dir == null) {
+			return false;
+		}
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_POLICY, FieldNames.FIELD_NAME, "RPG Response Policy");
+		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return IOSystem.getActiveContext().getSearch().findRecord(q) != null;
+	}
+
+	public static void populatePolicyDefaults(BaseRecord user) {
+		IOContext ctx = IOSystem.getActiveContext();
+		OrganizationContext octx = ctx.getOrganizationContext(user.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
+		if (octx == null) {
+			logger.error("Failed to find organization context");
+			return;
+		}
+		BaseRecord adminUser = octx.getAdminUser();
+
+		BaseRecord policyDir = getCreateLibrary(user, LIBRARY_POLICIES);
+		BaseRecord ruleDir = getCreateLibrary(user, LIBRARY_RULES);
+		BaseRecord patternDir = getCreateLibrary(user, LIBRARY_PATTERNS);
+		BaseRecord factDir = getCreateLibrary(user, LIBRARY_FACTS);
+		BaseRecord operationDir = getCreateLibrary(user, LIBRARY_OPERATIONS);
+		getCreateLibrary(user, LIBRARY_FUNCTIONS);
+
+		if (policyDir == null || ruleDir == null || patternDir == null || factDir == null || operationDir == null) {
+			logger.error("Failed to create policy library directories");
+			return;
+		}
+
+		String[] templateNames = {"rpg", "general", "rpg.bias"};
+		for (String templateName : templateNames) {
+			createPolicyFromTemplate(adminUser, user, templateName, policyDir, ruleDir, patternDir, factDir, operationDir);
+		}
+	}
+
+	private static void createPolicyFromTemplate(BaseRecord adminUser, BaseRecord user,
+			String templateName, BaseRecord policyDir, BaseRecord ruleDir,
+			BaseRecord patternDir, BaseRecord factDir, BaseRecord operationDir) {
+
+		String resourcePath = "olio/llm/policy." + templateName + ".json";
+		String json = null;
+		try {
+			json = ResourceUtil.getInstance().getResource(resourcePath);
+		} catch (Exception e) {
+			logger.warn("Policy template not found: " + resourcePath);
+			return;
+		}
+		if (json == null || json.isEmpty()) return;
+
+		try {
+			com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+			com.fasterxml.jackson.databind.JsonNode tpl = om.readTree(json);
+
+			String policyName = tpl.has("name") ? tpl.get("name").asText() : templateName;
+			String policyDesc = tpl.has("description") ? tpl.get("description").asText() : "";
+
+			/// Check if policy already exists (idempotent)
+			Query pq = QueryUtil.createQuery(ModelNames.MODEL_POLICY, FieldNames.FIELD_NAME, policyName);
+			pq.field(FieldNames.FIELD_GROUP_ID, policyDir.get(FieldNames.FIELD_ID));
+			if (IOSystem.getActiveContext().getSearch().findRecord(pq) != null) {
+				return;
+			}
+
+			/// Create operation records from template
+			List<BaseRecord> operationRecs = new ArrayList<>();
+			if (tpl.has("operations")) {
+				for (com.fasterxml.jackson.databind.JsonNode opNode : tpl.get("operations")) {
+					String opName = opNode.has("name") ? opNode.get("name").asText() : "unnamed";
+					String opClass = opNode.has("operationClass") ? opNode.get("operationClass").asText() : "";
+					String opDesc = opNode.has("description") ? opNode.get("description").asText() : "";
+
+					BaseRecord op = createLibraryRecord(adminUser, operationDir, ModelNames.MODEL_OPERATION, opName);
+					if (op != null) {
+						op.set("operation", opClass);
+						op.set(FieldNames.FIELD_DESCRIPTION, opDesc);
+						IOSystem.getActiveContext().getAccessPoint().create(adminUser, op);
+						Query oq = QueryUtil.createQuery(ModelNames.MODEL_OPERATION, FieldNames.FIELD_NAME, opName);
+						oq.field(FieldNames.FIELD_GROUP_ID, operationDir.get(FieldNames.FIELD_ID));
+						BaseRecord fetchedOp = IOSystem.getActiveContext().getSearch().findRecord(oq);
+						if (fetchedOp != null) operationRecs.add(fetchedOp);
+					}
+				}
+			}
+
+			/// Create a fact for each operation's parameters, then a pattern linking them
+			List<BaseRecord> patternRecs = new ArrayList<>();
+			int opIdx = 0;
+			if (tpl.has("operations")) {
+				for (com.fasterxml.jackson.databind.JsonNode opNode : tpl.get("operations")) {
+					String opName = opNode.has("name") ? opNode.get("name").asText() : "unnamed";
+
+					String factData = "";
+					if (opNode.has("parameters")) {
+						factData = opNode.get("parameters").toString();
+					}
+					BaseRecord fact = createLibraryRecord(adminUser, factDir, ModelNames.MODEL_FACT, opName + " Fact");
+					if (fact != null) {
+						if (!factData.isEmpty()) fact.set("factData", factData);
+						fact.set(FieldNames.FIELD_DESCRIPTION, "Parameters for " + opName);
+						IOSystem.getActiveContext().getAccessPoint().create(adminUser, fact);
+					}
+
+					BaseRecord pattern = createLibraryRecord(adminUser, patternDir, ModelNames.MODEL_PATTERN, opName + " Pattern");
+					if (pattern != null) {
+						pattern.set(FieldNames.FIELD_DESCRIPTION, "Pattern for " + opName);
+						if (opIdx < operationRecs.size()) {
+							pattern.set("operation", operationRecs.get(opIdx));
+						}
+						IOSystem.getActiveContext().getAccessPoint().create(adminUser, pattern);
+						Query ptq = QueryUtil.createQuery(ModelNames.MODEL_PATTERN, FieldNames.FIELD_NAME, opName + " Pattern");
+						ptq.field(FieldNames.FIELD_GROUP_ID, patternDir.get(FieldNames.FIELD_ID));
+						BaseRecord fetchedPt = IOSystem.getActiveContext().getSearch().findRecord(ptq);
+						if (fetchedPt != null) patternRecs.add(fetchedPt);
+					}
+					opIdx++;
+				}
+			}
+
+			/// Create rule linking all patterns
+			BaseRecord rule = createLibraryRecord(adminUser, ruleDir, ModelNames.MODEL_RULE, policyName + " Rule");
+			if (rule != null) {
+				rule.set(FieldNames.FIELD_DESCRIPTION, "Main rule for " + policyName);
+				if (tpl.has("ruleType")) {
+					try { rule.set("type", tpl.get("ruleType").asText()); } catch (Exception e) { /* ignore */ }
+				}
+				if (tpl.has("condition")) {
+					try { rule.set("condition", tpl.get("condition").asText()); } catch (Exception e) { /* ignore */ }
+				}
+				rule.set("patterns", patternRecs);
+				IOSystem.getActiveContext().getAccessPoint().create(adminUser, rule);
+			}
+
+			/// Fetch the rule back to link to policy
+			Query rq = QueryUtil.createQuery(ModelNames.MODEL_RULE, FieldNames.FIELD_NAME, policyName + " Rule");
+			rq.field(FieldNames.FIELD_GROUP_ID, ruleDir.get(FieldNames.FIELD_ID));
+			BaseRecord fetchedRule = IOSystem.getActiveContext().getSearch().findRecord(rq);
+
+			/// Create policy record
+			BaseRecord policy = createLibraryRecord(adminUser, policyDir, ModelNames.MODEL_POLICY, policyName);
+			if (policy != null) {
+				policy.set(FieldNames.FIELD_DESCRIPTION, policyDesc);
+				policy.set("enabled", true);
+				if (tpl.has("condition")) {
+					try { policy.set("condition", tpl.get("condition").asText()); } catch (Exception e) { /* ignore */ }
+				}
+				if (fetchedRule != null) {
+					List<BaseRecord> policyRules = new ArrayList<>();
+					policyRules.add(fetchedRule);
+					policy.set("rules", policyRules);
+				}
+				IOSystem.getActiveContext().getAccessPoint().create(adminUser, policy);
+				logger.info("Created library policy: " + policyName);
+			}
+
+		} catch (Exception e) {
+			logger.error("Failed to create policy from template '" + templateName + "': " + e.getMessage(), e);
+		}
+	}
+
+	private static BaseRecord createLibraryRecord(BaseRecord adminUser, BaseRecord libDir, String modelName, String name) {
+		Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_GROUP_ID, libDir.get(FieldNames.FIELD_ID));
+		if (IOSystem.getActiveContext().getSearch().findRecord(q) != null) {
+			return null;
+		}
+		try {
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, libDir.get("path"));
+			plist.parameter(FieldNames.FIELD_NAME, name);
+			return IOSystem.getActiveContext().getFactory().newInstance(modelName, adminUser, null, plist);
+		} catch (FactoryException e) {
+			logger.error("Failed to create library record '" + name + "' (" + modelName + "): " + e.getMessage());
+			return null;
+		}
+	}
 }

@@ -429,6 +429,16 @@
       // Phase 10c: Load context panel for selected session
       if (window.ContextPanel && obj && obj.objectId) {
         ContextPanel.load(obj.objectId);
+        ContextPanel.onContextChange(function(ctxData) {
+          if (window.LLMConnector) {
+            if (ctxData && ctxData.summarizing) {
+              LLMConnector.setBgActivity("progress_activity", "Creating summary...");
+            } else if (LLMConnector.bgActivity && LLMConnector.bgActivity.label === "Creating summary...") {
+              LLMConnector.setBgActivity(null, null);
+            }
+          }
+          m.redraw();
+        });
       }
       doPeek().then(function() {
         // Phase 13f: Load memories for the character pair (OI-69)
@@ -801,13 +811,19 @@
 
         chatCfg.peek = true;
 
+        /// Custom extract to handle 404 gracefully (returns null instead of throwing)
+        let configExtract = function(xhr) {
+          if (xhr.status !== 200 || !xhr.responseText) return null;
+          try { return JSON.parse(xhr.responseText); } catch(e) { return null; }
+        };
+
         /// Fetch promptConfig if present
         let promptFetch;
         if (c1 && (c1.name || c1.objectId)) {
           let promptUrl = c1.objectId
               ? g_application_path + "/rest/chat/config/prompt/id/" + c1.objectId
               : g_application_path + "/rest/chat/config/prompt/" + encodeURIComponent(c1.name);
-          promptFetch = m.request({ method: 'GET', url: promptUrl, withCredentials: true });
+          promptFetch = m.request({ method: 'GET', url: promptUrl, withCredentials: true, extract: configExtract });
         } else {
           promptFetch = Promise.resolve(null);
         }
@@ -817,7 +833,13 @@
             .then((c) => {
               chatCfg.prompt = c;
 
-              m.request({ method: 'GET', url: chatUrl, withCredentials: true }).then((cc) => {
+              m.request({ method: 'GET', url: chatUrl, withCredentials: true, extract: configExtract }).then((cc) => {
+                if (!cc || cc.error) {
+                  console.warn("Chat config not found");
+                  chatCfg.peek = false;
+                  rej(cc && cc.error ? cc.error : "Chat config not found");
+                  return;
+                }
                 chatCfg.chat = cc;
                 chatCfg.system = cc.systemCharacter;
                 chatCfg.user = cc.userCharacter;

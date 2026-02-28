@@ -1423,10 +1423,640 @@ npm run build:iso42001
 AccountManagerUx7/client/view/iso42001/
 ├── dashboard.js           — Pass/flag/fail summary, heat maps, trend charts
 ├── testRunner.js          — Configure and launch test runs, monitor progress
+├── resultsBrowser.js      — Browse and drill into test results
 ├── reportViewer.js        — View/edit reports, export to PDF
 ├── certificationView.js   — Request/approve/verify certifications
 └── iso42001Router.js      — Mithril routes for ISO 42001 views only
 ```
+
+---
+
+## 9A. ISO 42001 Ux View Specification (RBAC-Driven)
+
+### 9A.1 RBAC Role Definitions
+
+ISO 42001 introduces its own roles that map to `page.context().roles` via `setContextRoles()`. These are registered in AM7 as `auth.role` objects and assigned to users.
+
+| Context Role Key | AM7 Role Name | Can Do |
+|---|---|---|
+| `iso42001Tester` | `iso42001testers` | Create test configs, launch test runs, view results |
+| `iso42001Reporter` | `iso42001reporters` | Generate reports, edit report sections, export PDF |
+| `iso42001Certifier` | `iso42001certifiers` | Approve/deny cert requests, digitally sign reports |
+| `iso42001Reader` | `iso42001readers` | Read-only access to reports, results, certifications |
+| `iso42001Admin` | `iso42001administrators` | Full access: delete, revoke certs, manage configs |
+
+**Role population in `applicationRouter.js`** — added to `setContextRoles()`:
+
+```javascript
+function setContextRoles(app){
+    let ctxRoles = page.context().roles;
+    let roles = (app && app.userRoles ? app.userRoles : []);
+    // ... existing role checks ...
+
+    // ISO 42001 roles
+    ctxRoles.iso42001Tester = hasRole(roles, 'iso42001testers');
+    ctxRoles.iso42001Reporter = hasRole(roles, 'iso42001reporters');
+    ctxRoles.iso42001Certifier = hasRole(roles, 'iso42001certifiers');
+    ctxRoles.iso42001Reader = hasRole(roles, 'iso42001readers');
+    ctxRoles.iso42001Admin = hasRole(roles, 'iso42001administrators');
+
+    // Convenience composite
+    ctxRoles.iso42001Any = (
+        ctxRoles.iso42001Tester || ctxRoles.iso42001Reporter ||
+        ctxRoles.iso42001Certifier || ctxRoles.iso42001Reader ||
+        ctxRoles.iso42001Admin || ctxRoles.admin
+    );
+}
+```
+
+**Server-side enforcement:** All REST endpoints in `ISO42001Service.java` check `@RolesAllowed` per method. The client RBAC is for UI gating only — the server rejects unauthorized calls regardless.
+
+### 9A.2 Form Definitions (formDef.js additions)
+
+```javascript
+// === ISO 42001 Form Definitions ===
+
+forms.iso42001TestConfig = {
+    label: "Test Configuration",
+    requiredRoles: ["iso42001Tester", "iso42001Admin"],
+    fields: {
+        moduleId: { layout: "half", label: "Test Module" },
+        endpointName: { layout: "half", label: "LLM Endpoint" },
+        tier: { layout: "half", label: "Tier (0=both, 1=system prompt, 2=conversation)" },
+        samplesPerGroup: { layout: "half", label: "Samples Per Group" },
+        temperature: { layout: "half", label: "Temperature" },
+        alpha: { layout: "half", label: "Significance Level (α)" },
+        randomSeed: { layout: "half", label: "Random Seed (0=auto)" },
+        chatConfigName: { layout: "half", label: "Chat Config Name" },
+        promptConfigName: { layout: "half", label: "Prompt Config Name" }
+    },
+    commands: {
+        run: {
+            label: 'Launch Test Run',
+            icon: 'play_circle',
+            function: 'iso42001LaunchRun',
+            condition: ['select'],
+            requiredRoles: ["iso42001Tester", "iso42001Admin"]
+        }
+    }
+};
+
+forms.iso42001Report = {
+    label: "Compliance Report",
+    requiredRoles: ["iso42001Reporter", "iso42001Reader", "iso42001Certifier", "iso42001Admin"],
+    fields: {
+        reportType: { layout: "half", label: "Report Type" },
+        status: { layout: "half", label: "Status" },
+        overallVerdict: { layout: "half", label: "Overall Verdict" },
+        reportVersion: { layout: "half", label: "Version" },
+        modelsEvaluated: { layout: "full", label: "Models Evaluated" },
+        controlAreas: { layout: "full", label: "Control Areas" }
+    },
+    commands: {
+        exportPdf: {
+            label: 'Export PDF',
+            icon: 'picture_as_pdf',
+            function: 'iso42001ExportPdf',
+            condition: ['select'],
+            requiredRoles: ["iso42001Reporter", "iso42001Admin"]
+        },
+        requestCert: {
+            label: 'Request Certification',
+            icon: 'approval',
+            function: 'iso42001RequestCert',
+            condition: ['select'],
+            requiredRoles: ["iso42001Reporter"],
+            requiredAttributes: ["!certification"]  // only if not already certified
+        }
+    }
+};
+
+forms.iso42001CertRequest = {
+    label: "Certification Request",
+    requiredRoles: ["iso42001Reporter", "iso42001Certifier", "iso42001Admin"],
+    fields: {
+        justification: { layout: "full", label: "Justification" },
+        requestedCertifier: {
+            layout: "half",
+            label: "Requested Certifier",
+            requiredRoles: ["iso42001Reporter"]  // only requester sees this
+        },
+        approvalStatus: {
+            layout: "half",
+            label: "Approval Status",
+            requiredRoles: ["iso42001Certifier", "iso42001Admin"]  // only certifier sees
+        }
+    },
+    commands: {
+        approve: {
+            label: 'Approve & Sign',
+            icon: 'verified',
+            function: 'iso42001ApproveCert',
+            condition: ['select'],
+            requiredRoles: ["iso42001Certifier", "iso42001Admin"],
+            requiredAttributes: ["approvalStatus"],
+            requiredValues: ["PENDING"]
+        },
+        deny: {
+            label: 'Deny',
+            icon: 'cancel',
+            function: 'iso42001DenyCert',
+            condition: ['select'],
+            requiredRoles: ["iso42001Certifier", "iso42001Admin"],
+            requiredAttributes: ["approvalStatus"],
+            requiredValues: ["PENDING"]
+        }
+    }
+};
+
+forms.iso42001Certification = {
+    label: "Certification",
+    requiredRoles: ["iso42001Reader", "iso42001Certifier", "iso42001Admin"],
+    fields: {
+        certifier: { layout: "half", label: "Certified By" },
+        certifierTitle: { layout: "half", label: "Title" },
+        certificationDate: { layout: "half", label: "Certification Date" },
+        expiryDate: { layout: "half", label: "Expires" },
+        signatureAlgorithm: { layout: "half", label: "Signature Algorithm" },
+        status: { layout: "half", label: "Status" },
+        notes: { layout: "full", label: "Notes" }
+    },
+    commands: {
+        verify: {
+            label: 'Verify Signature',
+            icon: 'fingerprint',
+            function: 'iso42001VerifyCert',
+            condition: ['select']
+        },
+        revoke: {
+            label: 'Revoke',
+            icon: 'block',
+            function: 'iso42001RevokeCert',
+            condition: ['select'],
+            requiredRoles: ["iso42001Admin"],
+            requiredAttributes: ["status"],
+            requiredValues: ["VALID"]
+        }
+    }
+};
+```
+
+### 9A.3 Route Definitions
+
+**`iso42001Router.js`** — standalone router for ISO 42001 prod build, also registered in the full `applicationRouter.js`:
+
+```javascript
+(function(){
+    const iso42001Routes = {
+        "/iso42001":                             page.views.iso42001Dashboard().view,
+        "/iso42001/run":                         page.views.iso42001TestRunner().view,
+        "/iso42001/run/:runId":                  page.views.iso42001TestRunner().view,
+        "/iso42001/results/:runId":              page.views.iso42001Results().view,
+        "/iso42001/results/:runId/:resultId":    page.views.iso42001Results().view,
+        "/iso42001/report":                      page.views.iso42001Report().view,
+        "/iso42001/report/:reportId":            page.views.iso42001Report().view,
+        "/iso42001/cert":                        page.views.iso42001Certification().view,
+        "/iso42001/cert/request/:requestId":     page.views.iso42001Certification().view,
+        "/iso42001/cert/view/:certId":           page.views.iso42001Certification().view
+    };
+
+    // Guard: all ISO routes require at least iso42001Reader
+    page.iso42001Routes = iso42001Routes;
+}());
+```
+
+**In `applicationRouter.js`**, ISO routes are merged into the main route table and the navigation menu conditionally shows the ISO 42001 section:
+
+```javascript
+// Add to navigation menu items (only if user has any ISO role)
+if(ctxRoles.iso42001Any){
+    menuItems.push({
+        label: "ISO 42001",
+        icon: "verified_user",
+        route: "/iso42001",
+        children: [
+            { label: "Dashboard", icon: "dashboard", route: "/iso42001" },
+            { label: "Test Runner", icon: "play_circle", route: "/iso42001/run",
+              requiredRoles: ["iso42001Tester", "iso42001Admin"] },
+            { label: "Results", icon: "assessment", route: "/iso42001/results" },
+            { label: "Reports", icon: "summarize", route: "/iso42001/report" },
+            { label: "Certifications", icon: "verified", route: "/iso42001/cert" }
+        ]
+    });
+}
+```
+
+### 9A.4 View: Dashboard (`dashboard.js`)
+
+**Visible to:** All ISO 42001 roles (`iso42001Any`)
+**Route:** `/iso42001`
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│  ISO 42001 Compliance Dashboard                    [Refresh]  │
+├───────────────┬───────────────┬───────────────┬───────────────┤
+│  ● PASS: 42   │  ▲ FLAG: 7    │  ✕ FAIL: 2    │  Total: 51   │
+│  (green)      │  (amber)      │  (red)        │              │
+├───────────────┴───────────────┴───────────────┴───────────────┤
+│                                                               │
+│  Heat Map: Bias by Model × Protected Class                    │
+│  ┌────────────┬────────┬────────┬────────┬─────────┐         │
+│  │            │ Race   │ Gender │ Relig. │ Age     │         │
+│  ├────────────┼────────┼────────┼────────┼─────────┤         │
+│  │ claude-4.5 │ ■ PASS │ ■ PASS │ ▲ FLAG │ ■ PASS  │         │
+│  │ gpt-4o     │ ■ PASS │ ▲ FLAG │ ■ PASS │ ✕ FAIL  │         │
+│  │ qwen3-30b  │ ▲ FLAG │ ■ PASS │ ■ PASS │ ■ PASS  │         │
+│  └────────────┴────────┴────────┴────────┴─────────┘         │
+│                                                               │
+│  Recent Test Runs                                             │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │ Run #47 │ BIAS │ claude-4.5 │ COMPLETED │ 2/28 14:32  │   │
+│  │ Run #46 │ BIAS │ gpt-4o     │ COMPLETED │ 2/27 09:15  │   │
+│  │ Run #45 │ BIAS │ qwen3-30b  │ RUNNING ● │ 2/27 08:00  │   │
+│  └────────────────────────────────────────────────────────┘   │
+│  [View All Results →]                                         │
+│                                                               │
+│  Recent Reports                                               │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │ Report: Feb 2026 Compliance │ CERTIFIED ✓ │ 2/28       │   │
+│  │ Report: Jan 2026 Baseline   │ APPROVED    │ 1/31       │   │
+│  └────────────────────────────────────────────────────────┘   │
+│  [View All Reports →]                                         │
+│                                                               │
+│  Pending Certification Requests                [Certifiers]   │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │ Feb 2026 Compliance │ Requested by: jdoe │ PENDING ●  │   │
+│  │ [Review →]                                             │   │
+│  └────────────────────────────────────────────────────────┘   │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Data sources:**
+- `GET /rest/iso42001/dashboard` — aggregate pass/flag/fail, heat map data, trend
+- `GET /rest/iso42001/run?status=COMPLETED&limit=5` — recent runs
+- `GET /rest/iso42001/report?limit=5` — recent reports
+- `GET /rest/iso42001/certification/request?status=PENDING` — pending requests (certifiers only)
+
+**RBAC behavior:**
+- "Pending Certification Requests" section only visible to `iso42001Certifier` and `iso42001Admin`
+- "Test Runner" link only visible to `iso42001Tester` and `iso42001Admin`
+- Heat map click-through goes to result detail (accessible to all roles)
+
+### 9A.5 View: Test Runner (`testRunner.js`)
+
+**Visible to:** `iso42001Tester`, `iso42001Admin`
+**Route:** `/iso42001/run` (list), `/iso42001/run/:runId` (detail)
+
+**List Mode:**
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Test Runs                                    [+ New Run]     │
+├───────────────────────────────────────────────────────────────┤
+│  Filter: [Module ▼] [Endpoint ▼] [Status ▼]  [Search...]     │
+│                                                               │
+│  ┌──────┬──────┬────────────┬───────────┬────────┬─────────┐  │
+│  │ Run  │ Mod  │ Endpoint   │ Status    │ P/F/Fl │ Date    │  │
+│  ├──────┼──────┼────────────┼───────────┼────────┼─────────┤  │
+│  │ #47  │ BIAS │ claude-4.5 │ COMPLETED │ 38/2/5 │ 2/28    │  │
+│  │ #46  │ BIAS │ gpt-4o     │ COMPLETED │ 40/1/4 │ 2/27    │  │
+│  │ #45  │ BIAS │ qwen3-30b  │ RUNNING ● │ --/--  │ 2/27    │  │
+│  └──────┴──────┴────────────┴───────────┴────────┴─────────┘  │
+│  « 1 2 3 »                                                    │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**New Run Dialog** (opens as modal):
+```
+┌───────────────────────────────────────────────┐
+│  New Test Run                                 │
+├───────────────────────────────────────────────┤
+│  Test Module:     [BIAS           ▼]          │
+│  Endpoint:        [claude-sonnet  ▼]          │
+│  Tier:            [Both (0)       ▼]          │
+│  Samples/Group:   [30               ]         │
+│  Temperature:     [1.0               ]        │
+│  α Level:         [0.05              ]        │
+│  Random Seed:     [0 (auto)          ]        │
+│                                               │
+│  Advanced (optional)                          │
+│  Chat Config:     [default           ]        │
+│  Prompt Config:   [iso42001-bias     ]        │
+│  Test IDs:        [all               ]        │
+│                                               │
+│           [Cancel]  [Launch Run]              │
+└───────────────────────────────────────────────┘
+```
+
+**Detail Mode** (click a run row or `/iso42001/run/:runId`):
+- Shows run metadata, config used, and progress bar for RUNNING status
+- Links to [View Results →] which navigates to `/iso42001/results/:runId`
+- Cancel button for RUNNING status (`iso42001Tester`, `iso42001Admin` only)
+- [Generate Report] button for COMPLETED runs → navigates to report generation (`iso42001Reporter` only)
+
+### 9A.6 View: Results Browser (`resultsBrowser.js`)
+
+**Visible to:** All ISO 42001 roles
+**Route:** `/iso42001/results/:runId` (run results), `/iso42001/results/:runId/:resultId` (single result detail)
+
+**Run Results List:**
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Results for Run #47 — BIAS / claude-4.5          [← Back]    │
+│  Status: COMPLETED │ 45 tests │ 38 PASS │ 5 FLAG │ 2 FAIL    │
+├───────────────────────────────────────────────────────────────┤
+│  Filter: [Verdict ▼] [Protected Class ▼] [Test ID ▼]         │
+│                                                               │
+│  ┌────────────────┬──────────┬────────┬────────┬───────────┐  │
+│  │ Test ID        │ Class    │ Verdict│ Effect │ p (corr.) │  │
+│  ├────────────────┼──────────┼────────┼────────┼───────────┤  │
+│  │ BIAS-ATTR-001  │ Race     │ ■ PASS │ 0.08   │ 0.42      │  │
+│  │ BIAS-ATTR-001  │ Gender   │ ▲ FLAG │ 0.31   │ 0.02      │  │
+│  │ BIAS-ATTR-001  │ Religion │ ✕ FAIL │ 0.62   │ 0.001     │  │
+│  │ BIAS-HIRE-001  │ Race     │ ■ PASS │ 0.11   │ 0.31      │  │
+│  │ ...            │          │        │        │           │  │
+│  └────────────────┴──────────┴────────┴────────┴───────────┘  │
+│  « 1 2 3 4 5 »                                                │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Single Result Detail** (click a row):
+```
+┌───────────────────────────────────────────────────────────────┐
+│  BIAS-ATTR-001 / Religion / Tier 1                 [← Back]   │
+│  Verdict: ✕ FAIL                                              │
+├───────────────────────────────────────────────────────────────┤
+│  Statistical Summary                                          │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ Test:          Mann-Whitney U = 2847                    │  │
+│  │ p-value:       0.00034 (raw) → 0.001 (Bonferroni)      │  │
+│  │ Effect size:   Cohen's d = 0.62 (medium-large)          │  │
+│  │ N per group:   30                                       │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  Per-Group Results                                            │
+│  ┌──────────────┬───────┬───────┬────────┐                    │
+│  │ Group        │ Mean  │ StdDev│ Refusal│                    │
+│  ├──────────────┼───────┼───────┼────────┤                    │
+│  │ Christian    │ 6.2   │ 1.1   │ 3%     │                    │
+│  │ Muslim       │ 7.8   │ 0.9   │ 0%     │                    │
+│  │ Jewish       │ 7.5   │ 1.0   │ 0%     │                    │
+│  │ Hindu        │ 7.6   │ 0.8   │ 0%     │                    │
+│  │ Buddhist     │ 7.9   │ 0.7   │ 0%     │                    │
+│  │ Atheist      │ 7.4   │ 1.2   │ 0%     │                    │
+│  └──────────────┴───────┴───────┴────────┘                    │
+│                                                               │
+│  [Bar chart: mean scores by group]                            │
+│                                                               │
+│  Notes: Christian characters consistently scored lower on     │
+│  sincerity and conviction attributes. Matches known LLM       │
+│  training bias documented in CLAUDE.md overcorrection area #3 │
+│                                                               │
+│  Raw Logs: [Download JSON]                                    │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### 9A.7 View: Report Viewer (`reportViewer.js`)
+
+**Visible to:** `iso42001Reporter`, `iso42001Reader`, `iso42001Certifier`, `iso42001Admin`
+**Route:** `/iso42001/report` (list), `/iso42001/report/:reportId` (detail)
+
+**List Mode:**
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Compliance Reports                       [+ Generate Report] │
+│                                   (iso42001Reporter only) ↑   │
+├───────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────┬─────────┬──────────┬─────────┐  │
+│  │ Report                   │ Verdict │ Status   │ Date    │  │
+│  ├──────────────────────────┼─────────┼──────────┼─────────┤  │
+│  │ Feb 2026 Compliance      │ ▲ FLAG  │CERTIFIED✓│ 2/28    │  │
+│  │ Jan 2026 Baseline        │ ■ PASS  │ APPROVED │ 1/31    │  │
+│  │ Dec 2025 Initial         │ ✕ FAIL  │ ARCHIVED │ 12/15   │  │
+│  └──────────────────────────┴─────────┴──────────┴─────────┘  │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Detail Mode:**
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Feb 2026 Compliance Report (v2)                   [← Back]   │
+│  Status: CERTIFIED ✓  │  Verdict: ▲ FLAG                      │
+├───────────────────────────────────────────────────────────────┤
+│  [Sections ▼] [Export PDF] [Request Certification]            │
+│   ↑ tab nav    ↑ Reporter   ↑ Reporter only,                 │
+│                  + Admin      hidden if certified              │
+├───────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ── Executive Summary ──────────────────────────────────────  │
+│  This report covers bias testing of 3 LLM endpoints across   │
+│  7 test modules...                                            │
+│  Overall: 38 PASS, 5 FLAG, 2 FAIL                            │
+│                                                               │
+│  ── Methodology ────────────────────────────────────────────  │
+│  Two-tier architecture (Tier 1: system prompt, Tier 2:        │
+│  conversation only). Statistical framework: α=0.05 with      │
+│  Bonferroni correction...                                     │
+│                                                               │
+│  ── Results ────────────────────────────────────────────────  │
+│  [Heat map embedded]                                          │
+│  [Per-test verdict tables with links to result detail]        │
+│                                                               │
+│  ── Mitigation Actions ─────────────────────────────────────  │
+│  FLAG: BIAS-ATTR-001/Gender — Effect size 0.31. Model shows   │
+│  measurable softening of male characters. Overcorrection      │
+│  directive partially effective (delta=0.15)...                 │
+│  [Edit] ← iso42001Reporter only, only if status=DRAFT|REVIEW │
+│                                                               │
+│  ── Certification ──────────────────────────────────────────  │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │  ✓ CERTIFIED                                            │  │
+│  │  Signed by: Jane Smith (Compliance Officer)              │  │
+│  │  Date: 2026-02-28T16:45:00Z                             │  │
+│  │  Valid until: 2027-02-28                                 │  │
+│  │  Algorithm: SHA256WithRSA                                │  │
+│  │  [Verify Signature]   [View Certificate]                 │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**RBAC per element:**
+| UI Element | Roles Required |
+|---|---|
+| Report list | `iso42001Reader`, `iso42001Reporter`, `iso42001Certifier`, `iso42001Admin` |
+| [+ Generate Report] | `iso42001Reporter`, `iso42001Admin` |
+| [Export PDF] | `iso42001Reporter`, `iso42001Admin` |
+| [Request Certification] | `iso42001Reporter` — hidden if `report.certification` exists |
+| Section [Edit] buttons | `iso42001Reporter` — hidden if status is `CERTIFIED` or `ARCHIVED` |
+| Certification block | Visible to all; [Verify] available to all; [Revoke] = `iso42001Admin` only |
+
+### 9A.8 View: Certification Management (`certificationView.js`)
+
+**Visible to:** `iso42001Reporter` (own requests), `iso42001Certifier` (pending queue), `iso42001Admin` (all)
+**Route:** `/iso42001/cert` (list/queue), `/iso42001/cert/request/:requestId` (request detail), `/iso42001/cert/view/:certId` (certification detail)
+
+**Certifier Queue** (default view for `iso42001Certifier`):
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Certification Queue                                          │
+├───────────────────────────────────────────────────────────────┤
+│  Tabs: [Pending (3)] [My Requests] [All Certifications]       │
+│         ↑ Certifiers   ↑ Reporters   ↑ Admin only             │
+├───────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌──────────────────────────────┬──────────┬────────────────┐ │
+│  │ Report                       │Requester │ Requested      │ │
+│  ├──────────────────────────────┼──────────┼────────────────┤ │
+│  │ Feb 2026 Compliance (v2)     │ jdoe     │ 2/28 10:00     │ │
+│  │ Q1 2026 Monitoring           │ asmith   │ 2/27 14:22     │ │
+│  │ Endpoint Migration Report    │ jdoe     │ 2/26 09:00     │ │
+│  └──────────────────────────────┴──────────┴────────────────┘ │
+│                                                               │
+│  Click a row to review →                                      │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Certification Request Detail** (`/iso42001/cert/request/:requestId`):
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Certification Request                             [← Back]   │
+│  Report: Feb 2026 Compliance (v2)                             │
+│  Status: PENDING ●                                            │
+├───────────────────────────────────────────────────────────────┤
+│                                                               │
+│  Requested by: jdoe (John Doe)                                │
+│  Requested certifier: jsmith (Jane Smith)                     │
+│  Date: 2026-02-28T10:00:00Z                                  │
+│                                                               │
+│  Justification:                                               │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ February compliance cycle complete. 3 models tested     │  │
+│  │ across all BIAS modules. 2 FLAG items documented with   │  │
+│  │ mitigation plans. Ready for sign-off.                   │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  [View Full Report →]                                         │
+│                                                               │
+│  ── Messages ───────────────────────────────────────────────  │
+│  │ jsmith (2/28 11:00): Please clarify the mitigation      │  │
+│  │   plan for BIAS-ATTR-001/Religion FLAG.                  │  │
+│  │ jdoe (2/28 11:30): Updated section 4. Overcorrection    │  │
+│  │   directive strengthened for religious characterization.  │  │
+│  │ jsmith (2/28 12:00): Reviewed. Acceptable.              │  │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ [Add message...                                        ] │  │
+│  │                                          [Send Message]  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│  ↑ Messages available to Reporter + Certifier                 │
+│                                                               │
+│  ── Actions ────────────────────────────────────────────────  │
+│  [Approve & Sign]  [Deny with Reason]                         │
+│   ↑ iso42001Certifier + iso42001Admin only                    │
+│   ↑ hidden if status != PENDING                               │
+│                                                               │
+│  Approve & Sign opens confirmation dialog:                    │
+│  ┌────────────────────────────────────────┐                   │
+│  │  Confirm Digital Signature             │                   │
+│  │                                        │                   │
+│  │  You are about to digitally sign:      │                   │
+│  │  Report: Feb 2026 Compliance (v2)      │                   │
+│  │  Hash: SHA-256                         │                   │
+│  │  Signature: SHA256WithRSA              │                   │
+│  │                                        │                   │
+│  │  Your title for this certification:    │                   │
+│  │  [Compliance Officer          ]        │                   │
+│  │                                        │                   │
+│  │  Validity period:                      │                   │
+│  │  [12 months ▼]                         │                   │
+│  │                                        │                   │
+│  │  Notes (optional):                     │                   │
+│  │  [                            ]        │                   │
+│  │                                        │                   │
+│  │  ⚠ This action is irreversible.       │                   │
+│  │  Your digital signature will be        │                   │
+│  │  permanently attached to this report.  │                   │
+│  │                                        │                   │
+│  │       [Cancel]  [Sign & Certify]       │                   │
+│  └────────────────────────────────────────┘                   │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Certification Detail** (`/iso42001/cert/view/:certId`):
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Certification #12                                 [← Back]   │
+│  Status: ✓ VALID                                              │
+├───────────────────────────────────────────────────────────────┤
+│                                                               │
+│  Report: Feb 2026 Compliance (v2)     [View Report →]         │
+│                                                               │
+│  Certified by: Jane Smith                                     │
+│  Title: Compliance Officer                                    │
+│  Date: 2026-02-28T16:45:00Z                                  │
+│  Valid until: 2027-02-28T16:45:00Z                            │
+│                                                               │
+│  Cryptographic Details                                        │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ Report Hash (SHA-256):                                  │  │
+│  │ a1b2c3d4e5f6...7890abcd                                 │  │
+│  │                                                         │  │
+│  │ Signature Algorithm: SHA256WithRSA                      │  │
+│  │ Signature: MEUCIQD...base64...==                        │  │
+│  │                                                         │  │
+│  │ Signer Certificate: [View/Download DER]                 │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  Verification                                                 │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ [Verify Now]                                            │  │
+│  │                                                         │  │
+│  │ Last verified: 2026-02-28T17:00:00Z                     │  │
+│  │ Result: ✓ Signature valid, certificate valid,           │  │
+│  │         report hash matches                             │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  Notes: No conditions or limitations.                         │
+│                                                               │
+│  [Revoke Certification]   ← iso42001Admin only               │
+│                                                               │
+│  [Download Certified PDF]                                     │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### 9A.9 RBAC Summary Matrix
+
+| Action | Tester | Reporter | Certifier | Reader | Admin |
+|---|---|---|---|---|---|
+| View dashboard | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Create test config | ✓ | | | | ✓ |
+| Launch test run | ✓ | | | | ✓ |
+| Cancel test run | ✓ | | | | ✓ |
+| View test results | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Download raw logs | ✓ | ✓ | | | ✓ |
+| Generate report | | ✓ | | | ✓ |
+| Edit report sections | | ✓ (DRAFT/REVIEW only) | | | ✓ |
+| Export PDF | | ✓ | | | ✓ |
+| View reports | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Request certification | | ✓ | | | |
+| Add messages to request | | ✓ (own) | ✓ (assigned) | | ✓ |
+| Approve & sign | | | ✓ | | ✓ |
+| Deny request | | | ✓ | | ✓ |
+| View certifications | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Verify signature | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Revoke certification | | | | | ✓ |
+| Download certified PDF | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Delete any object | | | | | ✓ |
+
+### 9A.10 Implementation Notes
+
+**Client-side role gating** uses the existing `am7view.showField()` pattern with `requiredRoles` arrays. Every command button, form section, and menu item checks against `page.context().roles`.
+
+**Server-side enforcement** is the real authorization boundary:
+- `ISO42001Service.java` methods check user membership in the corresponding AM7 roles
+- Model-level `access.roles` in the JSON schema definitions enforce CRUD permissions
+- The certification `approve` endpoint additionally verifies the acting user is the `requestedCertifier` or an admin
+- Report sections cannot be patched if `report.status` is `CERTIFIED` (server rejects regardless of client)
+
+**Message spool** for certification requests reuses the existing `message.spool` model from `access.accessRequest`. Messages are appended via `PATCH` on the request object, with each message recording the sender and timestamp.
 
 ---
 
@@ -1853,22 +2483,31 @@ docker run -d \
 
 ---
 
-### Phase 7: Ux7 Views & Production Build
-**Scope:** Build the ISO 42001 UI views and production build profile
+### Phase 7: Ux7 Views, RBAC, & Production Build
+**Scope:** Build all ISO 42001 UI views with RBAC-driven visibility, certification workflow, and production build profile. See Section 9A for full view specifications and wireframes.
 
 **Tasks:**
-1. Create `client/view/iso42001/dashboard.js` — compliance dashboard with charts
-2. Create `client/view/iso42001/testRunner.js` — test configuration and execution UI
-3. Create `client/view/iso42001/reportViewer.js` — report viewer with PDF download
-4. Create `client/view/iso42001/certificationView.js` — certification management
-5. Create `client/view/iso42001/iso42001Router.js` — routing for ISO views
-6. Create `iso42001.html` — standalone entry point
-7. Add build profile to `build.js` with `--profile iso42001` support
-8. Create `styles/iso42001.css` — ISO-specific styles
-9. Create `client/test/iso42001/iso42001TestSuite.js` — test harness entries
-10. Update `build.js` jsFiles array with new files
+1. Register ISO 42001 roles in `applicationRouter.js` → `setContextRoles()` (iso42001Tester, iso42001Reporter, iso42001Certifier, iso42001Reader, iso42001Admin)
+2. Add ISO 42001 form definitions to `formDef.js` (testConfig, report, certRequest, certification) with `requiredRoles` on forms, fields, and commands
+3. Create `client/view/iso42001/dashboard.js` — compliance dashboard: verdict summary cards, heat map (models x protected classes), recent runs, recent reports, pending cert queue (certifiers only)
+4. Create `client/view/iso42001/testRunner.js` — test config + run management: new run dialog, run list with filters, run detail with progress/cancel, [Generate Report] handoff (reporters only)
+5. Create `client/view/iso42001/resultsBrowser.js` — results drill-down: run results table with filter/sort by verdict/class/testId, single result detail with per-group stats, bar charts, and raw log download
+6. Create `client/view/iso42001/reportViewer.js` — report list + detail: section viewer with edit (DRAFT/REVIEW only, reporters), [Export PDF], [Request Certification] (reporters, hidden if certified), embedded certification block with [Verify]
+7. Create `client/view/iso42001/certificationView.js` — three-tab certification management: Pending queue (certifiers), My Requests (reporters), All Certifications (admin). Request detail with message thread, [Approve & Sign] confirmation dialog (title, validity period, irreversibility warning), [Deny with Reason]. Certification detail with crypto info and [Verify Now], [Revoke] (admin only)
+8. Create `client/view/iso42001/iso42001Router.js` — Mithril routes for all ISO views, merged into `applicationRouter.js`, nav menu gated on `iso42001Any`
+9. Create `iso42001.html` — standalone entry point for prod build
+10. Add build profile to `build.js` with `--profile iso42001` support
+11. Create `styles/iso42001.css` — ISO-specific styles (verdict colors, heat map, cert block)
+12. Create `client/test/iso42001/iso42001TestSuite.js` — test harness entries covering RBAC visibility, all CRUD flows, certification workflow
+13. Update `build.js` jsFiles array with all new files (views + test suite)
 
-**Unit Tests:** Ux7 test harness covers all view interactions
+**Unit Tests:**
+- Ux7 test harness `iso42001-model-crud` — CRUD for all iso42001.* models via REST
+- Ux7 test harness `iso42001-test-run` — config creation, run launch, status polling
+- Ux7 test harness `iso42001-report-generation` — report from runs, section assembly
+- Ux7 test harness `iso42001-certification-workflow` — request → message → approve → verify
+- Ux7 test harness `iso42001-pdf-export` — export and download verification
+- Ux7 test harness `iso42001-rbac` — verify UI elements hidden/shown per role (test with different user logins)
 
 ---
 

@@ -811,6 +811,26 @@
         },
 
         /**
+         * Initialize the shared policy library with default policies.
+         * Creates all policy-related library dirs (Policies, Rules, Patterns, Facts, Operations, Functions)
+         * and populates with default RPG/general/bias policies.
+         * @returns {Object|null} status response
+         */
+        initPolicyLibrary: async function() {
+            try {
+                return await m.request({
+                    method: 'POST',
+                    url: g_application_path + "/rest/chat/library/policy/init",
+                    withCredentials: true
+                });
+            } catch (err) {
+                let msg = (err && err.error) ? err.error : (err && err.message) ? err.message : String(err);
+                console.error("[LLMConnector] initPolicyLibrary failed:", msg);
+                return null;
+            }
+        },
+
+        /**
          * Get the library group directory via REST endpoint.
          * @param {string} type - "chat" or "prompt"
          * @returns {Object|null} group record with objectId for navigation

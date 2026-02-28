@@ -264,37 +264,54 @@
     }
 
     async function openSystemLibrary() {
-      // For chat/prompt library types, use REST endpoint for reliable lookup
-      if (baseListType && baseListType.match(/^olio\.llm\./) && typeof LLMConnector !== "undefined") {
-        let libType = baseListType.match(/promptConfig/) ? "prompt" : "chat";
+      // Map model types to REST library type keys
+      let libTypeMap = {
+        "olio.llm.chatConfig": "chat",
+        "olio.llm.promptConfig": "prompt",
+        "policy.policy": "policy",
+        "policy.rule": "rule",
+        "policy.pattern": "pattern",
+        "policy.fact": "fact",
+        "policy.operation": "operation",
+        "policy.function": "function"
+      };
+      let libType = libTypeMap[baseListType];
+
+      if (libType && typeof LLMConnector !== "undefined") {
         let grp = await LLMConnector.getLibraryGroup(libType);
         if (grp) {
           navigateToPathId(grp);
           return;
         }
-        // Library doesn't exist — prompt auto-creates, chat needs wizard
-        if (libType === "prompt") {
+        // Library doesn't exist — auto-create based on type
+        if (libType === "chat") {
+          if (typeof ChatSetupWizard !== "undefined") {
+            ChatSetupWizard.show(function() { openSystemLibrary(); });
+          } else {
+            page.toast("info", "Chat library not initialized");
+          }
+        } else if (libType === "prompt") {
           page.toast("info", "Initializing prompt library...");
           let result = await LLMConnector.initPromptLibrary();
           if (result && result.status === "ok") {
             LLMConnector.resetLibraryCache();
             grp = await LLMConnector.getLibraryGroup("prompt");
-            if (grp) {
-              navigateToPathId(grp);
-              return;
-            }
+            if (grp) { navigateToPathId(grp); return; }
           }
           page.toast("error", "Failed to initialize prompt library");
-        } else if (typeof ChatSetupWizard !== "undefined") {
-          ChatSetupWizard.show(function() {
-            openSystemLibrary();
-          });
-        } else {
-          page.toast("info", "Chat library not initialized");
+        } else if (libType.match(/^(policy|rule|pattern|fact|operation|function)$/)) {
+          page.toast("info", "Initializing policy library...");
+          let result = await LLMConnector.initPolicyLibrary();
+          if (result && result.status === "ok") {
+            LLMConnector.resetLibraryCache();
+            grp = await LLMConnector.getLibraryGroup(libType);
+            if (grp) { navigateToPathId(grp); return; }
+          }
+          page.toast("error", "Failed to initialize policy library");
         }
         return;
       }
-      // Fallback for non-chat library types (e.g., Colors)
+      // Fallback for non-REST library types (e.g., Colors)
       let grp = await page.systemLibrary(baseListType);
       if (!grp) {
         page.toast("info", "System library not initialized");
@@ -509,7 +526,7 @@
       let buttons = [];
       let cnt = pagination.pages().container;
       let favSel = "";
-      if (type.match(/^policy\.policy/) || rs.accountAdmin || (rs.roleReader && type.match(/^auth\.role$/gi)) || (rs.permissionReader && type.match(/^auth\.permission$/gi))) {
+      if (rs.accountAdmin || (rs.roleReader && type.match(/^auth\.role$/gi)) || (rs.permissionReader && type.match(/^auth\.permission$/gi))) {
         buttons.push(pagination.button("button mr-4" + (systemList ? " active" : ""), "admin_panel_settings", "", listSystemType));
       }
       else if (am7model.system.library[type]) {
