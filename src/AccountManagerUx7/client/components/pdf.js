@@ -1,3 +1,6 @@
+import * as pdfjsLib from "/node_modules/pdfjs-dist/webpack.mjs";
+import * as pdfjsViewer from "/node_modules/pdfjs-dist/web/pdf_viewer.mjs";
+
 (function(){
 let viewers = {};
 function pdfViewer(inInst){

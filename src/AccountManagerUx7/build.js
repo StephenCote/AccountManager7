@@ -191,6 +191,25 @@ async function build() {
         }
     }
 
+    // Bundle pdfjs-dist libraries with IIFE wrappers to scope internal variables
+    // Each file self-assigns to globalThis.pdfjsLib / globalThis.pdfjsViewer
+    const pdfjsBundles = [
+        'node_modules/pdfjs-dist/build/pdf.mjs',
+        'node_modules/pdfjs-dist/web/pdf_viewer.mjs'
+    ];
+    for (const file of pdfjsBundles) {
+        const filePath = path.join(__dirname, file);
+        if (fs.existsSync(filePath)) {
+            let content = fs.readFileSync(filePath, 'utf8');
+            content = content.replace(/^\s*export\s+\{[^}]*\};\s*$/gm, '');
+            jsContent += `\n;/* === ${file} === */\n(function(){ ${content}\n})();\n`;
+        } else {
+            console.warn(`  Warning: ${file} not found`);
+        }
+    }
+    // Configure PDF worker via workerSrc (replaces webpack.mjs import.meta.url approach)
+    jsContent += `\n;if(typeof pdfjsLib !== "undefined"){ pdfjsLib.GlobalWorkerOptions.workerSrc = "/node_modules/pdfjs-dist/build/pdf.worker.mjs"; }\n`;
+
     // Write concatenated JS to temp file, then minify with esbuild
     const tempJsPath = path.join(__dirname, 'dist', 'app.temp.js');
     fs.writeFileSync(tempJsPath, jsContent);
