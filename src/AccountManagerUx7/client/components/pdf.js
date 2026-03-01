@@ -75,7 +75,11 @@ function pdfViewer(inInst){
         // Worker is auto-configured by webpack.mjs (loaded via <script> in index.html)
         // which sets GlobalWorkerOptions.workerPort to a module Worker.
 
-        let bits = am7model.base64ToUint8(inst.entity.dataBytesStore);
+        // Use atob() for raw binary decode — Base64.decode() applies _utf8_decode
+        // which corrupts binary data (bytes 128-191 get consumed as multi-byte sequences)
+        let raw = atob(inst.entity.dataBytesStore);
+        let bits = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bits[i] = raw.charCodeAt(i);
         let loadingTask = pdfjsLib.getDocument(bits);
         pdfDocument = await loadingTask.promise;
         return pdfDocument;
@@ -93,8 +97,8 @@ function pdfViewer(inInst){
     }
 
     async function render(pdfPageNum, pdfScale){
-    
-        if(!inst || !inst.model.name == "data.data"){
+
+        if(!inst || inst.model.name != "data.data"){
             console.error("Invalid instance or model name.", inst);
             return;
         }
@@ -111,29 +115,35 @@ function pdfViewer(inInst){
 
         let container = document.querySelector("#pdfContainer");
         if(container != null){
-            let doc = await loadPdf(inst);
-            if(!doc){
-                console.error("Failed to load pdf document.");
-            }
+            try {
+                let doc = await loadPdf(inst);
+                if(!doc){
+                    console.error("Failed to load pdf document.");
+                    return;
+                }
 
-            pageCount = doc.numPages;
-            let pdfPage = await doc.getPage(currentPage);
-            if(!pdfPage){
-                console.error("Failed to load page " + currentPage);
-                return;
-            }
+                pageCount = doc.numPages;
+                let pdfPage = await doc.getPage(currentPage);
+                if(!pdfPage){
+                    console.error("Failed to load page " + currentPage);
+                    return;
+                }
 
-           let viewport = pdfPage.getViewport({ scale: scale });
-            let pdfPageView = new pdfjsViewer.PDFPageView({
-                container,
-                id: pdfPageNum,
-                scale: scale,
-                defaultViewport: viewport,
-                eventBus,
-            });
-            pdfPageView.setPdfPage(pdfPage);
-            pdfPageView.draw();
-            currentPage = pdfPageNum;
+                let viewport = pdfPage.getViewport({ scale: scale });
+                let pdfPageView = new pdfjsViewer.PDFPageView({
+                    container,
+                    id: pdfPageNum,
+                    scale: scale,
+                    defaultViewport: viewport,
+                    eventBus,
+                });
+                pdfPageView.setPdfPage(pdfPage);
+                pdfPageView.draw();
+                currentPage = pdfPageNum;
+            }
+            catch(e){
+                console.error("PDF render error:", e);
+            }
         }
 
     }
