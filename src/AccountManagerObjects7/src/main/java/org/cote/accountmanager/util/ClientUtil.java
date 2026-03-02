@@ -211,14 +211,16 @@ public class ClientUtil {
 	            .connectTimeout(Duration.ofSeconds(10))
 	            .build();
 
-		HttpRequest request = HttpRequest.newBuilder()
+		HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
 				.uri(URI.create(url))
-				//.header("Authorization", "Bearer " + authorizationToken)
-				 .header("Accept", "text/event-stream")
-				 .version(HttpClient.Version.HTTP_1_1)  
+				.header("Accept", "text/event-stream")
+				.version(HttpClient.Version.HTTP_1_1)
 				.header("Content-Type", "application/json")
-				.POST(HttpRequest.BodyPublishers.ofString(json))
-				.build();
+				.POST(HttpRequest.BodyPublishers.ofString(json));
+		if (authorizationToken != null && !authorizationToken.isEmpty()) {
+			reqBuilder.header("Authorization", "Bearer " + authorizationToken);
+		}
+		HttpRequest request = reqBuilder.build();
 
 		return client.sendAsync(request, HttpResponse.BodyHandlers.ofLines());
 		/*

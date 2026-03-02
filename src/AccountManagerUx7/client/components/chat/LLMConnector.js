@@ -621,6 +621,7 @@
             cnt = LLMConnector.pruneToMark(cnt, "(Metrics");
             cnt = LLMConnector.pruneToMark(cnt, "(Reminder");
             cnt = LLMConnector.pruneToMark(cnt, "(KeyFrame");
+            cnt = LLMConnector.pruneOut(cnt, "--- INTERACTION HISTORY", "END INTERACTION HISTORY ---");
             cnt = LLMConnector.pruneOther(cnt);
             return cnt;
         },

@@ -964,8 +964,12 @@ public class ChatUtil {
 	}
 
 	/// Summarize a single chunk of content using a Chat instance.
+	/// Uses a lightweight request (no character templates or memory retrieval) to
+	/// avoid the overhead and prompt confusion of the full getChatPrompt() pipeline.
+	private static final String summarizeSystemPrompt = "You are a text summarization assistant. Produce concise, accurate summaries.";
 	private static String summarizeChunk(String content, Chat chat, boolean remote) {
-		OpenAIRequest req = chat.getChatPrompt();
+		chat.setLlmSystemPrompt(summarizeSystemPrompt);
+		OpenAIRequest req = chat.newRequest(chat.getModel());
 		String cmd = summarizeUserCommand + content;
 		chat.newMessage(req, cmd, Chat.userRole);
 
@@ -976,7 +980,7 @@ public class ChatUtil {
 			resp = chat.chat(req);
 		}
 		if (resp == null || resp.getMessage() == null) {
-			logger.warn("summarizeChunk: Content null or blocked.");
+			logger.warn("summarizeChunk: Content null or blocked. resp=" + (resp != null ? "present" : "null"));
 			return null;
 		}
 		return resp.getMessage().getContent();
@@ -1004,7 +1008,8 @@ public class ChatUtil {
 				Chat chat = new Chat(user, chatConfig, promptConfig);
 				chat.setDeferRemote(remote);
 
-				OpenAIRequest req = chat.getChatPrompt();
+				chat.setLlmSystemPrompt(summarizeSystemPrompt);
+				OpenAIRequest req = chat.newRequest(chat.getModel());
 				chat.newMessage(req, reduceCommand + merged, Chat.userRole);
 
 				OpenAIResponse resp = null;

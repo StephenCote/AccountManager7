@@ -1268,7 +1268,8 @@
           cnt = msg.displayContent;
         }
         if (!useServerDisplay && hideThoughts && !editMode && window.LLMConnector) {
-          cnt = LLMConnector.pruneOut(cnt, "--- CITATION", "END CITATIONS ---")
+          cnt = LLMConnector.pruneOut(cnt, "--- CITATION", "END CITATIONS ---");
+          cnt = LLMConnector.pruneOut(cnt, "--- INTERACTION HISTORY", "END INTERACTION HISTORY ---");
         }
         /// Delete icon on all messages when in edit mode
         if (editMode) {
@@ -1391,7 +1392,9 @@
       ];
       let setting = inst.api.setting();
       let setLbl = "";
-      if (setting) {
+      /// Only show the setting banner when the prompt config actually uses it
+      let promptUsesSetting = chatCfg.prompt && Array.isArray(chatCfg.prompt.setting) && chatCfg.prompt.setting.length > 0;
+      if (setting && promptUsesSetting) {
         setLbl = m("div", { class: "relative receive-chat flex justify-start" },
           m("div", { class: "px-5 mb-2 bg-gray-200 dark:bg-gray-900 dark:text-white text-black py-2 text-sm w-full border rounded-md truncate", title: setting },
             "Setting: " + setting

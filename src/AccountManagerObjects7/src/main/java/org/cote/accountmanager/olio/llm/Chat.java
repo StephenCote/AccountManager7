@@ -2995,16 +2995,18 @@ public class Chat {
 			}
 			boolean hasListener = listener != null;
 			java.util.Iterator<String> streamIt = response.body().iterator();
+			int lineCount = 0;
 			while (streamIt.hasNext()) {
 				if (hasListener && listener.isStopStream(req)) break;
 				String line = streamIt.next();
+				lineCount++;
 				boolean done = processStreamChunk(line, req, aresp, forwardToClient);
 				if (done) break;
 			}
 			if (!forwardToClient) {
 				BaseRecord bufMsg = aresp.get("message");
 				String bufContent = bufMsg != null ? bufMsg.get("content") : null;
-				logger.info("Buffer mode stream complete: contentLength=" + (bufContent != null ? bufContent.length() : "null"));
+				logger.info("Buffer mode stream complete: lines=" + lineCount + " contentLength=" + (bufContent != null ? bufContent.length() : "null"));
 			}
 		}).whenComplete((result, error) -> {
 			if (error != null) {
@@ -3105,25 +3107,36 @@ public class Chat {
 			}
 			String contentChunk = deltaMessage.get("content");
 			boolean done = asyncResp.get("done");
-			if (done) {
-				return true;
+			/// Diagnostic: detect thinking-model stream where content is empty but thinking has text
+			if (!forwardToClient && (contentChunk == null || contentChunk.isEmpty())) {
+				String thinkChunk = deltaMessage.hasField("thinking") ? deltaMessage.get("thinking") : null;
+				if (thinkChunk != null && !thinkChunk.isEmpty()) {
+					if (logger.isDebugEnabled()) {
+						logger.debug("processStreamChunk: thinking token (content empty), thinkLen=" + thinkChunk.length());
+					}
+				}
 			}
+			/// Accumulate content BEFORE checking done flag — Ollama may include
+			/// content on the final done=true chunk (e.g. single-token responses).
 			if (contentChunk != null && contentChunk.length() > 0) {
 				accumulateChunk(aresp, deltaMessage, contentChunk, forwardToClient, req);
+			}
+			if (done) {
+				return true;
 			}
 		} else {
 			/// OpenAI format: choices array with delta objects
 			for (BaseRecord choice : choices) {
-				String finishReason = choice.get("finish_reason");
-				if (finishReason != null && !finishReason.isEmpty()) {
-					return true;
-				}
 				BaseRecord delta = choice.get("delta");
 				if (delta != null && delta.hasField("content")) {
 					String contentChunk = delta.get("content");
 					if (contentChunk != null) {
 						accumulateChunk(aresp, delta, contentChunk, forwardToClient, req);
 					}
+				}
+				String finishReason = choice.get("finish_reason");
+				if (finishReason != null && !finishReason.isEmpty()) {
+					return true;
 				}
 			}
 		}
