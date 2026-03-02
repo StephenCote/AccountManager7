@@ -777,8 +777,11 @@ public class ChatUtil {
 		
 		List<String> summaries = composeSummary(user, chatConfig, promptConfig, ref, remote);
 		if(summaries.size() == 0) {
-			logger.error("Invalid summary data");
-			return null;
+			logger.error("composeSummary returned empty — saving placeholder to prevent infinite retry");
+			/// Save a placeholder note so getSummary() returns non-null and autoSummarize does not re-trigger.
+			/// A future createSummary(..., recreate=true) call will replace this placeholder.
+			summFin = DocumentUtil.getCreateNote(user, summName, notePath, "[summary-pending] Summarization failed or timed out for " + name);
+			return summFin;
 		}
 		
 		summSet = DocumentUtil.getCreateNote(user, setName, notePath, summaries.stream().collect(Collectors.joining(System.lineSeparator())));

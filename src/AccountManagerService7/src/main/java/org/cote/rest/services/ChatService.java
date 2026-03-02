@@ -904,6 +904,13 @@ public class ChatService {
 			String sessionId = chatReq.get(FieldNames.FIELD_OBJECT_ID);
 			String objectId = contextObj.get(FieldNames.FIELD_OBJECT_ID);
 
+			/// Check if summarization is already in-flight (e.g., triggered from another tab)
+			Set<String> inFlight = summarizingRefs.get(sessionId);
+			if (inFlight != null && inFlight.contains(objectId)) {
+				logger.info("Summarization already in-flight for " + objectId + " — skipping duplicate");
+				return false;
+			}
+
 			/// Mark as in-flight so the context endpoint can report summarizing status
 			summarizingRefs.computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet()).add(objectId);
 			logger.info("Auto-summarizing " + objectId + " (async)");
