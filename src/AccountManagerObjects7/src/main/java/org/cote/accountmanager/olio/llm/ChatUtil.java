@@ -416,8 +416,8 @@ public class ChatUtil {
 			if(templateOpts != null) {
 				BaseRecord opts = chatConfig.get("chatOptions");
 				if(opts != null) {
-					String[] doubleOptFields = {"temperature", "top_p", "frequency_penalty", "presence_penalty"};
-					String[] intOptFields = {"top_k", "max_tokens", "num_ctx", "seed"};
+					String[] doubleOptFields = {"temperature", "top_p", "min_p", "typical_p", "repeat_penalty", "frequency_penalty", "presence_penalty"};
+					String[] intOptFields = {"top_k", "repeat_last_n", "max_tokens", "num_ctx", "num_gpu", "seed"};
 					for(String f : doubleOptFields) {
 						if(templateOpts.hasField(f)) opts.set(f, (double) templateOpts.get(f));
 					}

@@ -4934,35 +4934,55 @@
     }
 
 
-    /// Options presets for the chatOptions balancer
+    /// Options presets for the chatOptions balancer — aligned with chatConfig templates
     let chatOptionsPresets = {
-        "Balanced (Default)": {
-            desc: "Model defaults — neutral baseline",
-            temperature: 1.0, top_p: 1.0, top_k: 50,
+        "General Chat": {
+            desc: "Conversational — moderate creativity with memory support",
+            temperature: 0.8, top_p: 0.9, top_k: 50,
+            min_p: 0.05, typical_p: 0.9,
+            repeat_penalty: 1.15, repeat_last_n: 64,
+            frequency_penalty: 0.3, presence_penalty: 0.1,
+            max_tokens: 4096, num_ctx: 16384, seed: 0
+        },
+        "RPG / Creative": {
+            desc: "Broad vocabulary and variety for narrative and roleplay",
+            temperature: 0.8, top_p: 0.95, top_k: 60,
+            min_p: 0.05, typical_p: 0.95,
+            repeat_penalty: 1.1, repeat_last_n: 100,
+            frequency_penalty: 0.2, presence_penalty: 0.3,
+            max_tokens: 16384, num_ctx: 131072, seed: 0
+        },
+        "Behavioral": {
+            desc: "Balanced precision and nuance for psychological analysis",
+            temperature: 0.5, top_p: 0.9, top_k: 50,
+            min_p: 0.1, typical_p: 0.85,
+            repeat_penalty: 1.2, repeat_last_n: 64,
+            frequency_penalty: 0.3, presence_penalty: 0.2,
+            max_tokens: 4096, num_ctx: 32768, seed: 0
+        },
+        "Content Analysis": {
+            desc: "Precise and focused for analytical work",
+            temperature: 0.3, top_p: 0.8, top_k: 40,
+            min_p: 0.15, typical_p: 0.8,
+            repeat_penalty: 1.3, repeat_last_n: 64,
+            frequency_penalty: 0.3, presence_penalty: 0.2,
+            max_tokens: 8192, num_ctx: 65536, seed: 0
+        },
+        "Coding": {
+            desc: "Focused code generation — low repeat penalty for natural code patterns",
+            temperature: 0.3, top_p: 0.85, top_k: 40,
+            min_p: 0.15, typical_p: 0.8,
+            repeat_penalty: 1.05, repeat_last_n: 32,
             frequency_penalty: 0.0, presence_penalty: 0.0,
-            max_tokens: 4096, num_ctx: 8192,
-            typical_p: 0.85, repeat_penalty: 1.2, min_p: 0.1, repeat_last_n: 64, seed: 0
+            max_tokens: 8192, num_ctx: 65536, seed: 0
         },
-        "Creative": {
-            desc: "Higher randomness for storytelling and RP",
-            temperature: 1.3, top_p: 0.95, top_k: 80,
-            frequency_penalty: 0.0, presence_penalty: 0.3,
-            max_tokens: 4096, num_ctx: 8192,
-            typical_p: 0.9, repeat_penalty: 1.1, min_p: 0.05, repeat_last_n: 64, seed: 0
-        },
-        "Precise": {
-            desc: "Lower randomness for factual and analytical tasks",
-            temperature: 0.5, top_p: 0.7, top_k: 30,
-            frequency_penalty: 0.3, presence_penalty: 0.0,
-            max_tokens: 4096, num_ctx: 8192,
-            typical_p: 0.8, repeat_penalty: 1.3, min_p: 0.15, repeat_last_n: 64, seed: 0
-        },
-        "Deterministic": {
-            desc: "Minimal randomness — reproducible outputs",
-            temperature: 0.1, top_p: 0.5, top_k: 10,
-            frequency_penalty: 0.5, presence_penalty: 0.3,
-            max_tokens: 4096, num_ctx: 8192,
-            typical_p: 0.7, repeat_penalty: 1.5, min_p: 0.2, repeat_last_n: 80, seed: 42
+        "Technical Eval": {
+            desc: "Most deterministic — reproducible, consistent technical output",
+            temperature: 0.2, top_p: 0.75, top_k: 30,
+            min_p: 0.2, typical_p: 0.75,
+            repeat_penalty: 1.0, repeat_last_n: 32,
+            frequency_penalty: 0.0, presence_penalty: 0.0,
+            max_tokens: 8192, num_ctx: 65536, seed: 42
         }
     };
 
@@ -4997,7 +5017,7 @@
                                         m("div", { class: "font-medium" }, name),
                                         m("div", { class: "text-xs text-gray-500" }, p.desc),
                                         m("div", { class: "text-xs text-gray-400 mt-1" },
-                                            "temp=" + p.temperature + " top_p=" + p.top_p + " freq=" + p.frequency_penalty + " pres=" + p.presence_penalty)
+                                            "temp=" + p.temperature + " top_p=" + p.top_p + " top_k=" + p.top_k + " repeat=" + p.repeat_penalty + " ctx=" + p.num_ctx)
                                     ]);
                                 }));
                             }
