@@ -224,41 +224,6 @@
         return props;
     }
 
-    /// Helper to create file upload button for drag-and-drop fields (mobile support)
-    function createUploadButton(ctx) {
-        if (!ctx.entity || ctx.entity.objectId || !ctx.fieldView.dragAndDrop) {
-            return "";
-        }
-        if (typeof page === "undefined" || !page.components || !page.components.dnd) {
-            return "";
-        }
-        let fileInputId = "file-upload-" + ctx.name;
-        return m("div", {class: "flex items-center mt-1"}, [
-            m("input", {
-                type: "file",
-                id: fileInputId,
-                multiple: true,
-                class: "hidden",
-                onchange: function(e) {
-                    if (e.target.files && e.target.files.length) {
-                        page.components.dnd.uploadFiles(ctx.inst, e.target.files);
-                        e.target.value = "";
-                    }
-                }
-            }),
-            m("button", {
-                type: "button",
-                class: "button flex items-center gap-1",
-                onclick: function() {
-                    document.getElementById(fileInputId).click();
-                }
-            }, [
-                m("span", {class: "material-symbols-outlined material-icons-24"}, "upload_file"),
-                "Upload File"
-            ])
-        ]);
-    }
-
     /// Text input field with audio recording support
     renderers.text = function(ctx) {
         let inputAttrs = {
@@ -279,8 +244,7 @@
             (audioRecord ? m("div", {class: "absolute inset-y-0 right-0 flex items-center"},
                 createAudioRecordButton(ctx)
             ) : "")
-        ),
-        createUploadButton(ctx)];
+        )];
     };
 
     /// Datetime-local field (shares most logic with text)
@@ -319,8 +283,7 @@
             (audioRecord ? m("div", {class: "absolute top-2 right-0 flex items-start"},
                 createAudioRecordButton(ctx)
             ) : "")
-        ),
-        createUploadButton(ctx)];
+        )];
     };
 
     /// Textlist is an alias for textarea

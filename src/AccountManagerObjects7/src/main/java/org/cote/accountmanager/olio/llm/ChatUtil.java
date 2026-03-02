@@ -1244,7 +1244,11 @@ public class ChatUtil {
 		BaseRecord cfg = null;
 		Query q = QueryUtil.createQuery(modelName);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		q.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
+		/// Only filter by owner when looking up by name — objectId lookups (e.g., shared library configs)
+		/// rely on PBAC via AccessPoint.find() for authorization instead.
+		if(objectId == null) {
+			q.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
+		}
 		if(groupPath != null && !groupPath.isEmpty()) {
 			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			if(dir != null) {

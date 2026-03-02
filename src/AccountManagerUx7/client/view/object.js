@@ -1073,6 +1073,8 @@
                 return "";
             }
 
+            let hasDragAndDrop = bNew && form.fields && Object.values(form.fields).some(function(f){ return f.dragAndDrop; });
+
             let footer = getFooter();
             return m("div",{class : "list-results-container"},[
                 m("div",{class : "list-results"},[
@@ -1083,6 +1085,23 @@
                             page.iconButton("button" + altCls,"save", "", doUpdate),
                             (designable ? page.iconButton("button" + (designMode ? " active" : ""),"design_services", "", toggleDesignMode) : ""),
                             page.iconButton("button","cancel", "", doCancel),
+                            (hasDragAndDrop ? [
+                                m("input", {
+                                    type: "file",
+                                    id: "toolbar-file-upload",
+                                    multiple: true,
+                                    class: "hidden",
+                                    onchange: function(e) {
+                                        if (e.target.files && e.target.files.length && page.components.dnd) {
+                                            page.components.dnd.uploadFiles(inst, e.target.files);
+                                            e.target.value = "";
+                                        }
+                                    }
+                                }),
+                                page.iconButton("button", "upload_file", "", function(){
+                                    document.getElementById("toolbar-file-upload").click();
+                                })
+                            ] : ""),
                             (bNew ? "" : page.iconButton("button","content_copy", "", doCopy)),
                             (bNew ? "" : page.iconButton("button","query_stats", "", chatInto)),
                             (bNew || type !== "olio.charPerson" ? "" : page.iconButton("button","photo_library", "", function(){ page.imageGallery([], inst); })),
