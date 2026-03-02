@@ -399,7 +399,7 @@ public class ChatUtil {
 		}
 		try {
 			String[] boolFields = {"prune", "assist", "stream", "includeScene", "extractMemories"};
-			String[] intFields = {"messageTrim", "keyframeEvery", "remindEvery", "requestTimeout", "memoryBudget", "memoryExtractionEvery", "analyzeTimeout"};
+			String[] intFields = {"messageTrim", "keyframeEvery", "remindEvery", "requestTimeout", "memoryBudget", "memoryExtractionEvery", "analyzeTimeout", "summaryWorkers"};
 			String[] stringFields = {"rating", "policyTemplate", "memoryExtractionPrompt"};
 
 			for(String f : boolFields) {
@@ -845,12 +845,20 @@ public class ChatUtil {
 
 			/// Step 2: Map phase — parallel batch summarization
 			int batchSize = 5;
-			summaries = mapSummarize(user, chatConfig, promptConfig, chunks, remote, batchSize);
+			/// Read summaryWorkers from chatConfig (0 or unset = use default)
+			int summaryWorkers = DEFAULT_SUMMARY_WORKERS;
+			if (chatConfig != null) {
+				try {
+					int cfgWorkers = chatConfig.get("summaryWorkers");
+					if (cfgWorkers > 0) summaryWorkers = cfgWorkers;
+				} catch (Exception e) { /* field may not exist on legacy configs */ }
+			}
+			summaries = mapSummarize(user, chatConfig, promptConfig, chunks, remote, batchSize, summaryWorkers);
 			logger.info("composeSummary: map phase produced " + summaries.size() + " summaries");
 
 			/// Step 3: Reduce phase — hierarchical merge until single summary
 			if (summaries.size() > 1) {
-				summaries = reduceSummaries(user, chatConfig, promptConfig, summaries, remote, batchSize);
+				summaries = reduceSummaries(user, chatConfig, promptConfig, summaries, remote, batchSize, summaryWorkers);
 				logger.info("composeSummary: reduce phase completed with " + summaries.size() + " final summaries");
 			}
 		}
@@ -915,15 +923,16 @@ public class ChatUtil {
 		return chunks;
 	}
 
-	/// Maximum number of concurrent LLM calls to prevent server overload.
+	/// Default number of concurrent LLM calls for summarization.
 	/// Ollama typically processes requests sequentially on a single GPU,
 	/// so more than 2 concurrent calls causes queue-induced timeouts.
-	private static final int MAX_CONCURRENT_LLM_CALLS = 2;
+	/// Configurable per chatConfig via the summaryWorkers field.
+	private static final int DEFAULT_SUMMARY_WORKERS = 2;
 
 	/// Map phase: parallel batch summarization of content chunks.
 	/// Each chunk runs in its own thread with its own Chat instance (Chat is not thread-safe).
-	/// Concurrency is limited by MAX_CONCURRENT_LLM_CALLS to avoid overwhelming the LLM server.
-	private static List<String> mapSummarize(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> chunks, boolean remote, int batchSize) {
+	/// Concurrency is limited by maxConcurrent to avoid overwhelming the LLM server.
+	private static List<String> mapSummarize(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> chunks, boolean remote, int batchSize, int maxConcurrent) {
 		List<String> summaries = new ArrayList<>();
 		if (chatConfig == null || promptConfig == null) {
 			/// Fallback to local embedding if no chat config
@@ -941,10 +950,10 @@ public class ChatUtil {
 		Chat timeoutProbe = new Chat(user, chatConfig, promptConfig);
 		final int perChunkTimeout = timeoutProbe.getRequestTimeout() > 0 ? timeoutProbe.getRequestTimeout() : 120;
 
-		logger.info("mapSummarize: " + chunks.size() + " chunks, maxConcurrent=" + MAX_CONCURRENT_LLM_CALLS + ", perChunkTimeout=" + perChunkTimeout + "s, chunk sizes: " + chunks.stream().map(c -> String.valueOf(c.length())).collect(Collectors.joining(", ")));
+		logger.info("mapSummarize: " + chunks.size() + " chunks, maxConcurrent=" + maxConcurrent + ", perChunkTimeout=" + perChunkTimeout + "s, chunk sizes: " + chunks.stream().map(c -> String.valueOf(c.length())).collect(Collectors.joining(", ")));
 
 		/// Semaphore limits concurrent LLM calls to avoid overwhelming the server
-		final Semaphore llmSemaphore = new Semaphore(MAX_CONCURRENT_LLM_CALLS);
+		final Semaphore llmSemaphore = new Semaphore(maxConcurrent);
 
 		/// Submit each chunk as its own parallel future — semaphore gates actual LLM execution
 		List<CompletableFuture<String>> futures = new ArrayList<>();
@@ -976,7 +985,7 @@ public class ChatUtil {
 		}
 
 		/// Collect results — each chunk gets the full per-chunk timeout plus semaphore wait time
-		int totalTimeout = perChunkTimeout + (chunks.size() / MAX_CONCURRENT_LLM_CALLS) * perChunkTimeout;
+		int totalTimeout = perChunkTimeout + (chunks.size() / maxConcurrent) * perChunkTimeout;
 		for (int i = 0; i < futures.size(); i++) {
 			try {
 				String result = futures.get(i).get(totalTimeout, TimeUnit.SECONDS);
@@ -1021,7 +1030,7 @@ public class ChatUtil {
 	private static final int MAX_REDUCE_DEPTH = 5;
 	private static final String reduceCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator();
 
-	private static List<String> reduceSummaries(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> summaries, boolean remote, int batchSize) {
+	private static List<String> reduceSummaries(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> summaries, boolean remote, int batchSize, int maxConcurrent) {
 		int depth = 0;
 		List<String> current = new ArrayList<>(summaries);
 
@@ -1039,7 +1048,7 @@ public class ChatUtil {
 				batches.add(current.subList(i, Math.min(i + batchSize, current.size())));
 			}
 
-			final Semaphore llmSemaphore = new Semaphore(MAX_CONCURRENT_LLM_CALLS);
+			final Semaphore llmSemaphore = new Semaphore(maxConcurrent);
 			List<CompletableFuture<String>> futures = new ArrayList<>();
 			for (int b = 0; b < batches.size(); b++) {
 				final List<String> batch = batches.get(b);
@@ -1077,7 +1086,7 @@ public class ChatUtil {
 			}
 
 			/// Collect results — each reduce call gets per-call timeout plus semaphore wait
-			int totalTimeout = perCallTimeout + (batches.size() / MAX_CONCURRENT_LLM_CALLS) * perCallTimeout;
+			int totalTimeout = perCallTimeout + (batches.size() / maxConcurrent) * perCallTimeout;
 			List<String> reduced = new ArrayList<>();
 			for (int b = 0; b < futures.size(); b++) {
 				try {

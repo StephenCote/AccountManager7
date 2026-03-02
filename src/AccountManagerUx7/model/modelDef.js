@@ -9047,6 +9047,12 @@
           "description": "Comma-separated memory types to extract"
         },
         {
+          "name": "summaryWorkers",
+          "type": "int",
+          "default": 2,
+          "description": "Concurrent LLM calls for map-reduce summarization. 0=default (2)."
+        },
+        {
           "name": "gossipEnabled",
           "type": "boolean",
           "default": false,

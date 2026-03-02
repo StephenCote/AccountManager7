@@ -5273,6 +5273,11 @@
                 label: "Analyze Timeout (sec)",
                 hint: "Timeout for background analyze/memory calls. 0=use 2x requestTimeout."
             },
+            summaryWorkers: {
+                layout: "one",
+                label: "Summary Workers",
+                hint: "Concurrent LLM calls for summarization (default 2). Increase for multi-GPU."
+            },
 
             // Phase 2 (MemoryRefactor2): Memory extraction tuning
             memoryExtractionMaxPerSegment: {
