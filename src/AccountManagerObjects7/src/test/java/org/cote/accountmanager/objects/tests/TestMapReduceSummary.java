@@ -51,31 +51,33 @@ public class TestMapReduceSummary extends BaseTest {
 			textContent.getBytes(), "~/Tests/Summaries", testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 		assertNotNull("Data record is null", data);
 
-		/// Create vector store for the data
+		/// Create vector store for the data (skip if chunks already exist)
 		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
 		if (vu == null || !VectorUtil.isVectorSupported()) {
 			logger.warn("Vector support not available — skipping");
 			return;
 		}
 
-		try {
-			/// Pass text content directly — avoids byte store re-extraction issues on re-runs
-			/// where getCreateData returns an existing record without byte store loaded
-			List<BaseRecord> chunks = vu.createVectorStore(data, textContent, VectorUtil.ChunkEnumType.WORD, 500);
-			if (chunks.isEmpty()) {
-				logger.warn("Vector store creation returned no chunks — skipping");
+		int storedCount = vu.countVectorStore(data);
+		if (storedCount == 0) {
+			try {
+				/// Pass text content directly — avoids byte store re-extraction issues on re-runs
+				/// where getCreateData returns an existing record without byte store loaded
+				List<BaseRecord> chunks = vu.createVectorStore(data, textContent, VectorUtil.ChunkEnumType.WORD, 500);
+				if (chunks.isEmpty()) {
+					logger.warn("Vector store creation returned no chunks — skipping");
+					return;
+				}
+				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
+				IOSystem.getActiveContext().getWriter().flush();
+				logger.info("Created " + chunks.size() + " vector chunks");
+			} catch (Exception e) {
+				logger.warn("Vector store creation failed: " + e.getMessage());
 				return;
 			}
-			IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
-			IOSystem.getActiveContext().getWriter().flush();
-			logger.info("Created " + chunks.size() + " vector chunks");
-		} catch (Exception e) {
-			logger.warn("Vector store creation failed: " + e.getMessage());
-			return;
+			storedCount = vu.countVectorStore(data);
 		}
 
-		/// Verify chunks were actually persisted (DB write may silently fail)
-		int storedCount = vu.countVectorStore(data);
 		if (storedCount == 0) {
 			logger.warn("Vector chunks not persisted (DB write failed) — skipping LLM-dependent assertions");
 			return;

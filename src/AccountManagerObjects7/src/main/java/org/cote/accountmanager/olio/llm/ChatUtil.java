@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -876,6 +877,7 @@ public class ChatUtil {
 			}
 
 			int minLength = 300;
+			int maxLength = 4000;
 			StringBuilder contentBuffer = new StringBuilder();
 			for (int i = 0; i < store.size(); i++) {
 				BaseRecord v = store.get(i);
@@ -886,6 +888,12 @@ public class ChatUtil {
 						cit = "<chat>" + System.lineSeparator() + cit + System.lineSeparator() + "</chat>";
 					}
 					contentBuffer.append(cit + System.lineSeparator());
+				}
+				/// Flush when buffer exceeds maxLength regardless of position
+				if (contentBuffer.length() >= maxLength) {
+					chunks.add(contentBuffer.toString());
+					contentBuffer = new StringBuilder();
+					continue;
 				}
 				if (i < (store.size() - 1) && contentBuffer.length() < minLength) {
 					continue;
@@ -904,8 +912,14 @@ public class ChatUtil {
 		return chunks;
 	}
 
+	/// Maximum number of concurrent LLM calls to prevent server overload.
+	/// Ollama typically processes requests sequentially on a single GPU,
+	/// so more than 2 concurrent calls causes queue-induced timeouts.
+	private static final int MAX_CONCURRENT_LLM_CALLS = 2;
+
 	/// Map phase: parallel batch summarization of content chunks.
-	/// Each batch runs in its own thread with its own Chat instance (Chat is not thread-safe).
+	/// Each chunk runs in its own thread with its own Chat instance (Chat is not thread-safe).
+	/// Concurrency is limited by MAX_CONCURRENT_LLM_CALLS to avoid overwhelming the LLM server.
 	private static List<String> mapSummarize(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> chunks, boolean remote, int batchSize) {
 		List<String> summaries = new ArrayList<>();
 		if (chatConfig == null || promptConfig == null) {
@@ -920,44 +934,56 @@ public class ChatUtil {
 			return summaries;
 		}
 
-		/// Split into batches and process each batch in parallel
-		List<List<String>> batches = new ArrayList<>();
-		for (int i = 0; i < chunks.size(); i += batchSize) {
-			batches.add(chunks.subList(i, Math.min(i + batchSize, chunks.size())));
-		}
+		/// Determine per-chunk timeout from chat config
+		Chat timeoutProbe = new Chat(user, chatConfig, promptConfig);
+		final int perChunkTimeout = timeoutProbe.getRequestTimeout() > 0 ? timeoutProbe.getRequestTimeout() : 120;
 
-		logger.info("mapSummarize: " + chunks.size() + " chunks in " + batches.size() + " batches of " + batchSize);
+		logger.info("mapSummarize: " + chunks.size() + " chunks, maxConcurrent=" + MAX_CONCURRENT_LLM_CALLS + ", perChunkTimeout=" + perChunkTimeout + "s, chunk sizes: " + chunks.stream().map(c -> String.valueOf(c.length())).collect(Collectors.joining(", ")));
 
-		List<CompletableFuture<List<String>>> futures = new ArrayList<>();
-		for (int b = 0; b < batches.size(); b++) {
-			final List<String> batch = batches.get(b);
-			final int batchIdx = b;
+		/// Semaphore limits concurrent LLM calls to avoid overwhelming the server
+		final Semaphore llmSemaphore = new Semaphore(MAX_CONCURRENT_LLM_CALLS);
+
+		/// Submit each chunk as its own parallel future — semaphore gates actual LLM execution
+		List<CompletableFuture<String>> futures = new ArrayList<>();
+		for (int i = 0; i < chunks.size(); i++) {
+			final int chunkIdx = i;
+			final String chunk = chunks.get(i);
 			futures.add(CompletableFuture.supplyAsync(() -> {
-				List<String> batchResults = new ArrayList<>();
-				/// Each parallel task creates its own Chat instance for thread safety
-				Chat chat = new Chat(user, chatConfig, promptConfig);
-				chat.setDeferRemote(remote);
-				for (int i = 0; i < batch.size(); i++) {
-					try {
-						String summ = summarizeChunk(batch.get(i), chat, remote);
-						if (summ != null && !summ.isEmpty()) {
-							batchResults.add(wrapChunkSummary(batchIdx * batchSize + i + 1, summ));
-						}
-					} catch (Exception e) {
-						logger.warn("mapSummarize: chunk " + (batchIdx * batchSize + i) + " failed: " + e.getMessage());
-					}
+				try {
+					llmSemaphore.acquire();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					logger.warn("mapSummarize: chunk " + chunkIdx + " interrupted waiting for semaphore");
+					return null;
 				}
-				return batchResults;
+				try {
+					Chat chat = new Chat(user, chatConfig, promptConfig);
+					chat.setDeferRemote(remote);
+					String summ = summarizeChunk(chunk, chat, remote);
+					if (summ != null && !summ.isEmpty()) {
+						return wrapChunkSummary(chunkIdx + 1, summ);
+					}
+				} catch (Exception e) {
+					logger.warn("mapSummarize: chunk " + chunkIdx + " failed: " + e.getMessage());
+				} finally {
+					llmSemaphore.release();
+				}
+				return null;
 			}));
 		}
 
-		/// Collect results with timeout
-		for (CompletableFuture<List<String>> future : futures) {
+		/// Collect results — each chunk gets the full per-chunk timeout plus semaphore wait time
+		int totalTimeout = perChunkTimeout + (chunks.size() / MAX_CONCURRENT_LLM_CALLS) * perChunkTimeout;
+		for (int i = 0; i < futures.size(); i++) {
 			try {
-				List<String> batchResult = future.get(120, TimeUnit.SECONDS);
-				summaries.addAll(batchResult);
+				String result = futures.get(i).get(totalTimeout, TimeUnit.SECONDS);
+				if (result != null) {
+					summaries.add(result);
+				} else {
+					logger.warn("mapSummarize: chunk " + i + " returned null summary");
+				}
 			} catch (Exception e) {
-				logger.warn("mapSummarize: batch timed out or failed: " + e.getMessage());
+				logger.warn("mapSummarize: chunk " + i + " timed out or failed: " + e.getMessage());
 			}
 		}
 		return summaries;
@@ -968,6 +994,7 @@ public class ChatUtil {
 	/// avoid the overhead and prompt confusion of the full getChatPrompt() pipeline.
 	private static final String summarizeSystemPrompt = "You are a text summarization assistant. Produce concise, accurate summaries.";
 	private static String summarizeChunk(String content, Chat chat, boolean remote) {
+		logger.info("summarizeChunk: content length=" + content.length());
 		chat.setLlmSystemPrompt(summarizeSystemPrompt);
 		OpenAIRequest req = chat.newRequest(chat.getModel());
 		String cmd = summarizeUserCommand + content;
@@ -995,34 +1022,73 @@ public class ChatUtil {
 		int depth = 0;
 		List<String> current = new ArrayList<>(summaries);
 
+		/// Determine per-call timeout from chat config
+		Chat timeoutProbe = new Chat(user, chatConfig, promptConfig);
+		final int perCallTimeout = timeoutProbe.getRequestTimeout() > 0 ? timeoutProbe.getRequestTimeout() : 120;
+
 		while (current.size() > 1 && depth < MAX_REDUCE_DEPTH) {
 			depth++;
 			logger.info("reduceSummaries: depth=" + depth + " reducing " + current.size() + " summaries");
-			List<String> reduced = new ArrayList<>();
 
+			/// Split into batches, then reduce each batch with concurrency limiting
+			List<List<String>> batches = new ArrayList<>();
 			for (int i = 0; i < current.size(); i += batchSize) {
-				List<String> batch = current.subList(i, Math.min(i + batchSize, current.size()));
-				String merged = batch.stream().collect(Collectors.joining(System.lineSeparator()));
+				batches.add(current.subList(i, Math.min(i + batchSize, current.size())));
+			}
 
-				/// Each reduce creates its own Chat instance for thread safety
-				Chat chat = new Chat(user, chatConfig, promptConfig);
-				chat.setDeferRemote(remote);
+			final Semaphore llmSemaphore = new Semaphore(MAX_CONCURRENT_LLM_CALLS);
+			List<CompletableFuture<String>> futures = new ArrayList<>();
+			for (int b = 0; b < batches.size(); b++) {
+				final List<String> batch = batches.get(b);
+				final int batchIdx = b;
+				futures.add(CompletableFuture.supplyAsync(() -> {
+					try {
+						llmSemaphore.acquire();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						return null;
+					}
+					try {
+						String merged = batch.stream().collect(Collectors.joining(System.lineSeparator()));
+						Chat chat = new Chat(user, chatConfig, promptConfig);
+						chat.setDeferRemote(remote);
 
-				chat.setLlmSystemPrompt(summarizeSystemPrompt);
-				OpenAIRequest req = chat.newRequest(chat.getModel());
-				chat.newMessage(req, reduceCommand + merged, Chat.userRole);
+						chat.setLlmSystemPrompt(summarizeSystemPrompt);
+						OpenAIRequest req = chat.newRequest(chat.getModel());
+						chat.newMessage(req, reduceCommand + merged, Chat.userRole);
 
-				OpenAIResponse resp = null;
-				if (remote) {
-					resp = chat.checkRemote(req, null, false);
-				} else {
-					resp = chat.chat(req);
-				}
-				if (resp != null && resp.getMessage() != null) {
-					reduced.add("<summary>" + System.lineSeparator() + resp.getMessage().getContent() + System.lineSeparator() + "</summary>");
-				} else {
-					/// Keep the batch as-is if merge fails
-					reduced.addAll(batch);
+						OpenAIResponse resp = null;
+						if (remote) {
+							resp = chat.checkRemote(req, null, false);
+						} else {
+							resp = chat.chat(req);
+						}
+						if (resp != null && resp.getMessage() != null) {
+							return "<summary>" + System.lineSeparator() + resp.getMessage().getContent() + System.lineSeparator() + "</summary>";
+						}
+					} finally {
+						llmSemaphore.release();
+					}
+					return null;
+				}));
+			}
+
+			/// Collect results — each reduce call gets per-call timeout plus semaphore wait
+			int totalTimeout = perCallTimeout + (batches.size() / MAX_CONCURRENT_LLM_CALLS) * perCallTimeout;
+			List<String> reduced = new ArrayList<>();
+			for (int b = 0; b < futures.size(); b++) {
+				try {
+					String result = futures.get(b).get(totalTimeout, TimeUnit.SECONDS);
+					if (result != null) {
+						reduced.add(result);
+					} else {
+						/// Keep the batch as-is if merge fails
+						logger.warn("reduceSummaries: batch " + b + " at depth " + depth + " returned null, keeping originals");
+						reduced.addAll(batches.get(b));
+					}
+				} catch (Exception e) {
+					logger.warn("reduceSummaries: batch " + b + " at depth " + depth + " timed out or failed: " + e.getMessage());
+					reduced.addAll(batches.get(b));
 				}
 			}
 			current = reduced;
