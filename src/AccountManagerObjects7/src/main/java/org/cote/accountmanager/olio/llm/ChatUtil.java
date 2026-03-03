@@ -1004,7 +1004,15 @@ public class ChatUtil {
 			prompts.reduceUser = (s != null) ? s : reduceCommandFallback;
 		}
 
-		logger.info("resolveSummarizePrompts: final mapSystem starts: " + prompts.mapSystem.substring(0, Math.min(100, prompts.mapSystem.length())) + "...");
+		logger.info("[DIAG] resolveSummarizePrompts FINAL: mapSystem(" + prompts.mapSystem.length() + ")=" + prompts.mapSystem.substring(0, Math.min(120, prompts.mapSystem.length())) + "...");
+		if (prompts.chatConfig != null) {
+			logger.info("[DIAG] resolveSummarizePrompts FINAL chatConfig: name=" + prompts.chatConfig.get(FieldNames.FIELD_NAME)
+				+ " serverUrl=" + prompts.chatConfig.get("serverUrl")
+				+ " model=" + prompts.chatConfig.get("model")
+				+ " serviceType=" + prompts.chatConfig.get("serviceType"));
+		} else {
+			logger.warn("[DIAG] resolveSummarizePrompts FINAL chatConfig: NULL");
+		}
 		return prompts;
 	}
 

@@ -99,6 +99,7 @@ public class ClientUtil {
 			*/
 		;
 
+		LLMConnectionManager.registerClient("clientUtil.jakarta", client);
 		return client;
 	}
 	
@@ -206,10 +207,14 @@ public class ClientUtil {
 	
 	public static CompletableFuture<HttpResponse<Stream<String>>> postToRecordAndStream(String url, String authorizationToken, String json) {
 
-	    HttpClient client = HttpClient.newBuilder()
+	    HttpClient streamClient = HttpClient.newBuilder()
 	            .version(HttpClient.Version.HTTP_1_1)  // Important for SSE
 	            .connectTimeout(Duration.ofSeconds(10))
 	            .build();
+
+	    /// Register for centralized shutdown
+	    String clientKey = "clientUtil.stream-" + System.nanoTime();
+	    LLMConnectionManager.registerClient(clientKey, streamClient);
 
 		HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
 				.uri(URI.create(url))
@@ -222,17 +227,10 @@ public class ClientUtil {
 		}
 		HttpRequest request = reqBuilder.build();
 
-		return client.sendAsync(request, HttpResponse.BodyHandlers.ofLines());
-		/*
-			.thenAccept(response -> {
-				response.body().forEach(lineConsumer);
-			})
+		return streamClient.sendAsync(request, HttpResponse.BodyHandlers.ofLines())
 			.whenComplete((result, error) -> {
-				if (error != null) {
-					logger.error("Error during streaming chat response", error);
-				}
+				LLMConnectionManager.unregisterClient(clientKey);
 			});
-		*/
 	}
 	
 	

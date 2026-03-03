@@ -914,6 +914,29 @@
         },
 
         /**
+         * Resolve a named promptTemplate from the shared library.
+         * Endpoint: GET /rest/chat/library/template/{name}
+         * @param {string} name - template name
+         * @param {string} [group] - optional group path override
+         * @returns {Object|null} promptTemplate
+         */
+        resolveTemplate: async function(name, group) {
+            try {
+                let url = g_application_path + "/rest/chat/library/template/"
+                    + encodeURIComponent(name);
+                if (group) url += "?group=" + encodeURIComponent(group);
+                return await m.request({
+                    method: 'GET',
+                    url: url,
+                    withCredentials: true
+                });
+            } catch (err) {
+                console.warn("[LLMConnector] resolveTemplate failed for '" + name + "':", err);
+                return null;
+            }
+        },
+
+        /**
          * Ensure the shared library is initialized.
          * Caches the result so subsequent calls don't hit the server.
          * @returns {boolean} true if library is ready

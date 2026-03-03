@@ -31,6 +31,7 @@ import org.cote.accountmanager.tools.VoiceUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.LLMConnectionManager;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
@@ -87,6 +88,9 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		if (cleanup > 0) {
 			logger.info("Cleaned up " + cleanup + " unboxed streams");
 		}
+
+		logger.info("Stopping all LLM/service connections");
+		LLMConnectionManager.shutdownAll();
 
 		logger.info("Chirping users");
 		WebSocketService.activeSessions().forEach(session -> {

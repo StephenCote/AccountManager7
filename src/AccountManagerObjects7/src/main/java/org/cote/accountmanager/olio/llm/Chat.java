@@ -48,6 +48,7 @@ import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.MemoryUtil;
 import org.cote.accountmanager.util.BinaryUtil;
+import org.cote.accountmanager.util.LLMConnectionManager;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ThumbnailUtil;
 import org.cote.accountmanager.tools.ImageTagUtil;
@@ -125,11 +126,7 @@ public class Chat {
 	private static final ConcurrentHashMap<String, Long> activeKeyframes = new ConcurrentHashMap<>();
 	/// Maximum time (ms) a keyframe lock can be held before it's considered leaked and forcibly removed.
 	private static final long KEYFRAME_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-	/// Global registry of all active LLM stream futures (both interactive and buffer-mode).
-	/// Used by stopAllActive() to abort all in-flight LLM connections.
-	private static final ConcurrentHashMap<String, CompletableFuture<HttpResponse<Stream<String>>>> activeStreams = new ConcurrentHashMap<>();
-	private static final ConcurrentHashMap<String, HttpResponse<Stream<String>>> activeHttpResponses = new ConcurrentHashMap<>();
-	private static final java.util.concurrent.atomic.AtomicLong streamIdCounter = new java.util.concurrent.atomic.AtomicLong(0);
+	/// Stream tracking delegated to LLMConnectionManager for unified shutdown.
 
 	/// Deferred keyframe: snapshot saved by pruneCount, launched after main response completes.
 	private volatile List<OpenAIMessage> pendingKeyframeSnapshot = null;
@@ -148,34 +145,14 @@ public class Chat {
 			Begin conversationally.
 			""";
 
-	/// Stop all active LLM streams globally (interactive + buffer mode).
-	/// Three-phase abort: (1) close HTTP response body, (2) cancel future.
+	/// Stop all active LLM streams globally — delegates to LLMConnectionManager.
 	public static void stopAllActive() {
-		int count = activeStreams.size() + activeHttpResponses.size();
-		logger.info("stopAllActive: aborting " + count + " tracked stream(s)");
-		/// Phase 1: Close HTTP response body streams to force IO exceptions
-		for (Map.Entry<String, HttpResponse<Stream<String>>> entry : activeHttpResponses.entrySet()) {
-			try {
-				entry.getValue().body().close();
-			} catch (Exception e) {
-				logger.debug("stopAllActive: close response body: " + e.getMessage());
-			}
-		}
-		/// Phase 2: Cancel futures
-		for (Map.Entry<String, CompletableFuture<HttpResponse<Stream<String>>>> entry : activeStreams.entrySet()) {
-			try {
-				entry.getValue().cancel(true);
-			} catch (Exception e) {
-				logger.debug("stopAllActive: cancel future: " + e.getMessage());
-			}
-		}
-		activeStreams.clear();
-		activeHttpResponses.clear();
+		LLMConnectionManager.stopAllStreams();
 	}
 
-	/// Get count of all active LLM streams (interactive + buffer mode).
+	/// Get count of all active LLM streams — delegates to LLMConnectionManager.
 	public static int getActiveStreamCount() {
-		return activeStreams.size();
+		return LLMConnectionManager.getActiveStreamCount();
 	}
 
 	public Chat() {
@@ -202,7 +179,8 @@ public class Chat {
 			}
 			logger.info("Chat config: model=" + model + " analyzeModel=" + amodel
 				+ " promptConfig=" + hasPromptCfg + " promptTemplate=" + hasPromptTpl
-				+ " analyzeTimeout=" + analyzeTimeout + " keyFrameEvery=" + keyFrameEvery);
+				+ " analyzeTimeout=" + analyzeTimeout + " keyFrameEvery=" + keyFrameEvery
+				+ " streamMode=" + streamMode + " serverUrl=" + serverUrl + " serviceType=" + serviceType);
 		}
 	}
 
@@ -2969,9 +2947,19 @@ public class Chat {
 	/// When stream=true, chunks are forwarded via the listener and the method returns null (async).
 	public OpenAIResponse chat(OpenAIRequest req) {
 		if (req == null) {
+			logger.warn("[DIAG] chat() called with null req");
 			return null;
 		}
 
+		try {
+			return chatInternal(req);
+		} catch (Exception e) {
+			logger.error("[DIAG] chat() UNCAUGHT EXCEPTION: " + e.getClass().getName() + ": " + e.getMessage(), e);
+			return null;
+		}
+	}
+
+	private OpenAIResponse chatInternal(OpenAIRequest req) {
 		/// Reset mid-stream policy tracking for this request
 		lastMidStreamCheckLength = 0;
 		midStreamViolation = null;
@@ -2984,18 +2972,27 @@ public class Chat {
 		ignoreFields.addAll(Arrays.asList(new String[] {"presence_penalty"}).stream().filter(f -> !f.equals(penField)).collect(Collectors.toList()));
 
 		boolean forwardToClient = (boolean) req.get("stream");
+		logger.info("[DIAG] chatInternal() entered: streamMode=" + streamMode + " forwardToClient=" + forwardToClient
+			+ " model=" + req.getModel() + " msgCount=" + (req.getMessages() != null ? req.getMessages().size() : 0));
 
 		/// Always set stream=true on the wire request so the LLM always streams
 		OpenAIRequest wireReq = ChatUtil.getPrunedRequest(req, ignoreFields);
 		wireReq.setStream(true);
 		String ser = JSONUtil.exportObject(wireReq, RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 
+		String serviceUrl = getServiceUrl(req);
+		if (!forwardToClient) {
+			logger.info("[DIAG] chat() buffer mode: url=" + serviceUrl + " model=" + req.getModel()
+				+ " serLength=" + (ser != null ? ser.length() : "null")
+				+ " authToken=" + (authorizationToken != null ? "present(" + authorizationToken.length() + ")" : "null"));
+		}
+
 		OpenAIResponse aresp = new OpenAIResponse();
 		CountDownLatch latch = forwardToClient ? null : new CountDownLatch(1);
 		final OpenAIResponse[] bufferResult = new OpenAIResponse[] { null };
 		final String[] bufferError = new String[] { null };
 
-		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = ClientUtil.postToRecordAndStream(getServiceUrl(req), authorizationToken, ser);
+		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = ClientUtil.postToRecordAndStream(serviceUrl, authorizationToken, ser);
 
 		/// Apply effective timeout: thread-local override (background analyze/extract) or requestTimeout (normal calls)
 		final int effectiveTimeout = analyzeTimeoutOverride.get() != null ? analyzeTimeoutOverride.get() : requestTimeout;
@@ -3012,60 +3009,68 @@ public class Chat {
 		}
 
 		/// Global registry: track ALL active streams (interactive + buffer mode)
-		final String streamId = "stream-" + streamIdCounter.incrementAndGet();
-		activeStreams.put(streamId, streamFuture);
+		final String streamId = LLMConnectionManager.registerStream(streamFuture);
 
 		streamFuture.thenAccept(response -> {
-			if (response == null || response.body() == null) {
-				logger.warn("Null response from streaming chat");
-				return;
-			}
-			if (!forwardToClient) {
-				logger.info("Buffer mode LLM call HTTP status: " + response.statusCode());
-			}
-			if (!forwardToClient && response.statusCode() != 200) {
-				logger.warn("Buffer mode LLM call returned HTTP " + response.statusCode());
-			}
-			/// Global registry: track HTTP response for abort
-			activeHttpResponses.put(streamId, response);
-			/// Phase 12: OI-27 — Register HTTP response for server-side abort on cancel
-			if (forwardToClient && listener instanceof ChatListener) {
-				String oid2 = req.get(FieldNames.FIELD_OBJECT_ID);
-				if (oid2 != null) {
-					((ChatListener) listener).registerHttpResponse(oid2, response);
+			try {
+				if (response == null || response.body() == null) {
+					logger.warn("Null response from streaming chat");
+					return;
 				}
-			}
-			boolean hasListener = listener != null;
-			java.util.Iterator<String> streamIt = response.body().iterator();
-			int lineCount = 0;
-			while (streamIt.hasNext()) {
-				if (hasListener && listener.isStopStream(req)) break;
-				String line = streamIt.next();
-				lineCount++;
-				boolean done = processStreamChunk(line, req, aresp, forwardToClient);
-				if (done) break;
-			}
-			if (!forwardToClient) {
-				BaseRecord bufMsg = aresp.get("message");
-				String bufContent = bufMsg != null ? bufMsg.get("content") : null;
-				logger.info("Buffer mode stream complete: lines=" + lineCount + " contentLength=" + (bufContent != null ? bufContent.length() : "null"));
+				if (!forwardToClient) {
+					logger.info("[DIAG] Buffer mode LLM call HTTP status: " + response.statusCode()
+						+ " headers: " + response.headers().map());
+				}
+				if (!forwardToClient && response.statusCode() != 200) {
+					logger.warn("Buffer mode LLM call returned HTTP " + response.statusCode());
+				}
+				/// Global registry: track HTTP response for abort
+				LLMConnectionManager.registerHttpResponse(streamId, response);
+				/// Phase 12: OI-27 — Register HTTP response for server-side abort on cancel
+				if (forwardToClient && listener instanceof ChatListener) {
+					String oid2 = req.get(FieldNames.FIELD_OBJECT_ID);
+					if (oid2 != null) {
+						((ChatListener) listener).registerHttpResponse(oid2, response);
+					}
+				}
+				boolean hasListener = listener != null;
+				java.util.Iterator<String> streamIt = response.body().iterator();
+				int lineCount = 0;
+				while (streamIt.hasNext()) {
+					if (hasListener && listener.isStopStream(req)) break;
+					String line = streamIt.next();
+					lineCount++;
+					boolean done = processStreamChunk(line, req, aresp, forwardToClient);
+					if (done) break;
+				}
+				if (!forwardToClient) {
+					BaseRecord bufMsg = aresp.get("message");
+					String bufContent = bufMsg != null ? bufMsg.get("content") : null;
+					logger.info("[DIAG] Buffer mode stream complete: lines=" + lineCount + " contentLength=" + (bufContent != null ? bufContent.length() : "null"));
+				}
+			} catch (RuntimeException streamEx) {
+				logger.error("[DIAG] thenAccept EXCEPTION during stream processing: " + streamEx.getClass().getName() + ": " + streamEx.getMessage(), streamEx);
+				throw streamEx;
+			} catch (Exception streamEx) {
+				logger.error("[DIAG] thenAccept CHECKED EXCEPTION during stream processing: " + streamEx.getClass().getName() + ": " + streamEx.getMessage(), streamEx);
+				throw new RuntimeException(streamEx);
 			}
 		}).whenComplete((result, error) -> {
 			/// Global registry cleanup
-			activeStreams.remove(streamId);
-			activeHttpResponses.remove(streamId);
+			LLMConnectionManager.unregisterStream(streamId);
 			if (error != null) {
 				String errMsg;
-				if (error instanceof TimeoutException || (error.getCause() != null && error.getCause() instanceof TimeoutException)) {
+				Throwable rootCause = error.getCause() != null ? error.getCause() : error;
+				if (rootCause instanceof TimeoutException) {
 					errMsg = "Request timed out after " + effectiveTimeout + " seconds";
 				} else {
-					errMsg = "Error during streaming chat response: " + error.getMessage();
+					errMsg = "Error during streaming chat response: " + error.getClass().getName() + ": " + error.getMessage();
 				}
+				logger.error("[DIAG] whenComplete error: " + errMsg + " rootCause=" + rootCause.getClass().getName() + ": " + rootCause.getMessage(), error);
 				if (forwardToClient && listener != null) {
 					listener.onerror(user, req, aresp, errMsg);
 				} else {
 					bufferError[0] = errMsg;
-					logger.error(errMsg);
 				}
 			} else {
 				if (forwardToClient && listener != null) {
@@ -3083,6 +3088,7 @@ public class Chat {
 			/// Buffer mode: block until streaming completes
 			try {
 				int waitSeconds = effectiveTimeout > 0 ? effectiveTimeout + 5 : 300;
+				logger.info("[DIAG] chat() buffer mode: awaiting latch (timeout=" + waitSeconds + "s)");
 				if (!latch.await(waitSeconds, TimeUnit.SECONDS)) {
 					logger.error("Buffer mode timed out waiting for stream completion");
 					return null;
@@ -3093,12 +3099,15 @@ public class Chat {
 				return null;
 			}
 			if (bufferError[0] != null) {
-				logger.error("Stream error in buffer mode: " + bufferError[0]);
+				logger.error("[DIAG] chat() buffer mode: stream error: " + bufferError[0]);
 				if (listener != null) {
 					listener.onerror(user, req, aresp, bufferError[0]);
 				}
 				return null;
 			}
+			BaseRecord bufMsg = bufferResult[0] != null ? bufferResult[0].get("message") : null;
+			logger.info("[DIAG] chat() buffer mode: returning result=" + (bufferResult[0] != null ? "present" : "null")
+				+ " message=" + (bufMsg != null ? "present" : "null"));
 			return bufferResult[0];
 		}
 

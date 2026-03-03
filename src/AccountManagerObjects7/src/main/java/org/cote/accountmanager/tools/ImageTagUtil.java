@@ -12,6 +12,7 @@ import java.util.Base64;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.util.LLMConnectionManager;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +44,7 @@ public class ImageTagUtil {
                 .version(HttpClient.Version.HTTP_1_1)  // Force HTTP/1.1
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+        LLMConnectionManager.registerClient("imageTagUtil", this.httpClient);
         this.objectMapper = new ObjectMapper();
         this.objectMapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
         this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);

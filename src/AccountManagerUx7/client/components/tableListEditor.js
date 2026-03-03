@@ -630,7 +630,7 @@
             fs.currentPage = totalPages - 1;
         }
 
-        /// Build the list rows
+        /// Build the list rows, injecting editor panel directly after the active row
         let listRows = [];
         if (paged.length === 0) {
             listRows.push(m("div", {class: "tle-empty"},
@@ -641,6 +641,10 @@
                 /// Calculate real index in the original array
                 let realIndex = items.indexOf(entry);
                 listRows.push(renderListRow(entry, realIndex, fs, tableForm, ctx));
+                /// Insert editor panel directly after the row being edited
+                if (fs.activeId === getEntryId(entry)) {
+                    listRows.push(renderEditorPanel(fs, tableForm, tableType, ctx));
+                }
             });
         }
 
@@ -650,7 +654,10 @@
         if (!hidden) {
             parts.push(m("div", {class: "tle-list"}, listRows));
             parts.push(renderPagination(filtered, fs));
-            parts.push(renderEditorPanel(fs, tableForm, tableType, ctx));
+            /// If creating a new entry, editor goes after the list (new entry is at the end)
+            if (fs.mode === 'creating' && !paged.some(function(e) { return getEntryId(e) === fs.activeId; })) {
+                parts.push(renderEditorPanel(fs, tableForm, tableType, ctx));
+            }
         }
 
         return [m("div", {class: "tle-container"}, parts)];

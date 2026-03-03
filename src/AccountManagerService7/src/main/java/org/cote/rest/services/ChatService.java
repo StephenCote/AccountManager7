@@ -302,6 +302,17 @@ public class ChatService {
 	}
 
 	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/library/template/{name:[\\.A-Za-z0-9%\\s]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getLibraryPromptTemplate(@PathParam(FieldNames.FIELD_NAME) String name, @QueryParam("group") String group, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		String groupPath = (group != null && !group.isEmpty()) ? group : null;
+		BaseRecord cfg = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_PROMPT_TEMPLATE, name, groupPath);
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : "{\"error\":\"not found\"}")).build();
+	}
+
+	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/new")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
@@ -795,6 +806,56 @@ public class ChatService {
 	}
 
 	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/summarize/retry")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response retrySummarize(String json, @Context HttpServletRequest request) {
+		try {
+			BaseRecord user = ServiceUtil.getPrincipalUser(request);
+			if (user == null) return Response.status(401).entity("{\"error\":\"Not authenticated\"}").build();
+
+			BaseRecord body = RecordFactory.importRecord(ModelNames.MODEL_SELF, json);
+			String sessionId = body.get("sessionId");
+			String objectId = body.get("objectId");
+
+			if (sessionId == null || objectId == null) {
+				return Response.status(400).entity("{\"error\":\"sessionId and objectId required\"}").build();
+			}
+
+			/// Load the chatRequest to get configs
+			BaseRecord chatReq = findByObjectId(user, OlioModelNames.MODEL_CHAT_REQUEST, sessionId);
+			if (chatReq == null) {
+				return Response.status(404).entity("{\"error\":\"Session not found\"}").build();
+			}
+			IOSystem.getActiveContext().getReader().populate(chatReq);
+
+			/// Find the context object
+			BaseRecord contextObj = null;
+			List<String> contextRefs = chatReq.get("contextRefs");
+			if (contextRefs != null) {
+				for (String cr : contextRefs) {
+					BaseRecord ref = RecordFactory.importRecord(cr);
+					if (objectId.equals(ref.get(FieldNames.FIELD_OBJECT_ID))) {
+						String refSchema = ref.getSchema();
+						contextObj = findByObjectId(user, refSchema, objectId);
+						break;
+					}
+				}
+			}
+			if (contextObj == null) {
+				return Response.status(404).entity("{\"error\":\"Context object not found in session\"}").build();
+			}
+
+			/// Force re-summarize with recreate=true
+			boolean started = autoSummarize(user, chatReq, contextObj, true);
+			return Response.status(200).entity("{\"started\":" + started + "}").build();
+		} catch (Exception e) {
+			logger.error("Error retrying summarization", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	@RolesAllowed({"admin","user"})
 	@GET
 	@Path("/llm/active")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -1004,15 +1065,21 @@ public class ChatService {
 	/// Auto-summarize a context object if no summary exists.
 	/// Returns true if async summarization was started.
 	private boolean autoSummarize(BaseRecord user, BaseRecord chatReq, BaseRecord contextObj) {
+		return autoSummarize(user, chatReq, contextObj, false);
+	}
+
+	private boolean autoSummarize(BaseRecord user, BaseRecord chatReq, BaseRecord contextObj, boolean recreate) {
 		try {
 			String content = DocumentUtil.getStringContent(contextObj);
 			if (content == null || content.isEmpty()) {
 				return false;
 			}
-			BaseRecord existingSummary = ChatUtil.getSummary(user, contextObj);
-			if (existingSummary != null) {
-				logger.info("Summary already exists for " + contextObj.get(FieldNames.FIELD_OBJECT_ID) + " — skipping auto-summarize");
-				return false;
+			if (!recreate) {
+				BaseRecord existingSummary = ChatUtil.getSummary(user, contextObj);
+				if (existingSummary != null) {
+					logger.info("Summary already exists for " + contextObj.get(FieldNames.FIELD_OBJECT_ID) + " — skipping auto-summarize");
+					return false;
+				}
 			}
 			/// Resolve chatConfig, promptTemplate, and promptConfig from the chatRequest
 			BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
@@ -1043,7 +1110,7 @@ public class ChatService {
 			/// Run summarization asynchronously so the attach response returns immediately
 			CompletableFuture.runAsync(() -> {
 				try {
-					ChatUtil.createSummary(user, chatConfig, promptTemplate, promptConfig, contextObj, false, progress);
+					ChatUtil.createSummary(user, chatConfig, promptTemplate, promptConfig, contextObj, recreate, progress);
 					progress.setPhase("complete");
 					logger.info("Auto-summarize complete for " + objectId);
 				} catch (Exception e) {

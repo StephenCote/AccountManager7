@@ -1188,9 +1188,7 @@ input[type="datetime-local"]:is(.dark *) {
 
 .tle-list {
   display: flex;
-  max-height: 20rem;
   flex-direction: column;
-  overflow-y: auto;
 }
 
 .tle-row {

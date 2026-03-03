@@ -266,6 +266,23 @@
         });
     }
 
+    function retrySummarize(objectId) {
+        if (!_sessionId) return;
+        m.request({
+            method: 'POST',
+            url: g_application_path + "/rest/chat/summarize/retry",
+            withCredentials: true,
+            body: { sessionId: _sessionId, objectId: objectId }
+        }).then(function(result) {
+            if (result && result.started) {
+                startSummarizePoller();
+            }
+            if (_sessionId) loadContext(_sessionId);
+        }).catch(function(e) {
+            console.warn("[ContextPanel] retry summarize failed:", e);
+        });
+    }
+
     function contextRefRowView(ref) {
         if (!ref) return "";
         let rSchema = ref.refSchema || ref.schema;
@@ -293,6 +310,14 @@
                         cancelSummarize(ref.objectId);
                     }
                 }, m("span", { class: "material-symbols-outlined text-red-400", style: "font-size: 16px;" }, "stop_circle")) : "",
+                !isSummarizing && rSchema !== "data.tag" ? m("button", {
+                    class: "menu-button ml-1",
+                    title: "Re-summarize",
+                    onclick: function(e) {
+                        e.stopPropagation();
+                        retrySummarize(ref.objectId);
+                    }
+                }, m("span", { class: "material-symbols-outlined text-blue-400", style: "font-size: 16px;" }, "refresh")) : "",
                 m("button", {
                     class: "menu-button ml-1",
                     title: "Detach " + label,

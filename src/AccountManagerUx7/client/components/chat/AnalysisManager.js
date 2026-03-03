@@ -43,7 +43,7 @@
             if (qr && qr.results) promptConfigs = qr.results;
         }
 
-        // Purpose-based filtering with fallback chain (library-aware)
+        // ChatConfig: purpose-based filtering with library fallback
         let cc = chatConfigs.filter(function(c) { return c.purpose === "analysis"; });
         if (!cc.length) {
             let libCfg = (typeof LLMConnector !== "undefined") ? await LLMConnector.resolveConfig("contentAnalysis") : null;
@@ -52,13 +52,27 @@
         if (!cc.length) cc = chatConfigs.filter(function(c) { return c.name && c.name.match(/^(Analyze|Object|contentAnalysis)/i); });
         if (!cc.length) cc = chatConfigs;
 
-        let pc = promptConfigs.filter(function(c) { return c.purpose === "analysis"; });
-        if (!pc.length) pc = promptConfigs.filter(function(c) { return c.name && c.name.match(/^(Analyze|Object|contentAnalysis)/i); });
-        if (!pc.length) pc = promptConfigs;
+        // PromptTemplate first (preferred), then promptConfig as fallback.
+        // Try library "summary" promptTemplate for analysis sessions.
+        let pt = null;
+        if (typeof LLMConnector !== "undefined") {
+            pt = await LLMConnector.resolveTemplate("summary");
+        }
+
+        // PromptConfig fallback — only if no promptTemplate found
+        let pc = null;
+        if (!pt) {
+            let pcList = promptConfigs.filter(function(c) { return c.purpose === "analysis"; });
+            if (!pcList.length) pcList = promptConfigs.filter(function(c) { return c.name && c.name.match(/^(Analyze|Object|contentAnalysis)/i); });
+            // Do NOT fall back to all promptConfigs — picking an unrelated config (e.g. alg2, RPG)
+            // causes wrong prompts to be loaded.
+            if (pcList.length) pc = pcList[0];
+        }
 
         return {
             chatConfig: cc.length ? cc[0] : null,
-            promptConfig: pc.length ? pc[0] : null
+            promptTemplate: pt,
+            promptConfig: pc
         };
     }
 
@@ -122,8 +136,8 @@
          */
         startAnalysis: async function(ref, sourceInst, sourceCCfg) {
             let configs = await resolveAnalysisConfigs();
-            if (!configs.chatConfig || !configs.promptConfig) {
-                page.toast("error", "No analysis config found. Create a chatConfig/promptConfig with name starting with 'Object' or 'Analyze'.");
+            if (!configs.chatConfig) {
+                page.toast("error", "No analysis chatConfig found. Create a chatConfig with purpose 'analysis' or name starting with 'contentAnalysis'.");
                 return;
             }
 
@@ -206,13 +220,18 @@
             if (pa.ref) wset.push(pa.ref);
 
             // Create server-side chat request via POST /rest/chat/new
+            // Prefer promptTemplate over promptConfig (server requires at least one)
             let chatReq = {
                 schema: "olio.llm.chatRequest",
                 name: pa.sessionName,
                 chatConfig: { objectId: pa.configs.chatConfig.objectId },
-                promptConfig: { objectId: pa.configs.promptConfig.objectId },
                 uid: page.uid()
             };
+            if (pa.configs.promptTemplate) {
+                chatReq.promptTemplate = { objectId: pa.configs.promptTemplate.objectId };
+            } else if (pa.configs.promptConfig) {
+                chatReq.promptConfig = { objectId: pa.configs.promptConfig.objectId };
+            }
 
             let obj;
             try {
