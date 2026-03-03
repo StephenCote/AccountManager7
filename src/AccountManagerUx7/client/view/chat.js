@@ -881,12 +881,13 @@
       let splitLeft = "";
       if (!fullMode) splitLeft = getSplitLeftContainerView();
       // , onselectstart: function (e) { e.preventDefault(); }
-      return m("div", { class: "results-fixed" },
+      return m("div", { class: "results-fixed" }, [
         m("div", { class: "splitcontainer" }, [
           splitLeft,
           getSplitRightContainerView()
-        ])
-      );
+        ]),
+        window.LLMDebugPanel ? m(LLMDebugPanel.PanelView) : ""
+      ]);
     }
 
     function getSplitRightContainerView() {

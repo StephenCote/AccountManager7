@@ -1,6 +1,8 @@
 package org.cote.accountmanager.olio.llm;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -513,5 +515,81 @@ public class ChatListener implements IChatListener {
 		handlers.forEach(h -> h.onEvalProgress(user, request, phase, detail));
 	}
 
+	// ── Public static accessors for LLM debug/abort ─────────────────────
+
+	/// Returns the set of all active request OIDs.
+	public static Set<String> getActiveRequestIds() {
+		return Collections.unmodifiableSet(asyncRequests.keySet());
+	}
+
+	/// Returns metadata about an active request for debug display.
+	public static Map<String, Object> getRequestInfo(String oid) {
+		if (oid == null || !asyncRequests.containsKey(oid)) return null;
+		Map<String, Object> info = new HashMap<>();
+		info.put("requestId", oid);
+
+		OpenAIRequest req = asyncRequests.get(oid);
+		if (req != null) {
+			info.put("model", req.getModel());
+			info.put("stream", req.isStream());
+		}
+		Chat chat = asyncChats.get(oid);
+		if (chat != null) {
+			info.put("serviceType", chat.getServiceType().toString());
+		}
+		Integer tokenCount = asyncRequestCount.get(oid);
+		info.put("tokenCount", tokenCount != null ? tokenCount : 0);
+
+		Boolean stopped = asyncRequestStop.get(oid);
+		info.put("stopped", stopped != null && stopped);
+
+		return info;
+	}
+
+	/// Returns info for all active requests.
+	public static List<Map<String, Object>> getAllActiveRequestInfo() {
+		List<Map<String, Object>> result = new ArrayList<>();
+		for (String oid : asyncRequests.keySet()) {
+			Map<String, Object> info = getRequestInfo(oid);
+			if (info != null) result.add(info);
+		}
+		return result;
+	}
+
+	/// Stop all active streams — sets graceful stop flag, closes HTTP connections,
+	/// and schedules forced cancellation for each.
+	public static void stopAllStreams() {
+		Set<String> oids = new HashSet<>(asyncRequests.keySet());
+		logger.info("stopAllStreams: aborting " + oids.size() + " active request(s)");
+		for (String oid : oids) {
+			OpenAIRequest req = asyncRequests.get(oid);
+			if (req != null) {
+				/// Phase 1: Set graceful stop flag
+				asyncRequestStop.put(oid, true);
+
+				/// Phase 2: Close HTTP response body stream
+				java.net.http.HttpResponse<?> httpResponse = asyncHttpResponses.get(oid);
+				if (httpResponse != null && httpResponse.body() instanceof java.util.stream.BaseStream) {
+					try {
+						((java.util.stream.BaseStream<?, ?>) httpResponse.body()).close();
+					} catch (Exception e) {
+						logger.warn("stopAllStreams: error closing HTTP body for " + oid + ": " + e.getMessage());
+					}
+				}
+
+				/// Phase 3: Force-cancel future after failover window
+				CompletableFuture<?> streamFuture = asyncStreamFutures.get(oid);
+				if (streamFuture != null) {
+					CompletableFuture.delayedExecutor(FAILOVER_SECONDS, TimeUnit.SECONDS)
+						.execute(() -> {
+							if (!streamFuture.isDone()) {
+								logger.warn("stopAllStreams: force-cancelling hung stream: " + oid);
+								streamFuture.cancel(true);
+							}
+						});
+				}
+			}
+		}
+	}
 
 }

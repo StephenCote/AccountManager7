@@ -766,10 +766,23 @@ public class ChatUtil {
 	}
 
 	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean recreate) {
-		return createSummary(user, chatConfig, promptConfig, ref, ChunkEnumType.WORD, 500, recreate, false);
+		return createSummary(user, chatConfig, null, promptConfig, ref, ChunkEnumType.WORD, 500, recreate, false, null);
 	}
-	
+
+	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean recreate, SummarizeProgress progress) {
+		return createSummary(user, chatConfig, null, promptConfig, ref, ChunkEnumType.WORD, 500, recreate, false, progress);
+	}
+
+	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptTemplate, BaseRecord promptConfig, BaseRecord ref, boolean recreate, SummarizeProgress progress) {
+		return createSummary(user, chatConfig, promptTemplate, promptConfig, ref, ChunkEnumType.WORD, 500, recreate, false, progress);
+	}
+
 	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, ChunkEnumType chunkType, int chunkCount, boolean recreate, boolean remote) {
+		return createSummary(user, chatConfig, null, promptConfig, ref, chunkType, chunkCount, recreate, remote, null);
+	}
+
+	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptTemplate, BaseRecord promptConfig, BaseRecord ref, ChunkEnumType chunkType, int chunkCount, boolean recreate, boolean remote, SummarizeProgress progress) {
+		if (progress == null) progress = new SummarizeProgress();
 		logger.info("Creating summary ...");
 		String name = getSummaryName(ref);
 		String setName = name + " - Summary Set";
@@ -797,6 +810,7 @@ public class ChatUtil {
 		
 		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
 		logger.info("Vectorizing reference ...");
+		progress.setPhase("vectorize");
 		try {
 			List<BaseRecord> chunks = vu.createVectorStore(ref, chunkType, chunkCount);
 			if(chunks.size() == 0) {
@@ -810,9 +824,14 @@ public class ChatUtil {
 			logger.error(e);
 			e.printStackTrace();
 		}
+		if (progress.isCancelled()) {
+			logger.info("Summarization cancelled after vectorize phase");
+			progress.setPhase("cancelled");
+			return null;
+		}
 		logger.info("Composing summary...");
-		
-		List<String> summaries = composeSummary(user, chatConfig, promptConfig, ref, remote);
+
+		List<String> summaries = composeSummary(user, chatConfig, promptTemplate, promptConfig, ref, remote, progress);
 		if(summaries.size() == 0) {
 			logger.error("composeSummary returned empty — saving placeholder to prevent infinite retry");
 			/// Save a placeholder note so getSummary() returns non-null and autoSummarize does not re-trigger.
@@ -828,6 +847,7 @@ public class ChatUtil {
 		
 		
 		logger.info("Vectorizing summary...");
+		progress.setPhase("vectorize-summary");
 		try {
 			List<BaseRecord> chunks = vu.createVectorStore(summSet, chunkType, chunkCount);
 			if(chunks.size() == 0) {
@@ -863,18 +883,110 @@ public class ChatUtil {
 	}
 	
 	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref) {
-		return composeSummary(user, chatConfig, promptConfig, ref, false);
+		return composeSummary(user, chatConfig, null, promptConfig, ref, false, null);
+	}
+
+	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean remote) {
+		return composeSummary(user, chatConfig, null, promptConfig, ref, remote, null);
+	}
+
+	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean remote, SummarizeProgress progress) {
+		return composeSummary(user, chatConfig, null, promptConfig, ref, remote, progress);
 	}
 
 	/// Fallback summarize user command (used if resource file fails to load)
 	private static String summarizeUserCommandFallback = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
 	private static final String SUMMARIZATION_RESOURCE = "summarization";
 	private static final String NO_THINK_DIRECTIVE = "/no_think";
-	
-	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean remote) {
+	/// Name of the library prompt template used as default for summarization
+	private static final String SUMMARY_TEMPLATE_NAME = "summary";
+
+	/// Resolved summarization prompts — holds system and user prompts for map and reduce phases.
+	/// Resolved once at the start of composeSummary, then passed to map/reduce.
+	static class SummarizePrompts {
+		String mapSystem;
+		String mapUser;
+		String reduceSystem;
+		String reduceUser;
+	}
+
+	/// Resolve summarization prompts via a fallback chain:
+	/// 1. Session promptTemplate (from chatRequest) → compose system/user via PromptTemplateComposer
+	/// 2. Named "summary" promptTemplate from /Library/PromptTemplates
+	/// 3. Resource file summarization.json (last resort)
+	private static SummarizePrompts resolveSummarizePrompts(BaseRecord user, BaseRecord promptTemplate, BaseRecord chatConfig, BaseRecord promptConfig) {
+		SummarizePrompts prompts = new SummarizePrompts();
+
+		/// Step 1: Try session's promptTemplate (from chatRequest, then chatConfig for backward compat)
+		BaseRecord effectiveTemplate = promptTemplate;
+		if (effectiveTemplate == null && chatConfig != null) {
+			effectiveTemplate = chatConfig.get("promptTemplate");
+		}
+		if (effectiveTemplate != null) {
+			IOSystem.getActiveContext().getReader().populate(effectiveTemplate);
+			String sys = PromptTemplateComposer.composeSystem(effectiveTemplate, promptConfig, null);
+			String usr = PromptTemplateComposer.composeUser(effectiveTemplate, promptConfig, null);
+			if (sys != null && !sys.isBlank()) {
+				logger.info("resolveSummarizePrompts: using session promptTemplate '" + effectiveTemplate.get(FieldNames.FIELD_NAME) + "'");
+				prompts.mapSystem = sys;
+				prompts.reduceSystem = sys;
+				prompts.mapUser = (usr != null && !usr.isBlank()) ? usr : null;
+				prompts.reduceUser = null;
+			}
+		}
+
+		/// Step 2: Try named "summary" promptTemplate from library
+		if (prompts.mapSystem == null && user != null) {
+			try {
+				BaseRecord libTemplate = resolveConfig(user, OlioModelNames.MODEL_PROMPT_TEMPLATE, SUMMARY_TEMPLATE_NAME, null);
+				if (libTemplate != null) {
+					IOSystem.getActiveContext().getReader().populate(libTemplate);
+					String sys = PromptTemplateComposer.composeSystem(libTemplate, null, null);
+					String usr = PromptTemplateComposer.composeUser(libTemplate, null, null);
+					if (sys != null && !sys.isBlank()) {
+						logger.info("resolveSummarizePrompts: using library template '" + SUMMARY_TEMPLATE_NAME + "'");
+						prompts.mapSystem = sys;
+						prompts.reduceSystem = sys;
+						prompts.mapUser = (usr != null && !usr.isBlank()) ? usr : null;
+						prompts.reduceUser = null;
+					}
+				}
+			} catch (Exception e) {
+				logger.warn("resolveSummarizePrompts: library lookup failed: " + e.getMessage());
+			}
+		}
+
+		/// Step 3: Fall back to resource file
+		if (prompts.mapSystem == null) {
+			logger.info("resolveSummarizePrompts: falling back to resource file");
+			String s = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "mapSystem");
+			prompts.mapSystem = (s != null) ? s : summarizeSystemPromptFallback;
+		}
+		if (prompts.mapUser == null) {
+			String s = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "mapUser");
+			prompts.mapUser = (s != null) ? s : summarizeUserCommandFallback;
+		}
+		if (prompts.reduceSystem == null) {
+			String s = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "reduceSystem");
+			prompts.reduceSystem = (s != null) ? s : summarizeSystemPromptFallback;
+		}
+		if (prompts.reduceUser == null) {
+			String s = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "reduceUser");
+			prompts.reduceUser = (s != null) ? s : reduceCommandFallback;
+		}
+
+		return prompts;
+	}
+
+	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptTemplate, BaseRecord promptConfig, BaseRecord ref, boolean remote, SummarizeProgress progress) {
+		if (progress == null) progress = new SummarizeProgress();
 		List<String> summaries = new ArrayList<>();
 
 		try {
+			/// Resolve summarization prompts via config chain:
+			/// 1. Session promptTemplate → 2. Library "summary" template → 3. Resource file
+			SummarizePrompts prompts = resolveSummarizePrompts(user, promptTemplate, chatConfig, promptConfig);
+
 			/// Step 1: Load chunks
 			List<String> chunks = loadChunks(user, ref);
 			if (chunks.isEmpty()) {
@@ -882,6 +994,8 @@ public class ChatUtil {
 				return summaries;
 			}
 			logger.info("composeSummary: loaded " + chunks.size() + " chunks for map-reduce");
+
+			if (progress.isCancelled()) return summaries;
 
 			/// Step 2: Map phase — parallel batch summarization
 			int batchSize = 5;
@@ -893,12 +1007,20 @@ public class ChatUtil {
 					if (cfgWorkers > 0) summaryWorkers = cfgWorkers;
 				} catch (Exception e) { /* field may not exist on legacy configs */ }
 			}
-			summaries = mapSummarize(user, chatConfig, promptConfig, chunks, remote, batchSize, summaryWorkers);
+			progress.setPhase("map");
+			progress.setTotal(chunks.size());
+			progress.setCurrent(0);
+			summaries = mapSummarize(user, chatConfig, promptConfig, chunks, remote, batchSize, summaryWorkers, progress, prompts);
 			logger.info("composeSummary: map phase produced " + summaries.size() + " summaries");
+
+			if (progress.isCancelled()) return summaries;
 
 			/// Step 3: Reduce phase — hierarchical merge until single summary
 			if (summaries.size() > 1) {
-				summaries = reduceSummaries(user, chatConfig, promptConfig, summaries, remote, batchSize, summaryWorkers);
+				progress.setPhase("reduce");
+				progress.setTotal(summaries.size());
+				progress.setCurrent(0);
+				summaries = reduceSummaries(user, chatConfig, promptConfig, summaries, remote, batchSize, summaryWorkers, progress, prompts);
 				logger.info("composeSummary: reduce phase completed with " + summaries.size() + " final summaries");
 			}
 		}
@@ -972,16 +1094,18 @@ public class ChatUtil {
 	/// Map phase: parallel batch summarization of content chunks.
 	/// Each chunk runs in its own thread with its own Chat instance (Chat is not thread-safe).
 	/// Concurrency is limited by maxConcurrent to avoid overwhelming the LLM server.
-	private static List<String> mapSummarize(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> chunks, boolean remote, int batchSize, int maxConcurrent) {
+	private static List<String> mapSummarize(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> chunks, boolean remote, int batchSize, int maxConcurrent, SummarizeProgress progress, SummarizePrompts prompts) {
 		List<String> summaries = new ArrayList<>();
 		if (chatConfig == null || promptConfig == null) {
 			/// Fallback to local embedding if no chat config
 			EmbeddingUtil eu = IOSystem.getActiveContext().getVectorUtil().getEmbedUtil();
 			for (int i = 0; i < chunks.size(); i++) {
+				if (progress.isCancelled()) break;
 				String summ = eu.getSummary(chunks.get(i));
 				if (summ != null && !summ.isEmpty()) {
 					summaries.add(wrapChunkSummary(i + 1, summ));
 				}
+				progress.incrementCurrent();
 			}
 			return summaries;
 		}
@@ -1001,6 +1125,7 @@ public class ChatUtil {
 			final int chunkIdx = i;
 			final String chunk = chunks.get(i);
 			futures.add(CompletableFuture.supplyAsync(() -> {
+				if (progress.isCancelled()) return null;
 				try {
 					llmSemaphore.acquire();
 				} catch (InterruptedException e) {
@@ -1009,10 +1134,12 @@ public class ChatUtil {
 					return null;
 				}
 				try {
+					if (progress.isCancelled()) return null;
 					Chat chat = new Chat(user, chatConfig, promptConfig);
 					chat.setDeferRemote(remote);
-					String summ = summarizeChunk(chunk, chat, remote);
+					String summ = summarizeChunk(chunk, chat, remote, prompts);
 					if (summ != null && !summ.isEmpty()) {
+						progress.incrementCurrent();
 						return wrapChunkSummary(chunkIdx + 1, summ);
 					}
 				} catch (Exception e) {
@@ -1038,6 +1165,9 @@ public class ChatUtil {
 				logger.warn("mapSummarize: chunk " + i + " timed out or failed: " + e.getMessage());
 			}
 		}
+		if (progress.isCancelled()) {
+			logger.info("mapSummarize: cancelled — returning " + summaries.size() + " completed summaries");
+		}
 		return summaries;
 	}
 
@@ -1047,15 +1177,11 @@ public class ChatUtil {
 	/// Loads system/user prompts from summarization.json resource with hardcoded fallbacks.
 	/// Appends /no_think directive to suppress thinking-model token waste.
 	private static final String summarizeSystemPromptFallback = "You are a text summarization assistant. Produce concise, accurate summaries.";
-	private static String summarizeChunk(String content, Chat chat, boolean remote) {
+	private static String summarizeChunk(String content, Chat chat, boolean remote, SummarizePrompts prompts) {
 		logger.info("summarizeChunk: content length=" + content.length());
 
-		String sysPrompt = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "mapSystem");
-		if (sysPrompt == null) sysPrompt = summarizeSystemPromptFallback;
-		chat.setLlmSystemPrompt(sysPrompt);
-
-		String userCmd = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "mapUser");
-		if (userCmd == null) userCmd = summarizeUserCommandFallback;
+		chat.setLlmSystemPrompt(prompts.mapSystem);
+		String userCmd = prompts.mapUser;
 
 		OpenAIRequest req = chat.newRequest(chat.getModel());
 		String cmd = userCmd + System.lineSeparator() + content + System.lineSeparator() + NO_THINK_DIRECTIVE;
@@ -1079,23 +1205,22 @@ public class ChatUtil {
 	private static final int MAX_REDUCE_DEPTH = 5;
 	private static final String reduceCommandFallback = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator();
 
-	private static List<String> reduceSummaries(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> summaries, boolean remote, int batchSize, int maxConcurrent) {
+	private static List<String> reduceSummaries(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> summaries, boolean remote, int batchSize, int maxConcurrent, SummarizeProgress progress, SummarizePrompts prompts) {
 		int depth = 0;
 		List<String> current = new ArrayList<>(summaries);
 
-		/// Load reduce prompts from resource with fallbacks
-		String reduceSysPrompt = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "reduceSystem");
-		if (reduceSysPrompt == null) reduceSysPrompt = summarizeSystemPromptFallback;
-		String reduceUserCmd = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "reduceUser");
-		if (reduceUserCmd == null) reduceUserCmd = reduceCommandFallback;
-		final String finalReduceSys = reduceSysPrompt;
-		final String finalReduceUser = reduceUserCmd;
+		final String finalReduceSys = prompts.reduceSystem;
+		final String finalReduceUser = prompts.reduceUser;
 
 		/// Determine per-call timeout from chat config
 		Chat timeoutProbe = new Chat(user, chatConfig, promptConfig);
 		final int perCallTimeout = timeoutProbe.getRequestTimeout() > 0 ? timeoutProbe.getRequestTimeout() : 120;
 
 		while (current.size() > 1 && depth < MAX_REDUCE_DEPTH) {
+			if (progress.isCancelled()) {
+				logger.info("reduceSummaries: cancelled at depth " + depth);
+				break;
+			}
 			depth++;
 			logger.info("reduceSummaries: depth=" + depth + " reducing " + current.size() + " summaries");
 
@@ -1104,6 +1229,8 @@ public class ChatUtil {
 			for (int i = 0; i < current.size(); i += batchSize) {
 				batches.add(current.subList(i, Math.min(i + batchSize, current.size())));
 			}
+			progress.setTotal(batches.size());
+			progress.setCurrent(0);
 
 			final Semaphore llmSemaphore = new Semaphore(maxConcurrent);
 			List<CompletableFuture<String>> futures = new ArrayList<>();
@@ -1111,6 +1238,7 @@ public class ChatUtil {
 				final List<String> batch = batches.get(b);
 				final int batchIdx = b;
 				futures.add(CompletableFuture.supplyAsync(() -> {
+					if (progress.isCancelled()) return null;
 					try {
 						llmSemaphore.acquire();
 					} catch (InterruptedException e) {
@@ -1118,6 +1246,7 @@ public class ChatUtil {
 						return null;
 					}
 					try {
+						if (progress.isCancelled()) return null;
 						String merged = batch.stream().collect(Collectors.joining(System.lineSeparator()));
 						Chat chat = new Chat(user, chatConfig, promptConfig);
 						chat.setDeferRemote(remote);
@@ -1134,6 +1263,7 @@ public class ChatUtil {
 							resp = chat.chat(req);
 						}
 						if (resp != null && resp.getMessage() != null) {
+							progress.incrementCurrent();
 							return "<summary>" + System.lineSeparator() + resp.getMessage().getContent() + System.lineSeparator() + "</summary>";
 						}
 					} finally {
@@ -1340,9 +1470,14 @@ public class ChatUtil {
 	/// are owned by the admin user. PBAC is still enforced via AccessPoint.find().
 	///
 	public static BaseRecord getLibraryConfig(BaseRecord user, String modelName, String name) {
-		String libraryName = OlioModelNames.MODEL_CHAT_CONFIG.equals(modelName)
-			? ChatLibraryUtil.LIBRARY_CHAT_CONFIGS
-			: ChatLibraryUtil.LIBRARY_PROMPT_CONFIGS;
+		String libraryName;
+		if (OlioModelNames.MODEL_CHAT_CONFIG.equals(modelName)) {
+			libraryName = ChatLibraryUtil.LIBRARY_CHAT_CONFIGS;
+		} else if (OlioModelNames.MODEL_PROMPT_TEMPLATE.equals(modelName)) {
+			libraryName = ChatLibraryUtil.LIBRARY_PROMPT_TEMPLATES;
+		} else {
+			libraryName = ChatLibraryUtil.LIBRARY_PROMPT_CONFIGS;
+		}
 		BaseRecord libDir = ChatLibraryUtil.findLibraryDir(user, libraryName);
 		if (libDir == null) {
 			return null;

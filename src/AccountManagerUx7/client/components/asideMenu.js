@@ -79,7 +79,17 @@
                     button("Breadcrumb Bar", "footprint", null, undefined, async function(){ page.components.breadCrumb.toggleBreadcrumb();}),
                     button("Mood Ring", "mood", null, (page.components.moodRing && page.components.moodRing.enabled() ? "active" : ""), async function(){ if(page.components.moodRing) await page.components.moodRing.toggle(); m.redraw(); }, true),
                     button("Clear Cache", "cached", null, undefined, async function(){ await am7client.clearCache();}),
-                    button("Cleanup", "cached", null, undefined, async function(){ await page.cleanup();})
+                    button("Cleanup", "cached", null, undefined, async function(){ await page.cleanup();}),
+                    button("Stop All LLM", "stop_circle", null, undefined, async function(){
+                        try {
+                            await m.request({ method: 'POST', url: g_application_path + "/rest/chat/llm/abort-all", withCredentials: true });
+                            if (page.toast) page.toast("info", "All LLM requests aborted");
+                        } catch(e) { console.error("Abort-all failed:", e); }
+                    }),
+                    button("LLM Debug", "bug_report", null, (page.components.llmDebug && page.components.llmDebug.isVisible() ? "active" : ""), function(){
+                        if (page.components.llmDebug) page.components.llmDebug.toggle();
+                        m.redraw();
+                    }, true)
                 ])
             ]);
             return vnode;

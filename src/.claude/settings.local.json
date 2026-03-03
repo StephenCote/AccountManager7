@@ -39,7 +39,8 @@
       "Read(//c/Projects/GitHub/**)",
       "WebFetch(domain:192.168.1.42)",
       "WebFetch(domain:github.com)",
-      "Bash(jar tf:*)"
+      "Bash(jar tf:*)",
+      "Bash(echo \"exit:$?\")"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

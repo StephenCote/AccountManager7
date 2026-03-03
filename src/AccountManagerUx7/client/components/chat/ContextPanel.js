@@ -238,6 +238,34 @@
         ]);
     }
 
+    function summarizeProgressText(ref) {
+        let phase = ref.summaryPhase || "pending";
+        let current = ref.summaryCurrent || 0;
+        let total = ref.summaryTotal || 0;
+        if (phase === "vectorize") return "vectorizing...";
+        if (phase === "vectorize-summary") return "vectorizing summary...";
+        if (phase === "map") return total > 0 ? "summarizing " + current + "/" + total + "..." : "summarizing...";
+        if (phase === "reduce") return total > 0 ? "merging " + current + "/" + total + "..." : "merging...";
+        if (phase === "complete") return "complete";
+        if (phase === "failed") return "failed";
+        if (phase === "cancelled") return "cancelled";
+        return "summarizing...";
+    }
+
+    function cancelSummarize(objectId) {
+        if (!_sessionId) return;
+        m.request({
+            method: 'POST',
+            url: g_application_path + "/rest/chat/summarize/cancel",
+            withCredentials: true,
+            body: { sessionId: _sessionId, objectId: objectId }
+        }).then(function() {
+            if (_sessionId) loadContext(_sessionId);
+        }).catch(function(e) {
+            console.warn("[ContextPanel] cancel summarize failed:", e);
+        });
+    }
+
     function contextRefRowView(ref) {
         if (!ref) return "";
         let rSchema = ref.refSchema || ref.schema;
@@ -246,6 +274,7 @@
         let displayName = ref.name || ref.objectId || "\u2014";
         let detachType = rSchema === "data.tag" ? "tag" : "context";
         let isSummarizing = ref.summarizing === true;
+        let progressLabel = isSummarizing ? summarizeProgressText(ref) : "";
 
         return m("div", { class: "flex items-center justify-between text-xs py-0.5" }, [
             m("span", { class: "flex items-center truncate flex-1 min-w-0" + (isSummarizing ? " text-yellow-400" : " text-gray-400"), title: rSchema + " " + displayName }, [
@@ -253,16 +282,26 @@
                     ? m("span", { class: "material-symbols-outlined mr-1 animate-spin", style: "font-size: 14px;" }, "progress_activity")
                     : m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 14px;" }, icon),
                 label + ": " + displayName,
-                isSummarizing ? m("span", { class: "ml-1 text-yellow-500 italic" }, "summarizing...") : ""
+                isSummarizing ? m("span", { class: "ml-1 text-yellow-500 italic" }, progressLabel) : ""
             ]),
-            m("button", {
-                class: "menu-button ml-1 flex-shrink-0",
-                title: "Detach " + label,
-                onclick: function(e) {
-                    e.stopPropagation();
-                    detach(detachType, ref.objectId);
-                }
-            }, m("span", { class: "material-symbols-outlined", style: "font-size: 16px;" }, "link_off"))
+            m("span", { class: "flex items-center flex-shrink-0" }, [
+                isSummarizing ? m("button", {
+                    class: "menu-button ml-1",
+                    title: "Stop summarization",
+                    onclick: function(e) {
+                        e.stopPropagation();
+                        cancelSummarize(ref.objectId);
+                    }
+                }, m("span", { class: "material-symbols-outlined text-red-400", style: "font-size: 16px;" }, "stop_circle")) : "",
+                m("button", {
+                    class: "menu-button ml-1",
+                    title: "Detach " + label,
+                    onclick: function(e) {
+                        e.stopPropagation();
+                        detach(detachType, ref.objectId);
+                    }
+                }, m("span", { class: "material-symbols-outlined", style: "font-size: 16px;" }, "link_off"))
+            ])
         ]);
     }
 
@@ -278,9 +317,25 @@
 
         /// Prominent summarizing banner when any context ref is being summarized
         if (_contextData.summarizing) {
+            /// Build aggregate progress label from contextRefs
+            let bannerText = "Creating summary for attached document(s)...";
+            if (_contextData.contextRefs) {
+                let active = _contextData.contextRefs.filter(function(r) { return r.summarizing; });
+                if (active.length > 0) {
+                    bannerText = active.map(function(r) { return summarizeProgressText(r); }).join(" | ");
+                }
+            }
             rows.push(m("div", { class: "flex items-center gap-1 px-2 py-1.5 mb-1 rounded bg-yellow-900/40 border border-yellow-700/50 text-yellow-300 text-xs" }, [
                 m("span", { class: "material-symbols-outlined animate-spin", style: "font-size: 16px;" }, "progress_activity"),
-                m("span", "Creating summary for attached document(s)...")
+                m("span.flex-1", bannerText),
+                m("button", {
+                    class: "menu-button ml-1 flex-shrink-0",
+                    title: "Stop all summarizations",
+                    onclick: function(e) {
+                        e.stopPropagation();
+                        cancelSummarize(null);
+                    }
+                }, m("span", { class: "material-symbols-outlined text-red-400", style: "font-size: 16px;" }, "stop_circle"))
             ]));
         }
 

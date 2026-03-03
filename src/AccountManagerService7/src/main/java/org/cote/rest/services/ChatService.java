@@ -3,6 +3,7 @@ package org.cote.rest.services;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,9 +25,11 @@ import org.cote.accountmanager.agent.AgentToolManager;
 import org.cote.accountmanager.agent.AM7AgentTool;
 import org.cote.accountmanager.agent.ChainExecutor;
 import org.cote.accountmanager.mcp.McpContextBuilder;
+import org.cote.accountmanager.olio.llm.ChatListener;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatResponse;
 import org.cote.accountmanager.olio.llm.ChatLibraryUtil;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
@@ -72,8 +75,8 @@ public class ChatService {
 	
 	private static final Logger logger = LogManager.getLogger(ChatService.class);
 
-	/// Track in-flight async summarizations: sessionId → set of objectIds being summarized
-	private static final Map<String, Set<String>> summarizingRefs = new ConcurrentHashMap<>();
+	/// Track in-flight async summarizations: sessionId → { objectId → progress }
+	private static final Map<String, Map<String, SummarizeProgress>> summarizingRefs = new ConcurrentHashMap<>();
 
 	@Context
 	ServletContext context;
@@ -702,9 +705,9 @@ public class ChatService {
 				ctx.set("context", legacyRef);
 			}
 
-			/// Build contextRefs list with summarizing status
+			/// Build contextRefs list with summarizing status and progress
 			List<String> contextRefs = chatReq.get("contextRefs");
-			Set<String> inFlightSet = summarizingRefs.getOrDefault(sessionId, Collections.emptySet());
+			Map<String, SummarizeProgress> inFlightMap = summarizingRefs.getOrDefault(sessionId, Collections.emptyMap());
 			boolean anySummarizing = false;
 			if (contextRefs != null && !contextRefs.isEmpty()) {
 				List<BaseRecord> refList = new ArrayList<>();
@@ -718,9 +721,13 @@ public class ChatService {
 							? (String) resolved.get(FieldNames.FIELD_NAME) : null;
 
 						BaseRecord entry = newContextRef(refSchema, refOid, resolvedName);
-						boolean isSummarizing = inFlightSet.contains(refOid);
-						if (isSummarizing) {
+						SummarizeProgress progress = inFlightMap.get(refOid);
+						if (progress != null) {
 							entry.set("summarizing", true);
+							entry.set("summaryPhase", progress.getPhase());
+							entry.set("summaryCurrent", progress.getCurrent());
+							entry.set("summaryTotal", progress.getTotal());
+							entry.set("summaryElapsed", (int) progress.getElapsedSeconds());
 							anySummarizing = true;
 						}
 						refList.add(entry);
@@ -739,6 +746,116 @@ public class ChatService {
 		}
 		catch (Exception e) {
 			logger.error("Error reading session context", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/summarize/cancel")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response cancelSummarize(String json, @Context HttpServletRequest request) {
+		try {
+			BaseRecord user = ServiceUtil.getPrincipalUser(request);
+			if (user == null) return Response.status(401).entity("{\"error\":\"Not authenticated\"}").build();
+
+			BaseRecord body = RecordFactory.importRecord(ModelNames.MODEL_SELF, json);
+			String sessionId = body.get("sessionId");
+			String objectId = body.get("objectId");
+
+			if (sessionId == null) return Response.status(400).entity("{\"error\":\"sessionId required\"}").build();
+
+			Map<String, SummarizeProgress> inFlight = summarizingRefs.get(sessionId);
+			if (inFlight == null || inFlight.isEmpty()) {
+				return Response.status(200).entity("{\"cancelled\":false,\"reason\":\"no active summarizations\"}").build();
+			}
+
+			int cancelled = 0;
+			if (objectId != null) {
+				/// Cancel a specific summarization
+				SummarizeProgress progress = inFlight.get(objectId);
+				if (progress != null && !progress.isCancelled()) {
+					progress.cancel();
+					cancelled++;
+				}
+			} else {
+				/// Cancel all summarizations for this session
+				for (SummarizeProgress progress : inFlight.values()) {
+					if (!progress.isCancelled()) {
+						progress.cancel();
+						cancelled++;
+					}
+				}
+			}
+			return Response.status(200).entity("{\"cancelled\":true,\"count\":" + cancelled + "}").build();
+		} catch (Exception e) {
+			logger.error("Error cancelling summarization", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/llm/active")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response llmActive(@Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if (user == null) return Response.status(401).entity("[]").build();
+		try {
+			List<Map<String, Object>> active = ChatListener.getAllActiveRequestInfo();
+			/// Append in-flight summarization info
+			List<Map<String, Object>> summInfo = new ArrayList<>();
+			for (Map.Entry<String, Map<String, SummarizeProgress>> sessionEntry : summarizingRefs.entrySet()) {
+				for (Map.Entry<String, SummarizeProgress> refEntry : sessionEntry.getValue().entrySet()) {
+					SummarizeProgress p = refEntry.getValue();
+					Map<String, Object> si = new HashMap<>();
+					si.put("type", "summarization");
+					si.put("sessionId", sessionEntry.getKey());
+					si.put("objectId", refEntry.getKey());
+					si.put("phase", p.getPhase());
+					si.put("current", p.getCurrent());
+					si.put("total", p.getTotal());
+					si.put("elapsed", (int) p.getElapsedSeconds());
+					si.put("cancelled", p.isCancelled());
+					summInfo.add(si);
+				}
+			}
+			Map<String, Object> result = new HashMap<>();
+			result.put("llmRequests", active);
+			result.put("summarizations", summInfo);
+			return Response.status(200).entity(new ObjectMapper().writeValueAsString(result)).build();
+		} catch (Exception e) {
+			logger.error("Error listing active LLM requests", e);
+			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+		}
+	}
+
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/llm/abort-all")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response llmAbortAll(@Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if (user == null) return Response.status(401).entity("{\"error\":\"Not authenticated\"}").build();
+		try {
+			/// Stop all active LLM streams
+			ChatListener.stopAllStreams();
+
+			/// Cancel all in-flight summarizations
+			int summCancelled = 0;
+			for (Map<String, SummarizeProgress> sessionMap : summarizingRefs.values()) {
+				for (SummarizeProgress progress : sessionMap.values()) {
+					if (!progress.isCancelled()) {
+						progress.cancel();
+						summCancelled++;
+					}
+				}
+			}
+
+			int llmCount = ChatListener.getActiveRequestIds().size();
+			return Response.status(200).entity("{\"stopped\":true,\"llmRequests\":" + llmCount + ",\"summarizationsCancelled\":" + summCancelled + "}").build();
+		} catch (Exception e) {
+			logger.error("Error aborting LLM requests", e);
 			return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
 		}
 	}
@@ -896,11 +1013,16 @@ public class ChatService {
 				logger.info("Summary already exists for " + contextObj.get(FieldNames.FIELD_OBJECT_ID) + " — skipping auto-summarize");
 				return false;
 			}
-			/// Resolve chatConfig and promptConfig from the chatRequest for the summarization LLM call
+			/// Resolve chatConfig, promptTemplate, and promptConfig from the chatRequest
 			BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
+			BaseRecord promptTemplate = OlioUtil.getFullRecord(chatReq.get("promptTemplate"));
 			BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.get("promptConfig"));
-			if (chatConfig == null || promptConfig == null) {
-				logger.warn("Cannot auto-summarize: chatConfig or promptConfig not available on session");
+			if (chatConfig == null) {
+				logger.warn("Cannot auto-summarize: chatConfig not available on session");
+				return false;
+			}
+			if (promptTemplate == null && promptConfig == null) {
+				logger.warn("Cannot auto-summarize: neither promptTemplate nor promptConfig available on session");
 				return false;
 			}
 
@@ -908,26 +1030,29 @@ public class ChatService {
 			String objectId = contextObj.get(FieldNames.FIELD_OBJECT_ID);
 
 			/// Check if summarization is already in-flight (e.g., triggered from another tab)
-			Set<String> inFlight = summarizingRefs.get(sessionId);
-			if (inFlight != null && inFlight.contains(objectId)) {
+			Map<String, SummarizeProgress> inFlight = summarizingRefs.get(sessionId);
+			if (inFlight != null && inFlight.containsKey(objectId)) {
 				logger.info("Summarization already in-flight for " + objectId + " — skipping duplicate");
 				return false;
 			}
 
-			/// Mark as in-flight so the context endpoint can report summarizing status
-			summarizingRefs.computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet()).add(objectId);
+			/// Mark as in-flight with a progress tracker so the context endpoint can report status
+			SummarizeProgress progress = new SummarizeProgress();
+			summarizingRefs.computeIfAbsent(sessionId, k -> new ConcurrentHashMap<>()).put(objectId, progress);
 			logger.info("Auto-summarizing " + objectId + " (async)");
 
 			/// Run summarization asynchronously so the attach response returns immediately
 			CompletableFuture.runAsync(() -> {
 				try {
-					ChatUtil.createSummary(user, chatConfig, promptConfig, contextObj, false);
+					ChatUtil.createSummary(user, chatConfig, promptTemplate, promptConfig, contextObj, false, progress);
+					progress.setPhase("complete");
 					logger.info("Auto-summarize complete for " + objectId);
 				} catch (Exception e) {
+					progress.setPhase("failed");
 					logger.warn("Auto-summarize failed for " + objectId + ": " + e.getMessage());
 				} finally {
-					/// Remove from in-flight set
-					Set<String> refs = summarizingRefs.get(sessionId);
+					/// Remove from in-flight map
+					Map<String, SummarizeProgress> refs = summarizingRefs.get(sessionId);
 					if (refs != null) {
 						refs.remove(objectId);
 						if (refs.isEmpty()) {
