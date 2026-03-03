@@ -21,6 +21,8 @@
     let _expanded = false;
     let _onContextChange = null;
     let _summarizePoller = null;
+    let _summarizePollCount = 0;
+    let _maxSummarizePollCount = 60; // 60 × 3s = 3 minutes max polling
 
     /**
      * Load context bindings from server for a session.
@@ -124,7 +126,14 @@
 
     function startSummarizePoller() {
         if (_summarizePoller) return;
+        _summarizePollCount = 0;
         _summarizePoller = setInterval(function() {
+            _summarizePollCount++;
+            if (_summarizePollCount >= _maxSummarizePollCount) {
+                console.warn("[ContextPanel] Summarize poller hit max retries (" + _maxSummarizePollCount + ") — stopping");
+                stopSummarizePoller();
+                return;
+            }
             if (_sessionId) loadContext(_sessionId);
         }, 3000);
     }
@@ -133,6 +142,7 @@
         if (_summarizePoller) {
             clearInterval(_summarizePoller);
             _summarizePoller = null;
+            _summarizePollCount = 0;
         }
     }
 

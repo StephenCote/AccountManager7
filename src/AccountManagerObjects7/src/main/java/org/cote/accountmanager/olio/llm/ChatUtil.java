@@ -781,11 +781,10 @@ public class ChatUtil {
 			if(recreate) {
 				IOSystem.getActiveContext().getAccessPoint().delete(user, summSet);
 			}
-			/*
 			else {
+				logger.info("Summary set already exists for '" + name + "' — returning existing (use recreate=true to force)");
 				return summSet;
 			}
-			*/
 		}
 		if(summFin != null) {
 			if(recreate) {
@@ -1147,22 +1146,32 @@ public class ChatUtil {
 			/// Collect results — each reduce call gets per-call timeout plus semaphore wait
 			int totalTimeout = perCallTimeout + (batches.size() / maxConcurrent) * perCallTimeout;
 			List<String> reduced = new ArrayList<>();
+			boolean anyFailed = false;
 			for (int b = 0; b < futures.size(); b++) {
 				try {
 					String result = futures.get(b).get(totalTimeout, TimeUnit.SECONDS);
 					if (result != null) {
 						reduced.add(result);
 					} else {
-						/// Keep the batch as-is if merge fails
-						logger.warn("reduceSummaries: batch " + b + " at depth " + depth + " returned null, keeping originals");
-						reduced.addAll(batches.get(b));
+						/// Drop failed batch — do NOT re-add originals to avoid retry storm
+						/// that re-sends the same content to an already-overwhelmed LLM server
+						logger.warn("reduceSummaries: batch " + b + " at depth " + depth + " returned null — dropping batch");
+						anyFailed = true;
 					}
 				} catch (Exception e) {
-					logger.warn("reduceSummaries: batch " + b + " at depth " + depth + " timed out or failed: " + e.getMessage());
-					reduced.addAll(batches.get(b));
+					logger.warn("reduceSummaries: batch " + b + " at depth " + depth + " timed out or failed — dropping batch: " + e.getMessage());
+					anyFailed = true;
 				}
 			}
 			current = reduced;
+			/// If all batches failed, break immediately to avoid an empty loop
+			if (current.isEmpty()) {
+				logger.error("reduceSummaries: all batches failed at depth " + depth + " — aborting reduce");
+				break;
+			}
+			if (anyFailed) {
+				logger.warn("reduceSummaries: some batches failed at depth " + depth + " — continuing with " + current.size() + " successful merges");
+			}
 		}
 
 		if (depth >= MAX_REDUCE_DEPTH && current.size() > 1) {
