@@ -22,6 +22,26 @@
 			"name": "summarizing",
 			"type": "boolean",
 			"description": "True when an auto-summarize operation is in progress for this reference."
+		},
+		{
+			"name": "summaryPhase",
+			"type": "string",
+			"description": "Current phase of the summarization: vectorize, map, reduce, complete, failed, cancelled."
+		},
+		{
+			"name": "summaryCurrent",
+			"type": "int",
+			"description": "Current chunk or batch index within the active phase."
+		},
+		{
+			"name": "summaryTotal",
+			"type": "int",
+			"description": "Total chunks or batches in the active phase."
+		},
+		{
+			"name": "summaryElapsed",
+			"type": "int",
+			"description": "Elapsed seconds since summarization started."
 		}
 	]
 }

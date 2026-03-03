@@ -823,6 +823,7 @@ public class ChatService {
 			Map<String, Object> result = new HashMap<>();
 			result.put("llmRequests", active);
 			result.put("summarizations", summInfo);
+			result.put("bufferModeStreams", Chat.getActiveStreamCount());
 			return Response.status(200).entity(new ObjectMapper().writeValueAsString(result)).build();
 		} catch (Exception e) {
 			logger.error("Error listing active LLM requests", e);
@@ -1021,10 +1022,8 @@ public class ChatService {
 				logger.warn("Cannot auto-summarize: chatConfig not available on session");
 				return false;
 			}
-			if (promptTemplate == null && promptConfig == null) {
-				logger.warn("Cannot auto-summarize: neither promptTemplate nor promptConfig available on session");
-				return false;
-			}
+			/// promptTemplate and promptConfig are optional — the summarizer resolves
+			/// its own prompt from the library "summary" promptTemplate as fallback
 
 			String sessionId = chatReq.get(FieldNames.FIELD_OBJECT_ID);
 			String objectId = contextObj.get(FieldNames.FIELD_OBJECT_ID);

@@ -112,7 +112,8 @@
 
         let llmRequests = (_data && _data.llmRequests) ? _data.llmRequests : [];
         let summarizations = (_data && _data.summarizations) ? _data.summarizations : [];
-        let isEmpty = llmRequests.length === 0 && summarizations.length === 0;
+        let bufferStreams = (_data && _data.bufferModeStreams) ? _data.bufferModeStreams : 0;
+        let isEmpty = llmRequests.length === 0 && summarizations.length === 0 && bufferStreams === 0;
 
         return m("div", { class: "fixed bottom-0 right-0 w-96 max-h-80 bg-gray-900 border border-gray-600 rounded-tl-lg shadow-lg z-50 flex flex-col text-xs text-gray-300 overflow-hidden" }, [
             /// Header
@@ -154,6 +155,7 @@
                                 m("tbody", llmRequests.map(llmRequestRow))
                             ])
                         ] : "",
+                        bufferStreams > 0 ? m("div.mb-2.text-yellow-400", "Buffer-mode streams: " + bufferStreams) : "",
                         summarizations.length > 0 ? [
                             m("div.font-semibold.mb-1.text-gray-400", "Summarizations (" + summarizations.length + ")"),
                             m("table.w-full", [

@@ -749,7 +749,14 @@
     /// Due to the complexity and tight coupling with object page state,
     /// this renderer delegates to the provided callback functions
     renderers.table = function(ctx) {
-        /// Delegate to the table renderer function if provided
+        /// Use the new table list editor for standard CRUD forms
+        if (page.components.tableListEditor
+            && ctx.fieldView?.form
+            && page.components.tableListEditor.isStandardCrud(ctx.fieldView.form)) {
+            return page.components.tableListEditor.render(ctx);
+        }
+
+        /// Delegate to the legacy table renderer for non-standard forms (entitylist, memberlist, etc.)
         if (ctx.getValuesForTableField) {
             return ctx.getValuesForTableField(
                 ctx.useName,

@@ -731,6 +731,8 @@
                 printJSONToWindow: printJSONToWindow,
                 getValuesForTableField: getValuesForTableField,
                 getValuesForFormField: getValuesForFormField,
+                modelField: modelField,
+                foreignData: foreignData,
                 /// Special state for certain renderers
                 pdfViewer: pdfViewer,
                 streamSeg: streamSeg,

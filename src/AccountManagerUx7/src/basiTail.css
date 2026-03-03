@@ -115,6 +115,75 @@
     .table-field tr th {
         @apply border-b dark:border-gray-300 font-medium p-4 pl-8 pt-0 pb-3 text-gray-500 text-left
     }
+
+    /* Table List Editor (TLE) component */
+    .tle-container {
+        @apply flex flex-col w-full
+    }
+    .tle-toolbar {
+        @apply flex items-center gap-2 py-1 px-1 border-b border-gray-200 dark:border-gray-700
+    }
+    .tle-search {
+        @apply text-sm border border-gray-300 rounded px-2 py-1 flex-1 max-w-xs
+            focus:outline-none focus:ring-1 focus:ring-blue-500
+            dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200
+    }
+    .tle-list {
+        @apply flex flex-col max-h-80 overflow-y-auto
+    }
+    .tle-row {
+        @apply flex items-center justify-between px-3 py-2 border-b border-gray-100
+            cursor-pointer hover:bg-blue-50 dark:border-gray-700 dark:hover:bg-gray-800
+    }
+    .tle-row-active {
+        @apply bg-blue-100 border-l-4 border-l-blue-500
+            dark:bg-blue-900/40 dark:border-l-blue-400
+    }
+    .tle-row-summary {
+        @apply flex-1 text-sm text-gray-700 dark:text-gray-300 truncate mr-2
+    }
+    .tle-row-actions {
+        @apply flex gap-1 shrink-0 opacity-0
+    }
+    .tle-row:hover .tle-row-actions {
+        @apply opacity-100
+    }
+    .tle-row-active .tle-row-actions {
+        @apply opacity-100
+    }
+    .tle-action-btn {
+        @apply p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400
+            hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer
+    }
+    .tle-action-btn .material-symbols-outlined {
+        font-size: 18px;
+    }
+    .tle-editor {
+        @apply overflow-hidden
+    }
+    .tle-editor-closed {
+        max-height: 0;
+        opacity: 0;
+        transition: max-height 300ms cubic-bezier(0.4, 0, 0.2, 1),
+                    opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .tle-editor-open {
+        max-height: 800px;
+        opacity: 1;
+        transition: max-height 400ms cubic-bezier(0.4, 0, 0.2, 1),
+                    opacity 200ms cubic-bezier(0.4, 0, 0.2, 1) 100ms;
+        @apply border-t-2 border-blue-400 bg-gray-50 dark:bg-gray-900 p-3 mt-1 rounded-b
+    }
+    .tle-editor-toolbar {
+        @apply flex gap-2 mt-3 pt-2 border-t border-gray-200 dark:border-gray-700
+    }
+    .tle-empty {
+        @apply text-center text-gray-400 dark:text-gray-500 text-sm py-4 italic
+    }
+    .tle-count {
+        @apply text-xs text-gray-400 dark:text-gray-500 ml-auto
+    }
+
     .field-disabled{
         @apply bg-gray-300
     }

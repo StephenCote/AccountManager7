@@ -103,6 +103,7 @@ const jsFiles = [
     'client/components/formFieldRenderers.js',
     'client/components/membership.js',
     'client/components/tableEntry.js',
+    'client/components/tableListEditor.js',
     'client/components/emoji.js',
     'client/components/games.js',
     'client/components/audio.js',

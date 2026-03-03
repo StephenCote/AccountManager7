@@ -560,7 +560,7 @@ public class ChatListener implements IChatListener {
 	/// and schedules forced cancellation for each.
 	public static void stopAllStreams() {
 		Set<String> oids = new HashSet<>(asyncRequests.keySet());
-		logger.info("stopAllStreams: aborting " + oids.size() + " active request(s)");
+		logger.info("stopAllStreams: aborting " + oids.size() + " listener-tracked request(s)");
 		for (String oid : oids) {
 			OpenAIRequest req = asyncRequests.get(oid);
 			if (req != null) {
@@ -590,6 +590,8 @@ public class ChatListener implements IChatListener {
 				}
 			}
 		}
+		/// Also stop all buffer-mode streams (summarization, analysis, etc.)
+		Chat.stopAllActive();
 	}
 
 }

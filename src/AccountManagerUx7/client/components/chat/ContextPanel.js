@@ -451,6 +451,7 @@
             view: function() {
                 let count = getBindingCount();
                 let label = "Context" + (count > 0 ? " (" + count + ")" : "");
+                let isSummarizing = _contextData && _contextData.summarizing;
                 return m("div", {
                     class: "border-t border-gray-600",
                     ondragover: function(e) { e.preventDefault(); },
@@ -461,8 +462,10 @@
                         onclick: function() { _expanded = !_expanded; }
                     }, [
                         m("span", { class: "flex items-center" }, [
-                            m("span", { class: "material-symbols-outlined material-icons-24 mr-1" }, "link"),
-                            label
+                            isSummarizing
+                                ? m("span", { class: "material-symbols-outlined animate-spin mr-1 text-yellow-400", style: "font-size: 18px;" }, "progress_activity")
+                                : m("span", { class: "material-symbols-outlined material-icons-24 mr-1" }, "link"),
+                            isSummarizing ? m("span.text-yellow-400", "Summarizing...") : label
                         ]),
                         m("span", { class: "material-symbols-outlined", style: "font-size: 16px;" },
                             _expanded ? "expand_less" : "expand_more"

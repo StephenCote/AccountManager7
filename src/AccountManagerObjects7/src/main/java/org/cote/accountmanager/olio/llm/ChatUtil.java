@@ -901,64 +901,93 @@ public class ChatUtil {
 	/// Name of the library prompt template used as default for summarization
 	private static final String SUMMARY_TEMPLATE_NAME = "summary";
 
-	/// Resolved summarization prompts — holds system and user prompts for map and reduce phases.
+	/// Resolved summarization config — holds prompts and chatConfig for map and reduce phases.
 	/// Resolved once at the start of composeSummary, then passed to map/reduce.
+	/// Name of the library chatConfig used for summarization LLM parameters.
+	private static final String SUMMARY_CHAT_CONFIG_NAME = "contentAnalysis";
+
 	static class SummarizePrompts {
 		String mapSystem;
 		String mapUser;
 		String reduceSystem;
 		String reduceUser;
+		/// Resolved chatConfig for summarization — uses library "contentAnalysis" config
+		/// with connection settings (serverUrl, model, apiKey) inherited from the session chatConfig.
+		BaseRecord chatConfig;
 	}
 
 	/// Resolve summarization prompts via a fallback chain:
-	/// 1. Session promptTemplate (from chatRequest) → compose system/user via PromptTemplateComposer
-	/// 2. Named "summary" promptTemplate from /Library/PromptTemplates
-	/// 3. Resource file summarization.json (last resort)
+	/// 1. Named "summary" promptTemplate from /Library/PromptTemplates
+	/// 2. Resource file summarization.json (last resort)
+	///
+	/// NOTE: The session's chat promptTemplate is intentionally NOT used here —
+	/// it is for interactive chat (RPG, etc.) and not appropriate for summarization.
+	/// When a "pick summarization config" UI is added, it will feed a dedicated parameter.
 	private static SummarizePrompts resolveSummarizePrompts(BaseRecord user, BaseRecord promptTemplate, BaseRecord chatConfig, BaseRecord promptConfig) {
 		SummarizePrompts prompts = new SummarizePrompts();
+		logger.info("resolveSummarizePrompts: begin (session promptTemplate=" + (promptTemplate != null ? promptTemplate.get(FieldNames.FIELD_NAME) : "null")
+			+ ", session chatConfig=" + (chatConfig != null ? chatConfig.get(FieldNames.FIELD_NAME) : "null") + ")");
 
-		/// Step 1: Try session's promptTemplate (from chatRequest, then chatConfig for backward compat)
-		BaseRecord effectiveTemplate = promptTemplate;
-		if (effectiveTemplate == null && chatConfig != null) {
-			effectiveTemplate = chatConfig.get("promptTemplate");
-		}
-		if (effectiveTemplate != null) {
-			IOSystem.getActiveContext().getReader().populate(effectiveTemplate);
-			String sys = PromptTemplateComposer.composeSystem(effectiveTemplate, promptConfig, null);
-			String usr = PromptTemplateComposer.composeUser(effectiveTemplate, promptConfig, null);
-			if (sys != null && !sys.isBlank()) {
-				logger.info("resolveSummarizePrompts: using session promptTemplate '" + effectiveTemplate.get(FieldNames.FIELD_NAME) + "'");
-				prompts.mapSystem = sys;
-				prompts.reduceSystem = sys;
-				prompts.mapUser = (usr != null && !usr.isBlank()) ? usr : null;
-				prompts.reduceUser = null;
-			}
-		}
-
-		/// Step 2: Try named "summary" promptTemplate from library
-		if (prompts.mapSystem == null && user != null) {
+		/// Step 1: Try named "summary" promptTemplate from library
+		if (user != null) {
 			try {
-				BaseRecord libTemplate = resolveConfig(user, OlioModelNames.MODEL_PROMPT_TEMPLATE, SUMMARY_TEMPLATE_NAME, null);
+				BaseRecord libTemplate = getLibraryConfig(user, OlioModelNames.MODEL_PROMPT_TEMPLATE, SUMMARY_TEMPLATE_NAME);
 				if (libTemplate != null) {
+					logger.info("resolveSummarizePrompts: found library template '" + SUMMARY_TEMPLATE_NAME + "' name=" + libTemplate.get(FieldNames.FIELD_NAME) + " oid=" + libTemplate.get(FieldNames.FIELD_OBJECT_ID));
 					IOSystem.getActiveContext().getReader().populate(libTemplate);
 					String sys = PromptTemplateComposer.composeSystem(libTemplate, null, null);
 					String usr = PromptTemplateComposer.composeUser(libTemplate, null, null);
 					if (sys != null && !sys.isBlank()) {
-						logger.info("resolveSummarizePrompts: using library template '" + SUMMARY_TEMPLATE_NAME + "'");
+						logger.info("resolveSummarizePrompts: using library template '" + SUMMARY_TEMPLATE_NAME + "' (sysPrompt " + sys.length() + " chars, starts: " + sys.substring(0, Math.min(80, sys.length())) + "...)");
 						prompts.mapSystem = sys;
 						prompts.reduceSystem = sys;
 						prompts.mapUser = (usr != null && !usr.isBlank()) ? usr : null;
 						prompts.reduceUser = null;
+					} else {
+						logger.warn("resolveSummarizePrompts: library template '" + SUMMARY_TEMPLATE_NAME + "' composed to null/blank system prompt");
 					}
+				} else {
+					logger.warn("resolveSummarizePrompts: library template '" + SUMMARY_TEMPLATE_NAME + "' not found — library may not be initialized");
 				}
 			} catch (Exception e) {
 				logger.warn("resolveSummarizePrompts: library lookup failed: " + e.getMessage());
 			}
 		}
 
-		/// Step 3: Fall back to resource file
+		/// Resolve chatConfig: use library "contentAnalysis" for LLM params,
+		/// but inherit serverUrl/model/apiKey from session chatConfig.
+		prompts.chatConfig = chatConfig;
+		if (user != null) {
+			try {
+				BaseRecord libChatConfig = getLibraryConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, SUMMARY_CHAT_CONFIG_NAME);
+				if (libChatConfig != null) {
+					logger.info("resolveSummarizePrompts: found library chatConfig '" + SUMMARY_CHAT_CONFIG_NAME + "' name=" + libChatConfig.get(FieldNames.FIELD_NAME));
+					IOSystem.getActiveContext().getReader().populate(libChatConfig);
+					/// Copy connection settings from session chatConfig onto the library config
+					if (chatConfig != null) {
+						try {
+							if (chatConfig.get("serverUrl") != null) libChatConfig.set("serverUrl", chatConfig.get("serverUrl"));
+							if (chatConfig.get("model") != null) libChatConfig.set("model", chatConfig.get("model"));
+							if (chatConfig.get("apiKey") != null) libChatConfig.set("apiKey", chatConfig.get("apiKey"));
+							if (chatConfig.get("apiVersion") != null) libChatConfig.set("apiVersion", chatConfig.get("apiVersion"));
+							libChatConfig.set("serviceType", chatConfig.get("serviceType"));
+						} catch (Exception e) {
+							logger.warn("resolveSummarizePrompts: failed to copy connection settings: " + e.getMessage());
+						}
+					}
+					logger.info("resolveSummarizePrompts: using library chatConfig '" + SUMMARY_CHAT_CONFIG_NAME + "'");
+					prompts.chatConfig = libChatConfig;
+				} else {
+					logger.warn("resolveSummarizePrompts: library chatConfig '" + SUMMARY_CHAT_CONFIG_NAME + "' not found — using session chatConfig as fallback");
+				}
+			} catch (Exception e) {
+				logger.warn("resolveSummarizePrompts: chatConfig library lookup failed: " + e.getMessage());
+			}
+		}
+
+		/// Step 2: Fall back to resource file
 		if (prompts.mapSystem == null) {
-			logger.info("resolveSummarizePrompts: falling back to resource file");
+			logger.info("resolveSummarizePrompts: falling back to resource file for prompts");
 			String s = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "mapSystem");
 			prompts.mapSystem = (s != null) ? s : summarizeSystemPromptFallback;
 		}
@@ -975,6 +1004,7 @@ public class ChatUtil {
 			prompts.reduceUser = (s != null) ? s : reduceCommandFallback;
 		}
 
+		logger.info("resolveSummarizePrompts: final mapSystem starts: " + prompts.mapSystem.substring(0, Math.min(100, prompts.mapSystem.length())) + "...");
 		return prompts;
 	}
 
@@ -984,7 +1014,7 @@ public class ChatUtil {
 
 		try {
 			/// Resolve summarization prompts via config chain:
-			/// 1. Session promptTemplate → 2. Library "summary" template → 3. Resource file
+			/// 1. Library "summary" promptTemplate → 2. Resource file (last resort)
 			SummarizePrompts prompts = resolveSummarizePrompts(user, promptTemplate, chatConfig, promptConfig);
 
 			/// Step 1: Load chunks
@@ -1096,7 +1126,8 @@ public class ChatUtil {
 	/// Concurrency is limited by maxConcurrent to avoid overwhelming the LLM server.
 	private static List<String> mapSummarize(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> chunks, boolean remote, int batchSize, int maxConcurrent, SummarizeProgress progress, SummarizePrompts prompts) {
 		List<String> summaries = new ArrayList<>();
-		if (chatConfig == null || promptConfig == null) {
+		BaseRecord effectiveChatConfig = prompts.chatConfig != null ? prompts.chatConfig : chatConfig;
+		if (effectiveChatConfig == null) {
 			/// Fallback to local embedding if no chat config
 			EmbeddingUtil eu = IOSystem.getActiveContext().getVectorUtil().getEmbedUtil();
 			for (int i = 0; i < chunks.size(); i++) {
@@ -1110,11 +1141,14 @@ public class ChatUtil {
 			return summaries;
 		}
 
-		/// Determine per-chunk timeout from chat config
-		Chat timeoutProbe = new Chat(user, chatConfig, promptConfig);
+		/// Determine per-chunk timeout from resolved chat config
+		Chat timeoutProbe = new Chat(user, effectiveChatConfig, null);
 		final int perChunkTimeout = timeoutProbe.getRequestTimeout() > 0 ? timeoutProbe.getRequestTimeout() : 120;
 
 		logger.info("mapSummarize: " + chunks.size() + " chunks, maxConcurrent=" + maxConcurrent + ", perChunkTimeout=" + perChunkTimeout + "s, chunk sizes: " + chunks.stream().map(c -> String.valueOf(c.length())).collect(Collectors.joining(", ")));
+		logger.info("[DIAG] mapSummarize chatConfig: name=" + (effectiveChatConfig != null ? effectiveChatConfig.get(FieldNames.FIELD_NAME) : "null")
+			+ " model=" + (effectiveChatConfig != null ? effectiveChatConfig.get("model") : "null")
+			+ " temp=" + (effectiveChatConfig != null && effectiveChatConfig.hasField("chatOptions") ? "check-opts" : "no-opts"));
 
 		/// Semaphore limits concurrent LLM calls to avoid overwhelming the server
 		final Semaphore llmSemaphore = new Semaphore(maxConcurrent);
@@ -1135,7 +1169,7 @@ public class ChatUtil {
 				}
 				try {
 					if (progress.isCancelled()) return null;
-					Chat chat = new Chat(user, chatConfig, promptConfig);
+					Chat chat = new Chat(user, effectiveChatConfig, null);
 					chat.setDeferRemote(remote);
 					String summ = summarizeChunk(chunk, chat, remote, prompts);
 					if (summ != null && !summ.isEmpty()) {
@@ -1184,6 +1218,11 @@ public class ChatUtil {
 		String userCmd = prompts.mapUser;
 
 		OpenAIRequest req = chat.newRequest(chat.getModel());
+		/// Diagnostic: log the actual system prompt being sent to the LLM
+		if (req.getMessages() != null && !req.getMessages().isEmpty()) {
+			String actualSys = req.getMessages().get(0).getContent();
+			logger.info("[DIAG] summarizeChunk system prompt (" + (actualSys != null ? actualSys.length() : 0) + " chars): " + (actualSys != null ? actualSys.substring(0, Math.min(120, actualSys.length())) : "null") + "...");
+		}
 		String cmd = userCmd + System.lineSeparator() + content + System.lineSeparator() + NO_THINK_DIRECTIVE;
 		chat.newMessage(req, cmd, Chat.userRole);
 
@@ -1212,8 +1251,11 @@ public class ChatUtil {
 		final String finalReduceSys = prompts.reduceSystem;
 		final String finalReduceUser = prompts.reduceUser;
 
+		/// Use resolved chatConfig from prompts (library contentAnalysis) if available
+		BaseRecord effectiveChatConfig = prompts.chatConfig != null ? prompts.chatConfig : chatConfig;
+
 		/// Determine per-call timeout from chat config
-		Chat timeoutProbe = new Chat(user, chatConfig, promptConfig);
+		Chat timeoutProbe = new Chat(user, effectiveChatConfig, null);
 		final int perCallTimeout = timeoutProbe.getRequestTimeout() > 0 ? timeoutProbe.getRequestTimeout() : 120;
 
 		while (current.size() > 1 && depth < MAX_REDUCE_DEPTH) {
@@ -1248,11 +1290,16 @@ public class ChatUtil {
 					try {
 						if (progress.isCancelled()) return null;
 						String merged = batch.stream().collect(Collectors.joining(System.lineSeparator()));
-						Chat chat = new Chat(user, chatConfig, promptConfig);
+						Chat chat = new Chat(user, effectiveChatConfig, null);
 						chat.setDeferRemote(remote);
 
 						chat.setLlmSystemPrompt(finalReduceSys);
 						OpenAIRequest req = chat.newRequest(chat.getModel());
+						/// Diagnostic: log the actual system prompt being sent to the LLM
+						if (req.getMessages() != null && !req.getMessages().isEmpty()) {
+							String actualSys = req.getMessages().get(0).getContent();
+							logger.info("[DIAG] reduceSummaries system prompt (" + (actualSys != null ? actualSys.length() : 0) + " chars): " + (actualSys != null ? actualSys.substring(0, Math.min(120, actualSys.length())) : "null") + "...");
+						}
 						String cmd = finalReduceUser + System.lineSeparator() + merged + System.lineSeparator() + NO_THINK_DIRECTIVE;
 						chat.newMessage(req, cmd, Chat.userRole);
 

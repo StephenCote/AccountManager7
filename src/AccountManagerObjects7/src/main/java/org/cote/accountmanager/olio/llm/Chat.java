@@ -125,6 +125,12 @@ public class Chat {
 	private static final ConcurrentHashMap<String, Long> activeKeyframes = new ConcurrentHashMap<>();
 	/// Maximum time (ms) a keyframe lock can be held before it's considered leaked and forcibly removed.
 	private static final long KEYFRAME_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+	/// Global registry of all active LLM stream futures (both interactive and buffer-mode).
+	/// Used by stopAllActive() to abort all in-flight LLM connections.
+	private static final ConcurrentHashMap<String, CompletableFuture<HttpResponse<Stream<String>>>> activeStreams = new ConcurrentHashMap<>();
+	private static final ConcurrentHashMap<String, HttpResponse<Stream<String>>> activeHttpResponses = new ConcurrentHashMap<>();
+	private static final java.util.concurrent.atomic.AtomicLong streamIdCounter = new java.util.concurrent.atomic.AtomicLong(0);
+
 	/// Deferred keyframe: snapshot saved by pruneCount, launched after main response completes.
 	private volatile List<OpenAIMessage> pendingKeyframeSnapshot = null;
 	/// The message index at which the previous keyframe was created (0 if first keyframe).
@@ -141,6 +147,36 @@ public class Chat {
 			You play the role of an assistant named Siren.
 			Begin conversationally.
 			""";
+
+	/// Stop all active LLM streams globally (interactive + buffer mode).
+	/// Three-phase abort: (1) close HTTP response body, (2) cancel future.
+	public static void stopAllActive() {
+		int count = activeStreams.size() + activeHttpResponses.size();
+		logger.info("stopAllActive: aborting " + count + " tracked stream(s)");
+		/// Phase 1: Close HTTP response body streams to force IO exceptions
+		for (Map.Entry<String, HttpResponse<Stream<String>>> entry : activeHttpResponses.entrySet()) {
+			try {
+				entry.getValue().body().close();
+			} catch (Exception e) {
+				logger.debug("stopAllActive: close response body: " + e.getMessage());
+			}
+		}
+		/// Phase 2: Cancel futures
+		for (Map.Entry<String, CompletableFuture<HttpResponse<Stream<String>>>> entry : activeStreams.entrySet()) {
+			try {
+				entry.getValue().cancel(true);
+			} catch (Exception e) {
+				logger.debug("stopAllActive: cancel future: " + e.getMessage());
+			}
+		}
+		activeStreams.clear();
+		activeHttpResponses.clear();
+	}
+
+	/// Get count of all active LLM streams (interactive + buffer mode).
+	public static int getActiveStreamCount() {
+		return activeStreams.size();
+	}
 
 	public Chat() {
 
@@ -2975,6 +3011,10 @@ public class Chat {
 			}
 		}
 
+		/// Global registry: track ALL active streams (interactive + buffer mode)
+		final String streamId = "stream-" + streamIdCounter.incrementAndGet();
+		activeStreams.put(streamId, streamFuture);
+
 		streamFuture.thenAccept(response -> {
 			if (response == null || response.body() == null) {
 				logger.warn("Null response from streaming chat");
@@ -2986,6 +3026,8 @@ public class Chat {
 			if (!forwardToClient && response.statusCode() != 200) {
 				logger.warn("Buffer mode LLM call returned HTTP " + response.statusCode());
 			}
+			/// Global registry: track HTTP response for abort
+			activeHttpResponses.put(streamId, response);
 			/// Phase 12: OI-27 — Register HTTP response for server-side abort on cancel
 			if (forwardToClient && listener instanceof ChatListener) {
 				String oid2 = req.get(FieldNames.FIELD_OBJECT_ID);
@@ -3009,6 +3051,9 @@ public class Chat {
 				logger.info("Buffer mode stream complete: lines=" + lineCount + " contentLength=" + (bufContent != null ? bufContent.length() : "null"));
 			}
 		}).whenComplete((result, error) -> {
+			/// Global registry cleanup
+			activeStreams.remove(streamId);
+			activeHttpResponses.remove(streamId);
 			if (error != null) {
 				String errMsg;
 				if (error instanceof TimeoutException || (error.getCause() != null && error.getCause() instanceof TimeoutException)) {
