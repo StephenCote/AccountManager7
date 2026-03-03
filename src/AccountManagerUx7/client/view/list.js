@@ -268,6 +268,7 @@
       let libTypeMap = {
         "olio.llm.chatConfig": "chat",
         "olio.llm.promptConfig": "prompt",
+        "olio.llm.promptTemplate": "promptTemplate",
         "policy.policy": "policy",
         "policy.rule": "rule",
         "policy.pattern": "pattern",
@@ -290,12 +291,12 @@
           } else {
             page.toast("info", "Chat library not initialized");
           }
-        } else if (libType === "prompt") {
+        } else if (libType === "prompt" || libType === "promptTemplate") {
           page.toast("info", "Initializing prompt library...");
           let result = await LLMConnector.initPromptLibrary();
           if (result && result.status === "ok") {
             LLMConnector.resetLibraryCache();
-            grp = await LLMConnector.getLibraryGroup("prompt");
+            grp = await LLMConnector.getLibraryGroup(libType);
             if (grp) { navigateToPathId(grp); return; }
           }
           page.toast("error", "Failed to initialize prompt library");

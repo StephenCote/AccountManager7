@@ -12,6 +12,7 @@
 			"data.color": "/Library/Colors",
 			"olio.llm.chatConfig": "/Library/ChatConfigs",
 			"olio.llm.promptConfig": "/Library/PromptConfigs",
+			"olio.llm.promptTemplate": "/Library/PromptTemplates",
 			"policy.policy": "/Library/Policies",
 			"policy.rule": "/Library/Rules",
 			"policy.pattern": "/Library/Patterns",
