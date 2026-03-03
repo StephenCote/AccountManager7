@@ -594,4 +594,18 @@ public class ChatListener implements IChatListener {
 		Chat.stopAllActive();
 	}
 
+	/// Full shutdown — stop all streams and clear all static tracking maps.
+	/// Called from RestServiceEventListener on server shutdown.
+	public static void shutdown() {
+		stopAllStreams();
+		asyncChats.clear();
+		asyncRequests.clear();
+		asyncRequestCount.clear();
+		asyncRequestStop.clear();
+		asyncChatRequestRecords.clear();
+		asyncStreamFutures.clear();
+		asyncHttpResponses.clear();
+		Chat.shutdown();
+	}
+
 }

@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -40,6 +41,22 @@ public class GameStreamHandler implements IGameEventHandler {
 
     // Executor for async game operations
     private static ExecutorService executor = Executors.newCachedThreadPool();
+
+    /// Gracefully shut down the executor and clear subscription maps.
+    public static void shutdown() {
+        logger.info("GameStreamHandler shutdown: clearing subscriptions, shutting down executor");
+        characterSubscriptions.clear();
+        sessionSubscriptions.clear();
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
 
     /**
      * Handle incoming game request from WebSocket

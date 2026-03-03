@@ -43,7 +43,7 @@
                 chatConfigs = await am7client.list("olio.llm.chatConfig", chatDir.objectId, null, 0, 0) || [];
             }
             if (reqDir) {
-                sessions = await am7client.list("olio.llm.chatRequest", reqDir.objectId, "name,objectId,chatTitle,chatIcon,chatConfig,promptConfig,session,sessionType,setting,contextType", 0, 0) || [];
+                sessions = await am7client.list("olio.llm.chatRequest", reqDir.objectId, "name,objectId,chatTitle,chatIcon,chatConfig,promptConfig,promptTemplate,session,sessionType,setting,contextType", 0, 0) || [];
             } else {
                 sessions = [];
             }

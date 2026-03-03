@@ -717,7 +717,7 @@
           data
         };
         try {
-          if (chatCfg?.chat.stream) {
+          if (chatCfg?.chat?.stream) {
             page.chatStream = newChatStream();
             chatCfg.streaming = true;
             page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
@@ -866,8 +866,17 @@
         });
       }
       else {
-        console.warn("No prompt or chat config");
-        p = Promise.resolve();
+        console.warn("No prompt or chat config", "chatConfig:", c2, "promptConfig:", c1, "promptTemplate:", c3pt);
+        /// Prevent infinite loop: doChat() retries doPeek() when peek is false.
+        /// Even though we have no configs, mark peek=true so doChat() proceeds
+        /// to the chat path (which will fail gracefully rather than loop).
+        chatCfg.peek = true;
+        page.toast("warn", "Missing chat or prompt configuration for this session");
+        /// Still try to load history — the session may have prior messages
+        p = getHistory().then((h) => {
+          if (h) chatCfg.history = h;
+          m.redraw();
+        }).catch(() => {});
       }
       return p;
     }

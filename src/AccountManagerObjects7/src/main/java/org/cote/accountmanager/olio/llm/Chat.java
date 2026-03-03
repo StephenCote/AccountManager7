@@ -150,6 +150,13 @@ public class Chat {
 		LLMConnectionManager.stopAllStreams();
 	}
 
+	/// Full shutdown — stop all streams and clear static caches.
+	/// Called from RestServiceEventListener on server shutdown.
+	public static void shutdown() {
+		LLMConnectionManager.stopAllStreams();
+		activeKeyframes.clear();
+	}
+
 	/// Get count of all active LLM streams — delegates to LLMConnectionManager.
 	public static int getActiveStreamCount() {
 		return LLMConnectionManager.getActiveStreamCount();
@@ -865,7 +872,7 @@ public class Chat {
 		sysMsg.setRole(systemRole);
 		String titleSys = PromptResourceUtil.getLines(CHAT_OPS_RESOURCE, "titleSystem");
 		sysMsg.setContent(titleSys != null ? titleSys : "Given a conversation, generate a short chat title (5-8 words max) and a Google Material Symbols icon name. Return exactly two lines.");
-		titleReq.getMessages().add(sysMsg);
+		titleReq.addMessage(sysMsg);
 
 		OpenAIMessage userPrompt = new OpenAIMessage();
 		userPrompt.setRole(userRole);
@@ -877,7 +884,7 @@ public class Chat {
 		} else {
 			userPrompt.setContent("User said: " + userMsg + "\nAssistant replied: " + assistMsg);
 		}
-		titleReq.getMessages().add(userPrompt);
+		titleReq.addMessage(userPrompt);
 
 		/// Phase 7: Retry with backoff (2 attempts)
 		for (int attempt = 0; attempt < 2; attempt++) {
@@ -942,6 +949,9 @@ public class Chat {
 				String firstMsg = msgs.get(offset).getContent();
 				if (firstMsg != null && !firstMsg.isEmpty()) {
 					firstMsg = firstMsg.trim();
+					/// Strip MCP context blocks — they are ephemeral and not suitable for titles
+					firstMsg = firstMsg.replaceAll("(?s)<mcp:context[^>]*>.*?</mcp:context>", "").trim();
+					if (firstMsg.isEmpty()) return "Chat";
 					if (firstMsg.length() <= 40) return firstMsg;
 					int lastSpace = firstMsg.lastIndexOf(' ', 40);
 					if (lastSpace > 10) return firstMsg.substring(0, lastSpace);
@@ -2856,6 +2866,19 @@ public class Chat {
 	/// OI-14: MCP-only reminder detection.
 	/// Keyframe detection removed (OI-98) — keyframes are now memory-only.
 
+	/// Check if an exception (or its cause chain) indicates a deliberate cancellation/abort.
+	/// Used to downgrade logging from ERROR to INFO when stopAllStreams() terminates active requests.
+	private static boolean isCancellationCause(Throwable t) {
+		Throwable cur = t;
+		while (cur != null) {
+			if (cur instanceof java.util.concurrent.CancellationException) return true;
+			String msg = cur.getMessage();
+			if (msg != null && (msg.contains("closed") || msg.contains("cancelled") || msg.contains("selector manager closed"))) return true;
+			cur = cur.getCause();
+		}
+		return false;
+	}
+
 	private static boolean isMcpReminder(String content) {
 		return content != null && content.contains("<mcp:context") && content.contains("/reminder/");
 	}
@@ -3049,10 +3072,19 @@ public class Chat {
 					logger.info("[DIAG] Buffer mode stream complete: lines=" + lineCount + " contentLength=" + (bufContent != null ? bufContent.length() : "null"));
 				}
 			} catch (RuntimeException streamEx) {
-				logger.error("[DIAG] thenAccept EXCEPTION during stream processing: " + streamEx.getClass().getName() + ": " + streamEx.getMessage(), streamEx);
+				/// Closed/cancelled exceptions are expected when stopAllStreams() aborts active requests
+				if (isCancellationCause(streamEx)) {
+					logger.info("Stream aborted (expected during stop): " + streamEx.getClass().getSimpleName());
+				} else {
+					logger.error("[DIAG] thenAccept EXCEPTION during stream processing: " + streamEx.getClass().getName() + ": " + streamEx.getMessage(), streamEx);
+				}
 				throw streamEx;
 			} catch (Exception streamEx) {
-				logger.error("[DIAG] thenAccept CHECKED EXCEPTION during stream processing: " + streamEx.getClass().getName() + ": " + streamEx.getMessage(), streamEx);
+				if (isCancellationCause(streamEx)) {
+					logger.info("Stream aborted (expected during stop): " + streamEx.getClass().getSimpleName());
+				} else {
+					logger.error("[DIAG] thenAccept CHECKED EXCEPTION during stream processing: " + streamEx.getClass().getName() + ": " + streamEx.getMessage(), streamEx);
+				}
 				throw new RuntimeException(streamEx);
 			}
 		}).whenComplete((result, error) -> {
@@ -3066,7 +3098,11 @@ public class Chat {
 				} else {
 					errMsg = "Error during streaming chat response: " + error.getClass().getName() + ": " + error.getMessage();
 				}
-				logger.error("[DIAG] whenComplete error: " + errMsg + " rootCause=" + rootCause.getClass().getName() + ": " + rootCause.getMessage(), error);
+				if (isCancellationCause(error)) {
+					logger.info("Stream cancelled (expected during stop): " + rootCause.getClass().getSimpleName());
+				} else {
+					logger.error("[DIAG] whenComplete error: " + errMsg + " rootCause=" + rootCause.getClass().getName() + ": " + rootCause.getMessage(), error);
+				}
 				if (forwardToClient && listener != null) {
 					listener.onerror(user, req, aresp, errMsg);
 				} else {

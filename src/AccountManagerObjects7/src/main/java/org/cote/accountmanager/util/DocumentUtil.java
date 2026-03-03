@@ -40,6 +40,10 @@ public class DocumentUtil {
 		return getRecord(owner, modelName, name, path, true);
 	}
 	public static BaseRecord getRecord(BaseRecord owner, String modelName, String name, String path, boolean full) {
+		return getRecord(owner, modelName, name, path, full, true);
+	}
+
+	public static BaseRecord getRecord(BaseRecord owner, String modelName, String name, String path, boolean full, boolean useCache) {
 		BaseRecord dat = null;
 		BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, path,
 				GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID)
@@ -50,9 +54,10 @@ public class DocumentUtil {
 			if(full) {
 				q.planMost(true);
 			}
-			// logger.info(q.toFullString());
-			// logger.info(q.toSelect());
-			
+			if(!useCache) {
+				q.setCache(false);
+			}
+
 			dat = IOSystem.getActiveContext().getAccessPoint().find(owner, q);
 		} else {
 			logger.warn("Group is null: " + path);
@@ -66,6 +71,10 @@ public class DocumentUtil {
 	
 	public static BaseRecord getNote(BaseRecord owner, String name, String path) {
 		return getRecord(owner, ModelNames.MODEL_NOTE, name, path);
+	}
+
+	public static BaseRecord getNote(BaseRecord owner, String name, String path, boolean useCache) {
+		return getRecord(owner, ModelNames.MODEL_NOTE, name, path, true, useCache);
 	}
 	
 	public static BaseRecord getCreateNote(BaseRecord owner, String name, String path, String textContents) {

@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
@@ -85,6 +86,12 @@ public class ChatUtil {
 	
 	public static void clearCache() {
 		chatTrack.clear();
+		/// Clear query-level caches for LLM-related models so that deleted/modified
+		/// configs, prompts, and summary notes are not returned from stale cache.
+		CacheUtil.clearCacheByModel(OlioModelNames.MODEL_CHAT_CONFIG);
+		CacheUtil.clearCacheByModel(OlioModelNames.MODEL_PROMPT_CONFIG);
+		CacheUtil.clearCacheByModel(OlioModelNames.MODEL_PROMPT_TEMPLATE);
+		CacheUtil.clearCacheByModel(ModelNames.MODEL_NOTE);
 	}
 
 	public static void generateAutoScene(OlioContext octx, BaseRecord cfg, BaseRecord pcfg, BaseRecord interaction, String setting, boolean json) {
@@ -1226,6 +1233,8 @@ public class ChatUtil {
 		String userCmd = prompts.mapUser;
 
 		OpenAIRequest req = chat.newRequest(chat.getModel());
+		/// Summarization has no SSE client — always use buffer mode
+		req.setStream(false);
 		/// Diagnostic: log the actual system prompt being sent to the LLM
 		if (req.getMessages() != null && !req.getMessages().isEmpty()) {
 			String actualSys = req.getMessages().get(0).getContent();
@@ -1303,6 +1312,8 @@ public class ChatUtil {
 
 						chat.setLlmSystemPrompt(finalReduceSys);
 						OpenAIRequest req = chat.newRequest(chat.getModel());
+						/// Summarization has no SSE client — always use buffer mode
+						req.setStream(false);
 						/// Diagnostic: log the actual system prompt being sent to the LLM
 						if (req.getMessages() != null && !req.getMessages().isEmpty()) {
 							String actualSys = req.getMessages().get(0).getContent();
@@ -1643,6 +1654,8 @@ public class ChatUtil {
 			display = THINK_PATTERN.matcher(display).replaceAll("");
 			display = THOUGHT_PATTERN.matcher(display).replaceAll("");
 			display = McpContextParser.stripAll(display);
+			display = stripBetween(display, "--- INTERACTION HISTORY", "END INTERACTION HISTORY ---");
+			display = stripBetween(display, "--- CITATION", "END CITATIONS ---");
 			display = stripAtMark(display, "(Metrics");
 			display = stripAtMark(display, "(Reminder");
 			display = stripAtMark(display, "(KeyFrame");
@@ -1660,6 +1673,16 @@ public class ChatUtil {
 		int idx = content.indexOf(mark);
 		if (idx > -1) {
 			return content.substring(0, idx);
+		}
+		return content;
+	}
+
+	/** Remove content between two marker strings (inclusive). Mirrors client-side pruneOut. */
+	private static String stripBetween(String content, String startMark, String endMark) {
+		int idx1 = content.indexOf(startMark);
+		int idx2 = content.indexOf(endMark);
+		if (idx1 > -1 && idx2 > -1 && idx2 > idx1) {
+			return content.substring(0, idx1) + content.substring(idx2 + endMark.length());
 		}
 		return content;
 	}

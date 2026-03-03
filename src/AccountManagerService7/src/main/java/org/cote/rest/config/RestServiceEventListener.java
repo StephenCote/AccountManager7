@@ -31,11 +31,13 @@ import org.cote.accountmanager.tools.VoiceUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.olio.llm.ChatListener;
 import org.cote.accountmanager.util.LLMConnectionManager;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.jaas.AM7LoginModule;
+import org.cote.sockets.GameStreamHandler;
 import org.cote.sockets.WebSocketService;
 import org.glassfish.jersey.server.monitoring.ApplicationEvent;
 import org.glassfish.jersey.server.monitoring.ApplicationEventListener;
@@ -89,31 +91,37 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			logger.info("Cleaned up " + cleanup + " unboxed streams");
 		}
 
-		logger.info("Stopping all LLM/service connections");
+		/// Phase 1: Stop all active LLM work (chat streams, summarization, swarm, analysis)
+		logger.info("Stopping all active LLM/chat/swarm connections");
+		ChatListener.shutdown();
 		LLMConnectionManager.shutdownAll();
 
+		/// Phase 2: Stop game stream executor
+		logger.info("Stopping game stream handler");
+		GameStreamHandler.shutdown();
+
+		/// Phase 3: Notify connected users before closing IO
 		logger.info("Chirping users");
 		WebSocketService.activeSessions().forEach(session -> {
-			// WebSocketService.chirpUser(user, new String[] {"Service going offline"});
 			WebSocketService.sendMessage(session, new String[] { "Service going offline" }, true, false, true);
 		});
-        
-		logger.info("Cleaning up AccountManager");
 
+		/// Phase 4: Close IO system (database, file handles, task queue, batch queue)
+		logger.info("Cleaning up AccountManager");
 		IOSystem.close();
 
+		/// Phase 5: Stop maintenance threads
 		try {
 			logger.info("Stopping maintenance threads");
 			for (Threaded svc : maintenanceThreads) {
 				svc.requestStop();
 			}
-			/// Sleep to give the threads a chance to shut down
-			///
 			Thread.sleep(100);
-
 		} catch (InterruptedException e) {
 			logger.error(e.getMessage());
 		}
+
+		logger.info("Shutdown complete");
 	}
 
 	public void startup() {

@@ -698,7 +698,8 @@ public class ChatService {
 				}
 			}
 
-			BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.get("promptConfig"));
+			BaseRecord pcCtxRef = chatReq.get("promptConfig");
+			BaseRecord promptConfig = pcCtxRef != null ? OlioUtil.getFullRecord(pcCtxRef) : null;
 			if (promptConfig != null) {
 				ctx.set("promptConfig", newContextRef(null,
 					(String) promptConfig.get(FieldNames.FIELD_OBJECT_ID),
@@ -1082,9 +1083,12 @@ public class ChatService {
 				}
 			}
 			/// Resolve chatConfig, promptTemplate, and promptConfig from the chatRequest
+			/// (promptTemplate and promptConfig may be null — normal for analysis sessions)
 			BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.get("chatConfig"));
-			BaseRecord promptTemplate = OlioUtil.getFullRecord(chatReq.get("promptTemplate"));
-			BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.get("promptConfig"));
+			BaseRecord ptRef = chatReq.get("promptTemplate");
+			BaseRecord promptTemplate = ptRef != null ? OlioUtil.getFullRecord(ptRef) : null;
+			BaseRecord pcRef = chatReq.get("promptConfig");
+			BaseRecord promptConfig = pcRef != null ? OlioUtil.getFullRecord(pcRef) : null;
 			if (chatConfig == null) {
 				logger.warn("Cannot auto-summarize: chatConfig not available on session");
 				return false;
