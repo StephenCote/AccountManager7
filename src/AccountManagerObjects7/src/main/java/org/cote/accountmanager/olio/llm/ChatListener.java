@@ -188,9 +188,11 @@ public class ChatListener implements IChatListener {
 		}
 
 		String userMessage = vChatReq.getMessage();
-		chat.continueChat(req, interactionCtx + citDesc + (userMessage != null ? userMessage : ""));
-		
+		/// Notify chatStart BEFORE continueChat — streaming chunks arrive on an async
+		/// thread and can reach the client before chatStart if it fires after.
 		handlers.forEach(h -> h.onChatStart(user, chatReq, req));
+
+		chat.continueChat(req, interactionCtx + citDesc + (userMessage != null ? userMessage : ""));
 		
 		return req;
 	}

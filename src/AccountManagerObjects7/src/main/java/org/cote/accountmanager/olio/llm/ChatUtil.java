@@ -1695,7 +1695,7 @@ public class ChatUtil {
 				String body = ctx.getBody();
 				Map<String, Object> data = null;
 				if(body != null && body.trim().startsWith("{")) {
-					data = JSONUtil.getMap(body, String.class, Object.class);
+					data = JSONUtil.getMap(body.getBytes(java.nio.charset.StandardCharsets.UTF_8), String.class, Object.class);
 				}
 				cit.set("url", ctx.getUri());
 				if(data != null) {

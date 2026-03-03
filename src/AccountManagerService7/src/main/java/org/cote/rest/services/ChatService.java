@@ -422,6 +422,11 @@ public class ChatService {
 		vChatReq.setValue(FieldNames.FIELD_MESSAGE, chatReq.get(FieldNames.FIELD_MESSAGE));
 		
 		OpenAIRequest req = ChatUtil.getOpenAIRequest(user, vChatReq);
+		/// REST /text endpoint must block for the response — streaming is handled
+		/// by the WebSocket path.  Force buffer mode regardless of chatConfig.stream.
+		if(req != null) {
+			req.setStream(false);
+		}
 
 		String citRef = "";
 		if(vChatReq.getMessage() != null && vChatReq.getMessage().length() > 0) {
