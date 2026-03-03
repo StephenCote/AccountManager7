@@ -431,6 +431,44 @@ public class ChatUtil {
 		}
 	}
 
+	/// --- Prompt Config Templates ---
+	private static final String PROMPT_CONFIG_TEMPLATE_PREFIX = "olio/llm/templates/promptConfig.";
+	private static final String[] PROMPT_CONFIG_TEMPLATE_NAMES = {
+		"default", "contentAnalysis", "coding", "summary"
+	};
+
+	public static String[] getPromptConfigTemplateNames() {
+		return PROMPT_CONFIG_TEMPLATE_NAMES.clone();
+	}
+
+	public static BaseRecord loadPromptConfigTemplate(String templateName) {
+		String resource = ResourceUtil.getInstance().getResource(PROMPT_CONFIG_TEMPLATE_PREFIX + templateName + TEMPLATE_RESOURCE_SUFFIX);
+		if(resource == null) {
+			logger.warn("Prompt config template not found: " + templateName);
+			return null;
+		}
+		return JSONUtil.importObject(resource, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+	}
+
+	/// --- Prompt Template Templates (new composable format) ---
+	private static final String PROMPT_TEMPLATE_TEMPLATE_PREFIX = "olio/llm/templates/promptTemplate.";
+	private static final String[] PROMPT_TEMPLATE_TEMPLATE_NAMES = {
+		"contentAnalysis", "coding", "summary"
+	};
+
+	public static String[] getPromptTemplateTemplateNames() {
+		return PROMPT_TEMPLATE_TEMPLATE_NAMES.clone();
+	}
+
+	public static BaseRecord loadPromptTemplateTemplate(String templateName) {
+		String resource = ResourceUtil.getInstance().getResource(PROMPT_TEMPLATE_TEMPLATE_PREFIX + templateName + TEMPLATE_RESOURCE_SUFFIX);
+		if(resource == null) {
+			logger.warn("Prompt template template not found: " + templateName);
+			return null;
+		}
+		return JSONUtil.importObject(resource, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+	}
+
 	public static BaseRecord getCreatePromptConfig(BaseRecord user, String name) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_NAME, name);
@@ -829,7 +867,10 @@ public class ChatUtil {
 		return composeSummary(user, chatConfig, promptConfig, ref, false);
 	}
 
-	private static String summarizeUserCommand = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
+	/// Fallback summarize user command (used if resource file fails to load)
+	private static String summarizeUserCommandFallback = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
+	private static final String SUMMARIZATION_RESOURCE = "summarization";
+	private static final String NO_THINK_DIRECTIVE = "/no_think";
 	
 	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean remote) {
 		List<String> summaries = new ArrayList<>();
@@ -1004,12 +1045,21 @@ public class ChatUtil {
 	/// Summarize a single chunk of content using a Chat instance.
 	/// Uses a lightweight request (no character templates or memory retrieval) to
 	/// avoid the overhead and prompt confusion of the full getChatPrompt() pipeline.
-	private static final String summarizeSystemPrompt = "You are a text summarization assistant. Produce concise, accurate summaries.";
+	/// Loads system/user prompts from summarization.json resource with hardcoded fallbacks.
+	/// Appends /no_think directive to suppress thinking-model token waste.
+	private static final String summarizeSystemPromptFallback = "You are a text summarization assistant. Produce concise, accurate summaries.";
 	private static String summarizeChunk(String content, Chat chat, boolean remote) {
 		logger.info("summarizeChunk: content length=" + content.length());
-		chat.setLlmSystemPrompt(summarizeSystemPrompt);
+
+		String sysPrompt = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "mapSystem");
+		if (sysPrompt == null) sysPrompt = summarizeSystemPromptFallback;
+		chat.setLlmSystemPrompt(sysPrompt);
+
+		String userCmd = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "mapUser");
+		if (userCmd == null) userCmd = summarizeUserCommandFallback;
+
 		OpenAIRequest req = chat.newRequest(chat.getModel());
-		String cmd = summarizeUserCommand + content;
+		String cmd = userCmd + System.lineSeparator() + content + System.lineSeparator() + NO_THINK_DIRECTIVE;
 		chat.newMessage(req, cmd, Chat.userRole);
 
 		OpenAIResponse resp = null;
@@ -1028,11 +1078,19 @@ public class ChatUtil {
 	/// Reduce phase: hierarchical merge of summaries until a single summary remains.
 	/// Guard: MAX_REDUCE_DEPTH prevents infinite recursion on pathological inputs.
 	private static final int MAX_REDUCE_DEPTH = 5;
-	private static final String reduceCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator();
+	private static final String reduceCommandFallback = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator();
 
 	private static List<String> reduceSummaries(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, List<String> summaries, boolean remote, int batchSize, int maxConcurrent) {
 		int depth = 0;
 		List<String> current = new ArrayList<>(summaries);
+
+		/// Load reduce prompts from resource with fallbacks
+		String reduceSysPrompt = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "reduceSystem");
+		if (reduceSysPrompt == null) reduceSysPrompt = summarizeSystemPromptFallback;
+		String reduceUserCmd = PromptResourceUtil.getString(SUMMARIZATION_RESOURCE, "reduceUser");
+		if (reduceUserCmd == null) reduceUserCmd = reduceCommandFallback;
+		final String finalReduceSys = reduceSysPrompt;
+		final String finalReduceUser = reduceUserCmd;
 
 		/// Determine per-call timeout from chat config
 		Chat timeoutProbe = new Chat(user, chatConfig, promptConfig);
@@ -1065,9 +1123,10 @@ public class ChatUtil {
 						Chat chat = new Chat(user, chatConfig, promptConfig);
 						chat.setDeferRemote(remote);
 
-						chat.setLlmSystemPrompt(summarizeSystemPrompt);
+						chat.setLlmSystemPrompt(finalReduceSys);
 						OpenAIRequest req = chat.newRequest(chat.getModel());
-						chat.newMessage(req, reduceCommand + merged, Chat.userRole);
+						String cmd = finalReduceUser + System.lineSeparator() + merged + System.lineSeparator() + NO_THINK_DIRECTIVE;
+						chat.newMessage(req, cmd, Chat.userRole);
 
 						OpenAIResponse resp = null;
 						if (remote) {

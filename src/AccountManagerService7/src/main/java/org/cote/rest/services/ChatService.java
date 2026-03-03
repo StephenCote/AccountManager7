@@ -206,12 +206,15 @@ public class ChatService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		boolean populated = ChatLibraryUtil.isLibraryPopulated(user);
 		boolean promptPopulated = ChatLibraryUtil.isPromptLibraryPopulated(user);
+		boolean promptTemplatePopulated = ChatLibraryUtil.isPromptTemplateLibraryPopulated(user);
 		boolean policyPopulated = PolicyUtil.isPolicyLibraryPopulated(user);
 		String json = "{\"initialized\":" + populated
 			+ ",\"promptInitialized\":" + promptPopulated
+			+ ",\"promptTemplateInitialized\":" + promptTemplatePopulated
 			+ ",\"policyInitialized\":" + policyPopulated
 			+ ",\"chatLibraryPath\":\"" + ChatLibraryUtil.LIBRARY_PATH_CHAT + "\""
 			+ ",\"promptLibraryPath\":\"" + ChatLibraryUtil.LIBRARY_PATH_PROMPT + "\""
+			+ ",\"promptTemplateLibraryPath\":\"" + ChatLibraryUtil.LIBRARY_PATH_PROMPT_TEMPLATE + "\""
 			+ ",\"policyLibraryPath\":\"" + PolicyUtil.LIBRARY_PATH_POLICIES + "\"}";
 		return Response.status(200).entity(json).build();
 	}
@@ -251,7 +254,7 @@ public class ChatService {
 
 	@RolesAllowed({"admin","user"})
 	@GET
-	@Path("/library/dir/{type:[a-z]+}")
+	@Path("/library/dir/{type:[a-zA-Z]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getLibraryDir(@PathParam("type") String type, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);

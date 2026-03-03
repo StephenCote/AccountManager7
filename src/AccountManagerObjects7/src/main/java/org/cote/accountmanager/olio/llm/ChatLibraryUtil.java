@@ -25,13 +25,16 @@ public class ChatLibraryUtil {
 
 	public static final String LIBRARY_CHAT_CONFIGS = "ChatConfigs";
 	public static final String LIBRARY_PROMPT_CONFIGS = "PromptConfigs";
+	public static final String LIBRARY_PROMPT_TEMPLATES = "PromptTemplates";
 	public static final String LIBRARY_PATH_CHAT = LibraryUtil.basePath + "/" + LIBRARY_CHAT_CONFIGS;
 	public static final String LIBRARY_PATH_PROMPT = LibraryUtil.basePath + "/" + LIBRARY_PROMPT_CONFIGS;
+	public static final String LIBRARY_PATH_PROMPT_TEMPLATE = LibraryUtil.basePath + "/" + LIBRARY_PROMPT_TEMPLATES;
 
-	/// Map library type keys to directory names (chat/prompt only)
+	/// Map library type keys to directory names
 	private static final java.util.Map<String, String> LIBRARY_TYPE_MAP = java.util.Map.of(
 		"chat", LIBRARY_CHAT_CONFIGS,
-		"prompt", LIBRARY_PROMPT_CONFIGS
+		"prompt", LIBRARY_PROMPT_CONFIGS,
+		"promptTemplate", LIBRARY_PROMPT_TEMPLATES
 	);
 
 	public static BaseRecord getCreateChatConfigLibrary(BaseRecord user) {
@@ -42,6 +45,11 @@ public class ChatLibraryUtil {
 	public static BaseRecord getCreatePromptConfigLibrary(BaseRecord user) {
 		LibraryUtil.configureLibraryRootReader(user);
 		return LibraryUtil.getCreateSharedLibrary(user, LIBRARY_PROMPT_CONFIGS, true);
+	}
+
+	public static BaseRecord getCreatePromptTemplateLibrary(BaseRecord user) {
+		LibraryUtil.configureLibraryRootReader(user);
+		return LibraryUtil.getCreateSharedLibrary(user, LIBRARY_PROMPT_TEMPLATES, true);
 	}
 
 	/// Resolve a library type key to the directory name.
@@ -85,6 +93,17 @@ public class ChatLibraryUtil {
 		return IOSystem.getActiveContext().getSearch().findRecord(q) != null;
 	}
 
+	public static boolean isPromptTemplateLibraryPopulated(BaseRecord user) {
+		BaseRecord dir = findLibraryDir(user, LIBRARY_PROMPT_TEMPLATES);
+		if (dir == null) {
+			return false;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_TEMPLATE, FieldNames.FIELD_NAME, "contentAnalysis");
+		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return IOSystem.getActiveContext().getSearch().findRecord(q) != null;
+	}
+
 	public static void populatePromptDefaults(BaseRecord user) {
 		IOContext ctx = IOSystem.getActiveContext();
 		OrganizationContext octx = ctx.getOrganizationContext(user.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
@@ -94,13 +113,28 @@ public class ChatLibraryUtil {
 		}
 		BaseRecord adminUser = octx.getAdminUser();
 		BaseRecord promptLibDir = getCreatePromptConfigLibrary(user);
-		if (promptLibDir == null) {
-			logger.error("Failed to create prompt library directory");
+		BaseRecord promptTemplateLibDir = getCreatePromptTemplateLibrary(user);
+		if (promptLibDir == null || promptTemplateLibDir == null) {
+			logger.error("Failed to create prompt library directories");
 			return;
 		}
-		BaseRecord defaultPrompt = ChatUtil.getDefaultPrompt();
-		if (defaultPrompt != null) {
-			createLibraryPromptConfig(adminUser, promptLibDir, "default", defaultPrompt);
+
+		/// Prompt config library entries from templates
+		String[] promptConfigNames = ChatUtil.getPromptConfigTemplateNames();
+		for (String pcName : promptConfigNames) {
+			BaseRecord pcTemplate = ChatUtil.loadPromptConfigTemplate(pcName);
+			if (pcTemplate != null) {
+				createLibraryPromptConfig(adminUser, promptLibDir, pcName, pcTemplate);
+			}
+		}
+
+		/// Prompt template library entries (preferred new format)
+		String[] promptTemplateNames = ChatUtil.getPromptTemplateTemplateNames();
+		for (String ptName : promptTemplateNames) {
+			BaseRecord ptTemplate = ChatUtil.loadPromptTemplateTemplate(ptName);
+			if (ptTemplate != null) {
+				createLibraryPromptTemplate(adminUser, promptTemplateLibDir, ptName, ptTemplate);
+			}
 		}
 	}
 
@@ -115,12 +149,14 @@ public class ChatLibraryUtil {
 
 		BaseRecord chatLibDir = getCreateChatConfigLibrary(user);
 		BaseRecord promptLibDir = getCreatePromptConfigLibrary(user);
+		BaseRecord promptTemplateLibDir = getCreatePromptTemplateLibrary(user);
 
-		if (chatLibDir == null || promptLibDir == null) {
+		if (chatLibDir == null || promptLibDir == null || promptTemplateLibDir == null) {
 			logger.error("Failed to create library directories");
 			return;
 		}
 
+		/// Chat config library entries from templates
 		String[] templateNames = ChatUtil.getChatConfigTemplateNames();
 		for (String templateName : templateNames) {
 			createLibraryChatConfig(adminUser, chatLibDir, templateName, templateName, serverUrl, model, serviceType);
@@ -129,10 +165,22 @@ public class ChatLibraryUtil {
 		/// Create "Open Chat" as an alias for the generalChat template
 		createLibraryChatConfig(adminUser, chatLibDir, "Open Chat", "generalChat", serverUrl, model, serviceType);
 
-		/// Create default prompt config
-		BaseRecord defaultPrompt = ChatUtil.getDefaultPrompt();
-		if (defaultPrompt != null) {
-			createLibraryPromptConfig(adminUser, promptLibDir, "default", defaultPrompt);
+		/// Prompt config library entries from templates
+		String[] promptConfigNames = ChatUtil.getPromptConfigTemplateNames();
+		for (String pcName : promptConfigNames) {
+			BaseRecord pcTemplate = ChatUtil.loadPromptConfigTemplate(pcName);
+			if (pcTemplate != null) {
+				createLibraryPromptConfig(adminUser, promptLibDir, pcName, pcTemplate);
+			}
+		}
+
+		/// Prompt template library entries (preferred new format)
+		String[] promptTemplateNames = ChatUtil.getPromptTemplateTemplateNames();
+		for (String ptName : promptTemplateNames) {
+			BaseRecord ptTemplate = ChatUtil.loadPromptTemplateTemplate(ptName);
+			if (ptTemplate != null) {
+				createLibraryPromptTemplate(adminUser, promptTemplateLibDir, ptName, ptTemplate);
+			}
 		}
 	}
 
@@ -182,6 +230,24 @@ public class ChatLibraryUtil {
 			IOSystem.getActiveContext().getAccessPoint().create(adminUser, cfg);
 		} catch (FactoryException e) {
 			logger.error("Failed to create library prompt config '" + name + "': " + e.getMessage());
+		}
+	}
+
+	private static void createLibraryPromptTemplate(BaseRecord adminUser, BaseRecord libDir, String name, BaseRecord template) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_TEMPLATE, FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_GROUP_ID, libDir.get(FieldNames.FIELD_ID));
+		if (IOSystem.getActiveContext().getSearch().findRecord(q) != null) {
+			return;
+		}
+
+		try {
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, libDir.get("path"));
+			plist.parameter(FieldNames.FIELD_NAME, name);
+			BaseRecord cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_PROMPT_TEMPLATE, adminUser, template, plist);
+
+			IOSystem.getActiveContext().getAccessPoint().create(adminUser, cfg);
+		} catch (FactoryException e) {
+			logger.error("Failed to create library prompt template '" + name + "': " + e.getMessage());
 		}
 	}
 }
