@@ -42,7 +42,9 @@
       "Bash(jar tf:*)",
       "Bash(echo \"exit:$?\")",
       "Bash(tar -xzf turndown-7.2.2.tgz)",
-      "Bash(comm -12 /tmp/pageStyle_classes.txt /tmp/basiTail_classes.txt)"
+      "Bash(comm -12 /tmp/pageStyle_classes.txt /tmp/basiTail_classes.txt)",
+      "Bash(npx vitest run)",
+      "Bash(npx vite build)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

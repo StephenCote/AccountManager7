@@ -1,0 +1,308 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+
+    html, body {
+        @apply min-h-screen dark:bg-gray-800
+    }
+
+    /* Headings */
+    h1 { @apply h-common text-5xl }
+    h2 { @apply h-common text-4xl }
+    h3 { @apply h-common text-3xl }
+    h4 { @apply h-common text-2xl }
+    h5 { @apply h-common text-xl }
+    .h-common {
+        @apply font-medium leading-tight mt-0 mb-2 text-green-900 dark:text-green-100
+    }
+
+    /* Form fields */
+    .text-field-form {
+        @apply w-full px-4 py-2 mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
+        dark:focus:ring-blue-300 dark:text-white
+    }
+    .text-field-full {
+        @apply w-full text-field-form dark:bg-black
+    }
+    .text-field-compact {
+        @apply w-full px-3 py-1.5 text-sm border rounded
+        border-gray-300 dark:border-gray-600
+        bg-white dark:bg-gray-900
+        focus:ring-1 focus:ring-blue-500 focus:border-blue-500
+        focus:outline-none dark:text-white
+    }
+    .check-field {
+        @apply w-10 h-10 p-2 mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
+    }
+    .button-field {
+        @apply check-field hover:bg-blue-200
+    }
+    .select-field-full {
+        @apply text-field-full bg-white dark:bg-black
+    }
+    .textarea-field-full {
+        @apply h-36 w-full text-field-full
+    }
+    .textarea-auto {
+        @apply w-full text-field-form dark:bg-black resize-none overflow-hidden
+    }
+    .color-field {
+        @apply box-border h-10 w-full mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
+    }
+    .range-field-full {
+        @apply w-full h-2 rounded-lg cursor-pointer bg-gray-200 dark:bg-gray-700
+    }
+    .field-required {
+        @apply border-l-4 border-l-blue-500
+    }
+    .field-error {
+        @apply bg-red-100 dark:bg-red-900
+    }
+    .field-disabled {
+        @apply bg-gray-300 dark:bg-gray-700
+    }
+    .field-readonly {
+        @apply bg-gray-50 dark:bg-gray-800 cursor-not-allowed
+        border-gray-200 dark:border-gray-700
+    }
+    .field-label {
+        @apply block text-sm font-medium text-gray-500 dark:text-gray-400
+    }
+    .field-inline {
+        @apply flex items-center gap-2
+    }
+    .field-inline label {
+        @apply text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap min-w-fit
+    }
+
+    /* Toggle switch */
+    .toggle-field {
+        @apply relative inline-flex h-6 w-11 items-center rounded-full
+        bg-gray-200 dark:bg-gray-700 transition-colors cursor-pointer mt-2
+    }
+    .toggle-field.active {
+        @apply bg-blue-600
+    }
+    .toggle-knob {
+        @apply inline-block h-4 w-4 rounded-full bg-white transition-transform transform translate-x-1
+    }
+    .toggle-field.active .toggle-knob {
+        @apply translate-x-6
+    }
+
+    input[type="datetime-local"] {
+        @apply dark:bg-black
+    }
+
+    /* Grid layout */
+    .field-grid-6 {
+        @apply grid grid-cols-6 gap-x-3 gap-y-1 auto-rows-max h-full grid-flow-row p-2
+    }
+    @media (max-width: 640px) {
+        .field-grid-6 {
+            @apply grid-cols-1
+        }
+        .field-grid-item-half,
+        .field-grid-item-third,
+        .field-grid-item-fifth,
+        .field-grid-item-two-thirds,
+        .field-grid-item-one {
+            @apply col-span-1
+        }
+    }
+    .field-grid-item-half {
+        @apply col-span-3 pl-0
+    }
+    .field-grid-item-full {
+        @apply col-span-6
+    }
+    .field-grid-item-third {
+        @apply col-span-2
+    }
+    .field-grid-item-fifth {
+        @apply col-span-5
+    }
+    .field-grid-item-two-thirds {
+        @apply col-span-4
+    }
+    .field-grid-item-one {
+        @apply col-span-1
+    }
+
+    /* Density modes */
+    .density-compact .field-grid-6 {
+        @apply gap-x-2 gap-y-0.5
+    }
+    .density-compact .text-field-compact,
+    .density-compact .text-field-full {
+        @apply py-1 text-xs
+    }
+    .density-compact label {
+        @apply text-xs
+    }
+    .density-comfortable .field-grid-6 {
+        @apply gap-x-4 gap-y-3
+    }
+    .density-comfortable .text-field-compact,
+    .density-comfortable .text-field-full {
+        @apply py-2.5
+    }
+
+    /* Page layout */
+    .screen-center-gray {
+        @apply flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900;
+    }
+    .box-shadow-white {
+        @apply px-8 py-6 mt-4 text-left bg-white shadow-lg dark:bg-black;
+    }
+    .box-title {
+        @apply text-2xl font-bold text-center;
+    }
+    .box-button {
+        @apply px-6 py-2 mt-4 text-white bg-green-500 rounded-lg hover:bg-green-800;
+    }
+
+    /* Toast */
+    .toast-container {
+        @apply absolute w-1/4 top-2 right-0 items-center flex flex-wrap p-0 h-auto m-0 z-40
+    }
+    .toast-box {
+        @apply flex items-center w-full p-2 rounded-lg shadow-sm
+    }
+    .toast-box .ico-box {
+        @apply inline-flex items-center justify-center shrink-0 w-8 h-8 rounded-lg
+    }
+    .toast-box .toast-text {
+        @apply ms-3 text-sm font-normal
+    }
+    .toast-box.transition {
+        @apply transition-opacity duration-300 ease-in-out
+    }
+    .toast-box.transition-full {
+        @apply opacity-100
+    }
+    .toast-box.transition-0 {
+        @apply opacity-0
+    }
+
+    /* Buttons */
+    .page-dialog-button {
+        @apply inline-flex px-2 py-2 mt-4 ml-2 mr-2 text-white bg-blue-600 rounded-lg hover:bg-blue-900
+    }
+    .page-button {
+        @apply text-gray-500 bg-white rounded-lg border-b-white border-b hover:border-solid hover:border-blue-500 hover:shadow
+        dark:bg-black dark:text-gray-300 dark:border-b-black dark:hover:border-blue-300
+    }
+    .page-select {
+        @apply appearance-none font-normal text-gray-700 bg-white bg-clip-padding rounded
+        pr-10 border-b border-b-white hover:border-solid hover:border-blue-500 hover:shadow
+        text-gray-500 transition ease-in-out m-0
+        dark:text-gray-200 dark:bg-black dark:border-b-black
+    }
+    .page-button:focus, .page-select:focus {
+        @apply focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none
+        dark:focus:text-gray-200 dark:focus:bg-black dark:focus:border-blue-200
+    }
+
+    /* Dialog system */
+    .am7-dialog-backdrop {
+        @apply fixed inset-0 bg-black/50
+        flex items-center justify-center
+    }
+    .am7-dialog-backdrop.am7-animate-in {
+        animation: am7-fadeIn 150ms ease-out forwards;
+    }
+    .am7-dialog-backdrop.am7-animate-out {
+        animation: am7-fadeOut 150ms ease-in forwards;
+    }
+
+    .am7-dialog {
+        @apply bg-white dark:bg-gray-800 rounded-lg shadow-2xl
+        flex flex-col max-h-[90vh]
+    }
+    .am7-dialog.am7-animate-in {
+        animation: am7-slideUp 150ms ease-out forwards;
+    }
+    .am7-dialog.am7-animate-out {
+        animation: am7-slideDown 150ms ease-in forwards;
+    }
+
+    /* Size variants */
+    .am7-dialog-sm { @apply w-full max-w-sm }
+    .am7-dialog-md { @apply w-full max-w-lg }
+    .am7-dialog-lg { @apply w-full max-w-2xl }
+    .am7-dialog-xl { @apply w-full max-w-4xl }
+    .am7-dialog-full { @apply w-[95vw] h-[90vh] }
+
+    /* Dialog sections */
+    .am7-dialog-header {
+        @apply flex items-center justify-between px-6 py-4
+        border-b border-gray-200 dark:border-gray-700
+    }
+    .am7-dialog-title {
+        @apply text-lg font-semibold text-gray-900 dark:text-white
+    }
+    .am7-dialog-body {
+        @apply flex-1 overflow-y-auto px-6 py-4
+    }
+    .am7-dialog-footer {
+        @apply flex items-center justify-end gap-2 px-6 py-4
+        border-t border-gray-200 dark:border-gray-700
+    }
+
+    /* Dialog buttons */
+    .am7-dialog-btn {
+        @apply inline-flex items-center gap-2 px-4 py-2 rounded-md
+        text-sm font-medium transition-colors
+    }
+    .am7-dialog-btn-primary {
+        @apply bg-blue-600 text-white hover:bg-blue-700
+    }
+    .am7-dialog-btn-secondary {
+        @apply bg-gray-100 text-gray-700 hover:bg-gray-200
+        dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600
+    }
+    .am7-dialog-btn-destructive {
+        @apply bg-red-600 text-white hover:bg-red-700
+    }
+
+    /* Drawer variant */
+    .am7-dialog-drawer {
+        @apply fixed top-0 right-0 h-full w-full max-w-md
+        bg-white dark:bg-gray-800 shadow-2xl flex flex-col
+    }
+    .am7-dialog-drawer.am7-animate-in {
+        animation: am7-slideInRight 200ms ease-out forwards;
+    }
+    .am7-dialog-drawer.am7-animate-out {
+        animation: am7-slideOutRight 200ms ease-in forwards;
+    }
+}
+
+/* Dialog animations (outside @layer so they work with arbitrary selectors) */
+@keyframes am7-fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes am7-fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+@keyframes am7-slideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes am7-slideDown {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(16px); }
+}
+@keyframes am7-slideInRight {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+@keyframes am7-slideOutRight {
+    from { transform: translateX(0); }
+    to { transform: translateX(100%); }
+}
