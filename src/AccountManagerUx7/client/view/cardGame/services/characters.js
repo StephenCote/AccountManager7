@@ -163,7 +163,7 @@
         card.name = fresh.name || card.name;
         card.gender = str(fresh.gender) || card.gender || null;
         card.race = (str(fresh.race) || "HUMAN").toUpperCase();
-        card.alignment = (str(fresh.alignment) || "NEUTRAL").replace(/_/g, " ");
+        card.alignment = (str(fresh.alignment) || "neutral").toUpperCase().replace(/^(CHAOTIC|LAWFUL|NEUTRAL)(EVIL|GOOD|NEUTRAL)$/, "$1 $2");
         card.age = fresh.age || card.age;
         card.stats = stats;
         card.needs = { hp: 20, energy: stats.MAG, morale: 20 };
@@ -208,7 +208,7 @@
             type: "character", name: shortName(char.name),
             gender: str(char.gender) || null,
             race: (str(char.race) || "HUMAN").toUpperCase(),
-            alignment: (str(char.alignment) || "NEUTRAL").replace(/_/g, " "),
+            alignment: (str(char.alignment) || "neutral").toUpperCase().replace(/^(CHAOTIC|LAWFUL|NEUTRAL)(EVIL|GOOD|NEUTRAL)$/, "$1 $2"),
             age: char.age || null,
             level: 1,
             stats,

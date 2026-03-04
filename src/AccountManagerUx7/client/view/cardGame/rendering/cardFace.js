@@ -94,7 +94,7 @@
             m("div", { class: "cg2-char-back-title" }, card.name || "Unknown"),
             m("div", { class: "cg2-card-body" }, [
                 // Alignment
-                card.alignment ? R.iconDetail("balance", card.alignment.replace(/_/g, " ")) : null,
+                card.alignment ? R.iconDetail("balance", card.alignment) : null,
                 // Body info (height, weight, body type/shape)
                 (card.height || card.bodyType || card.bodyShape) ? m("div", { class: "cg2-char-back-body-info" }, [
                     card.height ? (function() {

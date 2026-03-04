@@ -389,13 +389,13 @@ The current `formDef.js` has **39 fields** using `type: 'list'` where many don't
 
 | # | Field | Model Type | Form Type | Resolution |
 |---|-------|-----------|-----------|------------|
-| 1 | `gender` | `string` (maxLength 10) | `list` (5 forms, inconsistent limits) | **Change model to enum.** Add `GenderEnumType` (MALE, FEMALE, UNISEX, UNKNOWN). Backend change required. All 5 forms auto-derive from enum. |
+| 1 | `gender` | `string` (maxLength 10) | `list` (5 forms, inconsistent limits) | **Change model to enum.** Add `GenderEnumType` (MALE, FEMALE, UNISEX, UNKNOWN). **WARNING: Requires updating 48 backend Java references across 14 files** (see Appendix D.2.1). Serializer sends lowercase → Ux7 comparisons still work. |
 | 2 | `alignment` | `enum` (AlignmentEnumType, UPPERCASE) | `list` (lowercase values, wrong default) | **Fix: form derives from model enum.** Display UPPERCASE as-is. Serializer handles lower/upper conversion. Remove hardcoded lowercase arrays. Fix default to `"NEUTRAL"`. |
 | 3 | `level` (wearable) | `enum` (WearLevelEnumType, default `"NONE"`) | `list` (default `"BASE"`) | **Fix: form derives from model enum.** Fix default to `"NONE"` (matches model). |
 | 4 | `raceType` | `enum` (RaceEnumType) | `list` (runtime-patched, 2 inconsistent limit arrays) | **Keep runtime patching** (exception case). Consolidate to single limit array. Review later for model-level fix. |
 | 5 | `rating` | `enum` (ESRBEnumType) | `list` with hardcoded `["E","E10","T","M","AO","RC"]` | **Fix: form derives from model enum.** Remove hardcoded limits. |
 | 6 | `serviceType` | `enum` (LLMServiceEnumType) | `list` with hardcoded `["OPENAI","OLLAMA"]` | **Fix: form derives from model enum.** Server may add more service types — auto-derive keeps up. |
-| 7 | `bodyShape` | `string` (virtual, BodyStatsProvider) | `list` with hardcoded values | **Change to enum with provider.** Add `BodyShapeEnumType`. Provider still derives the value; enum constrains valid outputs. |
+| 7 | `bodyShape` | `string` (virtual, BodyStatsProvider) | `list` with hardcoded values | **Change to enum with provider.** Add `BodyShapeEnumType`. Provider still derives the value; enum constrains valid outputs. **Ux7 fix required:** add `.toUpperCase()` before switch in formDef.js (see Appendix D.2.2). |
 | 8 | `width/height` (SD) | `int` | `list` of STRINGS `['512','640',...]` | **Fix: form uses int + limit array.** `limit: [512, 640, 768, ...]` as integers. Renderer shows as constrained int dropdown. Verify server receives int values correctly. |
 | 9 | `role/defaultRole` (chat) | `string` | `list` with `["system","user","assistant"]` | **Form-level limit on string.** Keep model as string. Form adds limit array for dropdown. These are LLM API constants, not model enums. |
 | 10 | `sampler/scheduler` (SD) | `string` with limits in model | `list` with hardcoded limits | **Already consistent.** Model schema defines limits; form inherits. No change needed. |
@@ -1934,6 +1934,117 @@ The existing `testView.js` / `testFramework.js` / `testRegistry.js` stays as the
 
 **Estimated files changed:** 8-12 (client) + 3-6 (server)
 **Risk:** Medium-High — requires user input on workflow design, notification infrastructure
+
+---
+
+## Appendix D: Backend Impact Analysis
+
+### D.1 Backend Changes Required by Redesign
+
+All backend changes fall into two categories:
+1. **Additive (SAFE)** — new models, endpoints, enum values, fields. Don't affect existing code.
+2. **Breaking** — field type changes that affect existing backend Java code AND/OR current Ux7.
+
+### D.2 Breaking Backend Changes
+
+#### D.2.1 `gender` string → enum (`GenderEnumType`)
+
+**Scope:** 48 references across 14 Java files + 20+ Ux7 references
+
+**Decision: Convert to enum + fix all 48 backend references.**
+
+The backend Java code uses lowercase string comparisons (`"male".equals(gender)`). If gender becomes an enum, `rec.get("gender")` returns `MALE` (uppercase), breaking all 48 comparisons. All references must be updated to use `.equalsIgnoreCase()` or `GenderEnumType` constants.
+
+| File | References | Pattern |
+|------|-----------|---------|
+| `NarrativeUtil.java` | 15 | `"male"/"female"` comparisons and string concatenation |
+| `EvolutionUtil.java` | 7 | Marriage/birth logic, gender map keys |
+| `PromptUtil.java` | 5 | LLM prompt gender handling |
+| `BodyStatsProvider.java` | 4 | `"male".equals(gender)` for stat calculation |
+| `CharacterUtil.java` | 3 | Character creation gender assignment |
+| `ApparelUtil.java` | 3 | Gender assignment (`gender = "unisex"`) |
+| `Chat.java` | 2 | Pronoun selection |
+| `ChatUtil.java` | 2 | Gender in chat context |
+| `OlioUtil.java` | 2 | Gender utility |
+| `InteractionUtil.java` | 1 | Interaction context |
+| `ProfileComparison.java` | 1 | Profile comparison |
+| `VectorProvider.java` | 1 | Vector context |
+| `StatisticsUtil.java` | 1 | Stat calculation |
+| `MasculineSofteningDetectionOperation.java` | 1 | Bias detection |
+
+**Ux7 impact:** Serializer sends lowercase → Ux7 comparisons (`== 'male'`) still work. **Ux7 is safe** for this change because the JSON wire format stays lowercase.
+
+**Enum definition:**
+```java
+public enum GenderEnumType {
+    MALE, FEMALE, UNISEX, UNKNOWN;
+}
+```
+
+#### D.2.2 `bodyShape` string → enum (`BodyShapeEnumType`)
+
+**Decision: Convert to enum + fix Ux7 switch statement.**
+
+Currently a virtual string field (BodyStatsProvider). Ux7's switch uses UPPERCASE (`case 'V_TAPER':`). If changed to enum, serializer sends `"v_taper"` (lowercase). Switch cases won't match.
+
+**Ux7 fix required:** Add `.toUpperCase()` before the switch in `formDef.js`:
+```javascript
+shape = shape.toUpperCase(); // ADD THIS
+switch (shape) {
+    case 'V_TAPER': ...
+```
+
+**Backend impact:** BodyStatsProvider needs to return `BodyShapeEnumType` values instead of strings. Check all virtual field access paths.
+
+#### D.2.3 `alignment` enum values — EXISTING BUG (fix now in Ux7)
+
+**Not caused by redesign, but discovered during analysis.**
+
+Model enum values are `CHAOTICEVIL`, `NEUTRALEVIL`, etc. (no separator). Serializer sends `chaoticevil`. Ux7 code does `.toUpperCase()` → `CHAOTICEVIL`. But `gameState.js` alignment modifier table expects `"CHAOTIC EVIL"` or `"CHAOTIC_EVIL"` — neither matches.
+
+**Ux7 fix required:** Update alignment modifier table in `gameState.js:2621-2631` to use actual enum values:
+```javascript
+let alignMods = {
+    "CHAOTICEVIL": 4,
+    "NEUTRALEVIL": 2,
+    "LAWFULEVIL": 0,
+    "CHAOTICNEUTRAL": 2,
+    "NEUTRAL": 0,
+    "CHAOTICGOOD": 0,
+    "LAWFULNEUTRAL": -2,
+    "NEUTRALGOOD": -2,
+    "LAWFULGOOD": -4
+};
+```
+
+Also fix `characters.js:166` — `.replace(/_/g, " ")` does nothing on `CHAOTICEVIL` (no underscores). Either display the concatenated value or add a display label map.
+
+### D.3 Safe Backend Changes (Additive Only)
+
+| Change | Type | Details |
+|--------|------|---------|
+| `system.formDefinition` model | New model | Form system. No existing code affected. |
+| `system.formField` model | New model | Form field definitions. |
+| `auth.webauthnCredential` model | New model | WebAuthn credential storage. |
+| `governance.*` models | New namespace | ISO 42001 compliance. |
+| `userDefined` flag on models/fields | New field | Additive metadata. |
+| `CredentialEnumType.WEBAUTHN` | Enum addition | Additive to existing enum. |
+| Schema REST endpoints (`/rest/schema/*`) | New endpoints | Model viewer/editor API. |
+| WebAuthn REST endpoints (`/rest/credential/webauthn/*`) | New endpoints | Passkey auth. |
+| Feature config endpoints (`/rest/config/features`) | New endpoints | Feature flags. |
+| Compliance endpoints (`/rest/compliance/*`) | New endpoints | Dashboard data. |
+| Approval endpoints (adapted from v5) | New endpoints | Request/approve workflow. |
+| `webauthn4j` dependency | New Maven dep | Server-side WebAuthn validation. |
+| `AccountManagerGovernance7` library | New library (optional) | ISO 42001 backend. |
+
+### D.4 Immediate Ux7 Fixes (Pre-Ux8)
+
+These should be done now, before Ux8 development begins:
+
+1. **Fix alignment modifier table** in `gameState.js:2621-2631` — use actual enum values (`CHAOTICEVIL`, not `CHAOTIC EVIL`)
+2. **Fix alignment display** in `characters.js:166` — add label mapping for display instead of assuming underscores
+3. **Add `.toUpperCase()` guard** in `formDef.js:5755` for bodyShape switch — prepares for future enum conversion
+4. **Fix alignment display** in all `replace(/_/g, " ")` calls for alignment — these do nothing on the actual enum values
 
 ---
 

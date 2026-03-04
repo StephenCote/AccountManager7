@@ -5751,7 +5751,7 @@
         if (!shape || !gender) return;
 
         let isMale = gender === 'male';
-        shape = mapShapeForGender(shape, isMale);
+        shape = mapShapeForGender(shape.toUpperCase(), isMale);
 
         switch (shape) {
             case 'V_TAPER':

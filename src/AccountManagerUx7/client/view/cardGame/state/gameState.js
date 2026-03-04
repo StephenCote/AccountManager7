@@ -2618,16 +2618,17 @@
                         let skillMod = getStackSkillMod(pos.stack, "craft");
 
                         // Alignment modifier: Chaotic Evil = +4, Lawful Good = -4
+                        // Enum values are concatenated (CHAOTICEVIL, not CHAOTIC_EVIL)
                         let alignMods = {
-                            "CHAOTIC EVIL": 4, "CHAOTIC_EVIL": 4,
-                            "CHAOTIC NEUTRAL": 2, "CHAOTIC_NEUTRAL": 2,
-                            "NEUTRAL EVIL": 2, "NEUTRAL_EVIL": 2,
-                            "CHAOTIC GOOD": 0, "CHAOTIC_GOOD": 0,
-                            "LAWFUL EVIL": 0, "LAWFUL_EVIL": 0,
+                            "CHAOTICEVIL": 4,
+                            "CHAOTICNEUTRAL": 2,
+                            "NEUTRALEVIL": 2,
+                            "CHAOTICGOOD": 0,
+                            "LAWFULEVIL": 0,
                             "NEUTRAL": 0,
-                            "NEUTRAL GOOD": -2, "NEUTRAL_GOOD": -2,
-                            "LAWFUL NEUTRAL": -2, "LAWFUL_NEUTRAL": -2,
-                            "LAWFUL GOOD": -4, "LAWFUL_GOOD": -4
+                            "NEUTRALGOOD": -2,
+                            "LAWFULNEUTRAL": -2,
+                            "LAWFULGOOD": -4
                         };
                         let alignment = (owner.character.alignment || "NEUTRAL").toUpperCase();
                         let alignMod = alignMods[alignment] || 0;
