@@ -1167,12 +1167,12 @@ Use the existing backend session or a short-lived cache:
 | **Testing** | Add tests alongside refactors (retroactive) | Test-first from day 1 |
 | **Scope** | Too much change for in-place (Vite, ESM, new forms, new dialogs, SQLite cache, WCAG AA, full dark mode, full responsive) | All new systems designed properly from start |
 
-### 9.2 Decision: New Project Alongside (AccountManagerUx8)
+### 9.2 Decision: New Project Alongside (AccountManagerUx75)
 
 **Rationale:** The scope of decided changes (Vite bundler, ESM modules, database-backed forms, unified dialog system, SQLite WASM caching, WCAG 2.1 AA, full dark mode, full responsive/mobile, feature build system, governance models) is effectively a complete rewrite. Refactoring in place would mean fighting 132+ entangled scripts, inconsistent field types, and monolithic files while simultaneously building new systems on top.
 
 **Strategy:**
-1. Create `AccountManagerUx8` as a sibling project in the same repo
+1. Create `AccountManagerUx75` as a sibling project in the same repo
 2. Import core libraries from Ux7: `am7client.js`, `am7model.js`, `pageClient.js` (convert to ESM)
 3. Ux7 remains available as working reference/fallback
 4. No temp file cleanup needed — Ux7 stays as-is
@@ -1183,7 +1183,7 @@ Use the existing backend session or a short-lived cache:
 ```
 AccountManager7/src/
 ├── AccountManagerUx7/       ← Existing, untouched, reference
-├── AccountManagerUx8/       ← New project
+├── AccountManagerUx75/       ← New project
 │   ├── package.json         ← Vite, Mithril, Tailwind, Vitest, Playwright, sql.js
 │   ├── vite.config.js       ← Feature flags, build-level inclusion/exclusion
 │   ├── tailwind.config.js   ← Dark mode, responsive breakpoints, component classes
@@ -2037,9 +2037,9 @@ Also fix `characters.js:166` — `.replace(/_/g, " ")` does nothing on `CHAOTICE
 | `webauthn4j` dependency | New Maven dep | Server-side WebAuthn validation. |
 | `AccountManagerGovernance7` library | New library (optional) | ISO 42001 backend. |
 
-### D.4 Immediate Ux7 Fixes (Pre-Ux8)
+### D.4 Immediate Ux7 Fixes (Pre-Ux75)
 
-These should be done now, before Ux8 development begins:
+These should be done now, before Ux75 development begins:
 
 1. **Fix alignment modifier table** in `gameState.js:2621-2631` — use actual enum values (`CHAOTICEVIL`, not `CHAOTIC EVIL`)
 2. **Fix alignment display** in `characters.js:166` — add label mapping for display instead of assuming underscores
@@ -2211,5 +2211,5 @@ All questions needing answers before or during implementation, organized by sect
 | 73 | **Phase ordering preferences?** | Keep proposed order: 0→1→2→3→4→5→6→7→8. Foundation first, then styling, panel, features, forms, model viewer, WebAuthn, compliance, approvals. | **RESOLVED** |
 | 74 | **Parallel phase execution?** | Yes — run independent phases in parallel where possible. Example: Phase 6 (WebAuthn) can run alongside Phase 2 (panel) or Phase 5 (forms). Phase 7 (compliance) and Phase 8 (approvals) can overlap. Coordinate to avoid file conflicts. | **RESOLVED** |
 | 75 | **Notification system — unified or per-feature?** | Unified notification system. One notification component/service handles all types (approvals, compliance, system alerts). Consistent UX. Backend uses existing `message.spool` model. WebSocket delivers real-time; spool stores for read/delete/respond (Q58). | **RESOLVED** |
-| 76 | **`tmpclaude-*` temp files in repo?** | New project (Q9 resolved) — Ux7 stays as-is, no cleanup needed. Ux8 starts clean. Add `tmpclaude-*` to `.gitignore` in Ux7 for tidiness. | **RESOLVED** |
+| 76 | **`tmpclaude-*` temp files in repo?** | New project (Q9 resolved) — Ux7 stays as-is, no cleanup needed. Ux75 starts clean. Add `tmpclaude-*` to `.gitignore` in Ux7 for tidiness. | **RESOLVED** |
 | 77 | **Client-side caching upgrade — SQLite/WebDB?** | SQLite via WASM (e.g., sql.js). Mirror model schemas as SQLite tables for local persistent caching. Enables powerful client-side queries, longer cache lifetime, offline browsing of cached data. Phase 2 implementation alongside preferences storage. | **RESOLVED** |
