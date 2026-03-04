@@ -22,30 +22,27 @@
         let doc = (frame.contentWindow || frame.contentDocument);
         doc.document.body.focus();
 
-        var oA = doc.document.createElement("a");
+        let sOrg = am7client.dotPath(am7client.currentOrganization);
+        let sUrl = g_application_path + "/media/" + sOrg + "/data.data" + obj.groupPath + "/" + obj.name;
 
-
-        let oI;
-        var sOrg = am7client.dotPath(am7client.currentOrganization);
-        var sThumbUrl = g_application_path + "/thumbnail/" + sOrg + "/data.data" + obj.groupPath + "/" + obj.name + "/250x250";
-        var sUrl = g_application_path + "/media/" + sOrg + "/data.data" + obj.groupPath + "/" + obj.name;
-        var sIco = 0;
-        if (!obj.contentType.match(/^image/)) {
-            oI = doc.document.createElement("span");
-            oI.setAttribute("class", "material-symbols-outlined material-icons-48");
-            oI.appendChild(document.createTextNode("widgets"));
+        if (obj.contentType.match(/^image/)) {
+            let sThumbUrl = g_application_path + "/thumbnail/" + sOrg + "/data.data" + obj.groupPath + "/" + obj.name + "/250x250";
+            let oI = doc.document.createElement("img");
+            oI.setAttribute("src", sThumbUrl);
+            oI.setAttribute("alt", obj.name);
+            oI.setAttribute("title", obj.name);
+            insertNodeAtCaret(oI);
         }
         else {
-            oI = doc.document.createElement("img");
-            oI.setAttribute("src", sThumbUrl);
-            oI.setAttribute("title", obj.name);
+            let oA = doc.document.createElement("a");
+            oA.setAttribute("href", sUrl);
+            oA.setAttribute("target", "_blank");
+            oA.setAttribute("title", obj.name);
+            oA.textContent = obj.name;
+            insertNodeAtCaret(oA);
         }
-        oA.appendChild(oI);
-        oA.setAttribute("href", sUrl);
-        oA.setAttribute("target", "blank");
-        oA.setAttribute("title", obj.name);
-        insertNodeAtCaret(oA);
     }
+
     function insertNodeAtCaret(oNode) {
         var sel, range;
         let frame = document.querySelector("[rid=designFrame]");
@@ -66,33 +63,44 @@
             insertObjectAtCaret(pickDataObject);
             pickDataObject = null;
         }
-        else caller.preparePicker(caller.getInstance(), 'data.data', handlePickData, "~/Gallery");
+        else caller.preparePicker('data.data', handlePickData, "~/Gallery");
     }
-  
+
     function defAct(e, action) {
-        //console.log("Default action: " + e.srcElement);
         let frame = document.querySelector("[rid=designFrame]");
         let doc = (frame.contentWindow || frame.contentDocument);
-        let opt;
         doc.document.body.focus();
         switch (action) {
-            case "Indent":
-            case "Outdent":
             case "InsertHorizontalRule":
             case "InsertOrderedList":
             case "InsertUnorderedList":
-            case "JustifyLeft":
-            case "JustifyCenter":
-            case "JustifyRight":
-            case "Underline":
+            case "Strikethrough":
             case 'Bold':
             case 'Italic':
-                console.log("Command: '" + action + "'");
-                doc.document.execCommand(action, false, opt);
+                doc.document.execCommand(action, false, null);
                 break;
             default:
-                console.log("Don't know what to do");
+                console.log("Unhandled action: " + action);
                 break;
+        }
+        doc.focus();
+    }
+
+    function formatBlock(tag) {
+        let frame = document.querySelector("[rid=designFrame]");
+        let doc = (frame.contentWindow || frame.contentDocument);
+        doc.document.body.focus();
+        doc.document.execCommand('formatBlock', false, '<' + tag + '>');
+        doc.focus();
+    }
+
+    function insertLink() {
+        let frame = document.querySelector("[rid=designFrame]");
+        let doc = (frame.contentWindow || frame.contentDocument);
+        doc.document.body.focus();
+        let url = prompt("Enter URL:");
+        if (url) {
+            doc.document.execCommand('createLink', false, url);
         }
         doc.focus();
     }
@@ -117,8 +125,8 @@
             caller.getInstance().api.compressionType("none");
         }
         designHtml = "";
-
     }
+
     function alignSource() {
         toggled = false;
         if (!init) {
@@ -136,13 +144,14 @@
                 case 'preview':
                     let frame = document.querySelector("[rid=designFrame]");
                     if (frame) {
-                        let content = designDocumentHeader + bbConverter.import(designHtml) + designDocumentFooter;
+                        let content = designDocumentHeader + markdownConverter.toHtml(designHtml) + designDocumentFooter;
                         writeFrame(frame, content);
                     }
                     break;
             }
         }
     }
+
     function toggleStyle(sStyle) {
         designHtml = refreshDesignSources();
         designStyle = sStyle;
@@ -150,26 +159,26 @@
         m.redraw();
     }
 
-    let formatOptions = ['BLOCK', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BlockQuote', 'P'];
-    let fontOptions = ['FONT', 'Arial', 'Times', 'Verdana', 'Courier'];
-    let fontSizeOptions = ['SIZE', 'Size 1', 'Size 2', 'Size 3', 'Size 4', 'Size 5', 'Size 6', 'Size 7'];
-    let fontColorOptions = ['COLOR', 'Black', 'Grey', 'White', 'Yellow', 'Green', 'Blue', 'Violet'];
-    let fillColorOptions = ['FILL', 'Black', 'Grey', 'White', 'Yellow', 'Green', 'Blue', 'Violet'];
+    let formatOptions = ['BLOCK', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
 
     let designDocumentHeader = `<html lang="en">
         <head>
             <meta charset="utf-8">
             <title>forms</title>
-            <link rel="icon" href="/media/logo_48.png" />  
+            <link rel="icon" href="/media/logo_48.png" />
             <link href = "/dist/basiTail.css" rel = "stylesheet" />
             <link href="/node_modules/material-icons/iconfont/material-icons.css" rel="stylesheet" />
             <link rel="stylesheet" href="/styles/pageStyle.css" />
+            <style>
+                body { font-family: sans-serif; padding: 1rem; }
+                pre, code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
+                pre { padding: 0.5rem; overflow-x: auto; }
+                blockquote { border-left: 3px solid #ccc; margin-left: 0; padding-left: 1rem; color: #555; }
+                img { max-width: 100%; height: auto; }
+                hr { border: none; border-top: 1px solid #ccc; margin: 1rem 0; }
+            </style>
         </head>
         <body class = 'carousel-article'>
-    `;
-    let designDocumentDefContent = `<h1>Title</h1>
-    <h2>Sub Title</h2>
-    <div>[ body ]</div>
     `;
 
     let designDocumentFooter = `</body></html>`;
@@ -223,25 +232,27 @@
             if (!frame) {
                 return;
             }
+            /// Normalize source: migrate legacy BB code to markdown on load
+            let md = markdownConverter.normalizeSource(bytes);
+            if (md !== bytes) {
+                designHtml = md;
+            }
             if (bytes.length) {
-                console.log("Write byte store");
-                writeFrame(frame, designDocumentHeader + bbConverter.import(bytes) + designDocumentFooter);
+                writeFrame(frame, designDocumentHeader + markdownConverter.toHtml(bytes) + designDocumentFooter);
             }
             else {
-                writeFrame(frame, designDocumentHeader + designDocumentDefContent + designDocumentFooter);
+                writeFrame(frame, designDocumentHeader + "<h1>Title</h1><h2>Sub Title</h2><p>[ body ]</p>" + designDocumentFooter);
             }
         }
         init = true;
     }
 
     function writeFrame(frame, content) {
-
-        //console.log("Write: " + content);
         let docType = '<!doctype html>';
         let doc = (frame.contentWindow || frame.contentDocument);
         try {
             if (!doc || !doc.document) {
-                console.error("WriteContent: Unable to find document; " + this.writeFrame.caller);
+                console.error("WriteContent: Unable to find document");
                 return;
             }
             var d = doc.document;
@@ -254,15 +265,15 @@
             console.error("Unexpected UI Error: " + (e.message ? e.message : e.description));
         }
     }
+
     function enableDesigner(doc) {
         try {
             if (doc) {
                 doc.designMode = (designStyle == 'edit' ? "on" : "off");
-                console.log("Design mode: " + doc.designMode);
                 doc.documentElement.focus();
             }
             else {
-                console.error("Could not find designer document to enabled");
+                console.error("Could not find designer document to enable");
             }
         }
         catch (e) {
@@ -278,7 +289,7 @@
                 if (frame) {
                     var doc = (frame.contentWindow || frame.contentDocument);
                     if (!doc || !doc.document) return null;
-                    sSource = bbConverter.convertNodes(doc.document.body.childNodes);
+                    sSource = markdownConverter.convertNodes(doc.document.body.childNodes);
                 }
                 break;
             case 'source':
@@ -297,7 +308,6 @@
         switch (designStyle) {
             case 'edit':
             case 'preview':
-                /// src : '/blank.html'
                 field = m("iframe", { src: 'about:blank', rid: 'designFrame', class: cls });
                 break;
             case 'code':
@@ -324,11 +334,13 @@
         }
         return "";
     }
+
     function getCodeDesigner() {
         return [
             m("div", { class: "results-overflow" }, getDesignField())
         ];
     }
+
     function getRichTextDesigner() {
         return [
             m("div", { class: "result-nav-outer" + (page.components.picker.inPickMode() ? " hidden" : "") }, [
@@ -337,27 +349,26 @@
                         page.iconButton("button" + (designStyle == 'source' ? ' active' : ''), "code", "", function () { toggleStyle('source'); }),
                         page.iconButton("button" + (designStyle == 'edit' ? ' active' : ''), "design_services", "", function () { toggleStyle('edit'); }),
                         page.iconButton("button" + (designStyle == 'preview' ? ' active' : ''), "preview", "", function () { toggleStyle('preview'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_italic", "", function (e) { defAct(e, 'Italic'); }),
                         page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_bold", "", function (e) { defAct(e, 'Bold'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_underlined", "", function (e) { defAct(e, 'Underline'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_align_left", "", function (e) { defAct(e, 'JustifyLeft'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_align_center", "", function (e) { defAct(e, 'JustifyCenter'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_align_justify", "", function (e) { defAct(e, 'JustifyFull'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_align_right", "", function (e) { defAct(e, 'JustifyRight'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_list_bulleted", "", function (e) { defAct(e, 'InsertOrderedList'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_list_numbered", "", function (e) { defAct(e, 'InsertUnorderedList'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_indent_increase", "", function (e) { defAct(e, 'Indent'); }),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_indent_decrease", "", function (e) { defAct(e, 'Outdent'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_italic", "", function (e) { defAct(e, 'Italic'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_strikethrough", "", function (e) { defAct(e, 'Strikethrough'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_list_bulleted", "", function (e) { defAct(e, 'InsertUnorderedList'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_list_numbered", "", function (e) { defAct(e, 'InsertOrderedList'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_quote", "", function () { formatBlock('blockquote'); }),
                         page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "horizontal_rule", "", function (e) { defAct(e, 'InsertHorizontalRule'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "code_blocks", "", function () { formatBlock('pre'); }),
                         page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : (pickData ? ' focus' : '')), (pickData ? "content_paste_go" : "image"), "", pickImage),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "link", "", defAct)
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "link", "", insertLink)
                     ]),
                     (designStyle != 'edit' ? '' : m("div", { class: "result-nav" }, [
-                        m("select", { class: "nav-select reactive-arrow" }, formatOptions.map((o) => m("option", o))),
-                        m("select", { class: "nav-select reactive-arrow" }, fontOptions.map((o) => m("option", o))),
-                        m("select", { class: "nav-select reactive-arrow" }, fontSizeOptions.map((o) => m("option", o))),
-                        m("select", { class: "nav-select reactive-arrow" }, fontColorOptions.map((o) => m("option", o))),
-                        m("select", { class: "nav-select reactive-arrow" }, fillColorOptions.map((o) => m("option", o)))
+                        m("select", {
+                            class: "nav-select reactive-arrow",
+                            onchange: function (e) {
+                                let val = e.target.value;
+                                if (val !== 'BLOCK') formatBlock(val.toLowerCase());
+                                e.target.selectedIndex = 0;
+                            }
+                        }, formatOptions.map(function (o) { return m("option", { value: o }, o); }))
                     ]))
                 ])
             ]),

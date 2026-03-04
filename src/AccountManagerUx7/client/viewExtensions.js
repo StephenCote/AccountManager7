@@ -106,13 +106,14 @@
         if (mt.match(/^audio/)) {
             return "audio";
         }
-        if (mt.match(/^text/)) {
+        if (mt.match(/^text/) || mt.match(/(css|javascript)$/)) {
             return "text";
         }
         if (mt.match(/pdf$/)) {
             return "pdf";
         }
 
+        /// No specialized renderer for this content type (e.g. .docx, .zip)
         return null;
     };
 

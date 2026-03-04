@@ -352,6 +352,8 @@ public class ChatListener implements IChatListener {
 			/// Flush deferred keyframe AFTER main response completes (streaming mode).
 			/// This prevents the keyframe LLM call from competing with the main response.
 			chat.flushPendingKeyframe(request);
+			/// Flush deferred interaction extraction (independent of keyframes).
+			chat.flushPendingInteraction(request);
 
 			/// Phase 13g: Auto-generate title and icon after first real user+assistant exchange.
 			/// Strategy: set a SYNCHRONOUS fallback title immediately (from first user message),

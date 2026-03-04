@@ -135,6 +135,17 @@ public class Chat {
 	private volatile int pendingKeyframeStartIdx = 0;
 	private int responseCount = 0;
 
+	/// Deferred interaction: snapshot saved by checkInteractionTrigger, launched after main response completes.
+	private volatile List<OpenAIMessage> pendingInteractionSnapshot = null;
+	/// Guard against duplicate async interaction extraction.
+	private volatile boolean asyncInteractionInProgress = false;
+	/// Global per-chat interaction lock: prevents concurrent extractions for the same chat config.
+	private static final ConcurrentHashMap<String, Long> activeInteractions = new ConcurrentHashMap<>();
+	/// Maximum time (ms) an interaction lock can be held before forced removal.
+	private static final long INTERACTION_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+	/// Configured interaction extraction cadence (from chatConfig).
+	private int interactionEvery = 0;
+
 	/// Mid-stream policy evaluation tracking
 	private static final int MID_STREAM_CHECK_INTERVAL = 200;
 	private int lastMidStreamCheckLength = 0;
@@ -155,6 +166,7 @@ public class Chat {
 	public static void shutdown() {
 		LLMConnectionManager.stopAllStreams();
 		activeKeyframes.clear();
+		activeInteractions.clear();
 	}
 
 	/// Get count of all active LLM streams — delegates to LLMConnectionManager.
@@ -298,6 +310,16 @@ public class Chat {
 				}
 			} catch (Exception e) {
 				// keep field default
+			}
+
+			/// Read interaction extraction cadence (independent of keyframes).
+			try {
+				boolean extractInteractions = chatConfig.get("extractInteractions");
+				if (extractInteractions) {
+					interactionEvery = chatConfig.get("interactionEvery");
+				}
+			} catch (Exception e) {
+				// field may not be set on legacy configs
 			}
 
 			/// OI-5/OI-83: Enforce minimum keyframeEvery when extractMemories is enabled.
@@ -514,6 +536,8 @@ public class Chat {
 			/// Flush deferred keyframe AFTER main response completes (buffer mode).
 			/// This prevents the keyframe LLM call from competing with the main response.
 			flushPendingKeyframe(req);
+			/// Flush deferred interaction extraction (independent of keyframes).
+			flushPendingInteraction(req);
 
 			/// Phase 13g: Auto-generate title and icon after first real exchange (buffer mode)
 			/// Phase 7 (MemoryRefactor2): Read autoTitle defensively, defaulting to true
@@ -2309,41 +2333,12 @@ public class Chat {
 
 		/// Step 4: Extract discrete memories via dedicated prompt (Phase 14b)
 		/// Skip if keyframe analysis failed — avoid double timeout
-		List<BaseRecord> extractedMemories = null;
 		if (analysisOk) {
-			extractedMemories = extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar, previousKeyframeAt);
+			extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar, previousKeyframeAt);
 		}
 
-		/// Step 5: Interaction extraction — creates persisted olio.interaction record (Phase 3, MemoryRefactor2)
-		if (listener != null) {
-			listener.onEvalProgress(user, req, "interaction", "Extracting interaction...");
-		}
-		try {
-			BaseRecord interaction = InteractionExtractor.extractInteraction(
-				user, chatConfig, systemChar, userChar, snapshotReq.getMessages(), cfgObjId);
-			if (interaction != null) {
-				// Link previously-extracted memories to this interaction
-				if (extractedMemories != null && !extractedMemories.isEmpty()) {
-					InteractionExtractor.linkMemoriesToInteraction(extractedMemories, interaction);
-				}
-				// Phase 4: Add interaction to chat event
-				ChatEventUtil.addInteractionToEvent(user, chatConfig, interaction);
-				// Emit chirp for backward-compatible listener notification
-				if (listener != null) {
-					String chirp = InteractionExtractor.buildInteractionChirp(interaction);
-					listener.onInteractionEvent(user, req, chirp);
-				}
-			}
-			if (listener != null) {
-				listener.onEvalProgress(user, req, "interactionDone",
-					interaction != null ? "complete" : "no interaction");
-			}
-		} catch (Exception e) {
-			logger.warn("Interaction extraction failed: " + e.getMessage());
-			if (listener != null) {
-				listener.onEvalProgress(user, req, "interactionDone", "error");
-			}
-		}
+		/// Step 5 removed: Interaction extraction is now a standalone pipeline
+		/// (checkInteractionTrigger / flushPendingInteraction) independent of keyframes.
 	}
 
 	/// Phase 14b: Extract discrete memories from the conversation segment
@@ -2715,6 +2710,8 @@ public class Chat {
 		/// Keyframe trigger — separated from prune gating so memory extraction
 		/// works regardless of prune/assist settings.
 		checkKeyframeTrigger(req);
+		/// Interaction trigger — independent cadence from keyframes.
+		checkInteractionTrigger(req);
 	}
 
 	/// OI-98: Keyframes are now memory-only — no longer embedded in the message
@@ -2800,6 +2797,73 @@ public class Chat {
 		}
 	}
 
+	/// Check if interaction extraction should trigger based on message count.
+	/// Captures a message snapshot for deferred async launch if threshold reached.
+	private void checkInteractionTrigger(OpenAIRequest req) {
+		if (!chatMode || interactionEvery <= 0) {
+			return;
+		}
+		int lastIntAt = 0;
+		try {
+			lastIntAt = chatConfig.get("lastInteractionAt");
+		} catch (Exception e) {
+			// field may not be set on legacy configs
+		}
+		int msgSize = req.getMessages().size();
+
+		if (lastIntAt > msgSize) {
+			logger.warn("lastInteractionAt (" + lastIntAt + ") > msgSize (" + msgSize + ") — resetting stale marker");
+			lastIntAt = 0;
+			try {
+				chatConfig.setValue("lastInteractionAt", 0);
+				IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig.copyRecord(new String[] {
+					FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, "lastInteractionAt" }));
+			} catch (Exception e) {
+				logger.warn("Failed to reset lastInteractionAt: " + e.getMessage());
+			}
+		}
+
+		boolean useAssist = false;
+		try { useAssist = chatConfig.get("assist"); } catch (Exception e) { /* default false */ }
+		int introOverhead = (useAssist ? pruneSkip : 0) + 1;
+		int effectiveStart = lastIntAt > 0 ? lastIntAt : introOverhead;
+		int sinceLastInt = msgSize - effectiveStart;
+
+		logger.info("Interaction check: interactionEvery=" + interactionEvery
+			+ " msgSize=" + msgSize + " lastInteractionAt=" + lastIntAt
+			+ " effectiveStart=" + effectiveStart + " sinceLastInt=" + sinceLastInt);
+
+		if (sinceLastInt >= interactionEvery) {
+			if (asyncInteractionInProgress) {
+				logger.info("Skipping interaction — async interaction already in progress (instance)");
+				return;
+			}
+			String cfgOid = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+			if (cfgOid != null) {
+				Long lockTime = activeInteractions.get(cfgOid);
+				if (lockTime != null) {
+					long held = System.currentTimeMillis() - lockTime;
+					if (held > INTERACTION_LOCK_TIMEOUT_MS) {
+						logger.warn("Forcing expired interaction lock for chat " + cfgOid + " (held " + held + "ms)");
+						activeInteractions.remove(cfgOid);
+					} else {
+						logger.info("Skipping interaction — global interaction already active for chat " + cfgOid + " (" + held + "ms)");
+						return;
+					}
+				}
+			}
+			try {
+				chatConfig.setValue("lastInteractionAt", msgSize);
+				IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig.copyRecord(new String[] {
+					FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, "lastInteractionAt" }));
+			} catch (Exception e) {
+				logger.warn("Failed to eagerly update lastInteractionAt: " + e.getMessage());
+			}
+			logger.info("(Deferring interaction extraction — will launch after main response)");
+			pendingInteractionSnapshot = new ArrayList<>(req.getMessages());
+		}
+	}
+
 	/// Flush a deferred keyframe: launch the async pipeline now that the main response is complete.
 	/// Called from continueChat (buffer mode) and ChatListener.oncomplete (streaming mode).
 	public void flushPendingKeyframe(OpenAIRequest req) {
@@ -2861,6 +2925,137 @@ public class Chat {
 			if (lockKey != null) activeKeyframes.remove(lockKey);
 			return null;
 		});
+	}
+
+	/// Flush a deferred interaction extraction: launch the async pipeline now that
+	/// the main response is complete. Independent of keyframe pipeline.
+	/// Called from continueChat (buffer mode) and ChatListener.oncomplete (streaming mode).
+	public void flushPendingInteraction(OpenAIRequest req) {
+		List<OpenAIMessage> snapshot = pendingInteractionSnapshot;
+		pendingInteractionSnapshot = null;
+		if (snapshot == null) {
+			return;
+		}
+		if (asyncInteractionInProgress) {
+			logger.info("Skipping deferred interaction — async interaction already in progress (instance)");
+			return;
+		}
+		String cfgOid = chatConfig != null ? chatConfig.get(FieldNames.FIELD_OBJECT_ID) : null;
+		if (cfgOid != null) {
+			Long existingLock = activeInteractions.get(cfgOid);
+			if (existingLock != null) {
+				long held = System.currentTimeMillis() - existingLock;
+				if (held > INTERACTION_LOCK_TIMEOUT_MS) {
+					logger.warn("Forcing expired interaction lock in flush for chat " + cfgOid + " (held " + held + "ms)");
+					activeInteractions.remove(cfgOid);
+				} else {
+					logger.info("Skipping deferred interaction — global interaction already active for chat " + cfgOid + " (" + held + "ms)");
+					return;
+				}
+			}
+			if (activeInteractions.putIfAbsent(cfgOid, System.currentTimeMillis()) != null) {
+				logger.info("Skipping deferred interaction — lost CAS race for chat " + cfgOid);
+				return;
+			}
+		}
+		logger.info("(Launching deferred interaction extraction — main response complete) chat=" + cfgOid);
+		asyncInteractionInProgress = true;
+
+		if (listener != null) {
+			listener.onEvalProgress(user, req, "interaction", "Extracting interaction...");
+		}
+
+		final String lockKey = cfgOid;
+		CompletableFuture.runAsync(() -> {
+			try {
+				extractInteractionAsync(req, snapshot);
+			} catch (Exception e) {
+				logger.warn("Async interaction extraction failed: " + e.getMessage(), e);
+			} finally {
+				asyncInteractionInProgress = false;
+				if (lockKey != null) activeInteractions.remove(lockKey);
+			}
+		}).exceptionally(ex -> {
+			logger.error("Async interaction CompletableFuture failed: " + ex.getMessage(), ex);
+			asyncInteractionInProgress = false;
+			if (lockKey != null) activeInteractions.remove(lockKey);
+			return null;
+		});
+	}
+
+	/// Standalone async interaction extraction pipeline.
+	/// Runs on a background thread. Calls InteractionExtractor, links memories if available,
+	/// adds to chat event, and emits chirp.
+	private void extractInteractionAsync(OpenAIRequest req, List<OpenAIMessage> snapshot) {
+		logger.info("extractInteractionAsync: START — snapshot size=" + snapshot.size());
+		BaseRecord systemChar = chatConfig.get("systemCharacter");
+		BaseRecord userChar = chatConfig.get("userCharacter");
+		if (systemChar == null || userChar == null) {
+			logger.warn("extractInteractionAsync: systemCharacter or userCharacter is null — aborting");
+			return;
+		}
+
+		String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+
+		OpenAIRequest snapshotReq = new OpenAIRequest();
+		snapshotReq.setModel(req.getModel());
+		snapshotReq.setMessages(new ArrayList<>(snapshot));
+
+		try {
+			BaseRecord interaction = InteractionExtractor.extractInteraction(
+				user, chatConfig, systemChar, userChar, snapshotReq.getMessages(), cfgObjId);
+			if (interaction != null) {
+				// Best-effort: link recently-extracted unlinked memories for this conversation
+				List<BaseRecord> recentMemories = findRecentUnlinkedMemories(cfgObjId);
+				if (recentMemories != null && !recentMemories.isEmpty()) {
+					InteractionExtractor.linkMemoriesToInteraction(recentMemories, interaction);
+				}
+
+				ChatEventUtil.addInteractionToEvent(user, chatConfig, interaction);
+
+				if (listener != null) {
+					String chirp = InteractionExtractor.buildInteractionChirp(interaction);
+					listener.onInteractionEvent(user, req, chirp);
+				}
+			}
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "interactionDone",
+					interaction != null ? "complete" : "no interaction");
+			}
+		} catch (Exception e) {
+			logger.warn("Interaction extraction failed: " + e.getMessage());
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "interactionDone", "error");
+			}
+		}
+	}
+
+	/// Find memories recently extracted for this conversation that have no interaction link yet.
+	/// Queries by conversationId and filters for null interactionModel in-memory.
+	private List<BaseRecord> findRecentUnlinkedMemories(String conversationId) {
+		if (conversationId == null) return new ArrayList<>();
+		try {
+			Query q = QueryUtil.createQuery("tool.memory", "conversationId", conversationId);
+			q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			q.setRequestRange(0, 20);
+			BaseRecord[] results = IOSystem.getActiveContext().getSearch().findRecords(q);
+			if (results == null || results.length == 0) return new ArrayList<>();
+
+			List<BaseRecord> unlinked = new ArrayList<>();
+			for (BaseRecord mem : results) {
+				String intModel = mem.get("interactionModel");
+				if (intModel == null || intModel.isEmpty()) {
+					unlinked.add(mem);
+				}
+			}
+			if (!unlinked.isEmpty()) {
+				logger.info("findRecentUnlinkedMemories: found " + unlinked.size() + " unlinked memories for conversation " + conversationId);
+			}
+			return unlinked;
+		} catch (Exception e) {
+			logger.warn("findRecentUnlinkedMemories: query failed: " + e.getMessage());
+			return new ArrayList<>();
+		}
 	}
 
 	/// OI-14: MCP-only reminder detection.

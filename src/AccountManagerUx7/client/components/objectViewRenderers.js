@@ -134,7 +134,7 @@
 
         // Render loaded content
         let dat = ctx.contextObjects[objectId];
-        let cnt = bbConverter.mInto(Base64.decode(dat.dataBytesStore));
+        let cnt = markdownConverter.mInto(Base64.decode(dat.dataBytesStore));
 
         return m("div", { class: "carousel-article-outer" },
             m("div", { class: "carousel-article carousel-article-margin" }, cnt)
@@ -196,10 +196,11 @@
     /// Markdown/Note renderer
     function renderMarkdownField(inst, fieldName, attrs) {
         let value = inst.api[fieldName]();
+        let rendered = (value && value.trim()) ? m.trust(marked.parse(value)) : '';
 
         return m("div", { class: "carousel-article-outer" },
             m("div", { class: "carousel-article carousel-article-margin" },
-                value
+                rendered
             )
         );
     }

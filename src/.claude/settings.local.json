@@ -40,7 +40,8 @@
       "WebFetch(domain:192.168.1.42)",
       "WebFetch(domain:github.com)",
       "Bash(jar tf:*)",
-      "Bash(echo \"exit:$?\")"
+      "Bash(echo \"exit:$?\")",
+      "Bash(tar -xzf turndown-7.2.2.tgz)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

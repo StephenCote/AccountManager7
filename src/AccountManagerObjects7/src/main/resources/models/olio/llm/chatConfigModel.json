@@ -243,6 +243,23 @@
 			"description": "Message count at which the last keyframe was generated. Used by pruneCount to determine when the next keyframe is due. Updated by the async keyframe pipeline."
 		},
 		{
+			"name": "extractInteractions",
+			"type": "boolean",
+			"description": "When true, automatically extract olio.interaction records from chat sessions on an independent cadence."
+		},
+		{
+			"name": "interactionEvery",
+			"type": "int",
+			"default": 0,
+			"description": "Number of messages between automatic interaction extractions. 0 = disabled. Controls extraction cadence independently from keyframeEvery."
+		},
+		{
+			"name": "lastInteractionAt",
+			"type": "int",
+			"default": 0,
+			"description": "Message count at which the last interaction extraction was performed. Updated eagerly before async launch."
+		},
+		{
 			"name": "autoTitle",
 			"type": "boolean",
 			"default": true,

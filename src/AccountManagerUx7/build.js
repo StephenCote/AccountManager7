@@ -17,7 +17,7 @@ const jsFiles = [
 
     // Core client
     'client/codemirror.jslint.js',
-    'client/bbscript.js',
+    'client/markdownConverter.js',
     'client/pageClient.js',
 
     // Base components
