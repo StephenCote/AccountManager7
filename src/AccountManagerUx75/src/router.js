@@ -5,6 +5,28 @@ import { page } from './core/pageClient.js';
 
 // Import views
 import sigView from './views/sig.js';
+import { panel } from './components/panel.js';
+import { navigation, navigable } from './components/navigation.js';
+import { newListControl } from './views/list.js';
+import { newObjectPage } from './views/object.js';
+import { decorator } from './components/decorator.js';
+import { newPaginationControl } from './components/pagination.js';
+import { initTheme } from './components/topMenu.js';
+
+// Wire components onto page for cross-module access
+page.components.panel = panel;
+page.components.navigation = navigation;
+page.components.decorator = decorator;
+page.navigable = navigable();
+page.navigable.init();
+page.pagination = newPaginationControl;
+
+// Initialize theme from localStorage
+initTheme();
+
+// Create shared list and object page instances
+let listControl = newListControl();
+let objectPageControl = newObjectPage();
 
 // Layout wrapper that renders dialogs + toast on every route
 function layout(content) {
@@ -23,18 +45,40 @@ const routes = {
     },
     "/main": {
         view: function () {
+            if (!page.authenticated()) return layout(m("div", "Not authenticated"));
             return layout(
-                m("div", { class: "screen-center-gray" }, [
-                    m("div", { class: "box-shadow-white" }, [
-                        m("h3", { class: "box-title" }, "AccountManager7"),
-                        m("p", { class: "mt-4 text-gray-600 dark:text-gray-400" }, "Logged in as " + (page.user ? page.user.name : "unknown")),
-                        m("button", {
-                            class: "page-dialog-button",
-                            onclick: () => page.logout()
-                        }, "Logout")
+                m("div", { style: "display:flex;flex-direction:column;height:100vh" }, [
+                    m(navigation, { hideBreadcrumb: true }),
+                    m("div", { style: "flex:1;overflow:auto" }, [
+                        m(panel)
                     ])
                 ])
             );
+        }
+    },
+    "/list/:type": {
+        view: function () {
+            return layout(m(listControl.view));
+        }
+    },
+    "/list/:type/:objectId": {
+        view: function () {
+            return layout(m(listControl.view));
+        }
+    },
+    "/plist/:type/:objectId": {
+        view: function () {
+            return layout(m(listControl.view, { navigateByParent: true }));
+        }
+    },
+    "/view/:type/:objectId": {
+        view: function () {
+            return layout(m(objectPageControl.view));
+        }
+    },
+    "/new/:type/:objectId": {
+        view: function () {
+            return layout(m(objectPageControl.view, { new: true }));
         }
     }
 };

@@ -377,6 +377,72 @@ function clearPageCache() {
     contextModel = newContextModel();
 }
 
+// --- API helpers used by pagination, list, object views ---
+
+function openObject(type, objectId) {
+    let q = am7view.viewQuery(am7model.newInstance(type));
+    q.field('objectId', objectId);
+    return new Promise(function (resolve) {
+        am7client.search(q, function (qr) {
+            if (qr && qr.results && qr.results.length) {
+                resolve(qr.results[0]);
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
+function pageSearch(q) {
+    return new Promise(function (resolve) {
+        am7client.search(q, function (v) {
+            resolve(v);
+        });
+    });
+}
+
+function pageCount(q) {
+    return new Promise(function (resolve) {
+        am7client.searchCount(q, function (v) {
+            resolve(v);
+        });
+    });
+}
+
+function deleteObject(type, objectId) {
+    return new Promise(function (resolve) {
+        am7client.delete(type, objectId, function (v) {
+            resolve(v);
+        });
+    });
+}
+
+function createObject(obj) {
+    let type = obj[am7model.jsonModelKey] || obj.schema;
+    return new Promise(function (resolve) {
+        am7client.create(type, obj, function (v) {
+            resolve(v);
+        });
+    });
+}
+
+function patchObject(obj) {
+    let type = obj[am7model.jsonModelKey] || obj.schema;
+    return new Promise(function (resolve) {
+        am7client.patch(type, obj, function (v) {
+            resolve(v);
+        });
+    });
+}
+
+function makePath(type, subType, path) {
+    return new Promise(function (resolve) {
+        am7client.make(type, subType, path, function (v) {
+            resolve(v);
+        });
+    });
+}
+
 // --- Page Object ---
 
 const page = {
@@ -403,6 +469,13 @@ const page = {
     iconButton: iconButton,
     context: function () { return contextModel; },
     clearContextObject: clearContextObject,
+    openObject: openObject,
+    search: pageSearch,
+    count: pageCount,
+    deleteObject: deleteObject,
+    createObject: createObject,
+    patchObject: patchObject,
+    makePath: makePath,
     logout: async function () {
         clearPageCache();
         await uwm.logout();

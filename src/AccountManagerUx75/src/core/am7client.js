@@ -92,7 +92,7 @@ import Base64 from './base64.js';
 			return s.join("");
 		},
 		guid : function(){
-			return page.uid();
+			return am7model._page ? am7model._page.uid() : ("xxxxxxxx-xxxx-9xxx-yxxx-xxxxxxxxxxxx").replace(/[xy]/g, function(c) { const r = Math.random() * 16 | 0; return (c == 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
 		},
 		/// sKey and sIv in Base64 string format
 		///
@@ -301,7 +301,7 @@ import Base64 from './base64.js';
 				q.entity.sortField || "id",
 				q.entity.startRecord || 0,
 				q.entity.recordCount || 10,
-				page?.user?.objectId || "000",
+				am7model._page?.user?.objectId || "000",
 				q.keyField(q.entity.fields)
 			];
 			return k.join("-");
