@@ -41,7 +41,8 @@
       "WebFetch(domain:github.com)",
       "Bash(jar tf:*)",
       "Bash(echo \"exit:$?\")",
-      "Bash(tar -xzf turndown-7.2.2.tgz)"
+      "Bash(tar -xzf turndown-7.2.2.tgz)",
+      "Bash(comm -12 /tmp/pageStyle_classes.txt /tmp/basiTail_classes.txt)"
     ],
     "additionalDirectories": [
       "c:\\Projects\\GitHub\\AccountManager7\\src"

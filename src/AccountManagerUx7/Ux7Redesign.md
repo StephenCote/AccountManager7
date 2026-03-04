@@ -373,23 +373,56 @@ Allow arbitrary column/row placement:
 - The `formLoader` module provides `getForm(modelType)` which checks DB then falls back to `formDef.js`
 - All existing rendering code (`object.js`, `form.js`, `formFieldRenderers.js`) works unchanged — only the source of form definitions changes
 
-### 3.7 Field Type Inconsistencies — Must Fix
+### 3.7 Field Type Inconsistencies — Full Audit & Resolution
 
-The current `formDef.js` has multiple fields where the form definition type/limits don't match the server model schema. These must be corrected during the redesign. The DB-backed form system should auto-derive types from the model schema and only allow overrides where explicitly needed.
+The current `formDef.js` has **39 fields** using `type: 'list'` where many don't match the server model schema. The redesigned form system derives types from the model schema. Forms can only override layout/label/order/visibility — not type.
 
-| Field | Model Type | Form Type | Issues |
-|-------|-----------|-----------|--------|
-| `gender` | `string` (maxLength 10) | `list` with hardcoded limits | Type mismatch — form imposes limits not in schema. 5 different forms define this inconsistently (`['male','female','random']` vs `['male','female','unisex']`). |
-| `alignment` | `enum` (AlignmentEnumType, UPPERCASE values) | `list` with lowercase values | Type mismatch, case mismatch (lowercase vs UPPERCASE), wrong default (`"neutral"` vs `"NEUTRAL"`), missing `"UNKNOWN"` value. |
-| `level` (wearable) | `enum` (WearLevelEnumType, default `"NONE"`) | `list` with hardcoded limits | Type mismatch, wrong default (`"BASE"` vs `"NONE"`). |
-| `raceType` | `enum` (RaceEnumType) | `list` (runtime-patched) | Model patched at runtime via `prcr.type = "list"`. Two limit arrays with different values (8 items at line 4683 vs 7 items at line 4721 — missing `"M"`). |
-| Numeric fields | `int`/`long` with `minValue`/`maxValue` | No enforcement in form | Model constraints exist but form definitions don't propagate them. |
+#### Strategy: Forms Derive from Model (RESOLVED)
 
-**Root cause:** Form definitions manually duplicate model metadata instead of deriving from it. The redesigned `system.formField` should:
-1. Default type/limits from the model field (via `am7model.getModelField()`)
-2. Only store overrides (layout, label, order, visibility, readOnly)
-3. For enum fields: auto-populate limits from model enum values with correct casing
-4. For constrained numeric fields: auto-apply min/max from model schema
+1. Form fields inherit type from model schema via `am7model.getModelField()`
+2. For `enum` fields: auto-populate dropdown from model enum values (display UPPERCASE as-is)
+3. For `string` fields with known values: form can add a `limit` array to render as constrained dropdown
+4. For `int`/`long` fields with constraints: auto-apply min/max from model schema
+5. Runtime model patching is kept for exception/custom cases but will be reviewed for elimination
+
+#### Inconsistencies and Resolutions
+
+| # | Field | Model Type | Form Type | Resolution |
+|---|-------|-----------|-----------|------------|
+| 1 | `gender` | `string` (maxLength 10) | `list` (5 forms, inconsistent limits) | **Change model to enum.** Add `GenderEnumType` (MALE, FEMALE, UNISEX, UNKNOWN). Backend change required. All 5 forms auto-derive from enum. |
+| 2 | `alignment` | `enum` (AlignmentEnumType, UPPERCASE) | `list` (lowercase values, wrong default) | **Fix: form derives from model enum.** Display UPPERCASE as-is. Serializer handles lower/upper conversion. Remove hardcoded lowercase arrays. Fix default to `"NEUTRAL"`. |
+| 3 | `level` (wearable) | `enum` (WearLevelEnumType, default `"NONE"`) | `list` (default `"BASE"`) | **Fix: form derives from model enum.** Fix default to `"NONE"` (matches model). |
+| 4 | `raceType` | `enum` (RaceEnumType) | `list` (runtime-patched, 2 inconsistent limit arrays) | **Keep runtime patching** (exception case). Consolidate to single limit array. Review later for model-level fix. |
+| 5 | `rating` | `enum` (ESRBEnumType) | `list` with hardcoded `["E","E10","T","M","AO","RC"]` | **Fix: form derives from model enum.** Remove hardcoded limits. |
+| 6 | `serviceType` | `enum` (LLMServiceEnumType) | `list` with hardcoded `["OPENAI","OLLAMA"]` | **Fix: form derives from model enum.** Server may add more service types — auto-derive keeps up. |
+| 7 | `bodyShape` | `string` (virtual, BodyStatsProvider) | `list` with hardcoded values | **Change to enum with provider.** Add `BodyShapeEnumType`. Provider still derives the value; enum constrains valid outputs. |
+| 8 | `width/height` (SD) | `int` | `list` of STRINGS `['512','640',...]` | **Fix: form uses int + limit array.** `limit: [512, 640, 768, ...]` as integers. Renderer shows as constrained int dropdown. Verify server receives int values correctly. |
+| 9 | `role/defaultRole` (chat) | `string` | `list` with `["system","user","assistant"]` | **Form-level limit on string.** Keep model as string. Form adds limit array for dropdown. These are LLM API constants, not model enums. |
+| 10 | `sampler/scheduler` (SD) | `string` with limits in model | `list` with hardcoded limits | **Already consistent.** Model schema defines limits; form inherits. No change needed. |
+| 11 | `engine/speaker` (voice) | `string` with limits in model | `list` with hardcoded limits | **Already consistent.** Model schema defines limits; form inherits. No change needed. |
+| 12 | `model/refinerModel` (SD) | `string` | `list` (runtime-patched from `am7sd.fetchModels()`) | **Keep runtime patching.** SD model list is dynamic — fetched from diffusion service. This is the correct pattern for dynamic options. |
+| 13 | `chunkType` | No model field found | `list` with `['Sentence','Chapter','Word']` | **Orphaned field.** Verify if model exists; if not, add to model or remove from form. |
+| 14 | `whoStarts` | No model field found | `list` with `['none','system','user']` | **Orphaned field.** Same as above. |
+| 15 | Numeric fields | `int`/`long` with min/max | No enforcement in form | **Auto-apply constraints.** Form renderer reads `minValue`/`maxValue` from model field and applies as `<input min= max=>`. |
+
+#### Runtime Model Patching (4 locations — kept with review planned)
+
+| Location | What it does | Status |
+|----------|-------------|--------|
+| `data.data.contentType` → enum (formDef.js:591) | Patches string to enum with MIME type filter | Keep — exception case |
+| `data.tag.type` → enum (formDef.js:598) | Patches to enum of all model names | Keep — exception case |
+| `promptRaceConfig.raceType` → list (formDef.js:4682) | Patches to list with race codes | Keep — consolidate limit arrays |
+| SD `model`/`refinerModel` limits (formDef.js:5852) | Dynamic from `am7sd.fetchModels()` | Keep — correct pattern for dynamic options |
+
+All runtime patches will be reviewed during new project development for potential model-level fixes.
+
+#### Additional Architectural Decisions
+
+| Decision | Resolution |
+|----------|-----------|
+| **Event handling** | Don't enforce a single pattern. Fix inconsistencies when touching files. Mithril `onclick` is preferred for Mithril components; `addEventListener` for non-Mithril DOM. |
+| **CSS architecture** | Tailwind + minimal custom CSS. Tailwind for layout/spacing/color/dark mode. Minimal custom CSS for Material Icons overrides and complex animations. No `.dark` class duplication — use Tailwind `dark:` prefix. |
+| **Namespace model lookups** | Full qualified name always. All model lookups use `governance.policy`, `policy.policy`, etc. No short name ambiguity. `getModel()`, `getForm()`, form definitions all use qualified names. |
 
 ---
 
@@ -1120,53 +1153,62 @@ Use the existing backend session or a short-lived cache:
 
 ---
 
-## 9. Refactor In Place vs. New Project
+## 9. New Project — DECISION: New Project Alongside
 
 ### 9.1 Analysis
 
 | Factor | Refactor In Place | New Project |
 |--------|-------------------|-------------|
-| **Existing code reuse** | High — keep am7client, am7model, pageClient, all components | Must re-port or import |
-| **Bundler introduction** | Can add Vite to existing project incrementally | Clean start with proper tooling |
-| **Risk** | Lower — incremental changes, always deployable | Higher — big bang, parallel maintenance |
-| **Feature parity timeline** | Faster — already working | Months to reach parity |
-| **Technical debt** | Must actively clean up | Clean slate but may reintroduce patterns |
-| **Serving** | Currently Node.js `server.js` — works, lightweight | Could use nginx or any static server |
-| **Testing** | Add tests incrementally alongside refactors | Can establish test-first from day 1 |
+| **Existing code reuse** | High — keep am7client, am7model, pageClient, all components | Import core libs from Ux7 |
+| **Bundler introduction** | Can add Vite to existing project incrementally | Clean start with proper Vite tooling |
+| **Risk** | Higher — entangled inconsistencies, hard to clean up incrementally | Lower — clean slate, old Ux7 stays as reference/fallback |
+| **Feature parity timeline** | Faster initially | Longer but higher quality |
+| **Technical debt** | Must actively clean up 132+ scripts, IIFE patterns, monolithic files | Clean from day 1 |
+| **Testing** | Add tests alongside refactors (retroactive) | Test-first from day 1 |
+| **Scope** | Too much change for in-place (Vite, ESM, new forms, new dialogs, SQLite cache, WCAG AA, full dark mode, full responsive) | All new systems designed properly from start |
 
-### 9.2 Recommendation: Refactor In Place with Vite Migration
+### 9.2 Decision: New Project Alongside (AccountManagerUx8)
 
-**Phase 1: Add Vite as bundler to existing project**
-- Install Vite + configure for Mithril
-- Convert `index.html` 132-script setup to Vite entry point
-- All existing code works unchanged (Vite supports non-module scripts)
-- `server.js` replaced by Vite dev server in development
-- Production: Vite builds static bundle, served by any HTTP server (nginx, Tomcat, etc.)
+**Rationale:** The scope of decided changes (Vite bundler, ESM modules, database-backed forms, unified dialog system, SQLite WASM caching, WCAG 2.1 AA, full dark mode, full responsive/mobile, feature build system, governance models) is effectively a complete rewrite. Refactoring in place would mean fighting 132+ entangled scripts, inconsistent field types, and monolithic files while simultaneously building new systems on top.
 
-**Phase 2: Incremental module conversion**
-- Convert IIFE `(function(){...}())` patterns to ES module `import/export`
-- One file at a time, test after each conversion
-- Enables tree-shaking and code splitting
+**Strategy:**
+1. Create `AccountManagerUx8` as a sibling project in the same repo
+2. Import core libraries from Ux7: `am7client.js`, `am7model.js`, `pageClient.js` (convert to ESM)
+3. Ux7 remains available as working reference/fallback
+4. No temp file cleanup needed — Ux7 stays as-is
+5. Test-first development from day 1
 
-**Phase 3: Feature-based code splitting**
-- Once modules are proper ES imports, split into feature chunks
-- Dynamic `import()` for optional features (games, test harness, etc.)
+### 9.3 Project Structure
 
-### 9.3 Why Not a New Project
-
-- The core architecture (Mithril + am7client + am7model) is sound
-- The problems are organizational (monolithic files, no bundler, static forms) not architectural
-- A rewrite would take 3-6 months to reach feature parity with no new functionality
-- Refactoring in place delivers improvements incrementally
+```
+AccountManager7/src/
+├── AccountManagerUx7/       ← Existing, untouched, reference
+├── AccountManagerUx8/       ← New project
+│   ├── package.json         ← Vite, Mithril, Tailwind, Vitest, Playwright, sql.js
+│   ├── vite.config.js       ← Feature flags, build-level inclusion/exclusion
+│   ├── tailwind.config.js   ← Dark mode, responsive breakpoints, component classes
+│   ├── index.html           ← Single entry point
+│   ├── src/
+│   │   ├── main.js          ← App entry, router, feature initialization
+│   │   ├── core/            ← am7client, am7model, pageClient (ESM conversions)
+│   │   ├── components/      ← Dialog, Panel, FormField, Toggle, Notification, etc.
+│   │   ├── views/           ← Object, List, Panel, FormDesigner, ModelViewer, etc.
+│   │   ├── features/        ← Feature-gated modules (games/, compliance/, approvals/)
+│   │   ├── services/        ← Cache (SQLite), Preferences, WebSocket, WebAuthn
+│   │   ├── styles/          ← Tailwind base + minimal custom CSS
+│   │   └── test/            ← Vitest unit tests alongside source
+│   ├── e2e/                 ← Playwright E2E tests
+│   └── dist/                ← Vite build output → Nginx/Tomcat
+```
 
 ### 9.4 Serving Strategy
 
-- **Development:** Vite dev server with HMR (Hot Module Replacement)
+- **Development:** Vite dev server with HMR (Hot Module Replacement), proxy to Service7
 - **Production:** Vite builds to `dist/` folder → serve via:
   - Nginx (recommended for production) — static files + reverse proxy to Service7
   - Tomcat — deploy `dist/` as a webapp alongside Service7
-  - Any static file server
-- **`server.js`** becomes unnecessary — Vite replaces it for dev, static server replaces it for prod
+  - Docker Compose: nginx container + tomcat container
+- **`%AM7_SERVER%` token:** Vite dev server handles via `define` config; production uses Nginx env substitution or build-time injection
 
 ---
 
@@ -2041,22 +2083,22 @@ All questions needing answers before or during implementation, organized by sect
 
 | # | Question | Options / Context | Blocks |
 |---|----------|-------------------|--------|
-| 64 | **Test coverage threshold?** | Minimum coverage % to enforce? Or coverage as informational only? | Phase 0 |
-| 65 | **CI/CD pipeline?** | Is there an existing CI/CD system (GitHub Actions, Jenkins, etc.)? Should tests run automatically on push/PR? | Phase 0 |
-| 66 | **E2E test environment?** | Playwright tests need a running backend. Use a test instance of Service7? Mock the API? Or run against a Docker-composed full stack? | Phase 0 |
+| 64 | **Test coverage threshold?** | Informational only. Track coverage metrics but don't enforce a threshold. Focus on meaningful tests over numbers. | **RESOLVED** |
+| 65 | **CI/CD pipeline?** | No CI yet. Run tests manually for now. Add CI (likely GitHub Actions) in a later phase. | **RESOLVED** |
+| 66 | **E2E test environment?** | Run locally — Service7 runs out of Eclipse, Ux7 runs via Vite dev server. Playwright tests connect to local backend. Leave clear design notes for future migration to containerized build (Docker Compose for CI). | **RESOLVED** |
 
 ### C.12 — General / Cross-Cutting
 
 | # | Question | Options / Context | Blocks |
 |---|----------|-------------------|--------|
-| 67 | **`saur.js` and `hyp.js` — keep or deprecate?** | `saur.js` appears unused/legacy. `hyp.js` overlaps with magic8. Are these still in active use? Can `hyp.js` be consolidated? | Phase 0 |
-| 68 | **`designer.js` (WYSIWYG HTML editor) — keep?** | Uses deprecated `execCommand` API. Is it actively used? If so, replace with CodeMirror-based editor (already in the project) or similar. | Phase 0 |
-| 69 | **Dark mode completeness?** | Some components (dialogs, inline styles) don't support dark mode. Should full dark mode be a goal of this redesign, or just fix the obvious gaps? | Phase 1 |
-| 70 | **Accessibility standards target?** | WCAG 2.1 AA? Just the dialog focus trap and ARIA attributes, or a broader accessibility audit? | Phase 1 |
-| 71 | **Mobile / responsive priority?** | Is mobile a target platform? Currently the UI is desktop-only. Responsive breakpoints (Section 3.3) help but a full mobile experience requires more work. | Phase 1, 5 |
-| 72 | **Internationalization (i18n)?** | Any plans for localization? Labels are currently hardcoded in English. If i18n is a future goal, it affects how labels are stored in forms and throughout the UI. | All phases |
-| 73 | **Phase ordering preferences?** | The proposed order is 0→1→2→3→4→5→6→7→8. Should any phase be reprioritized based on current needs? | All phases |
-| 74 | **Parallel phase execution?** | Some phases are independent (e.g., Phase 2 panel customization and Phase 6 WebAuthn). Should multiple phases run in parallel? | All phases |
-| 75 | **Notification system — unified or per-feature?** | Access request notifications (Section 11) and compliance notifications (Section 10) both need notification infrastructure. Build one unified notification system, or each feature manages its own? | Phase 7, 8 |
-| 76 | **`tmpclaude-*` temp files in repo?** | Several temp files from prior Claude sessions are untracked in git. Clean up now or as part of Phase 0? | Phase 0 |
-| 77 | **Client-side caching upgrade — SQLite/WebDB?** | Current client caching is in-memory only (`am7client` cache). Consider using model definitions with SQLite (via WASM) or IndexedDB/WebDB for persistent local caching. Would allow longer cache lifetime, offline browsing of cached data, and better performance for large datasets. Evaluate complexity vs. benefit. | Phase 2 |
+| 67 | **`saur.js` and `hyp.js` — keep or deprecate?** | Deprecate both. Remove from redesigned Ux. | **RESOLVED** |
+| 68 | **`designer.js` (WYSIWYG HTML editor) — keep?** | Leave for now. Old execCommand-based editor should be replaced with a markdown WYSIWYG editor, but no markdown editor component exists yet. A `markdownConverter.js` exists but is render-only. Future: add a markdown WYSIWYG editor (e.g., Milkdown, Toast UI) and deprecate the old designer.js. | **RESOLVED** |
+| 69 | **Dark mode completeness?** | Full dark mode support. All components, dialogs, forms, and views support dark mode. Use Tailwind `dark:` prefix consistently. Light/dark toggle in user preferences (stored per Q27). Theme system built into the CSS architecture from the start. | **RESOLVED** |
+| 70 | **Accessibility standards target?** | WCAG 2.1 Level AA. Full compliance including: color contrast ratios, keyboard navigation for all interactive elements, screen reader support (ARIA roles/labels), focus management (dialog traps, skip links), form field labeling, error identification. Audit with axe-core or similar tool. | **RESOLVED** |
+| 71 | **Mobile / responsive priority?** | Full responsive/mobile support. Design for desktop and mobile from the start. Use Tailwind responsive prefixes (`sm:`, `md:`, `lg:`) throughout. Mobile gets simplified layouts (single column forms, collapsible panels, touch-friendly controls). Part of Phase 1 foundation. | **RESOLVED** |
+| 72 | **Internationalization (i18n)?** | Design for it, don't implement yet. Use label patterns that could be mapped to translations later (e.g., prefer `model.field.label` lookups over hardcoded strings). Don't build the translation system but don't hardcode in ways that prevent future i18n. Form labels from DB (Q16) naturally support this. | **RESOLVED** |
+| 73 | **Phase ordering preferences?** | Keep proposed order: 0→1→2→3→4→5→6→7→8. Foundation first, then styling, panel, features, forms, model viewer, WebAuthn, compliance, approvals. | **RESOLVED** |
+| 74 | **Parallel phase execution?** | Yes — run independent phases in parallel where possible. Example: Phase 6 (WebAuthn) can run alongside Phase 2 (panel) or Phase 5 (forms). Phase 7 (compliance) and Phase 8 (approvals) can overlap. Coordinate to avoid file conflicts. | **RESOLVED** |
+| 75 | **Notification system — unified or per-feature?** | Unified notification system. One notification component/service handles all types (approvals, compliance, system alerts). Consistent UX. Backend uses existing `message.spool` model. WebSocket delivers real-time; spool stores for read/delete/respond (Q58). | **RESOLVED** |
+| 76 | **`tmpclaude-*` temp files in repo?** | New project (Q9 resolved) — Ux7 stays as-is, no cleanup needed. Ux8 starts clean. Add `tmpclaude-*` to `.gitignore` in Ux7 for tidiness. | **RESOLVED** |
+| 77 | **Client-side caching upgrade — SQLite/WebDB?** | SQLite via WASM (e.g., sql.js). Mirror model schemas as SQLite tables for local persistent caching. Enables powerful client-side queries, longer cache lifetime, offline browsing of cached data. Phase 2 implementation alongside preferences storage. | **RESOLVED** |
