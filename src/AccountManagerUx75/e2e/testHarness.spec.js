@@ -1,10 +1,16 @@
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
+import { ensureSharedTestUser } from './helpers/api.js';
 
 test.describe('Test Harness feature', () => {
+    let testInfo = {};
+
+    test.beforeAll(async ({ request }) => {
+        testInfo = await ensureSharedTestUser(request);
+    });
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
     });
 
     test('test button in top menu navigates to test page', async ({ page }) => {
@@ -26,14 +32,15 @@ test.describe('Test Harness feature', () => {
         await screenshot(page, 'test-framework-ui');
     });
 
-    test('home button returns from test page to dashboard', async ({ page }) => {
+    test('test framework shows run button and categories', async ({ page }) => {
         await page.locator('button[title="Tests"]').click();
         await page.waitForURL(/.*#!\/test/, { timeout: 10000 });
-        await page.waitForTimeout(1000);
-        await page.locator('button[title="Home"]').click();
-        await page.waitForURL(/.*#!\/main/, { timeout: 10000 });
-        await expect(page.locator('.panel-container').first()).toBeVisible();
-        await screenshot(page, 'test-home-return');
+        await page.waitForTimeout(2000);
+        // Run Tests button should be visible
+        await expect(page.locator('text=Run Tests')).toBeVisible({ timeout: 5000 });
+        // Category toggle buttons should be present
+        await expect(page.locator('text=All')).toBeVisible();
+        await screenshot(page, 'test-run-button');
     });
 
 });

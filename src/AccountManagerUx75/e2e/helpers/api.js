@@ -237,3 +237,29 @@ export async function cleanupTestUserFull(request, userObjectId, opts = {}) {
     await request.get(BASE + '/model/cleanup').catch(() => {});
     await apiLogout(request).catch(() => {});
 }
+
+/**
+ * Ensure a shared persistent test user exists (idempotent — no cleanup needed).
+ * Creates the user + credential on first call; subsequent calls just verify it exists.
+ * Use for feature specs that don't need isolated test data.
+ */
+const SHARED_USER = 'e2etest_shared';
+const SHARED_PASSWORD = 'password';
+
+export async function ensureSharedTestUser(request, opts = {}) {
+    const org = opts.org || '/Development';
+
+    await apiLogin(request, { org });
+
+    let user = await searchByField(request, 'system.user', 'name', SHARED_USER);
+    if (!user || !user.objectId) {
+        user = await createUser(request, SHARED_USER);
+        if (user && user.objectId) {
+            await setCredential(request, user.objectId, SHARED_PASSWORD);
+        }
+    }
+
+    await apiLogout(request);
+
+    return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
+}

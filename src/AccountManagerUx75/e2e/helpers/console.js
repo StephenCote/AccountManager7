@@ -23,6 +23,9 @@ const IGNORED_PATTERNS = [
     /\[HMR\]/,                           // Hot module reload
     /favicon\.ico.*404/,                 // Missing favicon
     /ERR_CONNECTION_REFUSED/,            // Backend not ready during startup
+    /NotSupportedError/,                 // Camera/media not supported in headless
+    /NotAllowedError/,                   // Camera/media permission denied in headless
+    /permission error/i,                 // Camera permission errors in headless
 ];
 
 /**
