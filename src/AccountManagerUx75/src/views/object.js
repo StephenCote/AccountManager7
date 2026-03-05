@@ -6,16 +6,22 @@ import { page } from '../core/pageClient.js';
 // Navigation is handled by router's pageLayout wrapper
 
 /**
- * Minimal ESM object view — edit/create single entity.
+ * ESM object view — edit/create single entity.
  * Routes: /view/:type/:objectId (edit) | /new/:type/:objectId (create)
- * Skipped: design mode, foreign-key inline tables, chatInto,
- *          applyTags, doCopy, fullMode, valuesState, picker, embedded mode.
+ * Supports: formFieldRenderers, blob fields, file upload, thumbnail display,
+ *           object copy, tab navigation, form definitions from formDef.js,
+ *           fullMode, design mode, commands, table editing, picker, membership.
  */
 function newObjectPage() {
     let objectPage = {};
     let entity, inst;
     let tabIndex = 0;
     let objectType, objectId, objectNew;
+    let fullMode = false;
+    let designMode = false;
+    let foreignData = {};
+    let valuesState = {};
+    let pickerMode = { enabled: false, type: null, callback: null };
 
     // --- Entity loading ---
 
@@ -69,7 +75,10 @@ function newObjectPage() {
             let format = am7view.getFormatForType(f.type);
             let layout = 'half';
             if (f.name === 'description' || f.name === 'content' || f.name === 'text') layout = 'full';
-            if (f.type === 'blob') return;
+            if (f.type === 'blob') {
+                formDef.fields[f.name] = { label: f.label || f.name, format: 'contentType', layout: 'full' };
+                return;
+            }
             formDef.fields[f.name] = { label: f.label || f.name, format: format, layout: layout };
         });
         return formDef;
@@ -164,6 +173,178 @@ function newObjectPage() {
 
     function doCancel() { history.back(); m.redraw(); }
 
+    function toggleFullMode() { fullMode = !fullMode; m.redraw(); }
+
+    function isDesignable() {
+        if (!entity || !entity.contentType) return false;
+        return /^text\/(css|plain)|javascript$/i.test(entity.contentType);
+    }
+
+    function toggleDesignMode() {
+        designMode = !designMode;
+        m.redraw();
+    }
+
+    function doCopy() {
+        if (!entity || !entity.objectId) return;
+        page.components.dialog.confirm('Copy this object?', function() {
+            let copy = Object.assign({}, entity);
+            delete copy.objectId;
+            delete copy.id;
+            copy.name = (copy.name || '') + ' (copy)';
+            am7client.create(entity[am7model.jsonModelKey], copy, function(v) {
+                if (v) {
+                    page.toast('success', 'Copied!');
+                    am7client.clearCache(entity[am7model.jsonModelKey]);
+                    m.route.set('/view/' + v[am7model.jsonModelKey] + '/' + v.objectId);
+                } else {
+                    page.toast('error', 'Copy failed');
+                }
+            });
+        });
+    }
+
+    function getThumbnail() {
+        if (!entity || !entity.objectId) return null;
+        let ct = entity.contentType || '';
+        if (ct.match(/^image/)) {
+            return am7client.mediaDataPath(entity, true);
+        }
+        if (entity.profile && entity.profile.portrait && entity.profile.portrait.contentType) {
+            return am7client.mediaDataPath(entity.profile.portrait, true);
+        }
+        return null;
+    }
+
+    // --- Picker integration ---
+
+    function preparePicker(type, callback) {
+        if (page.components.picker) {
+            return page.components.picker.open({
+                type: type,
+                onSelect: function(selected) {
+                    if (callback) callback(Array.isArray(selected) ? selected : [selected]);
+                    cancelPicker();
+                }
+            });
+        }
+        return Promise.resolve(null);
+    }
+
+    function cancelPicker() {
+        pickerMode.enabled = false;
+        pickerMode.type = null;
+        pickerMode.callback = null;
+        m.redraw();
+    }
+
+    // --- Foreign data + table editing ---
+
+    function resetValuesState() {
+        valuesState = {};
+        m.redraw();
+    }
+
+    function updateChange() {
+        if (inst) inst.change(Object.keys(valuesState).length ? 'table' : '');
+        m.redraw();
+    }
+
+    /** Build context for table/membership operations */
+    function buildTableCtx(name, field, fieldView) {
+        return {
+            entity, inst, field, fieldView,
+            name, useName: name,
+            foreignData, valuesState,
+            objectPage,
+            preparePicker,
+            cancelPicker,
+            resetValuesState,
+            updateChange,
+            modelField: function(fk, tfv, tf, inputName, defVal, isTable, entry, tableForm) {
+                return modelField(fk, tfv, tf);
+            }
+        };
+    }
+
+    /** Render a table/list field using tableListEditor */
+    function renderTableField(name, fieldView, field) {
+        let tle = page.components.tableListEditor;
+        if (!tle) return m("div", { class: "text-xs text-gray-400" }, "Table editor not available");
+
+        let ctx = buildTableCtx(name, field, fieldView);
+        ctx.show = am7view.showField(inst, fieldView);
+        return tle.render(ctx);
+    }
+
+    // --- Command system ---
+
+    function getFormCommands() {
+        if (!inst || !inst.form || !inst.form.commands) return null;
+        let commands = inst.form.commands;
+        let buttons = [];
+
+        Object.keys(commands).forEach(function(cmdKey) {
+            let cmd = commands[cmdKey];
+            if (cmd.toolbar === false) return;
+
+            let icon = cmd.icon || "play_arrow";
+            let label = cmd.label || cmdKey;
+            let active = true;
+
+            // Check required attribute condition
+            if (cmd.requiredAttribute && entity) {
+                active = !!entity[cmd.requiredAttribute];
+            }
+
+            let handler = function() {
+                if (!active) return;
+                let fn = cmd.function;
+                if (objectPage[fn]) {
+                    objectPage[fn](entity, inst, cmd);
+                } else if (page.components.membership && page.components.membership[fn]) {
+                    let ctx = buildTableCtx(cmd.field || '', cmd, {});
+                    page.components.membership[fn](ctx, cmd.field || '', cmd);
+                } else {
+                    console.warn("Command function not found: " + fn);
+                }
+            };
+
+            buttons.push(page.iconButton(
+                'button' + (active ? '' : ' opacity-30'),
+                icon, '', handler
+            ));
+        });
+
+        return buttons.length ? buttons : null;
+    }
+
+    // --- Membership delegation ---
+
+    objectPage.objectMembers = function(name, field) {
+        let ms = page.components.membership;
+        if (!ms) return Promise.resolve([]);
+        return ms.objectMembers({ entity }, name, field);
+    };
+
+    objectPage.memberObjects = function(name, field) {
+        let ms = page.components.membership;
+        if (!ms) return Promise.resolve([]);
+        return ms.memberObjects({ entity }, name, field);
+    };
+
+    objectPage.objectControls = function(name, field) {
+        let ms = page.components.membership;
+        if (!ms) return Promise.resolve([]);
+        return ms.objectControls({ entity }, name, field);
+    };
+
+    objectPage.objectRequests = function(name, field) {
+        let ms = page.components.membership;
+        if (!ms) return Promise.resolve([]);
+        return ms.objectRequests({ entity }, name, field);
+    };
+
     // --- Tab support ---
 
     function switchTab(i) { tabIndex = i; }
@@ -208,6 +389,14 @@ function newObjectPage() {
     }
 
     function modelField(name, fieldView, field) {
+        // List/table fields — delegate to tableListEditor
+        if (field.type === 'list' && field.baseModel && fieldView.form) {
+            let tle = page.components.tableListEditor;
+            if (tle && tle.isStandardCrud(fieldView.form)) {
+                return renderTableField(name, fieldView, field);
+            }
+        }
+
         let format = fieldView.format || field.format || am7view.getFormatForType(field.type);
         let view = [];
         let disabled = false;
@@ -225,7 +414,8 @@ function newObjectPage() {
 
         let rendererCtx = {
             inst, entity, useEntity: entity, field, fieldView,
-            name, useName: name, defVal, fieldClass, disabled, fHandler, show, objectPage
+            name, useName: name, defVal, fieldClass, disabled, fHandler, show, objectPage,
+            foreignData, preparePicker, cancelPicker
         };
 
         if (page.components.formFieldRenderers && page.components.formFieldRenderers.has(format)) {
@@ -294,15 +484,37 @@ function newObjectPage() {
         let form = inst.form;
         if (!form) return '';
         let altCls = inst.changes.length ? ' warn' : '';
-        return m('div', { class: 'list-results-container' }, [
+        let thumb = getThumbnail();
+        let cmds = getFormCommands();
+
+        let toolbarButtons = [
+            thumb ? m('img', {
+                src: thumb,
+                class: 'w-8 h-8 rounded object-cover mr-2',
+                onerror: function(e) { e.target.style.display = 'none'; }
+            }) : null,
+            page.iconButton('button' + altCls, 'save', '', doUpdate),
+            page.iconButton('button', 'cancel', '', doCancel),
+            (!objectNew ? page.iconButton('button', 'delete_outline', '', doDelete) : ''),
+            (!objectNew ? page.iconButton('button', 'content_copy', '', doCopy) : ''),
+            page.iconButton('button' + (fullMode ? ' active' : ''),
+                fullMode ? 'close_fullscreen' : 'open_in_new', '', toggleFullMode),
+            (isDesignable() ? page.iconButton('button' + (designMode ? ' active' : ''),
+                'code', '', toggleDesignMode) : '')
+        ];
+
+        // Add form commands to toolbar
+        if (cmds) toolbarButtons = toolbarButtons.concat(cmds);
+
+        let containerClass = fullMode
+            ? 'fixed inset-0 z-50 bg-white dark:bg-gray-900 overflow-auto'
+            : 'list-results-container';
+
+        return m('div', { class: containerClass }, [
             m('div', { class: 'list-results' }, [
                 m('div', { class: 'result-nav-outer' }, [
                     m('div', { class: 'result-nav-inner' }, [
-                        m('div', { class: 'result-nav tab-container' }, [
-                            page.iconButton('button' + altCls, 'save', '', doUpdate),
-                            page.iconButton('button', 'cancel', '', doCancel),
-                            (!objectNew ? page.iconButton('button', 'delete_outline', '', doDelete) : '')
-                        ]),
+                        m('div', { class: 'result-nav tab-container' }, toolbarButtons),
                         m('div', { class: 'result-nav tab-container' }, getFormTabs())
                     ])
                 ]),
@@ -320,7 +532,13 @@ function newObjectPage() {
             objectNew = vnode.attrs.new || (m.route.get() && m.route.get().match(/^\/new/gi));
             loadEntity();
         },
-        onremove: function () { entity = null; inst = null; tabIndex = 0; },
+        onremove: function () {
+            entity = null; inst = null; tabIndex = 0;
+            fullMode = false; designMode = false;
+            foreignData = {}; valuesState = {};
+            pickerMode = { enabled: false, type: null, callback: null };
+            if (page.components.tableListEditor) page.components.tableListEditor.resetState();
+        },
         view: function () {
             return objectPage.renderContent();
         }

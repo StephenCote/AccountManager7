@@ -20,7 +20,9 @@ function newListControl() {
     let baseListType;
     let listContainerId;
     let containerMode = false;
-    let gridMode = 0;           // 0 = list only (grid/carousel in later phases)
+    let gridMode = 0;           // 0 = table, 1 = grid, 2 = carousel
+    let fullMode = false;
+    let maxMode = false;
     let embeddedMode = false;
     let pickerMode = false;
     let modType;
@@ -29,6 +31,10 @@ function newListControl() {
     let navContainerId = null;
     let navFilter = null;
     let defaultRecordCount = 10;
+    let defaultIconRecordCount = 40;
+    let carousel = false;
+    let infiniteScroll = false;
+    let infiniteLoading = false;
 
     let pagination = newPaginationControl();
 
@@ -181,15 +187,48 @@ function newListControl() {
 
     function displayList() {
         let pg = pagination.pages();
-        let items = pg.pageResults[pg.currentPage];
+        let items;
+
+        if (infiniteScroll) {
+            // Concatenate all loaded pages
+            items = [];
+            for (let i = 1; i <= pg.currentPage; i++) {
+                if (pg.pageResults[i]) items = items.concat(pg.pageResults[i]);
+            }
+        } else {
+            items = pg.pageResults[pg.currentPage];
+        }
+
         if (!items || !items.length) {
             return m('div', { class: 'list-empty' }, 'No results');
         }
 
-        // When the decorator module is available, use:
-        //   return decorator.tabularView(items, inst, ctl);
-        // For now render a simple table.
+        if (carousel || gridMode === 2) return renderCarousel(items);
+        if (gridMode === 1) return renderGrid(items);
         return renderSimpleTable(items);
+    }
+
+    function checkScrollPagination(e) {
+        if (!infiniteScroll || infiniteLoading) return;
+        let pg = pagination.pages();
+        let el = e.target;
+        let nearBottom = (el.clientHeight + el.scrollTop) > (el.scrollHeight - 50);
+        if (pg.currentPage < pg.pageCount && nearBottom) {
+            infiniteLoading = true;
+            pagination.next();
+            // pagination.next() triggers redraw; reset loading flag after
+            setTimeout(function() { infiniteLoading = false; }, 200);
+        }
+    }
+
+    function toggleInfiniteScroll() {
+        infiniteScroll = !infiniteScroll;
+        if (infiniteScroll) {
+            // Switch to a larger record count for smoother scrolling
+            pagination.new();
+            updatePagination(lastVnode);
+        }
+        m.redraw();
     }
 
     function renderSimpleTable(items) {
@@ -208,14 +247,26 @@ function newListControl() {
             if (fieldNames.includes('type') && !columns.includes('type')) columns.push('type');
         }
 
+        // Check if items have image content type or portrait for thumbnail column
+        let showThumb = items.some(function(item) {
+            let ct = item.contentType || '';
+            return ct.match(/^image/) ||
+                (item.profile && item.profile.portrait && item.profile.portrait.contentType);
+        });
+
         let rows = items.map((item) => {
             let state = pagination.state(item);
             let checked = !!(state && state.checked);
-            return m('tr', {
+            let dndAttrs = {};
+            if (page.components.dnd) {
+                dndAttrs.draggable = "true";
+                dndAttrs.ondragstart = page.components.dnd.dragStartHandler(item);
+            }
+            return m('tr', Object.assign({
                 class: 'list-tr' + (checked ? ' list-tr-selected' : ''),
                 onclick: () => selectResult(item),
                 ondblclick: () => navigateDown(item)
-            }, [
+            }, dndAttrs), [
                 m('td', { class: 'list-td list-td-check' },
                     m('input', {
                         type: 'checkbox',
@@ -223,6 +274,7 @@ function newListControl() {
                         onclick: (e) => { e.stopPropagation(); selectResult(item); }
                     })
                 ),
+                showThumb ? m('td', { class: 'list-td', style: 'width:40px' }, getItemThumbnail(item)) : null,
                 ...columns.map(c => m('td', { class: 'list-td' }, displayValue(item, c)))
             ]);
         });
@@ -231,6 +283,7 @@ function newListControl() {
             m('thead', [
                 m('tr', [
                     m('th', { class: 'list-th list-th-check' }, ''),
+                    showThumb ? m('th', { class: 'list-th', style: 'width:40px' }, '') : null,
                     ...columns.map(c => m('th', { class: 'list-th' }, c))
                 ])
             ]),
@@ -238,11 +291,154 @@ function newListControl() {
         ]);
     }
 
+    function getItemThumbnail(item) {
+        let url = null;
+        let ct = item.contentType || '';
+        if (ct.match(/^image/)) {
+            url = am7client.mediaDataPath(item, true);
+        } else if (item.profile && item.profile.portrait && item.profile.portrait.contentType) {
+            url = am7client.mediaDataPath(item.profile.portrait, true);
+        }
+        if (!url) return null;
+        return m('img', {
+            src: url,
+            class: 'w-8 h-8 rounded object-cover',
+            onerror: function(e) { e.target.style.display = 'none'; }
+        });
+    }
+
     function displayValue(item, field) {
         let v = item[field];
         if (v == null || v === undefined) return '';
         if (typeof v === 'object') return JSON.stringify(v);
         return String(v);
+    }
+
+    // ------------------------------------------------------------------
+    //  Grid / Carousel rendering
+    // ------------------------------------------------------------------
+
+    function renderGrid(items) {
+        if (!items || !items.length) return m('div', { class: 'p-4 text-gray-400' }, 'No results');
+
+        return m('div', { class: 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-3' },
+            items.map(function(item) {
+                let state = pagination.state(item);
+                let checked = !!(state && state.checked);
+                let thumb = getItemThumbnail(item);
+                let dndAttrs = {};
+                if (page.components.dnd) {
+                    dndAttrs.draggable = "true";
+                    dndAttrs.ondragstart = page.components.dnd.dragStartHandler(item);
+                }
+
+                return m('div', Object.assign({
+                    class: 'group relative rounded-lg border overflow-hidden cursor-pointer transition-all hover:shadow-md'
+                        + (checked ? ' border-blue-500 ring-2 ring-blue-300 dark:ring-blue-700' : ' border-gray-200 dark:border-gray-700'),
+                    onclick: function() { selectResult(item); },
+                    ondblclick: function() { navigateDown(item); }
+                }, dndAttrs), [
+                    // Thumbnail area
+                    thumb
+                        ? m('div', { class: 'aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center overflow-hidden' },
+                            m('img', { src: thumb.attrs.src, class: 'w-full h-full object-cover' }))
+                        : m('div', { class: 'aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center' },
+                            m('span', { class: 'material-symbols-outlined text-gray-300 dark:text-gray-600', style: 'font-size:48px' }, 'description')),
+                    // Info
+                    m('div', { class: 'p-2' }, [
+                        m('div', { class: 'text-xs font-medium text-gray-700 dark:text-gray-300 truncate' }, item.name || '(unnamed)'),
+                        item.description ? m('div', { class: 'text-xs text-gray-400 truncate mt-0.5' }, item.description) : null
+                    ]),
+                    // Check overlay
+                    checked ? m('div', { class: 'absolute top-1 right-1' },
+                        m('span', { class: 'material-symbols-outlined text-blue-500', style: 'font-size:20px' }, 'check_circle')
+                    ) : null
+                ]);
+            })
+        );
+    }
+
+    function renderCarousel(items) {
+        if (!items || !items.length) return m('div', { class: 'p-4 text-gray-400' }, 'No results');
+
+        let pg = pagination.pages();
+        let currentIdx = pg.currentItem || 0;
+        if (currentIdx >= items.length) currentIdx = items.length - 1;
+        let item = items[currentIdx];
+
+        // Try to render via objectViewRenderers
+        let rendererType = am7view.selectObjectRenderer ? am7view.selectObjectRenderer(item) : null;
+        let content;
+        if (rendererType && am7view.prepareObjectView) {
+            let viewInst = am7view.prepareObjectView(item);
+            if (viewInst && am7view.customRenderers && am7view.customRenderers[rendererType]) {
+                content = am7view.customRenderers[rendererType](viewInst, 'content', { maxMode: maxMode, active: true });
+            }
+        }
+        if (!content) {
+            let thumb = getItemThumbnail(item);
+            content = thumb
+                ? m('div', { class: 'flex justify-center p-4' },
+                    m('img', { src: thumb.attrs.src, class: maxMode ? 'max-h-[80vh] object-contain' : 'max-h-96 object-contain rounded shadow' }))
+                : m('div', { class: 'p-8 text-center text-gray-400' }, 'No preview available');
+        }
+
+        return m('div', { class: 'flex flex-col h-full' }, [
+            // Carousel nav
+            m('div', { class: 'flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700' }, [
+                m('button', {
+                    class: 'p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700' + (currentIdx <= 0 ? ' opacity-30' : ''),
+                    onclick: function() { if (currentIdx > 0) { pg.currentItem = currentIdx - 1; m.redraw(); } }
+                }, m('span', { class: 'material-symbols-outlined', style: 'font-size:20px' }, 'chevron_left')),
+                m('span', { class: 'text-sm text-gray-600 dark:text-gray-300' },
+                    (currentIdx + 1) + ' / ' + items.length + (item.name ? ' — ' + item.name : '')),
+                m('button', {
+                    class: 'p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700' + (currentIdx >= items.length - 1 ? ' opacity-30' : ''),
+                    onclick: function() { if (currentIdx < items.length - 1) { pg.currentItem = currentIdx + 1; m.redraw(); } }
+                }, m('span', { class: 'material-symbols-outlined', style: 'font-size:20px' }, 'chevron_right'))
+            ]),
+            // Content
+            m('div', { class: 'flex-1 overflow-auto' }, content)
+        ]);
+    }
+
+    function toggleGrid() {
+        gridMode++;
+        if (gridMode > 2) gridMode = 0;
+        carousel = (gridMode === 2);
+        let rc = (gridMode === 1) ? defaultIconRecordCount : defaultRecordCount;
+        pagination.new();
+        updatePagination(lastVnode);
+        m.redraw();
+    }
+
+    function toggleFullMode() {
+        fullMode = !fullMode;
+        m.redraw();
+    }
+
+    function toggleMaxMode() {
+        maxMode = !maxMode;
+        m.redraw();
+    }
+
+    // ------------------------------------------------------------------
+    //  Batch operations
+    // ------------------------------------------------------------------
+
+    function selectAll() {
+        let pg = pagination.pages();
+        let items = pg.pageResults[pg.currentPage];
+        if (!items) return;
+        let allChecked = items.every(function(item) {
+            let state = pg.pageState[item.objectId];
+            return state && state.checked;
+        });
+        items.forEach(function(item) {
+            let state = pagination.state(item);
+            state.checked = !allChecked;
+        });
+        m.redraw();
     }
 
     // ------------------------------------------------------------------
@@ -276,6 +472,21 @@ function newListControl() {
             buttons.push(iconBtn('button', 'north_west', '', navigateUp));
             buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'south_east', '', () => navigateDown()));
         }
+
+        // Grid/carousel toggle
+        let gridIcons = ['view_list', 'grid_view', 'view_carousel'];
+        buttons.push(iconBtn('button', gridIcons[gridMode] || 'view_list', '', toggleGrid));
+
+        // Select all
+        buttons.push(iconBtn('button', 'select_all', '', selectAll));
+
+        // Full mode
+        buttons.push(iconBtn('button' + (fullMode ? ' active' : ''),
+            fullMode ? 'close_fullscreen' : 'open_in_new', '', toggleFullMode));
+
+        // Infinite scroll toggle
+        buttons.push(iconBtn('button' + (infiniteScroll ? ' active' : ''),
+            'all_inclusive', '', toggleInfiniteScroll));
 
         return buttons;
     }
@@ -384,7 +595,10 @@ function newListControl() {
     // Inner content renderer — called by router's pageLayout wrapper
     listPage.renderContent = function (vnode) {
         let type = (vnode && vnode.attrs && vnode.attrs.type) || m.route.param('type') || listType;
-        return m('div', { style: 'flex:1;display:flex;flex-direction:column;overflow:hidden' }, [
+        let containerClass = fullMode
+            ? 'fixed inset-0 z-50 bg-white dark:bg-gray-900 flex flex-col overflow-hidden'
+            : 'flex-1 flex flex-col overflow-hidden';
+        return m('div', { class: containerClass, style: fullMode ? '' : 'flex:1;display:flex;flex-direction:column;overflow:hidden' }, [
             // Toolbar row
             m('div', { class: 'result-nav-outer' }, [
                 m('div', { class: 'result-nav-inner' }, [
@@ -396,8 +610,12 @@ function newListControl() {
                 ])
             ]),
             // List body
-            m('div', { style: 'flex:1;overflow:auto;padding:8px' }, [
-                displayList()
+            m('div', {
+                style: 'flex:1;overflow:auto;padding:8px',
+                onscroll: infiniteScroll ? checkScrollPagination : undefined
+            }, [
+                displayList(),
+                infiniteScroll && infiniteLoading ? m('div', { class: 'text-center py-2 text-sm text-gray-400' }, 'Loading more...') : null
             ])
         ]);
     };

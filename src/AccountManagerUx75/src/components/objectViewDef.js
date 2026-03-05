@@ -1,0 +1,89 @@
+/**
+ * objectViewDef.js — View model schemas for object display renderers (ESM)
+ * Port of Ux7 client/components/objectViewDef.js
+ *
+ * Registers: view.objectDisplay model + form definitions for
+ * portrait, image, video, audio, text, pdf, note, message, memory viewers.
+ */
+import { am7model } from '../core/model.js';
+
+// ── View Model ──────────────────────────────────────────────────────
+
+am7model.models.push({
+    name: "view.objectDisplay",
+    icon: "visibility",
+    label: "Object Display",
+    fields: [
+        { name: "objectId", type: "string", label: "Object ID" },
+        { name: "active", type: "boolean", label: "Active", default: false },
+        { name: "maxMode", type: "boolean", label: "Maximize", default: false },
+        { name: "viewType", type: "string", label: "View Type", virtual: true, ephemeral: true }
+    ]
+});
+
+// ── View Forms ──────────────────────────────────────────────────────
+
+am7model.forms.portraitView = {
+    label: "Portrait Viewer", icon: "account_circle", viewType: "portrait",
+    fields: {
+        objectId: { layout: "full", format: "portrait", field: { name: "objectId", type: "string" } }
+    }
+};
+
+am7model.forms.imageView = {
+    label: "Image Viewer", icon: "image", viewType: "image",
+    fields: {
+        objectId: { layout: "full", format: "image", field: { name: "objectId", type: "string" } }
+    }
+};
+
+am7model.forms.videoView = {
+    label: "Video Viewer", icon: "videocam", viewType: "video",
+    fields: {
+        objectId: { layout: "full", format: "video", field: { name: "objectId", type: "string" } }
+    }
+};
+
+am7model.forms.audioView = {
+    label: "Audio Player", icon: "audiotrack", viewType: "audio",
+    fields: {
+        objectId: { layout: "full", format: "audio", field: { name: "objectId", type: "string" } }
+    }
+};
+
+am7model.forms.textView = {
+    label: "Text Viewer", icon: "article", viewType: "text",
+    fields: {
+        objectId: { layout: "full", format: "text", field: { name: "objectId", type: "string" } }
+    }
+};
+
+am7model.forms.pdfView = {
+    label: "PDF Viewer", icon: "picture_as_pdf", viewType: "pdf",
+    fields: {
+        objectId: { layout: "full", format: "pdf", field: { name: "objectId", type: "string" } }
+    }
+};
+
+am7model.forms.noteView = {
+    label: "Note Viewer", icon: "note", viewType: "note",
+    fields: {
+        text: { layout: "full", format: "markdown", field: { name: "text", type: "string" } }
+    }
+};
+
+am7model.forms.messageView = {
+    label: "Message Viewer", icon: "message", viewType: "message",
+    fields: {
+        data: { layout: "full", format: "messageContent", field: { name: "data", type: "string" } }
+    }
+};
+
+am7model.forms.memoryView = {
+    label: "Memory Viewer", icon: "psychology", viewType: "memory",
+    fields: {
+        content: { layout: "full", format: "memory", field: { name: "content", type: "string" } }
+    }
+};
+
+export default {};

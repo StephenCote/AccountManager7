@@ -10,6 +10,7 @@ import { panel } from './components/panel.js';
 import { navigation, navigable } from './components/navigation.js';
 import { newListControl } from './views/list.js';
 import { newObjectPage } from './views/object.js';
+import { newNavigatorControl } from './views/navigator.js';
 import { decorator } from './components/decorator.js';
 import { newPaginationControl } from './components/pagination.js';
 import { initTheme } from './components/topMenu.js';
@@ -28,6 +29,7 @@ initTheme();
 // Create shared list and object page instances
 let listControl = newListControl();
 let objectPageControl = newObjectPage();
+let navigatorControl = newNavigatorControl();
 
 // Layout wrapper that renders dialogs + toast on every route
 function layout(content) {
@@ -98,6 +100,13 @@ const routes = {
                 console.error('[router] view error', e);
                 return layout(pageLayout(m("div", { style: "color:red;padding:20px" }, "Error: " + e.message)));
             }
+        }
+    },
+    "/nav": {
+        oninit: function(v) { navigatorControl.view.oninit(v); },
+        onremove: function() { if (navigatorControl.view.onremove) navigatorControl.view.onremove(); },
+        view: function(vnode) {
+            return layout(pageLayout(navigatorControl.renderContent()));
         }
     },
     "/new/:type/:objectId": {

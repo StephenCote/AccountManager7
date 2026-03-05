@@ -347,6 +347,13 @@ function routeMessage(msg) {
             import('../chat/LLMConnector.js').then(mod => {
                 mod.LLMConnector.handleMemoryEvent({ type: c1, data: msg.chirps[1] });
             }).catch(() => {});
+        } else if (c1 === "chainEvent") {
+            let eventType = msg.chirps[1];
+            let eventData = null;
+            try { eventData = JSON.parse(msg.chirps[2]); } catch(e) { eventData = msg.chirps[2]; }
+            if (page.chainStream && page.chainStream["on" + eventType]) {
+                page.chainStream["on" + eventType](eventData);
+            }
         } else if (c1.match(/^game\./)) {
             if (page.gameStream) {
                 page.gameStream.routePushMessage(c1, ...msg.chirps.slice(1));
@@ -498,7 +505,14 @@ const page = {
             closeAll: Dialog.closeAll,
             confirm: Dialog.confirm,
             loadDialogs: Dialog.loadDialogs
-        }
+        },
+        picker: null,
+        dnd: null,
+        formFieldRenderers: null,
+        tableEntry: null,
+        tableListEditor: null,
+        membership: null,
+        pdf: null
     },
     user: null,
     application: undefined,
@@ -535,6 +549,7 @@ const page = {
     luid: function () { return uid(luidStub); },
     views: {},
     chatStream: undefined,
+    chainStream: undefined,
     audioStream: undefined,
     gameStream: undefined,
     token: undefined,

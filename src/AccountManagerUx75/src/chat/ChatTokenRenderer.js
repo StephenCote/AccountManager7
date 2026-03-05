@@ -8,6 +8,14 @@
  */
 import m from 'mithril';
 import { LLMConnector } from './LLMConnector.js';
+import { am7imageTokens } from './imageTokens.js';
+import { am7audioTokens } from './audioTokens.js';
+
+// Register on window for backward compat with existing window.am7imageTokens checks
+if (typeof window !== "undefined") {
+    window.am7imageTokens = am7imageTokens;
+    window.am7audioTokens = am7audioTokens;
+}
 
 const IMAGE_TOKEN_RE = /\$\{image\.([^}]+)\}/g;
 const AUDIO_TOKEN_RE = /\$\{audio\.text\s+"([^"]+)"\}/g;

@@ -18,6 +18,12 @@ import { ChatSetupWizard } from '../chat/ChatSetupWizard.js';
 import { AnalysisManager } from '../chat/AnalysisManager.js';
 import { LLMDebugPanel } from '../chat/LLMDebugPanel.js';
 import { am7chat } from '../chat/chatUtil.js';
+import { ChatConfigToolbar } from '../chat/ChatConfigToolbar.js';
+import { ObjectPicker } from '../components/picker.js';
+import { GossipPanel } from '../chat/GossipPanel.js';
+import { SceneGenerator } from '../chat/SceneGenerator.js';
+import { ChainManager } from '../chat/ChainManager.js';
+import { ChatExport } from '../chat/ChatExport.js';
 
 // ── Chat state ──────────────────────────────────────────────────────
 
@@ -26,6 +32,9 @@ let chatCfg = newChatConfig();
 let hideThoughts = true;
 let sidebarCollapsed = true;
 let sidebarActivePanel = null; // null | "conversations" | "memories" | "context"
+let editMode = false;
+let deletedIndices = new Set();
+let fullMode = false;
 
 function newChatConfig() {
     return {
@@ -157,6 +166,17 @@ function newChatStream() {
 
 async function doSend(message) {
     if (!inst || !message || !message.trim()) return;
+
+    // Phase 6a: If streaming, interrupt current stream and resend
+    if (chatCfg.streaming) {
+        try { LLMConnector.cancelStream(inst.entity); } catch(e) {}
+        chatCfg.streaming = false;
+        chatCfg.streamText = "";
+        page.chatStream = null;
+        // Brief pause to let cancel propagate
+        await new Promise(function(r) { setTimeout(r, 200); });
+    }
+
     chatCfg.pending = true;
     if (!chatCfg.history.messages) chatCfg.history.messages = [];
     chatCfg.history.messages.push({ role: "user", content: message });
@@ -218,11 +238,72 @@ async function doDelete() {
     m.redraw();
 }
 
+// ── Edit mode ───────────────────────────────────────────────────────
+
+function toggleEditMode() {
+    editMode = !editMode;
+    deletedIndices.clear();
+    m.redraw();
+}
+
+async function saveEdits() {
+    if (!inst || !chatCfg.history.messages) return;
+    let messages = [];
+    chatCfg.history.messages.forEach(function(msg, idx) {
+        if (deletedIndices.has(idx)) return;
+        let el = document.getElementById("editMessage-" + idx);
+        let content = el ? el.value : msg.content;
+        messages.push({ role: msg.role, content: content });
+    });
+
+    // Update local state
+    chatCfg.history.messages = messages;
+    editMode = false;
+    deletedIndices.clear();
+
+    // Refresh from server
+    let h = await getHistory();
+    if (h) {
+        if (!h.messages) h.messages = [];
+        chatCfg.history = h;
+    }
+    m.redraw();
+}
+
 // ── Render helpers ──────────────────────────────────────────────────
 
 function renderMessage(msg, idx) {
     let isUser = msg.role === "user";
     let content = msg.content || "";
+    let isDeleted = deletedIndices.has(idx);
+
+    // Edit mode: render textarea
+    if (editMode) {
+        return m("div", {
+            class: "flex mb-3 " + (isUser ? "justify-end" : "justify-start") + (isDeleted ? " opacity-30 line-through" : ""),
+            key: "msg-" + idx
+        }, [
+            m("div", { class: "max-w-[80%] w-full" }, [
+                m("div", { class: "flex items-center gap-1 mb-1" }, [
+                    m("span", { class: "text-xs opacity-60" }, isUser ? "You" : (chatCfg.system ? chatCfg.system.name : "Assistant")),
+                    m("button", {
+                        class: "text-xs px-1 rounded " + (isDeleted ? "text-green-500 hover:bg-green-50" : "text-red-400 hover:bg-red-50"),
+                        onclick: function() {
+                            if (isDeleted) deletedIndices.delete(idx);
+                            else deletedIndices.add(idx);
+                            m.redraw();
+                        }
+                    }, isDeleted ? "restore" : "delete")
+                ]),
+                m("textarea", {
+                    id: "editMessage-" + idx,
+                    class: "w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white text-sm resize-y min-h-[60px]",
+                    value: content,
+                    disabled: isDeleted
+                })
+            ])
+        ]);
+    }
 
     // Process tokens
     content = ChatTokenRenderer.processContent(content);
@@ -236,11 +317,28 @@ function renderMessage(msg, idx) {
         ? "ml-auto bg-blue-600 text-white rounded-lg rounded-br-none"
         : "mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-lg rounded-bl-none";
 
-    return m("div", { class: "flex mb-3 " + (isUser ? "justify-end" : "justify-start"), key: "msg-" + idx }, [
+    // Phase 6c: Character avatar
+    let avatar = null;
+    if (!isUser && chatCfg.system && chatCfg.system.profile && chatCfg.system.profile.portrait) {
+        let pp = chatCfg.system.profile.portrait;
+        let thumbUrl = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + (pp.groupPath || "") + "/" + (pp.name || "") + "/48x48";
+        avatar = m("img", { src: thumbUrl, class: "w-8 h-8 rounded-full shrink-0 mt-1", onerror: function(e) { e.target.style.display = "none"; } });
+    } else if (!isUser) {
+        avatar = m("span", { class: "material-symbols-outlined text-gray-400 shrink-0 mt-1", style: "font-size:28px" }, "smart_toy");
+    }
+    if (isUser && chatCfg.user && chatCfg.user.profile && chatCfg.user.profile.portrait) {
+        let up = chatCfg.user.profile.portrait;
+        let thumbUrl = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + (up.groupPath || "") + "/" + (up.name || "") + "/48x48";
+        avatar = m("img", { src: thumbUrl, class: "w-8 h-8 rounded-full shrink-0 mt-1", onerror: function(e) { e.target.style.display = "none"; } });
+    }
+
+    return m("div", { class: "flex mb-3 gap-2 " + (isUser ? "justify-end" : "justify-start"), key: "msg-" + idx }, [
+        !isUser ? avatar : null,
         m("div", { class: "max-w-[80%] px-4 py-2 text-sm " + bubbleClass }, [
             m("div", { class: "text-xs opacity-60 mb-1" }, isUser ? "You" : (chatCfg.system ? chatCfg.system.name : "Assistant")),
             m.trust(formatContent(content))
-        ])
+        ]),
+        isUser ? avatar : null
     ]);
 }
 
@@ -357,6 +455,66 @@ function renderToolbar() {
                 title: hideThoughts ? "Show thoughts" : "Hide thoughts",
                 onclick: function() { hideThoughts = !hideThoughts; m.redraw(); }
             }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, hideThoughts ? "visibility_off" : "visibility")),
+            // Edit mode toggle
+            inst ? m("button", {
+                class: "p-1.5 rounded " + (editMode ? "text-blue-600 bg-blue-50 dark:bg-blue-900/30" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"),
+                title: editMode ? "Exit edit mode" : "Edit messages",
+                onclick: toggleEditMode
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "edit_note")) : null,
+            // Save edits button (visible only in edit mode)
+            editMode ? m("button", {
+                class: "p-1.5 rounded text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30",
+                title: "Save edits",
+                onclick: saveEdits
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "check")) : null,
+            // Gossip
+            inst && chatCfg.system ? m("div", { class: "relative" }, [
+                m("button", {
+                    class: "p-1.5 rounded " + (GossipPanel.isVisible() ? "text-purple-600 bg-purple-50 dark:bg-purple-900/30" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"),
+                    title: "Memory Gossip",
+                    onclick: function() {
+                        let personId = chatCfg.system.objectId;
+                        GossipPanel.toggle(personId, {}, function(content) {
+                            let input = document.querySelector("[name='chatmessage']");
+                            if (input) input.value = (input.value ? input.value + " " : "") + content;
+                            GossipPanel.hide();
+                        });
+                    }
+                }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "psychology_alt")),
+                m(GossipPanel.PanelView)
+            ]) : null,
+            // Scene generation
+            inst ? m("div", { class: "relative" }, [
+                m("button", {
+                    class: "p-1.5 rounded " + (SceneGenerator.isVisible() ? "text-green-600 bg-green-50 dark:bg-green-900/30" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"),
+                    title: "Generate Scene",
+                    onclick: function() {
+                        SceneGenerator.toggle(inst.api.objectId(), function(result) {
+                            // Append scene result to chat
+                            if (result && result.content) {
+                                chatCfg.history.messages.push({ role: "assistant", content: result.content });
+                                m.redraw();
+                            }
+                        });
+                    }
+                }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "landscape")),
+                m(SceneGenerator.PanelView)
+            ]) : null,
+            // Export
+            inst && chatCfg.history.messages.length > 0 ? m("button", {
+                class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
+                title: "Export chat",
+                onclick: function() {
+                    let name = inst.api.name ? inst.api.name() : "chat";
+                    ChatExport.exportChat(chatCfg.history, name, "markdown", chatCfg);
+                }
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "download")) : null,
+            // Fullscreen toggle
+            m("button", {
+                class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
+                title: fullMode ? "Exit fullscreen" : "Fullscreen",
+                onclick: function() { fullMode = !fullMode; m.redraw(); }
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, fullMode ? "close_fullscreen" : "open_in_full")),
             inst ? m("button", {
                 class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
                 title: "Clear history",
@@ -379,7 +537,8 @@ function renderToolbar() {
 // ── Message input ───────────────────────────────────────────────────
 
 function renderInput() {
-    let disabled = !inst || chatCfg.pending || chatCfg.streaming;
+    // Allow typing while streaming (will interrupt), disable only when pending non-stream
+    let disabled = !inst || (chatCfg.pending && !chatCfg.streaming);
 
     return m("div", { class: "border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 shrink-0" }, [
         m("form", {
@@ -517,11 +676,13 @@ const chatView = {
 
     view: function() {
         return m("div", { class: "flex h-full w-full bg-white dark:bg-gray-950" }, [
-            // Sidebar
-            renderSidebar(),
+            // Sidebar (hidden in fullscreen)
+            fullMode ? null : renderSidebar(),
             // Main chat area
             m("div", { class: "flex-1 flex flex-col min-w-0" }, [
                 renderToolbar(),
+                m(ChatConfigToolbar, { inst: inst, chatCfg: chatCfg, onConfigChange: function() { doPeek(); } }),
+                m(ChainManager.ProgressView),
                 // Messages area
                 inst ? m("div", {
                     class: "flex-1 overflow-y-auto p-4",
@@ -537,6 +698,7 @@ const chatView = {
             // Overlays
             m(ChatSetupWizard.WizardView),
             m(LLMDebugPanel.PanelView),
+            m(ObjectPicker.PickerView),
             renderNewSessionDialog()
         ]);
     }
