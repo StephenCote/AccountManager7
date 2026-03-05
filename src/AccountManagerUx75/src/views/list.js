@@ -3,10 +3,8 @@ import { am7model } from '../core/model.js';
 import { am7view } from '../core/view.js';
 import { am7client, uwm } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
-// These components will be wired up in later phases
-// import { newPaginationControl } from '../components/pagination.js';
-// import { decorator } from '../components/decorator.js';
-import { navigation } from '../components/navigation.js';
+import { newPaginationControl } from '../components/pagination.js';
+// Navigation is handled by router's pageLayout wrapper
 
 // ---------------------------------------------------------------------------
 //  newListControl  --  factory that returns a list-page controller + view
@@ -32,139 +30,7 @@ function newListControl() {
     let navFilter = null;
     let defaultRecordCount = 10;
 
-    // Pagination stub -- when the real pagination component is available it
-    // will be provided via `page.pagination()` or imported directly.  For now
-    // we create a minimal shim so the rest of the code can reference it.
-    let pagination = (page.pagination ? page.pagination() : newPaginationShim());
-
-    // ------------------------------------------------------------------
-    //  Pagination shim -- keeps the view functional before the real
-    //  pagination component lands.  Replace with the import once it
-    //  exists.
-    // ------------------------------------------------------------------
-
-    function newPaginationShim() {
-        let pages = {
-            navigateByParent: false,
-            listSystem: false,
-            startRecord: 0,
-            recordCount: 10,
-            displayCount: 0,
-            totalCount: 0,
-            counted: false,
-            currentPage: 1,
-            currentItem: 0,
-            pageCount: 0,
-            pageResults: [],
-            pageState: {},
-            resultType: null,
-            filter: null,
-            containerType: 'auth.group',
-            containerSubType: null,
-            containerId: null,
-            container: null,
-            sort: 'name',
-            order: 'ascending'
-        };
-
-        async function doSearch() {
-            if (!pages.resultType) return;
-            let q = am7client.newQuery(pages.resultType);
-            if (pages.filter) {
-                let qf = q.field('name', pages.filter);
-                qf.comparator = 'like';
-            }
-            q.range(pages.startRecord, pages.recordCount);
-            q.sort(pages.sort);
-            q.order(pages.order);
-            if (page.user) {
-                q.field('organizationId', page.user.organizationId);
-            }
-            if (pages.containerId) {
-                let gq = am7view.viewQuery(am7model.newInstance(pages.containerType));
-                gq.field('objectId', pages.containerId);
-                let g = await am7client.search(gq);
-                if (g && g.results && g.results.length) {
-                    let id = g.results[0].id;
-                    if (am7model.isGroup(pages.resultType) && am7model.hasField(pages.resultType, 'groupId')) {
-                        q.field('groupId', id);
-                    } else if (am7model.isParent(pages.resultType)) {
-                        q.field('parentId', id);
-                    }
-                }
-            }
-            let qr = await am7client.search(q);
-            let results = qr;
-            if (qr && qr[am7model.jsonModelKey] === 'io.queryResult') {
-                results = qr.results;
-                pages.totalCount = qr.count || 0;
-            }
-            if (results && results.length) {
-                am7model.updateListModel(results);
-            }
-            pages.pageResults[pages.currentPage] = results || [];
-            pages.counted = true;
-            pages.pageCount = Math.max(1, Math.ceil(pages.totalCount / pages.recordCount));
-            m.redraw();
-        }
-
-        return {
-            pages: () => pages,
-            state: (o) => {
-                if (!pages.pageState[o.objectId]) pages.pageState[o.objectId] = {};
-                return pages.pageState[o.objectId];
-            },
-            update: (type, containerId, byParent, listFilter, startRecord, recordCount, sys) => {
-                pages.resultType = type;
-                pages.containerId = containerId;
-                pages.navigateByParent = byParent;
-                pages.filter = listFilter || null;
-                pages.startRecord = parseInt(startRecord) || 0;
-                pages.recordCount = parseInt(recordCount) || defaultRecordCount;
-                pages.listSystem = sys;
-                if (pages.currentPage < 1) pages.currentPage = 1;
-                doSearch();
-            },
-            filter: (value, redraw) => {
-                pages.filter = value || null;
-                pages.startRecord = 0;
-                pages.currentPage = 1;
-                doSearch();
-                if (redraw) m.redraw();
-            },
-            new: () => {
-                pages.currentPage = 1;
-                pages.pageResults = [];
-                pages.pageState = {};
-                pages.counted = false;
-            },
-            stop: () => { /* no-op until real pagination */ },
-            setEmbeddedMode: (b) => { /* no-op */ },
-            next: () => {
-                if (pages.currentPage < pages.pageCount) {
-                    pages.currentPage++;
-                    pages.startRecord = (pages.currentPage - 1) * pages.recordCount;
-                    doSearch();
-                }
-            },
-            prev: () => {
-                if (pages.currentPage > 1) {
-                    pages.currentPage--;
-                    pages.startRecord = (pages.currentPage - 1) * pages.recordCount;
-                    doSearch();
-                }
-            },
-            pageButtons: () => {
-                let btns = [];
-                if (pages.pageCount <= 1) return m('span');
-                btns.push(iconBtn('button', 'chevron_left', '', () => shim.prev()));
-                btns.push(m('span', { class: 'page-indicator' }, pages.currentPage + ' / ' + pages.pageCount));
-                btns.push(iconBtn('button', 'chevron_right', '', () => shim.next()));
-                return btns;
-            },
-            button: iconBtn
-        };
-    }
+    let pagination = newPaginationControl();
 
     // ------------------------------------------------------------------
     //  Helpers
@@ -268,7 +134,7 @@ function newListControl() {
         }
     }
 
-    async function deleteSelected() {
+    function deleteSelected() {
         let selected = getSelectedIndices();
         if (!selected.length) return;
 
@@ -277,37 +143,36 @@ function newListControl() {
         let isBucket = subType && subType.match(/^(bucket|account|person)$/gi);
         let label = isBucket ? 'Remove' : 'Delete';
 
-        if (!confirm(label + ' selected objects?')) return;
-
-        let promises = [];
-        for (let i = 0; i < selected.length; i++) {
-            let obj = pg.pageResults[pg.currentPage][selected[i]];
-            if (isBucket) {
-                // membership removal
-                promises.push(
-                    new Promise((res) => {
-                        am7client.member(pg.containerType, listContainerId, 'null', getType(obj), obj.objectId, false, (r) => {
-                            if (r) page.toast('success', 'Removed member');
-                            else page.toast('error', 'Failed to remove member');
-                            res(r);
-                        });
-                    })
-                );
-            } else {
-                promises.push(
-                    am7client.delete(getType(obj), obj.objectId).then((r) => {
-                        if (r) page.toast('success', 'Deleted object');
-                        else page.toast('error', 'Failed to delete object');
-                        return r;
-                    })
-                );
+        page.components.dialog.confirm(label + ' selected objects?', async function () {
+            let promises = [];
+            for (let i = 0; i < selected.length; i++) {
+                let obj = pg.pageResults[pg.currentPage][selected[i]];
+                if (isBucket) {
+                    promises.push(
+                        new Promise((res) => {
+                            am7client.member(pg.containerType, listContainerId, 'null', getType(obj), obj.objectId, false, (r) => {
+                                if (r) page.toast('success', 'Removed member');
+                                else page.toast('error', 'Failed to remove member');
+                                res(r);
+                            });
+                        })
+                    );
+                } else {
+                    promises.push(
+                        page.deleteObject(getType(obj), obj.objectId).then((r) => {
+                            if (r) page.toast('success', 'Deleted object');
+                            else page.toast('error', 'Failed to delete object');
+                            return r;
+                        })
+                    );
+                }
             }
-        }
-        await Promise.all(promises);
-        pagination.new();
-        initParams(lastVnode);
-        updatePagination(lastVnode);
-        m.redraw();
+            await Promise.all(promises);
+            pagination.new();
+            initParams(lastVnode);
+            updatePagination(lastVnode);
+            m.redraw();
+        });
     }
 
     // ------------------------------------------------------------------
@@ -434,13 +299,7 @@ function newListControl() {
     function pageButtons() {
         let pg = pagination.pages();
         if (!pg.pageCount || pg.pageCount <= 1) return m('span');
-        return m('nav', { class: 'result-nav' }, [
-            iconBtn('button', 'chevron_left', '', () => pagination.prev()),
-            m('span', { class: 'page-indicator' },
-                pg.currentPage + ' / ' + pg.pageCount
-            ),
-            iconBtn('button', 'chevron_right', '', () => pagination.next())
-        ]);
+        return m('nav', { class: 'result-nav' }, pagination.pageButtons());
     }
 
     // ------------------------------------------------------------------
@@ -518,30 +377,29 @@ function newListControl() {
         },
 
         view: function (vnode) {
-            let type = vnode.attrs.type || m.route.param('type') || listType;
-
-            return m('div', { class: 'content-outer' }, [
-                m(navigation),
-                m('div', { class: 'content-main' }, [
-                    m('div', { class: 'list-results-container' }, [
-                        m('div', { class: 'list-results' }, [
-                            // Toolbar row
-                            m('div', { class: 'result-nav-outer' }, [
-                                m('div', { class: 'result-nav-inner' }, [
-                                    m('div', { class: 'result-nav tab-container' }, [
-                                        ...toolbar(type),
-                                        filterInput()
-                                    ]),
-                                    pageButtons()
-                                ])
-                            ]),
-                            // List body
-                            displayList()
-                        ])
-                    ])
-                ])
-            ]);
+            return listPage.renderContent(vnode);
         }
+    };
+
+    // Inner content renderer — called by router's pageLayout wrapper
+    listPage.renderContent = function (vnode) {
+        let type = (vnode && vnode.attrs && vnode.attrs.type) || m.route.param('type') || listType;
+        return m('div', { style: 'flex:1;display:flex;flex-direction:column;overflow:hidden' }, [
+            // Toolbar row
+            m('div', { class: 'result-nav-outer' }, [
+                m('div', { class: 'result-nav-inner' }, [
+                    m('div', { class: 'result-nav tab-container' }, [
+                        ...toolbar(type),
+                        filterInput()
+                    ]),
+                    pageButtons()
+                ])
+            ]),
+            // List body
+            m('div', { style: 'flex:1;overflow:auto;padding:8px' }, [
+                displayList()
+            ])
+        ]);
     };
 
     // Expose pagination on the controller for external access

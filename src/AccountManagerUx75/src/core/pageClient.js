@@ -443,6 +443,29 @@ function makePath(type, subType, path) {
     });
 }
 
+function listByType(type) {
+    let modType = am7model.getModel(type);
+    if (!modType) {
+        console.warn('listByType: unknown type ' + type);
+        m.route.set('/main');
+        return;
+    }
+    if (modType.group) {
+        // Group-based types need a container; use the org root
+        let orgPath = am7client.currentOrganization;
+        if (orgPath) {
+            makePath(type, 'data', orgPath).then(function (grp) {
+                if (grp) m.route.set('/list/' + type + '/' + grp.objectId);
+                else m.route.set('/main');
+            });
+        } else {
+            m.route.set('/main');
+        }
+    } else {
+        m.route.set('/list/' + type);
+    }
+}
+
 // --- Page Object ---
 
 const page = {
@@ -476,6 +499,7 @@ const page = {
     createObject: createObject,
     patchObject: patchObject,
     makePath: makePath,
+    listByType: listByType,
     logout: async function () {
         clearPageCache();
         await uwm.logout();

@@ -3,7 +3,7 @@ import { am7model } from '../core/model.js';
 import { am7view } from '../core/view.js';
 import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
-import { navigation } from '../components/navigation.js';
+// Navigation is handled by router's pageLayout wrapper
 
 /**
  * Minimal ESM object view — edit/create single entity.
@@ -47,9 +47,32 @@ function newObjectPage() {
     function setInst() {
         inst = undefined;
         if (entity) {
-            let fname = entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf('.') + 1);
-            inst = am7model.prepareInstance(entity, am7model.forms[fname]);
+            let modelKey = entity[am7model.jsonModelKey];
+            let fname = modelKey.substring(modelKey.lastIndexOf('.') + 1);
+            let form = am7model.forms[fname];
+            if (!form) {
+                form = generateDefaultForm(modelKey);
+                if (form) am7model.forms[fname] = form;
+            }
+            inst = am7model.prepareInstance(entity, form);
         }
+    }
+
+    function generateDefaultForm(type) {
+        let model = am7model.getModel(type);
+        if (!model) return null;
+        let fields = am7model.getModelFields(model);
+        let formDef = { label: model.label || model.name, fields: {} };
+        let skip = ['id', 'ownerId', 'organizationId', 'organizationPath', 'populated', 'score'];
+        fields.forEach(function (f) {
+            if (skip.includes(f.name)) return;
+            let format = am7view.getFormatForType(f.type);
+            let layout = 'half';
+            if (f.name === 'description' || f.name === 'content' || f.name === 'text') layout = 'full';
+            if (f.type === 'blob') return;
+            formDef.fields[f.name] = { label: f.label || f.name, format: format, layout: layout };
+        });
+        return formDef;
     }
 
     function resetEntity(e) {
@@ -210,7 +233,35 @@ function newObjectPage() {
             if (rendered) { view.push(...rendered); view.push(annot); return view; }
         }
 
-        console.warn('Unhandled field format: ' + format);
+        // Basic fallback renderers
+        let inputAttrs = { class: 'text-field-compact ' + fieldClass, disabled: disabled || false };
+        if (format === 'checkbox') {
+            view.push(m('input', Object.assign(inputAttrs, {
+                type: 'checkbox', class: 'check-field ' + fieldClass,
+                checked: !!defVal, onchange: fHandler
+            })));
+        } else if (format === 'select') {
+            let vals = am7view.defaultValuesForField(field) || [];
+            let options = [m('option', { value: '' }, '-- Select --')];
+            vals.forEach(function (v) {
+                let val = (typeof v === 'object') ? v.name || v : v;
+                options.push(m('option', { value: val, selected: defVal === val }, val));
+            });
+            view.push(m('select', Object.assign(inputAttrs, {
+                class: 'select-field-full ' + fieldClass, value: defVal || '', onchange: fHandler
+            }), options));
+        } else if (format === 'datetime-local') {
+            view.push(m('input', Object.assign(inputAttrs, {
+                type: 'datetime-local', value: defVal || '', oninput: fHandler
+            })));
+        } else {
+            // text, string, number, and other types
+            let inputType = (field.type === 'int' || field.type === 'double' || field.type === 'long') ? 'number' : 'text';
+            if (format === 'password') inputType = 'password';
+            view.push(m('input', Object.assign(inputAttrs, {
+                type: inputType, value: defVal != null ? String(defVal) : '', oninput: fHandler
+            })));
+        }
         view.push(annot);
         return view;
     }
@@ -271,12 +322,16 @@ function newObjectPage() {
         },
         onremove: function () { entity = null; inst = null; tabIndex = 0; },
         view: function () {
-            if (!page.authenticated() || !inst) return m('');
-            return m('div', { class: 'content-outer' }, [
-                m(navigation),
-                m('div', { class: 'content-main' }, [getObjectViewInner()])
-            ]);
+            return objectPage.renderContent();
         }
+    };
+
+    // Inner content renderer — called by router's pageLayout wrapper
+    objectPage.renderContent = function () {
+        if (!page.authenticated() || !inst) return m('div', { style: 'padding:20px' }, 'Loading...');
+        let inner = getObjectViewInner();
+        if (!inner) return m('div', { style: 'padding:20px' }, 'No form definition for: ' + objectType);
+        return inner;
     };
 
     objectPage.getEntity = function () { return entity; };

@@ -37,6 +37,16 @@ function layout(content) {
     ];
 }
 
+// Shared page layout: nav + scrollable content area
+function pageLayout(innerContent, navAttrs) {
+    return m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
+        m(navigation, navAttrs || {}),
+        m("div", { style: "flex:1;overflow:auto;display:flex;background:#fff" }, [
+            innerContent
+        ])
+    ]);
+}
+
 const routes = {
     "/sig": {
         view: function () {
@@ -46,39 +56,60 @@ const routes = {
     "/main": {
         view: function () {
             if (!page.authenticated()) return layout(m("div", "Not authenticated"));
-            return layout(
-                m("div", { style: "display:flex;flex-direction:column;height:100vh" }, [
-                    m(navigation, { hideBreadcrumb: true }),
-                    m("div", { style: "flex:1;overflow:auto" }, [
-                        m(panel)
-                    ])
-                ])
-            );
+            return layout(pageLayout(m(panel), { hideBreadcrumb: true }));
         }
     },
     "/list/:type": {
-        view: function () {
-            return layout(m(listControl.view));
+        oninit: function (v) { listControl.view.oninit(v); },
+        oncreate: function (v) { listControl.view.oncreate(v); },
+        onupdate: function (v) { listControl.view.onupdate(v); },
+        onremove: function () { listControl.view.onremove(); },
+        view: function (vnode) {
+            return layout(pageLayout(listControl.renderContent(vnode)));
         }
     },
     "/list/:type/:objectId": {
-        view: function () {
-            return layout(m(listControl.view));
+        oninit: function (v) { listControl.view.oninit(v); },
+        oncreate: function (v) { listControl.view.oncreate(v); },
+        onupdate: function (v) { listControl.view.onupdate(v); },
+        onremove: function () { listControl.view.onremove(); },
+        view: function (vnode) {
+            return layout(pageLayout(listControl.renderContent(vnode)));
         }
     },
     "/plist/:type/:objectId": {
-        view: function () {
-            return layout(m(listControl.view, { navigateByParent: true }));
+        oninit: function (v) { v.attrs.navigateByParent = true; listControl.view.oninit(v); },
+        oncreate: function (v) { listControl.view.oncreate(v); },
+        onupdate: function (v) { listControl.view.onupdate(v); },
+        onremove: function () { listControl.view.onremove(); },
+        view: function (vnode) {
+            return layout(pageLayout(listControl.renderContent(vnode)));
         }
     },
     "/view/:type/:objectId": {
-        view: function () {
-            return layout(m(objectPageControl.view));
+        oninit: function (v) { objectPageControl.view.oninit(v); },
+        oncreate: function (v) { if (objectPageControl.view.oncreate) objectPageControl.view.oncreate(v); },
+        onremove: function () { objectPageControl.view.onremove(); },
+        view: function (vnode) {
+            try {
+                return layout(pageLayout(objectPageControl.renderContent(vnode)));
+            } catch (e) {
+                console.error('[router] view error', e);
+                return layout(pageLayout(m("div", { style: "color:red;padding:20px" }, "Error: " + e.message)));
+            }
         }
     },
     "/new/:type/:objectId": {
-        view: function () {
-            return layout(m(objectPageControl.view, { new: true }));
+        oninit: function (v) { v.attrs.new = true; objectPageControl.view.oninit(v); },
+        oncreate: function (v) { if (objectPageControl.view.oncreate) objectPageControl.view.oncreate(v); },
+        onremove: function () { objectPageControl.view.onremove(); },
+        view: function (vnode) {
+            try {
+                return layout(pageLayout(objectPageControl.renderContent(vnode)));
+            } catch (e) {
+                console.error('[router] new error', e);
+                return layout(pageLayout(m("div", { style: "color:red;padding:20px" }, "Error: " + e.message)));
+            }
         }
     }
 };

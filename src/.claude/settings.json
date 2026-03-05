@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tr '\\\\\\\\n' '\\\\n')",
+      "Bash(npm test)"
+    ]
+  }
+}

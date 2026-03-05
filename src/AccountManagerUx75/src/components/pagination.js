@@ -7,6 +7,7 @@ import { page } from '../core/pageClient.js';
 function newPaginationControl() {
   let requesting = false;
   let embeddedMode = false;
+  let containerCache = {};   // objectId → numeric id cache
 
   let entity = {
     listFilter: "",
@@ -65,20 +66,18 @@ function newPaginationControl() {
       q.entity.request.push("tags");
     }
 
-    if (!pages.containerId) {
-      am7client.search(q, handleList);
-    }
-    else {
-      let gq = am7view.viewQuery(am7model.newInstance(pages.containerType));
-      gq.field("objectId", pages.containerId);
-      let g = await page.search(gq);
-      let id = 0;
-      if (g && g.results) {
-        id = g.results[0].id;
+    if (pages.containerId) {
+      let id = containerCache[pages.containerId];
+      if (!id) {
+        let gq = am7view.viewQuery(am7model.newInstance(pages.containerType));
+        gq.field("objectId", pages.containerId);
+        let g = await page.search(gq);
+        if (g && g.results && g.results.length) {
+          id = g.results[0].id;
+          containerCache[pages.containerId] = id;
+        }
       }
-      /// auth.group is a special case where it is a parent/child hierarchy, so the parentId is used
-      /// some models like data.note can be hierarchical by group and parent
-      if (pages.resultType) {
+      if (id) {
         if (am7model.isGroup(pages.resultType) && am7model.hasField(pages.resultType, "groupId")) {
           q.field("groupId", id);
         }
@@ -201,6 +200,7 @@ function newPaginationControl() {
   function stopPaginating() {
     pagination.paginating = false;
     pages = newPagination();
+    containerCache = {};
   }
 
   function updateList(type, containerId, navigateByParent, filter, startRecord, recordCount, bSystem) {

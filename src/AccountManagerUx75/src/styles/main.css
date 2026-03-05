@@ -265,13 +265,7 @@
         @apply hover:text-blue-600 dark:hover:text-blue-300
     }
 
-    /* Content layout */
-    div.content-outer {
-        @apply flex flex-col min-h-screen max-h-screen overflow-hidden dark:bg-gray-800
-    }
-    div.content-main {
-        @apply bg-white flex-grow overflow-hidden flex dark:bg-black dark:text-white
-    }
+    /* Content layout - see plain CSS below @layer for these */
 
     /* Panel / Dashboard */
     div.panel-container {
@@ -489,4 +483,26 @@
 @keyframes am7-slideOutRight {
     from { transform: translateX(0); }
     to { transform: translateX(100%); }
+}
+
+/* Content layout — plain CSS (outside @layer to avoid Tailwind specificity issues) */
+div.content-outer {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+}
+.dark div.content-outer {
+    background-color: #1f2937;
+}
+div.content-main {
+    background-color: #fff;
+    flex-grow: 1;
+    overflow: hidden;
+    display: flex;
+}
+.dark div.content-main {
+    background-color: #000;
+    color: #fff;
 }
