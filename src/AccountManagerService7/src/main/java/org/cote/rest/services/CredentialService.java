@@ -49,7 +49,7 @@ public class CredentialService {
 
 	@RolesAllowed({"user", "admin", "api"})
 	@POST
-	@Path("/{type:[A-Za-z]+}/{objectId:[A-Za-z0-9\\-\\.]+}")
+	@Path("/{type:[A-Za-z\\.]+}/{objectId:[A-Za-z0-9\\-\\.]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	public boolean newPrimaryCredential(@PathParam("type") String objectType, @PathParam("objectId") String objectId, String authReqJson,@Context HttpServletRequest request){
