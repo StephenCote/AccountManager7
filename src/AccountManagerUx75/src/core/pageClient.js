@@ -340,8 +340,13 @@ function routeMessage(msg) {
             if (!page.audioStream) return;
             page.audioStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2]);
         } else if (c1 === "policyEvent" || c1 === "autotuneEvent" || c1 === "evalProgress" || c1 === "interactionEvent") {
-            // Phase 7 (compliance dashboard) will handle these
-            console.log("[WS]", c1, msg.chirps.slice(1));
+            import('../chat/LLMConnector.js').then(mod => {
+                mod.LLMConnector.handlePolicyEvent({ type: c1, data: msg.chirps[1] });
+            }).catch(() => {});
+        } else if (c1 === "memoryEvent") {
+            import('../chat/LLMConnector.js').then(mod => {
+                mod.LLMConnector.handleMemoryEvent({ type: c1, data: msg.chirps[1] });
+            }).catch(() => {});
         } else if (c1.match(/^game\./)) {
             if (page.gameStream) {
                 page.gameStream.routePushMessage(c1, ...msg.chirps.slice(1));
