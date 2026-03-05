@@ -187,45 +187,53 @@ export async function setupTestUser(request, opts = {}) {
 export async function cleanupTestUser(request, userObjectId, opts = {}) {
     const org = opts.org || '/Development';
     const userName = opts.userName;
+    const TIMEOUT = 10000;
+
     await apiLogout(request).catch(() => {});
     await apiLogin(request, { org });
 
     if (userName) {
-        // Delete home directory (auth.group at /home/{username})
-        let homeGroup = await findPath(request, 'auth.group', 'data', '/home/' + userName);
+        let homeGroup = await findPath(request, 'auth.group', 'data', '/home/' + userName).catch(() => null);
         if (homeGroup && homeGroup.objectId) {
             await deleteObject(request, 'auth.group', homeGroup.objectId).catch(() => {});
         }
 
-        // Delete home role (auth.role at /home/{username})
-        let homeRole = await findPath(request, 'auth.role', 'user', '/home/' + userName);
+        let homeRole = await findPath(request, 'auth.role', 'user', '/home/' + userName).catch(() => null);
         if (homeRole && homeRole.objectId) {
             await deleteObject(request, 'auth.role', homeRole.objectId).catch(() => {});
         }
 
-        // Delete home permission (auth.permission at /home/{username})
-        let homePerm = await findPath(request, 'auth.permission', 'user', '/home/' + userName);
+        let homePerm = await findPath(request, 'auth.permission', 'user', '/home/' + userName).catch(() => null);
         if (homePerm && homePerm.objectId) {
             await deleteObject(request, 'auth.permission', homePerm.objectId).catch(() => {});
         }
 
-        // Delete person object in /Persons group
-        let personsGroup = await findPath(request, 'auth.group', 'data', '/Persons');
-        if (personsGroup && personsGroup.objectId) {
-            let person = await searchByField(request, 'identity.person', 'name', userName);
-            if (person && person.objectId) {
-                await deleteObject(request, 'identity.person', person.objectId).catch(() => {});
-            }
+        let person = await searchByField(request, 'identity.person', 'name', userName).catch(() => null);
+        if (person && person.objectId) {
+            await deleteObject(request, 'identity.person', person.objectId).catch(() => {});
         }
     }
 
-    // Delete the user object
     if (userObjectId) {
         await deleteObject(request, 'system.user', userObjectId).catch(() => {});
     }
 
-    // Prune orphaned records
-    await request.get(BASE + '/model/cleanup').catch(() => {});
+    // Skip /model/cleanup here — it includes a Postgres VACUUM that can be slow.
+    // Use cleanupTestUserFull() if you want orphan pruning + vacuum.
 
+    await apiLogout(request).catch(() => {});
+}
+
+/**
+ * Full cleanup including orphan pruning + Postgres VACUUM.
+ * Same as cleanupTestUser but also calls /rest/model/cleanup at the end.
+ * This can take minutes on large databases — do not use in afterAll hooks with tight timeouts.
+ */
+export async function cleanupTestUserFull(request, userObjectId, opts = {}) {
+    await cleanupTestUser(request, userObjectId, opts);
+
+    const org = opts.org || '/Development';
+    await apiLogin(request, { org });
+    await request.get(BASE + '/model/cleanup').catch(() => {});
     await apiLogout(request).catch(() => {});
 }
