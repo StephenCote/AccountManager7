@@ -201,5 +201,5 @@ function setContextRoles(app) {
     ctxRoles.admin = (ctxRoles.systemAdmin || ctxRoles.accountAdmin);
 }
 
-export { init, refreshApplication };
+export { init, refreshApplication, layout, pageLayout };
 export default { init };

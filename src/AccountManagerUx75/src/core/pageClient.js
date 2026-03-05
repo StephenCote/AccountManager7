@@ -443,6 +443,18 @@ function makePath(type, subType, path) {
     });
 }
 
+function findObject(type, subType, path) {
+    return am7client.find(type, subType, path);
+}
+
+function listObjects(type, parentId, fields, start, count) {
+    return am7client.list(type, parentId, fields, start, count);
+}
+
+function searchByName(type, parentId, name) {
+    return am7client.getByName(type, parentId, name);
+}
+
 function listByType(type) {
     let modType = am7model.getModel(type);
     if (!modType) {
@@ -493,6 +505,9 @@ const page = {
     context: function () { return contextModel; },
     clearContextObject: clearContextObject,
     openObject: openObject,
+    findObject: findObject,
+    listObjects: listObjects,
+    searchByName: searchByName,
     search: pageSearch,
     count: pageCount,
     deleteObject: deleteObject,

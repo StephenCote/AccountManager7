@@ -117,7 +117,7 @@ export async function setCredential(request, userObjectId, password) {
  * Create a data.note in the given group directory.
  */
 export async function createNote(request, groupPath, name, text) {
-    let dir = await ensurePath(request, 'data.note', 'data', groupPath);
+    let dir = await ensurePath(request, 'auth.group', 'data', groupPath);
     if (!dir || !dir.id) return null;
 
     let resp = await request.post(BASE + '/model', {
