@@ -17,6 +17,9 @@ export default defineConfig({
       }
     }
   },
+  define: {
+    __FEATURE_PROFILE__: JSON.stringify(process.env.VITE_FEATURE_PROFILE || 'full')
+  },
   build: {
     outDir: 'dist',
     sourcemap: true

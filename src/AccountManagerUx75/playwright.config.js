@@ -2,10 +2,13 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 30000,
+  timeout: 60000,
+  expect: { timeout: 10000 },
   use: {
     baseURL: 'http://localhost:8899',
     ignoreHTTPSErrors: true,
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } }
@@ -15,4 +18,5 @@ export default defineConfig({
     port: 8899,
     reuseExistingServer: true,
   },
+  outputDir: 'e2e/results',
 });

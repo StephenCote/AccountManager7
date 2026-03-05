@@ -69,7 +69,8 @@ function newPaginationControl() {
     if (pages.containerId) {
       let id = containerCache[pages.containerId];
       if (!id) {
-        let gq = am7view.viewQuery(am7model.newInstance(pages.containerType));
+        let gq = am7client.newQuery(pages.containerType);
+        gq.entity.request = ["id", "objectId"];
         gq.field("objectId", pages.containerId);
         let g = await page.search(gq);
         if (g && g.results && g.results.length) {
@@ -242,15 +243,20 @@ function newPaginationControl() {
     /// Need to get the container to understand the subType, such as GROUP/DATA vs GROUP/BUCKET
     if (containerId && pages.container == null) {
       requesting = true;
-      page.openObject(pages.containerType, pages.containerId).then(v => {
+      let cq = am7client.newQuery(pages.containerType);
+      cq.entity.request = ["id", "objectId", "name", "type", "path"];
+      cq.field("objectId", pages.containerId);
+      page.search(cq).then(qr => {
+        let v = (qr && qr.results && qr.results.length) ? qr.results[0] : null;
         pages.container = v;
         requesting = false;
         if (v != null) {
-          pages.container = v;
+          containerCache[pages.containerId] = v.id;
           if (pages.containerType.match(/^auth\.group$/gi)) {
             pages.containerSubType = pages.container.type;
           }
-          m.redraw();
+          // Chain into count step immediately
+          doCount(type, bSystem, startRecord, recordCount);
         }
         else {
           console.error("Error loading container: " + pages.containerType + " / " + pages.containerId);
@@ -258,45 +264,59 @@ function newPaginationControl() {
       });
     }
     else if (!pages.counted) {
-      requesting = true;
-      if (pages.containerSubType != null && pages.containerSubType.match(/^(system\.user|identity\.account|identity\.person|bucket)$/gi)) {
-        am7client.countMembers(pages.containerType, pages.containerId, type, handleCount);
-      }
-      else if (bSystem && type.match(/^(policy\.policy|auth\.role|auth\.permission)$/gi)) {
-        let ttype = type.substring(type.lastIndexOf(".") + 1, type.length);
-        let uType = ttype.substring(0, 1).toUpperCase() + ttype.slice(1);
-        let fType = uType + "s";
-        if (uType.match(/y$/)) fType = uType.slice(0, uType.length - 1) + "ies";
-        if (page.application["system" + fType]) {
-          handleCount(page.application["system" + fType].length);
-        }
-      }
-      else if (type.match(/^request$/gi)) {
-        console.warn("REFACTOR COUNT REQUESTS");
-      }
-      else {
-        getSearchQuery().then((req) => {
-          req.recordCount = 0;
-          page.count(req).then((v) => {
-            handleCount(v);
-          });
-        });
-      }
+      doCount(type, bSystem, startRecord, recordCount);
     }
     else {
-      if (pages.totalCount > 0) pages.pageCount = Math.ceil(pages.totalCount / pages.recordCount);
-      if (isNaN(startRecord)) startRecord = 0;
-      if (isNaN(recordCount)) recordCount = pages.recordCount;
-      pages.startRecord = startRecord;
-      pages.recordCount = recordCount;
+      doSearchPage(startRecord, recordCount);
+    }
+  }
 
-      let usePage = 0;
-      if (recordCount > 0) {
-        usePage = 1;
-        if (startRecord > 1) usePage = Math.ceil(startRecord / pages.recordCount) + 1;
-        if (usePage != pages.currentPage) {
-          updatePage(usePage);
-        }
+  function doCount(type, bSystem, startRecord, recordCount) {
+    if (requesting) return;
+    requesting = true;
+    if (pages.containerSubType != null && pages.containerSubType.match(/^(system\.user|identity\.account|identity\.person|bucket)$/gi)) {
+      am7client.countMembers(pages.containerType, pages.containerId, type, function (v) {
+        handleCount(v);
+        doSearchPage(startRecord, recordCount);
+      });
+    }
+    else if (bSystem && type.match(/^(policy\.policy|auth\.role|auth\.permission)$/gi)) {
+      let ttype = type.substring(type.lastIndexOf(".") + 1, type.length);
+      let uType = ttype.substring(0, 1).toUpperCase() + ttype.slice(1);
+      let fType = uType + "s";
+      if (uType.match(/y$/)) fType = uType.slice(0, uType.length - 1) + "ies";
+      if (page.application["system" + fType]) {
+        handleCount(page.application["system" + fType].length);
+        doSearchPage(startRecord, recordCount);
+      }
+    }
+    else if (type.match(/^request$/gi)) {
+      console.warn("REFACTOR COUNT REQUESTS");
+    }
+    else {
+      getSearchQuery().then((req) => {
+        req.recordCount = 0;
+        page.count(req).then((v) => {
+          handleCount(v);
+          doSearchPage(startRecord, recordCount);
+        });
+      });
+    }
+  }
+
+  function doSearchPage(startRecord, recordCount) {
+    if (pages.totalCount > 0) pages.pageCount = Math.ceil(pages.totalCount / pages.recordCount);
+    if (isNaN(startRecord)) startRecord = 0;
+    if (isNaN(recordCount)) recordCount = pages.recordCount;
+    pages.startRecord = startRecord;
+    pages.recordCount = recordCount;
+
+    let usePage = 0;
+    if (recordCount > 0) {
+      usePage = 1;
+      if (startRecord > 1) usePage = Math.ceil(startRecord / pages.recordCount) + 1;
+      if (usePage != pages.currentPage) {
+        updatePage(usePage);
       }
     }
   }

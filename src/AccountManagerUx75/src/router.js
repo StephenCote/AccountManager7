@@ -2,6 +2,7 @@ import m from 'mithril';
 import { am7client } from './core/am7client.js';
 import { am7model } from './core/model.js';
 import { page } from './core/pageClient.js';
+import { initFeatures, loadFeatureRoutes } from './features.js';
 
 // Import views
 import sigView from './views/sig.js';
@@ -125,40 +126,49 @@ function takeDown() {
     }
 }
 
-function refreshApplication() {
-    am7client.principal().then((usr) => {
-        let rt = window.location.hash.slice(window.location.hash.indexOf("/"));
-        page.application = undefined;
-        page.user = usr;
+async function refreshApplication() {
+    let usr = await am7client.principal();
+    let rt = window.location.hash.slice(window.location.hash.indexOf("/"));
+    page.application = undefined;
+    page.user = usr;
 
-        if (usr == null) {
-            page.wss.close();
-            rt = "/sig";
-            m.route.set(rt);
-            m.route(document.body, rt, routes);
-        } else {
-            am7client.currentOrganization = usr.organizationPath;
-            am7client.application().then((app) => {
-                page.application = app;
-                if (app && app != null) {
-                    if (am7model.updateListModel) {
-                        for (let v in app) {
-                            if (app[v] instanceof Array) {
-                                am7model.updateListModel(app[v], am7model.getModelField(app.schema, v));
-                            }
-                        }
+    // Initialize feature profile from URL param, Vite define, or default
+    let profile = new URLSearchParams(window.location.search).get('features')
+        || (typeof __FEATURE_PROFILE__ !== 'undefined' ? __FEATURE_PROFILE__ : null)
+        || 'full';
+    initFeatures(profile);
+
+    if (usr == null) {
+        page.wss.close();
+        rt = "/sig";
+        m.route.set(rt);
+        m.route(document.body, rt, routes);
+    } else {
+        am7client.currentOrganization = usr.organizationPath;
+        let app = await am7client.application();
+        page.application = app;
+        if (app && app != null) {
+            if (am7model.updateListModel) {
+                for (let v in app) {
+                    if (app[v] instanceof Array) {
+                        am7model.updateListModel(app[v], am7model.getModelField(app.schema, v));
                     }
-                    setContextRoles(app);
-                    if (!rt.length || rt == "/sig") rt = "/main";
-                    page.wss.connect();
-                } else {
-                    rt = "/sig";
                 }
-                m.route.set(rt);
-                m.route(document.body, rt, routes);
-            });
+            }
+            setContextRoles(app);
+            if (!rt.length || rt == "/sig") rt = "/main";
+            page.wss.connect();
+        } else {
+            rt = "/sig";
         }
-    });
+
+        // Load lazy feature routes and merge with core routes
+        let featureRoutes = await loadFeatureRoutes();
+        let allRoutes = Object.assign({}, routes, featureRoutes);
+
+        m.route.set(rt);
+        m.route(document.body, rt, allRoutes);
+    }
 
     page.router = {
         refresh: refreshApplication,

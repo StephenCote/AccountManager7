@@ -1,5 +1,6 @@
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
+import { getMenuItems } from '../features.js';
 
 function toggleDarkMode() {
     let html = document.documentElement;
@@ -28,6 +29,15 @@ const topMenu = {
     },
     view: function () {
         let userName = page.user ? page.user.name : '';
+        let featureButtons = getMenuItems('top')
+            .filter(function (mi) { return !(mi.devOnly && page.productionMode); })
+            .map(function (mi) {
+                return m("button", {
+                    class: "menu-button",
+                    onclick: function () { m.route.set(mi.route); },
+                    title: mi.label
+                }, m("span", { class: "material-symbols-outlined" }, mi.icon));
+            });
         return m("div", { class: "flex items-center gap-2" }, [
             m("button", {
                 class: "menu-button",
@@ -39,6 +49,7 @@ const topMenu = {
                 onclick: toggleDarkMode,
                 title: "Toggle dark mode"
             }, m("span", { class: "material-symbols-outlined" }, "dark_mode")),
+            ...featureButtons,
             m("span", { class: "text-sm text-gray-500 dark:text-gray-400 mx-2" }, userName),
             m("button", {
                 class: "menu-button",
