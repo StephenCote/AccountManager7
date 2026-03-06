@@ -27,8 +27,8 @@
 | **Phase 3.5b: Dialog Workflow Commands** | COMPLETE | 8 | Ported all 7 command handlers (summarize, vectorize, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder) as ESM workflow modules in `src/workflows/`. Wired into object.js command dispatch. 9 Vitest + 2 Playwright tests added. |
 | **Phase 3.5c: Core Workflow Runtime Validation** | COMPLETE | 9 | Runtime-tested all 7 workflow handlers + chat against backend. Fixed: setNarDescription null crash, 7 formDef forward-reference bugs, reimage null sdEntity + missing await, command dispatch error handling, Mithril render resilience. 9 Playwright E2E tests added. |
 | **Phase 3.5d: Model Ref Form Rendering** | COMPLETE | 2 | Sub-object tabs (personality, statistics, store, narrative, profile) now render full fields instead of just objectId. Implemented `pinst` cache for sub-instances, lazy tab activation, async sub-object save with `background:true` to avoid redraw storms, grid view null guard. |
-| **Phase 4: Compliance Dashboard** | STUB ONLY | 1 | `features/iso42001.js` has basic violation list. Missing: Overview, Audit Log, Policy Templates, Report tabs, real-time chat indicators. |
-| **Phase 5: UX Polish** | NOT STARTED | 0 | Dashboard customization, dense mode, notifications. |
+| **Phase 4: ISO 42001 Compliance Dashboard** | DEFERRED | 1 | Moved to separate design/plan (`aiDocs/ISO42001Plan.md`). Depends on backend compliance endpoints. Current stub remains functional for live policy event monitoring. |
+| **Phase 5: UX Polish** | **NEXT** | 0 | Dashboard customization, dense mode, notifications, runtime bug fixes. |
 | **Phase 6: Model Form View** | NOT STARTED | 0 | Requires backend schema endpoints. |
 | **Phase 7: Form Editor / Designer** | NOT STARTED | 0 | Requires `system.formDefinition` model on backend. Depends on Phase 6. |
 | **Phase 8: WebAuthn** | NOT STARTED | 0 | Requires `WebAuthnService.java` + `webauthn4j` on backend. |
