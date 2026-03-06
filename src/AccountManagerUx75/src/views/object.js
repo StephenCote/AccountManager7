@@ -3,6 +3,7 @@ import { am7model } from '../core/model.js';
 import { am7view } from '../core/view.js';
 import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
+import { summarize, vectorize, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder } from '../workflows/index.js';
 // Navigation is handled by router's pageLayout wrapper
 
 /**
@@ -352,6 +353,20 @@ function newObjectPage() {
         if (!ms) return Promise.resolve([]);
         return ms.objectRequests({ entity }, name, field);
     };
+
+    // --- Workflow command handlers ---
+
+    objectPage.summarize = summarize;
+    objectPage.vectorize = vectorize;
+    objectPage.reimage = reimage;
+    objectPage.reimageApparel = reimageApparel;
+    objectPage.memberCloud = function (entity, inst, cmd) {
+        let modelType = cmd.field || inst.model.name;
+        let containerId = entity.objectId || entity.id;
+        memberCloud(modelType, containerId);
+    };
+    objectPage.adoptCharacter = adoptCharacter;
+    objectPage.outfitBuilder = outfitBuilder;
 
     // --- Tab support ---
 

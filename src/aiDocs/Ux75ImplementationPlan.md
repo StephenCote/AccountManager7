@@ -8,10 +8,10 @@
 
 ## 1. Current Status
 
-**Project:** `AccountManagerUx75/` — 127 source files, ~69,000 lines
-**Build:** Vite 6.4.1, 152 modules, builds in ~5s
-**Tests:** 55 Vitest unit tests pass, 25 Playwright E2E tests pass (all green)
-**Ux7 File Parity:** ~99% — all active Ux7 source files ported (5 intentionally skipped)
+**Project:** `AccountManagerUx75/` — 135 source files, ~71,000 lines
+**Build:** Vite 6.4.1, 160 modules, builds in ~5s
+**Tests:** 64 Vitest unit tests pass, 27 Playwright E2E tests pass (all green)
+**Ux7 File Parity:** ~100% — all active Ux7 source files ported including dialog workflow commands (5 intentionally skipped)
 
 ---
 
@@ -24,15 +24,16 @@
 | **Phase 2: Main Panel** | COMPLETE | 3+ | `panel.js` (dashboard), `topMenu.js`, `asideMenu.js`, breadcrumb navigation |
 | **Phase 3: Feature System** | COMPLETE | 8 | `features.js` manifest with 7 features (core, chat, cardGame, games, testHarness, iso42001, biometrics), 5 build profiles, lazy `import()` for feature routes |
 | **Phase 3.5a: E2E Test Infrastructure** | COMPLETE | 7 | Playwright E2E tests (25 tests, 7 spec files), console error capture with IGNORED_PATTERNS, isolated API session helpers, test user setup/teardown. Fixed: biometrics spec selectors, Mithril key mismatch in biometrics.js, session conflicts in parallel workers. |
-| **Phase 3.5b: Dialog Workflow Commands** | **NEXT** | 0 | Port 6 missing command handlers from Ux7 dialog.js. See Section 4. |
-| **Phase 3.5c: Feature Route Validation** | NOT STARTED | 0 | Runtime test card game, magic8, games against backend. Expect errors in agent-generated files. |
+| **Phase 3.5b: Dialog Workflow Commands** | COMPLETE | 8 | Ported all 7 command handlers (summarize, vectorize, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder) as ESM workflow modules in `src/workflows/`. Wired into object.js command dispatch. 9 Vitest + 2 Playwright tests added. |
+| **Phase 3.5c: Core Workflow Runtime Validation** | **NEXT** | 0 | Runtime-test reimage, summarize, vectorize, memberCloud, adopt, outfitBuilder, chat against backend. Fix integration issues. |
 | **Phase 4: Compliance Dashboard** | STUB ONLY | 1 | `features/iso42001.js` has basic violation list. Missing: Overview, Audit Log, Policy Templates, Report tabs, real-time chat indicators. |
 | **Phase 5: UX Polish** | NOT STARTED | 0 | Dashboard customization, dense mode, notifications. |
 | **Phase 6: Model Form View** | NOT STARTED | 0 | Requires backend schema endpoints. |
 | **Phase 7: Form Editor / Designer** | NOT STARTED | 0 | Requires `system.formDefinition` model on backend. Depends on Phase 6. |
 | **Phase 8: WebAuthn** | NOT STARTED | 0 | Requires `WebAuthnService.java` + `webauthn4j` on backend. |
 | **Phase 9: Access Requests** | NOT STARTED | 0 | Backend model exists. No Ux. Must ask user about hierarchical approval concept first. |
-| **Phase 10: E2E + Performance** | NOT STARTED | 0 | SQLite WASM cache, a11y audit, performance profiling. |
+| **Phase 10: Game Feature Validation** | NOT STARTED | 0 | Runtime-test cardGame (34 files), magic8, tetris, wordGame. Deferred — benefits from stable common infra. |
+| **Phase 11: Performance + Polish** | NOT STARTED | 0 | SQLite WASM cache, a11y audit, performance profiling. |
 
 ---
 
@@ -63,29 +64,25 @@
 
 ---
 
-## 4. CRITICAL GAP: Dialog Workflow Commands NOT Ported
+## 4. Dialog Workflow Commands — RESOLVED (Phase 3.5b)
 
-The Ux7 `dialog.js` (2,044 lines) contained 6 command handler functions that were invoked by `object.js` when users clicked form command buttons. **These were NOT ported to Ux75.** The `dialogCore.js` replacement is a clean Dialog component, but the business logic that was embedded in the old `dialog.js` is missing.
+All 7 command handlers from Ux7 `dialog.js` have been ported to Ux75 as ESM workflow modules in `src/workflows/`. Each uses `Dialog.open()` from `dialogCore.js`.
 
-**Impact:** In Ux75, clicking any of these command buttons on an object form logs `"Command function not found: <fn>"` and does nothing.
+| Command Function | Ux75 Location | What It Does | Status |
+|------------------|--------------|-------------|--------|
+| `summarize(entity, inst)` | workflows/summarize.js | Chat/prompt config selection, calls `/vector/summarize` | **PORTED** |
+| `vectorize(entity, inst)` | workflows/vectorize.js | Chunk type/size selection, calls `/vector/vectorize` | **PORTED** |
+| `reimage(entity, inst)` | workflows/reimage.js | SD config dialog, batch image gen, wear level tagging, portrait update | **PORTED** |
+| `reimageApparel(entity, inst)` | workflows/reimageApparel.js | Mannequin image generation for apparel | **PORTED** |
+| `memberCloud(modelType, containerId)` | workflows/memberCloud.js | Tag cloud visualization with drill-down to member grid | **PORTED** |
+| `adoptCharacter(entity, inst)` | workflows/adoptCharacter.js | Adopt character into world population | **PORTED** |
+| `outfitBuilder(entity, inst)` | workflows/outfitBuilder.js | Outfit builder panel delegation | **PORTED** |
 
-| Command Function | Ux7 Location | Lines | What It Does | Ux75 Status |
-|------------------|-------------|-------|-------------|-------------|
-| `reimage(object, inst)` | dialog.js:777 | ~485 | Opens SD reimaging dialog — model/lora selection, prompt preview, batch reimaging, progress tracking | **MISSING** |
-| `reimageApparel(object, inst)` | dialog.js:1262 | ~293 | Reimages apparel items — iterates wearables, generates SD prompts per wear level | **MISSING** |
-| `summarize(object, inst)` | dialog.js:137 | ~58 | Opens summarization dialog — creates/updates context summary for chat sessions | **MISSING** |
-| `vectorize(object, inst)` | dialog.js:195 | ~582 | Opens vectorization dialog — creates vector embeddings for RAG context | **MISSING** |
-| `memberCloud(modelType, containerId)` | dialog.js:1555 | ~301 | Renders membership visualization — cloud/grid of member objects with thumbnails | **MISSING** |
-| `adoptCharacter(object, inst)` | dialog.js:1856 | ~188 | Opens character adoption dialog — copy character to user's population | **MISSING** |
+**Wiring:** All handlers registered on `objectPage` in `views/object.js` (lines 358-368). Form command buttons now dispatch to the correct workflow.
 
-**Additional dialog.js responsibilities NOT ported:**
-- Outfit builder integration (triggered via `outfitBuilder` command on charPerson forms)
-- Social sharing tag management
-- Batch progress tracking with progress bar dialogs
-- Policy template loading dialogs
-- Chat settings workflow (partially covered by `ChatConfigToolbar.js` and `ChatSetupWizard.js`)
+**Shared utilities:** `reimage.js` exports `getOrCreateSharingTag()`, `applySharingTag()`, `socialSharingMap` for reuse by `reimageApparel.js`.
 
-**Resolution:** These must be implemented as separate workflow modules in Ux75 using `Dialog.open()` from `dialogCore.js`. See Phase 3.5b in Section 8.
+**Tests:** 9 Vitest unit tests (workflow exports + socialSharingMap), 2 Playwright E2E tests (handler registration + no command-not-found warnings).
 
 ---
 
@@ -117,7 +114,7 @@ The Ux7 `dialog.js` (2,044 lines) contained 6 command handler functions that wer
 
 11. **`window.Magic8.*` / `window.CardGame.*` remnants** — IIFE modules used global namespace objects. Some may remain in agent-generated code.
 
-12. **`Dialog.open()` adoption** — Only 2 production files use `Dialog.open()`. All command workflows from dialog.js are missing entirely. See Section 4.
+12. **`Dialog.open()` adoption** — RESOLVED. 7 workflow modules now use `Dialog.open()` for all command workflows. See Section 4.
 
 13. **`media` feature not in manifest** — Design doc Section 7 defines a `media` feature for lazy loading. Currently loaded eagerly in `main.js`, inflating the index bundle.
 
@@ -144,8 +141,9 @@ The Ux7 `dialog.js` (2,044 lines) contained 6 command handler functions that wer
 
 | Gap | Design Section | Impact | Effort |
 |-----|---------------|--------|--------|
-| **Dialog workflow commands** (reimage, summarize, vectorize, memberCloud, adoptCharacter, outfitBuilder) | S4.3 | Object form command buttons do nothing in Ux75 | HIGH — ~1,900 lines of business logic to port as ESM workflow modules using Dialog.open() |
-| **Card game runtime validation** | N/A | 34 agent-generated files never tested against backend | MEDIUM — requires running backend, systematic testing |
+| ~~**Dialog workflow commands**~~ | S4.3 | ~~RESOLVED~~ — All 7 command handlers ported in Phase 3.5b | DONE |
+| **Core workflow runtime validation** | N/A | Workflow commands ported but not runtime-tested against backend | MEDIUM — Phase 3.5c |
+| **Card game runtime validation** | N/A | 34 agent-generated files never tested against backend | MEDIUM — deferred to Phase 10 |
 
 ### B. Design Doc Features — Backend Required
 
@@ -182,50 +180,73 @@ The Ux7 `dialog.js` (2,044 lines) contained 6 command handler functions that wer
 
 Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Commands).
 
-### Phase 3.5b: Dialog Workflow Commands — NEXT
+### Phase 3.5b: Dialog Workflow Commands — COMPLETE
 
-**Goal:** Port the 6 missing command handlers from Ux7 `dialog.js` into Ux75 as separate ESM workflow modules. Each workflow should use `Dialog.open()` from `dialogCore.js`.
+**Completed:** All 7 command handlers ported as ESM workflow modules using `Dialog.open()`.
 
-**Prerequisites:**
-- Backend running on localhost:8443 (needed for runtime testing the workflows)
-- Read Ux7 `client/components/dialog.js` for reference implementation
+**Files created (8):**
+- [x] `src/workflows/index.js` — Re-exports all workflow handlers
+- [x] `src/workflows/summarize.js` — Chat/prompt config dialog, `/vector/summarize` endpoint
+- [x] `src/workflows/vectorize.js` — Chunk options dialog, `/vector/vectorize` endpoint
+- [x] `src/workflows/reimage.js` — SD config dialog with dress up/down, batch generation, portrait update, sharing tags
+- [x] `src/workflows/reimageApparel.js` — Mannequin image generation for apparel
+- [x] `src/workflows/memberCloud.js` — Tag cloud visualization with drill-down member grid
+- [x] `src/workflows/adoptCharacter.js` — Character adoption to world population
+- [x] `src/workflows/outfitBuilder.js` — Outfit builder panel delegation
 
-**Tasks:**
-- [ ] Create `src/workflows/summarize.js` — Summarization dialog (~58 lines from dialog.js:137-194)
-  - Register as `objectPage.summarize` in `views/object.js`
-- [ ] Create `src/workflows/vectorize.js` — Vectorization dialog (~582 lines from dialog.js:195-776)
-  - Register as `objectPage.vectorize`
-- [ ] Create `src/workflows/reimage.js` — SD reimaging dialog (~485 lines from dialog.js:777-1261)
-  - Model/lora selection, prompt preview, batch reimaging, progress tracking
-  - Register as `objectPage.reimage`
-- [ ] Create `src/workflows/reimageApparel.js` — Apparel reimaging (~293 lines from dialog.js:1262-1554)
-  - Register as `objectPage.reimageApparel`
-- [ ] Create `src/workflows/memberCloud.js` — Member cloud visualization (~301 lines from dialog.js:1555-1855)
-  - Register as `objectPage.memberCloud`
-- [ ] Create `src/workflows/adoptCharacter.js` — Character adoption (~188 lines from dialog.js:1856-2043)
-  - Register as `objectPage.adoptCharacter`
-- [ ] Port `outfitBuilder` command handler (referenced in charPerson form commands)
-- [ ] Wire all workflow modules in `views/object.js` so command buttons dispatch correctly
-- [ ] Add Vitest tests for workflow module registration
-- [ ] Add Playwright E2E test for at least one workflow (summarize — simplest)
+**Files modified (1):**
+- [x] `src/views/object.js` — Added workflow imports + handler registration on objectPage
 
-**Estimated effort:** HIGH — ~1,900 lines of business logic
-**Estimated files changed:** 6-8 new workflow files + `views/object.js` wiring
-**Risk:** Medium — Ux7 source is the reference implementation
+**Tests added:**
+- [x] `src/test/workflows.test.js` — 9 Vitest tests (exports + socialSharingMap)
+- [x] `e2e/workflows.spec.js` — 2 Playwright E2E tests (registration + no warnings)
 
-### Phase 3.5c: Feature Route Validation
+### Phase 3.5c: Runtime Validation of Core Workflows — NEXT
 
-**Goal:** Runtime-test all feature routes against a running backend. Fix agent-generated code errors.
+**Goal:** Runtime-test workflow commands, sdConfig, olio operations, and chat against the running backend. Fix integration issues. This validates the common infrastructure that everything else depends on.
 
-- [ ] Test `/cardGame` — verify lazy load, game initialization, card rendering
-- [ ] Test `/game` — verify Tetris and Word Game load and run
-- [ ] Fix all agent-generated code runtime errors (expect significant work for cardGame)
-- [ ] Verify `g_application_path` → `am7client.base()` conversion complete
-- [ ] Verify no `window.Magic8.*` / `window.CardGame.*` remnants
-- [ ] Verify CSS class references resolve (no Ux7-only classes referenced)
+**Prerequisites:** Backend running on localhost:8443.
 
-**Estimated effort:** MEDIUM — primarily debugging agent-generated cardGame files
-**Risk:** Medium — card game has 34 files that were never runtime-tested
+**A. SD Config + Reimage Workflow Validation**
+- [ ] Open a `olio.charPerson` object, click Reimage command button
+- [ ] Verify SD config dialog opens with correct defaults (steps=40, cfg=5, photograph style)
+- [ ] Verify dress up/down buttons work (calls am7olio.dressCharacter + setNarDescription)
+- [ ] Generate a single image — verify POST to `/olio/olio.charPerson/{id}/reimage` succeeds
+- [ ] Verify portrait update, wear-level tagging, sharing tags all applied
+- [ ] Test with smaller/faster SD model if available (user can configure)
+- [ ] Open an `olio.apparel` object, click reimageApparel — verify mannequin generation
+- [ ] Fix any runtime issues with am7sd.fetchTemplate, loadConfig, saveConfig
+
+**B. Summarize + Vectorize Validation**
+- [ ] Open any object with summarize command, verify chat/prompt config dropdowns populate
+- [ ] Test summarize against backend — verify `/vector/summarize` endpoint call
+- [ ] Test vectorize — verify `/vector/vectorize` endpoint call
+- [ ] Fix any issues with loadChatList/loadPromptList (~/Chat directory resolution)
+
+**C. Member Cloud + Adopt Validation**
+- [ ] Test memberCloud on a tag or container with members
+- [ ] Verify cloud renders, tag click drills to member grid, thumbnails load
+- [ ] Test adoptCharacter on a character outside world population
+- [ ] Verify POST to `/rest/game/adopt/{id}` works
+
+**D. Outfit Builder Validation**
+- [ ] Test outfitBuilder command on a charPerson
+- [ ] Verify OutfitBuilderPanel / PieceEditorPanel components render (if am7olio exports them)
+- [ ] Document any missing olio components that need porting
+
+**E. Chat Feature Runtime Validation**
+- [ ] Navigate to /chat, verify session list loads from backend
+- [ ] Create a new chat session, send a message
+- [ ] Verify LLMConnector, ConversationManager, AnalysisManager work end-to-end
+- [ ] Verify WebSocket events (if chat uses real-time messaging)
+
+**F. Add E2E Tests for Validated Workflows**
+- [ ] E2E test: reimage dialog opens on charPerson
+- [ ] E2E test: summarize dialog opens with config dropdowns
+- [ ] E2E test: memberCloud renders cloud view
+
+**Estimated effort:** MEDIUM — primarily integration debugging
+**Risk:** Low-Medium — all code is ported, issues will be endpoint mismatches or missing data
 
 ### Phase 4: Compliance Dashboard Buildout (Client-Focused)
 
@@ -257,7 +278,19 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 - **Phase 8:** WebAuthn (S8) — requires `WebAuthnService.java`
 - **Phase 9:** Access Requests (S11) — requires user input on approval concept
 
-### Phase 10: Performance + Polish
+### Phase 10: Game Feature Validation (Deferred)
+
+**Goal:** Runtime-test agent-generated game features. Deferred to benefit from stable common infrastructure.
+
+- [ ] Test `/cardGame` — verify lazy load, game initialization, card rendering (34 agent-generated files)
+- [ ] Test `/game` — verify Tetris and Word Game load and run
+- [ ] Fix all agent-generated code runtime errors (expect significant work for cardGame)
+- [ ] Verify `g_application_path` → `am7client.base()` conversion complete
+- [ ] Verify no `window.Magic8.*` / `window.CardGame.*` remnants
+- [ ] Verify CSS class references resolve (no Ux7-only classes referenced)
+- [ ] Runtime-test magic8 full session flow against backend
+
+### Phase 11: Performance + Polish
 
 - [ ] SQLite WASM client cache (sql.js integration)
 - [ ] Performance profiling and bundle optimization
@@ -267,7 +300,7 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 
 ## 9. E2E Test Coverage
 
-**25 Playwright E2E tests** across 7 spec files:
+**27 Playwright E2E tests** across 8 spec files:
 
 | Spec | Tests | What's Covered |
 |------|-------|----------------|
@@ -278,6 +311,7 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 | `chat.spec.js` | 3 | Menu navigation, page content, library status check |
 | `biometrics.spec.js` | 3 | Magic 8 navigation, Start Session button, config description |
 | `testHarness.spec.js` | 3 | Menu navigation, UI components, Run Tests + categories |
+| `workflows.spec.js` | 2 | Workflow handler registration on objectPage, no command-not-found warnings |
 
 **Test infrastructure:**
 - `e2e/helpers/fixtures.js` — Extended fixture with automatic console error capture
@@ -291,11 +325,11 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 ## 10. Build Output
 
 ```
-Source files:  127 JS (69,000 lines) + 5 unit test files (55 tests) + 7 E2E spec files (25 tests)
+Source files:  135 JS (71,000 lines) + 6 unit test files (64 tests) + 8 E2E spec files (27 tests)
 Styles:        2 CSS files (main.css, pageStyle.css) -> 84KB bundled
 
 Build output (dist/):
-  index.js           385 KB / 103 KB gzip  (core + components + views)
+  index.js           410 KB / 110 KB gzip  (core + components + views + workflows)
   CardGameApp.js     392 KB / 115 KB gzip  (card game lazy chunk)
   Magic8App.js       171 KB /  46 KB gzip  (magic8 lazy chunk)
   pdf.js             448 KB / 133 KB gzip  (PDF.js library)
@@ -328,7 +362,8 @@ Build output (dist/):
 - `src/core/am7client.js` — REST client, `uwm` login helper
 - `src/views/object.js` — Object view with command dispatch (lines 295-317, where workflow commands are dispatched)
 
-**For Phase 3.5b (Dialog Workflow Commands):**
-- Read Ux7 `AccountManagerUx7/client/components/dialog.js` — reference implementation for all 6 workflows
-- Read `src/components/dialogCore.js` — the Ux75 Dialog component to use for workflow UIs
-- Read `src/views/object.js` lines 295-317 — command dispatch where `objectPage[fn]` handlers need registering
+**For Phase 3.5c (Feature Route Validation):**
+- Test `/cardGame` route against running backend — 34 agent-generated files never runtime-tested
+- Test `/game` route (Tetris, Word Game) against running backend
+- Fix agent-generated code errors (expect significant work for cardGame)
+- `src/workflows/` — All 7 workflow modules (Phase 3.5b complete)
