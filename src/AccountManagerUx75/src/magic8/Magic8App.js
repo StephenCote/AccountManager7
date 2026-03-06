@@ -8,7 +8,7 @@ import m from 'mithril';
 import { am7model } from '../core/model.js';
 import { am7client } from '../core/am7client.js';
 import { am7view } from '../core/view.js';
-import { uwm } from '../core/config.js';
+import { uwm } from '../core/am7client.js';
 
 // Subsystem imports
 import { FullscreenManager } from './utils/FullscreenManager.js';

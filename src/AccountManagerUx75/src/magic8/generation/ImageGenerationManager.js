@@ -8,7 +8,7 @@ import m from 'mithril';
 import { am7model } from '../../core/model.js';
 import { am7view } from '../../core/view.js';
 import { am7sd } from '../../components/sdConfig.js';
-import { uwm } from '../../core/base64.js';
+import { uwm } from '../../core/am7client.js';
 
 /** Late-bound accessor for page (wired via am7model._page in main.js) */
 function getPage() { return am7model._page; }
