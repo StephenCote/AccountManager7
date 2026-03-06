@@ -10,7 +10,7 @@
 
 **Project:** `AccountManagerUx75/` — 135 source files, ~71,000 lines
 **Build:** Vite 6.4.1, 160 modules, builds in ~5s
-**Tests:** 64 Vitest unit tests pass, 27 Playwright E2E tests pass (all green)
+**Tests:** 64 Vitest unit tests pass, 35 Playwright E2E tests pass (all green)
 **Ux7 File Parity:** ~100% — all active Ux7 source files ported including dialog workflow commands (5 intentionally skipped)
 
 ---
@@ -25,7 +25,8 @@
 | **Phase 3: Feature System** | COMPLETE | 8 | `features.js` manifest with 7 features (core, chat, cardGame, games, testHarness, iso42001, biometrics), 5 build profiles, lazy `import()` for feature routes |
 | **Phase 3.5a: E2E Test Infrastructure** | COMPLETE | 7 | Playwright E2E tests (25 tests, 7 spec files), console error capture with IGNORED_PATTERNS, isolated API session helpers, test user setup/teardown. Fixed: biometrics spec selectors, Mithril key mismatch in biometrics.js, session conflicts in parallel workers. |
 | **Phase 3.5b: Dialog Workflow Commands** | COMPLETE | 8 | Ported all 7 command handlers (summarize, vectorize, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder) as ESM workflow modules in `src/workflows/`. Wired into object.js command dispatch. 9 Vitest + 2 Playwright tests added. |
-| **Phase 3.5c: Core Workflow Runtime Validation** | **NEXT** | 0 | Runtime-test reimage, summarize, vectorize, memberCloud, adopt, outfitBuilder, chat against backend. Fix integration issues. |
+| **Phase 3.5c: Core Workflow Runtime Validation** | COMPLETE | 9 | Runtime-tested all 7 workflow handlers + chat against backend. Fixed: setNarDescription null crash, 7 formDef forward-reference bugs, reimage null sdEntity + missing await, command dispatch error handling, Mithril render resilience. 9 Playwright E2E tests added. |
+| **Phase 3.5d: Model Ref Form Rendering** | COMPLETE | 2 | Sub-object tabs (personality, statistics, store, narrative, profile) now render full fields instead of just objectId. Implemented `pinst` cache for sub-instances, lazy tab activation, async sub-object save with `background:true` to avoid redraw storms, grid view null guard. |
 | **Phase 4: Compliance Dashboard** | STUB ONLY | 1 | `features/iso42001.js` has basic violation list. Missing: Overview, Audit Log, Policy Templates, Report tabs, real-time chat indicators. |
 | **Phase 5: UX Polish** | NOT STARTED | 0 | Dashboard customization, dense mode, notifications. |
 | **Phase 6: Model Form View** | NOT STARTED | 0 | Requires backend schema endpoints. |
@@ -343,7 +344,23 @@ Build output (dist/):
 
 ---
 
-## 11. Quick Start Guide
+## 11. Conversation Handoff Protocol
+
+**MANDATORY:** At the end of every conversation that completes work on the Ux75 refactor:
+
+1. **Update this file** — Mark completed tasks, update phase status, adjust test counts, note any new known issues.
+2. **Update MEMORY.md** — Reflect current phase, key discoveries, and any new API gotchas.
+3. **Provide a summary** — Brief recap of what was done, files changed, tests added/passing.
+4. **Generate a kickoff prompt** — Write a ready-to-paste prompt the user can use to start the next phase in a new conversation. The prompt should include:
+   - Which phase to work on and what it involves
+   - Prerequisites (backend running, etc.)
+   - Sub-tasks in priority order
+   - Key context the new conversation needs (API gotchas, patterns, file locations)
+   - The standing test requirements: "Make sure all Playwright tests pass, all browser console warnings and errors are addressed, and watch server logs for unexpected errors."
+
+---
+
+## 12. Quick Start Guide
 
 **To resume Ux75 development in a new conversation:**
 
@@ -351,8 +368,8 @@ Build output (dist/):
 2. Read `Ux7Redesign.md` for design requirements (Sections 1-13)
 3. Read `~/.claude/projects/.../memory/MEMORY.md` for API patterns and gotchas
 4. Run `cd AccountManagerUx75 && npm run dev` to start Vite dev server (port 8899)
-5. Run `npx vitest run` to verify unit tests pass (55 tests expected)
-6. Run `npx playwright test` to verify E2E tests pass (25 tests expected, requires backend on 8443)
+5. Run `npx vitest run` to verify unit tests pass (64 tests expected)
+6. Run `npx playwright test` to verify E2E tests pass (27 tests expected, requires backend on 8443)
 
 **Key files to read first:**
 - `src/main.js` — Entry point, wires all modules
@@ -360,10 +377,13 @@ Build output (dist/):
 - `src/features.js` — Feature manifest, `loadFeatureRoutes()`
 - `src/core/pageClient.js` — App state, auth, WebSocket
 - `src/core/am7client.js` — REST client, `uwm` login helper
-- `src/views/object.js` — Object view with command dispatch (lines 295-317, where workflow commands are dispatched)
-
-**For Phase 3.5c (Feature Route Validation):**
-- Test `/cardGame` route against running backend — 34 agent-generated files never runtime-tested
-- Test `/game` route (Tetris, Word Game) against running backend
-- Fix agent-generated code errors (expect significant work for cardGame)
+- `src/views/object.js` — Object view with command dispatch + workflow handler registration
 - `src/workflows/` — All 7 workflow modules (Phase 3.5b complete)
+
+**For Phase 3.5c (Core Workflow Runtime Validation):**
+- Backend must be running on localhost:8443
+- Test workflow commands via browser: open charPerson → click Reimage, Summarize, etc.
+- Test chat feature: navigate to /chat, create session, send message
+- Fix integration issues (endpoint mismatches, missing data, am7sd config)
+- Key reference: Ux7 `client/components/dialog.js` for expected behavior
+- SD models: user can help select smaller/faster models for testing

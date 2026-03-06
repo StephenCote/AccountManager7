@@ -18,6 +18,9 @@ async function reimageApparel(entity, inst) {
 
     let am7sd = am7model._sd;
     let sdEntity = await am7sd.fetchTemplate(true);
+    if (!sdEntity) {
+        sdEntity = am7model.newPrimitive('olio.sdConfig');
+    }
     let cinst = am7model.prepareInstance(sdEntity, am7model.forms.sdMannequinConfig || am7model.forms.sdConfig);
 
     // Quality defaults

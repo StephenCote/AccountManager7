@@ -3818,7 +3818,7 @@ import { am7model } from './model.js';
             outfitBuilder: {
                 label: 'Outfit Builder',
                 icon: 'checkroom',
-                function: 'showOutfitBuilder',
+                function: 'outfitBuilder',
                 requiredAttribute: "objectId"
             },
             startGame: {
@@ -3988,19 +3988,6 @@ import { am7model } from './model.js';
         forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tagattributes"]
     };
 
-    forms.storeRef = {
-        label: "Store",
-        model: true,
-        property: "store",
-        fields: {
-            store: {
-                layout: "full",
-                form: forms.store
-            }
-        }
-    }
-
-
     forms.store = {
         label: "Store",
         fields: {
@@ -4013,6 +4000,18 @@ import { am7model } from './model.js';
                 layout: 'half',
                 format: "table",
                 form: forms.entitylist
+            }
+        }
+    };
+
+    forms.storeRef = {
+        label: "Store",
+        model: true,
+        property: "store",
+        fields: {
+            store: {
+                layout: "full",
+                form: forms.store
             }
         }
     };
@@ -4312,19 +4311,6 @@ import { am7model } from './model.js';
         },
         forms: ["lightgroupinfo"]
     };
-    forms.itemStatisticsRef = {
-        label: "Statistics",
-        model: true,
-        property: "statistics",
-        fields: {
-            statistics: {
-                layout: "full",
-                form: forms.itemStatistics
-            }
-        }
-    };
-
-
     forms.itemStatistics = {
         label: "Statistics",
         fields: {
@@ -4343,18 +4329,17 @@ import { am7model } from './model.js';
         }
     };
 
-    forms.statisticsRef = {
+    forms.itemStatisticsRef = {
         label: "Statistics",
         model: true,
         property: "statistics",
         fields: {
             statistics: {
                 layout: "full",
-                form: forms.statistics
+                form: forms.itemStatistics
             }
         }
     };
-
 
     forms.statistics = {
         label: "Statistics",
@@ -4467,37 +4452,14 @@ import { am7model } from './model.js';
         }
     };
 
-    forms.narrativeRef = {
-        label: "Narrative",
+    forms.statisticsRef = {
+        label: "Statistics",
         model: true,
-        property: "narrative",
+        property: "statistics",
         fields: {
-            narrative: {
+            statistics: {
                 layout: "full",
-                form: forms.narrative
-            }
-        }
-    }
-    forms.personalityRef = {
-        label: "Personality",
-        model: true,
-        property: "personality",
-        fields: {
-            personality: {
-                layout: "full",
-                form: forms.personality
-            }
-        }
-    };
-
-    forms.profileRef = {
-        label: "Profile",
-        model: true,
-        property: "profile",
-        fields: {
-            profile: {
-                layout: "full",
-                form: forms.profile
+                form: forms.statistics
             }
         }
     };
@@ -4690,6 +4652,42 @@ import { am7model } from './model.js';
                 layout: 'full',
                 label: "SD Negative Prompt",
                 format: 'print'
+            }
+        }
+    };
+
+    forms.profileRef = {
+        label: "Profile",
+        model: true,
+        property: "profile",
+        fields: {
+            profile: {
+                layout: "full",
+                form: forms.profile
+            }
+        }
+    };
+
+    forms.personalityRef = {
+        label: "Personality",
+        model: true,
+        property: "personality",
+        fields: {
+            personality: {
+                layout: "full",
+                form: forms.personality
+            }
+        }
+    };
+
+    forms.narrativeRef = {
+        label: "Narrative",
+        model: true,
+        property: "narrative",
+        fields: {
+            narrative: {
+                layout: "full",
+                form: forms.narrative
             }
         }
     };
@@ -4939,19 +4937,6 @@ import { am7model } from './model.js';
         forms: ["groupinfo", "attributes"]
     };
 
-    forms.chatOptionsRef = {
-        label: "Options",
-        model: true,
-        property: "chatOptions",
-        fields: {
-            chatOptions: {
-                layout: "full",
-                form: forms.chatOptions
-            }
-        }
-    }
-
-
     /// Options presets for the chatOptions balancer — aligned with chatConfig templates
     let chatOptionsPresets = {
         "General Chat": {
@@ -5113,6 +5098,19 @@ import { am7model } from './model.js';
 
         }
     };
+
+    forms.chatOptionsRef = {
+        label: "Options",
+        model: true,
+        property: "chatOptions",
+        fields: {
+            chatOptions: {
+                layout: "full",
+                form: forms.chatOptions
+            }
+        }
+    };
+
     forms.chatConfig = {
         label: "Chat Configuration",
         fields: {

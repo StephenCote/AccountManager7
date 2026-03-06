@@ -80,6 +80,9 @@ async function reimage(entity, inst) {
     let isCharPerson = inst.model.name === 'olio.charPerson';
 
     let sdEntity = await am7sd.fetchTemplate(true);
+    if (!sdEntity) {
+        sdEntity = am7model.newPrimitive('olio.sdConfig');
+    }
     let cinst = lastReimage || am7model.prepareInstance(sdEntity, am7model.forms.sdConfig);
 
     // Quality defaults
@@ -91,7 +94,7 @@ async function reimage(entity, inst) {
 
     // Load character-specific config
     let charConfigName = inst.api.name() + '-SD.json';
-    let charConfig = am7sd.loadConfig(charConfigName);
+    let charConfig = await am7sd.loadConfig(charConfigName);
     if (charConfig) am7sd.applyConfig(cinst, charConfig);
 
     lastReimage = cinst;

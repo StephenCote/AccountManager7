@@ -72,6 +72,7 @@ am7view.fieldView = function(fld, inst) {
 // ── Object Renderer Selection ───────────────────────────────────────
 
 am7view.selectObjectRenderer = function(object) {
+    if (!object) return null;
     // Check for portrait
     if (object.profile && object.profile.portrait && object.profile.portrait.contentType) {
         return "portrait";

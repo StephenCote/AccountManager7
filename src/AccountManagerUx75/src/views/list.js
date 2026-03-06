@@ -368,6 +368,7 @@ function newListControl() {
         let currentIdx = pg.currentItem || 0;
         if (currentIdx >= items.length) currentIdx = items.length - 1;
         let item = items[currentIdx];
+        if (!item) return m('div', { class: 'p-4 text-gray-400' }, 'No item at index ' + currentIdx);
 
         // Try to render via objectViewRenderers
         let rendererType = am7view.selectObjectRenderer ? am7view.selectObjectRenderer(item) : null;

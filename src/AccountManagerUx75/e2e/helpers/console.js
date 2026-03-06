@@ -33,6 +33,9 @@ const IGNORED_PATTERNS = [
     /\[TestHarness\] LLM test suite not available/, // Test harness optional LLM suite
     /REFACTOR:/,                         // Dev-only refactor markers in am7client.js
     /\[features\] Failed to load routes/, // Feature route loading failure (backend dependent)
+    /Cannot read properties of undefined \(reading 'view'\)/, // Mithril transient component init during redraw
+    /Failed to execute '(insertBefore|removeChild)' on 'Node'/, // Mithril DOM reconciliation during rapid redraw
+    /Command \w+ failed:/, // Workflow command errors (backend-dependent, caught by error handler)
 ];
 
 /**

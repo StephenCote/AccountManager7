@@ -71,7 +71,7 @@ async function searchCtx(ctx, type, fieldName, fieldValue, fields) {
 }
 
 function encodePath(dirPath) {
-    if (dirPath.startsWith('/') || dirPath.includes('.')) {
+    if (dirPath.startsWith('/') || dirPath.startsWith('~') || dirPath.includes('.')) {
         return 'B64-' + b64(dirPath).replace(/=/g, '%3D');
     }
     return dirPath;
@@ -127,6 +127,31 @@ async function createNoteCtx(ctx, groupPath, name, text) {
 
 async function deleteObjectCtx(ctx, type, objectId) {
     await ctx.delete(REST + '/model/' + type + '/' + objectId);
+}
+
+async function createObjectCtx(ctx, schema, data) {
+    let existing = data.name ? await searchCtx(ctx, schema, 'name', data.name) : null;
+    if (existing && existing.objectId) return existing;
+
+    let resp = await ctx.post(REST + '/model', {
+        data: Object.assign({ schema }, data)
+    });
+    return await safeJson(resp);
+}
+
+async function listObjectsCtx(ctx, type, groupId, count) {
+    let fields = [{ name: 'groupId', comparator: 'equals', value: String(groupId) }];
+    let resp = await ctx.post(REST + '/model/search', {
+        data: {
+            schema: 'io.query',
+            type: type,
+            fields: fields,
+            request: ['id', 'objectId', 'name', 'groupPath'],
+            recordCount: count || 10
+        }
+    });
+    let result = await safeJson(resp);
+    return (result && result.results) ? result.results : [];
 }
 
 // ── Public exports (backward-compatible, use shared request fixture) ───
@@ -279,4 +304,81 @@ export async function ensureSharedTestUser(request, opts = {}) {
     } finally {
         await ctx.dispose();
     }
+}
+
+/**
+ * Setup workflow test data: create test user + charPerson + data.data objects.
+ * Uses its own isolated APIRequestContext.
+ * Returns { user, testUserName, testPassword, charPerson, dataObject, note }.
+ */
+export async function setupWorkflowTestData(request, opts = {}) {
+    const org = opts.org || '/Development';
+    const suffix = opts.suffix || 'wf' + Date.now().toString(36);
+    const testUserName = 'e2etest_' + suffix;
+    const testPassword = 'password';
+
+    // Phase 1: Admin creates and configures the test user
+    let adminCtx = await newApiContext();
+    let user;
+    try {
+        await loginCtx(adminCtx, { org });
+        user = await searchCtx(adminCtx, 'system.user', 'name', testUserName);
+        if (!user || !user.objectId) {
+            user = await createUserCtx(adminCtx, testUserName);
+        }
+        if (user && user.objectId) {
+            await setCredentialCtx(adminCtx, user.objectId, testPassword);
+        }
+        await logoutCtx(adminCtx);
+    } finally {
+        await adminCtx.dispose();
+    }
+
+    // Phase 2: Login as test user to create data in their home directory
+    let userCtx = await newApiContext();
+    let charPerson = null, dataObject = null, note = null;
+    let charDirId = null, dataDirId = null;
+    try {
+        await loginCtx(userCtx, { org, user: testUserName, password: testPassword });
+
+        // Ensure home subdirectories exist (~ = user's home dir)
+        let charDir = await ensurePathCtx(userCtx, 'auth.group', 'data', '~/Characters');
+        let dataDir = await ensurePathCtx(userCtx, 'auth.group', 'data', '~/Data');
+
+        if (charDir && charDir.id) {
+            charDirId = charDir.objectId;
+            charPerson = await createObjectCtx(userCtx, 'olio.charPerson', {
+                name: testUserName + '_char',
+                firstName: 'Test',
+                middleName: 'E2E',
+                lastName: 'Character',
+                gender: 'female',
+                alignment: 'NEUTRAL_GOOD',
+                groupId: charDir.id,
+                groupPath: charDir.path
+            });
+        }
+
+        if (dataDir && dataDir.id) {
+            dataDirId = dataDir.objectId;
+            dataObject = await createObjectCtx(userCtx, 'data.data', {
+                name: testUserName + '_data.txt',
+                contentType: 'text/plain',
+                groupId: dataDir.id,
+                groupPath: dataDir.path
+            });
+        }
+
+        note = await createNoteCtx(userCtx, '~/Notes', testUserName + '_note', 'Workflow test content');
+
+        await logoutCtx(userCtx);
+    } finally {
+        await userCtx.dispose();
+    }
+
+    return {
+        user, testUserName, testPassword,
+        charPerson, dataObject, note,
+        charDirId, dataDirId
+    };
 }

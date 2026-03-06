@@ -9,6 +9,7 @@ import { am7model } from './core/model.js';
 import { am7view } from './core/view.js';
 import { am7client } from './core/am7client.js';
 import { page } from './core/pageClient.js';
+import './core/formDef.js'; // Side-effect: registers am7model.forms.*
 import { Dialog } from './components/dialogCore.js';
 import { ObjectPicker } from './components/picker.js';
 import { dnd } from './components/dnd.js';
@@ -92,9 +93,11 @@ page.components.form = form.component;
 import { object_v2 } from './components/object_v2.js';
 page.components.object_v2 = object_v2.component;
 
-// Expose Dialog for dev console testing
+// Expose internals for dev console and E2E testing
 if (typeof window !== 'undefined') {
     window.Dialog = Dialog;
+    window.__am7page = page;
+    window.__am7model = am7model;
 }
 
 // Start the application

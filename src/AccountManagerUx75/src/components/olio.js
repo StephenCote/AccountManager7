@@ -216,10 +216,19 @@ async function dressApparel(vapp, dressUpDir) {
 async function setNarDescription(inst, cinst) {
     let am7client = getClient();
     let page = getPage();
+    let narRef = inst.api.narrative ? inst.api.narrative() : null;
+    if (!narRef || !narRef.objectId) {
+        cinst.api.description(inst.api.firstName() + " " + (inst.api.lastName ? inst.api.lastName() : ''));
+        return;
+    }
     await am7client.clearCache("olio.narrative");
-    let nar = await page.searchFirst("olio.narrative", undefined, undefined, inst.api.narrative().objectId);
+    let nar = await page.searchFirst("olio.narrative", undefined, undefined, narRef.objectId);
+    if (!nar) {
+        cinst.api.description(inst.api.firstName() + " " + (inst.api.lastName ? inst.api.lastName() : ''));
+        return;
+    }
     let pro = (inst.api.gender() == "male" ? "He" : "She");
-    cinst.api.description(inst.api.firstName() + " is a " + nar.physicalDescription + " " + pro + " is " + nar.outfitDescription + ".");
+    cinst.api.description(inst.api.firstName() + " is a " + (nar.physicalDescription || '') + " " + pro + " is " + (nar.outfitDescription || '') + ".");
 }
 
 // ── Constants ────────────────────────────────────────────────────

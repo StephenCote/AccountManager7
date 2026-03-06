@@ -23,6 +23,7 @@ function newObjectPage() {
     let foreignData = {};
     let valuesState = {};
     let pickerMode = { enabled: false, type: null, callback: null };
+    let pinst = {}; // Cached sub-object instances for model ref forms
 
     // --- Entity loading ---
 
@@ -97,6 +98,7 @@ function newObjectPage() {
         let modType = am7model.getModel(type);
         entity = null;
         tabIndex = 0;
+        pinst = {};
 
         if (objectNew) {
             if (objectId && !ctx.contextObjects[objectId]) {
@@ -132,7 +134,7 @@ function newObjectPage() {
 
     // --- Actions ---
 
-    function doUpdate() {
+    async function doUpdate() {
         if (!entity) { console.error('No entity defined'); return; }
         if (!entity[am7model.jsonModelKey] || entity[am7model.jsonModelKey] === 'UNKNOWN') {
             console.error('Unknown entity type'); return;
@@ -140,24 +142,76 @@ function newObjectPage() {
         if (!inst.validate(true)) { page.toast('warn', 'Please fill in all fields'); return; }
 
         let bpatch = am7model.hasIdentity(entity);
-        if (!inst.changes.length) { page.toast('warn', 'No changes detected'); return; }
+
+        // Collect sub-object changes
+        let subKeys = [];
+        Object.keys(pinst).forEach(function (k) {
+            if (k.endsWith('_loaded')) return;
+            let e = pinst[k];
+            if (e && e.changes && e.changes.length) subKeys.push(k);
+        });
+
+        // Remove sub-object property names from parent changes
+        subKeys.forEach(function (k) { inst.unchange(k); });
+
+        let hasAnyChanges = inst.changes.length > 0 || subKeys.length > 0;
+        if (!hasAnyChanges) { page.toast('warn', 'No changes detected'); return; }
+
+        // Save sub-objects with background:true to suppress per-request redraws
+        for (let i = 0; i < subKeys.length; i++) {
+            let k = subKeys[i];
+            let e = pinst[k];
+            let upatch = am7model.hasIdentity(e.entity);
+            let puint = upatch ? e.patch() : e.entity;
+            if (!puint) continue;
+            try {
+                let v = await m.request({
+                    method: upatch ? 'PATCH' : 'POST',
+                    url: am7client.base() + '/resource/' + e.entity[am7model.jsonModelKey],
+                    body: puint,
+                    withCredentials: true,
+                    background: true
+                });
+                if (v) {
+                    e.resetChanges();
+                    if (!upatch) {
+                        Object.keys(v).forEach(function (j) { e.entity[j] = v[j]; });
+                        if (inst.api[k]) inst.api[k](v);
+                    }
+                    am7client.clearCache(e.entity[am7model.jsonModelKey], true);
+                }
+            } catch (err) {
+                page.toast('error', 'Failed to save ' + k + ': ' + (err.message || err));
+                m.redraw();
+                return;
+            }
+        }
+
+        // Save parent if it has its own changes
+        if (!inst.changes.length) {
+            if (subKeys.length) {
+                page.toast('success', 'Saved!');
+                page.clearContextObject(entity.objectId);
+            }
+            m.redraw();
+            return;
+        }
 
         let uint = bpatch ? inst.patch() : entity;
-        if (!uint) { page.toast('warn', 'No patch fields identified'); return; }
+        if (!uint) { page.toast('warn', 'No patch fields identified'); m.redraw(); return; }
 
         am7client[bpatch ? 'patch' : 'create'](entity[am7model.jsonModelKey], uint, function (v) {
             if (v != null) {
                 page.toast('success', 'Saved!');
                 let wasNew = objectNew;
                 inst.resetChanges();
-                am7client.clearCache(entity[am7model.jsonModelKey], false, function () {
-                    if (!bpatch) entity = v;
-                    page.clearContextObject(entity.objectId);
-                    objectNew = false;
-                    if (wasNew) {
-                        m.route.set('/view/' + entity[am7model.jsonModelKey] + '/' + entity.objectId, { key: entity.objectId });
-                    } else m.redraw();
-                });
+                am7client.clearCache(entity[am7model.jsonModelKey], true);
+                if (!bpatch) entity = v;
+                page.clearContextObject(entity.objectId);
+                objectNew = false;
+                if (wasNew) {
+                    m.route.set('/view/' + entity[am7model.jsonModelKey] + '/' + entity.objectId, { key: entity.objectId });
+                } else m.redraw();
             } else {
                 page.toast('error', 'An error occurred while trying to update the object');
             }
@@ -310,7 +364,10 @@ function newObjectPage() {
                 if (!active) return;
                 let fn = cmd.function;
                 if (objectPage[fn]) {
-                    objectPage[fn](entity, inst, cmd);
+                    Promise.resolve(objectPage[fn](entity, inst, cmd)).catch(function(e) {
+                        console.error("Command " + fn + " failed:", e);
+                        page.toast('error', 'Command failed: ' + (e.message || e));
+                    });
                 } else if (page.components.membership && page.components.membership[fn]) {
                     let ctx = buildTableCtx(cmd.field || '', cmd, {});
                     page.components.membership[fn](ctx, cmd.field || '', cmd);
@@ -367,6 +424,10 @@ function newObjectPage() {
     };
     objectPage.adoptCharacter = adoptCharacter;
     objectPage.outfitBuilder = outfitBuilder;
+
+    // Stub handlers for commands not yet implemented (prevent "Command function not found" warnings)
+    objectPage.makeFact = function () { page.toast('info', 'Fact creation not yet implemented'); };
+    objectPage.startGameWithCharacter = function () { page.toast('info', 'Game start not yet implemented'); };
 
     // --- Tab support ---
 
@@ -480,6 +541,72 @@ function newObjectPage() {
     }
 
     function modelForm(active, type, form) {
+        // Model ref forms: resolve sub-object and render its fields
+        if (form.model && form.property) {
+            if (!inst) return '';
+
+            // Only resolve and render model ref when tab is active — avoids loading all sub-objects upfront
+            if (!active && !pinst[form.property]) {
+                return m('div', { class: 'field-grid-6 hidden' });
+            }
+
+            let mf = am7model.getModelField(type, form.property);
+            if (!mf || !mf.baseModel) {
+                return m('div', { class: 'field-grid-6' + (active ? '' : ' hidden') }, 'Property not found: ' + form.property);
+            }
+
+            let minst;
+            if (!pinst[form.property]) {
+                let mo = inst.api[form.property] ? inst.api[form.property]() : null;
+                if (!mo) {
+                    mo = am7model.newPrimitive(mf.baseModel);
+                    if (inst.api[form.property]) inst.api[form.property](mo);
+                    mo[am7model.jsonModelKey] = mf.baseModel;
+                }
+                minst = am7model.prepareInstance(mo);
+                pinst[form.property] = minst;
+
+                // If the sub-object has identity, load full data
+                if (am7model.hasIdentity(mo) && !pinst[form.property + '_loaded']) {
+                    pinst[form.property + '_loaded'] = true;
+                    let subType = mf.baseModel;
+                    let q = am7view.viewQuery(am7model.newInstance(subType));
+                    if (mo.objectId) q.field('objectId', mo.objectId);
+                    else if (mo.id) q.field('id', mo.id);
+                    am7client.search(q, function (qr) {
+                        if (qr && qr.count) {
+                            pinst[form.property] = am7model.prepareInstance(qr.results[0]);
+                        }
+                    });
+                }
+            } else {
+                minst = pinst[form.property];
+            }
+
+            // Render the sub-form's fields using the sub-form definition
+            let subForm = form.fields[form.property] ? form.fields[form.property].form : null;
+            if (!subForm) subForm = form;
+
+            // Temporarily swap inst/entity to render sub-object fields
+            let savedInst = inst;
+            let savedEntity = entity;
+            let subType = minst.model ? minst.model.name : mf.baseModel;
+            inst = minst;
+            entity = minst.entity;
+
+            let outF = [];
+            Object.keys(subForm.fields).forEach(function (e) {
+                let field = subForm.fields[e].field || am7model.getModelField(subType, e);
+                if (!field) console.warn('Failed to find field ' + e + ' for ' + subType);
+                else outF.push(modelFieldContainer(e, subForm.fields[e], field));
+            });
+
+            inst = savedInst;
+            entity = savedEntity;
+
+            return m('div', { class: 'field-grid-6' + (active ? '' : ' hidden') }, outF);
+        }
+
         let outF = [];
         Object.keys(form.fields).forEach(function (e) {
             let field = form.fields[e].field || am7model.getModelField(type, e);
@@ -558,7 +685,7 @@ function newObjectPage() {
         onremove: function () {
             entity = null; inst = null; tabIndex = 0;
             fullMode = false; designMode = false;
-            foreignData = {}; valuesState = {};
+            foreignData = {}; valuesState = {}; pinst = {};
             pickerMode = { enabled: false, type: null, callback: null };
             if (page.components.tableListEditor) page.components.tableListEditor.resetState();
         },
