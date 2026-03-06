@@ -59,7 +59,7 @@ const routes = {
                 );
             }
             // Magic8App renders fullscreen — no nav/layout wrapper needed
-            return layout(m(magic8App, { key: 'magic8', routeParams: vnode.attrs }));
+            return layout(m(magic8App, { routeParams: vnode.attrs }));
         }
     }
 };

@@ -1,25 +1,47 @@
 /**
  * API helpers for E2E test data setup/teardown.
- * Uses Playwright's request context to call the backend REST API.
  *
- * Flow: login as admin → create test user → set credential → logout → login as test user → create test data
+ * Each setup/teardown function creates its own APIRequestContext (own cookie jar)
+ * so that parallel workers don't share and clobber each other's server sessions.
  */
+import { request as pwRequest } from '@playwright/test';
 
-const BASE = 'http://localhost:8899/AccountManagerService7/rest';
+const BASE_URL = 'https://localhost:8899';
+const REST = BASE_URL + '/AccountManagerService7/rest';
 
 function b64(str) {
     return Buffer.from(str).toString('base64');
 }
 
 /**
- * Login via REST API.
+ * Create an isolated API request context (own cookie jar = own server session).
  */
-export async function apiLogin(request, opts = {}) {
+async function newApiContext() {
+    return await pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
+}
+
+/**
+ * Parse a response as JSON, returning null if it fails or the status is not OK.
+ */
+async function safeJson(resp) {
+    if (!resp.ok()) return null;
+    try {
+        let text = await resp.text();
+        if (!text || text.startsWith('<!') || text.startsWith('<html')) return null;
+        return JSON.parse(text);
+    } catch {
+        return null;
+    }
+}
+
+// ── Internal helpers that take an explicit context ──────────────────────
+
+async function loginCtx(ctx, opts = {}) {
     const org = opts.org || '/Development';
     const user = opts.user || 'admin';
     const password = opts.password || 'password';
 
-    let resp = await request.post(BASE + '/login', {
+    return await ctx.post(REST + '/login', {
         data: {
             schema: 'auth.credential',
             organizationPath: org,
@@ -28,21 +50,14 @@ export async function apiLogin(request, opts = {}) {
             type: 'hashed_password'
         }
     });
-    return resp;
 }
 
-/**
- * Logout via REST API.
- */
-export async function apiLogout(request) {
-    await request.get(BASE + '/logout');
+async function logoutCtx(ctx) {
+    await ctx.get(REST + '/logout');
 }
 
-/**
- * Search for objects by type and field value.
- */
-export async function searchByField(request, type, fieldName, fieldValue, fields) {
-    let resp = await request.post(BASE + '/model/search', {
+async function searchCtx(ctx, type, fieldName, fieldValue, fields) {
+    let resp = await ctx.post(REST + '/model/search', {
         data: {
             schema: 'io.query',
             type: type,
@@ -51,13 +66,10 @@ export async function searchByField(request, type, fieldName, fieldValue, fields
             recordCount: 1
         }
     });
-    let result = await resp.json();
+    let result = await safeJson(resp);
     return (result && result.results && result.results.length > 0) ? result.results[0] : null;
 }
 
-/**
- * Encode a path for the path service (base64 with B64- prefix if needed).
- */
 function encodePath(dirPath) {
     if (dirPath.startsWith('/') || dirPath.includes('.')) {
         return 'B64-' + b64(dirPath).replace(/=/g, '%3D');
@@ -65,44 +77,25 @@ function encodePath(dirPath) {
     return dirPath;
 }
 
-/**
- * Ensure a directory path exists (make endpoint).
- */
-export async function ensurePath(request, type, subType, dirPath) {
-    let resp = await request.get(BASE + '/path/make/' + type + '/' + subType + '/' + encodePath(dirPath));
-    let text = await resp.text();
-    if (!text) return null;
-    return JSON.parse(text);
+async function ensurePathCtx(ctx, type, subType, dirPath) {
+    let resp = await ctx.get(REST + '/path/make/' + type + '/' + subType + '/' + encodePath(dirPath));
+    return await safeJson(resp);
 }
 
-/**
- * Find an object by path (does NOT create if missing).
- */
-export async function findPath(request, type, subType, dirPath) {
-    let resp = await request.get(BASE + '/path/find/' + type + '/' + subType + '/' + encodePath(dirPath));
-    let text = await resp.text();
-    if (!text) return null;
-    try { return JSON.parse(text); } catch { return null; }
+async function findPathCtx(ctx, type, subType, dirPath) {
+    let resp = await ctx.get(REST + '/path/find/' + type + '/' + subType + '/' + encodePath(dirPath));
+    return await safeJson(resp);
 }
 
-/**
- * Create a system.user. UserWriter handles group assignment automatically.
- * Must be logged in as admin.
- */
-export async function createUser(request, name) {
-    await request.post(BASE + '/model', {
+async function createUserCtx(ctx, name) {
+    await ctx.post(REST + '/model', {
         data: { schema: 'system.user', name: name }
     });
-    // UserWriter returns minimal response; search to get the full object
-    return await searchByField(request, 'system.user', 'name', name);
+    return await searchCtx(ctx, 'system.user', 'name', name);
 }
 
-/**
- * Set password credential on a user via CredentialService.
- * Must be logged in as admin. Admin can set credentials without supplying the old password.
- */
-export async function setCredential(request, userObjectId, password) {
-    let resp = await request.post(BASE + '/credential/system.user/' + userObjectId, {
+async function setCredentialCtx(ctx, userObjectId, password) {
+    let resp = await ctx.post(REST + '/credential/system.user/' + userObjectId, {
         data: {
             schema: 'auth.authenticationRequest',
             credential: b64(password),
@@ -113,14 +106,14 @@ export async function setCredential(request, userObjectId, password) {
     return text === 'true';
 }
 
-/**
- * Create a data.note in the given group directory.
- */
-export async function createNote(request, groupPath, name, text) {
-    let dir = await ensurePath(request, 'auth.group', 'data', groupPath);
+async function createNoteCtx(ctx, groupPath, name, text) {
+    let existing = await searchCtx(ctx, 'data.note', 'name', name);
+    if (existing && existing.objectId) return existing;
+
+    let dir = await ensurePathCtx(ctx, 'auth.group', 'data', groupPath);
     if (!dir || !dir.id) return null;
 
-    let resp = await request.post(BASE + '/model', {
+    let resp = await ctx.post(REST + '/model', {
         data: {
             schema: 'data.note',
             groupId: dir.id,
@@ -129,20 +122,38 @@ export async function createNote(request, groupPath, name, text) {
             text: text || 'E2E test note content'
         }
     });
-    let body = await resp.text();
-    if (!body) return null;
-    return JSON.parse(body);
+    return await safeJson(resp);
 }
 
-/**
- * Delete an object by type and objectId.
- */
+async function deleteObjectCtx(ctx, type, objectId) {
+    await ctx.delete(REST + '/model/' + type + '/' + objectId);
+}
+
+// ── Public exports (backward-compatible, use shared request fixture) ───
+
+export async function apiLogin(request, opts) { return loginCtx(request, opts); }
+export async function apiLogout(request) { return logoutCtx(request); }
+export async function searchByField(request, type, fieldName, fieldValue, fields) {
+    return searchCtx(request, type, fieldName, fieldValue, fields);
+}
+export async function ensurePath(request, type, subType, dirPath) {
+    return ensurePathCtx(request, type, subType, dirPath);
+}
+export async function findPath(request, type, subType, dirPath) {
+    return findPathCtx(request, type, subType, dirPath);
+}
+export async function createNote(request, groupPath, name, text) {
+    return createNoteCtx(request, groupPath, name, text);
+}
 export async function deleteObject(request, type, objectId) {
-    await request.delete(BASE + '/model/' + type + '/' + objectId);
+    return deleteObjectCtx(request, type, objectId);
 }
 
+// ── Composite helpers (each creates its own isolated session) ──────────
+
 /**
- * Full test setup: login as admin, create test user + credential + test data, logout, login as test user.
+ * Full test setup: login as admin, create test user + credential + test data.
+ * Uses its own isolated APIRequestContext so parallel workers don't conflict.
  * Returns { user, testUserName, testPassword, notes }.
  */
 export async function setupTestUser(request, opts = {}) {
@@ -153,95 +164,97 @@ export async function setupTestUser(request, opts = {}) {
     const noteCount = opts.noteCount || 3;
     const notePrefix = opts.notePrefix || testUserName;
 
-    // 1. Login as admin
-    await apiLogin(request, { org });
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org });
 
-    // 2. Create test user
-    let user = await createUser(request, testUserName);
+        let user = await searchCtx(ctx, 'system.user', 'name', testUserName);
+        if (!user || !user.objectId) {
+            user = await createUserCtx(ctx, testUserName);
+        }
 
-    // 3. Set credential
-    if (user && user.objectId) {
-        await setCredential(request, user.objectId, testPassword);
+        if (user && user.objectId) {
+            await setCredentialCtx(ctx, user.objectId, testPassword);
+        }
+
+        let notes = [];
+        let orgPath = org.replace(/^\//, '');
+        for (let i = 1; i <= noteCount; i++) {
+            let note = await createNoteCtx(ctx, '/' + orgPath + '/Notes', notePrefix + ' Note ' + i, 'Test content ' + i);
+            if (note && note.objectId) notes.push(note);
+        }
+
+        await logoutCtx(ctx);
+        return { user, testUserName, testPassword, notes };
+    } finally {
+        await ctx.dispose();
     }
-
-    // 4. Create test data as admin (test user may not have directory creation permissions)
-    let notes = [];
-    let orgPath = org.replace(/^\//, '');
-    for (let i = 1; i <= noteCount; i++) {
-        let note = await createNote(request, '/' + orgPath + '/Notes', notePrefix + ' Note ' + i, 'Test content ' + i);
-        if (note && note.objectId) notes.push(note);
-    }
-
-    // 5. Logout admin, login as test user
-    await apiLogout(request);
-    await apiLogin(request, { org, user: testUserName, password: testPassword });
-
-    return { user, testUserName, testPassword, notes };
 }
 
 /**
  * Cleanup test user and all associated objects.
- * Mirrors pageClient.cleanupUserRemains: home group, home role, home permission, person object.
- * Then calls /rest/model/cleanup to prune orphaned DB records.
+ * Uses its own isolated APIRequestContext.
  */
 export async function cleanupTestUser(request, userObjectId, opts = {}) {
     const org = opts.org || '/Development';
     const userName = opts.userName;
-    const TIMEOUT = 10000;
 
-    await apiLogout(request).catch(() => {});
-    await apiLogin(request, { org });
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org });
 
-    if (userName) {
-        let homeGroup = await findPath(request, 'auth.group', 'data', '/home/' + userName).catch(() => null);
-        if (homeGroup && homeGroup.objectId) {
-            await deleteObject(request, 'auth.group', homeGroup.objectId).catch(() => {});
+        if (userName) {
+            let homeGroup = await findPathCtx(ctx, 'auth.group', 'data', '/home/' + userName).catch(() => null);
+            if (homeGroup && homeGroup.objectId) {
+                await deleteObjectCtx(ctx, 'auth.group', homeGroup.objectId).catch(() => {});
+            }
+
+            let homeRole = await findPathCtx(ctx, 'auth.role', 'user', '/home/' + userName).catch(() => null);
+            if (homeRole && homeRole.objectId) {
+                await deleteObjectCtx(ctx, 'auth.role', homeRole.objectId).catch(() => {});
+            }
+
+            let homePerm = await findPathCtx(ctx, 'auth.permission', 'user', '/home/' + userName).catch(() => null);
+            if (homePerm && homePerm.objectId) {
+                await deleteObjectCtx(ctx, 'auth.permission', homePerm.objectId).catch(() => {});
+            }
+
+            let person = await searchCtx(ctx, 'identity.person', 'name', userName).catch(() => null);
+            if (person && person.objectId) {
+                await deleteObjectCtx(ctx, 'identity.person', person.objectId).catch(() => {});
+            }
         }
 
-        let homeRole = await findPath(request, 'auth.role', 'user', '/home/' + userName).catch(() => null);
-        if (homeRole && homeRole.objectId) {
-            await deleteObject(request, 'auth.role', homeRole.objectId).catch(() => {});
+        if (userObjectId) {
+            await deleteObjectCtx(ctx, 'system.user', userObjectId).catch(() => {});
         }
 
-        let homePerm = await findPath(request, 'auth.permission', 'user', '/home/' + userName).catch(() => null);
-        if (homePerm && homePerm.objectId) {
-            await deleteObject(request, 'auth.permission', homePerm.objectId).catch(() => {});
-        }
-
-        let person = await searchByField(request, 'identity.person', 'name', userName).catch(() => null);
-        if (person && person.objectId) {
-            await deleteObject(request, 'identity.person', person.objectId).catch(() => {});
-        }
+        await logoutCtx(ctx);
+    } finally {
+        await ctx.dispose();
     }
-
-    if (userObjectId) {
-        await deleteObject(request, 'system.user', userObjectId).catch(() => {});
-    }
-
-    // Skip /model/cleanup here — it includes a Postgres VACUUM that can be slow.
-    // Use cleanupTestUserFull() if you want orphan pruning + vacuum.
-
-    await apiLogout(request).catch(() => {});
 }
 
 /**
  * Full cleanup including orphan pruning + Postgres VACUUM.
- * Same as cleanupTestUser but also calls /rest/model/cleanup at the end.
- * This can take minutes on large databases — do not use in afterAll hooks with tight timeouts.
  */
 export async function cleanupTestUserFull(request, userObjectId, opts = {}) {
     await cleanupTestUser(request, userObjectId, opts);
 
-    const org = opts.org || '/Development';
-    await apiLogin(request, { org });
-    await request.get(BASE + '/model/cleanup').catch(() => {});
-    await apiLogout(request).catch(() => {});
+    let ctx = await newApiContext();
+    try {
+        const org = opts.org || '/Development';
+        await loginCtx(ctx, { org });
+        await ctx.get(REST + '/model/cleanup').catch(() => {});
+        await logoutCtx(ctx);
+    } finally {
+        await ctx.dispose();
+    }
 }
 
 /**
  * Ensure a shared persistent test user exists (idempotent — no cleanup needed).
- * Creates the user + credential on first call; subsequent calls just verify it exists.
- * Use for feature specs that don't need isolated test data.
+ * Uses its own isolated APIRequestContext.
  */
 const SHARED_USER = 'e2etest_shared';
 const SHARED_PASSWORD = 'password';
@@ -249,17 +262,21 @@ const SHARED_PASSWORD = 'password';
 export async function ensureSharedTestUser(request, opts = {}) {
     const org = opts.org || '/Development';
 
-    await apiLogin(request, { org });
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org });
 
-    let user = await searchByField(request, 'system.user', 'name', SHARED_USER);
-    if (!user || !user.objectId) {
-        user = await createUser(request, SHARED_USER);
-        if (user && user.objectId) {
-            await setCredential(request, user.objectId, SHARED_PASSWORD);
+        let user = await searchCtx(ctx, 'system.user', 'name', SHARED_USER);
+        if (!user || !user.objectId) {
+            user = await createUserCtx(ctx, SHARED_USER);
+            if (user && user.objectId) {
+                await setCredentialCtx(ctx, user.objectId, SHARED_PASSWORD);
+            }
         }
+
+        await logoutCtx(ctx);
+        return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
+    } finally {
+        await ctx.dispose();
     }
-
-    await apiLogout(request);
-
-    return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
 }

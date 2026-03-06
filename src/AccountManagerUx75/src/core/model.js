@@ -1,5 +1,6 @@
 import m from 'mithril';
 import { am7model } from './modelDef.js';
+import Base64 from './base64.js';
 
 	am7model.enums.modelNames = [];
 	am7model.models.forEach((o) => {

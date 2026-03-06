@@ -11,6 +11,7 @@
 import m from 'mithril';
 import { am7model } from '../core/model.js';
 import { am7view } from '../core/view.js';
+import { FileUpload } from './fileUpload.js';
 
 let renderers = {};
 
@@ -39,6 +40,14 @@ function buildThumbnailPath(entity, size) {
     return client.base() + "/thumbnail/" +
         client.dotPath(client.currentOrganization) +
         "/data.data" + entity.groupPath + "/" + entity.name + "/" + size;
+}
+
+function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return "0 B";
+    let k = 1024;
+    let sizes = ["B", "KB", "MB", "GB"];
+    let i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
 function applyDragAndDrop(ctx, props) {
@@ -550,8 +559,51 @@ renderers.contentType = function(ctx) {
     }
     if (ct.match(/pdf$/)) return renderers.pdf(ctx);
 
-    // Text/other — show as textarea
-    return renderers.textarea(ctx);
+    // Text content types — show as editable textarea
+    if (ct.match(/^text\//) || ct.match(/json$/) || ct.match(/xml$/) || ct.match(/javascript$/)) {
+        return renderers.textarea(ctx);
+    }
+
+    // Binary/unknown content types — show info + download link + upload zone
+    return renderers.binaryContent(ctx);
+};
+
+renderers.binaryContent = function(ctx) {
+    let useEntity = ctx.useEntity || ctx.entity;
+    let ct = (useEntity && useEntity.contentType) || "application/octet-stream";
+    let client = getClient();
+    let page = getPage();
+    let downloadUrl = buildMediaPath(useEntity);
+    let modelKey = useEntity ? useEntity[am7model.jsonModelKey] : null;
+
+    return [m("div", { class: "space-y-3" }, [
+        // Content type info
+        m("div", { class: "flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300" }, [
+            m("span", { class: "material-symbols-outlined", style: "font-size:20px" }, "description"),
+            m("span", ct),
+            useEntity && useEntity.size ? m("span", { class: "text-gray-400" }, "(" + formatBytes(useEntity.size) + ")") : null
+        ]),
+        // Download link
+        downloadUrl ? m("a", {
+            href: downloadUrl,
+            target: "_blank",
+            class: "inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
+        }, [
+            m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "download"),
+            "Download"
+        ]) : null,
+        // Upload replacement
+        useEntity && useEntity.objectId ? m(FileUpload.View, {
+            type: modelKey,
+            objectId: useEntity.objectId,
+            field: ctx.useName,
+            onComplete: function() {
+                if (client) client.clearCache(modelKey);
+                if (page) page.clearContextObject(useEntity.objectId);
+                m.redraw();
+            }
+        }) : null
+    ])];
 };
 
 // ── Registry API ────────────────────────────────────────────────────

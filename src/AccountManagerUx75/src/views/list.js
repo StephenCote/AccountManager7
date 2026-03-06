@@ -129,6 +129,9 @@ function newListControl() {
             console.error('editItem: invalid object');
             return;
         }
+        // Store current list URL so object view cancel can return here with container context
+        let ctx = page.context();
+        ctx.listReturnUrl = m.route.get();
         m.route.set('/view/' + getType(o) + '/' + o.objectId);
     }
 

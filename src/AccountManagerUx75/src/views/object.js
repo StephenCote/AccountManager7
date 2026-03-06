@@ -171,7 +171,15 @@ function newObjectPage() {
         });
     }
 
-    function doCancel() { history.back(); m.redraw(); }
+    function doCancel() {
+        let returnUrl = page.context().listReturnUrl;
+        if (returnUrl) {
+            delete page.context().listReturnUrl;
+            m.route.set(returnUrl);
+        } else {
+            history.back();
+        }
+    }
 
     function toggleFullMode() { fullMode = !fullMode; m.redraw(); }
 

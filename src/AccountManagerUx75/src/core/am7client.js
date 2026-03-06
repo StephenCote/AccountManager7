@@ -980,7 +980,7 @@ import Base64 from './base64.js';
 
 
 	function mediaDataPath(oObj, bThumb){
-		return applicationPath + "/" + (bThumb ? "thumbnail" : "media") + "/" + am7client.dotPath(o.organizationPath) + "/data.data" + o.groupPath + "/" + o.name + (bThumb ? "/100x100" : "");
+		return applicationPath + "/" + (bThumb ? "thumbnail" : "media") + "/" + am7client.dotPath(oObj.organizationPath) + "/data.data" + oObj.groupPath + "/" + oObj.name + (bThumb ? "/100x100" : "");
 	}
 
 	function getIsRequestable(sType,sId,fH){

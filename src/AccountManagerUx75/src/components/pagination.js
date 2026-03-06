@@ -66,6 +66,9 @@ function newPaginationControl() {
       q.entity.request.push("tags");
     }
 
+    let needsContainer = (am7model.isGroup(pages.resultType) && am7model.hasField(pages.resultType, "groupId"))
+        || am7model.isParent(pages.resultType);
+
     if (pages.containerId) {
       let id = containerCache[pages.containerId];
       if (!id) {
@@ -86,6 +89,9 @@ function newPaginationControl() {
           q.field("parentId", id);
         }
       }
+    } else if (needsContainer) {
+      console.warn("[pagination] Type " + pages.resultType + " requires a container but none provided — returning empty results");
+      return null;
     }
 
     return q;
@@ -178,6 +184,7 @@ function newPaginationControl() {
       }
       else {
         getSearchQuery().then((q) => {
+          if (!q) { requesting = false; handleList([]); return; }
           am7client.search(q, handleList);
         });
       }
@@ -295,6 +302,7 @@ function newPaginationControl() {
     }
     else {
       getSearchQuery().then((req) => {
+        if (!req) { requesting = false; handleCount(0); return; }
         req.recordCount = 0;
         page.count(req).then((v) => {
           handleCount(v);
