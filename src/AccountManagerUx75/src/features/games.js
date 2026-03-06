@@ -40,17 +40,18 @@ let currentGame = null;
 let loading = false;
 
 function layout(content) {
+    let pg = getPage();
     return [
         content,
-        getPage().loadToast(),
-        getPage().components.dialog.loadDialogs()
+        pg.loadToast(),
+        pg.components.dialog ? pg.components.dialog.loadDialogs() : null
     ];
 }
 
 function pageLayout(innerContent) {
     return m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
         m(navigation, {}),
-        m("div", { style: "flex:1;overflow:auto;display:flex;background:#fff" }, [
+        m("div", { class: "flex-1 overflow-auto flex bg-white dark:bg-gray-900" }, [
             innerContent
         ])
     ]);

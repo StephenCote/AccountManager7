@@ -11,6 +11,7 @@
 **Project:** `AccountManagerUx75/` — 135 source files, ~71,000 lines
 **Build:** Vite 6.4.1, 160 modules, builds in ~5s
 **Tests:** 64 Vitest unit tests pass, 35 Playwright E2E tests pass (all green)
+**Phase 5 completed:** 2026-03-06
 **Ux7 File Parity:** ~100% — all active Ux7 source files ported including dialog workflow commands (5 intentionally skipped)
 
 ---
@@ -28,7 +29,7 @@
 | **Phase 3.5c: Core Workflow Runtime Validation** | COMPLETE | 9 | Runtime-tested all 7 workflow handlers + chat against backend. Fixed: setNarDescription null crash, 7 formDef forward-reference bugs, reimage null sdEntity + missing await, command dispatch error handling, Mithril render resilience. 9 Playwright E2E tests added. |
 | **Phase 3.5d: Model Ref Form Rendering** | COMPLETE | 2 | Sub-object tabs (personality, statistics, store, narrative, profile) now render full fields instead of just objectId. Implemented `pinst` cache for sub-instances, lazy tab activation, async sub-object save with `background:true` to avoid redraw storms, grid view null guard. |
 | **Phase 4: ISO 42001 Compliance Dashboard** | DEFERRED | 1 | Moved to separate design/plan (`aiDocs/ISO42001Plan.md`). Depends on backend compliance endpoints. Current stub remains functional for live policy event monitoring. |
-| **Phase 5: UX Polish** | **NEXT** | 0 | Dashboard customization, dense mode, notifications, runtime bug fixes. |
+| **Phase 5: UX Polish** | COMPLETE | 10 | Aside menu navigation, dark mode fix, keyboard shortcuts (Ctrl+S/Esc/Ctrl+1-9), toast stacking, dashboard recent items, dense mode toggle, runtime null guards, responsive grid breakpoints, notification panel with badge, notification CSS |
 | **Phase 6: Model Form View** | NOT STARTED | 0 | Requires backend schema endpoints. |
 | **Phase 7: Form Editor / Designer** | NOT STARTED | 0 | Requires `system.formDefinition` model on backend. Depends on Phase 6. |
 | **Phase 8: WebAuthn** | NOT STARTED | 0 | Requires `WebAuthnService.java` + `webauthn4j` on backend. |
@@ -263,14 +264,29 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 - [ ] Bias Pattern Editor (view/edit biasPatterns.json)
 - [ ] Create compliance data aggregation endpoint on backend
 
-### Phase 5: Dashboard Customization + UX Polish (Client-Only)
+### Phase 5: UX Polish — COMPLETE
 
-- [ ] Dashboard customization: edit mode, drag-to-reorder, pinned items, recent items
-- [ ] Dashboard preferences: save/load via `data.data` JSON
-- [ ] Dense/compact view mode with CSS density toggle
-- [ ] Responsive field grid breakpoints
-- [ ] Notification panel with `message.spool` data + badge
-- [ ] Extract `media` feature from core imports to lazy chunk
+**Completed:**
+- [x] Aside menu category navigation (resolves group paths, navigates to list views)
+- [x] Dark mode fix in pageLayout (replaced hardcoded `background:#fff` with Tailwind classes)
+- [x] Keyboard shortcuts on object view: Ctrl+S (save), Escape (cancel), Ctrl+1-9 (tabs)
+- [x] Toast system: fixed positioning, vertical stacking with gap, increased z-index
+- [x] Dashboard recent items: trackRecent() in panel.js, quick-nav chips on dashboard
+- [x] Dense mode toggle: 3-mode cycle (normal/compact/comfortable), persisted in localStorage
+- [x] Runtime null guards: navigateUp path check, navigateDown results check, inst.api typeof check
+
+**Files changed (7):** asideMenu.js, router.js, object.js, list.js, panel.js, topMenu.js, main.css
+**Tests:** 64 Vitest pass (panel test updated for new structure)
+
+**Phase 5 continuation (same session):**
+- [x] Responsive field grid breakpoints: added `641px-1024px` medium breakpoint with 3-col grid
+- [x] Notification panel: new `notifications.js` component — polls `message.spool`, badge count, dismiss, auto-refresh
+- [x] Notification wired into topMenu + router (startPolling on auth, stopPolling on logout)
+- [x] Notification CSS: badge, panel dropdown, item list with dismiss button
+
+**Remaining client-only items (deferred):**
+- [ ] Dashboard drag-to-reorder, pinned items, save/load preferences via `data.data` JSON
+- [ ] Extract `media` feature from core imports to lazy chunk (medium effort — many integration points)
 
 ### Phase 6-9: Backend-Dependent Features
 
@@ -279,17 +295,28 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 - **Phase 8:** WebAuthn (S8) — requires `WebAuthnService.java`
 - **Phase 9:** Access Requests (S11) — requires user input on approval concept
 
-### Phase 10: Game Feature Validation (Deferred)
+### Phase 10: Game Feature Validation — IN PROGRESS (Build Audit)
 
 **Goal:** Runtime-test agent-generated game features. Deferred to benefit from stable common infrastructure.
 
+**Build/Import Audit Results (2026-03-06):**
+- [x] Vite build succeeds — all chunks compile (CardGameApp 392KB, Magic8App 171KB, tetris 9KB, wordGame 23KB)
+- [x] No broken imports — all `from` paths resolve correctly
+- [x] No `window.CardGame.*` / `window.Magic8.*` global remnants in active code
+- [x] `g_application_path` — only used as local variable alias for `getAppPath()` in artPipeline.js/characters.js (works correctly)
+- [x] `uwm` imports — all from correct `am7client.js` path
+- [x] Only 1 `document.querySelector` in cardGame (chatUI scroll — legitimate)
+- [x] magic8, games directories clean of legacy patterns
+- [x] **Fixed:** CardGameApp.js now wires late-binding setters for overlays.js and cardFace.js (circular dep resolution was missing)
+- [x] **Fixed:** `features/games.js` — hardcoded `background:#fff` replaced with Tailwind dark mode classes, added null guard on `dialog` in `layout()`
+- [x] **Fixed:** `magic8/ai/SessionDirector.js` — replaced `applicationPath` import with `am7client.base()` (was bypassing late-binding pattern)
+
+**Remaining (requires running backend on localhost:8443):**
 - [ ] Test `/cardGame` — verify lazy load, game initialization, card rendering (34 agent-generated files)
 - [ ] Test `/game` — verify Tetris and Word Game load and run
-- [ ] Fix all agent-generated code runtime errors (expect significant work for cardGame)
-- [ ] Verify `g_application_path` → `am7client.base()` conversion complete
-- [ ] Verify no `window.Magic8.*` / `window.CardGame.*` remnants
-- [ ] Verify CSS class references resolve (no Ux7-only classes referenced)
+- [ ] Fix runtime errors (endpoint mismatches, missing state, event handler issues)
 - [ ] Runtime-test magic8 full session flow against backend
+- [ ] Verify CSS class references render correctly in all game views
 
 ### Phase 11: Performance + Polish
 

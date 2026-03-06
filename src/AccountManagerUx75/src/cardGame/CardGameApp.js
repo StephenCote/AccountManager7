@@ -159,6 +159,15 @@ if (encounters.wireEncounterRefs) {
     encounters.wireEncounterRefs(ctx, themes);
 }
 
+// Wire late-bound references for rendering modules (circular dep resolution)
+if (overlays._setCardFaceRef) overlays._setCardFaceRef(cardFace);
+if (overlays._setCtxFn) overlays._setCtxFn(() => ctx);
+if (overlays._setArtPipelineRef) overlays._setArtPipelineRef(artPipeline);
+if (overlays._setCharactersRef) overlays._setCharactersRef(characters);
+if (overlays._setDeckStorageFn) overlays._setDeckStorageFn(() => storage);
+if (cardFace._setDesignerRef) cardFace._setDesignerRef(designerCanvas);
+if (cardFace._setCtxFn) cardFace._setCtxFn(() => ctx);
+
 // ── Main Mithril Component ──────────────────────────────────────
 const cardGameComponent = {
     oninit() {

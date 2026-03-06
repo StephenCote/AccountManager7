@@ -1,7 +1,35 @@
 import m from 'mithril';
 import { am7model } from '../core/model.js';
+import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
 import { getMenuItems } from '../features.js';
+
+function navigateToCategory(cat) {
+    if (page.navigable) page.navigable.drawer(true);
+    let order = cat.order;
+    if (!order || !order.length) {
+        order = [];
+        am7model.models.forEach(function (mod) {
+            if (mod.categories && mod.categories.includes(cat.name)) order.push(mod.name);
+        });
+    }
+    if (!order.length) { m.route.set("/main"); return; }
+    let type = order[0];
+    let mod = am7model.getModel(type);
+    if (mod && (am7model.isGroup(mod) || mod.group)) {
+        let path = page.user ? page.user.homeDirectory.path + "/" + (cat.group || cat.name) : null;
+        if (path) {
+            am7client.make("auth.group", "data", path, function (v) {
+                if (v) m.route.set("/list/" + type + "/" + v.objectId);
+                else m.route.set("/main");
+            });
+        } else {
+            m.route.set("/main");
+        }
+    } else {
+        m.route.set("/list/" + type);
+    }
+}
 
 const asideMenu = {
     view: function () {
@@ -16,10 +44,7 @@ const asideMenu = {
                     return m("li", { class: "py-1" },
                         m("button", {
                             class: "w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2",
-                            onclick: function () {
-                                if (page.navigable) page.navigable.drawer(true);
-                                m.route.set("/main");
-                            }
+                            onclick: function () { navigateToCategory(cat); }
                         }, [
                             cat.icon ? m("span", { class: "material-symbols-outlined material-icons-cm" }, cat.icon) : null,
                             m("span", {}, cat.label || cat.name)

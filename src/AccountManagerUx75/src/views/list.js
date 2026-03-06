@@ -4,6 +4,7 @@ import { am7view } from '../core/view.js';
 import { am7client, uwm } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
 import { newPaginationControl } from '../components/pagination.js';
+import { panel } from '../components/panel.js';
 // Navigation is handled by router's pageLayout wrapper
 
 // ---------------------------------------------------------------------------
@@ -88,11 +89,12 @@ function newListControl() {
 
     function navigateUp() {
         let pg = pagination.pages();
-        if (!pg.container) return;
+        if (!pg.container || !pg.container.path) return;
 
         let type = modType ? (modType.type || listType) : listType;
         if (type === 'auth.group') {
             let parentPath = pg.container.path.substring(0, pg.container.path.lastIndexOf('/'));
+            if (!parentPath) { m.route.set('/main'); return; }
             // In Ux75, page-level navigateToPath is not yet ported; fall back to route set
             m.route.set('/list/' + (containerMode ? baseListType : type) + '/' + encodeURIComponent(parentPath), { key: Date.now() });
         } else {
@@ -109,7 +111,9 @@ function newListControl() {
         if (!sel && !idx.length) return;
 
         let pg = pagination.pages();
-        let obj = sel || pg.pageResults[pg.currentPage][idx[0]];
+        let results = pg.pageResults[pg.currentPage];
+        if (!sel && (!results || !results.length)) return;
+        let obj = sel || results[idx[0]];
         let ltype = obj[am7model.jsonModelKey] || baseListType;
         m.route.set('/' + (byParent ? 'p' : '') + 'list/' + (containerMode ? baseListType : ltype) + '/' + obj.objectId, { key: Date.now() });
     }
@@ -573,6 +577,11 @@ function newListControl() {
         oncreate: function (vnode) {
             lastVnode = vnode;
             updatePagination(vnode);
+            // Track this list view as a recent item
+            let mod = am7model.getModel(listType);
+            if (mod && panel.trackRecent) {
+                panel.trackRecent(mod.label || listType, m.route.get(), mod.icon || 'list');
+            }
         },
 
         onupdate: function (vnode) {

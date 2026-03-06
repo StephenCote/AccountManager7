@@ -106,14 +106,48 @@ function modelPanelContents(key) {
     return items;
 }
 
+// --- Recent items tracking ---
+
+let recentItems = [];
+const MAX_RECENT = 8;
+
+function trackRecent(label, route, icon) {
+    recentItems = recentItems.filter(function (r) { return r.route !== route; });
+    recentItems.unshift({ label, route, icon });
+    if (recentItems.length > MAX_RECENT) recentItems.length = MAX_RECENT;
+}
+
+function quickNav() {
+    if (!recentItems.length) return null;
+    return m("div", { class: "panel-quick-nav" }, [
+        m("p", { class: "card-title" }, [
+            m("span", { class: "material-symbols-outlined material-icons-cm mr-2" }, "history"),
+            "Recent"
+        ]),
+        m("div", { class: "flex flex-wrap gap-2" },
+            recentItems.map(function (r) {
+                return m("button", {
+                    class: "quick-nav-chip",
+                    onclick: function () { m.route.set(r.route); }
+                }, [
+                    r.icon ? m("span", { class: "material-symbols-outlined material-icons-cm mr-1" }, r.icon) : null,
+                    r.label
+                ]);
+            })
+        )
+    ]);
+}
+
 const panel = {
     clickPanelItem,
+    trackRecent,
     view: function () {
-        return m("div", { class: "panel-container" },
+        return m("div", { class: "panel-container" }, [
+            quickNav(),
             m("div", { class: "panel-grid" },
                 modelPanel()
             )
-        );
+        ]);
     }
 };
 

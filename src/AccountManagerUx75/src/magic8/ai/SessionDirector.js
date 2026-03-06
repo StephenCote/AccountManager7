@@ -7,7 +7,7 @@
  */
 import m from 'mithril';
 import { am7model } from '../../core/model.js';
-import { applicationPath } from '../../core/config.js';
+import { am7client } from '../../core/am7client.js';
 import { LLMConnector } from '../../chat/LLMConnector.js';
 import { ChatSetupWizard } from '../../chat/ChatSetupWizard.js';
 import { am7chat } from '../../chat/chatUtil.js';
@@ -143,7 +143,7 @@ class SessionDirector {
         try {
             const serverResp = await m.request({
                 method: 'GET',
-                url: applicationPath + '/rest/chat/config/prompt/prompt.magic8',
+                url: am7client.base() + '/chat/config/prompt/prompt.magic8',
                 withCredentials: true,
                 extract: function(xhr) {
                     if (xhr.status !== 200 || !xhr.responseText) return null;

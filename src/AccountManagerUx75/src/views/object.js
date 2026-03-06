@@ -490,7 +490,7 @@ function newObjectPage() {
         else if (field.readOnly || fieldView.readOnly) { disabled = true; fieldClass += 'field-disabled'; }
         else if (field.required) fieldClass += 'field-required';
 
-        let defVal = (inst && inst.api[name]) ? inst.api[name]() : undefined;
+        let defVal = (inst && typeof inst.api[name] === 'function') ? inst.api[name]() : undefined;
         let fHandler = (!disabled && !field.command) ? inst.handleChange(name) : undefined;
         let show = am7view.showField(inst, fieldView);
         let annot = inst.validationErrors[name] ? am7view.errorLabel(inst.validationErrors[name]) : '';
@@ -673,6 +673,33 @@ function newObjectPage() {
         ]);
     }
 
+    // --- Keyboard shortcuts ---
+
+    function onKeyDown(e) {
+        // Ctrl+S / Cmd+S => save
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            doUpdate();
+            return;
+        }
+        // Escape => cancel (only when not in an input/textarea to avoid interfering with dropdowns)
+        if (e.key === 'Escape' && !e.target.closest('select')) {
+            doCancel();
+            return;
+        }
+        // Ctrl+1-9 => switch tabs
+        if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '9') {
+            let idx = parseInt(e.key) - 1;
+            let form = inst ? inst.form : null;
+            let tabCount = 1 + (form && form.forms ? form.forms.length : 0);
+            if (idx < tabCount) {
+                e.preventDefault();
+                switchTab(idx);
+                m.redraw();
+            }
+        }
+    }
+
     // --- Mithril component lifecycle ---
 
     objectPage.view = {
@@ -682,7 +709,11 @@ function newObjectPage() {
             objectNew = vnode.attrs.new || (m.route.get() && m.route.get().match(/^\/new/gi));
             loadEntity();
         },
+        oncreate: function () {
+            document.addEventListener('keydown', onKeyDown);
+        },
         onremove: function () {
+            document.removeEventListener('keydown', onKeyDown);
             entity = null; inst = null; tabIndex = 0;
             fullMode = false; designMode = false;
             foreignData = {}; valuesState = {}; pinst = {};

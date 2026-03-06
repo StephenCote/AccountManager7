@@ -14,6 +14,7 @@ import { newNavigatorControl } from './views/navigator.js';
 import { decorator } from './components/decorator.js';
 import { newPaginationControl } from './components/pagination.js';
 import { initTheme } from './components/topMenu.js';
+import { startPolling, stopPolling } from './components/notifications.js';
 
 // Wire components onto page for cross-module access
 page.components.panel = panel;
@@ -44,7 +45,7 @@ function layout(content) {
 function pageLayout(innerContent, navAttrs) {
     return m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
         m(navigation, navAttrs || {}),
-        m("div", { style: "flex:1;overflow:auto;display:flex;background:#fff" }, [
+        m("div", { class: "flex-1 overflow-auto flex bg-white dark:bg-gray-900" }, [
             innerContent
         ])
     ]);
@@ -149,6 +150,7 @@ async function refreshApplication() {
 
     if (usr == null) {
         page.wss.close();
+        stopPolling();
         rt = "/sig";
         m.route.set(rt);
         m.route(document.body, rt, routes);
@@ -167,6 +169,7 @@ async function refreshApplication() {
             setContextRoles(app);
             if (!rt.length || rt == "/sig") rt = "/main";
             page.wss.connect();
+            startPolling();
         } else {
             rt = "/sig";
         }

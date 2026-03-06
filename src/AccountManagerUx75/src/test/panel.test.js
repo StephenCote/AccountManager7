@@ -70,14 +70,16 @@ describe('panel component', () => {
 
     it('should render panel-grid inside container', () => {
         let vnode = panel.view();
-        let grid = vnode.children;
+        let children = Array.isArray(vnode.children) ? vnode.children : [vnode.children];
+        let grid = children.find(function (c) { return c && c.attrs && c.attrs.class && c.attrs.class.includes('panel-grid'); });
         expect(grid).toBeDefined();
         expect(grid.attrs.class).toContain('panel-grid');
     });
 
     it('should render categories from am7model', () => {
         let vnode = panel.view();
-        let grid = vnode.children;
+        let children = Array.isArray(vnode.children) ? vnode.children : [vnode.children];
+        let grid = children.find(function (c) { return c && c.attrs && c.attrs.class && c.attrs.class.includes('panel-grid'); });
         // grid.children is the array of panel cards from modelPanel()
         let cards = grid.children;
         expect(Array.isArray(cards)).toBe(true);
