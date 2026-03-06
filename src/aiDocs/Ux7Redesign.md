@@ -1929,11 +1929,11 @@ The existing `testView.js` / `testFramework.js` / `testRegistry.js` stays as the
 
 ---
 
-## 14. Implementation Status (Updated 2026-03-06)
+## 14. Implementation Status (Updated 2026-03-06, Revised 2026-03-06)
 
 **Project:** `AccountManagerUx75/` — 127 source files, ~69,000 lines
 **Build:** Vite 6.4.1, 152 modules, builds in ~4s, 55 Vitest tests pass
-**Ux7 Parity:** ~90% by file count, ~88% by line count (120 Ux7 files → 127 Ux75 files)
+**Ux7 File Parity:** ~99% — all active Ux7 source files ported (5 intentionally skipped)
 
 ### 14.1 Phase Completion Summary
 
@@ -1941,52 +1941,77 @@ The existing `testView.js` / `testFramework.js` / `testRegistry.js` stays as the
 |-------|--------|-------|-------|
 | **Phase 0: Foundation** | COMPLETE | 25+ | Vite bundler, ESM conversion, 6 core libs ported, Vitest + Playwright configured, dev server on port 8899 with proxy to localhost:8443 |
 | **Phase 1: Dialog System + Field Styling** | COMPLETE | 5+ | `dialogCore.js` (unified Dialog component), form field renderers, field styling in Tailwind, dialog stacking, confirm shorthand |
-| **Phase 2: Main Panel** | COMPLETE | 3+ | `panel.js` (customizable dashboard), `topMenu.js`, `asideMenu.js`, breadcrumb navigation |
-| **Phase 3: Feature System** | COMPLETE | 8 | `features.js` manifest with 7 features (core, chat, cardGame, games, testHarness, iso42001, biometrics), 5 build profiles (minimal, standard, full, gaming, enterprise), lazy `import()` for feature routes |
-| **Phase 4: Model Form View** | NOT STARTED | 0 | Server-side schema endpoints not yet built. Requires backend work. |
+| **Phase 2: Main Panel** | COMPLETE | 3+ | `panel.js` (dashboard), `topMenu.js`, `asideMenu.js`, breadcrumb navigation |
+| **Phase 3: Feature System** | COMPLETE | 8 | `features.js` manifest with 7 features (core, chat, cardGame, games, testHarness, iso42001, biometrics), 5 build profiles, lazy `import()` for feature routes |
+| **Phase 3.5: Runtime Validation** | **CRITICAL — NOT STARTED** | 0 | Agent-generated files (54 files: card game + magic8) never tested against backend. Dialog workflow commands missing. See 14.3. |
+| **Phase 4: Model Form View** | NOT STARTED | 0 | Requires backend schema endpoints. |
 | **Phase 5: Form Editor / Designer** | NOT STARTED | 0 | Requires `system.formDefinition` model on backend. Depends on Phase 4. |
 | **Phase 6: WebAuthn** | NOT STARTED | 0 | Requires `WebAuthnService.java` + `webauthn4j` on backend. |
-| **Phase 7: ISO 42001 Compliance Dashboard** | PARTIAL | 1 | `features/iso42001.js` route stub exists. No dashboard UI yet. Backend events (WebSocket chirps) already work. |
+| **Phase 7: ISO 42001 Compliance Dashboard** | STUB ONLY | 1 | `features/iso42001.js` has basic violation list. Missing: Overview, Audit Log, Policy Templates, Report tabs, real-time chat indicators. |
 | **Phase 8: Access Requests & Approvals** | NOT STARTED | 0 | Backend model exists. No Ux. Must ask user about hierarchical approval concept first. |
 
-### 14.2 Feature Port Status (Ux7 → Ux75)
+### 14.2 Feature Port Status (Ux7 to Ux75)
 
-| Feature | Files | Lines | Status | Lazy Chunk Size |
-|---------|-------|-------|--------|-----------------|
-| **Core** (am7client, model, view, pageClient, formDef, modelDef) | 11 | ~20,500 | COMPLETE | index: 385KB/103KB gzip |
-| **Components** (dialog, form, picker, dnd, tree, tab, etc.) | 30 | ~12,000 | COMPLETE | (in index bundle) |
-| **Views** (sig, list, object, navigator) | 4 | ~2,200 | COMPLETE | (in index bundle) |
-| **Chat** (LLMConnector, ConversationManager, AnalysisManager, etc.) | 16 | ~8,500 | COMPLETE | chat: 28KB/8KB gzip |
-| **Card Game** (CardGameApp + 34 subsystem files) | 35 | ~16,000 | COMPLETE | CardGameApp: 392KB/115KB gzip |
-| **Magic 8** (Magic8App + 18 subsystem files) | 19 | ~8,500 | COMPLETE | Magic8App: 171KB/46KB gzip |
-| **Games** (Tetris, Word Game) | 2 | ~1,600 | COMPLETE | tetris: 9KB, wordGame: 23KB |
-| **Test Harness** (LLM test suite, framework, registry) | 3 | ~5,200 | COMPLETE | llmTestSuite: 119KB/33KB gzip |
-| **ISO 42001** | 1 | ~120 | STUB ONLY | iso42001: 3KB |
-| **Biometrics** | 1 | ~70 | ROUTE ONLY (routes to Magic8) | biometrics: 1KB |
+| Feature | Files | Lines | Port Status | Runtime Status | Lazy Chunk Size |
+|---------|-------|-------|-------------|----------------|-----------------|
+| **Core** (am7client, model, view, pageClient, formDef, modelDef) | 11 | ~20,500 | COMPLETE | UNTESTED | index: 385KB/103KB gzip |
+| **Components** (dialog, form, picker, dnd, tree, tab, etc.) | 30 | ~12,000 | COMPLETE | UNTESTED | (in index bundle) |
+| **Views** (sig, list, object, navigator) | 4 | ~2,200 | COMPLETE | UNTESTED | (in index bundle) |
+| **Chat** (LLMConnector, ConversationManager, AnalysisManager, etc.) | 16 | ~8,500 | COMPLETE | UNTESTED | chat: 28KB/8KB gzip |
+| **Card Game** (CardGameApp + 33 subsystem files) | 34 | ~16,000 | COMPLETE (agent-generated) | UNTESTED — expect runtime errors | CardGameApp: 392KB/115KB gzip |
+| **Magic 8** (Magic8App + 18 subsystem files) | 19 | ~8,500 | COMPLETE (agent-generated) | UNTESTED — expect runtime errors | Magic8App: 171KB/46KB gzip |
+| **Games** (Tetris, Word Game) | 2 | ~1,600 | COMPLETE | UNTESTED | tetris: 9KB, wordGame: 23KB |
+| **Test Harness** (LLM test suite, framework, registry) | 3 | ~5,200 | COMPLETE | UNTESTED | llmTestSuite: 119KB/33KB gzip |
+| **ISO 42001** | 1 | ~120 | STUB ONLY | N/A | iso42001: 3KB |
+| **Biometrics** | 1 | ~70 | ROUTE ONLY (routes to Magic8) | N/A | biometrics: 1KB |
 
-### 14.3 Deprecated Ux7 Files (Intentionally NOT Ported)
+### 14.3 CRITICAL GAP: Dialog Workflow Commands NOT Ported
+
+The Ux7 `dialog.js` (2,044 lines) contained 6 command handler functions that were invoked by `object.js` when users clicked form command buttons. **These were NOT ported to Ux75.** The `dialogCore.js` replacement is a clean Dialog component, but the business logic that was embedded in the old `dialog.js` is missing.
+
+**Impact:** In Ux75, clicking any of these command buttons on an object form logs `"Command function not found: <fn>"` and does nothing.
+
+| Command Function | Ux7 Location | Lines | What It Does | Ux75 Status |
+|------------------|-------------|-------|-------------|-------------|
+| `reimage(object, inst)` | dialog.js:777 | ~485 | Opens SD reimaging dialog — model/lora selection, prompt preview, batch reimaging, progress tracking | **MISSING** |
+| `reimageApparel(object, inst)` | dialog.js:1262 | ~293 | Reimages apparel items — iterates wearables, generates SD prompts per wear level | **MISSING** |
+| `summarize(object, inst)` | dialog.js:137 | ~58 | Opens summarization dialog — creates/updates context summary for chat sessions | **MISSING** |
+| `vectorize(object, inst)` | dialog.js:195 | ~582 | Opens vectorization dialog — creates vector embeddings for RAG context | **MISSING** |
+| `memberCloud(modelType, containerId)` | dialog.js:1555 | ~301 | Renders membership visualization — cloud/grid of member objects with thumbnails | **MISSING** |
+| `adoptCharacter(object, inst)` | dialog.js:1856 | ~188 | Opens character adoption dialog — copy character to user's population | **MISSING** |
+
+**Additional dialog.js responsibilities NOT ported:**
+- Outfit builder integration (triggered via `outfitBuilder` command on charPerson forms)
+- Social sharing tag management
+- Batch progress tracking with progress bar dialogs
+- Policy template loading dialogs
+- Chat settings workflow (partially covered by `ChatConfigToolbar.js` and `ChatSetupWizard.js`)
+
+**Resolution:** These must be implemented as separate workflow modules in Ux75 using `Dialog.open()` from `dialogCore.js`. See Revised Phase Plan (14.10).
+
+### 14.4 Deprecated Ux7 Files (Intentionally NOT Ported)
 
 | File | Lines | Reason |
 |------|-------|--------|
-| `components/advGrid.js` | 807 | Obsolete advanced grid — user directive: "ignore advGrid" |
+| `components/advGrid.js` | 807 | Obsolete — user directive: "ignore advGrid" |
 | `view/hyp.js` | 371 | Replaced by Magic8 — user directive: "/hyp should be replaced by magic8" |
 | `view/saur.js` | 32 | Legacy saurian view — design doc says deprecate |
 | `codemirror.jslint.js` | 32 | Utility, not needed |
 | `view/bak/*.js` | ~15,000 | Backup files, not active code |
 
-### 14.4 Known Issues and Import Mismatches
+### 14.5 Known Issues and Import Mismatches
 
 **FIXED during porting (document for reference):**
 
 1. **`uwm` export location** — `uwm` is exported from `core/am7client.js`, NOT from `base64.js` or `config.js`. Several agent-generated magic8 files had wrong import paths. All fixed.
 
-2. **Top-level `await`** — `SessionConfigEditor.js` used top-level await for optional `am7sd` import. Vite's es2020 target doesn't support this. Fixed with lazy init pattern (`_ensureSd()` in `oninit`).
+2. **Top-level `await`** — `SessionConfigEditor.js` used top-level await for optional `am7sd` import. Fixed with lazy init pattern (`_ensureSd()` in `oninit`).
 
 3. **Circular dependencies** — Solved in Phase 0 via late-binding: `am7model._view`, `am7model._page`, `am7model._client` wired in `main.js`. Pattern: `function getPage() { return am7model._page; }` in subsystem files.
 
 **POTENTIAL ISSUES (not yet validated at runtime):**
 
-4. **Agent-generated files not runtime-tested** — Card game (35 files) and Magic8 (19 files) were ported by background agents. They build successfully but have NOT been tested against a running backend. Expect runtime issues with:
+4. **Agent-generated files not runtime-tested** — Card game (34 files) and Magic8 (19 files) were ported by background agents. They build successfully but have NOT been tested against a running backend. Expect runtime issues with:
    - Incorrect function signatures (agent may have guessed wrong)
    - Missing state initialization
    - Event handler binding differences between IIFE `this` and ESM module scope
@@ -2000,7 +2025,11 @@ The existing `testView.js` / `testFramework.js` / `testRegistry.js` stays as the
 
 8. **`window.Magic8.*` / `window.CardGame.*` remnants** — IIFE modules used global namespace objects. ESM conversion should have replaced all of these with direct imports, but some may remain in agent-generated code.
 
-### 14.5 Architecture Decisions Made During Implementation
+9. **`Dialog.open()` adoption** — Only 2 production files use `Dialog.open()` (`deckView.js`, `pageClient.js`). All command workflows from dialog.js (reimage, summarize, vectorize, memberCloud, adoptCharacter) are missing entirely. See 14.3.
+
+10. **`media` feature not in manifest** — Design doc Section 7 defines a `media` feature (audio, PDF, SD config) for lazy loading. Currently these are all loaded eagerly in `main.js` as core imports, inflating the index bundle. Not a bug, but a missed optimization.
+
+### 14.6 Architecture Decisions Made During Implementation
 
 | Decision | Resolution |
 |----------|-----------|
@@ -2012,36 +2041,50 @@ The existing `testView.js` / `testFramework.js` / `testRegistry.js` stays as the
 | **Vite dev server** | Port 8899, proxies `/rest/*` and `/media/*` to `https://localhost:8443` (Service7) |
 | **Test framework** | Vitest for unit tests (55 tests), Playwright configured for E2E (not yet written) |
 
-### 14.6 What's NOT Built Yet (Design Doc Features)
+### 14.7 What's NOT Built Yet — Complete Gap Analysis
 
-These are features described in Sections 2-8 and 10-11 that have NOT been implemented:
+#### A. Critical Gaps (Functional regressions from Ux7)
 
-#### Backend Required (Cannot Build Client-Only)
+| Gap | Design Section | Impact | Effort |
+|-----|---------------|--------|--------|
+| **Dialog workflow commands** (reimage, summarize, vectorize, memberCloud, adoptCharacter, outfitBuilder) | S4.3 | Object form command buttons do nothing in Ux75 | HIGH — ~1,900 lines of business logic to port as ESM workflow modules using Dialog.open() |
+| **Runtime validation of all features** | N/A | 54 agent-generated files never tested against backend | HIGH — requires running backend, systematic testing of each route |
+
+#### B. Design Doc Features — Backend Required
 
 | Feature | Section | Blocking Backend Work |
 |---------|---------|----------------------|
 | **Model Form View** | S2 | Schema REST endpoints (`/rest/schema/*`), `userDefined` flag on models/fields |
 | **Form Editor / Designer** | S3 | `system.formDefinition` + `system.formField` models, `formLoader` DB integration |
 | **WebAuthn** | S8 | `WebAuthnService.java`, `webauthn4j` dependency, `CredentialEnumType.WEBAUTHN`, challenge management |
-| **Compliance Dashboard** | S10 | Compliance data aggregation endpoint, policy template CRUD (currently JSON files) |
-| **Access Requests UI** | S11 | Approval workflow endpoints (adapt from v5 `ApprovalService.java`), auto-provisioning logic |
+| **Compliance data aggregation** | S10 | Server endpoint for violation counts, pass rates over time periods |
+| **Access Requests UI** | S11 | Approval workflow endpoints, auto-provisioning logic |
 
-#### Client-Only (Can Build Without Backend Changes)
+#### C. Design Doc Features — Client-Only (Can Build Now)
 
 | Feature | Section | Effort | Notes |
 |---------|---------|--------|-------|
-| **Dashboard customization** (pin/reorder/hide) | S6 | Medium | Preferences stored as `data.data` JSON. Panel.js needs edit mode. |
-| **Compliance real-time indicators** | S10.4 | Low | WebSocket events already fire. Just need chat view badge + inline panel. |
-| **Dense/compact view mode** | S5 | Low | CSS-only + localStorage preference toggle |
-| **SQLite WASM client cache** | S9/Q77 | High | sql.js integration, schema mirroring, cache invalidation |
-| **Notification panel** | Q75 | Medium | Unified notification component using `message.spool` + WebSocket |
-| **Playwright E2E tests** | S12 | Medium | Config exists, no test files written yet |
+| **Compliance dashboard tabs** (Overview, Violations detail, Audit Log, Policy Templates, Report) | S10.2-10.5 | Medium | Current stub only shows violation list. Design calls for 5 tabs with charts, filters, export. Backend events already work. |
+| **Compliance real-time indicators in chat** | S10.4 | Low | WebSocket policyEvent/autotuneEvent already fire. Need badge + inline panel in chat view. |
+| **Bias Pattern Editor** | S10.6 | Medium | View/edit biasPatterns.json. Includes pattern test tool. |
+| **Dashboard customization** (pin/reorder/hide categories) | S6 | Medium | Preferences stored as `data.data` JSON. Panel.js needs edit mode, drag-to-reorder. |
+| **Dense/compact view mode** | S5 | Low | CSS density classes + localStorage preference toggle. |
+| **Notification panel** | S11.C | Medium | Unified notification component using `message.spool` + WebSocket events. Badge in top menu. |
+| **Playwright E2E tests** | S12 | Medium | Config exists, no test files written yet. |
 
-### 14.7 File Counts and Build Output
+#### D. Design Doc Optimizations — Deferred
+
+| Feature | Section | Effort | Notes |
+|---------|---------|--------|-------|
+| **`media` feature extraction** | S7 | Low | Move audio, PDF, SD config from main.js core imports to lazy-loaded feature chunk. Reduces index bundle. |
+| **SQLite WASM client cache** | S9 | High | sql.js integration, schema mirroring, cache invalidation. Enhancement, not required for parity. |
+| **Responsive breakpoints on field grid** | S5 | Low | `sm:grid-cols-1 md:grid-cols-3 lg:grid-cols-6` on form fields. Currently fixed 6-col. |
+
+### 14.8 File Counts and Build Output
 
 ```
 Source files:  127 JS (69,000 lines) + 5 test files (55 tests)
-Styles:        2 CSS files (main.css, pageStyle.css) → 84KB bundled
+Styles:        2 CSS files (main.css, pageStyle.css) -> 84KB bundled
 
 Build output (dist/):
   index.js           385 KB / 103 KB gzip  (core + components + views)
@@ -2056,20 +2099,14 @@ Build output (dist/):
   + 10 smaller chunks (< 11 KB each)
 ```
 
-### 14.8 Continuing Work — Quick Start Guide
+### 14.9 Continuing Work — Quick Start Guide
 
 **To resume Ux75 development in a new conversation:**
 
-1. Read `AccountManagerUx7/Ux7Redesign.md` Section 14 (this section) for current status
+1. Read `aiDocs/Ux7Redesign.md` Section 14 (this section) for current status
 2. Read `~/.claude/projects/.../memory/MEMORY.md` for API patterns and gotchas
 3. Run `cd AccountManagerUx75 && npx vite build` to verify build passes
 4. Run `npx vitest run` to verify tests pass (55 tests expected)
-
-**Priority order for next work:**
-1. **Runtime validation** — Start Vite dev server (`npx vite`), log in, test each feature route (`/chat`, `/cardGame`, `/magic8`, `/game`) against a running Service7 backend. Fix runtime errors.
-2. **Compliance dashboard** (Section 10) — Most of the backend already works. Build the dashboard UI.
-3. **Dashboard customization** (Section 6) — Client-only, no backend changes needed.
-4. **E2E tests** — Write Playwright tests for login, navigation, object CRUD.
 
 **Key files to read first:**
 - `src/main.js` — Entry point, wires all modules
@@ -2077,6 +2114,126 @@ Build output (dist/):
 - `src/features.js` — Feature manifest, `loadFeatureRoutes()`
 - `src/core/pageClient.js` — App state, auth, WebSocket
 - `src/core/am7client.js` — REST client, `uwm` login helper
+
+### 14.10 Revised Implementation Phases
+
+The original Phases 0-3 are COMPLETE. The original Phases 4-8 remain valid but their ordering is revised. A new Phase 3.5 is inserted to address the critical gap of untested code and missing workflow commands before proceeding to new features.
+
+#### Phase 3.5: Runtime Validation + Dialog Workflow Port — NEXT
+
+**Goal:** Make Ux75 functionally equivalent to Ux7. Fix all runtime errors. Port missing dialog workflow commands.
+
+**Priority:** CRITICAL — Ux75 is not usable without this phase. All subsequent phases depend on a working baseline.
+
+**Sub-phase 3.5a: Core Runtime Validation**
+- [ ] Start Vite dev server, log in against running Service7 backend
+- [ ] Test `/sig` (login) — verify login flow, JWT token, WebSocket connection
+- [ ] Test `/main` (panel) — verify categories render, model links work
+- [ ] Test `/list/:type` — verify object listing, pagination, search
+- [ ] Test `/view/:type/:objectId` — verify object view, form rendering, field values
+- [ ] Test `/new/:type/:objectId` — verify object creation flow
+- [ ] Test `/nav` (navigator) — verify tree navigation
+- [ ] Fix all runtime errors found in core views
+
+**Sub-phase 3.5b: Dialog Workflow Commands**
+Port the 6 missing command handler functions from Ux7 `dialog.js` into Ux75 as separate ESM modules. Each workflow should use `Dialog.open()` from `dialogCore.js`.
+
+- [ ] Create `src/workflows/reimage.js` — SD reimaging dialog (~485 lines from dialog.js:777-1261)
+  - Model/lora selection, prompt preview, batch reimaging, progress tracking
+  - Register as `objectPage.reimage` in `views/object.js`
+- [ ] Create `src/workflows/reimageApparel.js` — Apparel reimaging (~293 lines from dialog.js:1262-1554)
+  - Register as `objectPage.reimageApparel`
+- [ ] Create `src/workflows/summarize.js` — Summarization dialog (~58 lines from dialog.js:137-194)
+  - Register as `objectPage.summarize`
+- [ ] Create `src/workflows/vectorize.js` — Vectorization dialog (~582 lines from dialog.js:195-776)
+  - Register as `objectPage.vectorize`
+- [ ] Create `src/workflows/memberCloud.js` — Member cloud visualization (~301 lines from dialog.js:1555-1855)
+  - Register as `objectPage.memberCloud`
+- [ ] Create `src/workflows/adoptCharacter.js` — Character adoption (~188 lines from dialog.js:1856-2043)
+  - Register as `objectPage.adoptCharacter`
+- [ ] Port `outfitBuilder` command handler (referenced in charPerson form commands)
+- [ ] Wire all workflow modules in `views/object.js` so command buttons dispatch correctly
+
+**Sub-phase 3.5c: Feature Route Validation**
+- [ ] Test `/chat` — verify session list, session creation, chat send/receive, streaming
+- [ ] Test `/cardGame` — verify lazy load, game initialization, card rendering
+- [ ] Test `/magic8` — verify lazy load, biometric overlay, audio engine
+- [ ] Test `/game` — verify Tetris and Word Game load and run
+- [ ] Test `/test` — verify test harness loads, LLM test suite renders
+- [ ] Fix all agent-generated code runtime errors (expect significant work for cardGame + magic8)
+- [ ] Verify `g_application_path` → `am7client.base()` conversion complete
+- [ ] Verify no `window.Magic8.*` / `window.CardGame.*` remnants
+- [ ] Verify CSS class references resolve (no Ux7-only classes referenced)
+
+**Estimated effort:** HIGH — this is the largest remaining phase
+**Estimated files changed:** 20-40 (fixes across agent-generated files + 6-8 new workflow files)
+**Risk:** Medium — Ux7 source is the reference implementation, so fixes are straightforward but numerous
+
+#### Phase 4: Compliance Dashboard Buildout (Client-Focused)
+
+**Goal:** Build the full 5-tab compliance dashboard described in Section 10. Most backend infrastructure already exists.
+
+Moved UP from original Phase 7 because:
+- Backend WebSocket events already fire (policyEvent, autotuneEvent)
+- `system.audit` records already exist for querying
+- Policy templates already exist as JSON files
+- Only needs 1-2 new server endpoints for data aggregation
+
+- [ ] Expand `features/iso42001.js` from stub to full tabbed dashboard
+- [ ] Tab 1: Overview — aggregate violation stats, pass rates, trend chart (last 7d/30d)
+- [ ] Tab 2: Violations Detail — searchable/filterable list with response excerpts, mark-as-reviewed
+- [ ] Tab 3: Audit Log — query `system.audit` records with date/type/user filters, CSV/JSON export
+- [ ] Tab 4: Policy Templates — view/edit policy template JSON, operation toggles, parameter editing
+- [ ] Tab 5: Report — generate compliance reports (date range, scope, format selection)
+- [ ] Add real-time compliance indicator badge to chat view toolbar (green/yellow/red based on policyEvent/autotuneEvent)
+- [ ] Add inline compliance panel in chat view (click badge to expand)
+- [ ] Build Bias Pattern Editor (view/edit biasPatterns.json, pattern test tool)
+- [ ] Write Vitest tests for dashboard components
+- [ ] Create compliance data aggregation endpoint on backend (violation counts over time) — ONLY new backend work needed
+
+**Estimated files changed:** 5-8 (client) + 1-2 (server)
+**Risk:** Low-Medium — mostly Ux buildout with existing backend
+
+#### Phase 5: Dashboard Customization + UX Polish (Client-Only)
+
+**Goal:** Implement the remaining client-only design doc features from Sections 5 and 6.
+
+- [ ] Dashboard customization: edit mode in panel.js (toggle visibility, drag-to-reorder categories)
+- [ ] Dashboard customization: pinned items ("Quick Access" row at top)
+- [ ] Dashboard customization: recent items (last 5-10 accessed objects, client-side localStorage)
+- [ ] Dashboard preferences: save/load via `data.data` JSON to server
+- [ ] Dense/compact view mode: CSS density toggle (default/compact/comfortable)
+- [ ] Dense/compact view mode: localStorage persistence, UI toggle in top menu
+- [ ] Responsive field grid: add Tailwind breakpoints `sm:grid-cols-1 md:grid-cols-3 lg:grid-cols-6`
+- [ ] Notification panel: unified notification component using `message.spool` data
+- [ ] Notification badge in top menu (count of unread notifications)
+- [ ] Extract `media` feature from main.js core imports to lazy-loaded feature chunk
+
+**Estimated files changed:** 8-12 (client only)
+**Risk:** Low — all client-side, no backend dependencies
+
+#### Phase 6: Model Form View — UNCHANGED (requires backend)
+
+See original Phase 4 description (Section 13). Depends on schema REST endpoints.
+
+#### Phase 7: Form Editor / Designer — UNCHANGED (requires backend)
+
+See original Phase 5 description (Section 13). Depends on Phase 6 + `system.formDefinition` model.
+
+#### Phase 8: WebAuthn — UNCHANGED (requires backend)
+
+See original Phase 6 description (Section 13). Depends on `WebAuthnService.java`.
+
+#### Phase 9: Access Requests & Approvals — UNCHANGED (requires backend + user input)
+
+See original Phase 8 description (Section 13). Must ASK user about hierarchical approval concept first.
+
+#### Phase 10: E2E Tests + Performance (Polish)
+
+- [ ] Write Playwright E2E tests: login, navigation, object CRUD, dialog lifecycle, feature toggling
+- [ ] SQLite WASM client cache (sql.js integration, if desired)
+- [ ] Performance profiling and bundle optimization
+- [ ] Accessibility audit (WCAG 2.1 AA compliance for forms, dialogs, navigation)
 
 ---
 
