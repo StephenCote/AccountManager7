@@ -78,6 +78,18 @@ page.components.emoji = emoji;
 import { newTabComponent } from './components/tab.js';
 page.components.tab = newTabComponent;
 
+// Game stream (WebSocket game action streaming)
+import { gameStream } from './core/gameStream.js';
+page.components.gameStream = gameStream;
+
+// Form viewer component (carousel-based form rendering)
+import { form } from './components/form.js';
+page.components.form = form.component;
+
+// Object v2 (lightweight object view using am7view + custom renderers)
+import { object_v2 } from './components/object_v2.js';
+page.components.object_v2 = object_v2.component;
+
 // Expose Dialog for dev console testing
 if (typeof window !== 'undefined') {
     window.Dialog = Dialog;

@@ -63,7 +63,7 @@ const features = {
         required: false,
         deps: ['core'],
         routes: () => import('./features/biometrics.js'),
-        menuItems: [{ icon: 'monitor_heart', label: 'Biometrics', route: '/hyp', section: 'top' }]
+        menuItems: [{ icon: 'monitor_heart', label: 'Magic 8', route: '/magic8', section: 'top' }]
     }
 };
 

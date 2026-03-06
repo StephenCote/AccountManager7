@@ -1,0 +1,489 @@
+/**
+ * ImageGenerationManager - Stable Diffusion img2img generation from camera captures
+ * Captures user images and transforms them using the olio reimage API
+ *
+ * ESM port of AccountManagerUx7/client/view/magic8/generation/ImageGenerationManager.js
+ */
+import m from 'mithril';
+import { am7model } from '../../core/model.js';
+import { am7view } from '../../core/view.js';
+import { am7sd } from '../../components/sdConfig.js';
+import { uwm } from '../../core/base64.js';
+
+/** Late-bound accessor for page (wired via am7model._page in main.js) */
+function getPage() { return am7model._page; }
+
+/** Late-bound accessor for am7client (wired via am7model._client in main.js) */
+function getClient() { return am7model._client; }
+
+class ImageGenerationManager {
+    constructor(sdConfigObjectId = null, inlineConfig = null) {
+        this.sdConfigId = sdConfigObjectId;
+        this.inlineConfig = inlineConfig;
+        this.sdConfig = null;
+        this.pendingGenerations = [];
+        this.generatedImages = [];
+        this.maxPendingJobs = 3;
+        this.isProcessing = false;
+        this.sessionName = null;
+
+        this.onImageGenerated = null;
+        this.onGenerationStarted = null;
+        this.onGenerationFailed = null;
+        this.onQueueChanged = null;
+        this.onCaptureCreated = null;
+
+        // Cached server resources
+        this._captureDir = null;
+        this._generatedDir = null;
+        this._baseEntity = null;
+    }
+
+    /**
+     * Load SD configuration from server
+     * @returns {Promise<Object>} Configuration object
+     */
+    async loadConfig() {
+        const page = getPage();
+
+        // Use inline config if provided (created via SessionConfigEditor "Create New")
+        if (this.inlineConfig) {
+            this.sdConfig = { ...this._getDefaultConfig(), ...this.inlineConfig };
+            return this.sdConfig;
+        }
+
+        if (!this.sdConfigId) {
+            this.sdConfig = this._getDefaultConfig();
+            return this.sdConfig;
+        }
+
+        try {
+            let q = am7view.viewQuery(am7model.newInstance("data.data"));
+            q.entity.request.push("dataBytesStore");
+            q.field("objectId", this.sdConfigId);
+            let qr = await page.search(q);
+            if (qr && qr.results && qr.results.length) {
+                am7model.updateListModel(qr.results);
+                let obj = qr.results[0];
+                if (obj.dataBytesStore && obj.dataBytesStore.length) {
+                    this.sdConfig = { ...this._getDefaultConfig(), ...JSON.parse(uwm.base64Decode(obj.dataBytesStore)) };
+                    return this.sdConfig;
+                }
+            }
+            this.sdConfig = this._getDefaultConfig();
+            return this.sdConfig;
+        } catch (err) {
+            console.error('ImageGenerationManager: Failed to load config:', err);
+            this.sdConfig = this._getDefaultConfig();
+            return this.sdConfig;
+        }
+    }
+
+    /**
+     * Get default SD configuration
+     * @returns {Object}
+     * @private
+     */
+    _getDefaultConfig() {
+        return {
+            style: "art",
+            description: "ethereal dreamlike portrait, soft lighting, mystical atmosphere",
+            imageAction: "posing in a surreal setting",
+            denoisingStrength: 0.65,
+            steps: 30,
+            cfg: 7,
+            seed: -1,
+            sampler: "dpmpp_2m",
+            scheduler: "Karras",
+            width: 512,
+            height: 512,
+            captureInterval: 30000,
+            emotionPromptMapping: {
+                happy: "joyful radiant golden light",
+                sad: "melancholic blue ethereal mist",
+                angry: "intense fiery dramatic shadows",
+                fear: "mysterious shadowy surreal",
+                surprise: "magical sparkling wonder",
+                neutral: "serene peaceful calm atmosphere"
+            }
+        };
+    }
+
+    /**
+     * Set custom configuration
+     * @param {Object} config - SD configuration
+     */
+    setConfig(config) {
+        this.sdConfig = { ...this._getDefaultConfig(), ...config };
+    }
+
+    /**
+     * Capture frame from camera and generate image
+     * @param {Object} cameraComponent - Camera component with captureFrame method
+     * @param {Object} biometricData - Current biometric data for emotion-aware prompts
+     * @returns {Promise<string>} Job ID
+     */
+    async captureAndGenerate(cameraComponent, biometricData = null) {
+        if (!this.sdConfig) {
+            await this.loadConfig();
+        }
+
+        const activeJobs = this.pendingGenerations.filter(
+            j => j.status === 'pending' || j.status === 'processing'
+        ).length;
+        if (activeJobs >= this.maxPendingJobs) {
+            console.warn('ImageGenerationManager: Max pending jobs reached (' + activeJobs + ' active)');
+            return null;
+        }
+
+        try {
+            // Capture current frame
+            let imageData;
+            if (typeof cameraComponent.captureFrame === 'function') {
+                imageData = await cameraComponent.captureFrame();
+            } else if (typeof cameraComponent.capture === 'function') {
+                imageData = await cameraComponent.capture();
+            } else {
+                throw new Error('Camera component does not have capture method');
+            }
+
+            // Extract base64 data
+            let base64Image = imageData;
+            if (imageData.includes(',')) {
+                base64Image = imageData.split(',')[1];
+            }
+
+            // Build description with emotion awareness
+            let description = this.sdConfig.description || "";
+            if (biometricData && biometricData.dominant_emotion) {
+                const emotionPrompt = this.sdConfig.emotionPromptMapping?.[biometricData.dominant_emotion];
+                if (emotionPrompt) {
+                    description = `${emotionPrompt}, ${description}`;
+                }
+            }
+
+            // Build generation request using real olio.sd.config field names
+            const genRequest = { ...this.sdConfig };
+            genRequest.description = description;
+            genRequest.init_image = base64Image;
+
+            return this.queueGeneration(genRequest);
+
+        } catch (err) {
+            console.error('ImageGenerationManager: Failed to capture and generate:', err);
+            if (this.onGenerationFailed) {
+                this.onGenerationFailed(null, err);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Queue a generation request
+     * @param {Object} request - Generation request
+     * @returns {string} Job ID
+     */
+    queueGeneration(request) {
+        const jobId = `gen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        const job = {
+            id: jobId,
+            request: request,
+            status: 'pending',
+            createdAt: Date.now(),
+            result: null,
+            error: null
+        };
+
+        this.pendingGenerations.push(job);
+
+        if (this.onQueueChanged) {
+            this.onQueueChanged(this.pendingGenerations.length);
+        }
+
+        // Start processing if not already
+        this._processQueue();
+
+        return jobId;
+    }
+
+    /**
+     * Process the generation queue using olio reimage API
+     * Flow: save camera frame -> build SD config -> call reimage -> handle response
+     * @private
+     */
+    async _processQueue() {
+        if (this.isProcessing) return;
+
+        const pendingJob = this.pendingGenerations.find(j => j.status === 'pending');
+        if (!pendingJob) return;
+
+        this.isProcessing = true;
+        pendingJob.status = 'processing';
+
+        if (this.onGenerationStarted) {
+            this.onGenerationStarted(pendingJob.id);
+        }
+
+        const client = getClient();
+        const appBase = client.base().replace("/rest", "");
+
+        try {
+            // Step 1: Save camera frame to ~/Magic8/Captures
+            const captureObj = await this._saveCameraFrame(
+                pendingJob.request.init_image,
+                pendingJob.id
+            );
+            if (!captureObj || !captureObj.objectId) {
+                throw new Error('Failed to save camera capture');
+            }
+            console.log('ImageGenerationManager: Camera frame saved:', captureObj.objectId);
+
+            // Step 2: Build olio.sd.config entity for the reimage API
+            const sdEntity = await this._buildSdConfigEntity(pendingJob.request, captureObj.objectId);
+
+            // Step 3: Call reimage endpoint (same API used by dialog.js)
+            const reimageUrl = `${appBase}/rest/olio/data.data/${captureObj.objectId}/reimage`;
+            console.log('ImageGenerationManager: Calling reimage for', captureObj.objectId);
+            let response;
+            try {
+                response = await m.request({
+                    method: 'POST',
+                    url: reimageUrl,
+                    withCredentials: true,
+                    body: sdEntity
+                });
+            } catch (reqErr) {
+                const detail = reqErr?.message || (reqErr != null ? JSON.stringify(reqErr) : 'server returned null/empty error');
+                console.warn('ImageGenerationManager: reimage response error:', reqErr);
+                throw new Error(`Reimage request failed (${reimageUrl}): ${detail}`);
+            }
+
+            if (response && response.objectId) {
+                // Rename to distinguish from captures
+                if (response.name && !response.name.startsWith('generated-')) {
+                    response.name = 'generated-' + Date.now() + '.' + (response.name.split('.').pop() || 'png');
+                }
+                // Move generated image to ~/Magic8/Generated
+                const movedImage = await this._moveToGeneratedGroup(response);
+                const imageUrl = `${appBase}/media/Public/data.data${encodeURI(movedImage.groupPath)}/${encodeURIComponent(movedImage.name)}`;
+
+                const savedImage = {
+                    objectId: movedImage.objectId,
+                    url: imageUrl,
+                    name: movedImage.name,
+                    groupPath: movedImage.groupPath
+                };
+
+                pendingJob.status = 'complete';
+                pendingJob.result = savedImage;
+
+                this.generatedImages.push({
+                    id: pendingJob.id,
+                    url: savedImage.url,
+                    objectId: savedImage.objectId,
+                    timestamp: Date.now()
+                });
+
+                if (this.onImageGenerated) {
+                    this.onImageGenerated(savedImage);
+                }
+            } else {
+                throw new Error('No image returned from generation');
+            }
+
+        } catch (err) {
+            console.error('ImageGenerationManager: Generation failed:', err);
+            pendingJob.status = 'failed';
+            pendingJob.error = err.message || String(err);
+
+            if (this.onGenerationFailed) {
+                this.onGenerationFailed(pendingJob.id, err);
+            }
+        }
+
+        // Remove completed/failed jobs older than 5 minutes
+        const cutoff = Date.now() - 5 * 60 * 1000;
+        this.pendingGenerations = this.pendingGenerations.filter(
+            j => j.status === 'pending' || j.status === 'processing' || j.createdAt > cutoff
+        );
+
+        if (this.onQueueChanged) {
+            this.onQueueChanged(this.pendingGenerations.length);
+        }
+
+        this.isProcessing = false;
+
+        // Process next job
+        this._processQueue();
+    }
+
+    /**
+     * Save camera frame as data.data in ~/Magic8/Captures
+     * @param {string} base64Image - Base64 encoded image data
+     * @param {string} jobId - Job ID for naming
+     * @returns {Promise<Object>} Saved data.data object
+     * @private
+     */
+    async _saveCameraFrame(base64Image, jobId) {
+        const page = getPage();
+
+        if (!this._captureDir) {
+            const capturePath = this.sessionName
+                ? '~/Magic8/Captures/' + this.sessionName
+                : '~/Magic8/Captures';
+            this._captureDir = await page.findObject("auth.group", "DATA", capturePath);
+            if (!this._captureDir || !this._captureDir.objectId) {
+                this._captureDir = await page.makePath("auth.group", "data", capturePath);
+            }
+        }
+
+        let obj = am7model.newPrimitive("data.data");
+        obj.name = `capture-${Date.now()}.png`;
+        obj.contentType = 'image/png';
+        obj.compressionType = 'none';
+        obj.groupId = this._captureDir.id;
+        obj.groupPath = this._captureDir.path;
+        obj.dataBytesStore = base64Image;
+
+        const created = await page.createObject(obj);
+
+        if (created && this.onCaptureCreated) {
+            this.onCaptureCreated({
+                objectId: created.objectId,
+                groupPath: created.groupPath || this._captureDir.path,
+                name: created.name || obj.name
+            });
+        }
+
+        return created;
+    }
+
+    /**
+     * Move a generated image to ~/Magic8/Generated group
+     * @param {Object} imageObj - data.data object returned from reimage API
+     * @returns {Promise<Object>} Updated object with new groupPath
+     * @private
+     */
+    async _moveToGeneratedGroup(imageObj) {
+        const page = getPage();
+
+        if (!this._generatedDir) {
+            const genPath = this.sessionName
+                ? '~/Magic8/Generated/' + this.sessionName
+                : '~/Magic8/Generated';
+            this._generatedDir = await page.findObject("auth.group", "DATA", genPath);
+            if (!this._generatedDir || !this._generatedDir.objectId) {
+                this._generatedDir = await page.makePath("auth.group", "data", genPath);
+            }
+        }
+
+        // If already in the right group, skip
+        if (imageObj.groupId === this._generatedDir.id) {
+            return imageObj;
+        }
+
+        await page.moveObject(imageObj, this._generatedDir);
+        imageObj.groupId = this._generatedDir.id;
+        imageObj.groupPath = this._generatedDir.path;
+        console.log('ImageGenerationManager: Moved generated image to ~/Magic8/Generated:', imageObj.objectId);
+        return imageObj;
+    }
+
+    /**
+     * Build an olio.sd.config entity for the reimage API.
+     * Delegates to am7sd common utility for template fetching and style defaults.
+     * @param {Object} request - Internal generation request
+     * @param {string} referenceImageId - ObjectId of the saved camera frame
+     * @returns {Promise<Object>} SD config entity
+     * @private
+     */
+    async _buildSdConfigEntity(request, referenceImageId) {
+        let entity = await am7sd.buildEntity(request, {
+            skipFields: ['init_image', 'captureInterval', 'emotionPromptMapping']
+        });
+
+        // If a refiner model is configured, force hires mode
+        if (entity.refinerModel) {
+            entity.hires = true;
+        }
+
+        // Set reference image for img2img
+        entity.referenceImageId = referenceImageId;
+
+        return entity;
+    }
+
+    /**
+     * Get job status
+     * @param {string} jobId - Job ID
+     * @returns {Object|null} Job info
+     */
+    getJob(jobId) {
+        return this.pendingGenerations.find(j => j.id === jobId) || null;
+    }
+
+    /**
+     * Get all pending jobs
+     * @returns {Array}
+     */
+    getPendingJobs() {
+        return this.pendingGenerations.filter(j => j.status === 'pending' || j.status === 'processing');
+    }
+
+    /**
+     * Get all generated images
+     * @returns {Array}
+     */
+    getGeneratedImages() {
+        return [...this.generatedImages];
+    }
+
+    /**
+     * Cancel a pending job
+     * @param {string} jobId - Job ID
+     */
+    cancelJob(jobId) {
+        const job = this.pendingGenerations.find(j => j.id === jobId);
+        if (job && job.status === 'pending') {
+            job.status = 'cancelled';
+        }
+    }
+
+    /**
+     * Clear all generated images
+     */
+    clearGeneratedImages() {
+        this.generatedImages = [];
+    }
+
+    /**
+     * Set maximum pending jobs
+     * @param {number} max - Maximum number of pending jobs
+     */
+    setMaxPendingJobs(max) {
+        this.maxPendingJobs = Math.max(1, max);
+    }
+
+    /**
+     * Clean up resources
+     */
+    dispose() {
+        this.pendingGenerations = [];
+        this.generatedImages = [];
+        this.sdConfig = null;
+        this._captureDir = null;
+        this._generatedDir = null;
+        this._baseEntity = null;
+        this.onImageGenerated = null;
+        this.onGenerationStarted = null;
+        this.onGenerationFailed = null;
+        this.onQueueChanged = null;
+        this.onCaptureCreated = null;
+    }
+}
+
+const Magic8ImageGenerationManager = { ImageGenerationManager };
+
+export { ImageGenerationManager };
+export default Magic8ImageGenerationManager;

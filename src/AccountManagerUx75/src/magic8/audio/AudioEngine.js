@@ -1,0 +1,972 @@
+/**
+ * AudioEngine - Unified audio context management for Magic8
+ * Handles voice synthesis, binaural beats, isochronic tones, Q-sound panning,
+ * and audio source management with analyser node for visualizers
+ *
+ * ESM port from Ux7 IIFE
+ */
+import m from 'mithril';
+import { am7model } from '../../core/model.js';
+
+function getClient() { return am7model._client; }
+
+class AudioEngine {
+    constructor() {
+        this.context = null;
+        this.sources = new Map();
+        this.binauralEngine = null;
+        this.isochronicEngine = null;
+        this.masterGain = null;
+        this.destinationNode = null;
+        this.analyserNode = null;
+        this.isInitialized = false;
+        this.currentBandLabel = null;
+    }
+
+    /**
+     * Brainwave frequency band definitions
+     */
+    static BRAINWAVE_BANDS = {
+        delta:      { label: 'Delta (Deep Sleep)',             min: 0.5, max: 4,    mid: 2,    desc: 'Deep dreamless sleep, healing, unconscious' },
+        theta:      { label: 'Theta (Meditation)',             min: 4,   max: 7.5,  mid: 5.5,  desc: 'Hypnosis, deep meditation, REM, subconscious' },
+        alphaTheta: { label: 'Alpha-Theta Border (Hypnotic)',  min: 7,   max: 8,    mid: 7.5,  desc: 'Visualization, mind programming, conscious creation' },
+        alpha:      { label: 'Alpha (Relaxation)',             min: 7.5, max: 14,   mid: 10,   desc: 'Relaxation, learning, imagination, intuition' },
+        beta:       { label: 'Beta (Waking)',                  min: 14,  max: 40,   mid: 20,   desc: 'Alertness, logic, focus, can cause stress' },
+        gamma:      { label: 'Gamma (Insight)',                min: 40,  max: 100,  mid: 40,   desc: 'High-level processing, bursts of insight' }
+    };
+
+    /**
+     * Solfeggio carrier frequency definitions
+     */
+    static SOLFEGGIO_FREQS = {
+        174:  { label: '174 Hz \u2014 Foundation',       desc: 'Pain relief, sense of security' },
+        285:  { label: '285 Hz \u2014 Restoration',      desc: 'Healing tissue, energy field repair' },
+        396:  { label: '396 Hz \u2014 Liberation',       desc: 'Releasing guilt and fear' },
+        417:  { label: '417 Hz \u2014 Change',           desc: 'Facilitating change, undoing situations' },
+        432:  { label: '432 Hz \u2014 Spiritual Tuning', desc: 'Natural alignment, spiritual attunement' },
+        528:  { label: '528 Hz \u2014 Love',             desc: 'Transformation, love frequency, DNA repair' },
+        639:  { label: '639 Hz \u2014 Connection',       desc: 'Heart opening, relationships, harmonizing' },
+        741:  { label: '741 Hz \u2014 Expression',       desc: 'Self-expression, solutions, creative awakening' },
+        852:  { label: '852 Hz \u2014 Intuition',        desc: 'Third eye activation, spiritual sight' },
+        963:  { label: '963 Hz \u2014 Divine',           desc: 'Crown chakra, pineal gland, divine consciousness' }
+    };
+
+    /**
+     * Named frequency combination presets (solfeggio carrier + brainwave band transitions)
+     */
+    static FREQUENCY_PRESETS = {
+        goddessEnergy: {
+            label: 'Goddess Energy',
+            desc: 'Spiritual femininity, divine feminine through meditative states',
+            baseFreq: 432,
+            startBand: 'alpha', troughBand: 'alphaTheta', endBand: 'theta'
+        },
+        heartOpening: {
+            label: 'Heart Opening',
+            desc: 'Connection, compassion, relational harmony',
+            baseFreq: 639,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'alpha'
+        },
+        loveFrequency: {
+            label: 'Love Frequency',
+            desc: 'Transformation, cellular healing, unconditional love',
+            baseFreq: 528,
+            startBand: 'alpha', troughBand: 'alphaTheta', endBand: 'alpha'
+        },
+        deepHealing: {
+            label: 'Deep Healing',
+            desc: 'Physical restoration, deep regeneration',
+            baseFreq: 174,
+            startBand: 'theta', troughBand: 'delta', endBand: 'theta'
+        },
+        lettingGo: {
+            label: 'Letting Go',
+            desc: 'Releasing guilt, fear, and emotional blockages',
+            baseFreq: 396,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'alphaTheta'
+        },
+        transformation: {
+            label: 'Transformation',
+            desc: 'Facilitating change, breaking old patterns',
+            baseFreq: 417,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'theta'
+        },
+        creativeFlow: {
+            label: 'Creative Flow',
+            desc: 'Self-expression, artistic solutions, inspired work',
+            baseFreq: 741,
+            startBand: 'alpha', troughBand: 'alphaTheta', endBand: 'alpha'
+        },
+        thirdEye: {
+            label: 'Third Eye Awakening',
+            desc: 'Intuition, spiritual sight, inner knowing',
+            baseFreq: 852,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'alphaTheta'
+        },
+        crownConnection: {
+            label: 'Crown Connection',
+            desc: 'Divine consciousness, universal awareness',
+            baseFreq: 963,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'gamma'
+        },
+        regeneration: {
+            label: 'Regeneration',
+            desc: 'Deep tissue repair, energy field restoration',
+            baseFreq: 285,
+            startBand: 'theta', troughBand: 'delta', endBand: 'theta'
+        },
+        deepHypnosis: {
+            label: 'Deep Hypnosis',
+            desc: 'Hypnotic induction, subconscious programming, visualization',
+            baseFreq: 432,
+            startBand: 'alpha', troughBand: 'alphaTheta', endBand: 'delta'
+        },
+        lucidDream: {
+            label: 'Lucid Dreaming',
+            desc: 'Conscious dream state, REM activation',
+            baseFreq: 528,
+            startBand: 'alpha', troughBand: 'theta', endBand: 'delta'
+        }
+    };
+
+    /**
+     * Get or create the AudioContext (singleton pattern)
+     * @returns {AudioContext}
+     */
+    getContext() {
+        if (!this.context || this.context.state === 'closed') {
+            this.context = new (window.AudioContext || window.webkitAudioContext)();
+            this._setupMasterChain();
+        }
+        return this.context;
+    }
+
+    /**
+     * Setup the master audio chain for recording support
+     * @private
+     */
+    _setupMasterChain() {
+        if (this.masterGain) return;
+
+        this.masterGain = this.context.createGain();
+        this.masterGain.gain.value = 1.0;
+
+        // Create a destination for recording (MediaStreamDestination)
+        if (this.context.createMediaStreamDestination) {
+            this.destinationNode = this.context.createMediaStreamDestination();
+            this.masterGain.connect(this.destinationNode);
+        }
+
+        // Also connect to speakers
+        this.masterGain.connect(this.context.destination);
+        this.isInitialized = true;
+    }
+
+    /**
+     * Get the audio destination for recording
+     * @returns {MediaStreamAudioDestinationNode|null}
+     */
+    getDestination() {
+        if (!this.isInitialized) {
+            this.getContext();
+        }
+        return this.destinationNode;
+    }
+
+    /**
+     * Get or create an AnalyserNode connected to the master output.
+     * Used by AudioVisualizerOverlay to display frequency data.
+     * @returns {AnalyserNode}
+     */
+    getAnalyser() {
+        if (this.analyserNode) return this.analyserNode;
+
+        const ctx = this.getContext();
+        this.analyserNode = ctx.createAnalyser();
+        this.analyserNode.fftSize = 2048;
+        this.analyserNode.smoothingTimeConstant = 0.85;
+
+        // Insert analyser between masterGain and destinations
+        // Disconnect masterGain from current destinations
+        this.masterGain.disconnect();
+
+        // Reconnect through analyser
+        this.masterGain.connect(this.analyserNode);
+        this.analyserNode.connect(this.context.destination);
+        if (this.destinationNode) {
+            this.analyserNode.connect(this.destinationNode);
+        }
+
+        return this.analyserNode;
+    }
+
+    /**
+     * Resume audio context (needed after user interaction)
+     * @returns {Promise<void>}
+     */
+    async resume() {
+        const ctx = this.getContext();
+        if (ctx.state === 'suspended') {
+            await ctx.resume();
+        }
+    }
+
+    /**
+     * Create a hash for content caching
+     * @param {string} content - Content to hash
+     * @returns {string}
+     */
+    hashContent(content) {
+        let hash = 0;
+        for (let i = 0; i < content.length; i++) {
+            const char = content.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return 'audio_' + hash.toString(16);
+    }
+
+    /**
+     * Create a voice audio source from text content
+     * @param {string} content - Text content to synthesize
+     * @param {string} profileId - Voice profile ID
+     * @returns {Promise<Object>} Audio source object
+     */
+    async createVoiceSource(content, profileId) {
+        const hash = this.hashContent(content + profileId);
+
+        // Return cached source if exists
+        if (this.sources.has(hash)) {
+            return this.sources.get(hash);
+        }
+
+        // Clean content for synthesis
+        let cleanContent = content
+            .replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, "")
+            .replace(/["\*]+/g, "");
+
+        if (!cleanContent || cleanContent.length === 0) {
+            console.warn('AudioEngine: No content to synthesize');
+            return null;
+        }
+
+        try {
+            // Build voice request
+            const vprops = {
+                text: cleanContent,
+                speed: 1.2
+            };
+
+            if (profileId) {
+                vprops.voiceProfileId = profileId;
+            } else {
+                vprops.engine = "piper";
+                vprops.speaker = "en_GB-alba-medium";
+            }
+
+            const basePath = getClient().base().replace("/rest", "");
+
+            // Synthesize voice
+            const response = await m.request({
+                method: 'POST',
+                url: `${basePath}/rest/voice/${hash}`,
+                withCredentials: true,
+                body: vprops
+            });
+
+            if (!response || !response.dataBytesStore) {
+                throw new Error('No audio data received');
+            }
+
+            // Decode audio
+            const ctx = this.getContext();
+            const arrayBuffer = this._base64ToArrayBuffer(response.dataBytesStore);
+            const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+            // Create source object
+            const source = {
+                id: hash,
+                buffer: audioBuffer,
+                context: ctx,
+                started: false,
+                source: null,
+
+                play: () => this._playSource(hash),
+                stop: () => this._stopSource(hash),
+                isPlaying: () => this._isSourcePlaying(hash)
+            };
+
+            this.sources.set(hash, source);
+            return source;
+
+        } catch (err) {
+            console.error('AudioEngine: Error creating voice source:', err);
+            return null;
+        }
+    }
+
+    /**
+     * Play an audio source
+     * @param {string} hash - Source hash
+     * @private
+     */
+    _playSource(hash) {
+        const source = this.sources.get(hash);
+        if (!source) return;
+
+        // Stop any currently playing sources
+        this.stopAllSources();
+
+        const ctx = this.getContext();
+
+        // Create new buffer source node (required for each playback)
+        source.source = ctx.createBufferSource();
+        source.source.buffer = source.buffer;
+        source.source.connect(this.masterGain);
+
+        source.source.onended = () => {
+            source.started = false;
+        };
+
+        if (ctx.state === 'suspended') {
+            ctx.resume().then(() => {
+                source.source.start(0);
+                source.started = true;
+            });
+        } else {
+            source.source.start(0);
+            source.started = true;
+        }
+    }
+
+    /**
+     * Stop an audio source
+     * @param {string} hash - Source hash
+     * @private
+     */
+    _stopSource(hash) {
+        const source = this.sources.get(hash);
+        if (!source || !source.started) return;
+
+        try {
+            source.source.stop();
+        } catch (e) {
+            // Source may already be stopped
+        }
+        source.started = false;
+    }
+
+    /**
+     * Check if a source is playing
+     * @param {string} hash - Source hash
+     * @returns {boolean}
+     * @private
+     */
+    _isSourcePlaying(hash) {
+        const source = this.sources.get(hash);
+        return source ? source.started : false;
+    }
+
+    /**
+     * Stop all playing audio sources
+     */
+    stopAllSources() {
+        this.sources.forEach((source, hash) => {
+            if (source.started) {
+                this._stopSource(hash);
+            }
+        });
+    }
+
+    /**
+     * Start binaural beats with configurable sweep, fades, and Q-sound panning
+     * @param {Object} config - Binaural configuration
+     * @param {number} [config.baseFreq=440] - Base carrier frequency (Hz)
+     * @param {number} [config.sweepStart=8] - Beat frequency at start of sweep cycle (Hz)
+     * @param {number} [config.sweepTrough=2] - Beat frequency at midpoint of sweep cycle (Hz)
+     * @param {number} [config.sweepEnd=8] - Beat frequency at end of sweep cycle (Hz)
+     * @param {number} [config.sweepDurationMin=5] - Full sweep cycle duration (minutes)
+     * @param {number} [config.fadeInSec=2] - Fade-in duration (seconds)
+     * @param {number} [config.fadeOutSec=3] - Fade-out duration (seconds)
+     * @param {boolean} [config.panEnabled=false] - Enable Q-sound spatial panning
+     * @param {number} [config.panSpeed=0.1] - Pan oscillation speed (radians/sec)
+     * @param {number} [config.panDepth=0.8] - Pan sweep depth (-1 to 1 range)
+     */
+    startBinaural(config = {}) {
+        if (this.binauralEngine) {
+            this.stopBinaural();
+        }
+
+        const ctx = this.getContext();
+
+        const baseFreq = config.baseFreq || 440;
+        // Support new 3-point sweep or fall back to legacy minBeat/maxBeat
+        const sweepStart = config.sweepStart || config.maxBeat || 8;
+        const sweepTrough = config.sweepTrough || config.minBeat || 2;
+        const sweepEnd = config.sweepEnd || config.maxBeat || 8;
+        const sweepDurationMin = config.sweepDurationMin || 5;
+        const fadeInSec = config.fadeInSec || 2;
+        const fadeOutSec = config.fadeOutSec || 3;
+        const panEnabled = config.panEnabled || false;
+        const panSpeed = config.panSpeed || 0.1;
+        const panDepth = config.panDepth || 0.8;
+
+        // Create oscillators and nodes
+        this.binauralEngine = {
+            leftOsc: ctx.createOscillator(),
+            rightOsc: ctx.createOscillator(),
+            leftGain: ctx.createGain(),
+            rightGain: ctx.createGain(),
+            binauralGain: ctx.createGain(),
+            merger: ctx.createChannelMerger(2),
+            dcBlocker: ctx.createBiquadFilter(),
+            panner: null,
+            panAnimFrame: null,
+            baseFreq,
+            sweepStart,
+            sweepTrough,
+            sweepEnd,
+            sweepDurationMin,
+            fadeInSec,
+            fadeOutSec,
+            panEnabled,
+            panSpeed,
+            panDepth,
+            sweepInterval: null
+        };
+
+        const be = this.binauralEngine;
+
+        // Configure DC blocker
+        be.dcBlocker.type = "highpass";
+        be.dcBlocker.frequency.value = 20;
+
+        // Set initial gain to 0 for smooth ramp-up
+        be.binauralGain.gain.setValueAtTime(0, ctx.currentTime);
+
+        // Build audio graph
+        be.leftOsc.connect(be.leftGain).connect(be.merger, 0, 0);
+        be.rightOsc.connect(be.rightGain).connect(be.merger, 0, 1);
+
+        if (panEnabled) {
+            // Q-sound: insert StereoPannerNode after merger
+            be.panner = ctx.createStereoPanner();
+            be.panner.pan.value = 0;
+            be.merger.connect(be.panner);
+            be.panner.connect(be.binauralGain);
+        } else {
+            be.merger.connect(be.binauralGain);
+        }
+
+        be.binauralGain.connect(be.dcBlocker);
+        be.dcBlocker.connect(this.masterGain);
+
+        // Set initial frequencies (start of sweep)
+        be.leftOsc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+        be.rightOsc.frequency.setValueAtTime(baseFreq + sweepStart, ctx.currentTime);
+
+        // Start oscillators
+        be.leftOsc.start();
+        be.rightOsc.start();
+
+        // Smooth fade-in
+        const targetVolume = 0.35;
+        const delay = 0.05;
+        const startTime = ctx.currentTime + delay;
+
+        be.binauralGain.gain.cancelScheduledValues(ctx.currentTime);
+        be.binauralGain.gain.setValueAtTime(0, ctx.currentTime);
+        be.binauralGain.gain.linearRampToValueAtTime(targetVolume, startTime + fadeInSec);
+
+        // Start frequency sweep
+        this._scheduleBinauralSweep();
+        be.sweepInterval = setInterval(
+            () => this._scheduleBinauralSweep(),
+            sweepDurationMin * 60 * 1000
+        );
+
+        // Start Q-sound panning animation if enabled
+        if (panEnabled) {
+            this._startPanAnimation();
+        }
+
+        console.log('AudioEngine: Binaural started — base:', baseFreq, 'Hz, sweep:',
+            sweepStart, '\u2192', sweepTrough, '\u2192', sweepEnd, 'Hz, cycle:', sweepDurationMin, 'min',
+            panEnabled ? ', Q-sound enabled' : '');
+    }
+
+    /**
+     * Schedule binaural frequency sweep (3-point: start -> trough -> end)
+     * @private
+     */
+    _scheduleBinauralSweep() {
+        if (!this.binauralEngine) return;
+
+        const be = this.binauralEngine;
+        const ctx = this.context;
+        const now = ctx.currentTime;
+        const halfCycle = (be.sweepDurationMin * 60) / 2;
+
+        be.rightOsc.frequency.cancelScheduledValues(now);
+        be.rightOsc.frequency.setValueAtTime(be.baseFreq + be.sweepStart, now);
+        be.rightOsc.frequency.linearRampToValueAtTime(be.baseFreq + be.sweepTrough, now + halfCycle);
+        be.rightOsc.frequency.linearRampToValueAtTime(be.baseFreq + be.sweepEnd, now + 2 * halfCycle);
+    }
+
+    /**
+     * Animate Q-sound stereo panning using requestAnimationFrame
+     * Creates slow spatial movement for an immersive effect
+     * @private
+     */
+    _startPanAnimation() {
+        if (!this.binauralEngine || !this.binauralEngine.panner) return;
+
+        const be = this.binauralEngine;
+        const startTime = performance.now();
+
+        const animate = (now) => {
+            if (!this.binauralEngine || !be.panner) return;
+
+            const elapsed = (now - startTime) / 1000;
+            const panValue = Math.sin(elapsed * be.panSpeed) * be.panDepth;
+            be.panner.pan.value = Math.max(-1, Math.min(1, panValue));
+
+            be.panAnimFrame = requestAnimationFrame(animate);
+        };
+
+        be.panAnimFrame = requestAnimationFrame(animate);
+    }
+
+    /**
+     * Stop binaural beats with configurable fade-out
+     */
+    stopBinaural() {
+        if (!this.binauralEngine) return;
+
+        const be = this.binauralEngine;
+        const ctx = this.context;
+
+        if (be.sweepInterval) {
+            clearInterval(be.sweepInterval);
+        }
+
+        if (be.panAnimFrame) {
+            cancelAnimationFrame(be.panAnimFrame);
+        }
+
+        if (!ctx) {
+            // Context already closed or never created - just clean up references
+            try { be.leftOsc.stop(); } catch (e) {}
+            try { be.rightOsc.stop(); } catch (e) {}
+            try { be.leftOsc.disconnect(); } catch (e) {}
+            try { be.rightOsc.disconnect(); } catch (e) {}
+            try { be.binauralGain.disconnect(); } catch (e) {}
+            if (be.panner) try { be.panner.disconnect(); } catch (e) {}
+            this.binauralEngine = null;
+            return;
+        }
+
+        // Ramp down volume using configured fade-out
+        const fadeOutSec = be.fadeOutSec || 3;
+        const now = ctx.currentTime;
+        be.binauralGain.gain.cancelScheduledValues(now);
+        be.binauralGain.gain.setValueAtTime(be.binauralGain.gain.value, now);
+        be.binauralGain.gain.linearRampToValueAtTime(0, now + fadeOutSec);
+
+        setTimeout(() => {
+            try {
+                be.leftOsc.stop();
+                be.rightOsc.stop();
+            } catch (e) {}
+
+            try {
+                be.leftOsc.disconnect();
+                be.rightOsc.disconnect();
+                be.binauralGain.disconnect();
+                be.dcBlocker.disconnect();
+                if (be.panner) be.panner.disconnect();
+            } catch (e) {}
+
+            this.binauralEngine = null;
+        }, (fadeOutSec * 1000) + 50);
+    }
+
+    /**
+     * Start isochronic tones -- amplitude-modulated rhythmic pulsing
+     * @param {Object} config - Isochronic configuration
+     * @param {number} [config.isochronicFreq=200] - Tone frequency (Hz)
+     * @param {number} [config.isochronicRate=6] - Pulse rate (Hz, e.g. 4-10)
+     * @param {number} [config.isochronicVolume=0.15] - Volume (0-1)
+     */
+    startIsochronic(config = {}) {
+        if (this.isochronicEngine) {
+            this.stopIsochronic();
+        }
+
+        const ctx = this.getContext();
+        const freq = config.isochronicFreq || 200;
+        const rate = config.isochronicRate || 6;
+        const volume = config.isochronicVolume || 0.15;
+
+        // Create oscillator for the tone
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+
+        // Create gain node for amplitude modulation (the pulsing)
+        const pulseGain = ctx.createGain();
+        pulseGain.gain.value = 0;
+
+        // Create master gain for overall volume
+        const isoGain = ctx.createGain();
+        isoGain.gain.value = volume;
+
+        // Connect: osc -> pulseGain -> isoGain -> masterGain
+        osc.connect(pulseGain);
+        pulseGain.connect(isoGain);
+        isoGain.connect(this.masterGain);
+
+        osc.start();
+
+        // Schedule repeating pulse pattern
+        const pulseDuration = 1.0 / rate;
+        const onDuration = pulseDuration * 0.5;
+        const rampTime = 0.01; // sharp on/off transitions
+
+        this.isochronicEngine = {
+            osc,
+            pulseGain,
+            isoGain,
+            rate,
+            interval: null
+        };
+
+        // Schedule pulses using a recurring function
+        const schedulePulses = () => {
+            if (!this.isochronicEngine) return;
+
+            const now = ctx.currentTime;
+            const scheduleAhead = 2.0; // schedule 2 seconds ahead
+
+            for (let t = 0; t < scheduleAhead; t += pulseDuration) {
+                const pulseStart = now + t;
+                // On: ramp up
+                pulseGain.gain.setValueAtTime(0, pulseStart);
+                pulseGain.gain.linearRampToValueAtTime(1, pulseStart + rampTime);
+                // Stay on
+                pulseGain.gain.setValueAtTime(1, pulseStart + onDuration - rampTime);
+                // Off: ramp down
+                pulseGain.gain.linearRampToValueAtTime(0, pulseStart + onDuration);
+            }
+        };
+
+        schedulePulses();
+        this.isochronicEngine.interval = setInterval(schedulePulses, 1500);
+
+        console.log('AudioEngine: Isochronic started — freq:', freq, 'Hz, rate:', rate, 'Hz, vol:', volume);
+    }
+
+    /**
+     * Stop isochronic tones
+     */
+    stopIsochronic() {
+        if (!this.isochronicEngine) return;
+
+        const ie = this.isochronicEngine;
+        if (ie.interval) {
+            clearInterval(ie.interval);
+        }
+
+        try {
+            ie.pulseGain.gain.cancelScheduledValues(0);
+            ie.isoGain.gain.value = 0;
+        } catch (e) {}
+
+        setTimeout(() => {
+            try {
+                ie.osc.stop();
+                ie.osc.disconnect();
+                ie.pulseGain.disconnect();
+                ie.isoGain.disconnect();
+            } catch (e) {}
+        }, 100);
+
+        this.isochronicEngine = null;
+    }
+
+    /**
+     * Convert base64 string to ArrayBuffer
+     * @param {string} base64 - Base64 encoded string
+     * @returns {ArrayBuffer}
+     * @private
+     */
+    _base64ToArrayBuffer(base64) {
+        const cleanedBase64 = base64.replace(/^data:audio\/\w+;base64,/, '');
+        const binaryString = atob(cleanedBase64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        return bytes.buffer;
+    }
+
+    /**
+     * Set master volume
+     * @param {number} volume - Volume level (0-1)
+     */
+    setVolume(volume) {
+        if (this.masterGain) {
+            this.masterGain.gain.value = Math.max(0, Math.min(1, volume));
+        }
+    }
+
+    /**
+     * Start binaural beats from a named preset
+     * @param {string} presetName - Key from FREQUENCY_PRESETS
+     * @param {Object} [overrides] - Optional config overrides
+     */
+    startBinauralFromPreset(presetName, overrides) {
+        const preset = AudioEngine.FREQUENCY_PRESETS[presetName];
+        if (!preset) {
+            console.warn('AudioEngine: Unknown preset:', presetName);
+            return;
+        }
+        this.startBinauralFromBands({ ...preset, ...overrides });
+    }
+
+    /**
+     * Start binaural beats using named brainwave bands
+     * @param {Object} config
+     * @param {string} config.startBand - Starting band name
+     * @param {string} config.troughBand - Trough band name
+     * @param {string} config.endBand - End band name
+     * @param {string} [config.secondTransition] - Optional 2nd transition band
+     * @param {string} [config.thirdTransition] - Optional 3rd transition band
+     * @param {number} [config.baseFreq=200] - Carrier frequency (Hz)
+     * @param {number} [config.sweepDurationMin=5] - Full sweep cycle (minutes)
+     * @param {number} [config.fadeInSec=2] - Fade-in duration (seconds)
+     * @param {number} [config.fadeOutSec=3] - Fade-out duration (seconds)
+     */
+    startBinauralFromBands(config) {
+        const bands = AudioEngine.BRAINWAVE_BANDS;
+        const start = bands[config.startBand] || bands.alpha;
+        const trough = bands[config.troughBand] || bands.theta;
+        const end = bands[config.endBand] || bands.alpha;
+
+        // Build waypoints: [start, trough, optional2, optional3, end]
+        const waypoints = [start.mid, trough.mid];
+        if (config.secondTransition && bands[config.secondTransition]) {
+            waypoints.push(bands[config.secondTransition].mid);
+        }
+        if (config.thirdTransition && bands[config.thirdTransition]) {
+            waypoints.push(bands[config.thirdTransition].mid);
+        }
+        waypoints.push(end.mid);
+
+        this.currentBandLabel = start.label;
+
+        this.startBinauralMultiPoint({
+            baseFreq: config.baseFreq || 200,
+            waypoints: waypoints,
+            sweepDurationMin: config.sweepDurationMin || 5,
+            fadeInSec: config.fadeInSec || 2,
+            fadeOutSec: config.fadeOutSec || 3,
+            panEnabled: config.panEnabled || false,
+            panSpeed: config.panSpeed || 0.1,
+            panDepth: config.panDepth || 0.8
+        });
+    }
+
+    /**
+     * Start binaural beats with multi-point frequency waypoints
+     * Instead of the 3-point sweep, schedules N-segment linear ramps
+     * @param {Object} config
+     * @param {number} config.baseFreq - Carrier frequency
+     * @param {Array<number>} config.waypoints - Beat frequency waypoints (Hz)
+     * @param {number} [config.sweepDurationMin=5] - Full cycle duration (minutes)
+     * @param {number} [config.fadeInSec=2] - Fade-in (seconds)
+     * @param {number} [config.fadeOutSec=3] - Fade-out (seconds)
+     */
+    startBinauralMultiPoint(config) {
+        if (this.binauralEngine) {
+            this.stopBinaural();
+        }
+
+        const ctx = this.getContext();
+        const baseFreq = config.baseFreq || 200;
+        const waypoints = config.waypoints || [10, 5.5, 10];
+        const sweepDurationMin = config.sweepDurationMin || 5;
+        const fadeInSec = config.fadeInSec || 2;
+        const fadeOutSec = config.fadeOutSec || 3;
+        const panEnabled = config.panEnabled || false;
+        const panSpeed = config.panSpeed || 0.1;
+        const panDepth = config.panDepth || 0.8;
+
+        // Create oscillators and nodes (same infrastructure as startBinaural)
+        this.binauralEngine = {
+            leftOsc: ctx.createOscillator(),
+            rightOsc: ctx.createOscillator(),
+            leftGain: ctx.createGain(),
+            rightGain: ctx.createGain(),
+            binauralGain: ctx.createGain(),
+            merger: ctx.createChannelMerger(2),
+            dcBlocker: ctx.createBiquadFilter(),
+            panner: null,
+            panAnimFrame: null,
+            baseFreq,
+            waypoints,
+            sweepDurationMin,
+            fadeInSec,
+            fadeOutSec,
+            panEnabled,
+            panSpeed,
+            panDepth,
+            sweepInterval: null
+        };
+
+        const be = this.binauralEngine;
+
+        // Configure DC blocker
+        be.dcBlocker.type = "highpass";
+        be.dcBlocker.frequency.value = 20;
+
+        // Set initial gain to 0 for smooth ramp-up
+        be.binauralGain.gain.setValueAtTime(0, ctx.currentTime);
+
+        // Build audio graph
+        be.leftOsc.connect(be.leftGain).connect(be.merger, 0, 0);
+        be.rightOsc.connect(be.rightGain).connect(be.merger, 0, 1);
+
+        if (panEnabled) {
+            be.panner = ctx.createStereoPanner();
+            be.panner.pan.value = 0;
+            be.merger.connect(be.panner);
+            be.panner.connect(be.binauralGain);
+        } else {
+            be.merger.connect(be.binauralGain);
+        }
+
+        be.binauralGain.connect(be.dcBlocker);
+        be.dcBlocker.connect(this.masterGain);
+
+        // Set initial frequencies
+        be.leftOsc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+        be.rightOsc.frequency.setValueAtTime(baseFreq + waypoints[0], ctx.currentTime);
+
+        // Start oscillators
+        be.leftOsc.start();
+        be.rightOsc.start();
+
+        // Smooth fade-in
+        const targetVolume = 0.35;
+        const delay = 0.05;
+        const startTime = ctx.currentTime + delay;
+
+        be.binauralGain.gain.cancelScheduledValues(ctx.currentTime);
+        be.binauralGain.gain.setValueAtTime(0, ctx.currentTime);
+        be.binauralGain.gain.linearRampToValueAtTime(targetVolume, startTime + fadeInSec);
+
+        // Schedule multi-point sweep
+        this._scheduleMultiPointSweep();
+        be.sweepInterval = setInterval(
+            () => this._scheduleMultiPointSweep(),
+            sweepDurationMin * 60 * 1000
+        );
+
+        // Start Q-sound panning if enabled
+        if (panEnabled) {
+            this._startPanAnimation();
+        }
+
+        console.log('AudioEngine: Multi-point binaural started — base:', baseFreq,
+            'Hz, waypoints:', waypoints.map(w => w.toFixed(1)).join('\u2192'), 'Hz, cycle:', sweepDurationMin, 'min');
+    }
+
+    /**
+     * Schedule multi-point frequency sweep across waypoints
+     * Divides sweep duration equally among (waypoints.length - 1) segments
+     * @private
+     */
+    _scheduleMultiPointSweep() {
+        if (!this.binauralEngine || !this.binauralEngine.waypoints) return;
+
+        const be = this.binauralEngine;
+        const ctx = this.context;
+        const now = ctx.currentTime;
+        const totalDuration = be.sweepDurationMin * 60; // in seconds
+        const segments = be.waypoints.length - 1;
+        const segmentDuration = totalDuration / segments;
+
+        be.rightOsc.frequency.cancelScheduledValues(now);
+        be.rightOsc.frequency.setValueAtTime(be.baseFreq + be.waypoints[0], now);
+
+        for (let i = 1; i < be.waypoints.length; i++) {
+            const targetTime = now + (i * segmentDuration);
+            be.rightOsc.frequency.linearRampToValueAtTime(
+                be.baseFreq + be.waypoints[i],
+                targetTime
+            );
+        }
+
+        // Update band label for state reporting
+        this.currentBandLabel = this.getBandForFrequency(be.waypoints[0]);
+    }
+
+    /**
+     * Get the brainwave band name for a given beat frequency
+     * @param {number} hz - Beat frequency in Hz
+     * @returns {string} Band label (e.g., "Alpha (Relaxation)")
+     */
+    getBandForFrequency(hz) {
+        const bands = AudioEngine.BRAINWAVE_BANDS;
+        for (const [name, band] of Object.entries(bands)) {
+            if (hz >= band.min && hz <= band.max) {
+                return band.label;
+            }
+        }
+        return hz + ' Hz';
+    }
+
+    /**
+     * Clean up and dispose all resources
+     */
+    dispose() {
+        this.stopBinaural();
+        this.stopIsochronic();
+        this.stopAllSources();
+
+        if (this.analyserNode) {
+            try { this.analyserNode.disconnect(); } catch (e) {}
+            this.analyserNode = null;
+        }
+
+        if (this.masterGain) {
+            this.masterGain.disconnect();
+        }
+
+        if (this.destinationNode) {
+            this.destinationNode.disconnect();
+        }
+
+        if (this.context && this.context.state !== 'closed') {
+            this.context.close();
+        }
+
+        this.sources.clear();
+        this.context = null;
+        this.masterGain = null;
+        this.destinationNode = null;
+        this.isInitialized = false;
+    }
+}
+
+// Namespace object for convenient grouped import
+const Magic8AudioEngine = {
+    AudioEngine
+};
+
+export { AudioEngine };
+export default Magic8AudioEngine;
