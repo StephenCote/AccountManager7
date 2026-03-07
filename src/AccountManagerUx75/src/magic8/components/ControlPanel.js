@@ -130,7 +130,7 @@ const ControlPanel = {
                 fixed bottom-0 left-0 right-0 z-50
                 flex justify-center items-center gap-3 sm:gap-4 p-4
                 bg-gradient-to-t from-black/60 to-transparent
-                transition-all duration-300
+                transition-[opacity,transform] duration-300
                 ${this.isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-full pointer-events-none'}
             `,
             style: {

@@ -64,6 +64,15 @@ const features = {
         deps: ['core'],
         routes: () => import('./features/biometrics.js'),
         menuItems: [{ icon: 'monitor_heart', label: 'Magic 8', route: '/magic8', section: 'top' }]
+    },
+    schema: {
+        id: 'schema',
+        label: 'Schema',
+        description: 'Model schema browser and form editor (admin only)',
+        required: false,
+        deps: ['core'],
+        routes: () => import('./features/schema.js'),
+        menuItems: [{ icon: 'schema', label: 'Schema', route: '/schema', section: 'aside', adminOnly: true }]
     }
 };
 
@@ -72,7 +81,7 @@ const profiles = {
     standard: ['core', 'chat'],
     full: Object.keys(features),
     gaming: ['core', 'chat', 'cardGame', 'games', 'biometrics'],
-    enterprise: ['core', 'chat', 'iso42001']
+    enterprise: ['core', 'chat', 'iso42001', 'schema']
 };
 
 // --- Feature state ---

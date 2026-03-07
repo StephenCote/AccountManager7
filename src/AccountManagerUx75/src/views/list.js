@@ -340,7 +340,7 @@ function newListControl() {
                 }
 
                 return m('div', Object.assign({
-                    class: 'group relative rounded-lg border overflow-hidden cursor-pointer transition-all hover:shadow-md'
+                    class: 'group relative rounded-lg border overflow-hidden cursor-pointer transition-shadow hover:shadow-md'
                         + (checked ? ' border-blue-500 ring-2 ring-blue-300 dark:ring-blue-700' : ' border-gray-200 dark:border-gray-700'),
                     onclick: function() { selectResult(item); },
                     ondblclick: function() { navigateDown(item); }

@@ -120,7 +120,7 @@ function refreshGrid(){
 
     let defCubeColor = "white";
 
-    let cubeTrans = "rounded-sm transition-all duration-300"
+    let cubeTrans = "rounded-sm transition-colors duration-300"
     let cubeClsC = cubeTrans;
     let cubeStyleS = "width:" + w + "px;"
     + "height: " + h + "px;";

@@ -327,12 +327,20 @@ async function wssSend(name, message, recipient, schema) {
     }
 }
 
+let _wsRedrawTimer = 0;
+function _scheduleWsRedraw() {
+    if (!_wsRedrawTimer) {
+        _wsRedrawTimer = requestAnimationFrame(() => { _wsRedrawTimer = 0; m.redraw(); });
+    }
+}
+
 function routeMessage(msg) {
     if (msg.token) {
         page.token = msg.token;
     }
     if (msg.chirps) {
         let c1 = msg.chirps[0] || "";
+        let handled = true;
         if (c1.match(/(chatStart|chatComplete|chatUpdate|chatError)/)) {
             if (!page.chatStream) return;
             page.chatStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2], msg.chirps[3]);
@@ -342,11 +350,15 @@ function routeMessage(msg) {
         } else if (c1 === "policyEvent" || c1 === "autotuneEvent" || c1 === "evalProgress" || c1 === "interactionEvent") {
             import('../chat/LLMConnector.js').then(mod => {
                 mod.LLMConnector.handlePolicyEvent({ type: c1, data: msg.chirps[1] });
+                m.redraw();
             }).catch(() => {});
+            return; // async — redraw handled in .then()
         } else if (c1 === "memoryEvent") {
             import('../chat/LLMConnector.js').then(mod => {
                 mod.LLMConnector.handleMemoryEvent({ type: c1, data: msg.chirps[1] });
+                m.redraw();
             }).catch(() => {});
+            return; // async — redraw handled in .then()
         } else if (c1 === "chainEvent") {
             let eventType = msg.chirps[1];
             let eventData = null;
@@ -358,8 +370,10 @@ function routeMessage(msg) {
             if (page.gameStream) {
                 page.gameStream.routePushMessage(c1, ...msg.chirps.slice(1));
             }
+        } else {
+            handled = false;
         }
-        m.redraw();
+        if (handled) _scheduleWsRedraw();
     }
 }
 

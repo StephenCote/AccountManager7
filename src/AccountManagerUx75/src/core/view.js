@@ -182,10 +182,15 @@ import { am7model } from './model.js';
         return m("input", Object.assign(iprops, props));
     }
 
+    let _resizeRaf = 0;
     function autoResize(el) {
         if(!el) return;
-        el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+        if (_resizeRaf) cancelAnimationFrame(_resizeRaf);
+        _resizeRaf = requestAnimationFrame(() => {
+            _resizeRaf = 0;
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+        });
     }
 
     function form(inst) {

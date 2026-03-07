@@ -8,10 +8,10 @@
 
 ## 1. Current Status
 
-**Project:** `AccountManagerUx75/` — 135 source files, ~71,000 lines
-**Build:** Vite 6.4.1, 160 modules, builds in ~5s
+**Project:** `AccountManagerUx75/` — 136 source files, ~71,500 lines
+**Build:** Vite 6.4.1, 161 modules, builds in ~5s
 **Tests:** 64 Vitest unit tests pass, 35 Playwright E2E tests pass (all green)
-**Phase 5 completed:** 2026-03-06
+**Phase 7 completed:** 2026-03-06
 **Ux7 File Parity:** ~100% — all active Ux7 source files ported including dialog workflow commands (5 intentionally skipped)
 
 ---
@@ -30,8 +30,8 @@
 | **Phase 3.5d: Model Ref Form Rendering** | COMPLETE | 2 | Sub-object tabs (personality, statistics, store, narrative, profile) now render full fields instead of just objectId. Implemented `pinst` cache for sub-instances, lazy tab activation, async sub-object save with `background:true` to avoid redraw storms, grid view null guard. |
 | **Phase 4: ISO 42001 Compliance Dashboard** | DEFERRED | 1 | Moved to separate design/plan (`aiDocs/ISO42001Plan.md`). Depends on backend compliance endpoints. Current stub remains functional for live policy event monitoring. |
 | **Phase 5: UX Polish** | COMPLETE | 10 | Aside menu navigation, dark mode fix, keyboard shortcuts (Ctrl+S/Esc/Ctrl+1-9), toast stacking, dashboard recent items, dense mode toggle, runtime null guards, responsive grid breakpoints, notification panel with badge, notification CSS |
-| **Phase 6: Model Form View** | NOT STARTED | 0 | Requires backend schema endpoints. |
-| **Phase 7: Form Editor / Designer** | NOT STARTED | 0 | Requires `system.formDefinition` model on backend. Depends on Phase 6. |
+| **Phase 6: Model Form View** | COMPLETE | 1 | Schema browser at `/schema` route (admin-only). Fetches model names from `/rest/schema/models`, model detail + fields from `/rest/schema/{type}`. Searchable/filterable model list, namespace grouping, field table with type/flags/provider, properties tab, clickable inheritance chain. Admin-gated in aside menu via `adminOnly` flag. Lazy-loaded chunk: 19KB/5KB gzip. |
+| **Phase 7: Form Editor / Designer** | COMPLETE | 1 | Form definition editor integrated into schema feature. CRUD for `system.formDefinition` records via `/rest/model` endpoints. Create from model type (auto-populates fields from schema), edit field labels/layout/visibility/required/order, reorder with up/down arrows, 6-column grid preview. Saves via `am7client.patch()`. Combined into single `features/schema.js` file with Phase 6. |
 | **Phase 8: WebAuthn** | NOT STARTED | 0 | Requires `WebAuthnService.java` + `webauthn4j` on backend. |
 | **Phase 9: Access Requests** | NOT STARTED | 0 | Backend model exists. No Ux. Must ask user about hierarchical approval concept first. |
 | **Phase 10: Game Feature Validation** | NOT STARTED | 0 | Runtime-test cardGame (34 files), magic8, tetris, wordGame. Deferred — benefits from stable common infra. |
@@ -53,6 +53,7 @@
 | **Test Harness** (LLM test suite, framework, registry) | 3 | ~5,200 | COMPLETE | E2E TESTED — route loads, Run Tests button + categories render | llmTestSuite: 119KB/33KB gzip |
 | **ISO 42001** | 1 | ~120 | STUB ONLY | N/A | iso42001: 3KB |
 | **Biometrics** | 1 | ~70 | ROUTE ONLY (routes to Magic8) | E2E TESTED — lazy load + config screen works | biometrics: 1KB |
+| **Schema** (model browser + form editor) | 1 | ~500 | COMPLETE | UNTESTED against backend — needs admin login + SchemaService deployed | schema: 19KB/5KB gzip |
 
 ### Deprecated Ux7 Files (Intentionally NOT Ported)
 

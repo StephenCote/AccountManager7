@@ -125,7 +125,7 @@ const FileUploadView = {
                 m("div", { class: "text-sm text-blue-500 mb-2" }, "Uploading... " + _progress + "%"),
                 m("div", { class: "w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2" },
                     m("div", {
-                        class: "bg-blue-500 h-2 rounded-full transition-all",
+                        class: "bg-blue-500 h-2 rounded-full transition-[width]",
                         style: "width:" + _progress + "%"
                     })
                 )

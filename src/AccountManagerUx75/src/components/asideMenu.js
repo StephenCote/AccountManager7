@@ -34,7 +34,11 @@ function navigateToCategory(cat) {
 const asideMenu = {
     view: function () {
         let cats = am7model.categories || [];
-        let asideItems = getMenuItems('aside');
+        let asideItems = getMenuItems('aside').filter(function (mi) {
+            if (mi.adminOnly && (!page.context().roles || !page.context().roles.admin)) return false;
+            if (mi.devOnly && !page.devMode) return false;
+            return true;
+        });
         return m("aside", { class: "transition transition-0" }, [
             m("div", { class: "p-4 border-b border-gray-200 dark:border-gray-700" }, [
                 m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, "Categories")
