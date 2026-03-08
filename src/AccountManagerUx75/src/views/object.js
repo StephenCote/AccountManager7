@@ -434,9 +434,12 @@ function newObjectPage() {
     function switchTab(i) { tabIndex = i; }
 
     function buttonTab(active, label, handler) {
-        let cls = 'button-tab' + (active ? ' button-tab-active' : '');
+        let cls = 'inline-flex items-center px-3 py-1.5 text-sm cursor-pointer border-b-2 transition-colors ' +
+            (active
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300');
         return m('button', { class: cls, onclick: handler },
-            m('span', { class: 'material-icons-outlined mr-2' }, active ? 'tab' : 'tab_unselected'), label);
+            m('span', { class: 'material-icons-outlined mr-1 text-base' }, active ? 'tab' : 'tab_unselected'), label);
     }
 
     function getFormTabs() {
@@ -665,7 +668,7 @@ function newObjectPage() {
                 m('div', { class: 'result-nav-outer' }, [
                     m('div', { class: 'result-nav-inner' }, [
                         m('div', { class: 'result-nav tab-container' }, toolbarButtons),
-                        m('div', { class: 'result-nav tab-container' }, getFormTabs())
+                        m('div', { class: 'form-tab-bar' }, getFormTabs())
                     ])
                 ]),
                 getForm()

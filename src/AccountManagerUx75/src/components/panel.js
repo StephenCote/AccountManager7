@@ -4,21 +4,166 @@ import { am7view } from '../core/view.js';
 import { am7client, uwm } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
 
+// --- Dashboard preferences (localStorage) ---
+
+const PREFS_KEY = 'am7.dashboard';
+let prefs = null; // { order: [catName, ...], hidden: [catName, ...] }
+let editing = false;
+let dragFrom = -1;
+let dragOver = -1;
+
+function loadPrefs() {
+    if (prefs) return prefs;
+    try {
+        let raw = localStorage.getItem(PREFS_KEY);
+        if (raw) prefs = JSON.parse(raw);
+    } catch (e) { /* ignore */ }
+    if (!prefs) prefs = { order: [], hidden: [] };
+    return prefs;
+}
+
+function savePrefs() {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ }
+}
+
+function getOrderedCategories() {
+    loadPrefs();
+    let cats = am7model.categories.slice();
+    if (prefs.order && prefs.order.length) {
+        cats.sort(function (a, b) {
+            let ai = prefs.order.indexOf(a.name);
+            let bi = prefs.order.indexOf(b.name);
+            if (ai === -1) ai = 999;
+            if (bi === -1) bi = 999;
+            return ai - bi;
+        });
+    }
+    if (!editing && prefs.hidden && prefs.hidden.length) {
+        cats = cats.filter(function (c) { return prefs.hidden.indexOf(c.name) === -1; });
+    }
+    return cats;
+}
+
+function isHidden(name) {
+    loadPrefs();
+    return prefs.hidden && prefs.hidden.indexOf(name) !== -1;
+}
+
+function toggleHidden(name) {
+    loadPrefs();
+    if (!prefs.hidden) prefs.hidden = [];
+    let idx = prefs.hidden.indexOf(name);
+    if (idx === -1) prefs.hidden.push(name);
+    else prefs.hidden.splice(idx, 1);
+    savePrefs();
+}
+
+function resetPrefs() {
+    prefs = { order: [], hidden: [] };
+    savePrefs();
+}
+
+// --- Drag-to-reorder ---
+
+function onDragStart(idx, e) {
+    dragFrom = idx;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '' + idx);
+}
+
+function onDragOver(idx, e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOver !== idx) { dragOver = idx; m.redraw(); }
+}
+
+function onDragLeave() {
+    dragOver = -1;
+}
+
+function onDrop(idx, e) {
+    e.preventDefault();
+    let cats = getOrderedCategories();
+    if (dragFrom >= 0 && dragFrom !== idx && dragFrom < cats.length && idx < cats.length) {
+        let names = cats.map(function (c) { return c.name; });
+        let moved = names.splice(dragFrom, 1)[0];
+        names.splice(idx, 0, moved);
+        prefs.order = names;
+        savePrefs();
+    }
+    dragFrom = -1;
+    dragOver = -1;
+}
+
+function onDragEnd() {
+    dragFrom = -1;
+    dragOver = -1;
+}
+
+// --- Panel rendering ---
+
 function modelPanel() {
     let panels = [];
-    am7model.categories.forEach(function (cat) {
+    let cats = getOrderedCategories();
+    cats.forEach(function (cat, idx) {
         let k = cat.name;
+        let hidden = isHidden(k);
+        let dragAttrs = editing ? {
+            draggable: true,
+            ondragstart: function (e) { onDragStart(idx, e); },
+            ondragover: function (e) { onDragOver(idx, e); },
+            ondragleave: onDragLeave,
+            ondrop: function (e) { onDrop(idx, e); },
+            ondragend: onDragEnd
+        } : {};
+        let cardClass = 'panel-card' +
+            (editing && dragOver === idx ? ' panel-card-drop-target' : '') +
+            (editing && hidden ? ' panel-card-hidden' : '');
         panels.push(
-            m("div", { class: "panel-card" },
+            m("div", Object.assign({ class: cardClass }, dragAttrs),
                 m("p", { class: "card-title" }, [
+                    editing ? m("span", {
+                        class: "material-symbols-outlined material-icons-cm mr-1 cursor-grab text-gray-400",
+                        style: "font-size: 16px"
+                    }, "drag_indicator") : null,
                     cat.icon ? m("span", { class: "material-symbols-outlined material-icons-cm mr-2" }, cat.icon) : "",
-                    cat.label || k
+                    cat.label || k,
+                    editing ? m("button", {
+                        class: "ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200",
+                        title: hidden ? 'Show category' : 'Hide category',
+                        onclick: function (e) { e.stopPropagation(); toggleHidden(k); }
+                    }, m("span", {
+                        class: "material-symbols-outlined",
+                        style: "font-size: 16px"
+                    }, hidden ? 'visibility_off' : 'visibility')) : null
                 ]),
                 m("div", { class: "card-contents" }, modelPanelContents(k))
             )
         );
     });
     return panels;
+}
+
+function editToolbar() {
+    return m("div", { class: "panel-edit-toolbar" }, [
+        m("button", {
+            class: "panel-edit-btn" + (editing ? " panel-edit-btn-active" : ""),
+            title: editing ? 'Done editing' : 'Customize dashboard',
+            onclick: function () { editing = !editing; }
+        }, [
+            m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 16px" },
+                editing ? 'check' : 'dashboard_customize'),
+            editing ? 'Done' : 'Customize'
+        ]),
+        editing ? m("button", {
+            class: "panel-edit-btn",
+            title: 'Reset to defaults',
+            onclick: function () { resetPrefs(); }
+        }, [
+            m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 16px" }, "restart_alt"),
+            'Reset'
+        ]) : null
+    ]);
 }
 
 async function clickPanelItem(item, type) {
@@ -143,6 +288,7 @@ const panel = {
     trackRecent,
     view: function () {
         return m("div", { class: "panel-container" }, [
+            editToolbar(),
             quickNav(),
             m("div", { class: "panel-grid" },
                 modelPanel()

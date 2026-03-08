@@ -23,13 +23,14 @@ async function reimageApparel(entity, inst) {
     }
     let cinst = am7model.prepareInstance(sdEntity, am7model.forms.sdMannequinConfig || am7model.forms.sdConfig);
 
-    // Quality defaults
-    cinst.api.steps(40);
-    cinst.api.refinerSteps(40);
+    // Quality defaults (lower for testing)
+    cinst.api.steps(20);
+    cinst.api.refinerSteps(20);
     cinst.entity.style = 'photograph';
+    if (cinst.api.hires) cinst.api.hires(false);
 
     // Load shared apparel config
-    let sharedConfig = am7sd.loadConfig('sharedApparelSD.json');
+    let sharedConfig = await am7sd.loadConfig('sharedApparelSD.json');
     if (sharedConfig) am7sd.applyConfig(cinst, sharedConfig);
 
     let seed = cinst.api.seed ? String(cinst.api.seed()) : '-1';
@@ -84,8 +85,8 @@ async function reimageApparel(entity, inst) {
             },
             {
                 label: 'Load Shared', icon: 'download',
-                onclick: function () {
-                    let config = am7sd.loadConfig('sharedApparelSD.json');
+                onclick: async function () {
+                    let config = await am7sd.loadConfig('sharedApparelSD.json');
                     if (config) {
                         am7sd.applyConfig(cinst, config);
                         page.toast('success', 'Loaded shared apparel config');

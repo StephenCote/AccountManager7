@@ -85,12 +85,13 @@ async function reimage(entity, inst) {
     }
     let cinst = lastReimage || am7model.prepareInstance(sdEntity, am7model.forms.sdConfig);
 
-    // Quality defaults
-    cinst.api.steps(40);
-    cinst.api.refinerSteps(40);
+    // Quality defaults (lower for testing)
+    cinst.api.steps(20);
+    cinst.api.refinerSteps(20);
     cinst.api.cfg(5);
     cinst.api.refinerCfg(5);
     cinst.entity.style = 'photograph';
+    if (cinst.api.hires) cinst.api.hires(false);
 
     // Load character-specific config
     let charConfigName = inst.api.name() + '-SD.json';

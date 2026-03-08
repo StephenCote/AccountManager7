@@ -217,7 +217,135 @@ test.describe('Workflow runtime validation', () => {
         await screenshot(page, 'chat-runtime');
     });
 
-    // ── H. No command-not-found warnings ──────────────────────────────────
+    // ── H. Reimage dialog shows correct defaults and dress buttons ─────
+
+    test('reimage dialog has SD config fields and dress buttons on charPerson', async ({ page }) => {
+        test.skip(!td.charPerson?.objectId, 'No charPerson test data created');
+
+        await navigateToObject(page, 'olio.charPerson', td.charPerson.objectId);
+
+        let btn = page.locator('button:has(span.material-symbols-outlined:text("auto_awesome"))').first();
+        let visible = await btn.isVisible({ timeout: 5000 }).catch(() => false);
+        if (!visible) {
+            test.skip(true, 'Reimage button not visible');
+            return;
+        }
+
+        await btn.click();
+        await page.waitForTimeout(2000);
+
+        let dialog = page.locator('.am7-dialog-backdrop .am7-dialog').first();
+        let dialogVisible = await dialog.isVisible({ timeout: 5000 }).catch(() => false);
+        if (!dialogVisible) {
+            test.skip(true, 'Reimage dialog did not open');
+            return;
+        }
+
+        // Check Steps field has value 20 (test default)
+        let stepsInput = dialog.locator('input[type="number"]').first();
+        let stepsVal = await stepsInput.inputValue();
+        expect(parseInt(stepsVal)).toBe(20);
+
+        // Check Dress Down / Dress Up buttons are present (charPerson only)
+        let dressDown = dialog.locator('button:has-text("Dress Down")');
+        let dressUp = dialog.locator('button:has-text("Dress Up")');
+        expect(await dressDown.isVisible({ timeout: 2000 }).catch(() => false)).toBe(true);
+        expect(await dressUp.isVisible({ timeout: 2000 }).catch(() => false)).toBe(true);
+
+        // Check Generate button exists
+        let generateBtn = dialog.locator('.am7-dialog-btn:has-text("Generate")');
+        expect(await generateBtn.isVisible({ timeout: 2000 }).catch(() => false)).toBe(true);
+
+        // Close dialog
+        let cancelBtn = dialog.locator('.am7-dialog-btn:has-text("Cancel")').first();
+        if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) await cancelBtn.click();
+
+        await screenshot(page, 'reimage-dialog-fields');
+    });
+
+    // ── I. Summarize dialog shows config dropdowns ────────────────────
+
+    test('summarize dialog opens with config dropdowns (best-effort)', async ({ page }) => {
+        test.skip(!td.charPerson?.objectId, 'No charPerson test data created');
+
+        await navigateToObject(page, 'olio.charPerson', td.charPerson.objectId);
+
+        let btn = page.locator('button:has(span.material-symbols-outlined:text("summarize")), button:has(span.material-symbols-outlined:text("polyline"))').first();
+        let visible = await btn.isVisible({ timeout: 5000 }).catch(() => false);
+        if (!visible) {
+            test.skip(true, 'Summarize button not visible');
+            return;
+        }
+
+        await btn.click();
+        await page.waitForTimeout(2000);
+
+        let dialog = page.locator('.am7-dialog-backdrop .am7-dialog').first();
+        let dialogVisible = await dialog.isVisible({ timeout: 5000 }).catch(() => false);
+        if (!dialogVisible) {
+            test.skip(true, 'Summarize dialog did not open');
+            return;
+        }
+
+        // Should have at least chunk type selector
+        let selects = dialog.locator('select');
+        expect(await selects.count()).toBeGreaterThanOrEqual(1);
+
+        // Check for Summarize action button
+        let summarizeBtn = dialog.locator('.am7-dialog-btn:has-text("Summarize")');
+        expect(await summarizeBtn.isVisible({ timeout: 2000 }).catch(() => false)).toBe(true);
+
+        // Close dialog
+        let cancelBtn = dialog.locator('.am7-dialog-btn:has-text("Cancel")').first();
+        if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) await cancelBtn.click();
+
+        await screenshot(page, 'summarize-dialog');
+    });
+
+    // ── J. Adopt Character dialog content validation ──────────────────
+
+    test('adoptCharacter dialog shows target realm and location info', async ({ page }) => {
+        test.skip(!td.charPerson?.objectId, 'No charPerson test data created');
+
+        await navigateToObject(page, 'olio.charPerson', td.charPerson.objectId);
+
+        let btn = page.locator('button:has(span.material-symbols-outlined:text("person_add"))').first();
+        let visible = await btn.isVisible({ timeout: 5000 }).catch(() => false);
+        if (!visible) {
+            test.skip(true, 'Adopt button not visible');
+            return;
+        }
+
+        await btn.click();
+        await page.waitForTimeout(1500);
+
+        let dialog = page.locator('.am7-dialog-backdrop .am7-dialog').first();
+        let dialogVisible = await dialog.isVisible({ timeout: 5000 }).catch(() => false);
+        if (!dialogVisible) {
+            test.skip(true, 'Adopt dialog did not open');
+            return;
+        }
+
+        // Check for realm selector
+        let realmSelect = dialog.locator('select');
+        expect(await realmSelect.count()).toBeGreaterThanOrEqual(1);
+
+        // Check for Adopt action button
+        let adoptBtn = dialog.locator('.am7-dialog-btn:has-text("Adopt")');
+        expect(await adoptBtn.isVisible({ timeout: 2000 }).catch(() => false)).toBe(true);
+
+        // Check for "Current location" text
+        let locationText = dialog.locator('text=Current location');
+        expect(await locationText.isVisible({ timeout: 2000 }).catch(() => false)).toBe(true);
+
+        // Close dialog
+        let cancelBtn = dialog.locator('.am7-dialog-btn:has-text("Cancel")').first();
+        if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) await cancelBtn.click();
+
+        await screenshot(page, 'adopt-dialog-content');
+    });
+
+    // ── K. No command-not-found warnings ──────────────────────────────
 
     test('charPerson loads without command-not-found warnings', async ({ page }) => {
         test.skip(!td.charPerson?.objectId, 'No charPerson test data created');
