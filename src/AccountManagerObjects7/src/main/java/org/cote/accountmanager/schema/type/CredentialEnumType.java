@@ -52,7 +52,8 @@ public enum CredentialEnumType {
     SIGNATURE,
     SESSION,
     KEY,
-    KNOWLEDGE;
+    KNOWLEDGE,
+    WEBAUTHN;
 
     public String value() {
         return name();

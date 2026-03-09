@@ -21,29 +21,15 @@ All core CRUD, path, auth, olio, vector, chat, game, voice, face, word, media, W
 
 ## 2. New Backend Work Required
 
-### Priority 1: Compliance Data Aggregation (Unblocks Phase 4)
+### Priority 1: Compliance Data Aggregation — SEPARATED
 
-**Effort:** Medium (2-3 days) | **Risk:** Low
-
-New `ComplianceService.java` REST service:
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /rest/compliance/summary?period=7d` | Aggregate violation counts, pass rates, trend data |
-| `GET /rest/compliance/violations?startRecord=0&recordCount=25&area={biasArea}` | Paginated violation list with filters |
-| `POST /rest/compliance/report` | Generate compliance report JSON for date range |
-| `GET /rest/compliance/patterns` | Read biasPatterns.json |
-| `PUT /rest/compliance/patterns` | Update biasPatterns.json (admin only) |
-
-**Backend work:** Query `system.audit` records filtered by policy-related actions, aggregate by bias area and time period. Straightforward query/aggregation against existing models.
-
-**NOTE:** Phase 4 (ISO 42001) is being done separately per user direction.
+**MOVED TO:** `aiDocs/ISO42001Plan.md` — all ISO 42001 compliance work (Ux + backend) is tracked in its own plan per user direction. ComplianceService.java endpoints, bias pattern management, and related backend work are defined there.
 
 ---
 
-### Priority 2: WebAuthn Service (Unblocks Phase 8)
+### Priority 2: WebAuthn Service (Unblocks Phase 8) — COMPLETE
 
-**Effort:** High (3-5 days) | **Risk:** Medium
+**Effort:** High (3-5 days) | **Risk:** Medium | **Status:** COMPLETE (2026-03-09)
 
 New model + service for passwordless authentication:
 
@@ -131,8 +117,8 @@ Optional server-side feature enablement per organization. Currently handled clie
 | Order | Item | Effort | Unblocks | Notes |
 |-------|------|--------|----------|-------|
 | 1 | Runtime validation (Phase 3.5c + 10) | Test only | Phases 3.5c, 10 | No backend changes — just test |
-| 2 | Compliance endpoints | 2-3d | Phase 4 | Done separately (ISO42001) |
-| 3 | WebAuthn service | 3-5d | Phase 8 | Clean, isolated addition |
+| 2 | Compliance endpoints | 2-3d | ISO 42001 | **SEPARATED** — see `aiDocs/ISO42001Plan.md` |
+| 3 | WebAuthn service | 3-5d | Phase 8 | **COMPLETE** — `WebAuthnService.java`, `auth.webauthnCredential` model, `WEBAUTHN` enum, `webauthn4j-core` dep |
 | 4 | Access Request workflow | 3-5d | Phase 9 | Needs user input first |
 | 5 | Schema write endpoints | 2-4d | Phase 6/7 write | High risk, low urgency |
 | 6 | Feature configuration | 1d | None | Optional |

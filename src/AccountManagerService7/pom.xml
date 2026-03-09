@@ -213,6 +213,12 @@
 		
 		
 
+		<dependency>
+			<groupId>com.webauthn4j</groupId>
+			<artifactId>webauthn4j-core</artifactId>
+			<version>0.28.4.RELEASE</version>
+		</dependency>
+
 		<!-- https://mvnrepository.com/artifact/org.graalvm.sdk/graal-sdk -->
 <dependency>
 			<groupId>org.graalvm.js</groupId>

@@ -84,7 +84,28 @@ The ISO 42001 Compliance Dashboard provides visibility into AI system compliance
 
 ---
 
-## 6. Design Decisions
+## 6. Backend: ComplianceService.java
+
+**Effort:** Medium (2-3 days) | **Risk:** Low
+**Location:** `AccountManagerService7/src/main/java/org/cote/rest/services/ComplianceService.java`
+
+New REST service with the following endpoints:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/rest/compliance/summary?period=7d` | GET | Aggregate violation counts, pass rates, trend data |
+| `/rest/compliance/violations?startRecord=0&recordCount=25&area={biasArea}` | GET | Paginated violation list with filters |
+| `/rest/compliance/report` | POST | Generate compliance report JSON for date range |
+| `/rest/compliance/patterns` | GET | Read biasPatterns.json |
+| `/rest/compliance/patterns` | PUT | Update biasPatterns.json (admin only) |
+
+**Backend work:** Query `system.audit` records filtered by policy-related actions, aggregate by bias area and time period. Straightforward query/aggregation against existing models.
+
+**Testing:** Each endpoint needs a JUnit test in `AccountManagerService7/src/test/`.
+
+---
+
+## 7. Design Decisions
 
 - ISO 42001 UX development is decoupled from the main Ux75 refactor phases
 - The current stub is functional for live monitoring and will remain as-is until backend work begins

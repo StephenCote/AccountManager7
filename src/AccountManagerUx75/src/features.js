@@ -73,6 +73,15 @@ const features = {
         deps: ['core'],
         routes: () => import('./features/schema.js'),
         menuItems: [{ icon: 'schema', label: 'Schema', route: '/schema', section: 'aside', adminOnly: true }]
+    },
+    webauthn: {
+        id: 'webauthn',
+        label: 'Passkeys',
+        description: 'WebAuthn/FIDO2 passwordless authentication',
+        required: false,
+        deps: ['core'],
+        routes: () => import('./features/webauthn.js'),
+        menuItems: [{ icon: 'passkey', label: 'Passkeys', route: '/webauthn', section: 'aside' }]
     }
 };
 
@@ -81,7 +90,7 @@ const profiles = {
     standard: ['core', 'chat'],
     full: Object.keys(features),
     gaming: ['core', 'chat', 'cardGame', 'games', 'biometrics'],
-    enterprise: ['core', 'chat', 'iso42001', 'schema']
+    enterprise: ['core', 'chat', 'iso42001', 'schema', 'webauthn']
 };
 
 // --- Feature state ---

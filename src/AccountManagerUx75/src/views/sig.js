@@ -1,7 +1,7 @@
 import m from 'mithril';
 import { am7model } from '../core/model.js';
 import { am7view } from '../core/view.js';
-import { uwm } from '../core/am7client.js';
+import { uwm, am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
 
 const signInPage = {};
@@ -64,6 +64,48 @@ function doLogin() {
     inst.api.password("");
 }
 
+let passkeyLoading = false;
+
+async function doPasskeyLogin() {
+    if (passkeyLoading) return;
+    if (!am7client.webauthnSupported()) {
+        page.toast("error", "WebAuthn is not supported in this browser");
+        return;
+    }
+    passkeyLoading = true;
+    m.redraw();
+
+    let org = inst.api.organization();
+    let userName = inst.api.userName();
+    if (!userName) {
+        page.toast("warn", "Enter your username first");
+        passkeyLoading = false;
+        m.redraw();
+        return;
+    }
+
+    try {
+        let result = await am7client.webauthnAuthenticate(org, userName);
+        if (result && result.response === "AUTHENTICATED" && result.tokens && result.tokens.length > 0) {
+            am7client.currentOrganization = org;
+            am7client.clearCache(0, 1);
+            let oU2 = await uwm.getUser();
+            if (oU2) {
+                page.toast("info", "Logged in as " + oU2.name);
+                page.router.refresh();
+            } else {
+                page.toast("error", "Passkey authentication succeeded but session failed");
+            }
+        } else {
+            page.toast("error", "Passkey authentication failed");
+        }
+    } catch (e) {
+        page.toast("error", "Passkey login failed: " + (e.message || e));
+    }
+    passkeyLoading = false;
+    m.redraw();
+}
+
 let organizations = ["Specify ...", "/Public", "/Development", "/System"];
 
 function toggleSpecify() {
@@ -118,7 +160,17 @@ signInPage.view = {
             m("div", {
                 class: "box-shadow-white"
             }, [
-                am7view.form(inst)
+                am7view.form(inst),
+                am7client.webauthnSupported() ? m("div", { class: "mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-center" }, [
+                    m("button", {
+                        class: "btn btn-secondary w-full flex items-center justify-center gap-2",
+                        disabled: passkeyLoading,
+                        onclick: doPasskeyLogin
+                    }, [
+                        m("span", { class: "material-symbols-outlined text-base" }, "passkey"),
+                        passkeyLoading ? "Authenticating..." : "Sign in with Passkey"
+                    ])
+                ]) : null
             ])
         ]);
         return vnode;

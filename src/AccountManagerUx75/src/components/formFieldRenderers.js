@@ -28,18 +28,14 @@ function getPage() {
 function buildMediaPath(entity) {
     let client = getClient();
     if (!client || !entity) return "";
-    return client.base() + "/media/" +
-        client.dotPath(client.currentOrganization) +
-        "/data.data" + entity.groupPath + "/" + entity.name;
+    return client.mediaDataPath(entity);
 }
 
 function buildThumbnailPath(entity, size) {
     let client = getClient();
     if (!client || !entity) return "";
     size = size || "96x96";
-    return client.base() + "/thumbnail/" +
-        client.dotPath(client.currentOrganization) +
-        "/data.data" + entity.groupPath + "/" + entity.name + "/" + size;
+    return client.mediaDataPath(entity, true, size);
 }
 
 function formatBytes(bytes) {

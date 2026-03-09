@@ -49,10 +49,11 @@ public class VectorService {
 	@GET
 	@Path("/vectorize/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/{chunkType:[A-Za-z\\.]+}/{chunkSize:[\\d]+}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response vectorize(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("chunkType") ChunkEnumType chunkType, @PathParam("chunkSize") int chunkSize, @Context HttpServletRequest request, @Context HttpServletResponse response){
+	public Response vectorize(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("chunkType") String chunkTypeStr, @PathParam("chunkSize") int chunkSize, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		boolean vectorized = false;
 		try{
+			ChunkEnumType chunkType = ChunkEnumType.valueOf(chunkTypeStr.toUpperCase());
 			vectorized = IOSystem.getActiveContext().getAccessPoint().vectorize(user, type, objectId, chunkType, chunkSize);
 		}
 		catch(Exception e) {
@@ -66,7 +67,8 @@ public class VectorService {
 	@POST
 	@Path("/summarize/{chunkType:[A-Za-z\\.]+}/{chunkSize:[\\d]+}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response summarize(String json, @PathParam("chunkType") ChunkEnumType chunkType, @PathParam("chunkSize") int chunkSize, @Context HttpServletRequest request){
+	public Response summarize(String json, @PathParam("chunkType") String chunkTypeStr, @PathParam("chunkSize") int chunkSize, @Context HttpServletRequest request){
+		ChunkEnumType chunkType = ChunkEnumType.valueOf(chunkTypeStr.toUpperCase());
 		ChatRequest chatReq = ChatRequest.importRecord(json);
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.getChatConfig());

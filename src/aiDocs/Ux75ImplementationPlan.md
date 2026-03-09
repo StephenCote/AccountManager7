@@ -1,17 +1,17 @@
 # AccountManagerUx75 — Implementation Plan & Status
 
 **Extracted from:** `Ux7Redesign.md` Section 14
-**Last Updated:** 2026-03-06
+**Last Updated:** 2026-03-09
 **Design Reference:** See `Ux7Redesign.md` Sections 1-13 for requirements, architecture, and design specifications.
 
 ---
 
 ## 1. Current Status
 
-**Project:** `AccountManagerUx75/` — 136 source files, ~71,500 lines
+**Project:** `AccountManagerUx75/` — 140 source files, ~72,500 lines
 **Build:** Vite 6.4.1, 161 modules, builds in ~5s
-**Tests:** 64 Vitest unit tests pass, 35 Playwright E2E tests pass (all green)
-**Phase 7 completed:** 2026-03-06
+**Tests:** 77 Vitest unit tests pass, 36 Playwright E2E tests pass (all green)
+**Phase 8 completed:** 2026-03-09
 **Ux7 File Parity:** ~100% — all active Ux7 source files ported including dialog workflow commands (5 intentionally skipped)
 
 ---
@@ -32,9 +32,9 @@
 | **Phase 5: UX Polish** | COMPLETE | 10 | Aside menu navigation, dark mode fix, keyboard shortcuts (Ctrl+S/Esc/Ctrl+1-9), toast stacking, dashboard recent items, dense mode toggle, runtime null guards, responsive grid breakpoints, notification panel with badge, notification CSS |
 | **Phase 6: Model Form View** | COMPLETE | 1 | Schema browser at `/schema` route (admin-only). Fetches model names from `/rest/schema/models`, model detail + fields from `/rest/schema/{type}`. Searchable/filterable model list, namespace grouping, field table with type/flags/provider, properties tab, clickable inheritance chain. Admin-gated in aside menu via `adminOnly` flag. Lazy-loaded chunk: 19KB/5KB gzip. |
 | **Phase 7: Form Editor / Designer** | COMPLETE | 1 | Form definition editor integrated into schema feature. CRUD for `system.formDefinition` records via `/rest/model` endpoints. Create from model type (auto-populates fields from schema), edit field labels/layout/visibility/required/order, reorder with up/down arrows, 6-column grid preview. Saves via `am7client.patch()`. Combined into single `features/schema.js` file with Phase 6. |
-| **Phase 8: WebAuthn** | NOT STARTED | 0 | Requires `WebAuthnService.java` + `webauthn4j` on backend. |
+| **Phase 8: WebAuthn** | **COMPLETE** | 4 | Backend: `auth.webauthnCredential` model, `WEBAUTHN` enum, `WebAuthnService.java` (6 endpoints), `webauthn4j-core` dep. Frontend: `features/webauthn.js` (passkey management settings), passkey login button in `sig.js`, `am7client` WebAuthn API (5 methods). 7 Vitest tests added. Also fixed VectorService 404 (enum @PathParam). |
 | **Phase 9: Access Requests** | NOT STARTED | 0 | Backend model exists. No Ux. Must ask user about hierarchical approval concept first. |
-| **Phase 10: Game Feature Validation** | NOT STARTED | 0 | Runtime-test cardGame (34 files), magic8, tetris, wordGame. Deferred — benefits from stable common infra. |
+| **Phase 10: Game Feature Validation** | DEFERRED | 0 | Build audit done. Runtime testing deferred — benefits from stable common infra. |
 | **Phase 11: Performance + Polish** | NOT STARTED | 0 | SQLite WASM cache, a11y audit, performance profiling. |
 
 ---
@@ -119,6 +119,12 @@ All 7 command handlers from Ux7 `dialog.js` have been ported to Ux75 as ESM work
 
 12. **`Dialog.open()` adoption** — RESOLVED. 7 workflow modules now use `Dialog.open()` for all command workflows. See Section 4.
 
+**OPEN ISSUES:**
+
+13. **VectorService 404** — `AccountManagerService7/src/main/java/org/cote/rest/services/VectorService.java` has `@Path("/vector")` but returns 404 on all endpoints. Jersey silently fails to register it. The class compiles, all bytecode dependencies exist. No errors in app logs or Tomcat logs. Blocks summarize and vectorize workflows. Discovered during Phase 3.5c.
+
+14. **Image display bugs (fixed post-3.5c)** — Grid view thumbnails were 100x100 (too small for grid cards), now 256x256. Object view image rendering was broken — `formFieldRenderers.buildMediaPath` used `client.base()` (`/rest/media/...`) instead of `applicationPath` (`/media/...`). Both fixed.
+
 13. **`media` feature not in manifest** — Design doc Section 7 defines a `media` feature for lazy loading. Currently loaded eagerly in `main.js`, inflating the index bundle.
 
 ---
@@ -155,16 +161,14 @@ All 7 command handlers from Ux7 `dialog.js` have been ported to Ux75 as ESM work
 | **Model Form View** | S2 | Schema REST endpoints (`/rest/schema/*`), `userDefined` flag on models/fields |
 | **Form Editor / Designer** | S3 | `system.formDefinition` + `system.formField` models, `formLoader` DB integration |
 | **WebAuthn** | S8 | `WebAuthnService.java`, `webauthn4j` dependency, `CredentialEnumType.WEBAUTHN`, challenge management |
-| **Compliance data aggregation** | S10 | Server endpoint for violation counts, pass rates over time periods |
+| **Compliance data aggregation** | S10 | **SEPARATED** — see `aiDocs/ISO42001Plan.md` |
 | **Access Requests UI** | S11 | Approval workflow endpoints, auto-provisioning logic |
 
 ### C. Design Doc Features — Client-Only (Can Build Now)
 
 | Feature | Section | Effort | Notes |
 |---------|---------|--------|-------|
-| **Compliance dashboard tabs** (Overview, Violations detail, Audit Log, Policy Templates, Report) | S10.2-10.5 | Medium | Current stub only shows violation list. Design calls for 5 tabs with charts, filters, export. Backend events already work. |
-| **Compliance real-time indicators in chat** | S10.4 | Low | WebSocket policyEvent/autotuneEvent already fire. Need badge + inline panel in chat view. |
-| **Bias Pattern Editor** | S10.6 | Medium | View/edit biasPatterns.json. Includes pattern test tool. |
+| **Compliance dashboard + real-time indicators + bias pattern editor** | S10 | Medium | **SEPARATED** — see `aiDocs/ISO42001Plan.md` |
 | **Dashboard customization** (pin/reorder/hide categories) | S6 | Medium | Preferences stored as `data.data` JSON. Panel.js needs edit mode, drag-to-reorder. |
 | **Dense/compact view mode** | S5 | Low | CSS density classes + localStorage preference toggle. |
 | **Notification panel** | S11.C | Medium | Unified notification component using `message.spool` + WebSocket events. Badge in top menu. |
@@ -251,19 +255,11 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 **Estimated effort:** MEDIUM — primarily integration debugging
 **Risk:** Low-Medium — all code is ported, issues will be endpoint mismatches or missing data
 
-### Phase 4: Compliance Dashboard Buildout (Client-Focused)
+### Phase 4: ISO 42001 Compliance Dashboard — SEPARATED
 
-**Goal:** Build the full 5-tab compliance dashboard described in Ux7Redesign.md Section 10.
+**Moved to:** `aiDocs/ISO42001Plan.md` (Ux + backend plan in one document)
 
-- [ ] Expand `features/iso42001.js` from stub to full tabbed dashboard
-- [ ] Tab 1: Overview — aggregate violation stats, pass rates, trend chart
-- [ ] Tab 2: Violations Detail — searchable/filterable list, mark-as-reviewed
-- [ ] Tab 3: Audit Log — query `system.audit` records with filters, CSV/JSON export
-- [ ] Tab 4: Policy Templates — view/edit policy template JSON
-- [ ] Tab 5: Report — generate compliance reports
-- [ ] Real-time compliance indicator badge in chat view toolbar
-- [ ] Bias Pattern Editor (view/edit biasPatterns.json)
-- [ ] Create compliance data aggregation endpoint on backend
+All ISO 42001 work (compliance dashboard tabs, backend ComplianceService.java, bias pattern editor, real-time indicators) is tracked separately. Current `features/iso42001.js` stub remains functional for live policy event monitoring. No further Phase 4 work in this plan.
 
 ### Phase 5: UX Polish — COMPLETE
 
@@ -289,14 +285,43 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 - [ ] Dashboard drag-to-reorder, pinned items, save/load preferences via `data.data` JSON
 - [ ] Extract `media` feature from core imports to lazy chunk (medium effort — many integration points)
 
-### Phase 6-9: Backend-Dependent Features
+### Phase 6-7: Backend-Dependent Features (COMPLETE)
 
-- **Phase 6:** Model Form View (S2) — requires schema REST endpoints
-- **Phase 7:** Form Editor / Designer (S3) — requires Phase 6 + `system.formDefinition`
-- **Phase 8:** WebAuthn (S8) — requires `WebAuthnService.java`
-- **Phase 9:** Access Requests (S11) — requires user input on approval concept
+- **Phase 6:** Model Form View (S2) — COMPLETE
+- **Phase 7:** Form Editor / Designer (S3) — COMPLETE
 
-### Phase 10: Game Feature Validation — IN PROGRESS (Build Audit)
+### Phase 8: WebAuthn — NEXT
+
+**Goal:** Add passwordless authentication via WebAuthn/passkeys. Requires new backend service + model + frontend UI.
+
+**Backend (create + unit test):**
+- New model: `auth.webauthnCredential` — see `aiDocs/BackendPlan.md` Priority 2 for field spec
+- New enum value: `WEBAUTHN` in `CredentialEnumType.java`
+- New Maven dep: `webauthn4j-core` in `AccountManagerService7/pom.xml`
+- New `WebAuthnService.java` — 6 endpoints (register, auth, list, delete)
+- Challenge stored in HttpSession, auth terminates via `TokenService.createJWTToken()`
+
+**Frontend:**
+- New `features/webauthn.js` or integrate into existing auth/settings views
+- Register credential, list/delete credentials, "Sign in with passkey" on login
+- Wire into `features.js` manifest
+- Vitest + Playwright tests
+
+### Phase 9: Access Requests
+
+**Goal:** Self-service access request workflow with approval chain.
+
+**Backend (create + unit test):**
+- Model exists: `access.accessRequest` with `approvalStatus`, `approver`/`delegate`, `messages` spool
+- New `AccessRequestService.java` — 5 endpoints (list, submit, approve/deny, requestable resources, notify)
+- Auto-provisioning on approval (add requester to role/group)
+- **Requires user input** on hierarchical approval concept before starting
+
+**Frontend:**
+- Request submission form, pending approval list, approve/deny actions
+- Vitest + Playwright tests
+
+### Phase 10: Game Feature Validation — DEFERRED (Build Audit Done)
 
 **Goal:** Runtime-test agent-generated game features. Deferred to benefit from stable common infrastructure.
 

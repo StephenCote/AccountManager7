@@ -581,6 +581,102 @@ import Base64 from './base64.js';
 		return login(cred, fH);
 	}
 
+	var sWebAuthn = sBase + "/credential/webauthn";
+
+	function webauthnSupported() {
+		return !!(window.PublicKeyCredential && navigator.credentials);
+	}
+
+	async function webauthnGetRegistrationOptions() {
+		return get(sWebAuthn + "/register");
+	}
+
+	async function webauthnRegister(name) {
+		let options = await get(sWebAuthn + "/register");
+		if (!options || !options.challenge) return null;
+
+		options.challenge = _b64ToBuffer(options.challenge);
+		options.user.id = _b64ToBuffer(options.user.id);
+		if (options.excludeCredentials) {
+			options.excludeCredentials = options.excludeCredentials.map(c => ({
+				...c, id: _b64ToBuffer(c.id)
+			}));
+		}
+
+		let credential;
+		try {
+			credential = await navigator.credentials.create({ publicKey: options });
+		} catch (e) {
+			console.error("WebAuthn create failed", e);
+			return null;
+		}
+
+		let regData = {
+			credentialId: _bufferToB64(credential.rawId),
+			publicKey: _bufferToB64(credential.response.getPublicKey ? credential.response.getPublicKey() : new Uint8Array()),
+			clientDataJSON: _bufferToB64(credential.response.clientDataJSON),
+			attestationObject: _bufferToB64(credential.response.attestationObject),
+			name: name || "Passkey"
+		};
+
+		return post(sWebAuthn + "/register", regData);
+	}
+
+	async function webauthnAuthenticate(sOrg, sName) {
+		let userPath = sOrg + "/" + sName;
+		let options = await get(sWebAuthn + "/auth?user=" + encodeURIComponent(userPath));
+		if (!options || !options.challenge) return null;
+
+		options.challenge = _b64ToBuffer(options.challenge);
+		if (options.allowCredentials) {
+			options.allowCredentials = options.allowCredentials.map(c => ({
+				...c, id: _b64ToBuffer(c.id)
+			}));
+		}
+
+		let assertion;
+		try {
+			assertion = await navigator.credentials.get({ publicKey: options });
+		} catch (e) {
+			console.error("WebAuthn get failed", e);
+			return null;
+		}
+
+		let authData = {
+			credentialId: _bufferToB64(assertion.rawId),
+			clientDataJSON: _bufferToB64(assertion.response.clientDataJSON),
+			authenticatorData: _bufferToB64(assertion.response.authenticatorData),
+			signature: _bufferToB64(assertion.response.signature),
+			organizationPath: sOrg
+		};
+
+		return post(sWebAuthn + "/auth", authData);
+	}
+
+	async function webauthnListCredentials() {
+		return get(sWebAuthn + "/credentials");
+	}
+
+	async function webauthnDeleteCredential(credentialId) {
+		return del(sWebAuthn + "/" + encodeURIComponent(credentialId));
+	}
+
+	function _b64ToBuffer(b64) {
+		let s = b64.replace(/-/g, '+').replace(/_/g, '/');
+		while (s.length % 4) s += '=';
+		let binary = atob(s);
+		let bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+		return bytes.buffer;
+	}
+
+	function _bufferToB64(buffer) {
+		let bytes = new Uint8Array(buffer);
+		let binary = '';
+		for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+		return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+	}
+
 	function get(url, fH){
 		return m.request({
 			method: 'GET',
@@ -979,8 +1075,9 @@ import Base64 from './base64.js';
 	}
 
 
-	function mediaDataPath(oObj, bThumb){
-		return applicationPath + "/" + (bThumb ? "thumbnail" : "media") + "/" + am7client.dotPath(oObj.organizationPath) + "/data.data" + oObj.groupPath + "/" + oObj.name + (bThumb ? "/100x100" : "");
+	function mediaDataPath(oObj, bThumb, sSize){
+		if(!sSize) sSize = "100x100";
+		return applicationPath + "/" + (bThumb ? "thumbnail" : "media") + "/" + am7client.dotPath(oObj.organizationPath) + "/data.data" + oObj.groupPath + "/" + oObj.name + (bThumb ? "/" + sSize : "");
 	}
 
 	function getIsRequestable(sType,sId,fH){
@@ -1125,6 +1222,11 @@ import Base64 from './base64.js';
 		login : login,
 		loginWithPassword : loginWithPassword,
 		logout : logout,
+		webauthnSupported,
+		webauthnRegister,
+		webauthnAuthenticate,
+		webauthnListCredentials,
+		webauthnDeleteCredential,
 		base:function(){
 			return sBase;
 		},
