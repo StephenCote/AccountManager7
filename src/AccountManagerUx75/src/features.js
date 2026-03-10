@@ -91,6 +91,15 @@ const features = {
         deps: ['core'],
         routes: () => import('./features/accessRequests.js'),
         menuItems: [{ icon: 'switch_access_shortcut', label: 'Access Requests', route: '/accessRequests', section: 'aside' }]
+    },
+    featureConfig: {
+        id: 'featureConfig',
+        label: 'Feature Config',
+        description: 'Server-side feature configuration (admin only)',
+        required: false,
+        deps: ['core'],
+        routes: () => import('./features/featureConfig.js'),
+        menuItems: [{ icon: 'tune', label: 'Features', route: '/admin/features', section: 'aside', adminOnly: true }]
     }
 };
 
@@ -99,7 +108,7 @@ const profiles = {
     standard: ['core', 'chat'],
     full: Object.keys(features),
     gaming: ['core', 'chat', 'cardGame', 'games', 'biometrics'],
-    enterprise: ['core', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests']
+    enterprise: ['core', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig']
 };
 
 // --- Feature state ---

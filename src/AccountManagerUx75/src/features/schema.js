@@ -1,7 +1,8 @@
 /**
- * Schema feature — Model schema browser + form definition editor (admin only)
+ * Schema feature — Model schema browser + form definition editor + schema write (admin only)
  * Phase 6: Browse model schemas via /rest/schema endpoints
  * Phase 7: CRUD form definitions via /rest/model (system.formDefinition)
+ * Phase 13: Schema write — create/update/delete user-defined models and fields
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -24,6 +25,42 @@ async function fetchModelSchema(type) {
 
 async function fetchModelFields(type) {
     return m.request({ method: 'GET', url: sSchemaBase + "/" + type + "/fields", withCredentials: true });
+}
+
+// ── Schema Write API (Phase 13) ─────────────────────────────────────
+
+async function createModelSchema(schemaObj) {
+    return m.request({
+        method: 'POST',
+        url: sSchemaBase,
+        body: schemaObj,
+        withCredentials: true
+    });
+}
+
+async function addFieldsToModel(type, fields) {
+    return m.request({
+        method: 'PUT',
+        url: sSchemaBase + "/" + type,
+        body: { fields: fields },
+        withCredentials: true
+    });
+}
+
+async function deleteModel(type) {
+    return m.request({
+        method: 'DELETE',
+        url: sSchemaBase + "/" + type,
+        withCredentials: true
+    });
+}
+
+async function deleteField(type, fieldName) {
+    return m.request({
+        method: 'DELETE',
+        url: sSchemaBase + "/" + type + "/field/" + fieldName,
+        withCredentials: true
+    });
 }
 
 // ── State ───────────────────────────────────────────────────────────
@@ -50,6 +87,19 @@ let formDefinitions = [];
 let selectedFormDef = null;
 let formEditorLoading = false;
 let formEditorDirty = false;
+
+// Schema write state (Phase 13)
+let showCreateModel = false;
+let newModelName = "";
+let newModelInherits = "data.directory";
+let newModelGroup = "";
+let createModelLoading = false;
+
+let showAddField = false;
+let newFieldName = "";
+let newFieldType = "string";
+let newFieldDefault = "";
+let addFieldLoading = false;
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -87,6 +137,7 @@ function fieldTypeLabel(field) {
 
 function fieldBadges(field) {
     let badges = [];
+    if (field.system === false) badges.push({ label: "user", color: "text-green-600 bg-green-50 dark:bg-green-900/30" });
     if (field.required) badges.push({ label: "required", color: "text-red-600 bg-red-50 dark:bg-red-900/30" });
     if (field.identity) badges.push({ label: "identity", color: "text-blue-600 bg-blue-50 dark:bg-blue-900/30" });
     if (field.foreign) badges.push({ label: "foreign", color: "text-purple-600 bg-purple-50 dark:bg-purple-900/30" });
@@ -95,6 +146,16 @@ function fieldBadges(field) {
     if (field.restricted) badges.push({ label: "restricted", color: "text-orange-600 bg-orange-50 dark:bg-orange-900/30" });
     return badges;
 }
+
+function isSystemModel(schema) {
+    return schema && schema.system !== false;
+}
+
+function isSystemField(field) {
+    return field && field.system !== false;
+}
+
+let FIELD_TYPES = ["string", "int", "long", "double", "boolean", "enum", "blob", "timestamp", "zonetime", "list"];
 
 // ── Data loading ────────────────────────────────────────────────────
 
@@ -119,6 +180,7 @@ async function loadModelDetail(type) {
     detailError = null;
     detailTab = "fields";
     fieldFilter = "";
+    showAddField = false;
     try {
         let results = await Promise.all([fetchModelSchema(type), fetchModelFields(type)]);
         selectedSchema = results[0];
@@ -138,6 +200,114 @@ function backToList() {
     selectedSchema = null;
     selectedFields = null;
     detailError = null;
+    showAddField = false;
+}
+
+// ── Schema Write Operations (Phase 13) ──────────────────────────────
+
+async function doCreateModel() {
+    if (!newModelName || !newModelName.trim()) {
+        page.toast("error", "Model name is required");
+        return;
+    }
+    let name = newModelName.trim();
+    if (!/^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)+$/.test(name)) {
+        page.toast("error", "Invalid model name. Use namespaced format (e.g. custom.myModel)");
+        return;
+    }
+
+    createModelLoading = true;
+    m.redraw();
+    try {
+        let inherits = newModelInherits.trim().split(/\s*,\s*/).filter(function (s) { return s.length > 0; });
+        let schema = {
+            name: name,
+            inherits: inherits.length > 0 ? inherits : ["data.directory"],
+            group: newModelGroup.trim() || name.split(".").pop(),
+            version: "1.0",
+            fields: []
+        };
+        await createModelSchema(schema);
+        page.toast("info", "Model '" + name + "' created");
+        newModelName = "";
+        newModelInherits = "data.directory";
+        newModelGroup = "";
+        showCreateModel = false;
+        await loadModelNames();
+        loadModelDetail(name);
+    } catch (e) {
+        let msg = (e.response && e.response.error) ? e.response.error : (e.message || "Unknown error");
+        page.toast("error", "Failed to create model: " + msg);
+    }
+    createModelLoading = false;
+    m.redraw();
+}
+
+async function doDeleteModel(type) {
+    if (!confirm("Delete model '" + type + "'? This will drop the database table and cannot be undone.")) return;
+    try {
+        await deleteModel(type);
+        page.toast("info", "Model '" + type + "' deleted");
+        backToList();
+        await loadModelNames();
+    } catch (e) {
+        let msg = (e.response && e.response.error) ? e.response.error : (e.message || "Unknown error");
+        page.toast("error", "Failed to delete model: " + msg);
+    }
+    m.redraw();
+}
+
+async function doAddField() {
+    if (!newFieldName || !newFieldName.trim()) {
+        page.toast("error", "Field name is required");
+        return;
+    }
+    let name = newFieldName.trim();
+    if (!/^[a-zA-Z][a-zA-Z0-9]*$/.test(name)) {
+        page.toast("error", "Invalid field name. Use camelCase alphanumeric characters.");
+        return;
+    }
+
+    addFieldLoading = true;
+    m.redraw();
+    try {
+        let field = {
+            name: name,
+            type: newFieldType
+        };
+        if (newFieldDefault.trim()) {
+            let dv = newFieldDefault.trim();
+            if (newFieldType === "int" || newFieldType === "long") field["default"] = parseInt(dv) || 0;
+            else if (newFieldType === "double") field["default"] = parseFloat(dv) || 0.0;
+            else if (newFieldType === "boolean") field["default"] = dv === "true";
+            else field["default"] = dv;
+        }
+        await addFieldsToModel(selectedType, [field]);
+        page.toast("info", "Field '" + name + "' added to " + selectedType);
+        newFieldName = "";
+        newFieldType = "string";
+        newFieldDefault = "";
+        showAddField = false;
+        await loadModelDetail(selectedType);
+    } catch (e) {
+        let msg = (e.response && e.response.error) ? e.response.error : (e.message || "Unknown error");
+        page.toast("error", "Failed to add field: " + msg);
+    }
+    addFieldLoading = false;
+    m.redraw();
+}
+
+async function doDeleteField(fieldName) {
+    if (!confirm("Delete field '" + fieldName + "' from " + selectedType + "? This will drop the database column.")) return;
+    try {
+        await deleteField(selectedType, fieldName);
+        page.toast("info", "Field '" + fieldName + "' removed from " + selectedType);
+        await loadModelDetail(selectedType);
+    } catch (e) {
+        let msg = (e.response && e.response.error) ? e.response.error : (e.message || "Unknown error");
+        page.toast("error", "Failed to delete field: " + msg);
+    }
+    m.redraw();
 }
 
 // ── Form Definition CRUD (Phase 7) ─────────────────────────────────
@@ -258,7 +428,7 @@ function markDirty() {
     formEditorDirty = true;
 }
 
-// ── Render: Model List (Phase 6) ────────────────────────────────────
+// ── Render: Model List (Phase 6 + Phase 13 create) ──────────────────
 
 function renderModelList() {
     let filtered = getFilteredModels();
@@ -279,9 +449,16 @@ function renderModelList() {
                         editorMode = true;
                         if (formDefinitions.length === 0) loadFormDefinitions();
                     }
-                }, "Form Editor")
+                }, "Form Editor"),
+                m("button", {
+                    class: "px-3 py-1.5 rounded text-sm bg-green-600 text-white hover:bg-green-500",
+                    onclick: function () { showCreateModel = !showCreateModel; }
+                }, "+ New Model")
             ])
         ]),
+
+        // Create model form (Phase 13)
+        showCreateModel ? renderCreateModelForm() : null,
 
         // Filter bar
         m("div", { class: "flex gap-2" }, [
@@ -341,7 +518,58 @@ function renderModelList() {
     ]);
 }
 
-// ── Render: Model Detail (Phase 6) ──────────────────────────────────
+// ── Create Model Form (Phase 13) ────────────────────────────────────
+
+function renderCreateModelForm() {
+    return m("div", { class: "p-4 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 space-y-3" }, [
+        m("h3", { class: "text-sm font-semibold text-green-800 dark:text-green-300" }, "Create New Model"),
+        m("div", { class: "flex gap-3 flex-wrap" }, [
+            m("div", { class: "flex-1 min-w-48" }, [
+                m("label", { class: "text-xs text-gray-600 dark:text-gray-400 block mb-1" }, "Model Name (e.g. custom.myModel)"),
+                m("input", {
+                    type: "text",
+                    class: "w-full px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono",
+                    placeholder: "custom.myModel",
+                    value: newModelName,
+                    oninput: function (e) { newModelName = e.target.value; }
+                })
+            ]),
+            m("div", { class: "flex-1 min-w-48" }, [
+                m("label", { class: "text-xs text-gray-600 dark:text-gray-400 block mb-1" }, "Inherits (comma-separated)"),
+                m("input", {
+                    type: "text",
+                    class: "w-full px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono",
+                    placeholder: "data.directory",
+                    value: newModelInherits,
+                    oninput: function (e) { newModelInherits = e.target.value; }
+                })
+            ]),
+            m("div", { class: "w-40" }, [
+                m("label", { class: "text-xs text-gray-600 dark:text-gray-400 block mb-1" }, "Group Name"),
+                m("input", {
+                    type: "text",
+                    class: "w-full px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm",
+                    placeholder: "Auto from name",
+                    value: newModelGroup,
+                    oninput: function (e) { newModelGroup = e.target.value; }
+                })
+            ])
+        ]),
+        m("div", { class: "flex gap-2" }, [
+            m("button", {
+                class: "px-4 py-1.5 rounded text-sm bg-green-600 text-white hover:bg-green-500" + (createModelLoading ? " opacity-50" : ""),
+                disabled: createModelLoading,
+                onclick: doCreateModel
+            }, createModelLoading ? "Creating..." : "Create Model"),
+            m("button", {
+                class: "px-4 py-1.5 rounded text-sm bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300",
+                onclick: function () { showCreateModel = false; }
+            }, "Cancel")
+        ])
+    ]);
+}
+
+// ── Render: Model Detail (Phase 6 + Phase 13 actions) ────────────────
 
 function renderModelDetail() {
     if (detailLoading) {
@@ -360,12 +588,22 @@ function renderModelDetail() {
 
     let schema = selectedSchema || {};
     let fields = selectedFields || [];
+    let isSys = isSystemModel(schema);
 
     return m("div", { class: "space-y-4" }, [
         // Header
         m("div", { class: "flex items-center justify-between" }, [
             renderBackButton(),
-            m("h1", { class: "text-xl font-bold text-gray-800 dark:text-white font-mono" }, selectedType)
+            m("div", { class: "flex items-center gap-3" }, [
+                m("h1", { class: "text-xl font-bold text-gray-800 dark:text-white font-mono" }, selectedType),
+                isSys
+                    ? m("span", { class: "text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300" }, "system")
+                    : m("span", { class: "text-xs px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300" }, "user-defined"),
+                !isSys ? m("button", {
+                    class: "px-3 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-500",
+                    onclick: function () { doDeleteModel(selectedType); }
+                }, "Delete Model") : null
+            ])
         ]),
 
         // Tabs
@@ -401,22 +639,15 @@ function detailTabBtn(tab, label) {
     }, label);
 }
 
-// ── Fields tab ──────────────────────────────────────────────────────
+// ── Fields tab (Phase 6 + Phase 13 add/delete field) ────────────────
 
 function renderFieldsTab(fields, schema) {
-    let inheritTypes = [];
-    if (schema.inherits && Array.isArray(schema.inherits)) {
-        inheritTypes = schema.inherits;
-    }
-
     let filtered = fields;
     if (fieldFilter) {
         let lower = fieldFilter.toLowerCase();
         filtered = fields.filter(function (f) { return f.name.toLowerCase().indexOf(lower) !== -1; });
     }
     if (!showInherited && schema.inherits) {
-        // Filter to fields that aren't from parent models
-        // We approximate by checking if the field's provider matches the selected type
         filtered = filtered.filter(function (f) {
             return !f.provider || f.provider === selectedType;
         });
@@ -439,8 +670,15 @@ function renderFieldsTab(fields, schema) {
                     onchange: function () { showInherited = !showInherited; }
                 }),
                 "Show inherited"
-            ])
+            ]),
+            m("button", {
+                class: "px-3 py-1.5 rounded text-xs bg-green-600 text-white hover:bg-green-500",
+                onclick: function () { showAddField = !showAddField; }
+            }, showAddField ? "Cancel" : "+ Add Field")
         ]),
+
+        // Add field form (Phase 13)
+        showAddField ? renderAddFieldForm() : null,
 
         // Fields table
         m("div", { class: "overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700" },
@@ -451,14 +689,16 @@ function renderFieldsTab(fields, schema) {
                         m("th", { class: "px-3 py-2 font-medium text-gray-600 dark:text-gray-300" }, "Type"),
                         m("th", { class: "px-3 py-2 font-medium text-gray-600 dark:text-gray-300" }, "Flags"),
                         m("th", { class: "px-3 py-2 font-medium text-gray-600 dark:text-gray-300" }, "Provider"),
-                        m("th", { class: "px-3 py-2 font-medium text-gray-600 dark:text-gray-300" }, "Description")
+                        m("th", { class: "px-3 py-2 font-medium text-gray-600 dark:text-gray-300" }, "Description"),
+                        m("th", { class: "px-3 py-2 font-medium text-gray-600 dark:text-gray-300 w-16" }, "")
                     ])
                 ),
                 m("tbody",
                     filtered.length === 0
-                        ? m("tr", m("td", { colspan: 5, class: "px-3 py-6 text-center text-gray-400" }, "No fields match filter"))
+                        ? m("tr", m("td", { colspan: 6, class: "px-3 py-6 text-center text-gray-400" }, "No fields match filter"))
                         : filtered.map(function (f) {
                             let isOwn = !f.provider || f.provider === selectedType;
+                            let canDelete = !isSystemField(f) && !f.identity && !f.inherited;
                             return m("tr", {
                                 key: f.name,
                                 class: "border-t border-gray-100 dark:border-gray-800 " + (isOwn ? "" : "opacity-70")
@@ -473,7 +713,14 @@ function renderFieldsTab(fields, schema) {
                                     )
                                 ),
                                 m("td", { class: "px-3 py-1.5 text-xs text-gray-500 font-mono" }, f.provider || selectedType),
-                                m("td", { class: "px-3 py-1.5 text-xs text-gray-500" }, f.description || "")
+                                m("td", { class: "px-3 py-1.5 text-xs text-gray-500" }, f.description || ""),
+                                m("td", { class: "px-3 py-1.5" },
+                                    canDelete ? m("button", {
+                                        class: "text-red-400 hover:text-red-600",
+                                        title: "Delete field",
+                                        onclick: function () { doDeleteField(f.name); }
+                                    }, m("span", { class: "material-symbols-outlined", style: "font-size:16px" }, "close")) : null
+                                )
                             ]);
                         })
                 )
@@ -482,11 +729,55 @@ function renderFieldsTab(fields, schema) {
     ]);
 }
 
+// ── Add Field Form (Phase 13) ───────────────────────────────────────
+
+function renderAddFieldForm() {
+    return m("div", { class: "p-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 space-y-2" }, [
+        m("h4", { class: "text-xs font-semibold text-green-800 dark:text-green-300" }, "Add Field to " + selectedType),
+        m("div", { class: "flex gap-3 flex-wrap items-end" }, [
+            m("div", { class: "w-48" }, [
+                m("label", { class: "text-xs text-gray-600 dark:text-gray-400 block mb-1" }, "Field Name"),
+                m("input", {
+                    type: "text",
+                    class: "w-full px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono",
+                    placeholder: "myField",
+                    value: newFieldName,
+                    oninput: function (e) { newFieldName = e.target.value; }
+                })
+            ]),
+            m("div", { class: "w-36" }, [
+                m("label", { class: "text-xs text-gray-600 dark:text-gray-400 block mb-1" }, "Type"),
+                m("select", {
+                    class: "w-full px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm",
+                    value: newFieldType,
+                    onchange: function (e) { newFieldType = e.target.value; }
+                }, FIELD_TYPES.map(function (t) { return m("option", { value: t }, t); }))
+            ]),
+            m("div", { class: "w-36" }, [
+                m("label", { class: "text-xs text-gray-600 dark:text-gray-400 block mb-1" }, "Default Value"),
+                m("input", {
+                    type: "text",
+                    class: "w-full px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm",
+                    placeholder: "(optional)",
+                    value: newFieldDefault,
+                    oninput: function (e) { newFieldDefault = e.target.value; }
+                })
+            ]),
+            m("button", {
+                class: "px-4 py-1.5 rounded text-sm bg-green-600 text-white hover:bg-green-500" + (addFieldLoading ? " opacity-50" : ""),
+                disabled: addFieldLoading,
+                onclick: doAddField
+            }, addFieldLoading ? "Adding..." : "Add Field")
+        ])
+    ]);
+}
+
 // ── Properties tab ──────────────────────────────────────────────────
 
 function renderPropertiesTab(schema) {
     let props = [];
     if (schema.name) props.push(["Name", schema.name]);
+    if (schema.system != null) props.push(["System", String(schema.system)]);
     if (schema.inherits) props.push(["Inherits", Array.isArray(schema.inherits) ? schema.inherits.join(", ") : schema.inherits]);
     if (schema.group != null) props.push(["Group", String(schema.group)]);
     if (schema.abstract != null) props.push(["Abstract", String(schema.abstract)]);
@@ -825,4 +1116,12 @@ export const routes = {
             return layout(pageLayout(schemaView.view()));
         }
     }
+};
+
+// ── Test exports ────────────────────────────────────────────────────
+
+export {
+    createModelSchema, addFieldsToModel, deleteModel, deleteField,
+    isSystemModel, isSystemField, FIELD_TYPES,
+    fetchModelNames, fetchModelSchema, fetchModelFields
 };

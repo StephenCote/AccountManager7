@@ -581,6 +581,28 @@ import Base64 from './base64.js';
 		return login(cred, fH);
 	}
 
+	var sConfig = sBase + "/config";
+
+	async function getFeatureConfig() {
+		return get(sConfig + "/features");
+	}
+
+	async function updateFeatureConfig(config) {
+		return m.request({
+			method: 'PUT',
+			url: sConfig + "/features",
+			withCredentials: true,
+			body: config
+		}).catch(function(e) {
+			console.error("Failed to update feature config", e);
+			return null;
+		});
+	}
+
+	async function getAvailableFeatures() {
+		return get(sConfig + "/features/available");
+	}
+
 	var sAccess = sBase + "/access";
 
 	async function accessRequestList(view, status, startIndex, count) {
@@ -1265,6 +1287,9 @@ import Base64 from './base64.js';
 		accessRequestUpdate,
 		accessRequestableList,
 		accessRequestNotify,
+		getFeatureConfig,
+		updateFeatureConfig,
+		getAvailableFeatures,
 		base:function(){
 			return sBase;
 		},

@@ -1,6 +1,6 @@
 # Backend Implementation Plan for Ux75 Frontend
 
-**Created:** 2026-03-08 | **Updated:** 2026-03-10 | **Status:** Priorities 2-3 COMPLETE, 1 separated, 4-5 PLANNED (Phases 13-14)
+**Created:** 2026-03-08 | **Updated:** 2026-03-10 | **Status:** Priorities 2-6 COMPLETE, 1 separated
 
 ## Summary
 
@@ -87,7 +87,7 @@ Current `SchemaService.java` is read-only (4 GET endpoints). Phase 6/7 work fine
 
 **Backend work:** Add `isSystem` tracking, implement runtime schema modification in `RecordFactory`/`SchemaUtil`, persist user-defined models to database.
 
-**PLANNED** — Phase 13 in `Ux75ImplementationPlan.md`. Full backend write endpoints + frontend schema editor integration.
+**COMPLETE** — Phase 13 in `Ux75ImplementationPlan.md`. Backend write endpoints + frontend schema editor implemented. `isSystem` tracking on ModelSchema/FieldSchema, runtime schema CRUD in RecordFactory, 4 new REST endpoints in SchemaService, frontend editor in schema.js, 6 JUnit + 19 Vitest tests.
 
 ---
 
@@ -102,7 +102,7 @@ Optional server-side feature enablement per organization. Currently handled clie
 | `GET /rest/config/features` | Return enabled features for current org |
 | `PUT /rest/config/features` | Update enabled features (admin only) |
 
-**PLANNED** — Phase 14 in `Ux75ImplementationPlan.md`. Full backend service + frontend admin panel.
+**COMPLETE** — Phase 14 in `Ux75ImplementationPlan.md`. `FeatureConfigService.java` (3 endpoints: GET features, PUT features, GET available), `TestFeatureConfigService.java` (4 tests), frontend admin panel `featureConfig.js`, `am7client` 3 API methods, `router.js` server config fetch.
 
 ---
 
@@ -114,8 +114,8 @@ Optional server-side feature enablement per organization. Currently handled clie
 | 2 | Compliance endpoints | 2-3d | Phase 4 | See `aiDocs/ISO42001Plan.md` + Phase 4 in Ux75 plan |
 | 3 | WebAuthn service | 3-5d | Phase 8 | **COMPLETE** |
 | 4 | Access Request workflow | 3-5d | Phase 9 | **COMPLETE** |
-| 5 | Schema write endpoints | 2-4d | Phase 13 | **PLANNED** — user-defined models/fields |
-| 6 | Feature configuration | 1-2d | Phase 14 | **PLANNED** — server-side feature toggles |
+| 5 | Schema write endpoints | 2-4d | Phase 13 | **COMPLETE** — user-defined models/fields |
+| 6 | Feature configuration | 1-2d | Phase 14 | **COMPLETE** — server-side feature toggles |
 
 ---
 

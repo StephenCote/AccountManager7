@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.EnumUtils;
 import org.apache.logging.log4j.LogManager;
@@ -470,6 +471,93 @@ public class RecordFactory {
 			logger.info("Orphan cleanup not supported on " + IOSystem.getActiveContext().getIoType().toString());
 		}
 	}
+	/// Update an existing schema's persisted definition and reload caches
+	public static boolean updateSchemaDefinition(ModelSchema ms) {
+		if(ms == null || ms.getName() == null) {
+			logger.error("Null schema or name");
+			return false;
+		}
+		IOContext ctx = IOSystem.getActiveContext();
+		if(ctx == null || !IOSystem.isInitialized()) {
+			logger.error("IO context not available");
+			return false;
+		}
+		OrganizationContext sysOrg = ctx.getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, null);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_MODEL_SCHEMA, FieldNames.FIELD_NAME, ms.getName());
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
+		q.planMost(false);
+		BaseRecord ioSchema = ctx.getSearch().findRecord(q);
+		if(ioSchema == null) {
+			logger.error("Schema record not found for: " + ms.getName());
+			return false;
+		}
+		try {
+			ioSchema.set(FieldNames.FIELD_SCHEMA, JSONUtil.exportObject(ms).getBytes());
+		} catch(Exception e) {
+			logger.error(e);
+			return false;
+		}
+		boolean updated = ctx.getRecordUtil().updateRecord(ioSchema);
+		if(updated) {
+			/// Reload caches
+			unloadSchema(ms.getName());
+			CacheUtil.clearCache();
+		}
+		return updated;
+	}
+
+	/// Add a field to an existing schema, including the database column
+	public static boolean addFieldToSchema(ModelSchema ms, FieldSchema fs) {
+		if(ms == null || fs == null) return false;
+		IOContext ctx = IOSystem.getActiveContext();
+		if(ctx == null) return false;
+
+		/// Add column to database table
+		if(ctx.getIoType() == RecordIO.DATABASE) {
+			String table = ctx.getDbUtil().getTableName(ms.getName());
+			String col = ctx.getDbUtil().generateSchemaLine(null, ms, fs);
+			String sql = "ALTER TABLE " + table + " ADD " + col + ";";
+			try (Connection con = ctx.getDbUtil().getDataSource().getConnection(); Statement st = con.createStatement()) {
+				st.executeUpdate(sql);
+			} catch(SQLException e) {
+				logger.error("Failed to add column: " + e.getMessage());
+				return false;
+			}
+		}
+
+		/// Add field to schema and persist
+		ms.getFields().add(fs);
+		return updateSchemaDefinition(ms);
+	}
+
+	/// Remove a field from an existing schema, including the database column
+	public static boolean removeFieldFromSchema(ModelSchema ms, String fieldName) {
+		if(ms == null || fieldName == null) return false;
+		FieldSchema fs = ms.getFieldSchema(fieldName);
+		if(fs == null) {
+			logger.error("Field not found: " + fieldName);
+			return false;
+		}
+		IOContext ctx = IOSystem.getActiveContext();
+		if(ctx == null) return false;
+
+		/// Drop column from database table
+		if(ctx.getIoType() == RecordIO.DATABASE) {
+			String table = ctx.getDbUtil().getTableName(ms.getName());
+			String sql = "ALTER TABLE " + table + " DROP COLUMN IF EXISTS " + fieldName + ";";
+			try (Connection con = ctx.getDbUtil().getDataSource().getConnection(); Statement st = con.createStatement()) {
+				st.executeUpdate(sql);
+			} catch(SQLException e) {
+				logger.error("Failed to drop column: " + e.getMessage());
+				return false;
+			}
+		}
+
+		/// Remove field from schema and persist
+		ms.setFields(ms.getFields().stream().filter(f -> !f.getName().equals(fieldName)).collect(Collectors.toList()));
+		return updateSchemaDefinition(ms);
+	}
+
 	public static boolean releaseCustomSchema(String name) {
 		IOContext ctx = IOSystem.getActiveContext();
 		
@@ -586,6 +674,13 @@ public class RecordFactory {
 		if(mod == null) {
 			logger.error("Failed to load schema from contents '" + name + "'");
 			return null;
+		}
+		/// Mark user-defined models and their own fields as non-system
+		mod.setSystem(false);
+		for(FieldSchema fs : mod.getFields()) {
+			if(!fs.isInherited()) {
+				fs.setSystem(false);
+			}
 		}
 		configureSchema(mod, impSet);
 		if(createIOSchema(name, mod) == null) {

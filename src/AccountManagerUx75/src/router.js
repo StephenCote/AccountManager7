@@ -153,10 +153,24 @@ async function refreshApplication() {
     page.application = undefined;
     page.user = usr;
 
-    // Initialize feature profile from URL param, Vite define, or default
-    let profile = new URLSearchParams(window.location.search).get('features')
-        || (typeof __FEATURE_PROFILE__ !== 'undefined' ? __FEATURE_PROFILE__ : null)
-        || 'full';
+    // Initialize feature profile: try server config first, then URL param / build define / default
+    let profile = 'full';
+    if (usr != null) {
+        try {
+            let serverConfig = await am7client.getFeatureConfig();
+            if (serverConfig && serverConfig.features && Array.isArray(serverConfig.features)) {
+                profile = serverConfig.features;
+            }
+        } catch (e) {
+            console.warn('[router] Failed to fetch server feature config, using fallback', e);
+        }
+    }
+    if (typeof profile === 'string') {
+        // Fallback to URL param or Vite define
+        profile = new URLSearchParams(window.location.search).get('features')
+            || (typeof __FEATURE_PROFILE__ !== 'undefined' ? __FEATURE_PROFILE__ : null)
+            || 'full';
+    }
     initFeatures(profile);
 
     if (usr == null) {

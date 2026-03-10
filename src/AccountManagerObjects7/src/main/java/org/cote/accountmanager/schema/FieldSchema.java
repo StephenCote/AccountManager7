@@ -81,7 +81,10 @@ public class FieldSchema {
 	private ComputeEnumType compute = ComputeEnumType.UNKNOWN;
 	
 	private boolean encrypt = false;
-	
+
+	/// isSystem indicates the field is a built-in system field and cannot be modified or deleted by users
+	private boolean system = true;
+
 	@JsonProperty("private")
 	private boolean priv = false;
 	
@@ -175,6 +178,16 @@ public class FieldSchema {
 
 	public void setPriority(int priority) {
 		this.priority = priority;
+	}
+
+	@JsonProperty("system")
+	public boolean isSystem() {
+		return system;
+	}
+
+	@JsonProperty("system")
+	public void setSystem(boolean system) {
+		this.system = system;
 	}
 
 	public boolean isEncrypt() {

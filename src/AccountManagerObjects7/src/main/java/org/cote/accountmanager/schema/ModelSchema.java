@@ -57,7 +57,10 @@ public class ModelSchema {
 	private boolean dedicatedParticipation = false;
 	
 	private boolean autoCreateForeignReference = true;
-	
+
+	/// isSystem indicates the model is a built-in system model and cannot be modified or deleted by users
+	private boolean system = true;
+
 	private String version = null;
 	
 	public ModelSchema() {
@@ -102,6 +105,16 @@ public class ModelSchema {
 
 	public void setLikeInherits(List<String> likeInherits) {
 		this.likeInherits = likeInherits;
+	}
+
+	@JsonProperty("system")
+	public boolean isSystem() {
+		return system;
+	}
+
+	@JsonProperty("system")
+	public void setSystem(boolean system) {
+		this.system = system;
 	}
 
 	public boolean isAutoCreateForeignReference() {

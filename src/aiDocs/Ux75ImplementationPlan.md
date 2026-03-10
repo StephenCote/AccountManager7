@@ -10,7 +10,7 @@
 
 **Project:** `AccountManagerUx75/` — 143 source files, ~73,000 lines
 **Build:** Vite 6.4.1, 161 modules, builds in ~4s
-**Tests:** 111 Vitest unit tests pass (97 existing + 14 new Phase 11b), 43+ Playwright E2E tests pass
+**Tests:** 147 Vitest unit tests pass, 48+ Playwright E2E tests pass
 **Phase 9 completed:** 2026-03-10
 **Phase 11 gap remediation completed:** 2026-03-10
 **Ux7 File Parity:** ~99% — all major Ux7 features ported (5 intentionally skipped). 7 gaps closed in Phase 11. Phase 11b completed: group navigation/search in list view, file explorer view.
@@ -43,8 +43,8 @@
 | **Phase 10: Game Feature Validation** | NOT STARTED | 0 | Runtime-test cardGame (34 files), magic8 (19 files), tetris, wordGame against live backend. |
 | **Phase 4: ISO 42001 Compliance** | NOT STARTED | 1 stub | Full ComplianceService.java backend (summary, violations, patterns, reports) + multi-tab frontend dashboard. |
 | **Phase 12: Performance + Polish** | NOT STARTED | 0 | Bundle optimization, SQLite WASM cache, performance profiling, WCAG 2.1 AA a11y audit. |
-| **Phase 13: Schema Write Endpoints** | NOT STARTED | 0 | Backend PUT/POST/DELETE for user-defined models/fields + frontend schema editor integration. |
-| **Phase 14: Feature Configuration** | NOT STARTED | 0 | Backend FeatureConfigService + frontend admin panel for server-side feature toggles. |
+| **Phase 13: Schema Write Endpoints** | **COMPLETE** | 19 Vitest + 6 JUnit | Backend PUT/POST/DELETE for user-defined models/fields + frontend schema editor integration. |
+| **Phase 14: Feature Configuration** | **COMPLETE** | 17 Vitest + 4 JUnit + 5 E2E | Backend `FeatureConfigService.java` (3 endpoints at `/rest/config`), frontend admin panel at `/admin/features`, server-side feature config in `router.js`, `am7client` 3 API methods, dependency graph UI. |
 | **Phase 15: Integration + Open Issues** | NOT STARTED | 0 | WebAuthn live test, full E2E regression, cross-browser validation. |
 
 ---
@@ -650,57 +650,81 @@ All ISO 42001 work (compliance dashboard tabs, backend ComplianceService.java, b
 
 ---
 
-### Phase 13: Schema Write Endpoints — NOT STARTED
+### Phase 13: Schema Write Endpoints — COMPLETE (2026-03-10)
 
 **Goal:** Enable user-defined models and fields via the schema service. Full backend + frontend.
-**Effort:** Medium-High (3-5 days)
 
 **13a: Backend — SchemaService Write Endpoints**
-- [ ] Add `isSystem` flag to `ModelSchema` / `FieldSchema` — system models/fields cannot be deleted
-- [ ] `PUT /rest/schema/{type}` — update model: add user-defined fields to existing model. Validates field name uniqueness, type validity. Reloads schema at runtime via `RecordFactory`.
-- [ ] `POST /rest/schema` — create new user-defined model type. Requires: name, inherits, fields[]. Persists JSON to model definitions directory. Registers in `RecordFactory` at runtime.
-- [ ] `DELETE /rest/schema/{type}` — delete non-system model type. Validates no data exists for type. Removes from RecordFactory + deletes definition file.
-- [ ] `DELETE /rest/schema/{type}/field/{fieldName}` — remove non-system field from model. Validates field is user-defined. Updates model definition + RecordFactory.
-- [ ] Runtime schema reload: after any write operation, call `RecordFactory.reloadSchema(type)` to update in-memory schema without restart
-- [ ] Persist user-defined models to `{store.path}/models/user/` directory (separate from system models)
-- [ ] All write endpoints: `@RolesAllowed({"admin"})` — admin only
-- [ ] JUnit tests: `TestSchemaWriteService.java` — create model, add field, delete field, delete model, system-protection validation
+- [x] Add `isSystem` flag to `ModelSchema` / `FieldSchema` — system=true by default, user-defined models get system=false via `importSchemaFromUser()`
+- [x] `PUT /rest/schema/{type}` — add user-defined fields to existing model. Validates field name uniqueness, type, marks as non-system. Uses `RecordFactory.addFieldToSchema()` for runtime ALTER TABLE + schema persist.
+- [x] `POST /rest/schema` — create new user-defined model type. Validates name format (namespaced), delegates to `RecordFactory.importSchemaFromUser()` which handles DB table creation.
+- [x] `DELETE /rest/schema/{type}` — delete non-system model. Checks `isSystem` flag. Delegates to `RecordFactory.releaseCustomSchema()` which drops table + deletes schema record.
+- [x] `DELETE /rest/schema/{type}/field/{fieldName}` — remove non-system field. Checks `isSystem` + `isIdentity`. Uses `RecordFactory.removeFieldFromSchema()` for ALTER TABLE DROP + schema persist.
+- [x] Runtime schema reload: `RecordFactory.updateSchemaDefinition()` persists to DB + clears caches via `unloadSchema()` + `CacheUtil.clearCache()`
+- [x] User-defined models persisted to `system.modelSchema` records in /System org (same as existing custom model pattern)
+- [x] All write endpoints: `@RolesAllowed({"admin"})` — admin only
+- [x] JUnit tests: `TestSchemaService.java` — 6 tests: isSystem flag, create model, add field, remove field, delete model, schema update persistence
+
+**New RecordFactory methods:**
+- `addFieldToSchema(ModelSchema, FieldSchema)` — ALTER TABLE ADD + schema persist
+- `removeFieldFromSchema(ModelSchema, String fieldName)` — ALTER TABLE DROP + schema persist
+- `updateSchemaDefinition(ModelSchema)` — persist schema JSON to DB + reload caches
 
 **13b: Frontend — Schema Editor Integration**
-- [ ] Add "New Model" button to schema browser — opens dialog: name, inherits-from dropdown, initial fields
-- [ ] Add "Add Field" button to field table — opens dialog: name, type dropdown, required, description
-- [ ] Add "Delete" button per field (only for user-defined fields, disabled for system fields)
-- [ ] Add "Delete Model" button (only for user-defined models)
-- [ ] Calls to new `am7client` methods: `createModel()`, `updateModelField()`, `deleteModel()`, `deleteModelField()`
-- [ ] Confirmation dialogs for all destructive operations
-- [ ] Vitest tests: button visibility based on isSystem flag
-- [ ] Playwright E2E test: create model, add field, verify in browser, delete
+- [x] "New Model" button on schema browser — inline form: name (namespaced), inherits (comma-sep), group name
+- [x] "Add Field" button on field table — inline form: field name, type dropdown (10 types), default value
+- [x] Delete button per field (only for non-system, non-identity, non-inherited fields)
+- [x] "Delete Model" button (only for user-defined models, with confirmation)
+- [x] Schema write API functions: `createModelSchema()`, `addFieldsToModel()`, `deleteModel()`, `deleteField()`
+- [x] System/user-defined badges on model detail header and field rows ("user" badge for system=false)
+- [x] `isSystemModel()` / `isSystemField()` helpers guard all destructive UI actions
+- [x] Confirmation dialogs for all destructive operations
+- [x] 19 Vitest tests: isSystem helpers, FIELD_TYPES, API function exports, HTTP method/URL verification
+- [x] All 130 Vitest tests pass (11 test files)
+
+**Files modified/created:**
+- `AccountManagerObjects7/.../schema/ModelSchema.java` — added `system` field + getter/setter
+- `AccountManagerObjects7/.../schema/FieldSchema.java` — added `system` field + getter/setter
+- `AccountManagerObjects7/.../record/RecordFactory.java` — 3 new methods, `importSchemaFromUser()` marks user-defined
+- `AccountManagerService7/.../rest/services/SchemaService.java` — 4 new endpoints (POST/PUT/DELETE/DELETE)
+- `AccountManagerService7/.../tests/TestSchemaService.java` — NEW: 6 JUnit tests
+- `AccountManagerUx75/src/features/schema.js` — schema write API, editor UI, system protection
+- `AccountManagerUx75/src/test/schema.test.js` — NEW: 19 Vitest tests
 
 ---
 
-### Phase 14: Feature Configuration — NOT STARTED
+### Phase 14: Feature Configuration — COMPLETE (2026-03-10)
 
 **Goal:** Server-side feature enablement per organization, replacing client-only build profiles.
-**Effort:** Low-Medium (2-3 days)
 
-**14a: Backend — FeatureConfigService.java** (NEW)
-- [ ] Create `FeatureConfigService.java` at `/rest/config`
-- [ ] `GET /rest/config/features` — return enabled features for current user's organization. Reads from `data.data` record at `~/.featureConfig` in org root. Returns JSON: `{ features: ["core", "chat", ...], profile: "full" }`
-- [ ] `PUT /rest/config/features` — update enabled features (admin only). Validates feature IDs against known set. Saves to `data.data` record.
-- [ ] `GET /rest/config/features/available` — return all available feature definitions (id, label, description, deps) for UI rendering
-- [ ] If no config record exists, return default "full" profile
-- [ ] JUnit test: `TestFeatureConfigService.java` — read default, update, read updated, reset
+**14a: Backend — FeatureConfigService.java**
+- [x] Create `FeatureConfigService.java` at `/rest/config`
+- [x] `GET /rest/config/features` — returns enabled features for current user's org. Reads from `data.data` record named `.featureConfig` in user's home directory. Returns `{ features: [...], profile: "full" }`. Defaults to full profile if no config record exists.
+- [x] `PUT /rest/config/features` — update enabled features (admin only via `@RolesAllowed`). Validates feature IDs against known set. Ensures 'core' always included. Creates/updates `data.data` record.
+- [x] `GET /rest/config/features/available` — returns all 11 available feature definitions (id, label, description, required, deps) for UI rendering.
+- [x] JUnit test: `TestFeatureConfigService.java` — 4 tests: default config, CRUD lifecycle, feature validation, core-always-included logic.
 
 **14b: Frontend — Feature Admin Panel**
-- [ ] New admin-only view at `/admin/features` (or integrate into existing schema/settings area)
-- [ ] Display all available features with toggle switches (enabled/disabled)
-- [ ] Show dependency graph: disabling a feature warns if dependents are enabled
-- [ ] Save button calls PUT endpoint
-- [ ] On load: `initFeatures()` reads from server instead of URL param / build define
-- [ ] Update `router.js` `refreshApplication()` to fetch server feature config after auth
-- [ ] Add `am7client` methods: `getFeatureConfig()`, `updateFeatureConfig()`, `getAvailableFeatures()`
-- [ ] Vitest tests: toggle logic, dependency validation
-- [ ] Playwright E2E test: feature admin page loads, toggle works
+- [x] New admin-only view at `/admin/features` via `features/featureConfig.js`
+- [x] Toggle switches for each feature (enabled/disabled), Required badge for core
+- [x] Dependency graph: shows "Depends on:" with color-coded deps, "Active dependents:" warning, blocks disable when dependents are active
+- [x] Save button calls PUT endpoint, shows unsaved changes indicator
+- [x] Quick profile buttons (Minimal, Standard, Enterprise, Gaming, Full)
+- [x] `router.js` `refreshApplication()` fetches server feature config after auth, falls back to URL param/build define
+- [x] `am7client` methods: `getFeatureConfig()`, `updateFeatureConfig()`, `getAvailableFeatures()`
+- [x] `featureConfig` registered in `features.js` manifest with `adminOnly: true` aside menu item
+- [x] 17 Vitest tests in `featureConfig.test.js`: manifest integration, profile inclusion, toggle logic, dependency validation
+- [x] 5 Playwright E2E tests in `featureConfig.spec.js`: page load, toggle visibility, profile buttons, unsaved changes, dependency info
+
+**Key Files:**
+- `AccountManagerService7/src/main/java/org/cote/rest/services/FeatureConfigService.java` — 3 REST endpoints
+- `AccountManagerService7/src/test/java/org/cote/accountmanager/objects/tests/TestFeatureConfigService.java` — 4 JUnit tests
+- `AccountManagerUx75/src/features/featureConfig.js` — admin panel UI + route
+- `AccountManagerUx75/src/core/am7client.js` — 3 new API methods
+- `AccountManagerUx75/src/features.js` — `featureConfig` entry + enterprise profile
+- `AccountManagerUx75/src/router.js` — server config fetch in `refreshApplication()`
+- `AccountManagerUx75/src/test/featureConfig.test.js` — 17 Vitest tests
+- `AccountManagerUx75/e2e/featureConfig.spec.js` — 5 Playwright E2E tests
 
 ---
 
