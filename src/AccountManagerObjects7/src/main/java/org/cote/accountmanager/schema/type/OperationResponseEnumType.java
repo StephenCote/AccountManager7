@@ -36,7 +36,8 @@ public enum OperationResponseEnumType {
     UNKNOWN,
     SUCCEEDED,
     FAILED,
-    ERROR;
+    ERROR,
+    PENDING;
 
     public String value() {
         return name();

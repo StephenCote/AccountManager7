@@ -10,7 +10,7 @@
 
 **Project:** `AccountManagerUx75/` — 140 source files, ~72,500 lines
 **Build:** Vite 6.4.1, 161 modules, builds in ~5s
-**Tests:** 77 Vitest unit tests pass, 36 Playwright E2E tests pass (all green)
+**Tests:** 77 Vitest unit tests pass, 43 Playwright E2E tests pass (all green)
 **Phase 8 completed:** 2026-03-09
 **Ux7 File Parity:** ~100% — all active Ux7 source files ported including dialog workflow commands (5 intentionally skipped)
 
@@ -32,7 +32,8 @@
 | **Phase 5: UX Polish** | COMPLETE | 10 | Aside menu navigation, dark mode fix, keyboard shortcuts (Ctrl+S/Esc/Ctrl+1-9), toast stacking, dashboard recent items, dense mode toggle, runtime null guards, responsive grid breakpoints, notification panel with badge, notification CSS |
 | **Phase 6: Model Form View** | COMPLETE | 1 | Schema browser at `/schema` route (admin-only). Fetches model names from `/rest/schema/models`, model detail + fields from `/rest/schema/{type}`. Searchable/filterable model list, namespace grouping, field table with type/flags/provider, properties tab, clickable inheritance chain. Admin-gated in aside menu via `adminOnly` flag. Lazy-loaded chunk: 19KB/5KB gzip. |
 | **Phase 7: Form Editor / Designer** | COMPLETE | 1 | Form definition editor integrated into schema feature. CRUD for `system.formDefinition` records via `/rest/model` endpoints. Create from model type (auto-populates fields from schema), edit field labels/layout/visibility/required/order, reorder with up/down arrows, 6-column grid preview. Saves via `am7client.patch()`. Combined into single `features/schema.js` file with Phase 6. |
-| **Phase 8: WebAuthn** | **COMPLETE** | 4 | Backend: `auth.webauthnCredential` model, `WEBAUTHN` enum, `WebAuthnService.java` (6 endpoints), `webauthn4j-core` dep. Frontend: `features/webauthn.js` (passkey management settings), passkey login button in `sig.js`, `am7client` WebAuthn API (5 methods). 7 Vitest tests added. Also fixed VectorService 404 (enum @PathParam). |
+| **Phase 8: WebAuthn** | **COMPLETE** | 4 | Backend: `auth.webauthnCredential` model, `WEBAUTHN` enum, `WebAuthnService.java` (6 endpoints), `webauthn4j-core` dep. Frontend: `features/webauthn.js` (passkey management settings), passkey login button in `sig.js`, `am7client` WebAuthn API (5 methods). 7 Vitest + 7 Playwright E2E tests. Also fixed VectorService 404 (enum @PathParam). |
+| **Phase 8.5: List View Grid Rework** | **COMPLETE** | 1 | 4-mode grid system (table → small grid → large grid → gallery with arrow key nav). Fixed "No item at index -1" bug. Gallery mode: full-size fit-to-container with chevron navigation. |
 | **Phase 9: Access Requests** | NOT STARTED | 0 | Backend model exists. No Ux. Must ask user about hierarchical approval concept first. |
 | **Phase 10: Game Feature Validation** | DEFERRED | 0 | Build audit done. Runtime testing deferred — benefits from stable common infra. |
 | **Phase 11: Performance + Polish** | NOT STARTED | 0 | SQLite WASM cache, a11y audit, performance profiling. |
@@ -125,7 +126,13 @@ All 7 command handlers from Ux7 `dialog.js` have been ported to Ux75 as ESM work
 
 14. **Image display bugs (fixed post-3.5c)** — Grid view thumbnails were 100x100 (too small for grid cards), now 256x256. Object view image rendering was broken — `formFieldRenderers.buildMediaPath` used `client.base()` (`/rest/media/...`) instead of `applicationPath` (`/media/...`). Both fixed.
 
-13. **`media` feature not in manifest** — Design doc Section 7 defines a `media` feature for lazy loading. Currently loaded eagerly in `main.js`, inflating the index bundle.
+15. **`media` feature not in manifest** — Design doc Section 7 defines a `media` feature for lazy loading. Currently loaded eagerly in `main.js`, inflating the index bundle.
+
+16. **Aside nav viewport overflow** — Bottom aside items (Passkeys, possibly others) are outside the viewport because the aside nav doesn't scroll. Items below the fold cannot be reached by scrolling. Workaround: JS click via evaluate. Needs scrollable aside or collapsible sections.
+
+17. **Direct URL navigation to feature routes broken** — `page.goto('/#!/webauthn')` renders the main dashboard instead of the feature page. In-app navigation works fine. Root cause: Mithril route initialization race with feature route lazy loading.
+
+18. **WebAuthn backend not integration-tested** — E2E tests validate the full client-side flow with CDP virtual authenticator, but backend WebAuthnService.java hasn't been tested with a live browser (backend wasn't running during E2E test development).
 
 ---
 
@@ -354,7 +361,7 @@ All ISO 42001 work (compliance dashboard tabs, backend ComplianceService.java, b
 
 ## 9. E2E Test Coverage
 
-**27 Playwright E2E tests** across 8 spec files:
+**43 Playwright E2E tests** across 10 spec files:
 
 | Spec | Tests | What's Covered |
 |------|-------|----------------|
@@ -366,6 +373,8 @@ All ISO 42001 work (compliance dashboard tabs, backend ComplianceService.java, b
 | `biometrics.spec.js` | 3 | Magic 8 navigation, Start Session button, config description |
 | `testHarness.spec.js` | 3 | Menu navigation, UI components, Run Tests + categories |
 | `workflows.spec.js` | 2 | Workflow handler registration on objectPage, no command-not-found warnings |
+| `webauthn.spec.js` | 7 | Login passkey button, no-username toast, settings page, register form, client API, CDP virtual authenticator registration flow, base64url encoding roundtrip |
+| `schema.spec.js` | 9 | Schema browser route, model list, model details, field table, search, namespace grouping |
 
 **Test infrastructure:**
 - `e2e/helpers/fixtures.js` — Extended fixture with automatic console error capture
@@ -379,7 +388,7 @@ All ISO 42001 work (compliance dashboard tabs, backend ComplianceService.java, b
 ## 10. Build Output
 
 ```
-Source files:  135 JS (71,000 lines) + 6 unit test files (64 tests) + 8 E2E spec files (27 tests)
+Source files:  140 JS (72,500 lines) + 6 unit test files (77 tests) + 10 E2E spec files (43 tests)
 Styles:        2 CSS files (main.css, pageStyle.css) -> 84KB bundled
 
 Build output (dist/):
@@ -421,8 +430,8 @@ Build output (dist/):
 2. Read `Ux7Redesign.md` for design requirements (Sections 1-13)
 3. Read `~/.claude/projects/.../memory/MEMORY.md` for API patterns and gotchas
 4. Run `cd AccountManagerUx75 && npm run dev` to start Vite dev server (port 8899)
-5. Run `npx vitest run` to verify unit tests pass (64 tests expected)
-6. Run `npx playwright test` to verify E2E tests pass (27 tests expected, requires backend on 8443)
+5. Run `npx vitest run` to verify unit tests pass (77 tests expected)
+6. Run `npx playwright test` to verify E2E tests pass (43 tests expected, requires backend on 8443)
 
 **Key files to read first:**
 - `src/main.js` — Entry point, wires all modules

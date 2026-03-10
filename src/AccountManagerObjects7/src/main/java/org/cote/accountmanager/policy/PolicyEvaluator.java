@@ -63,7 +63,8 @@ public class PolicyEvaluator {
 	private AuthorizationUtil authUtil = null;
 	private MemberUtil memberUtil = null;
 	private boolean trace = false;
-	
+	private boolean pendingDetected = false;
+
 	public PolicyEvaluator(IReader reader, IWriter writer, ISearch search, AuthorizationUtil authUtil, MemberUtil memUtil){
 		this.reader = reader;
 		this.writer = writer;
@@ -166,9 +167,9 @@ public class PolicyEvaluator {
 		List<BaseRecord> rules = pol.get(FieldNames.FIELD_RULES);
 		int pass = 0;
 		int size = rules.size();
+		pendingDetected = false;
 		if(trace) {
 			logger.info("***** Evaluating Policy " + pol.get(FieldNames.FIELD_URN) + " " + pol.get(FieldNames.FIELD_CONDITION));
-			// logger.info(IOSystem.getActiveContext().getPolicyUtil().printPolicy(pol.toConcrete()));
 		}
 		ConditionEnumType cond = ConditionEnumType.valueOf(pol.get(FieldNames.FIELD_CONDITION));
 		for(BaseRecord rule : rules) {
@@ -182,14 +183,29 @@ public class PolicyEvaluator {
 					break;
 				}
 			}
+			else if(pendingDetected) {
+				if(trace) {
+					logger.info("***** Policy evaluation paused — approval pending");
+				}
+				break;
+			}
 			else if(cond == ConditionEnumType.ALL) {
 				if(trace) {
 					logger.info("***** Policy ruled failed evaluation");
 				}
 				break;
 			}
-			
+
 		}
+
+		if(pendingDetected) {
+			prr.set(FieldNames.FIELD_TYPE, PolicyResponseEnumType.PENDING_OPERATION.toString());
+			if(trace) {
+				logger.info("**** Policy " + pol.get(FieldNames.FIELD_URN) + " returned PENDING_OPERATION — awaiting approval");
+			}
+			return;
+		}
+
 		boolean success = (
 			(cond == ConditionEnumType.ANY && pass > 0)
 			||
@@ -197,18 +213,17 @@ public class PolicyEvaluator {
 			||
 			(cond == ConditionEnumType.NONE && pass == 0)
 		);
-		
+
 		if(trace) {
 			logger.info("**** Evaluation Results for " + pol.get(FieldNames.FIELD_URN) + ": " + cond.toString() + " Pass = " + pass + " Size = " + size + " = " + success);
 		}
-		
+
 		if(success){
 			int sumScore = (int)prr.get(FieldNames.FIELD_SCORE) + (int)pol.get(FieldNames.FIELD_SCORE);
 			prr.set(FieldNames.FIELD_SCORE, sumScore);
 			prr.set(FieldNames.FIELD_TYPE, PolicyResponseEnumType.PERMIT.toString());
 		}
 		else prr.set(FieldNames.FIELD_TYPE, PolicyResponseEnumType.DENY.toString());
-		// logger.info("Policy " + pol.get(FieldNames.FIELD_URN) + ": " + prr.get(FieldNames.FIELD_TYPE));
 	}
 	
 	private boolean evaluateRule(BaseRecord rule, List<BaseRecord> facts, BaseRecord prt, BaseRecord prr) throws FieldException, ValueException, ModelNotFoundException, ScriptException, IndexException, ReaderException, ModelException{
@@ -226,6 +241,12 @@ public class PolicyEvaluator {
 		for(BaseRecord crule : rules) {
 			reader.populate(crule);
 			boolean bRule = evaluateRule(crule, facts, prt, prr);
+			if(pendingDetected) {
+				if(trace) {
+					logger.info("***** Sub-rule " + crule.get(FieldNames.FIELD_URN) + " returned PENDING — stopping rule evaluation");
+				}
+				break;
+			}
 			if(bRule){
 				pass++;
 				if(rcond == ConditionEnumType.ANY){
@@ -235,22 +256,27 @@ public class PolicyEvaluator {
 					break;
 				}
 			}
-			else if(rcond == ConditionEnumType.ALL && !bRule){
+			else if(rcond == ConditionEnumType.ALL){
 				if(trace) {
 					logger.info("***** Breaking on " + crule.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond.toString() + " failure");
 				}
 				break;
-				
-			
 			}
 		}
 		for(BaseRecord pat : patterns) {
 			reader.populate(pat);
-			boolean bPat = evaluatePattern(rule, pat, facts, prt, prr);
-			
-			if(
-				bPat
-			){
+			OperationResponseEnumType patResult = evaluatePatternWithResponse(rule, pat, facts, prt, prr);
+
+			if(patResult == OperationResponseEnumType.PENDING) {
+				if(trace) {
+					logger.info("***** Pattern " + pat.get(FieldNames.FIELD_URN) + " returned PENDING — stopping rule evaluation");
+				}
+				pendingDetected = true;
+				break;
+			}
+
+			boolean bPat = (patResult == OperationResponseEnumType.SUCCEEDED);
+			if(bPat){
 				pass++;
 				if(rcond == ConditionEnumType.ANY){
 					if(trace) {
@@ -259,12 +285,12 @@ public class PolicyEvaluator {
 					break;
 				}
 			}
-			else if(rcond == ConditionEnumType.ALL && !bPat){
+			else if(rcond == ConditionEnumType.ALL){
 				if(trace) {
 					logger.info("***** Breaking on " + pat.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond + " failure");
 				}
 				break;
-				
+
 			}
 		}
 		if(trace) {
@@ -306,39 +332,48 @@ public class PolicyEvaluator {
 		return success;
 	}
 		
-	private boolean evaluatePattern(BaseRecord rule, BaseRecord pattern, List<BaseRecord> facts, BaseRecord prt, BaseRecord prr) throws ValueException, ScriptException, IndexException, ReaderException, FieldException, ModelNotFoundException, ModelException{
+	private OperationResponseEnumType evaluatePatternWithResponse(BaseRecord rule, BaseRecord pattern, List<BaseRecord> facts, BaseRecord prt, BaseRecord prr) throws ValueException, ScriptException, IndexException, ReaderException, FieldException, ModelNotFoundException, ModelException{
 		PatternEnumType ptype = PatternEnumType.valueOf(pattern.get(FieldNames.FIELD_TYPE));
-		
+
 		if(trace) {
 			logger.info("***** Evaluating Pattern " + pattern.get(FieldNames.FIELD_URN) + " " + ptype.toString());
 		}
-		
+
 		BaseRecord fact = pattern.get(FieldNames.FIELD_FACT);
 		BaseRecord mfact = pattern.get(FieldNames.FIELD_MATCH);
 
 		BaseRecord pfact = fact;
 		OperationResponseEnumType opr = OperationResponseEnumType.UNKNOWN;
-		boolean outBool = false;
 		if(fact == null){
 			throw new ValueException("Pattern fact is null");
 		}
 		if(mfact == null){
 			throw new ValueException("Match fact is null");
 		}
-		
+
 		reader.populate(fact, RecordUtil.getPossibleFields(fact.getSchema(), FIELD_POPULATION));
 		reader.populate(mfact, RecordUtil.getPossibleFields(mfact.getSchema(), FIELD_POPULATION));
 
 		FactEnumType mtype = FactEnumType.valueOf(mfact.get(FieldNames.FIELD_TYPE));
 		pfact = getFactParameter(pfact, facts);
 		reader.populate(pfact, RecordUtil.getPossibleFields(pfact.getSchema(), FIELD_POPULATION));
-		
+
 		if(ptype == PatternEnumType.PARAMETER){
 			opr = OperationResponseEnumType.SUCCEEDED;
 		}
 		/// Operation - fork processing over to a custom-defined class or function
 		///
 		else if(ptype == PatternEnumType.OPERATION){
+			String cls = null;
+			BaseRecord op = pattern.get(FieldNames.FIELD_OPERATION);
+			if(op != null) {
+				cls = op.get(FieldNames.FIELD_OPERATION);
+			}
+			opr = evaluateOperation(prt, prr, pattern, pfact, mfact, cls, pattern.get(FieldNames.FIELD_OPERATION_URN));
+		}
+		/// Approval - dispatches to approval operation class, may return PENDING
+		///
+		else if(ptype == PatternEnumType.APPROVAL){
 			String cls = null;
 			BaseRecord op = pattern.get(FieldNames.FIELD_OPERATION);
 			if(op != null) {
@@ -362,16 +397,14 @@ public class PolicyEvaluator {
 		else if(mtype == FactEnumType.FUNCTION) {
 			opr = evaluateForFact(prt, prr, pattern, pfact, mfact);
 		}
-		
 		else{
 			logger.error("Pattern type not supported: " + pattern.get(FieldNames.FIELD_TYPE));
 		}
 
 		if(opr == OperationResponseEnumType.SUCCEEDED){
-			outBool = true;
 			prr.set(FieldNames.FIELD_SCORE, (int)prr.get(FieldNames.FIELD_SCORE) + (int)pattern.get(FieldNames.FIELD_SCORE));
 		}
-		
+
 		List<String> chain = prr.get(FieldNames.FIELD_PATTERN_CHAIN);
 		String rurn = rule.get(FieldNames.FIELD_URN);
 		if(rurn == null) {
@@ -381,16 +414,16 @@ public class PolicyEvaluator {
 		if(purn == null) {
 			purn = pattern.get(FieldNames.FIELD_NAME);
 		}
-		
+
 		if(trace) {
-			logger.info("***** Evaluated Pattern " + pattern.get(FieldNames.FIELD_URN) + " " + ptype.toString() + " = " + outBool);
-			chain.add(rurn + "/" + purn + " (" + outBool + ")");
+			logger.info("***** Evaluated Pattern " + pattern.get(FieldNames.FIELD_URN) + " " + ptype.toString() + " = " + opr);
+			chain.add(rurn + "/" + purn + " (" + opr + ")");
 		}
 		else {
 			chain.add(purn);
 		}
 
-		return outBool;
+		return opr;
 	}
 	private OperationResponseEnumType evaluateForFact(BaseRecord prt, BaseRecord prr, BaseRecord pattern, BaseRecord fact, BaseRecord matchFact) throws FieldException, ValueException, ModelNotFoundException, ModelException {
 		OperationResponseEnumType outResponse;
