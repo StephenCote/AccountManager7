@@ -11,10 +11,12 @@ import { navigation, navigable } from './components/navigation.js';
 import { newListControl } from './views/list.js';
 import { newObjectPage } from './views/object.js';
 import { newNavigatorControl } from './views/navigator.js';
+import { newExplorerControl } from './views/explorer.js';
 import { decorator } from './components/decorator.js';
 import { newPaginationControl } from './components/pagination.js';
 import { initTheme } from './components/topMenu.js';
 import { startPolling, stopPolling } from './components/notifications.js';
+import { contextMenuComponent } from './components/contextMenu.js';
 
 // Wire components onto page for cross-module access
 page.components.panel = panel;
@@ -31,11 +33,13 @@ initTheme();
 let listControl = newListControl();
 let objectPageControl = newObjectPage();
 let navigatorControl = newNavigatorControl();
+let explorerControl = newExplorerControl();
 
 // Layout wrapper that renders dialogs + toast on every route
 function layout(content) {
     return [
         content,
+        m(contextMenuComponent),
         page.loadToast(),
         page.components.dialog.loadDialogs()
     ];
@@ -110,6 +114,13 @@ const routes = {
             return layout(pageLayout(navigatorControl.renderContent()));
         }
     },
+    "/explorer": {
+        oninit: function(v) { explorerControl.view.oninit(v); },
+        onremove: function() { if (explorerControl.view.onremove) explorerControl.view.onremove(); },
+        view: function() {
+            return layout(pageLayout(explorerControl.renderContent()));
+        }
+    },
     "/new/:type/:objectId": {
         oninit: function (v) { v.attrs.new = true; objectPageControl.view.oninit(v); },
         oncreate: function (v) { if (objectPageControl.view.oncreate) objectPageControl.view.oncreate(v); },
@@ -152,8 +163,7 @@ async function refreshApplication() {
         page.wss.close();
         stopPolling();
         rt = "/sig";
-        m.route.set(rt);
-        m.route(document.body, rt, routes);
+        m.route(document.body, "/sig", routes);
     } else {
         am7client.currentOrganization = usr.organizationPath;
         let app = await am7client.application();
@@ -178,8 +188,13 @@ async function refreshApplication() {
         let featureRoutes = await loadFeatureRoutes();
         let allRoutes = Object.assign({}, routes, featureRoutes);
 
-        m.route.set(rt);
-        m.route(document.body, rt, allRoutes);
+        // Initialize Mithril router with all routes (core + feature).
+        // Use /main as the default fallback, then navigate to the desired route.
+        // This ensures feature routes are registered before navigation occurs.
+        m.route(document.body, "/main", allRoutes);
+        if (rt && rt !== "/main") {
+            m.route.set(rt);
+        }
     }
 
     page.router = {

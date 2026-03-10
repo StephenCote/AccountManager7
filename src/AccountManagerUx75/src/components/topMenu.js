@@ -1,4 +1,6 @@
 import m from 'mithril';
+import { am7client } from '../core/am7client.js';
+import { applicationPath } from '../core/config.js';
 import { page } from '../core/pageClient.js';
 import { getMenuItems } from '../features.js';
 import { notificationButton } from './notifications.js';
@@ -40,6 +42,31 @@ function initTheme() {
     }
 }
 
+function profileImage(userName) {
+    let profilePath = null;
+    if (page.user) {
+        profilePath = am7client.getAttributeValue(page.user, "v1-profile-path", null);
+    }
+    if (profilePath) {
+        return m("div", { class: "flex items-center gap-1 mx-2" }, [
+            m("img", {
+                src: applicationPath + "/thumbnail/" + profilePath + "/48x48",
+                class: "w-8 h-8 rounded-full object-cover",
+                onerror: function (e) { e.target.style.display = 'none'; }
+            }),
+            m("span", { class: "text-sm text-gray-500 dark:text-gray-400" }, userName)
+        ]);
+    }
+    // Fallback: initials circle or generic icon
+    let initials = userName ? userName.charAt(0).toUpperCase() : '?';
+    return m("div", { class: "flex items-center gap-1 mx-2" }, [
+        m("div", {
+            class: "w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-sm font-medium text-gray-700 dark:text-gray-200"
+        }, initials),
+        m("span", { class: "text-sm text-gray-500 dark:text-gray-400" }, userName)
+    ]);
+}
+
 const topMenu = {
     oninit: function () {
         initTheme();
@@ -73,7 +100,7 @@ const topMenu = {
             }, m("span", { class: "material-symbols-outlined" }, "density_small")),
             ...featureButtons,
             m(notificationButton),
-            m("span", { class: "text-sm text-gray-500 dark:text-gray-400 mx-2" }, userName),
+            profileImage(userName),
             m("button", {
                 class: "menu-button",
                 onclick: function () { page.logout(); },

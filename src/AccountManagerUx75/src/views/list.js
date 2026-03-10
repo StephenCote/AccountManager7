@@ -36,6 +36,16 @@ function newListControl() {
     let infiniteScroll = false;
     let infiniteLoading = false;
 
+    // 11b-1: Group navigation state
+    let childGroups = null;
+    let childGroupsLoading = false;
+    let groupPath = null;          // breadcrumb path segments [{name, objectId}]
+
+    // 11b-2: Search state
+    let searchQuery = '';
+    let searchTimer = null;
+    let searchActive = false;
+
     let pagination = newPaginationControl();
 
     // ------------------------------------------------------------------
@@ -82,6 +92,20 @@ function newListControl() {
         m.redraw();
     }
 
+    function showListContextMenu(e, item) {
+        let cm = page.components.contextMenu;
+        if (!cm) return;
+        cm.show(e, [
+            { label: 'Open', icon: 'open_in_new', action: function () { navigateDown(item); } },
+            { label: 'Edit', icon: 'edit', action: function () { editItem(item); } },
+            { divider: true },
+            { label: 'Delete', icon: 'delete', action: function () {
+                selectResult(item);
+                deleteSelected();
+            }}
+        ]);
+    }
+
     // ------------------------------------------------------------------
     //  Navigation
     // ------------------------------------------------------------------
@@ -115,6 +139,197 @@ function newListControl() {
         let obj = sel || results[idx[0]];
         let ltype = obj[am7model.jsonModelKey] || baseListType;
         m.route.set('/' + (byParent ? 'p' : '') + 'list/' + (containerMode ? baseListType : ltype) + '/' + obj.objectId, { key: Date.now() });
+    }
+
+    // ------------------------------------------------------------------
+    //  11b-1: Group navigation — child groups + breadcrumb path
+    // ------------------------------------------------------------------
+
+    function loadChildGroups(containerId) {
+        if (!containerId || childGroupsLoading) return;
+        childGroupsLoading = true;
+        childGroups = null;
+
+        // Search for child groups whose parentId matches this container
+        let q = am7client.newQuery('auth.group');
+        q.entity.request = ['id', 'objectId', 'name', 'type', 'path', 'groupId', 'parentId'];
+        q.field('organizationId', page.user.organizationId);
+
+        // Resolve containerId (objectId) to numeric id for parentId filter
+        let cq = am7client.newQuery('auth.group');
+        cq.entity.request = ['id', 'objectId'];
+        cq.field('objectId', containerId);
+        page.search(cq).then(function (qr) {
+            if (!qr || !qr.results || !qr.results.length) {
+                childGroupsLoading = false;
+                childGroups = [];
+                m.redraw();
+                return;
+            }
+            let numericId = qr.results[0].id;
+            q.field('parentId', numericId);
+            q.range(0, 200);
+            q.sort('name');
+            q.cache(false);
+            am7client.search(q, function (result) {
+                childGroupsLoading = false;
+                let items = result;
+                if (result && result.results) items = result.results;
+                childGroups = (items || []).filter(function (g) {
+                    return g.name && !g.name.match(/^\./);
+                });
+                m.redraw();
+            });
+        });
+    }
+
+    function loadGroupPath(containerId) {
+        if (!containerId) { groupPath = null; return; }
+        groupPath = null;
+
+        // Fetch the container to get its path, then build breadcrumb segments
+        let cq = am7client.newQuery('auth.group');
+        cq.entity.request = ['id', 'objectId', 'name', 'path'];
+        cq.field('objectId', containerId);
+        page.search(cq).then(function (qr) {
+            if (!qr || !qr.results || !qr.results.length) return;
+            let container = qr.results[0];
+            let fullPath = container.path;
+            if (!fullPath) return;
+
+            // Build path segments from the full path
+            let segments = fullPath.split('/').filter(function (s) { return s.length > 0; });
+            let pathPromises = [];
+            let accumulated = '';
+
+            for (let i = 0; i < segments.length; i++) {
+                accumulated += '/' + segments[i];
+                let segPath = accumulated;
+                let segName = segments[i];
+                pathPromises.push({ name: segName, path: segPath });
+            }
+
+            // Resolve each path segment to get objectId for navigation
+            groupPath = pathPromises.map(function (seg) {
+                return { name: seg.name, path: seg.path, objectId: null };
+            });
+            // Add current container name at the end
+            groupPath[groupPath.length - 1].objectId = containerId;
+            groupPath[groupPath.length - 1].name = container.name || segments[segments.length - 1];
+            m.redraw();
+
+            // Resolve earlier segments lazily
+            for (let i = 0; i < groupPath.length - 1; i++) {
+                (function (idx, spath) {
+                    am7client.find('auth.group', 'data', spath, function (v) {
+                        if (v && groupPath && groupPath[idx]) {
+                            groupPath[idx].objectId = v.objectId;
+                            m.redraw();
+                        }
+                    });
+                })(i, groupPath[i].path);
+            }
+        });
+    }
+
+    function navigateToChildGroup(group) {
+        let type = baseListType || listType;
+        childGroups = null;
+        groupPath = null;
+        m.route.set('/list/' + type + '/' + group.objectId, { key: Date.now() });
+    }
+
+    function renderChildGroups() {
+        if (!childGroups || !childGroups.length) return null;
+        if (gridMode >= 1) {
+            // Grid/gallery: render as folder cards
+            let isSmall = (gridMode === 1);
+            return childGroups.map(function (group) {
+                return m('div', {
+                    class: 'group relative rounded-lg border overflow-hidden cursor-pointer transition-shadow hover:shadow-md border-gray-200 dark:border-gray-700',
+                    onclick: function () { navigateToChildGroup(group); }
+                }, [
+                    m('div', { class: 'aspect-square bg-gray-50 dark:bg-gray-800 flex items-center justify-center' },
+                        m('span', { class: 'material-symbols-outlined text-yellow-500 dark:text-yellow-400', style: 'font-size:' + (isSmall ? '32px' : '48px') }, 'folder')),
+                    m('div', { class: isSmall ? 'p-1' : 'p-2' },
+                        m('div', { class: 'text-xs font-medium text-gray-700 dark:text-gray-300 truncate' }, group.name))
+                ]);
+            });
+        }
+        // Table mode: render as folder rows
+        return m('tbody', { class: 'child-groups-section' },
+            childGroups.map(function (group) {
+                return m('tr', {
+                    class: 'list-tr cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20',
+                    onclick: function () { navigateToChildGroup(group); },
+                    ondblclick: function () { navigateToChildGroup(group); }
+                }, [
+                    m('td', { class: 'list-td list-td-check' },
+                        m('span', { class: 'material-symbols-outlined text-yellow-500', style: 'font-size:18px' }, 'folder')),
+                    m('td', { class: 'list-td', colspan: 10 },
+                        m('span', { class: 'font-medium' }, group.name))
+                ]);
+            })
+        );
+    }
+
+    function renderGroupBreadcrumb() {
+        if (!groupPath || !groupPath.length) return null;
+        let type = baseListType || listType;
+        return m('div', { class: 'flex items-center gap-1 px-2 py-1 text-sm text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800' },
+            groupPath.map(function (seg, i) {
+                let isLast = (i === groupPath.length - 1);
+                let sep = i > 0 ? m('span', { class: 'mx-0.5' }, '/') : null;
+                if (isLast || !seg.objectId) {
+                    return [sep, m('span', { class: isLast ? 'font-medium text-gray-700 dark:text-gray-300' : '' }, seg.name)];
+                }
+                return [sep, m('button', {
+                    class: 'hover:text-blue-600 dark:hover:text-blue-400 hover:underline',
+                    onclick: function () {
+                        childGroups = null;
+                        groupPath = null;
+                        m.route.set('/list/' + type + '/' + seg.objectId, { key: Date.now() });
+                    }
+                }, seg.name)];
+            })
+        );
+    }
+
+    // ------------------------------------------------------------------
+    //  11b-2: Search — debounced server-side search
+    // ------------------------------------------------------------------
+
+    function doSearch(value) {
+        searchQuery = value || '';
+        if (searchTimer) clearTimeout(searchTimer);
+        if (!searchQuery.length) {
+            searchActive = false;
+            navFilter = null;
+            pagination.new();
+            initParams(lastVnode);
+            updatePagination(lastVnode);
+            m.redraw();
+            return;
+        }
+        searchTimer = setTimeout(function () {
+            searchActive = true;
+            navFilter = searchQuery;
+            pagination.new();
+            initParams(lastVnode);
+            updatePagination(lastVnode);
+            m.redraw();
+        }, 300);
+    }
+
+    function clearSearch() {
+        searchQuery = '';
+        searchActive = false;
+        if (searchTimer) clearTimeout(searchTimer);
+        navFilter = null;
+        pagination.new();
+        initParams(lastVnode);
+        updatePagination(lastVnode);
+        m.redraw();
     }
 
     // ------------------------------------------------------------------
@@ -205,14 +420,130 @@ function newListControl() {
             items = pg.pageResults[pg.currentPage];
         }
 
-        if (!items || !items.length) {
+        let hasItems = items && items.length;
+        let hasChildGroups = childGroups && childGroups.length && !searchActive;
+
+        if (!hasItems && !hasChildGroups) {
             return m('div', { class: 'list-empty' }, 'No results');
         }
 
-        if (gridMode === 3) return renderGallery(items);
-        if (gridMode === 2) return renderGrid(items, 'large');
-        if (gridMode === 1) return renderGrid(items, 'small');
-        return renderSimpleTable(items);
+        if (gridMode === 3) return renderGallery(items || []);
+        if (gridMode >= 1) return renderGridWithGroups(items || [], gridMode === 1 ? 'small' : 'large');
+        return renderSimpleTableWithGroups(items || []);
+    }
+
+    function renderGridWithGroups(items, size) {
+        let isSmall = (size === 'small');
+        let gridClass = isSmall
+            ? 'grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2 p-2'
+            : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-3';
+        let folderCards = (!searchActive ? renderChildGroups() : null) || [];
+        let itemCards = renderGridItems(items, size);
+        if (!folderCards.length && !itemCards.length) return m('div', { class: 'list-empty' }, 'No results');
+        return m('div', { class: gridClass }, [...folderCards, ...itemCards]);
+    }
+
+    function renderGridItems(items, size) {
+        if (!items || !items.length) return [];
+        let isSmall = (size === 'small');
+        let thumbSize = isSmall ? '128x128' : '256x256';
+        let iconSize = isSmall ? '32px' : '48px';
+
+        return items.map(function(item) {
+            let state = pagination.state(item);
+            let checked = !!(state && state.checked);
+            let thumb = getItemThumbnail(item, thumbSize);
+            let dndAttrs = {};
+            if (page.components.dnd) {
+                dndAttrs.draggable = "true";
+                dndAttrs.ondragstart = page.components.dnd.dragStartHandler(item);
+            }
+
+            return m('div', Object.assign({
+                class: 'group relative rounded-lg border overflow-hidden cursor-pointer transition-shadow hover:shadow-md'
+                    + (checked ? ' border-blue-500 ring-2 ring-blue-300 dark:ring-blue-700' : ' border-gray-200 dark:border-gray-700'),
+                onclick: function() { selectResult(item); },
+                ondblclick: function() { navigateDown(item); },
+                oncontextmenu: function(e) { showListContextMenu(e, item); }
+            }, dndAttrs), [
+                thumb
+                    ? m('div', { class: 'aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center overflow-hidden' },
+                        m('img', { src: thumb.attrs.src, class: 'w-full h-full object-cover' }))
+                    : m('div', { class: 'aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center' },
+                        m('span', { class: 'material-symbols-outlined text-gray-300 dark:text-gray-600', style: 'font-size:' + iconSize }, 'description')),
+                m('div', { class: isSmall ? 'p-1' : 'p-2' }, [
+                    m('div', { class: 'text-xs font-medium text-gray-700 dark:text-gray-300 truncate' }, item.name || '(unnamed)'),
+                    !isSmall && item.description ? m('div', { class: 'text-xs text-gray-400 truncate mt-0.5' }, item.description) : null
+                ]),
+                checked ? m('div', { class: 'absolute top-1 right-1' },
+                    m('span', { class: 'material-symbols-outlined text-blue-500', style: 'font-size:' + (isSmall ? '16px' : '20px') }, 'check_circle')
+                ) : null
+            ]);
+        });
+    }
+
+    function renderSimpleTableWithGroups(items) {
+        let childGroupRows = (!searchActive ? renderChildGroups() : null);
+        let hasItems = items && items.length;
+
+        if (!hasItems && !childGroupRows) {
+            return m('div', { class: 'list-empty' }, 'No results');
+        }
+
+        let type = hasItems ? items[0][am7model.jsonModelKey] : null;
+        let mod = type ? am7model.getModel(type) : null;
+        let columns = ['name'];
+        if (mod) {
+            let allFields = am7model.getModelFields(mod);
+            let fieldNames = allFields.map(f => f.name);
+            if (fieldNames.includes('description')) columns.push('description');
+            if (fieldNames.includes('groupPath')) columns.push('groupPath');
+            if (fieldNames.includes('type') && !columns.includes('type')) columns.push('type');
+        }
+
+        let showThumb = hasItems && items.some(function(item) {
+            let ct = item.contentType || '';
+            return ct.match(/^image/) ||
+                (item.profile && item.profile.portrait && item.profile.portrait.contentType);
+        });
+
+        let rows = hasItems ? items.map((item) => {
+            let state = pagination.state(item);
+            let checked = !!(state && state.checked);
+            let dndAttrs = {};
+            if (page.components.dnd) {
+                dndAttrs.draggable = "true";
+                dndAttrs.ondragstart = page.components.dnd.dragStartHandler(item);
+            }
+            return m('tr', Object.assign({
+                class: 'list-tr' + (checked ? ' list-tr-selected' : ''),
+                onclick: () => selectResult(item),
+                ondblclick: () => navigateDown(item),
+                oncontextmenu: (e) => showListContextMenu(e, item)
+            }, dndAttrs), [
+                m('td', { class: 'list-td list-td-check' },
+                    m('input', {
+                        type: 'checkbox',
+                        checked,
+                        onclick: (e) => { e.stopPropagation(); selectResult(item); }
+                    })
+                ),
+                showThumb ? m('td', { class: 'list-td', style: 'width:40px' }, getItemThumbnail(item)) : null,
+                ...columns.map(c => m('td', { class: 'list-td' }, displayValue(item, c)))
+            ]);
+        }) : [];
+
+        return m('table', { class: 'list-table' }, [
+            m('thead', [
+                m('tr', [
+                    m('th', { class: 'list-th list-th-check' }, ''),
+                    showThumb ? m('th', { class: 'list-th', style: 'width:40px' }, '') : null,
+                    ...columns.map(c => m('th', { class: 'list-th' }, c))
+                ])
+            ]),
+            childGroupRows,
+            m('tbody', rows)
+        ]);
     }
 
     function checkScrollPagination(e) {
@@ -236,66 +567,6 @@ function newListControl() {
             updatePagination(lastVnode);
         }
         m.redraw();
-    }
-
-    function renderSimpleTable(items) {
-        if (!items || !items.length) return m('div', 'No results');
-
-        let type = items[0][am7model.jsonModelKey];
-        let mod = type ? am7model.getModel(type) : null;
-
-        // Choose display columns: name, plus a few useful inherited fields
-        let columns = ['name'];
-        if (mod) {
-            let allFields = am7model.getModelFields(mod);
-            let fieldNames = allFields.map(f => f.name);
-            if (fieldNames.includes('description')) columns.push('description');
-            if (fieldNames.includes('groupPath')) columns.push('groupPath');
-            if (fieldNames.includes('type') && !columns.includes('type')) columns.push('type');
-        }
-
-        // Check if items have image content type or portrait for thumbnail column
-        let showThumb = items.some(function(item) {
-            let ct = item.contentType || '';
-            return ct.match(/^image/) ||
-                (item.profile && item.profile.portrait && item.profile.portrait.contentType);
-        });
-
-        let rows = items.map((item) => {
-            let state = pagination.state(item);
-            let checked = !!(state && state.checked);
-            let dndAttrs = {};
-            if (page.components.dnd) {
-                dndAttrs.draggable = "true";
-                dndAttrs.ondragstart = page.components.dnd.dragStartHandler(item);
-            }
-            return m('tr', Object.assign({
-                class: 'list-tr' + (checked ? ' list-tr-selected' : ''),
-                onclick: () => selectResult(item),
-                ondblclick: () => navigateDown(item)
-            }, dndAttrs), [
-                m('td', { class: 'list-td list-td-check' },
-                    m('input', {
-                        type: 'checkbox',
-                        checked,
-                        onclick: (e) => { e.stopPropagation(); selectResult(item); }
-                    })
-                ),
-                showThumb ? m('td', { class: 'list-td', style: 'width:40px' }, getItemThumbnail(item)) : null,
-                ...columns.map(c => m('td', { class: 'list-td' }, displayValue(item, c)))
-            ]);
-        });
-
-        return m('table', { class: 'list-table' }, [
-            m('thead', [
-                m('tr', [
-                    m('th', { class: 'list-th list-th-check' }, ''),
-                    showThumb ? m('th', { class: 'list-th', style: 'width:40px' }, '') : null,
-                    ...columns.map(c => m('th', { class: 'list-th' }, c))
-                ])
-            ]),
-            m('tbody', rows)
-        ]);
     }
 
     function getItemThumbnail(item, size) {
@@ -322,55 +593,8 @@ function newListControl() {
     }
 
     // ------------------------------------------------------------------
-    //  Grid / Carousel rendering
+    //  Gallery rendering
     // ------------------------------------------------------------------
-
-    function renderGrid(items, size) {
-        if (!items || !items.length) return m('div', { class: 'p-4 text-gray-400' }, 'No results');
-
-        let isSmall = (size === 'small');
-        let gridClass = isSmall
-            ? 'grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2 p-2'
-            : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-3';
-        let thumbSize = isSmall ? '128x128' : '256x256';
-        let iconSize = isSmall ? '32px' : '48px';
-
-        return m('div', { class: gridClass },
-            items.map(function(item) {
-                let state = pagination.state(item);
-                let checked = !!(state && state.checked);
-                let thumb = getItemThumbnail(item, thumbSize);
-                let dndAttrs = {};
-                if (page.components.dnd) {
-                    dndAttrs.draggable = "true";
-                    dndAttrs.ondragstart = page.components.dnd.dragStartHandler(item);
-                }
-
-                return m('div', Object.assign({
-                    class: 'group relative rounded-lg border overflow-hidden cursor-pointer transition-shadow hover:shadow-md'
-                        + (checked ? ' border-blue-500 ring-2 ring-blue-300 dark:ring-blue-700' : ' border-gray-200 dark:border-gray-700'),
-                    onclick: function() { selectResult(item); },
-                    ondblclick: function() { navigateDown(item); }
-                }, dndAttrs), [
-                    // Thumbnail area
-                    thumb
-                        ? m('div', { class: 'aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center overflow-hidden' },
-                            m('img', { src: thumb.attrs.src, class: 'w-full h-full object-cover' }))
-                        : m('div', { class: 'aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center' },
-                            m('span', { class: 'material-symbols-outlined text-gray-300 dark:text-gray-600', style: 'font-size:' + iconSize }, 'description')),
-                    // Info
-                    m('div', { class: isSmall ? 'p-1' : 'p-2' }, [
-                        m('div', { class: 'text-xs font-medium text-gray-700 dark:text-gray-300 truncate' }, item.name || '(unnamed)'),
-                        !isSmall && item.description ? m('div', { class: 'text-xs text-gray-400 truncate mt-0.5' }, item.description) : null
-                    ]),
-                    // Check overlay
-                    checked ? m('div', { class: 'absolute top-1 right-1' },
-                        m('span', { class: 'material-symbols-outlined text-blue-500', style: 'font-size:' + (isSmall ? '16px' : '20px') }, 'check_circle')
-                    ) : null
-                ]);
-            })
-        );
-    }
 
     function galleryNav(delta, items) {
         let pg = pagination.pages();
@@ -458,6 +682,26 @@ function newListControl() {
     //  Batch operations
     // ------------------------------------------------------------------
 
+    async function bulkApplyTags() {
+        let selected = getSelected();
+        if (!selected.length) return;
+        let total = selected.length;
+        let done = 0;
+        let toastId = page.toast('info', 'Applying tags: 0/' + total, -1);
+        for (let i = 0; i < selected.length; i++) {
+            try {
+                await new Promise(function (res) {
+                    am7client.applyImageTags(selected[i].objectId, function () { res(); });
+                });
+            } catch (e) {
+                page.toast('error', 'Tag failed: ' + (selected[i].name || selected[i].objectId));
+            }
+            done++;
+            // Update progress toast by removing old and adding new
+        }
+        page.toast('success', 'Tags applied to ' + done + '/' + total + ' items');
+    }
+
     function selectAll() {
         let pg = pagination.pages();
         let items = pg.pageResults[pg.currentPage];
@@ -509,6 +753,9 @@ function newListControl() {
         let gridIcons = ['view_list', 'grid_view', 'apps', 'view_carousel'];
         buttons.push(iconBtn('button', gridIcons[gridMode] || 'view_list', '', toggleGrid));
 
+        // Bulk apply image tags
+        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'label', '', bulkApplyTags));
+
         // Select all
         buttons.push(iconBtn('button', 'select_all', '', selectAll));
 
@@ -537,6 +784,30 @@ function newListControl() {
                 }
             }
         });
+    }
+
+    function searchInput() {
+        return m('div', { class: 'flex items-center gap-1' }, [
+            m('input', {
+                type: 'text',
+                class: 'text-field',
+                placeholder: 'Search...',
+                value: searchQuery,
+                oninput: function (e) { doSearch(e.target.value); },
+                onkeydown: function (e) {
+                    if (e.key === 'Escape') { clearSearch(); e.target.value = ''; }
+                    if (e.key === 'Enter') {
+                        if (searchTimer) clearTimeout(searchTimer);
+                        doSearch(e.target.value);
+                    }
+                }
+            }),
+            searchActive ? m('button', {
+                class: 'button',
+                onclick: function () { clearSearch(); },
+                title: 'Clear search'
+            }, m('span', { class: 'material-symbols-outlined material-icons-24' }, 'close')) : null
+        ]);
     }
 
     function pageButtons() {
@@ -601,6 +872,11 @@ function newListControl() {
         oncreate: function (vnode) {
             lastVnode = vnode;
             updatePagination(vnode);
+            // Load child groups and path for group navigation (11b-1)
+            if (listContainerId) {
+                loadChildGroups(listContainerId);
+                loadGroupPath(listContainerId);
+            }
             // Track this list view as a recent item
             let mod = am7model.getModel(listType);
             if (mod && panel.trackRecent) {
@@ -614,13 +890,26 @@ function newListControl() {
             let newType = vnode.attrs.type || m.route.param('type');
             let newId = vnode.attrs.objectId || m.route.param('objectId');
             if (newType !== listType || newId !== listContainerId) {
+                let oldContainerId = listContainerId;
                 initParams(vnode);
                 updatePagination(vnode);
+                // Reload child groups and path if container changed (11b-1)
+                if (listContainerId && listContainerId !== oldContainerId) {
+                    childGroups = null;
+                    groupPath = null;
+                    loadChildGroups(listContainerId);
+                    loadGroupPath(listContainerId);
+                }
             }
         },
 
         onremove: function () {
             navFilter = null;
+            searchQuery = '';
+            searchActive = false;
+            if (searchTimer) clearTimeout(searchTimer);
+            childGroups = null;
+            groupPath = null;
             pagination.stop();
         },
 
@@ -636,12 +925,15 @@ function newListControl() {
             ? 'fixed inset-0 z-50 bg-white dark:bg-gray-900 flex flex-col overflow-hidden'
             : 'flex-1 flex flex-col overflow-hidden';
         return m('div', { class: containerClass, style: fullMode ? '' : 'flex:1;display:flex;flex-direction:column;overflow:hidden' }, [
+            // Group breadcrumb (11b-1)
+            listContainerId ? renderGroupBreadcrumb() : null,
             // Toolbar row
             m('div', { class: 'result-nav-outer' }, [
                 m('div', { class: 'result-nav-inner' }, [
                     m('div', { class: 'result-nav tab-container' }, [
                         ...toolbar(type),
-                        filterInput()
+                        filterInput(),
+                        searchInput()
                     ]),
                     pageButtons()
                 ])
@@ -660,6 +952,11 @@ function newListControl() {
     // Expose pagination on the controller for external access
     listPage.pagination = function () {
         return pagination;
+    };
+
+    // Expose internal helpers for testing (11b)
+    listPage._testHelpers = function () {
+        return { doSearch, clearSearch, navigateToChildGroup, renderGroupBreadcrumb, renderChildGroups };
     };
 
     return listPage;

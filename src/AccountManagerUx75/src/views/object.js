@@ -653,7 +653,18 @@ function newObjectPage() {
             page.iconButton('button' + (fullMode ? ' active' : ''),
                 fullMode ? 'close_fullscreen' : 'open_in_new', '', toggleFullMode),
             (isDesignable() ? page.iconButton('button' + (designMode ? ' active' : ''),
-                'code', '', toggleDesignMode) : '')
+                'code', '', toggleDesignMode) : ''),
+            (!objectNew && entity ? m('button', {
+                class: 'button',
+                title: page.isFavorite(entity) ? 'Remove from favorites' : 'Add to favorites',
+                onclick: async function () {
+                    await page.toggleFavorite(entity);
+                    m.redraw();
+                }
+            }, m('span', {
+                class: 'material-symbols-outlined' + (page.isFavorite(entity) ? ' filled' : ''),
+                style: page.isFavorite(entity) ? 'color:#eab308' : ''
+            }, 'star')) : '')
         ];
 
         // Add form commands to toolbar
@@ -711,6 +722,7 @@ function newObjectPage() {
             objectId = vnode.attrs.objectId || m.route.param('objectId');
             objectNew = vnode.attrs.new || (m.route.get() && m.route.get().match(/^\/new/gi));
             loadEntity();
+            if (!objectNew && objectType) page.checkFavorites(objectType);
         },
         oncreate: function () {
             document.addEventListener('keydown', onKeyDown);

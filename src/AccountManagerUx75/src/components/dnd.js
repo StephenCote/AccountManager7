@@ -87,18 +87,48 @@ const dnd = {
     },
 
     /**
-     * Blend operation: check if working set contains config objects
-     * that should be combined (e.g., chatConfig + promptConfig → navigate to chat).
+     * Blend operation: check if working set contains objects
+     * that should be combined. Matches Ux7 blend types:
+     *   chatConfig+promptConfig → chat, tag+items → tag membership,
+     *   role+actors → role membership, group+items → group membership,
+     *   charPerson+charPerson → character blend
      * @returns {object|null} Blend result with type and items, or null
      */
     checkBlend: function() {
         if (workingSet.length < 2) return null;
         let schemas = workingSet.map(function(i) { return i.schema || i['.type']; });
+
+        // chatConfig + promptConfig → navigate to chat
         let hasChatConfig = schemas.includes("olio.llm.chatConfig");
         let hasPromptConfig = schemas.includes("olio.llm.promptConfig") || schemas.includes("olio.llm.promptTemplate");
         if (hasChatConfig && hasPromptConfig) {
             return { type: "chatBlend", items: workingSet.slice() };
         }
+
+        // tag + tagged items → tag membership
+        let hasTag = schemas.includes("data.tag");
+        if (hasTag && schemas.some(function(s) { return s !== "data.tag"; })) {
+            return { type: "tagBlend", items: workingSet.slice() };
+        }
+
+        // role + actors → role membership
+        let hasRole = schemas.includes("auth.role");
+        if (hasRole && schemas.some(function(s) { return s !== "auth.role"; })) {
+            return { type: "roleBlend", items: workingSet.slice() };
+        }
+
+        // group (bucket) + items → group membership
+        let hasGroup = schemas.includes("auth.group");
+        if (hasGroup && schemas.some(function(s) { return s !== "auth.group"; })) {
+            return { type: "groupBlend", items: workingSet.slice() };
+        }
+
+        // charPerson + charPerson → character blend
+        let charCount = schemas.filter(function(s) { return s === "olio.charPerson"; }).length;
+        if (charCount >= 2) {
+            return { type: "characterBlend", items: workingSet.slice() };
+        }
+
         return null;
     }
 };

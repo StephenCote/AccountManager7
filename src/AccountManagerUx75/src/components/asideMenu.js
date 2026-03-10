@@ -31,6 +31,45 @@ function navigateToCategory(cat) {
     }
 }
 
+function favoritesSection() {
+    let ctx = page.context();
+    let favItems = [];
+    Object.keys(ctx.favorites).forEach(function (type) {
+        let items = ctx.favorites[type];
+        if (items && items.length) {
+            items.forEach(function (item) { favItems.push(item); });
+        }
+    });
+    if (!favItems.length) return null;
+    return [
+        m("div", { class: "p-4 border-t border-gray-200 dark:border-gray-700" }, [
+            m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, [
+                m("span", { class: "material-symbols-outlined material-icons-cm mr-2", style: "color:#eab308" }, "star"),
+                "Favorites"
+            ])
+        ]),
+        m("ul", { class: "p-2" },
+            favItems.map(function (item) {
+                let type = item[am7model.jsonModelKey] || '';
+                let mod = am7model.getModel(type);
+                let icon = (mod && mod.icon) ? mod.icon : 'description';
+                return m("li", { class: "py-1" },
+                    m("button", {
+                        class: "w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2",
+                        onclick: function () {
+                            if (page.navigable) page.navigable.drawer(true);
+                            m.route.set('/view/' + type + '/' + item.objectId);
+                        }
+                    }, [
+                        m("span", { class: "material-symbols-outlined material-icons-cm" }, icon),
+                        m("span", { class: "truncate" }, item.name || '(unnamed)')
+                    ])
+                );
+            })
+        )
+    ];
+}
+
 const asideMenu = {
     view: function () {
         let cats = am7model.categories || [];
@@ -39,7 +78,7 @@ const asideMenu = {
             if (mi.devOnly && !page.devMode) return false;
             return true;
         });
-        return m("aside", { class: "transition transition-0" }, [
+        return m("aside", { class: "transition transition-0", style: "overflow-y:auto;max-height:100vh" }, [
             m("div", { class: "p-4 border-b border-gray-200 dark:border-gray-700" }, [
                 m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, "Categories")
             ]),
@@ -56,6 +95,36 @@ const asideMenu = {
                     );
                 })
             ),
+            // Explorer + Navigator quick links
+            m("div", { class: "p-4 border-t border-gray-200 dark:border-gray-700" }, [
+                m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, "Browse")
+            ]),
+            m("ul", { class: "p-2" }, [
+                m("li", { class: "py-1" },
+                    m("button", {
+                        class: "w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2",
+                        onclick: function () {
+                            if (page.navigable) page.navigable.drawer(true);
+                            m.route.set('/explorer');
+                        }
+                    }, [
+                        m("span", { class: "material-symbols-outlined material-icons-cm" }, "folder_open"),
+                        m("span", {}, "Explorer")
+                    ])
+                ),
+                m("li", { class: "py-1" },
+                    m("button", {
+                        class: "w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2",
+                        onclick: function () {
+                            if (page.navigable) page.navigable.drawer(true);
+                            m.route.set('/nav');
+                        }
+                    }, [
+                        m("span", { class: "material-symbols-outlined material-icons-cm" }, "account_tree"),
+                        m("span", {}, "Navigator")
+                    ])
+                )
+            ]),
             asideItems.length ? [
                 m("div", { class: "p-4 border-t border-gray-200 dark:border-gray-700" }, [
                     m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, "Features")
@@ -76,7 +145,8 @@ const asideMenu = {
                         );
                     })
                 )
-            ] : null
+            ] : null,
+            favoritesSection()
         ]);
     }
 };

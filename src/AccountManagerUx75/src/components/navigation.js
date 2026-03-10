@@ -3,15 +3,25 @@ import { page } from '../core/pageClient.js';
 import { topMenu } from './topMenu.js';
 import { asideMenu } from './asideMenu.js';
 import { breadcrumb } from './breadcrumb.js';
+import { FullscreenManager } from './FullscreenManager.js';
+
+let fullscreenMgr = new FullscreenManager();
 
 function navigable() {
     let nav = {
         drawerOpen: false,
+        fullscreenManager: fullscreenMgr,
         init: function () {
             document.addEventListener("keydown", function (e) {
                 if (e.key === 'Escape') {
                     if (page.components.dialog) page.components.dialog.close();
                     nav.drawer(true);
+                }
+                // Ctrl+F11: toggle fullscreen
+                if (e.key === 'F11' && e.ctrlKey) {
+                    e.preventDefault();
+                    let target = document.querySelector('.flex-1.overflow-auto') || document.body;
+                    fullscreenMgr.toggleFullscreen(target);
                 }
             });
         },

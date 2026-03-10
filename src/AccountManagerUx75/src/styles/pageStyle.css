@@ -64,6 +64,50 @@
     color: #FF0000;
 }
 
+/* Context menu */
+.context-menu {
+    min-width: 160px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    padding: 4px 0;
+    animation: fadeIn 0.1s ease-out;
+}
+.dark .context-menu {
+    background: #1f2937;
+    border-color: #374151;
+}
+.context-menu-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 6px 12px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 13px;
+    color: #374151;
+    text-align: left;
+}
+.dark .context-menu-item {
+    color: #d1d5db;
+}
+.context-menu-item:hover {
+    background: #f3f4f6;
+}
+.dark .context-menu-item:hover {
+    background: #374151;
+}
+.context-menu-divider {
+    height: 1px;
+    margin: 4px 0;
+    background: #e5e7eb;
+}
+.dark .context-menu-divider {
+    background: #374151;
+}
+
 /* Select dropdown arrow on hover */
 .reactive-arrow:hover {
     background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/></svg>");

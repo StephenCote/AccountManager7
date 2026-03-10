@@ -81,6 +81,10 @@ page.components.emoji = emoji;
 import { newTabComponent } from './components/tab.js';
 page.components.tab = newTabComponent;
 
+// Context menu
+import { contextMenu } from './components/contextMenu.js';
+page.components.contextMenu = contextMenu;
+
 // Game stream (WebSocket game action streaming)
 import { gameStream } from './core/gameStream.js';
 page.components.gameStream = gameStream;

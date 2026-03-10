@@ -83,6 +83,19 @@ function newTreeComponent() {
         inlineType(mtx.listChildType, inlineAdd);
     }
 
+    function showTreeContextMenu(e, node, mtx) {
+        let cm = page.components.contextMenu;
+        if (!cm) return;
+        selectedNode = node.objectId;
+        cm.show(e, [
+            { label: mtx.expanded ? 'Collapse' : 'Expand', icon: mtx.expanded ? 'expand_less' : 'expand_more', action: function () { expandNode(node); } },
+            { label: 'Add Child', icon: 'add', action: function () { addNew(); } },
+            { divider: true },
+            { label: 'Refresh', icon: 'refresh', action: function () { resetNode(node.objectId); am7client.clearCache("auth.group", true); m.redraw(); } },
+            { label: 'Delete', icon: 'delete', action: function () { deleteNode(); } }
+        ]);
+    }
+
     function deleteNode() {
         if (!selectedNode || selectedNode === origin.objectId) return;
         let node = treeMatrix[selectedNode];
@@ -287,7 +300,8 @@ function newTreeComponent() {
                 class: "flex items-center gap-1 px-2 py-1 cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-gray-800"
                     + (isSelected ? " bg-blue-50 dark:bg-blue-900/30" : ""),
                 onclick: function() { selectNode(node); },
-                ondblclick: function() { expandNode(node); }
+                ondblclick: function() { expandNode(node); },
+                oncontextmenu: function(e) { showTreeContextMenu(e, node, mtx); }
             }, [
                 m("span", { class: icoClass, style: "font-size:18px" }, mtx.ico),
                 m("span", {

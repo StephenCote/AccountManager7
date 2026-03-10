@@ -1,7 +1,7 @@
 # ISO 42001 Compliance Dashboard — Design & Implementation Plan
 
 **Parent project:** AccountManagerUx75
-**Status:** DEFERRED — waiting on backend compliance endpoints
+**Status:** PLANNED — Phase 4 in `Ux75ImplementationPlan.md` (full backend + frontend)
 **Current stub:** `AccountManagerUx75/src/features/iso42001.js` (live policy event monitor)
 
 ---

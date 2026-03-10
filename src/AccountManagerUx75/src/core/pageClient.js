@@ -511,6 +511,62 @@ function listByType(type) {
     }
 }
 
+// --- Favorites ---
+
+let favGroup = null;
+
+async function favorites() {
+    if (!page.user) return null;
+    if (favGroup) return favGroup;
+    let origin = page.user.homeDirectory;
+    let grp = await searchByName('auth.group', origin.objectId, 'Favorites');
+    if (!grp) {
+        grp = am7model.newPrimitive('auth.group');
+        grp.type = 'bucket';
+        grp.parentId = origin.id;
+        grp.name = 'Favorites';
+        await createObject(grp);
+        am7client.clearCache('auth.group', true);
+        grp = await searchByName('auth.group', origin.objectId, 'Favorites');
+    }
+    favGroup = grp;
+    return grp;
+}
+
+function isFavorite(obj) {
+    let type = obj[am7model.jsonModelKey];
+    return (contextModel.favorites[type] !== undefined &&
+        contextModel.favorites[type].filter(function (o) { return o.objectId === obj.objectId; }).length > 0);
+}
+
+async function toggleFavorite(obj) {
+    let set = !isFavorite(obj);
+    let fav = await favorites();
+    if (!fav) return false;
+    let type = obj[am7model.jsonModelKey];
+    return new Promise(function (resolve) {
+        am7client.member(fav[am7model.jsonModelKey], fav.objectId, 'null', type, obj.objectId, set, function (r) {
+            contextModel.favorites[type] = undefined;
+            am7client.clearCache(fav[am7model.jsonModelKey], true);
+            checkFavorites(type);
+            resolve(!!r);
+        });
+    });
+}
+
+async function checkFavorites(itype) {
+    let type = itype || m.route.param('type');
+    if (type && contextModel.favorites[type] === undefined) {
+        contextModel.favorites[type] = [];
+        let fav = await favorites();
+        if (!fav) return;
+        am7client.members(fav[am7model.jsonModelKey], fav.objectId, type, 0, 100, function (v) {
+            contextModel.favorites[type] = v || [];
+            m.redraw();
+        });
+    }
+}
+
 // --- Page Object ---
 
 const page = {
@@ -555,6 +611,10 @@ const page = {
     patchObject: patchObject,
     makePath: makePath,
     listByType: listByType,
+    favorites: favorites,
+    isFavorite: isFavorite,
+    toggleFavorite: toggleFavorite,
+    checkFavorites: checkFavorites,
     logout: async function () {
         clearPageCache();
         await uwm.logout();

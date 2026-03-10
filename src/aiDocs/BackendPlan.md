@@ -1,6 +1,6 @@
 # Backend Implementation Plan for Ux75 Frontend
 
-**Created:** 2026-03-08 | **Status:** Planning
+**Created:** 2026-03-08 | **Updated:** 2026-03-10 | **Status:** Priorities 2-3 COMPLETE, 1 separated, 4-5 PLANNED (Phases 13-14)
 
 ## Summary
 
@@ -87,7 +87,7 @@ Current `SchemaService.java` is read-only (4 GET endpoints). Phase 6/7 work fine
 
 **Backend work:** Add `isSystem` tracking, implement runtime schema modification in `RecordFactory`/`SchemaUtil`, persist user-defined models to database.
 
-**Deferred** — read-only schema browser works fine. Write capabilities are not blocking any frontend work.
+**PLANNED** — Phase 13 in `Ux75ImplementationPlan.md`. Full backend write endpoints + frontend schema editor integration.
 
 ---
 
@@ -102,7 +102,7 @@ Optional server-side feature enablement per organization. Currently handled clie
 | `GET /rest/config/features` | Return enabled features for current org |
 | `PUT /rest/config/features` | Update enabled features (admin only) |
 
-**Can be deferred indefinitely** — client-side build profiles work.
+**PLANNED** — Phase 14 in `Ux75ImplementationPlan.md`. Full backend service + frontend admin panel.
 
 ---
 
@@ -111,11 +111,11 @@ Optional server-side feature enablement per organization. Currently handled clie
 | Order | Item | Effort | Unblocks | Notes |
 |-------|------|--------|----------|-------|
 | 1 | Runtime validation (Phase 3.5c + 10) | Test only | Phases 3.5c, 10 | No backend changes — just test |
-| 2 | Compliance endpoints | 2-3d | ISO 42001 | **SEPARATED** — see `aiDocs/ISO42001Plan.md` |
-| 3 | WebAuthn service | 3-5d | Phase 8 | **COMPLETE** — `WebAuthnService.java`, `auth.webauthnCredential` model, `WEBAUTHN` enum, `webauthn4j-core` dep |
-| 4 | Access Request workflow | 3-5d | Phase 9 | **COMPLETE** — `AccessRequestService.java`, 4 policy operations, `PolicyEvaluator` PENDING support, auto-provisioning, WebSocket stubs |
-| 5 | Schema write endpoints | 2-4d | Phase 6/7 write | High risk, low urgency |
-| 6 | Feature configuration | 1d | None | Optional |
+| 2 | Compliance endpoints | 2-3d | Phase 4 | See `aiDocs/ISO42001Plan.md` + Phase 4 in Ux75 plan |
+| 3 | WebAuthn service | 3-5d | Phase 8 | **COMPLETE** |
+| 4 | Access Request workflow | 3-5d | Phase 9 | **COMPLETE** |
+| 5 | Schema write endpoints | 2-4d | Phase 13 | **PLANNED** — user-defined models/fields |
+| 6 | Feature configuration | 1-2d | Phase 14 | **PLANNED** — server-side feature toggles |
 
 ---
 

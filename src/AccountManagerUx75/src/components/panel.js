@@ -4,10 +4,13 @@ import { am7view } from '../core/view.js';
 import { am7client, uwm } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
 
-// --- Dashboard preferences (localStorage) ---
+// --- Dashboard preferences (localStorage + server) ---
 
 const PREFS_KEY = 'am7.dashboard';
+const SERVER_PREFS_NAME = '.dashboardPrefs';
 let prefs = null; // { order: [catName, ...], hidden: [catName, ...] }
+let prefsLoaded = false;
+let serverPrefsId = null; // objectId of the server-side data.data record
 let editing = false;
 let dragFrom = -1;
 let dragOver = -1;
@@ -19,11 +22,66 @@ function loadPrefs() {
         if (raw) prefs = JSON.parse(raw);
     } catch (e) { /* ignore */ }
     if (!prefs) prefs = { order: [], hidden: [] };
+    // Trigger async server fetch on first load
+    if (!prefsLoaded) {
+        prefsLoaded = true;
+        loadServerPrefs();
+    }
     return prefs;
+}
+
+async function loadServerPrefs() {
+    try {
+        if (!page.user || !page.user.homeDirectory) return;
+        let homePath = page.user.homeDirectory.path;
+        let obj = await page.findObject('data.data', 'data', homePath + '/' + SERVER_PREFS_NAME);
+        if (obj && obj.dataBytesStore) {
+            try {
+                let serverPrefs = JSON.parse(atob(obj.dataBytesStore));
+                if (serverPrefs && (serverPrefs.order || serverPrefs.hidden)) {
+                    prefs = serverPrefs;
+                    serverPrefsId = obj.objectId;
+                    // Update localStorage cache
+                    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ }
+                    m.redraw();
+                }
+            } catch (e) { /* parse error — use localStorage */ }
+        } else if (obj) {
+            serverPrefsId = obj.objectId;
+        }
+    } catch (e) { /* server unreachable — use localStorage */ }
 }
 
 function savePrefs() {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ }
+    saveServerPrefs();
+}
+
+async function saveServerPrefs() {
+    try {
+        if (!page.user || !page.user.homeDirectory) return;
+        let encoded = btoa(JSON.stringify(prefs));
+        if (serverPrefsId) {
+            // Patch existing record
+            let patch = am7model.newPrimitive('data.data');
+            patch.objectId = serverPrefsId;
+            patch.dataBytesStore = encoded;
+            await am7client.patch('data.data', patch);
+        } else {
+            // Create new record in home directory
+            let homePath = page.user.homeDirectory.path;
+            let homeDir = await page.makePath('auth.group', 'data', homePath);
+            if (!homeDir) return;
+            let obj = am7model.newPrimitive('data.data');
+            obj.name = SERVER_PREFS_NAME;
+            obj.groupId = homeDir.id;
+            obj.groupPath = homePath;
+            obj.mimeType = 'application/json';
+            obj.dataBytesStore = encoded;
+            let created = await am7client.create('data.data', obj);
+            if (created) serverPrefsId = created.objectId;
+        }
+    } catch (e) { /* server save failed — localStorage still updated */ }
 }
 
 function getOrderedCategories() {

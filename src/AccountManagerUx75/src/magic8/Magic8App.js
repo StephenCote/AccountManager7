@@ -11,7 +11,7 @@ import { am7view } from '../core/view.js';
 import { uwm } from '../core/am7client.js';
 
 // Subsystem imports
-import { FullscreenManager } from './utils/FullscreenManager.js';
+import { FullscreenManager } from '../components/FullscreenManager.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { BiometricThemer } from './state/BiometricThemer.js';
 import { DynamicImageGallery } from './utils/DynamicImageGallery.js';
