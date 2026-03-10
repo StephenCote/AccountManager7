@@ -276,7 +276,8 @@ function addPiece(){
     data.current_piece_left = data.piece_left;
 
     if(evaluateGrid()){
-        alert("game over");
+        let pg = getPage();
+        if(pg) pg.toast("warn", "Game Over! Score: " + data.score);
         endGame();
     }
     else{
@@ -479,6 +480,9 @@ function clearAllNodes(){
 
 function keyControl(e){
 
+    // Ignore when modifier keys are held (avoid conflicts with global shortcuts like Ctrl+S)
+    if(e.ctrlKey || e.metaKey || e.altKey) return;
+
     var i = e.keyCode;
     /* Move a piece left */
     if(i==37 || i==52 || i==100)
@@ -580,11 +584,13 @@ tetris.component = {
 
     oninit : function(x){
         init();
+        document.addEventListener('keydown', keyControl);
     },
     oncreate : function (x) {
 
     },
     onremove : function(x){
+        document.removeEventListener('keydown', keyControl);
         endGame();
     },
 

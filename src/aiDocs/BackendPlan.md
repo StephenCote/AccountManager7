@@ -56,15 +56,11 @@ New model + service for passwordless authentication:
 
 ---
 
-### Priority 3: Access Request Workflow (Unblocks Phase 9)
+### Priority 3: Access Request Workflow (Unblocks Phase 9) — COMPLETE
 
-**Effort:** Medium-High (3-5 days) | **Risk:** Medium
+**Effort:** Medium-High (3-5 days) | **Risk:** Medium | **Status:** COMPLETE (2026-03-10)
 
-**REQUIRES USER INPUT** on hierarchical approval concept before starting.
-
-The `access.accessRequest` model already exists with `approvalStatus` enum, `approver`/`delegate` fields, and `messages` spool. `AccessRequestFactory` handles initialization.
-
-**New `AccessRequestService.java` endpoints:**
+`AccessRequestService.java` with 5 REST endpoints at `/rest/access/`. Policy-based async approval via `PatternEnumType.APPROVAL` dispatching to 4 operations (`AccessApprovalOperation`, `DelegateApprovalOperation`, `LookupOwnerOperation`, `LookupApproverOperation`). `PolicyEvaluator` supports `PENDING` propagation → `PENDING_OPERATION` response. Auto-provisioning on APPROVE via `MemberUtil.member()`. Spool-based notifications (`SpoolBucketEnumType.APPROVAL`). WebSocket notification stubs added. Integration test `TestApprovalFlow` covers full policy evaluation cycle.
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -73,8 +69,6 @@ The `access.accessRequest` model already exists with `approvalStatus` enum, `app
 | `PATCH /rest/access/requests/{id}` | Approve/deny/update request |
 | `GET /rest/access/requestable?type=role` | List requestable resources |
 | `POST /rest/access/requests/{id}/notify` | Send notification/reminder |
-
-**Backend work:** Auto-provisioning on approval (add requester to role/group), notification via `message.spool`.
 
 ---
 
@@ -119,7 +113,7 @@ Optional server-side feature enablement per organization. Currently handled clie
 | 1 | Runtime validation (Phase 3.5c + 10) | Test only | Phases 3.5c, 10 | No backend changes — just test |
 | 2 | Compliance endpoints | 2-3d | ISO 42001 | **SEPARATED** — see `aiDocs/ISO42001Plan.md` |
 | 3 | WebAuthn service | 3-5d | Phase 8 | **COMPLETE** — `WebAuthnService.java`, `auth.webauthnCredential` model, `WEBAUTHN` enum, `webauthn4j-core` dep |
-| 4 | Access Request workflow | 3-5d | Phase 9 | Needs user input first |
+| 4 | Access Request workflow | 3-5d | Phase 9 | **COMPLETE** — `AccessRequestService.java`, 4 policy operations, `PolicyEvaluator` PENDING support, auto-provisioning, WebSocket stubs |
 | 5 | Schema write endpoints | 2-4d | Phase 6/7 write | High risk, low urgency |
 | 6 | Feature configuration | 1d | None | Optional |
 

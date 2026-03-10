@@ -277,6 +277,17 @@ public class AccessRequestService {
 			}
 
 			BaseRecord updated = IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+
+			/// TODO: WebSocket notification stub
+			/// When WebSocket push is implemented server-side, fire a notification here:
+			///   WebSocketService.broadcast("accessRequestUpdate", JSON.stringify({
+			///     "objectId": objectId,
+			///     "approvalStatus": statusStr,
+			///     "requesterId": existing.get("requester").get("id"),
+			///     "approverId": user.get("id")
+			///   }));
+			/// Recipients: the requester (status changed) and any approvers (if delegated)
+
 			return Response.status(200).entity(updated != null).build();
 
 		} catch (FieldException | ValueException | ModelNotFoundException e) {

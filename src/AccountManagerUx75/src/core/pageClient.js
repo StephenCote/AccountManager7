@@ -370,6 +370,13 @@ function routeMessage(msg) {
             if (page.gameStream) {
                 page.gameStream.routePushMessage(c1, ...msg.chirps.slice(1));
             }
+        } else if (c1 === "accessRequestUpdate") {
+            // Access request status change notification — notify registered listeners
+            let eventData = null;
+            try { eventData = JSON.parse(msg.chirps[1]); } catch(e) { eventData = msg.chirps[1]; }
+            if (page.accessRequestListeners) {
+                page.accessRequestListeners.forEach(fn => { try { fn(eventData); } catch(e) {} });
+            }
         } else {
             handled = false;
         }
@@ -566,6 +573,9 @@ const page = {
     chainStream: undefined,
     audioStream: undefined,
     gameStream: undefined,
+    accessRequestListeners: [],
+    onAccessRequestUpdate: function (fn) { page.accessRequestListeners.push(fn); return fn; },
+    offAccessRequestUpdate: function (fn) { page.accessRequestListeners = page.accessRequestListeners.filter(f => f !== fn); },
     token: undefined,
     router: null,
     testMode: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get("testMode") === "true"),

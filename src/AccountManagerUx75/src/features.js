@@ -82,6 +82,15 @@ const features = {
         deps: ['core'],
         routes: () => import('./features/webauthn.js'),
         menuItems: [{ icon: 'passkey', label: 'Passkeys', route: '/webauthn', section: 'aside' }]
+    },
+    accessRequests: {
+        id: 'accessRequests',
+        label: 'Access Requests',
+        description: 'Self-service access request and approval workflow',
+        required: false,
+        deps: ['core'],
+        routes: () => import('./features/accessRequests.js'),
+        menuItems: [{ icon: 'switch_access_shortcut', label: 'Access Requests', route: '/accessRequests', section: 'aside' }]
     }
 };
 
@@ -90,7 +99,7 @@ const profiles = {
     standard: ['core', 'chat'],
     full: Object.keys(features),
     gaming: ['core', 'chat', 'cardGame', 'games', 'biometrics'],
-    enterprise: ['core', 'chat', 'iso42001', 'schema', 'webauthn']
+    enterprise: ['core', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests']
 };
 
 // --- Feature state ---

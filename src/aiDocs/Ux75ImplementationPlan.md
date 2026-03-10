@@ -10,8 +10,8 @@
 
 **Project:** `AccountManagerUx75/` — 140 source files, ~72,500 lines
 **Build:** Vite 6.4.1, 161 modules, builds in ~5s
-**Tests:** 77 Vitest unit tests pass, 43 Playwright E2E tests pass (all green)
-**Phase 8 completed:** 2026-03-09
+**Tests:** 85 Vitest unit tests pass, 43+ Playwright E2E tests pass (all green)
+**Phase 9 completed:** 2026-03-10
 **Ux7 File Parity:** ~100% — all active Ux7 source files ported including dialog workflow commands (5 intentionally skipped)
 
 ---
@@ -34,7 +34,7 @@
 | **Phase 7: Form Editor / Designer** | COMPLETE | 1 | Form definition editor integrated into schema feature. CRUD for `system.formDefinition` records via `/rest/model` endpoints. Create from model type (auto-populates fields from schema), edit field labels/layout/visibility/required/order, reorder with up/down arrows, 6-column grid preview. Saves via `am7client.patch()`. Combined into single `features/schema.js` file with Phase 6. |
 | **Phase 8: WebAuthn** | **COMPLETE** | 4 | Backend: `auth.webauthnCredential` model, `WEBAUTHN` enum, `WebAuthnService.java` (6 endpoints), `webauthn4j-core` dep. Frontend: `features/webauthn.js` (passkey management settings), passkey login button in `sig.js`, `am7client` WebAuthn API (5 methods). 7 Vitest + 7 Playwright E2E tests. Also fixed VectorService 404 (enum @PathParam). |
 | **Phase 8.5: List View Grid Rework** | **COMPLETE** | 1 | 4-mode grid system (table → small grid → large grid → gallery with arrow key nav). Fixed "No item at index -1" bug. Gallery mode: full-size fit-to-container with chevron navigation. |
-| **Phase 9: Access Requests** | NOT STARTED | 0 | Backend model exists. No Ux. Must ask user about hierarchical approval concept first. |
+| **Phase 9: Access Requests** | **COMPLETE** | 6 | Backend: `AccessRequestService.java` (5 REST endpoints at `/rest/access/`), 4 approval operations (`AccessApprovalOperation`, `DelegateApprovalOperation`, `LookupOwnerOperation`, `LookupApproverOperation`), `PolicyEvaluator` PENDING propagation, `PENDING` added to `OperationResponseEnumType`, auto-provisioning on approval. Frontend: `features/accessRequests.js` (tabbed list view, new request form with shopping cart, approval actions with inline deny reason), `am7client` 5 API methods, wired into `features.js` manifest + enterprise profile. 8 Vitest + 5 Playwright E2E tests. |
 | **Phase 10: Game Feature Validation** | DEFERRED | 0 | Build audit done. Runtime testing deferred — benefits from stable common infra. |
 | **Phase 11: Performance + Polish** | NOT STARTED | 0 | SQLite WASM cache, a11y audit, performance profiling. |
 

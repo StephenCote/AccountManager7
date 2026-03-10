@@ -581,6 +581,39 @@ import Base64 from './base64.js';
 		return login(cred, fH);
 	}
 
+	var sAccess = sBase + "/access";
+
+	async function accessRequestList(view, status, startIndex, count) {
+		var params = [];
+		if (view) params.push("view=" + encodeURIComponent(view));
+		if (status) params.push("status=" + encodeURIComponent(status));
+		if (startIndex > 0) params.push("startIndex=" + startIndex);
+		if (count > 0) params.push("count=" + count);
+		var qs = params.length > 0 ? "?" + params.join("&") : "";
+		return get(sAccess + "/requests" + qs);
+	}
+
+	async function accessRequestSubmit(requestBody) {
+		return post(sAccess + "/requests", requestBody);
+	}
+
+	async function accessRequestUpdate(objectId, patchBody) {
+		return patch(sAccess + "/requests/" + encodeURIComponent(objectId), patchBody);
+	}
+
+	async function accessRequestableList(type, startIndex, count) {
+		var params = [];
+		if (type) params.push("type=" + encodeURIComponent(type));
+		if (startIndex > 0) params.push("startIndex=" + startIndex);
+		if (count > 0) params.push("count=" + count);
+		var qs = params.length > 0 ? "?" + params.join("&") : "";
+		return get(sAccess + "/requestable" + qs);
+	}
+
+	async function accessRequestNotify(objectId) {
+		return post(sAccess + "/requests/" + encodeURIComponent(objectId) + "/notify");
+	}
+
 	var sWebAuthn = sBase + "/credential/webauthn";
 
 	function webauthnSupported() {
@@ -1227,6 +1260,11 @@ import Base64 from './base64.js';
 		webauthnAuthenticate,
 		webauthnListCredentials,
 		webauthnDeleteCredential,
+		accessRequestList,
+		accessRequestSubmit,
+		accessRequestUpdate,
+		accessRequestableList,
+		accessRequestNotify,
 		base:function(){
 			return sBase;
 		},

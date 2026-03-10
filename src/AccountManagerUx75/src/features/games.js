@@ -105,7 +105,10 @@ const routes = {
             }
         },
         onremove: function() {
-            if (currentGame && currentGame.onremove) currentGame.onremove();
+            if (currentGame) {
+                if (currentGame.onremove) currentGame.onremove();
+                else if (currentGame.component && currentGame.component.onremove) currentGame.component.onremove();
+            }
             currentGameId = null;
             currentGame = null;
         },
@@ -126,15 +129,18 @@ const routes = {
             }
             // Render game component
             let content;
+            let scoreCard = null;
             if (currentGame.view) {
                 content = currentGame.view(vnode);
+                if (currentGame.scoreCard) scoreCard = currentGame.scoreCard();
             } else if (currentGame.component && currentGame.component.view) {
                 content = m(currentGame.component, vnode.attrs);
+                if (currentGame.component.scoreCard) scoreCard = currentGame.component.scoreCard();
             } else {
                 content = m("div", "Game loaded but has no view");
             }
             return layout(pageLayout(
-                m("div", { class: "flex-grow flex flex-col overflow-hidden" }, content)
+                m("div", { class: "flex-grow flex flex-col overflow-hidden" }, [scoreCard, content])
             ));
         }
     }

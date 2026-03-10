@@ -5,10 +5,12 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
@@ -17,16 +19,35 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.objects.generated.FactType;
+import org.cote.accountmanager.objects.generated.OperationType;
+import org.cote.accountmanager.objects.generated.PatternType;
+import org.cote.accountmanager.objects.generated.PolicyRequestType;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
+import org.cote.accountmanager.objects.generated.PolicyType;
+import org.cote.accountmanager.objects.generated.RuleType;
+import org.cote.accountmanager.policy.PolicyEvaluator;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.ApprovalResponseEnumType;
+import org.cote.accountmanager.schema.type.ConditionEnumType;
+import org.cote.accountmanager.schema.type.FactEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.OperationEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.schema.type.PatternEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
+import org.cote.accountmanager.schema.type.RuleEnumType;
+import org.cote.accountmanager.schema.type.SpoolBucketEnumType;
+import org.cote.accountmanager.schema.type.SpoolNameEnumType;
+import org.cote.accountmanager.schema.type.SpoolStatusEnumType;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.junit.Test;
 
@@ -231,6 +252,367 @@ public class TestAccessApproval extends BaseTest {
 		*/
 	}
 	
+	/**
+	 * Full approval flow integration test:
+	 * 1. Build an approval policy with APPROVAL patterns using AccessApprovalOperation
+	 * 2. Submit an access request
+	 * 3. Evaluate policy → should return PENDING_OPERATION (no approval response yet)
+	 * 4. Simulate approver response (create RESPONDED spool entry with "APPROVE")
+	 * 5. Re-evaluate policy → should return PERMIT (approval found)
+	 */
+	@Test
+	public void TestApprovalFlow() {
+		if(ioContext.getIoType() == RecordIO.FILE) {
+			logger.error("Skipping — file IO does not support flex foreign keys");
+			return;
+		}
+
+		logger.info("=== TestApprovalFlow: Full approval policy evaluation ===");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Approval Flow");
+		Factory mf = ioContext.getFactory();
+		long orgId = testOrgContext.getOrganizationId();
+		BaseRecord adminUser = testOrgContext.getAdminUser();
+
+		/// Setup test users
+		BaseRecord requester = mf.getCreateUser(adminUser, "approvalRequester", orgId);
+		BaseRecord approver = mf.getCreateUser(adminUser, "approvalApprover", orgId);
+		assertNotNull("Requester is null", requester);
+		assertNotNull("Approver is null", approver);
+
+		/// Assign system roles so users can create/read/update access requests
+		BaseRecord requesterRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUESTERS, RoleEnumType.USER.toString(), orgId);
+		BaseRecord requestReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_READERS, RoleEnumType.USER.toString(), orgId);
+		BaseRecord requestUpdaterRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_UPDATERS, RoleEnumType.USER.toString(), orgId);
+		BaseRecord accountReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS_READERS, RoleEnumType.USER.toString(), orgId);
+		BaseRecord roleReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ROLE_READERS, RoleEnumType.USER.toString(), orgId);
+
+		if(!ioContext.getMemberUtil().isMember(requester, requesterRole, null)) {
+			ioContext.getMemberUtil().member(adminUser, requesterRole, requester, null, true);
+			ioContext.getMemberUtil().member(adminUser, accountReaderRole, requester, null, true);
+			ioContext.getMemberUtil().member(adminUser, roleReaderRole, requester, null, true);
+		}
+		if(!ioContext.getMemberUtil().isMember(approver, requestReaderRole, null)) {
+			ioContext.getMemberUtil().member(adminUser, requestReaderRole, approver, null, true);
+			ioContext.getMemberUtil().member(adminUser, requestUpdaterRole, approver, null, true);
+			ioContext.getMemberUtil().member(adminUser, accountReaderRole, approver, null, true);
+			ioContext.getMemberUtil().member(adminUser, roleReaderRole, approver, null, true);
+		}
+
+		/// Cleanup any prior requests from this requester
+		cleanupRequestsForUser(approver, requester);
+
+		/// Create a target role that the requester wants access to
+		BaseRecord targetRole = ioContext.getPathUtil().makePath(requester, ModelNames.MODEL_ROLE, "~/Approval Roles/Target Role", RoleEnumType.USER.toString(), orgId);
+		assertNotNull("Target role is null", targetRole);
+
+		boolean error = false;
+		try {
+			/// ──────────────────────────────────────────────────────
+			/// Step 1: Create the approval policy structure
+			/// Policy (ALL) → Rule (ALL) → Pattern (APPROVAL, AccessApprovalOperation)
+			///   SourceFact (PARAMETER) = access request id
+			///   MatchFact (OPERATION, LookupOwnerOperation) = resolves owner as approver
+			/// ──────────────────────────────────────────────────────
+
+			logger.info("Step 1: Building approval policy");
+
+			/// Create the operation record for AccessApprovalOperation
+			OperationType approvalOp = getOrCreateOperation(adminUser, "Test Approval Operation",
+				"org.cote.accountmanager.policy.operation.AccessApprovalOperation", orgId);
+			assertNotNull("Approval operation is null", approvalOp);
+
+			/// Create the operation record for LookupOwnerOperation
+			OperationType lookupOwnerOp = getOrCreateOperation(adminUser, "Test Lookup Owner Operation",
+				"org.cote.accountmanager.policy.operation.LookupOwnerOperation", orgId);
+			assertNotNull("Lookup owner operation is null", lookupOwnerOp);
+
+			/// Create source fact (PARAMETER — carries the access request reference)
+			FactType sourceFact = getOrCreateFact(adminUser, "Test Approval Source Fact", orgId);
+			sourceFact.setType(FactEnumType.PARAMETER);
+			sourceFact.set(FieldNames.FIELD_FACT_DATA_TYPE, ModelNames.MODEL_ACCESS_REQUEST);
+			Queue.queue(sourceFact);
+
+			/// Create match fact (OPERATION — runs LookupOwnerOperation to resolve approver)
+			FactType matchFact = getOrCreateFact(adminUser, "Test Approval Match Fact", orgId);
+			matchFact.setType(FactEnumType.OPERATION);
+			matchFact.set(FieldNames.FIELD_MODEL_TYPE, ModelNames.MODEL_USER);
+			Queue.queue(matchFact);
+
+			Queue.processQueue(adminUser);
+
+			/// Create the APPROVAL pattern — this dispatches to AccessApprovalOperation
+			PatternType approvalPattern = getOrCreatePattern(adminUser, "Test Approval Pattern", approvalOp, orgId);
+			approvalPattern.setType(PatternEnumType.APPROVAL);
+			approvalPattern.setFact(sourceFact);
+			approvalPattern.setMatch(matchFact);
+			approvalPattern.set(FieldNames.FIELD_OPERATION, approvalOp);
+			Queue.queue(approvalPattern);
+
+			Queue.processQueue(adminUser);
+
+			/// Create the rule (ALL condition)
+			RuleType approvalRule = getOrCreateRule(adminUser, "Test Approval Rule", orgId);
+			IOSystem.getActiveContext().getMemberUtil().member(adminUser, approvalRule, approvalPattern, null, true);
+
+			/// Create the policy (ALL condition, enabled)
+			PolicyType approvalPolicy = getOrCreatePolicy(adminUser, "Test Approval Policy", orgId);
+			IOSystem.getActiveContext().getMemberUtil().member(adminUser, approvalPolicy, approvalRule, null, true);
+
+			/// Re-read the fully populated policy
+			Query polQuery = QueryUtil.createQuery(ModelNames.MODEL_POLICY, FieldNames.FIELD_OBJECT_ID, approvalPolicy.get(FieldNames.FIELD_OBJECT_ID));
+			polQuery.planMost(true);
+			QueryResult polQr = IOSystem.getActiveContext().getSearch().find(polQuery);
+			assertTrue("Expected to find the approval policy", polQr != null && polQr.getResults().length > 0);
+			PolicyType fullPolicy = new PolicyType(polQr.getResults()[0]);
+
+			/// ──────────────────────────────────────────────────────
+			/// Step 2: Create an access request
+			/// ──────────────────────────────────────────────────────
+
+			logger.info("Step 2: Submitting access request");
+
+			BaseRecord accessReq = newAccessRequest(requester, requester, requester, ActionEnumType.ADD, requester, null, targetRole, 0L);
+			assertNotNull("Access request template is null", accessReq);
+			BaseRecord createdReq = ioContext.getAccessPoint().create(requester, accessReq);
+			assertNotNull("Created access request is null", createdReq);
+
+			/// Read the full request to get its id
+			long reqId = createdReq.get(FieldNames.FIELD_ID);
+			String reqObjectId = createdReq.get(FieldNames.FIELD_OBJECT_ID);
+			assertTrue("Request id should be > 0", reqId > 0L);
+			logger.info("Created access request id=" + reqId + " objectId=" + reqObjectId);
+
+			/// ──────────────────────────────────────────────────────
+			/// Step 3: Evaluate policy — should return PENDING_OPERATION
+			/// ──────────────────────────────────────────────────────
+
+			logger.info("Step 3: Evaluating policy (expecting PENDING_OPERATION)");
+
+			/// Build a policy request with the access request id in the source fact
+			PolicyRequestType prt = new PolicyRequestType(RecordFactory.model(ModelNames.MODEL_POLICY_REQUEST).newInstance());
+			prt.set(FieldNames.FIELD_URN, fullPolicy.get(FieldNames.FIELD_URN));
+			prt.set(FieldNames.FIELD_ORGANIZATION_PATH, testOrgContext.getOrganizationPath());
+			prt.set(FieldNames.FIELD_CONTEXT_USER, adminUser);
+
+			/// Add the source fact parameter with the access request id
+			FactType reqFact = new FactType(RecordFactory.newInstance(ModelNames.MODEL_FACT));
+			reqFact.setType(FactEnumType.PARAMETER);
+			reqFact.set(FieldNames.FIELD_URN, sourceFact.get(FieldNames.FIELD_URN));
+			reqFact.set(FieldNames.FIELD_NAME, sourceFact.get(FieldNames.FIELD_NAME));
+			reqFact.set(FieldNames.FIELD_FACT_DATA, Long.toString(reqId));
+			reqFact.set(FieldNames.FIELD_FACT_DATA_TYPE, ModelNames.MODEL_ACCESS_REQUEST);
+			List<BaseRecord> facts = prt.get(FieldNames.FIELD_FACTS);
+			facts.add(reqFact);
+
+			PolicyEvaluator pe = ioContext.getPolicyEvaluator();
+			pe.setTrace(true);
+
+			PolicyResponseType prr = new PolicyResponseType(pe.evaluatePolicyRequest(prt, fullPolicy));
+			String responseType = prr.get(FieldNames.FIELD_TYPE);
+			logger.info("Policy response: " + responseType);
+			assertTrue("Expected PENDING_OPERATION, got " + responseType,
+				PolicyResponseEnumType.PENDING_OPERATION.toString().equals(responseType));
+
+			/// ──────────────────────────────────────────────────────
+			/// Step 4: Simulate approver response
+			/// Create a RESPONDED spool entry with "APPROVE" in the name
+			/// ──────────────────────────────────────────────────────
+
+			logger.info("Step 4: Simulating approver response (APPROVE)");
+
+			/// The approver is the owner of targetRole — which is the requester in this test
+			long ownerId = targetRole.get(FieldNames.FIELD_OWNER_ID);
+			logger.info("Target role owner id: " + ownerId);
+
+			BaseRecord spoolMsg = RecordFactory.newInstance(ModelNames.MODEL_SPOOL);
+			spoolMsg.set(FieldNames.FIELD_NAME, "APPROVE");
+			spoolMsg.set(FieldNames.FIELD_SPOOL_BUCKET_TYPE, SpoolBucketEnumType.APPROVAL.toString());
+			spoolMsg.set(FieldNames.FIELD_SPOOL_BUCKET_NAME, SpoolNameEnumType.ACCESS.toString());
+			spoolMsg.set(FieldNames.FIELD_SPOOL_STATUS, SpoolStatusEnumType.RESPONDED.toString());
+			spoolMsg.set("parentObjectId", reqObjectId);
+			spoolMsg.set("senderId", ownerId);
+			spoolMsg.set("senderType", ModelNames.MODEL_USER);
+			spoolMsg.set(FieldNames.FIELD_OBJECT_ID, UUID.randomUUID().toString());
+			spoolMsg.set(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			spoolMsg.set(FieldNames.FIELD_DATA, ("APPROVE:" + reqObjectId).getBytes());
+
+			boolean spoolCreated = ioContext.getRecordUtil().createRecord(spoolMsg);
+			assertTrue("Failed to create approval spool entry", spoolCreated);
+			logger.info("Created APPROVE spool entry for request " + reqObjectId);
+
+			/// ──────────────────────────────────────────────────────
+			/// Step 5: Re-evaluate policy — should return PERMIT
+			/// ──────────────────────────────────────────────────────
+
+			logger.info("Step 5: Re-evaluating policy (expecting PERMIT)");
+
+			/// Rebuild the policy request
+			PolicyRequestType prt2 = new PolicyRequestType(RecordFactory.model(ModelNames.MODEL_POLICY_REQUEST).newInstance());
+			prt2.set(FieldNames.FIELD_URN, fullPolicy.get(FieldNames.FIELD_URN));
+			prt2.set(FieldNames.FIELD_ORGANIZATION_PATH, testOrgContext.getOrganizationPath());
+			prt2.set(FieldNames.FIELD_CONTEXT_USER, adminUser);
+
+			FactType reqFact2 = new FactType(RecordFactory.newInstance(ModelNames.MODEL_FACT));
+			reqFact2.setType(FactEnumType.PARAMETER);
+			reqFact2.set(FieldNames.FIELD_URN, sourceFact.get(FieldNames.FIELD_URN));
+			reqFact2.set(FieldNames.FIELD_NAME, sourceFact.get(FieldNames.FIELD_NAME));
+			reqFact2.set(FieldNames.FIELD_FACT_DATA, Long.toString(reqId));
+			reqFact2.set(FieldNames.FIELD_FACT_DATA_TYPE, ModelNames.MODEL_ACCESS_REQUEST);
+			List<BaseRecord> facts2 = prt2.get(FieldNames.FIELD_FACTS);
+			facts2.add(reqFact2);
+
+			PolicyResponseType prr2 = new PolicyResponseType(pe.evaluatePolicyRequest(prt2, fullPolicy));
+			String responseType2 = prr2.get(FieldNames.FIELD_TYPE);
+			logger.info("Policy response after approval: " + responseType2);
+			assertTrue("Expected PERMIT after approval, got " + responseType2,
+				PolicyResponseEnumType.PERMIT.toString().equals(responseType2));
+
+			pe.setTrace(false);
+
+			/// ──────────────────────────────────────────────────────
+			/// Step 6: Verify auto-provisioning can be triggered
+			/// ──────────────────────────────────────────────────────
+
+			logger.info("Step 6: Verifying auto-provisioning");
+
+			/// Read the full access request with subject and entitlement
+			Query arq = QueryUtil.createQuery(ModelNames.MODEL_ACCESS_REQUEST, FieldNames.FIELD_OBJECT_ID, reqObjectId);
+			arq.planMost(false);
+			BaseRecord fullReq = ioContext.getAccessPoint().find(adminUser, arq);
+			assertNotNull("Full access request is null", fullReq);
+
+			BaseRecord subject = fullReq.get(FieldNames.FIELD_SUBJECT);
+			BaseRecord entitlement = fullReq.get(FieldNames.FIELD_ENTITLEMENT);
+			String entType = fullReq.get(FieldNames.FIELD_ENTITLEMENT_TYPE);
+			assertNotNull("Subject is null", subject);
+			assertNotNull("Entitlement is null", entitlement);
+
+			long subjectId = subject.get(FieldNames.FIELD_ID);
+			long entId = entitlement.get(FieldNames.FIELD_ID);
+			assertTrue("Subject id should be > 0", subjectId > 0L);
+			assertTrue("Entitlement id should be > 0", entId > 0L);
+
+			/// Read the full records for provisioning
+			String subjectType = fullReq.get(FieldNames.FIELD_SUBJECT_TYPE);
+			if(subjectType == null) subjectType = ModelNames.MODEL_USER;
+			BaseRecord fullSubject = ioContext.getReader().read(subjectType, subjectId);
+			BaseRecord fullEntitlement = ioContext.getReader().read(entType, entId);
+			assertNotNull("Full subject is null", fullSubject);
+			assertNotNull("Full entitlement is null", fullEntitlement);
+
+			/// Auto-provision: add subject as member of entitlement
+			boolean provisioned = ioContext.getMemberUtil().member(adminUser, fullEntitlement, fullSubject, null, true);
+			assertTrue("Auto-provisioning should succeed", provisioned);
+
+			/// Verify membership
+			boolean isMember = ioContext.getMemberUtil().isMember(fullSubject, fullEntitlement, null);
+			assertTrue("Subject should now be a member of the entitlement", isMember);
+
+			logger.info("=== TestApprovalFlow PASSED ===");
+
+		} catch (Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			error = true;
+		}
+		assertTrue("Error encountered during approval flow test", !error);
+	}
+
+	/// ── Helper methods for policy structure creation ──
+
+	private OperationType getOrCreateOperation(BaseRecord user, String name, String className, long orgId) {
+		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Operations", "DATA", orgId);
+		OperationType ope = null;
+		try {
+			BaseRecord[] existing = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_OPERATION, dir.get(FieldNames.FIELD_ID), name);
+			if(existing.length > 0) {
+				return new OperationType(existing[0]);
+			}
+			ope = new OperationType();
+			ope.setType(OperationEnumType.INTERNAL);
+			ope.setOperation(className);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, ope, name, "~/Operations", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(ope);
+		} catch (ReaderException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return ope;
+	}
+
+	private FactType getOrCreateFact(BaseRecord user, String name, long orgId) {
+		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Facts", "DATA", orgId);
+		FactType fac = null;
+		try {
+			BaseRecord[] existing = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_FACT, dir.get(FieldNames.FIELD_ID), name);
+			if(existing.length > 0) {
+				return new FactType(existing[0]);
+			}
+			fac = new FactType();
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, fac, name, "~/Facts", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(fac);
+		} catch (ReaderException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return fac;
+	}
+
+	private PatternType getOrCreatePattern(BaseRecord user, String name, OperationType op, long orgId) {
+		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Patterns", "DATA", orgId);
+		PatternType pat = null;
+		try {
+			BaseRecord[] existing = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_PATTERN, dir.get(FieldNames.FIELD_ID), name);
+			if(existing.length > 0) {
+				return new PatternType(existing[0]);
+			}
+			pat = new PatternType();
+			pat.setType(PatternEnumType.APPROVAL);
+			pat.set(FieldNames.FIELD_OPERATION, op);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, pat, name, "~/Patterns", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(pat);
+		} catch (ReaderException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return pat;
+	}
+
+	private RuleType getOrCreateRule(BaseRecord user, String name, long orgId) {
+		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Rules", "DATA", orgId);
+		RuleType rul = null;
+		try {
+			BaseRecord[] existing = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_RULE, dir.get(FieldNames.FIELD_ID), name);
+			if(existing.length > 0) {
+				return new RuleType(existing[0]);
+			}
+			rul = new RuleType();
+			rul.setType(RuleEnumType.PERMIT);
+			rul.setCondition(ConditionEnumType.ALL);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, rul, name, "~/Rules", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(rul);
+		} catch (ReaderException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return rul;
+	}
+
+	private PolicyType getOrCreatePolicy(BaseRecord user, String name, long orgId) {
+		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Policies", "DATA", orgId);
+		PolicyType pol = null;
+		try {
+			BaseRecord[] existing = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_POLICY, dir.get(FieldNames.FIELD_ID), name);
+			if(existing.length > 0) {
+				return new PolicyType(existing[0]);
+			}
+			pol = new PolicyType();
+			pol.setEnabled(true);
+			pol.setCondition(ConditionEnumType.ALL);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, pol, name, "~/Policies", orgId);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(pol);
+		} catch (ReaderException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return pol;
+	}
+
 	private BaseRecord[] getAccessRequests(BaseRecord requestAdmin, BaseRecord requester)  {
 		logger.info("Get access requests for " + requester.get(FieldNames.FIELD_NAME));
 		BaseRecord[] recs = new BaseRecord[0];
