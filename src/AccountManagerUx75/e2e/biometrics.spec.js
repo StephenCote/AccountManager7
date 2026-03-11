@@ -41,4 +41,30 @@ test.describe('Magic 8 (Biometrics) feature', () => {
         await screenshot(page, 'magic8-config-detail');
     });
 
+    test('session config shows biometric adaptation and recording sections', async ({ page }) => {
+        await page.locator('button[title="Magic 8"]').click();
+        await page.waitForURL(/.*#!\/magic8/, { timeout: 10000 });
+        await expect(page.locator('text=Magic8 Session')).toBeVisible({ timeout: 15000 });
+        // Biometric Adaptation section with its enable checkbox
+        await expect(page.locator('h3:has-text("Biometric Adaptation")')).toBeVisible({ timeout: 5000 });
+        // Session Recording section with its enable checkbox
+        await expect(page.locator('h3:has-text("Session Recording")')).toBeVisible();
+        // Session Name input should be present
+        await expect(page.locator('input[type="text"]').first()).toBeVisible();
+        await screenshot(page, 'magic8-config-sections');
+    });
+
+    test('no uncaught JS errors during magic8 load', async ({ page }) => {
+        let errors = [];
+        page.on('pageerror', err => errors.push(err.message));
+
+        await page.locator('button[title="Magic 8"]').click();
+        await page.waitForURL(/.*#!\/magic8/, { timeout: 10000 });
+        await expect(page.locator('text=Magic8 Session')).toBeVisible({ timeout: 15000 });
+        await page.waitForTimeout(2000); // let async subsystem init settle
+
+        expect(errors, 'Uncaught JS errors:\n' + errors.join('\n')).toHaveLength(0);
+        await screenshot(page, 'magic8-no-js-errors');
+    });
+
 });

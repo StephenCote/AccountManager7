@@ -13,7 +13,11 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } }
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Phase 15c: Firefox cross-browser validation
+    // Phase 7 perf fixes (specific CSS transitions, WebSocket redraw debouncing) apply here.
+    // CDP-based tests (WebAuthn virtual authenticator) run chromium-only.
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } }
   ],
   webServer: {
     command: 'npm run dev',

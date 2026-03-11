@@ -1,7 +1,7 @@
 # ISO 42001 Compliance Dashboard — Design & Implementation Plan
 
 **Parent project:** AccountManagerUx75
-**Status:** PLANNED — Phase 4 in `Ux75ImplementationPlan.md` (full backend + frontend)
+**Status:** PLANNED — tracked separately from `Ux75ImplementationPlan.md` (see Section 8 for full checklist)
 **Current stub:** `AccountManagerUx75/src/features/iso42001.js` (live policy event monitor)
 
 ---
@@ -111,3 +111,56 @@ New REST service with the following endpoints:
 - The current stub is functional for live monitoring and will remain as-is until backend work begins
 - This plan will be revisited when the main ISO 42001 compliance effort starts on the backend
 - All overcorrection directives and bias detection logic live on the server side — the UX is a reporting/monitoring layer only
+
+---
+
+## 8. Implementation Checklist
+
+**Goal:** Complete compliance dashboard with full backend service + multi-tab frontend.
+**Effort:** High (5-7 days total: 2-3 backend, 3-4 frontend)
+
+**8a: Backend — ComplianceService.java** (NEW)
+- [ ] Create `ComplianceService.java` at `/rest/compliance`
+- [ ] `GET /rest/compliance/summary?period=7d` — aggregate violation counts, pass rates, trend data by querying `system.audit` records filtered by compliance-related action types
+- [ ] `GET /rest/compliance/violations?startRecord=0&recordCount=25&area={biasArea}` — paginated violation list with severity, area, timestamp, message
+- [ ] `POST /rest/compliance/report` — generate compliance report JSON for date range (accepts `{startDate, endDate, format}`)
+- [ ] `GET /rest/compliance/patterns` — read bias patterns from configuration (the 10 overcorrection areas + custom patterns)
+- [ ] `PUT /rest/compliance/patterns` — update bias patterns (admin only)
+- [ ] `GET /rest/compliance/prompts` — list prompt configs with overcorrection directive status per call path
+- [ ] Register service in Jersey (auto-discovered via `@Path` in `org.cote.rest.services` package)
+- [ ] JUnit tests: `TestComplianceService.java` — summary aggregation, violation query, report generation, pattern CRUD
+- [ ] Wire compliance-specific audit action types into existing `system.audit` model (or use existing action types if suitable)
+
+**8b: Frontend — Tab Navigation**
+- [ ] Replace single-page view with tabbed layout: Overview | Audit Log | Policy Templates | Reports | Live Monitor
+- [ ] Move current violation list into "Live Monitor" tab
+- [ ] Add `am7client` methods for compliance endpoints (summary, violations, report, patterns, prompts)
+
+**8c: Frontend — Overview Tab**
+- [ ] Summary cards: total evaluations, pass rate, fail rate, violations by area
+- [ ] Trend sparklines (last 7/30 days) — simple SVG line charts, no external charting library
+- [ ] Area breakdown: horizontal bar chart showing violation count per overcorrection area
+- [ ] Auto-refresh every 60s
+
+**8d: Frontend — Audit Log Tab**
+- [ ] Searchable/filterable table of compliance evaluation records
+- [ ] Columns: timestamp, type, area, severity, message, actor
+- [ ] Pagination via existing pagination component
+- [ ] Filter by: severity (error/warn/info), area (10 overcorrection areas), date range
+- [ ] Click row to expand details
+
+**8e: Frontend — Policy Templates Tab**
+- [ ] List all 5 LLM call paths with overcorrection directive status (present/missing/modified)
+- [ ] Display prompt config content with syntax highlighting (pre-formatted text)
+- [ ] Admin: edit/save prompt configs via compliance/prompts endpoint
+- [ ] Validation: warn if overcorrection directive is missing or weakened
+
+**8f: Frontend — Reports Tab**
+- [ ] Date range picker (start/end date inputs)
+- [ ] Generate report button → POST to `/rest/compliance/report`
+- [ ] Display report as formatted summary + download as JSON/CSV
+- [ ] Report includes: period summary, top violations, area breakdown, trend data
+
+**8g: Frontend — Tests**
+- [ ] Vitest unit tests: tab navigation, summary card rendering, filter logic, export formatting
+- [ ] Playwright E2E test: compliance route loads, tabs render, library status badges
