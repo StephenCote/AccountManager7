@@ -28,6 +28,7 @@ import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Before;
 
@@ -39,7 +40,8 @@ public class BaseTest {
 	@Before
 	public void setup() {
 		/// NOTE: The current setup will throw an error if trying to deserialize a model whose schema has not yet been loaded.  This was done intentionally to only support intentionally loaded schemas
-		/// 
+		///
+		OlioModelNames.use();
 		resetIO("jdbc:h2:./am7/h2", "sa", "1234");
 	}
 	

@@ -303,7 +303,7 @@
 					</dependency>
 				</dependencies>
 				<configuration>
-					<skipTests>true</skipTests>
+					<skipTests>${skipTests}</skipTests>
 					<excludes>
 						</excludes>
 					<systemProperties>

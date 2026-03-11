@@ -1,0 +1,350 @@
+{
+	"name": "olio.llm.chatConfig",
+	"inherits": ["data.directory", "common.description", "common.alignment", "crypto.vaultExt"],
+	"group": "Chat",
+	"icon": "chat",
+	"label": "Chat Configuration",
+	"description": "Configuration for a chat session with an LLM (Large Language Model). This includes settings for characters, narratives, interactions, and various options to control the chat experience.",
+	"fields": [
+		{
+			"name": "rating",
+			"baseClass": "org.cote.accountmanager.olio.llm.ESRBEnumType",
+			"type": "enum",
+			"maxLength": 3,
+			"default": "E"
+		},
+		{
+			"name": "serviceType",
+			"baseClass": "org.cote.accountmanager.olio.llm.LLMServiceEnumType",
+			"type": "enum",
+			"maxLength": 10,
+			"default": "OPENAI"
+		},
+		{
+			"name": "systemCharacter",
+			"type": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true
+		},
+		{
+			"name": "systemNarrative",
+			"type": "model",
+			"baseModel": "olio.narrative",
+			"followReference": false
+		},
+		{
+			"name": "userCharacter",
+			"type": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true
+		},
+		{
+			"name": "userNarrative",
+			"type": "model",
+			"baseModel": "olio.narrative",
+			"followReference": false
+		},
+
+		{
+			"name": "interactions",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.interaction",
+			"foreign": true,
+			"participantModel": "chatConfig.interaction",
+			"followReference": false
+		},
+		{
+			"name": "interaction",
+			"type": "model",
+			"baseModel": "olio.interaction",
+			"foreign": true,
+			"followReference": false
+		},
+		{
+			"name": "event",
+			"type": "model",
+			"baseModel": "olio.event",
+			"foreign": true,
+			"followReference": false
+		},
+
+		{
+			"name": "useNLP",
+			"type": "boolean"
+		},
+		{
+			"name": "nlpCommand",
+			"type": "string",
+			"description": "Brief phrase (not a complete sentence) of what to reinfore through NLP during a chat conversation"
+		},
+		{
+			"name": "useJailBreak",
+			"type": "boolean"
+		},
+		{
+			"name": "prune",
+			"type": "boolean"
+		},
+		{
+			"name": "scene",
+			"type": "string"
+		},
+		{
+			"name": "terrain",
+			"type": "string"
+		},
+		{
+			"name": "populationDescription",
+			"type": "string"
+		},
+		{
+			"name": "animalDescription",
+			"type": "string"
+		},
+		{
+			"name": "includeScene",
+			"type": "boolean"
+		},
+		{
+			"name": "setting",
+			"type": "string",
+			"default": "random"
+		},
+		{
+			"name": "model",
+			"type": "string",
+			"default": "dolphin-llama3"
+		},
+		{
+			"name": "analyzeModel",
+			"type": "string"
+		},
+		{
+			"name": "userPrompt",
+			"type": "string"
+		},
+		{
+			"name": "universeName",
+			"type": "string",
+			"description": "Name of any olio universe related to the characters or interactions."
+		},
+		{
+			"name": "worldName",
+			"type": "string",
+			"description": "Name of any olio world related to the characters or interactions."
+		},
+		{
+			"name": "startMode",
+			"type": "string",
+			"maxLength": "16",
+			"description": "Variant used to control how a chat begins",
+			"limit": ["user", "system", "none"],
+			"default": "none"
+		},
+		{
+			"name": "episodes",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.episode"
+		},
+		{
+			"name": "chatOptions",
+			"type": "model",
+			"baseModel": "olio.llm.chatOptions",
+			"followReference": false
+		},
+		{
+			"name": "apiVersion",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "serverUrl",
+			"type": "string",
+			"maxLength": 512,
+			"default": "http://localhost:11434"
+		},
+		{
+			"name": "apiKey",
+			"type": "string",
+			"maxLength": 256,
+			"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
+			"encrypt": true
+		},
+		{
+			"name": "assist",
+			"type": "boolean"
+		},
+		{
+			"name": "stream",
+			"type": "boolean"
+		},
+		{
+			"name": "requestTimeout",
+			"type": "int",
+			"default": 120,
+			"description": "Hard timeout in seconds for LLM connections. Used with CompletableFuture.orTimeout() to abort hung requests. 0 = no timeout."
+		},
+
+		{
+			"name": "remindEvery",
+			"type": "int",
+			"default": 6,
+			"description": "When assist is true, the number of user messages before any reminder text is included in the conversation history"
+		},
+		{
+			"name": "keyframeEvery",
+			"type": "int",
+			"default": 0,
+			"description": "When assist is true and prune is true, the number of messages after any previous keyframe or after the beginning of the message history before conducting a conversation analysis.  This is intended to be an objective summary of the conversation to preserve context and important details"
+		},
+		{
+			"name": "messageTrim",
+			"type": "int",
+			"default": 20,
+			"description": "When prune is true, sets the size of the message history to include in each request. messageTrim and keyframeEvery should be the same size when used in conjunction.  Note: The entire conversation is always preserved and may be used for summarization and analysis, this only affects the number of messages to include when using the chat capability."
+		},
+		{
+			"name": "policy",
+			"type": "model",
+			"baseModel": "policy.policy",
+			"foreign": true,
+			"followReference": false,
+			"description": "Development: Using a policy to route conversation requests through conditional rules and logic."
+		},
+		{
+			"name": "policyTemplate",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Resource name of the policy template JSON (e.g., 'rpg', 'bias', 'rpg.bias'). Loaded from olio/llm/policy.{name}.json by ResponsePolicyEvaluator for direct operation evaluation."
+		},
+		{
+			"name": "extractMemories",
+			"type": "boolean",
+			"description": "When true, the agent layer will automatically extract discrete memories (engrams) from chat sessions after save."
+		},
+		{
+			"name": "memoryBudget",
+			"type": "int",
+			"default": 0,
+			"description": "Token budget for memory context injection in prompts. 0 = disabled. Typical values: 500 (light), 800 (standard), 1000+ (rich)."
+		},
+		{
+			"name": "memoryExtractionEvery",
+			"type": "int",
+			"default": 0,
+			"description": "When extractMemories is true, the number of keyframes between automatic memory extraction from keyframe analysis text. 0 = extract on every keyframe. Typical values: 0 (every keyframe), 3 (every 3rd), 5 (every 5th)."
+		},
+		{
+			"name": "lastKeyframeAt",
+			"type": "int",
+			"default": 0,
+			"description": "Message count at which the last keyframe was generated. Used by pruneCount to determine when the next keyframe is due. Updated by the async keyframe pipeline."
+		},
+		{
+			"name": "extractInteractions",
+			"type": "boolean",
+			"description": "When true, automatically extract olio.interaction records from chat sessions on an independent cadence."
+		},
+		{
+			"name": "interactionEvery",
+			"type": "int",
+			"default": 0,
+			"description": "Number of messages between automatic interaction extractions. 0 = disabled. Controls extraction cadence independently from keyframeEvery."
+		},
+		{
+			"name": "lastInteractionAt",
+			"type": "int",
+			"default": 0,
+			"description": "Message count at which the last interaction extraction was performed. Updated eagerly before async launch."
+		},
+		{
+			"name": "autoTitle",
+			"type": "boolean",
+			"default": true,
+			"description": "When true, auto-generate a descriptive chat title via LLM after the first user+assistant exchange."
+		},
+		{
+			"name": "autoTunePrompts",
+			"type": "boolean",
+			"description": "When true, automatically analyze and suggest prompt revisions when policy violations are detected. Creates new prompt variants (never overwrites originals)."
+		},
+		{
+			"name": "autoTuneChatOptions",
+			"type": "boolean",
+			"description": "When true, automatically adjust chatOptions (temperature, top_p, penalties) when policy violations indicate quality issues. Requires a policy reference."
+		},
+		{
+			"name": "complianceCheck",
+			"type": "boolean",
+			"description": "When true, run LLM-based response compliance evaluation checking: (1) not responding as user, (2) gendered voice, (3) profile comparison adherence, (4) age guidance adherence, (5) no racial/orientation bias, (6) personality consistency vs dark triad scores."
+		},
+		{
+			"name": "complianceCheckEvery",
+			"type": "int",
+			"default": 3,
+			"description": "When complianceCheck is true, evaluate every Nth response. 1 = every response (expensive), 3 = every 3rd (recommended). 0 = disabled."
+		},
+		{
+			"name": "analyzeTimeout",
+			"type": "int",
+			"default": 120,
+			"description": "Timeout in seconds for internal analyze/memory extraction LLM calls. Separate from requestTimeout to allow longer processing for background operations."
+		},
+		{
+			"name": "memoryExtractionPrompt",
+			"type": "string",
+			"maxLength": 128,
+			"description": "Custom memory extraction prompt resource name. Null uses default memoryExtractionV2.json."
+		},
+		{
+			"name": "memoryExtractionMaxPerSegment",
+			"type": "int",
+			"default": 1,
+			"description": "Maximum number of memories to extract per conversation segment. 1 = focused single-memory extraction (recommended). 0 = unlimited. Max 10."
+		},
+		{
+			"name": "memoryExtractionTypes",
+			"type": "string",
+			"maxLength": 256,
+			"default": "FACT,RELATIONSHIP,DISCOVERY,DECISION,INSIGHT",
+			"description": "Comma-separated list of allowed MemoryTypeEnumType values for extraction. Only memories matching these types will be persisted."
+		},
+		{
+			"name": "promptTemplate",
+			"type": "model",
+			"baseModel": "olio.llm.promptTemplate",
+			"foreign": true,
+			"description": "DEPRECATED — use promptTemplate on chatRequest instead. This field is retained for backward compatibility and will be removed in a future version. When set, Chat uses PromptTemplateComposer instead of flat promptConfig fields for prompt assembly."
+		},
+		{
+			"name": "summaryWorkers",
+			"type": "int",
+			"default": 2,
+			"description": "Maximum number of concurrent LLM calls during map-reduce summarization. Ollama on a single GPU typically handles 2 concurrent calls; increase for multi-GPU or faster models. 0 = use default (2)."
+		},
+		{
+			"name": "gossipEnabled",
+			"type": "boolean",
+			"default": false,
+			"description": "Enable cross-character memory recall and gossip suggestions."
+		},
+		{
+			"name": "gossipThreshold",
+			"type": "double",
+			"default": 0.65,
+			"description": "Minimum relevance score for gossip memory suggestions."
+		},
+		{
+			"name": "gossipMaxSuggestions",
+			"type": "int",
+			"default": 5,
+			"description": "Maximum number of gossip memory suggestions to return."
+		}
+
+	]
+}
+
+
+

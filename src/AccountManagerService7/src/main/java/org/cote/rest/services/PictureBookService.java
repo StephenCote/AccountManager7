@@ -688,7 +688,7 @@ public class PictureBookService {
             String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
             if (sceneGroupPath == null) sceneGroupPath = "~/Chat";
             String imageName = "scene_" + sceneObjectId + "_" + System.currentTimeMillis();
-            long seed = -1L;
+            int seed = -1;
 
             SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType), sdServer);
             List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfig, imageName, 1, hires, seed);
