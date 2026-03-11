@@ -71,7 +71,7 @@ public class PictureBookService {
     // SD generation defaults — enforced unless pictureBook.hq feature flag is true
     private static final int DEFAULT_STEPS = 20;
     private static final int DEFAULT_REFINER_STEPS = 20;
-    private static final float DEFAULT_CFG = 5.0f;
+    private static final int DEFAULT_CFG = 5;
     private static final boolean DEFAULT_HIRES = false;
 
     // Default scene count cap for non-HQ mode
@@ -594,7 +594,7 @@ public class PictureBookService {
         String promptOverride = null;
         int steps = DEFAULT_STEPS;
         int refinerSteps = DEFAULT_REFINER_STEPS;
-        float cfg = DEFAULT_CFG;
+        int cfg = DEFAULT_CFG;
         boolean hires = DEFAULT_HIRES;
 
         if (json != null && !json.trim().isEmpty()) {
@@ -610,7 +610,7 @@ public class PictureBookService {
                     Object rv = sdConf.get("refinerSteps");
                     if (rv instanceof Number) refinerSteps = ((Number) rv).intValue();
                     Object cv = sdConf.get("cfg");
-                    if (cv instanceof Number) cfg = ((Number) cv).floatValue();
+                    if (cv instanceof Number) cfg = ((Number) cv).intValue();
                     Object hv = sdConf.get("hires");
                     if (hv instanceof Boolean) hires = (Boolean) hv;
                 }
@@ -677,12 +677,12 @@ public class PictureBookService {
             return Response.status(500).entity("{\"error\":\"SD server not configured\"}").build();
         }
         try {
-            BaseRecord sdConfig = RecordFactory.newInstance("olio.sdConfig");
+            BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
             sdConfig.set("steps", steps);
             sdConfig.set("refinerSteps", refinerSteps);
             sdConfig.set("cfg", cfg);
             sdConfig.set("hires", hires);
-            sdConfig.set("positive", sdPrompt);
+            sdConfig.set("description", sdPrompt);
             sdConfig.set("style", "illustration");
 
             String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
