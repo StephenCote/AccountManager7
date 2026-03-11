@@ -1,0 +1,4 @@
+{
+  "system": "Write engaging, literary picture book captions. Use present tense. Include specific sensory details. Avoid generic summaries. Maximum 3 sentences. Return only the caption text — no quotes, no labels, no JSON. /no_think",
+  "user": "Write a 2-3 sentence picture book caption.\nTITLE: {title}\nSETTING: {setting}\nACTION: {action}\nCHARACTERS: {characterList}\n\nCaption:"
+}

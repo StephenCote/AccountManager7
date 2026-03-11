@@ -11,3 +11,4 @@ export { reimageApparel } from './reimageApparel.js';
 export { memberCloud } from './memberCloud.js';
 export { adoptCharacter } from './adoptCharacter.js';
 export { outfitBuilder } from './outfitBuilder.js';
+export { pictureBook } from './pictureBook.js';

@@ -100,6 +100,15 @@ const features = {
         deps: ['core'],
         routes: () => import('./features/featureConfig.js'),
         menuItems: [{ icon: 'tune', label: 'Features', route: '/admin/features', section: 'aside', adminOnly: true }]
+    },
+    pictureBook: {
+        id: 'pictureBook',
+        label: 'Picture Book',
+        description: 'Generate illustrated picture books from story/document objects',
+        required: false,
+        deps: ['core', 'chat'],
+        routes: () => import('./features/pictureBook.js'),
+        menuItems: [{ icon: 'auto_stories', label: 'Picture Book', route: '/picture-book', section: 'aside' }]
     }
 };
 

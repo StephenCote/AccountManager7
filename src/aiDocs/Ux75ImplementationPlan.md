@@ -750,7 +750,7 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 
 ---
 
-### Phase 16: Picture Book — PLANNED
+### Phase 16: Picture Book — COMPLETE (2026-03-11)
 
 **Goal:** Generate an illustrated "picture book" from a story or document — a series of scene images with caption blurbs representing the most visually notable moments in the work. Bridges the LLM summarizer pipeline with character extraction, outfit building, and image generation.
 

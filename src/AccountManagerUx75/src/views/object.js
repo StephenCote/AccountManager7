@@ -3,7 +3,7 @@ import { am7model } from '../core/model.js';
 import { am7view } from '../core/view.js';
 import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
-import { summarize, vectorize, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder } from '../workflows/index.js';
+import { summarize, vectorize, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder, pictureBook } from '../workflows/index.js';
 // Navigation is handled by router's pageLayout wrapper
 
 /**
@@ -424,6 +424,7 @@ function newObjectPage() {
     };
     objectPage.adoptCharacter = adoptCharacter;
     objectPage.outfitBuilder = outfitBuilder;
+    objectPage.pictureBook = pictureBook;
 
     // Stub handlers for commands not yet implemented (prevent "Command function not found" warnings)
     objectPage.makeFact = function () { page.toast('info', 'Fact creation not yet implemented'); };
