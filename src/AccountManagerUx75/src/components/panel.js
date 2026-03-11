@@ -189,9 +189,11 @@ function modelPanel() {
                     editing ? m("button", {
                         class: "ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200",
                         title: hidden ? 'Show category' : 'Hide category',
+                        'aria-label': hidden ? 'Show category' : 'Hide category',
                         onclick: function (e) { e.stopPropagation(); toggleHidden(k); }
                     }, m("span", {
                         class: "material-symbols-outlined",
+                        'aria-hidden': 'true',
                         style: "font-size: 16px"
                     }, hidden ? 'visibility_off' : 'visibility')) : null
                 ]),

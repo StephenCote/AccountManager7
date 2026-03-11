@@ -26,7 +26,7 @@ const breadcrumb = {
             }
         }
 
-        return m("nav", { class: "breadcrumb-bar" }, [
+        return m("nav", { class: "breadcrumb-bar", 'aria-label': "Breadcrumb" }, [
             m("div", { class: "breadcrumb-container" }, [
                 m("nav", { class: "breadcrumb" }, [
                     m("ol", { class: "breadcrumb-list" },

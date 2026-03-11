@@ -49,7 +49,7 @@ function layout(content) {
 function pageLayout(innerContent, navAttrs) {
     return m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
         m(navigation, navAttrs || {}),
-        m("div", { class: "flex-1 overflow-auto flex bg-white dark:bg-gray-900" }, [
+        m("main", { class: "flex-1 overflow-auto flex bg-white dark:bg-gray-900", role: "main" }, [
             innerContent
         ])
     ]);

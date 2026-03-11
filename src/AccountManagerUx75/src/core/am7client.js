@@ -2,8 +2,18 @@ import m from 'mithril';
 import { applicationPath } from './config.js';
 import { am7model } from './model.js';
 import Base64 from './base64.js';
+import { cacheDb } from './cacheDb.js';
 
 	var cache = {};
+	var _cacheDbReady = false;
+
+	// Initialize SQLite WASM cache asynchronously
+	cacheDb.init().then(function(ok) {
+		_cacheDbReady = ok;
+		if (ok && typeof console !== 'undefined') {
+			console.log('[am7client] SQLite WASM cache active');
+		}
+	});
 	var principal = 0;
 	var sCurrentOrganization = 0;
 	var sBase = applicationPath + "/rest";
@@ -148,12 +158,18 @@ import Base64 from './base64.js';
 		}
 		if(!sType){
 			cache = {};
+			if (_cacheDbReady) cacheDb.clearAll();
 			return (bLocalOnly ? Promise.resolve(true) : get(sCache + "/clearAll",fH));
 		}
 		else{
 			delete cache[sType];
-			if(sType.match(/^(project|lifecycle)$/gi)) delete cache["GROUP"];
+			if (_cacheDbReady) cacheDb.removeByType(sType);
+			if(sType.match(/^(project|lifecycle)$/gi)){
+				delete cache["GROUP"];
+				if (_cacheDbReady) cacheDb.removeByType("GROUP");
+			}
 			delete cache["COUNT"];
+			if (_cacheDbReady) cacheDb.removeByType("COUNT");
 			return (bLocalOnly ? Promise.resolve(true) : get(sCache + "/clear/" + sType,fH));
 		}
 	}
@@ -164,22 +180,38 @@ import Base64 from './base64.js';
 			sType = vType[am7model.jsonModelKey];
 			if(!sObjId) sObjId = vType.objectId;
 		}
+		if (_cacheDbReady) cacheDb.remove(sType, sObjId);
 		if(!cache[sType]) return;
 		for(var s in cache[sType]){
 			delete cache[sType][s][sObjId];
 		}
 	}
 	function getFromCache(sType, sAct, sObjId){
-		if(!cache[sType]) return 0;
-		if(!cache[sType][sAct]) return 0;
-		if(typeof cache[sType][sAct][sObjId]=="undefined") return 0;
-		return cache[sType][sAct][sObjId];
+		// Try in-memory first (fastest)
+		if(cache[sType] && cache[sType][sAct] && typeof cache[sType][sAct][sObjId] !== "undefined"){
+			return cache[sType][sAct][sObjId];
+		}
+		// Try SQLite cache
+		if (_cacheDbReady) {
+			var v = cacheDb.get(sType, sAct, sObjId);
+			if (v !== undefined) {
+				// Promote to in-memory for subsequent fast access
+				if(!cache[sType]) cache[sType] = {};
+				if(!cache[sType][sAct]) cache[sType][sAct] = {};
+				cache[sType][sAct][sObjId] = v;
+				return v;
+			}
+		}
+		return 0;
 	}
 	function addToCache(sType, sAct, sId, vObj){
 		if(!cache[sType]) cache[sType] = {};
 		if(!cache[sType][sAct]) cache[sType][sAct] = {};
 		cache[sType][sAct][sId]=vObj;
-
+		// Write-through to SQLite
+		if (_cacheDbReady) {
+			cacheDb.put(sType, sAct, sId, vObj);
+		}
 	}
 	function newPrimaryCredential(sType, sObjId, oAuthN, fH){
 		return post(sCred + "/" + sType + "/" + sObjId, oAuthN, fH);
@@ -331,6 +363,9 @@ import Base64 from './base64.js';
 	}
 	*/
 
+	// In-flight request deduplication map: key -> Promise
+	var _inflight = {};
+
 	function search(q, fH, bCount){
 
 		var sKey = q.key();
@@ -342,9 +377,19 @@ import Base64 from './base64.js';
 				return o;
 			}
 		}
+		// Deduplicate: if same query is already in-flight, reuse the promise
+		var dedupKey = type + ":" + sKey;
+		if (_inflight[dedupKey]) {
+			return _inflight[dedupKey].then(function(v) { if(fH) fH(v); return v; });
+		}
 		var f = fH;
 		var fc = function(v){if(q.entity.cache && typeof v != "undefined" && v != null){addToCache(type,"GET",sKey,v);} if(f) f(v);};
-		return post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fc);
+		var p = post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fc);
+		if (p && p.then) {
+			_inflight[dedupKey] = p;
+			p.then(function() { delete _inflight[dedupKey]; }, function() { delete _inflight[dedupKey]; });
+		}
+		return p;
 	}
 	function trace( bEnable, fH){
 		if(typeof bEnable != "boolean") bEnable = true;
@@ -1302,7 +1347,10 @@ import Base64 from './base64.js';
 		refreshNested,
 		syncObject,
 		syncFromResponse,
-		SYNC_MAPPINGS
+		SYNC_MAPPINGS,
+		// Cache metrics (dev mode)
+		cacheMetrics: function() { return _cacheDbReady ? cacheDb.getMetrics() : { hits: 0, misses: 0, writes: 0, evictions: 0, backend: 'memory' }; },
+		cacheEntryCount: function() { return _cacheDbReady ? cacheDb.entryCount() : Object.keys(cache).length; }
 	};
 
 export { uwm, am7client };

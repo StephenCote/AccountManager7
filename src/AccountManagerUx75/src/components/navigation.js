@@ -51,8 +51,8 @@ function navigable() {
 
 function asideToggle() {
     return m("div", { class: "menuToggle" }, [
-        m("button", { class: "mr-2" },
-            m("span", { class: "material-symbols-outlined material-icons-48" }, "menu")
+        m("button", { class: "mr-2", 'aria-label': "Toggle navigation menu", 'aria-expanded': "false" },
+            m("span", { class: "material-symbols-outlined material-icons-48", 'aria-hidden': 'true' }, "menu")
         )
     ]);
 }
@@ -76,7 +76,7 @@ const navigation = {
         if (!page.authenticated()) return '';
         let showBreadcrumb = !(vnode.attrs && vnode.attrs.hideBreadcrumb);
         return [
-            m("nav", { class: "pageNav" }, [
+            m("nav", { class: "pageNav", 'aria-label': "Main navigation" }, [
                 asideToggle(),
                 m(topMenu)
             ]),

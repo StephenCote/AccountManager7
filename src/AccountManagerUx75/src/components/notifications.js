@@ -86,8 +86,9 @@ function notificationPanel() {
                     m('button', {
                         class: 'shrink-0 ml-2 text-gray-400 hover:text-green-600',
                         onclick: function (e) { e.stopPropagation(); acknowledge(item); },
-                        title: 'Dismiss'
-                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'check'))
+                        title: 'Dismiss',
+                        'aria-label': 'Dismiss notification'
+                    }, m('span', { class: 'material-symbols-outlined', 'aria-hidden': 'true', style: 'font-size:18px' }, 'check'))
                 ]);
             })
         )
@@ -100,9 +101,11 @@ const notificationButton = {
             m('button', {
                 class: 'menu-button',
                 onclick: toggle,
-                title: 'Notifications'
+                title: 'Notifications',
+                'aria-label': 'Notifications',
+                'aria-expanded': panelOpen ? 'true' : 'false'
             }, [
-                m('span', { class: 'material-symbols-outlined' }, 'notifications'),
+                m('span', { class: 'material-symbols-outlined', 'aria-hidden': 'true' }, 'notifications'),
                 badge()
             ]),
             notificationPanel()

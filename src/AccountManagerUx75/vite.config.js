@@ -24,6 +24,15 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-mithril': ['mithril'],
+          'vendor-marked': ['marked'],
+          'vendor-turndown': ['turndown']
+        }
+      }
+    }
   }
 });

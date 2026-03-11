@@ -48,6 +48,19 @@ function dismiss() {
 function onKeyDown(e) {
     if (e.key === 'Escape') {
         dismiss();
+        return;
+    }
+    // Arrow key navigation within context menu
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        let menu = document.querySelector('.context-menu');
+        if (!menu) return;
+        let items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+        if (!items.length) return;
+        let idx = items.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') idx = (idx + 1) % items.length;
+        else idx = (idx - 1 + items.length) % items.length;
+        items[idx].focus();
     }
 }
 
@@ -61,18 +74,27 @@ const contextMenuComponent = {
         if (!menuState.visible || !menuState.items.length) return null;
         return m('div', {
             class: 'context-menu',
-            style: 'position:fixed;left:' + menuState.x + 'px;top:' + menuState.y + 'px;z-index:10000'
+            role: 'menu',
+            'aria-label': 'Context menu',
+            style: 'position:fixed;left:' + menuState.x + 'px;top:' + menuState.y + 'px;z-index:10000',
+            oncreate: function(vnode) {
+                // Focus first menu item for keyboard access
+                let first = vnode.dom.querySelector('[role="menuitem"]');
+                if (first) first.focus();
+            }
         },
             menuState.items.map(function (item) {
                 if (item.divider) {
-                    return m('div', { class: 'context-menu-divider' });
+                    return m('div', { class: 'context-menu-divider', role: 'separator' });
                 }
                 return m('button', {
                     class: 'context-menu-item',
+                    role: 'menuitem',
                     onclick: function () { executeItem(item); }
                 }, [
                     item.icon ? m('span', {
                         class: 'material-symbols-outlined',
+                        'aria-hidden': 'true',
                         style: 'font-size:16px;margin-right:8px;vertical-align:middle'
                     }, item.icon) : null,
                     m('span', {}, item.label)

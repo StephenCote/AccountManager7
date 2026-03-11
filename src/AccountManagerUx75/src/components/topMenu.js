@@ -79,33 +79,38 @@ const topMenu = {
                 return m("button", {
                     class: "menu-button",
                     onclick: function () { m.route.set(mi.route); },
-                    title: mi.label
-                }, m("span", { class: "material-symbols-outlined" }, mi.icon));
+                    title: mi.label,
+                    'aria-label': mi.label
+                }, m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, mi.icon));
             });
-        return m("div", { class: "flex items-center gap-2" }, [
+        return m("div", { class: "flex items-center gap-2", role: "toolbar", 'aria-label': "Main toolbar" }, [
             m("button", {
                 class: "menu-button",
                 onclick: function () { m.route.set("/main"); },
-                title: "Home"
-            }, m("span", { class: "material-symbols-outlined" }, "home")),
+                title: "Home",
+                'aria-label': "Home"
+            }, m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, "home")),
             m("button", {
                 class: "menu-button",
                 onclick: toggleDarkMode,
-                title: "Toggle dark mode"
-            }, m("span", { class: "material-symbols-outlined" }, "dark_mode")),
+                title: "Toggle dark mode",
+                'aria-label': "Toggle dark mode"
+            }, m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, "dark_mode")),
             m("button", {
                 class: "menu-button" + (densityIndex ? " active" : ""),
                 onclick: toggleDensity,
-                title: "Toggle density: " + (densityModes[densityIndex] || "normal")
-            }, m("span", { class: "material-symbols-outlined" }, "density_small")),
+                title: "Toggle density: " + (densityModes[densityIndex] || "normal"),
+                'aria-label': "Toggle density: " + (densityModes[densityIndex] || "normal")
+            }, m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, "density_small")),
             ...featureButtons,
             m(notificationButton),
             profileImage(userName),
             m("button", {
                 class: "menu-button",
                 onclick: function () { page.logout(); },
-                title: "Logout"
-            }, m("span", { class: "material-symbols-outlined" }, "logout"))
+                title: "Logout",
+                'aria-label': "Logout"
+            }, m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, "logout"))
         ]);
     }
 };

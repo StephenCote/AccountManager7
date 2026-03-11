@@ -146,19 +146,20 @@ function loadToast() {
         let closeBtn = m("button", {
             onclick: () => { burnToast(t); },
             type: "button",
+            'aria-label': "Dismiss notification",
             class: "ms-auto -mx-1.5 -my-1.5 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-200 inline-flex items-center justify-center h-8 w-8"
         },
-            m("span", { class: "material-symbols-outlined" }, "close")
+            m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, "close")
         );
-        return m("div", { id: "toast-box-" + t.id, class: "transition transition-" + (t.visible ? "100" : "0") + " toast-box " + cfg.style }, [
+        return m("div", { id: "toast-box-" + t.id, class: "transition transition-" + (t.visible ? "100" : "0") + " toast-box " + cfg.style, role: "status" }, [
             m("div", { class: cfg.icoStyle + " ico-box" }, [
-                m("span", { class: "material-symbols-outlined" }, cfg.ico)
+                m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, cfg.ico)
             ]),
             m("div", { class: "toast-text" }, t.message),
             closeBtn
         ]);
     });
-    return (items.length == 0 ? "" : m("div", { class: "toast-container" }, [
+    return (items.length == 0 ? "" : m("div", { class: "toast-container", 'aria-live': "polite", 'aria-atomic': "false" }, [
         items
     ]));
 }

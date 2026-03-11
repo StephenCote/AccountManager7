@@ -52,9 +52,13 @@ function newListControl() {
     //  Helpers
     // ------------------------------------------------------------------
 
-    function iconBtn(sClass, sIco, sLabel, fHandler) {
-        return m('button', { onclick: fHandler, class: sClass }, [
-            sIco ? m('span', { class: 'material-symbols-outlined material-icons-24' }, sIco) : '',
+    function iconBtn(sClass, sIco, sLabel, fHandler, ariaLabel) {
+        let attrs = { onclick: fHandler, class: sClass };
+        if (ariaLabel || (sLabel == null || sLabel === '')) {
+            attrs['aria-label'] = ariaLabel || sIco;
+        }
+        return m('button', attrs, [
+            sIco ? m('span', { class: 'material-symbols-outlined material-icons-24', 'aria-hidden': 'true' }, sIco) : '',
             sLabel || ''
         ]);
     }
@@ -644,14 +648,16 @@ function newListControl() {
             m('div', { class: 'flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700' }, [
                 m('button', {
                     class: 'p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700' + (currentIdx <= 0 ? ' opacity-30' : ''),
-                    onclick: function() { galleryNav(-1, items); }
-                }, m('span', { class: 'material-symbols-outlined', style: 'font-size:20px' }, 'chevron_left')),
+                    onclick: function() { galleryNav(-1, items); },
+                    'aria-label': 'Previous item'
+                }, m('span', { class: 'material-symbols-outlined', style: 'font-size:20px', 'aria-hidden': 'true' }, 'chevron_left')),
                 m('span', { class: 'text-sm text-gray-600 dark:text-gray-300' },
                     (currentIdx + 1) + ' / ' + items.length + (item.name ? ' — ' + item.name : '')),
                 m('button', {
                     class: 'p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700' + (currentIdx >= items.length - 1 ? ' opacity-30' : ''),
-                    onclick: function() { galleryNav(1, items); }
-                }, m('span', { class: 'material-symbols-outlined', style: 'font-size:20px' }, 'chevron_right'))
+                    onclick: function() { galleryNav(1, items); },
+                    'aria-label': 'Next item'
+                }, m('span', { class: 'material-symbols-outlined', style: 'font-size:20px', 'aria-hidden': 'true' }, 'chevron_right'))
             ]),
             // Content — full-size fit to container
             m('div', { class: 'flex-1 overflow-hidden p-2' }, content)
@@ -686,20 +692,19 @@ function newListControl() {
         let selected = getSelected();
         if (!selected.length) return;
         let total = selected.length;
-        let done = 0;
-        let toastId = page.toast('info', 'Applying tags: 0/' + total, -1);
-        for (let i = 0; i < selected.length; i++) {
-            try {
-                await new Promise(function (res) {
-                    am7client.applyImageTags(selected[i].objectId, function () { res(); });
-                });
-            } catch (e) {
-                page.toast('error', 'Tag failed: ' + (selected[i].name || selected[i].objectId));
-            }
-            done++;
-            // Update progress toast by removing old and adding new
+        page.toast('info', 'Applying tags to ' + total + ' items...');
+        // Parallel batch — all requests fire concurrently
+        let results = await Promise.allSettled(
+            selected.map(function(item) {
+                return am7client.applyImageTags(item.objectId);
+            })
+        );
+        let failed = results.filter(function(r) { return r.status === 'rejected'; }).length;
+        if (failed > 0) {
+            page.toast('warn', 'Tags applied: ' + (total - failed) + '/' + total + ' (' + failed + ' failed)');
+        } else {
+            page.toast('success', 'Tags applied to ' + total + ' items');
         }
-        page.toast('success', 'Tags applied to ' + done + '/' + total + ' items');
     }
 
     function selectAll() {
@@ -738,34 +743,35 @@ function newListControl() {
 
         // Add / Edit / Delete
         if (!modType || !modType.systemNew) {
-            buttons.push(iconBtn('button', 'add', '', addNew));
+            buttons.push(iconBtn('button', 'add', '', addNew, 'Add new item'));
         }
-        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'edit', '', editSelected));
-        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'delete', '', deleteSelected));
+        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'edit', '', editSelected, 'Edit selected'));
+        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'delete', '', deleteSelected, 'Delete selected'));
 
         // Navigate up/down for group navigation
         if (isGroupNav) {
-            buttons.push(iconBtn('button', 'north_west', '', navigateUp));
-            buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'south_east', '', () => navigateDown()));
+            buttons.push(iconBtn('button', 'north_west', '', navigateUp, 'Navigate up'));
+            buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'south_east', '', () => navigateDown(), 'Navigate into'));
         }
 
         // Grid/gallery toggle: table → small icons → large icons → gallery
         let gridIcons = ['view_list', 'grid_view', 'apps', 'view_carousel'];
-        buttons.push(iconBtn('button', gridIcons[gridMode] || 'view_list', '', toggleGrid));
+        let gridLabels = ['Table view', 'Small icons', 'Large icons', 'Gallery view'];
+        buttons.push(iconBtn('button', gridIcons[gridMode] || 'view_list', '', toggleGrid, gridLabels[gridMode] || 'Toggle view'));
 
         // Bulk apply image tags
-        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'label', '', bulkApplyTags));
+        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'label', '', bulkApplyTags, 'Apply tags to selected'));
 
         // Select all
-        buttons.push(iconBtn('button', 'select_all', '', selectAll));
+        buttons.push(iconBtn('button', 'select_all', '', selectAll, 'Select all'));
 
         // Full mode
         buttons.push(iconBtn('button' + (fullMode ? ' active' : ''),
-            fullMode ? 'close_fullscreen' : 'open_in_new', '', toggleFullMode));
+            fullMode ? 'close_fullscreen' : 'open_in_new', '', toggleFullMode, fullMode ? 'Exit full mode' : 'Full mode'));
 
         // Infinite scroll toggle
         buttons.push(iconBtn('button' + (infiniteScroll ? ' active' : ''),
-            'all_inclusive', '', toggleInfiniteScroll));
+            'all_inclusive', '', toggleInfiniteScroll, infiniteScroll ? 'Disable infinite scroll' : 'Enable infinite scroll'));
 
         return buttons;
     }
@@ -778,6 +784,7 @@ function newListControl() {
             type: 'text',
             class: 'text-field',
             placeholder,
+            'aria-label': 'Filter items',
             onkeydown: (e) => {
                 if (e.which === 13) {
                     doFilter(e.target.value);
@@ -792,6 +799,7 @@ function newListControl() {
                 type: 'text',
                 class: 'text-field',
                 placeholder: 'Search...',
+                'aria-label': 'Search items',
                 value: searchQuery,
                 oninput: function (e) { doSearch(e.target.value); },
                 onkeydown: function (e) {
@@ -805,15 +813,16 @@ function newListControl() {
             searchActive ? m('button', {
                 class: 'button',
                 onclick: function () { clearSearch(); },
-                title: 'Clear search'
-            }, m('span', { class: 'material-symbols-outlined material-icons-24' }, 'close')) : null
+                title: 'Clear search',
+                'aria-label': 'Clear search'
+            }, m('span', { class: 'material-symbols-outlined material-icons-24', 'aria-hidden': 'true' }, 'close')) : null
         ]);
     }
 
     function pageButtons() {
         let pg = pagination.pages();
         if (!pg.pageCount || pg.pageCount <= 1) return m('span');
-        return m('nav', { class: 'result-nav' }, pagination.pageButtons());
+        return m('nav', { class: 'result-nav', 'aria-label': 'Pagination' }, pagination.pageButtons());
     }
 
     // ------------------------------------------------------------------
