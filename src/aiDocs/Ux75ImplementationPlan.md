@@ -726,6 +726,288 @@ Phases 0-3 and 3.5a are COMPLETE. The next phase is 3.5b (Dialog Workflow Comman
 
 ---
 
+### Phase 16: Picture Book — PLANNED
+
+**Goal:** Generate an illustrated "picture book" from a story or document — a series of scene images with caption blurbs representing the most visually notable moments in the work. Bridges the LLM summarizer pipeline with character extraction, outfit building, and image generation.
+
+---
+
+#### 16.0 Concept Overview
+
+The Picture Book feature operates on a "work" — any `data.data` or `data.note` object containing story or document text. It produces an ordered sequence of scene records, each with:
+- A short blurb (2-3 sentences: characters in a setting doing something)
+- A generated image representing the scene
+
+The pipeline has two entry paths:
+1. **Auto (LLM extraction)** — Feed the work text to the LLM; it identifies and returns the most visually notable scenes, characters, and settings.
+2. **Manual** — User provides a list of scene descriptions (title, summary, characters, setting) directly via a form.
+
+In either path, the system:
+1. Extracts or accepts scene definitions
+2. Identifies characters in each scene and creates/matches `olio.charPerson` objects scoped to the work
+3. Thoroughly outfits and narrates each character using the existing outfit builder + narrate pipeline
+4. Generates a scene image by compositing character narrations + setting + action into an SD prompt
+5. Stores scenes as `data.note` records linked to the work
+
+The result is a browsable picture book that can also be exported or referenced inside the work.
+
+---
+
+#### 16.1 Data Model
+
+**Scene Storage**
+- Type: `data.note` (existing model, no new schema needed)
+- Group: `{workGroupPath}/Scenes/` — auto-created as a sub-group of the work's group
+- Per-scene record fields:
+  - `name` — scene title (e.g., "The Duel at Dawn")
+  - `description` — the blurb paragraph (characters in setting, doing action)
+  - `tags` — linked `data.tag` records: `scene-index:{N}`, the work's tag, any character tags
+- Scene images stored as `data.data` linked to the scene `data.note` via membership (same pattern as charPerson portrait images)
+- Scene order: encoded in the `scene-index:{N}` tag name, or in a `.pictureBookMeta` `data.data` JSON blob in the work's group (ordered array of scene objectIds)
+
+**Character Storage**
+- Type: `olio.charPerson` (existing model)
+- Group: `{workGroupPath}/Characters/` — auto-created per work
+- Each extracted character maps to one `olio.charPerson` in this group
+- Characters are tagged with a work-scoped tag: `work:{workObjectId}` to allow cross-query
+- After creation, they receive a full outfit (via outfit builder themes or LLM-extracted clothing) and a narrate call so SD prompts are current
+
+**Work Tag**
+- A `data.tag` named after the work (or using its objectId) links together all scenes and characters: the work is the "owner" of the extraction run
+- Allows future re-runs (detect existing extractions, offer to re-extract vs. append)
+
+**Picture Book Meta**
+- A `data.data` record named `.pictureBookMeta` in `{workGroupPath}/` stores JSON:
+  ```json
+  {
+    "workObjectId": "...",
+    "workName": "...",
+    "sceneCount": 5,
+    "scenes": [
+      { "objectId": "...", "index": 0, "title": "...", "imageObjectId": "...", "characters": ["...","..."] }
+    ],
+    "extractedAt": "...",
+    "generatedAt": "..."
+  }
+  ```
+
+---
+
+#### 16.2 LLM Prompt Templates
+
+Four new PromptTemplate files under `olio/llm/prompts/` (externalized via `PromptResourceUtil`, same pattern as `summarization.json`):
+
+**`pictureBook.extract-scenes.json`**
+- System: Instruct the LLM to identify the N most visually compelling scenes in a story. Each scene must have enough concrete visual detail (characters, setting, action) to generate an illustration. Scenes should be distributed across the narrative arc, not clustered at the start. Append `/no_think`.
+- User template: `"Given this story, identify the {count} most visually notable scenes. Return a JSON array only, no prose:\n[{\"index\": 0, \"title\": \"...\", \"summary\": \"2-3 sentence blurb of who is doing what where\", \"setting\": \"environment/landscape description for illustration\", \"action\": \"what characters are doing\", \"mood\": \"atmosphere, lighting, time of day\", \"characters\": [{\"name\": \"...\", \"role\": \"brief role in scene\"}]}]\n\nSTORY:\n{text}"`
+- Default count: 5 (configurable in the wizard UI, range 3-12)
+- Response parsed as JSON array
+
+**`pictureBook.extract-character.json`**
+- System: Extract a thorough physical and costume description suitable for stable diffusion character generation. Be specific about ethnicity, hair color, eye color, build, age approximation, and detailed clothing. Do not invent details not supported by the text; note gaps as `null`. Append `/no_think`.
+- User template: `"From the story below, extract all available physical and costume details for the character named '{name}'. Return JSON only:\n{\"name\": \"...\", \"gender\": \"male|female|other\", \"age_approx\": \"...\", \"physical\": {\"height\": \"...\", \"build\": \"...\", \"hair\": \"...\", \"eyes\": \"...\", \"skin\": \"...\", \"distinguishing\": \"...\"}, \"clothing_style\": \"...\", \"outfit_notes\": \"detailed clothing description\", \"personality_hint\": \"...\"}\n\nSTORY:\n{text}"`
+- One call per unique character name
+
+**`pictureBook.scene-image-prompt.json`**
+- System: You are an expert Stable Diffusion prompt engineer. Combine character appearance descriptions with a scene setting and action into a high-quality SD image prompt. Format: masterpiece, best quality, [characters described in scene], [setting], [action], [mood/lighting]. DO NOT include negative prompts here (handled separately). Append `/no_think`.
+- User template: `"Create a Stable Diffusion scene prompt for this scene.\nSETTING: {setting}\nACTION: {action}\nMOOD: {mood}\nCHARACTERS IN SCENE:\n{charNarrations}\n\nReturn only the SD prompt text, no commentary."`
+- `charNarrations` = concatenated `olio.charPerson.narrative` for each character in scene
+
+**`pictureBook.scene-blurb.json`**
+- System: Write engaging, literary picture book captions. Present tense. Specific sensory details. No generic summaries. Maximum 3 sentences. Append `/no_think`.
+- User template: `"Write a 2-3 sentence picture book caption for this scene:\nTITLE: {title}\nSETTING: {setting}\nACTION: {action}\nCHARACTERS: {characterList}\n\nCaption:"`
+- Used to generate/regenerate the blurb per scene
+
+---
+
+#### 16.3 Backend: PictureBookService.java
+
+New REST service at `/rest/olio/picture-book`. Handles the long-running orchestration steps that are impractical to sequence entirely in the browser.
+
+**Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/rest/olio/picture-book/{workObjectId}/extract` | Run full LLM extraction: scenes + characters from work text. Creates scene `data.note` records, `olio.charPerson` records, outfits characters, calls narrate. Returns the `.pictureBookMeta` JSON. |
+| `POST` | `/rest/olio/picture-book/{workObjectId}/extract-scenes-only` | LLM scene extraction only (no character creation). Returns raw scene JSON array for user review before committing. |
+| `POST` | `/rest/olio/picture-book/scene/{sceneObjectId}/generate` | Generate SD image for one scene. Accepts `{ chatConfig, sdConfig, promptOverride }` body. Builds SD prompt from scene data + linked charPerson narratives, calls SD service, stores image, links to scene. Returns image objectId. |
+| `POST` | `/rest/olio/picture-book/scene/{sceneObjectId}/blurb` | Regenerate the scene blurb via LLM. Updates the `data.note.description` field. |
+| `GET` | `/rest/olio/picture-book/{workObjectId}/scenes` | Returns ordered scene list with meta (title, blurb, imageObjectId, characters). Reads from `.pictureBookMeta` data.data. |
+| `PUT` | `/rest/olio/picture-book/{workObjectId}/scenes/order` | Reorder scenes (body: `{ scenes: ["objectId1", ...] }`). Updates `.pictureBookMeta`. |
+| `DELETE` | `/rest/olio/picture-book/{workObjectId}/reset` | Delete all scenes and extracted characters for a work (with confirmation). Removes `Scenes/` and `Characters/` groups. |
+
+**Java implementation notes:**
+- `PictureBookService.java` in `AccountManagerService7/src/main/java/org/cote/rest/services/`
+- Uses existing `PromptResourceUtil` for prompt loading
+- Uses existing chat infrastructure (`ChatUtil`, `LLMConnector` Java equivalent) for LLM calls
+- Character creation calls existing `RecordFactory` for `olio.charPerson`
+- Outfit assignment: use existing `OlioUtil.applyThemeOutfit()` or equivalent — pick a theme-appropriate outfit based on the story's genre tag (fantasy/sci-fi/contemporary/period) OR use the LLM-extracted `outfit_notes` to match an outfit template
+- After outfit creation: call `OlioUtil.narrateCharacter(charPersonId)` to refresh SD prompt
+- Scene image generation: delegates to `SDService` via the scene SD prompt built from charPerson narratives
+- JUnit tests: `TestPictureBookService.java` — 6 tests: extract scenes (mock LLM), create characters, generate image (mock SD), list scenes, reorder, reset
+
+---
+
+#### 16.4 Frontend: Feature Structure
+
+**New files:**
+
+`src/features/pictureBook.js` — Lazy-loaded feature chunk
+- Route: `/picture-book` — work selector view (list of documents to illustrate)
+- Route: `/picture-book/:workObjectId` — picture book viewer for a specific work
+- `PictureBookFeature` — feature manifest entry (chat profile required — depends on LLM)
+- Registered in `features.js` with `deps: ['chat']`, aside menu under "Creative Tools"
+
+`src/workflows/pictureBook.js` — Command workflow
+- Entry point: `pictureBook(entity, inst)` — appears as command button on `data.data` and `data.note` objects
+- Launches the multi-step wizard (see 16.5)
+- Registered in `workflows/index.js` and `views/object.js` command dispatch
+
+`src/workflows/sceneExtractor.js` — LLM pipeline utilities (shared by workflow + feature)
+- `extractScenes(workObjectId, workText, chatConfig, count)` → calls `/extract-scenes-only`, returns scene array
+- `buildCharPersonFromExtracted(extractedChar, workGroupPath)` → creates charPerson, outfits, narrates
+- `generateSceneImage(sceneObjectId, sdConfig, chatConfig)` → calls `/scene/{id}/generate`
+- `pollGenerationStatus(sceneObjectId)` → polls for image completion
+- `loadPictureBook(workObjectId)` → fetches `.pictureBookMeta` and scene list
+
+---
+
+#### 16.5 Frontend: Multi-Step Wizard
+
+Launched via the command button on any document object. Uses `Dialog.open()` with a step controller (same pattern as existing multi-step dialogs).
+
+**Step 1: Source & Method**
+- Shows work title/name (pre-filled from `inst`)
+- Toggle: "Auto-extract from text" vs. "Enter scenes manually"
+- For Auto: select chat config (dropdown from `~/Chat`), scene count (3-12, default 5), genre hint (Fantasy / Sci-Fi / Contemporary / Historical / Other — guides outfit selection)
+- For Manual: skip to Step 3 directly
+
+**Step 2: Scene Preview (Auto path only)**
+- Calls `/extract-scenes-only` with spinner
+- Shows extracted scenes in a card list: index, title, summary, characters mentioned, setting
+- User can edit any field inline before committing
+- Add/remove scene buttons
+- "Looks good — continue" or "Re-extract" buttons
+
+**Step 3: Character Review**
+- Lists all unique characters found across scenes
+- For each: name, extracted description (or blank if manual), outfit style recommendation
+- "Create All" button — calls backend to create `olio.charPerson` records + outfit + narrate
+- Progress indicator per character
+- "Skip character" — exclude from image generation (scene images will omit them)
+- Shows existing charPersons if work was previously processed (detect by `Characters/` group existence)
+
+**Step 4: Image Generation**
+- Grid of scene cards, each with:
+  - Scene title + blurb
+  - "Generate Image" button (or "Regenerate" if image exists)
+  - Image thumbnail once generated
+  - SD config picker (use global default or override per scene)
+- "Generate All" button fires sequential requests with progress (N/total)
+- Each generation calls `/scene/{id}/generate`, polls for completion, shows thumbnail on finish
+- Generation is interruptible (Cancel button stops queuing remaining scenes)
+
+**Step 5: Picture Book View**
+- Full-screen gallery of generated scenes in order
+- Each scene card: full image + blurb caption + character tags
+- Drag-to-reorder (calls `/scenes/order` on drop)
+- "Edit Blurb" inline (calls `/scene/{id}/blurb` to regenerate via LLM, or freeform edit)
+- "Insert into Document" — copies Markdown image reference to clipboard (future: inline embed if document editor exists)
+- "Export Picture Book" — downloads as HTML or ZIP of images + captions
+- "Done" closes wizard, saves final state to `.pictureBookMeta`
+
+---
+
+#### 16.6 Picture Book Viewer (Feature Route `/picture-book/:workObjectId`)
+
+Standalone view accessed from the aside menu or directly:
+- Loads `.pictureBookMeta` for the work
+- Renders scenes in a responsive masonry or flex-row gallery
+- Dark/light mode aware
+- Scene selection shows full-size image + blurb + character list
+- "Edit" button opens the wizard at Step 4 to add/regenerate
+- "Back to Work" navigates to the source `data.data` object view
+
+---
+
+#### 16.7 Outfit Strategy for Extracted Characters
+
+The outfit applied to a new `olio.charPerson` is selected by this priority:
+1. LLM-extracted `outfit_notes` are compared against existing outfit templates in `~/Wearables` — if a close match exists, use it
+2. If no match: use the genre hint from Step 1 to pick a theme (fantasy=dark-medieval, sci-fi=sci-fi, contemporary=modern, historical=period) and apply the theme's gender-appropriate `functional` outfit tier
+3. Fallback: apply the default BASE wear level (naked + no apparel) so the character at least has a narration
+4. After outfit is applied: call `narrate` endpoint unconditionally so the SD prompt includes clothing details
+
+This ensures characters are "thoroughly outfitted and described" as required, without blocking on perfect outfit detection.
+
+---
+
+#### 16.8 Files Summary
+
+**New backend files:**
+- `AccountManagerService7/src/main/java/org/cote/rest/services/PictureBookService.java`
+- `AccountManagerService7/src/test/java/org/cote/accountmanager/objects/tests/TestPictureBookService.java`
+- `AccountManagerService7/src/main/resources/olio/llm/prompts/pictureBook.extract-scenes.json`
+- `AccountManagerService7/src/main/resources/olio/llm/prompts/pictureBook.extract-character.json`
+- `AccountManagerService7/src/main/resources/olio/llm/prompts/pictureBook.scene-image-prompt.json`
+- `AccountManagerService7/src/main/resources/olio/llm/prompts/pictureBook.scene-blurb.json`
+
+**New frontend files:**
+- `AccountManagerUx75/src/features/pictureBook.js`
+- `AccountManagerUx75/src/workflows/pictureBook.js`
+- `AccountManagerUx75/src/workflows/sceneExtractor.js`
+- `AccountManagerUx75/src/test/pictureBook.test.js` — ~20 Vitest unit tests
+- `AccountManagerUx75/e2e/pictureBook.spec.js` — ~8 Playwright E2E tests
+
+**Modified frontend files:**
+- `AccountManagerUx75/src/workflows/index.js` — add `pictureBook` export
+- `AccountManagerUx75/src/views/object.js` — register `pictureBook` command handler
+- `AccountManagerUx75/src/features.js` — add `pictureBook` feature entry with `deps: ['chat']`
+
+---
+
+#### 16.9 Tests
+
+**Vitest unit tests (~20):**
+- `sceneExtractor.js` exports and API function shapes
+- Scene JSON parsing from LLM response
+- charPerson field mapping from extracted character JSON
+- SD prompt assembly from scene + narrations
+- `.pictureBookMeta` structure validation
+- Blurb generation call path
+- Reorder mutation logic
+- Feature manifest entry (deps, aside menu, adminOnly=false)
+- Command handler registration on objectPage
+
+**Playwright E2E tests (~8):**
+- Picture book route loads (`/picture-book`)
+- Work selector lists document objects
+- Wizard opens from object command button on a `data.data` object
+- Step 1 shows method toggle and chat config dropdown
+- Character review step renders character list
+- Scene grid shows generate buttons
+- Picture book viewer renders scene cards
+- No uncaught JS errors across all picture book routes
+
+---
+
+#### 16.10 Estimated Effort and Dependencies
+
+| Sub-phase | Effort | Prerequisite |
+|-----------|--------|-------------|
+| 16a: Prompt templates + backend service | Medium-High | Backend running, LLM chat infrastructure |
+| 16b: sceneExtractor.js + charPerson pipeline | Medium | 16a prompts deployed, outfit builder working |
+| 16c: Wizard (Steps 1-4) | High | 16a endpoints, 16b utilities |
+| 16d: Picture book viewer feature route | Medium | 16c wizard complete |
+| 16e: Export + Insert-into-document | Low | 16d viewer complete |
+
+**Hard dependencies:**
+- Chat feature + LLM infrastructure must be configured (chat config, prompt config in `~/Chat`)
+- SD service must be running for image generation steps
+- `olio.charPerson` creation, outfit builder, narrate endpoint must all be working (Phase 3.5c validation)
+
+---
+
 ## 9. E2E Test Coverage
 
 **74+ Playwright E2E tests** across 15 spec files:
