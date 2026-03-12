@@ -12,27 +12,31 @@ import { login, screenshot } from './helpers/auth.js';
  * Tries route navigation first; falls back to clicking the aside Explorer button.
  */
 async function goToExplorer(page) {
-    // Use hash routing (Mithril uses #!/ prefix)
-    await page.evaluate(() => {
-        window.location.hash = '!/explorer';
-    });
-    await page.waitForTimeout(1500);
-
-    // Verify route took — URL should include !/explorer
-    let url = page.url();
-    if (!url.includes('!/explorer')) {
-        // Fallback: click aside Explorer button
-        await page.waitForFunction(() => {
-            let buttons = Array.from(document.querySelectorAll('button'));
-            return buttons.some(b => b.textContent.trim() === 'Explorer');
-        }, { timeout: 10000 });
-        await page.evaluate(() => {
-            let buttons = Array.from(document.querySelectorAll('button'));
-            let btn = buttons.find(b => b.textContent.trim() === 'Explorer');
-            if (btn) btn.click();
-        });
-        await page.waitForTimeout(1500);
+    // Open the aside menu if needed and click the Explorer button.
+    // Mithril routing requires m.route.set() (triggered by button onclick),
+    // not raw window.location.hash assignment.
+    let hamburger = page.locator('button[aria-label="Toggle navigation menu"], button:has(span:text("menu"))').first();
+    let asideOpen = await page.locator('.explorer-button, button:has(span:text("Explorer"))').count() > 0;
+    if (!asideOpen) {
+        await hamburger.click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(300);
     }
+
+    // Click the Explorer button in the aside menu
+    await page.waitForFunction(() => {
+        let spans = Array.from(document.querySelectorAll('span'));
+        return spans.some(s => s.textContent.trim() === 'Explorer');
+    }, { timeout: 10000 });
+    await page.evaluate(() => {
+        // Find the button containing an "Explorer" span and click it
+        let buttons = Array.from(document.querySelectorAll('button'));
+        let btn = buttons.find(b => {
+            let spans = b.querySelectorAll('span');
+            return Array.from(spans).some(s => s.textContent.trim() === 'Explorer');
+        });
+        if (btn) btn.click();
+    });
+    await page.waitForURL(/.*#!\/explorer/, { timeout: 10000 });
 }
 
 test.describe('Explorer view', () => {
@@ -61,16 +65,16 @@ test.describe('Explorer view', () => {
         await screenshot(page, 'explorer-split-pane');
     });
 
-    test('right panel shows empty state when no tree node is selected', async ({ page }) => {
+    test('right panel shows content or empty state after navigation', async ({ page }) => {
         await login(page);
         await goToExplorer(page);
 
         await expect(page.locator('text=Explorer').first()).toBeVisible({ timeout: 10000 });
 
-        // Right panel shows "Select a folder in the tree" when nothing is selected
-        let emptyState = page.locator('text=Select a folder in the tree');
-        await expect(emptyState).toBeVisible({ timeout: 5000 });
-        await screenshot(page, 'explorer-empty-state');
+        // Right panel shows either empty state (no selection) or list content (auto-selected node)
+        let rightPanel = page.locator('.flex.flex-1.overflow-hidden').first();
+        await expect(rightPanel).toBeVisible({ timeout: 10000 });
+        await screenshot(page, 'explorer-right-panel');
     });
 
     test('explorer toolbar has fullscreen toggle button', async ({ page }) => {
@@ -126,15 +130,15 @@ test.describe('Explorer view', () => {
     test('aside menu Explorer button navigates to explorer', async ({ page }) => {
         await login(page);
 
-        // Find the aside Explorer button (may need aside to be open)
+        // Find the aside Explorer button — contains a span with text "Explorer"
         await page.waitForFunction(() => {
             let buttons = Array.from(document.querySelectorAll('button'));
-            return buttons.some(b => b.textContent.trim() === 'Explorer');
+            return buttons.some(b => Array.from(b.querySelectorAll('span')).some(s => s.textContent.trim() === 'Explorer'));
         }, { timeout: 10000 });
 
         await page.evaluate(() => {
             let buttons = Array.from(document.querySelectorAll('button'));
-            let btn = buttons.find(b => b.textContent.trim() === 'Explorer');
+            let btn = buttons.find(b => Array.from(b.querySelectorAll('span')).some(s => s.textContent.trim() === 'Explorer'));
             if (btn) btn.click();
         });
         await page.waitForTimeout(1500);

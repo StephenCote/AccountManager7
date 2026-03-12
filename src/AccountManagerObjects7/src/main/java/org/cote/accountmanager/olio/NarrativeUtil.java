@@ -1859,4 +1859,45 @@ public class NarrativeUtil {
 			   "extra limbs, missing limbs, cartoon, anime, illustration";
 	}
 
+	/**
+	 * Build an SDXL-weighted portrait prompt from LLM-extracted character data.
+	 * Used by PictureBookService for characters that don't have full Olio PersonalityProfile data.
+	 * The extracted map is expected to contain: gender, age_approx, outfit_notes,
+	 * and a nested "physical" map with keys: build, hair, eyes, skin.
+	 *
+	 * @param name Character name (for logging)
+	 * @param charData Map of extracted LLM character data
+	 * @return SDXL portrait prompt string, or null if charData is null/empty
+	 */
+	@SuppressWarnings("unchecked")
+	public static String buildPortraitPromptFromExtractedData(String name, Map<String, Object> charData) {
+		if (charData == null || name == null) return null;
+		Map<String, Object> phys = (Map<String, Object>) charData.get("physical");
+		String gender     = (String) charData.getOrDefault("gender", "");
+		String ageApprox  = (String) charData.getOrDefault("age_approx", "");
+		String build      = phys != null ? (String) phys.getOrDefault("build", "") : "";
+		String hair       = phys != null ? (String) phys.getOrDefault("hair", "") : "";
+		String eyes       = phys != null ? (String) phys.getOrDefault("eyes", "") : "";
+		String skin       = phys != null ? (String) phys.getOrDefault("skin", "") : "";
+		String outfitNotes = (String) charData.getOrDefault("outfit_notes", "");
+		boolean isMale = gender != null && gender.toLowerCase().contains("male") && !gender.toLowerCase().contains("female");
+		String pronoun = isMale ? "He" : "She";
+		String label   = isMale ? "man" : "woman";
+		if (outfitNotes == null || outfitNotes.isBlank()) {
+			outfitNotes = "fully clothed in appropriate attire";
+			logger.warn("buildPortraitPromptFromExtractedData: no outfit_notes for {} — using fallback", name);
+		}
+		StringBuilder min = new StringBuilder();
+		min.append("a");
+		if (build != null && !build.isBlank()) min.append(" (").append(build).append(")");
+		min.append(" ((");
+		if (ageApprox != null && !ageApprox.isBlank()) min.append(ageApprox).append(":1.5) (");
+		if (skin != null && !skin.isBlank()) min.append(skin.toLowerCase()).append(") (");
+		min.append(label).append("))");
+		if (hair != null && !hair.isBlank()) min.append(" with ((").append(hair).append("))");
+		if (eyes != null && !eyes.isBlank()) min.append(" and (").append(eyes).append(" eyes)");
+		min.append(". ").append(pronoun).append(" is (((").append(outfitNotes).append("))).");
+		return "8k highly detailed ((highest quality)) ((ultra realistic)) ((professional portrait)) of " + min;
+	}
+
 }

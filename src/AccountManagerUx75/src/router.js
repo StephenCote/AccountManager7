@@ -203,12 +203,11 @@ async function refreshApplication() {
         let allRoutes = Object.assign({}, routes, featureRoutes);
 
         // Initialize Mithril router with all routes (core + feature).
-        // Use /main as the default fallback, then navigate to the desired route.
-        // This ensures feature routes are registered before navigation occurs.
+        // Always explicitly navigate to the desired route after mounting, because
+        // if the current URL hash matches a route (e.g. #!/sig from a prior unauthenticated
+        // visit), Mithril will route there instead of using the default route.
         m.route(document.body, "/main", allRoutes);
-        if (rt && rt !== "/main") {
-            m.route.set(rt);
-        }
+        m.route.set(rt);
     }
 
     page.router = {

@@ -1,7 +1,7 @@
 # AccountManagerUx75 — Implementation Plan & Status
 
 **Extracted from:** `Ux7Redesign.md` Section 14
-**Last Updated:** 2026-03-10
+**Last Updated:** 2026-03-11
 **Design Reference:** See `Ux7Redesign.md` Sections 1-13 for requirements, architecture, and design specifications.
 
 ---
@@ -10,11 +10,11 @@
 
 **Project:** `AccountManagerUx75/` — 143 source files, ~73,000 lines
 **Build:** Vite 6.4.1, 161 modules, builds in ~4s
-**Tests:** 147 Vitest unit tests pass, 48+ Playwright E2E tests pass
-**Phase 9 completed:** 2026-03-10
-**Phase 11 gap remediation completed:** 2026-03-10
+**Tests:** 197 Vitest unit tests pass, 146 Playwright E2E tests pass (11 skipped), 16 spec files, Chromium + Firefox
+**Phase 16 completed:** 2026-03-11
 **Phase 15 completed:** 2026-03-11
-**Ux7 File Parity:** ~99% — all major Ux7 features ported (5 intentionally skipped). 7 gaps closed in Phase 11. Phase 11b completed: group navigation/search in list view, file explorer view. Phase 15 complete: all E2E regression + cross-browser validation done.
+**Ux7 File Parity:** 100% — all major Ux7 features ported (5 intentionally deprecated). Phases 0-16 all COMPLETE.
+**NEXT:** Phase 4 / ISO 42001 Compliance Dashboard (tracked in `aiDocs/ISO42001Plan.md`)
 
 ---
 
@@ -46,7 +46,7 @@
 | **Phase 13: Schema Write Endpoints** | **COMPLETE** | 19 Vitest + 6 JUnit | Backend PUT/POST/DELETE for user-defined models/fields + frontend schema editor integration. |
 | **Phase 14: Feature Configuration** | **COMPLETE** | 17 Vitest + 4 JUnit + 5 E2E | Backend `FeatureConfigService.java` (3 endpoints at `/rest/config`), frontend admin panel at `/admin/features`, server-side feature config in `router.js`, `am7client` 3 API methods, dependency graph UI. |
 | **Phase 15: Integration + Open Issues** | **COMPLETE** | 0 Vitest + 21 E2E new | 15a: WebAuthn REST API integration tests (6 tests, `webauthn.spec.js`). 15b: Explorer view E2E (`explorer.spec.js`, 7 tests), list group nav + search (`list.spec.js`, +9 tests). 15c: Firefox project added to `playwright.config.js`; CDP-only test skip-annotated. 173 Vitest pass. |
-| **Phase 16: Picture Book** | **PLANNED** | — | LLM scene extraction, work-scoped charPerson creation + outfit, scene image generation, picture book viewer. See Section 8 for full spec. |
+| **Phase 16: Picture Book** | **COMPLETE** | 2026-03-11 | `PictureBookService.java` (7 endpoints), `sceneExtractor.js`, `pictureBook.js` wizard, `features/pictureBook.js` viewer. 9 backend tests (6 unit + 3 LLM/SD live), 24 Vitest, 8 Playwright. |
 
 ---
 

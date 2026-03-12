@@ -11,6 +11,7 @@ import { am7view } from '../core/view.js';
 import { uwm } from '../core/am7client.js';
 
 // Subsystem imports
+import { LLMConnector } from '../chat/LLMConnector.js';
 import { FullscreenManager } from '../components/FullscreenManager.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { BiometricThemer } from './state/BiometricThemer.js';
@@ -93,6 +94,13 @@ const Magic8App = {
     // Test mode thumbnails
     _lastCaptureObj: null,
     _lastGeneratedObj: null,
+
+    // Open chat mode state
+    _chatMessages: [],
+    _chatPending: false,
+    _openChatInput: '',
+    _openChatSession: null,
+    _openChatVoiceProfileId: null,
 
     // Interactive director state
     _pendingQuestion: null,
@@ -492,6 +500,58 @@ const Magic8App = {
             this.sessionDirector.start();
         }
 
+        // Open chat mode
+        if (cfg.director?.openChatMode && cfg.director?.chatConfigObjectId) {
+            await this._initOpenChat(cfg);
+        }
+
+        m.redraw();
+    },
+
+    // ── Open Chat Mode ───────────────────────────────────────────────
+    async _initOpenChat(cfg) {
+        const chatConfigObjectId = cfg.director?.chatConfigObjectId;
+        if (!chatConfigObjectId) return;
+        try {
+            const chatConfig = await am7client.getFull('olio.llm.chatConfig', chatConfigObjectId);
+            if (!chatConfig) { console.warn('Magic8App: Open chat config not found:', chatConfigObjectId); return; }
+            const chatDir = await LLMConnector.findChatDir();
+            const promptConfig = await LLMConnector.ensurePrompt('Magic8 Open Chat', [], chatDir);
+            if (!promptConfig) { console.warn('Magic8App: Could not create open chat prompt config'); return; }
+            const sessionName = 'Magic8 Open Chat - ' + (cfg.name || 'Session');
+            this._openChatSession = await LLMConnector.createSession(sessionName, chatConfig, promptConfig);
+            this._openChatVoiceProfileId = cfg.voice?.voiceProfileId || null;
+            this._chatMessages = [];
+            console.log('Magic8App: Open chat initialized');
+        } catch (err) {
+            console.error('Magic8App: Failed to initialize open chat:', err);
+        }
+    },
+
+    async _sendOpenChatMessage() {
+        const text = this._openChatInput.trim();
+        if (!text || this._chatPending || !this._openChatSession) return;
+        this._openChatInput = '';
+        this._chatMessages.push({ role: 'user', text });
+        this._chatPending = true;
+        m.redraw();
+        try {
+            const resp = await LLMConnector.chat(this._openChatSession, text);
+            const content = LLMConnector.extractContent(resp);
+            if (content) {
+                this._chatMessages.push({ role: 'assistant', text: content });
+                this.currentText = content;
+                if (this.audioEngine) {
+                    try {
+                        const voiceSource = await this.audioEngine.createVoiceSource(content, this._openChatVoiceProfileId);
+                        if (voiceSource) voiceSource.play();
+                    } catch (e) { console.warn('Magic8App: TTS failed:', e); }
+                }
+            }
+        } catch (err) {
+            console.error('Magic8App: Open chat message failed:', err);
+        }
+        this._chatPending = false;
         m.redraw();
     },
 
@@ -851,6 +911,7 @@ const Magic8App = {
         if (this._responseTimeoutId) { clearTimeout(this._responseTimeoutId); this._responseTimeoutId = null; }
         if (this._interactionIdleTimer) { clearInterval(this._interactionIdleTimer); this._interactionIdleTimer = null; }
         this._pendingQuestion = null; this._voicePausedForInteraction = false;
+        this._openChatSession = null; this._chatMessages = []; this._chatPending = false;
 
         this.sessionDirector?.dispose();
         this.sessionLabels = []; this.sessionVoiceLines = [];
@@ -954,6 +1015,47 @@ const Magic8App = {
 
             // Recording indicator
             this.isRecording && m(RecordingIndicator, { recorder: this.sessionRecorder }),
+
+            // Open Chat overlay — translucent message display + persistent input bar
+            this.sessionConfig?.director?.openChatMode && (() => {
+                const lastAssistant = [...this._chatMessages].reverse().find(msg => msg.role === 'assistant');
+                const lastUser = [...this._chatMessages].reverse().find(msg => msg.role === 'user');
+                return [
+                    // Translucent message display over the whole screen
+                    (lastAssistant || lastUser) && m('.fixed.inset-0.pointer-events-none.flex.flex-col.items-center.justify-center.px-8', { style: { zIndex: 175 } }, [
+                        lastAssistant && m('.text-center.text-white.mb-6', {
+                            style: {
+                                fontSize: '2.2rem', lineHeight: '1.5', maxWidth: '70%',
+                                opacity: 0.35, textShadow: '0 0 20px rgba(255,255,255,0.4)',
+                                fontFamily: "'Playfair Display', Georgia, serif"
+                            }
+                        }, lastAssistant.text),
+                        lastUser && m('.text-right.text-white', {
+                            style: {
+                                fontSize: '1rem', maxWidth: '50%', alignSelf: 'flex-end',
+                                opacity: 0.22, marginRight: '2rem'
+                            }
+                        }, 'You: ' + lastUser.text)
+                    ]),
+                    // Persistent input bar
+                    m('.fixed.inset-x-0.bottom-0.pointer-events-auto', { style: { zIndex: 180 } }, [
+                        m('.flex.gap-2.px-4.py-3.bg-black\\/40.backdrop-blur', [
+                            m('input.flex-1.bg-white\\/10.text-white.rounded-full.px-5.py-2.border.border-white\\/20.outline-none.placeholder-white\\/40', {
+                                placeholder: this._chatPending ? 'Waiting for response...' : 'Send a message...',
+                                value: this._openChatInput,
+                                disabled: this._chatPending || !this._openChatSession,
+                                oninput: (e) => { this._openChatInput = e.target.value; },
+                                onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this._sendOpenChatMessage(); } }
+                            }),
+                            m('button.px-5.py-2.rounded-full.font-medium.transition-colors', {
+                                class: (this._chatPending || !this._openChatSession) ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-white\\/20 text-white hover:bg-white\\/30',
+                                disabled: this._chatPending || !this._openChatSession,
+                                onclick: () => this._sendOpenChatMessage()
+                            }, this._chatPending ? '...' : 'Send')
+                        ])
+                    ])
+                ];
+            })(),
 
             // Interactive overlay
             this._pendingQuestion && m('.fixed.inset-x-0.bottom-20.flex.justify-center.px-4', { style: { zIndex: 200 } }, [

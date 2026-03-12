@@ -7,12 +7,9 @@ import { cacheDb } from './cacheDb.js';
 	var cache = {};
 	var _cacheDbReady = false;
 
-	// Initialize SQLite WASM cache asynchronously
+	// Initialize localStorage cache
 	cacheDb.init().then(function(ok) {
 		_cacheDbReady = ok;
-		if (ok && typeof console !== 'undefined') {
-			console.log('[am7client] SQLite WASM cache active');
-		}
 	});
 	var principal = 0;
 	var sCurrentOrganization = 0;

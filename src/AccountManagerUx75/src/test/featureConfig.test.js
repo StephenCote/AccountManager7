@@ -120,6 +120,7 @@ describe('Feature Config Dependency Validation', () => {
         // Disable all features that depend on chat
         disableFeature('cardGame');
         disableFeature('iso42001');
+        disableFeature('pictureBook');
         let result = disableFeature('chat');
         expect(result).toBe(true);
         expect(isEnabled('chat')).toBe(false);

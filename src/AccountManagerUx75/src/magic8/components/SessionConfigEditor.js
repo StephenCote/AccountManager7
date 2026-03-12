@@ -40,6 +40,7 @@ const SessionConfigEditor = {
         this.newVoiceName = '';
         this.newVoiceContent = '';
         this.newVoiceSourceType = 'note';
+        this.chatConfigs = [];
         this.isSaving = false;
         this.loadingSession = false;
         this.directorTestRunning = false;
@@ -86,7 +87,7 @@ const SessionConfigEditor = {
             text: { enabled: false, sourceObjectId: null, sourceType: 'note', displayDuration: 5000, loop: true },
             voice: { enabled: false, sourceObjectId: null, sourceType: 'note', voiceProfileId: null, loop: true },
             recording: { enabled: false, autoStart: true, maxDurationMin: 30 },
-            director: { enabled: false, command: '', intervalMs: 60000, testMode: false, imageTags: '', interactive: false }
+            director: { enabled: false, command: '', intervalMs: 60000, testMode: false, imageTags: '', interactive: false, openChatMode: false, chatConfigObjectId: null }
         };
     },
 
@@ -100,6 +101,14 @@ const SessionConfigEditor = {
 
             this.savedSessions = await this._listDataInGroup('~/Magic8/Configs');
             this.sdConfigs = await this._listDataInGroup('~/Magic8/SDConfigs');
+
+            // Load chat configs from ~/Chat for the open chat mode dropdown
+            try {
+                let chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
+                if (chatDir?.objectId) {
+                    this.chatConfigs = await page.listObjects("olio.llm.chatConfig", chatDir.objectId, null, 0, 50) || [];
+                }
+            } catch (e) { this.chatConfigs = []; }
 
             const notes = await this._listNotesInGroup('~/Magic8/TextSequences');
             const textObjects = await this._listDataInGroup('~/Magic8/TextSequences');
@@ -704,6 +713,21 @@ const SessionConfigEditor = {
                 m('.config-field', [
                     m('label.block.text-sm.font-medium.mb-1', 'Check-in Interval: ' + Math.round(this.config.director.intervalMs / 1000) + 's'),
                     m('input.w-full', { type: 'range', min: 30000, max: 300000, step: 15000, value: this.config.director.intervalMs, oninput: (e) => this.config.director.intervalMs = parseInt(e.target.value) })
+                ]),
+                // Open Chat Mode
+                m('label.flex.items-center.gap-3.cursor-pointer', [
+                    m('input.w-4.h-4.rounded', { type: 'checkbox', checked: !!this.config.director.openChatMode, onchange: (e) => { this.config.director.openChatMode = e.target.checked; if (!e.target.checked) this.config.director.chatConfigObjectId = null; } }),
+                    m('span.text-sm', 'Open Chat Mode (free conversation with TTS overlay)')
+                ]),
+                this.config.director.openChatMode && m('.config-field.mt-2.ml-6', [
+                    m('label.block.text-xs.text-gray-400.mb-1', 'Chat Config (from ~/Chat)'),
+                    m('select.w-full.bg-gray-900.rounded.px-3.py-2.text-sm', {
+                        value: this.config.director.chatConfigObjectId || '',
+                        onchange: (e) => { this.config.director.chatConfigObjectId = e.target.value || null; }
+                    }, [
+                        m('option', { value: '' }, '— Select a Chat Config —'),
+                        ...this.chatConfigs.map(c => m('option', { value: c.objectId, selected: c.objectId === this.config.director.chatConfigObjectId }, c.name))
+                    ])
                 ]),
                 // Interactive + Test
                 m('label.flex.items-center.gap-3.cursor-pointer', [

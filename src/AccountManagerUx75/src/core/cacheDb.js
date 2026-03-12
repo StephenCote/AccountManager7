@@ -1,47 +1,145 @@
-// SQLite WASM cache layer for am7client
-// Replaces the in-memory cache object with persistent, TTL-aware SQLite storage.
-// Falls back gracefully to in-memory caching if sql.js fails to load.
+// localStorage cache layer for am7client
+// Persistent, TTL-aware cache backed by localStorage.
+// Key format: am7cache:{type}:{objectId}:{act}
+// Falls back gracefully to in-memory if localStorage is unavailable.
 
-let db = null;
-let ready = false;
-let failed = false;
-let initPromise = null;
+const LS_PREFIX = 'am7cache:';
 let metrics = { hits: 0, misses: 0, writes: 0, evictions: 0 };
+let useMemory = false;
+let memStore = {};
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-async function init() {
-    if (initPromise) return initPromise;
-    initPromise = _doInit();
-    return initPromise;
+function _lsAvailable() {
+    try {
+        localStorage.setItem('__am7test__', '1');
+        localStorage.removeItem('__am7test__');
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
 
-async function _doInit() {
-    if (ready || failed) return ready;
-    try {
-        const initSqlJs = (await import('sql.js')).default;
-        const SQL = await initSqlJs();
-        db = new SQL.Database();
-        db.run(`CREATE TABLE IF NOT EXISTS cache (
-            type TEXT NOT NULL,
-            act TEXT NOT NULL,
-            key TEXT NOT NULL,
-            value TEXT NOT NULL,
-            expires INTEGER NOT NULL,
-            PRIMARY KEY (type, act, key)
-        )`);
-        db.run(`CREATE INDEX IF NOT EXISTS idx_cache_expires ON cache (expires)`);
-        ready = true;
-    } catch (e) {
-        console.warn('[cacheDb] SQLite WASM failed to load, falling back to in-memory cache', e);
-        failed = true;
-        ready = false;
+function init() {
+    useMemory = !_lsAvailable();
+    if (useMemory) {
+        console.warn('[cacheDb] localStorage unavailable, using in-memory cache');
+    } else {
+        console.log('[am7client] localStorage cache active');
     }
-    return ready;
+    return Promise.resolve(true);
 }
 
 function isReady() {
-    return ready && db !== null;
+    return true;
+}
+
+// Key format: am7cache:{type}:{objectId}:{act}
+function _lsKey(type, act, key) {
+    return LS_PREFIX + type + ':' + key + ':' + act;
+}
+
+function _allKeys() {
+    if (useMemory) return Object.keys(memStore);
+    try { return Object.keys(localStorage).filter(k => k.startsWith(LS_PREFIX)); } catch (e) { return []; }
+}
+
+function _getRaw(lk) {
+    return useMemory ? memStore[lk] : localStorage.getItem(lk);
+}
+
+function _setRaw(lk, val) {
+    if (useMemory) { memStore[lk] = val; return; }
+    try {
+        localStorage.setItem(lk, val);
+    } catch (quota) {
+        evictExpired();
+        try { localStorage.setItem(lk, val); } catch (e2) { /* ignore */ }
+    }
+}
+
+function _deleteRaw(lk) {
+    if (useMemory) delete memStore[lk];
+    else try { localStorage.removeItem(lk); } catch (e) { /* ignore */ }
+}
+
+function get(type, act, key) {
+    try {
+        let raw = _getRaw(_lsKey(type, act, key));
+        if (raw == null) { metrics.misses++; return undefined; }
+        let entry = JSON.parse(raw);
+        if (entry.expires > 0 && Date.now() > entry.expires) {
+            _deleteRaw(_lsKey(type, act, key));
+            metrics.evictions++;
+            metrics.misses++;
+            return undefined;
+        }
+        metrics.hits++;
+        return entry.value;
+    } catch (e) {
+        metrics.misses++;
+        return undefined;
+    }
+}
+
+function put(type, act, key, value, ttlMs) {
+    try {
+        let ttl = (ttlMs !== undefined && ttlMs !== null) ? ttlMs : DEFAULT_TTL_MS;
+        let entry = JSON.stringify({ value, expires: ttl > 0 ? Date.now() + ttl : 0 });
+        _setRaw(_lsKey(type, act, key), entry);
+        metrics.writes++;
+    } catch (e) {
+        console.warn('[cacheDb] Failed to write cache entry', e);
+    }
+}
+
+// remove(type, objectId) — deletes all acts for this type+objectId
+// remove(type)           — deletes all entries for this type
+function remove(type, objectId) {
+    try {
+        // Prefix: am7cache:{type}:{objectId}: or am7cache:{type}:
+        let prefix = LS_PREFIX + type + ':' + (objectId ? objectId + ':' : '');
+        _allKeys().filter(k => k.startsWith(prefix)).forEach(k => _deleteRaw(k));
+    } catch (e) {
+        console.warn('[cacheDb] Failed to remove cache entry', e);
+    }
+}
+
+function removeByType(type) {
+    remove(type);
+}
+
+function clearAll() {
+    try {
+        _allKeys().forEach(k => _deleteRaw(k));
+        metrics.evictions = 0;
+    } catch (e) {
+        console.warn('[cacheDb] Failed to clear all', e);
+    }
+}
+
+function evictExpired() {
+    let count = 0;
+    let now = Date.now();
+    try {
+        for (let k of _allKeys()) {
+            try {
+                let raw = _getRaw(k);
+                if (!raw) continue;
+                let entry = JSON.parse(raw);
+                if (entry.expires > 0 && now > entry.expires) {
+                    _deleteRaw(k);
+                    count++;
+                }
+            } catch (e) { /* skip malformed */ }
+        }
+        metrics.evictions += count;
+    } catch (e) { /* ignore */ }
+    return count;
+}
+
+function entryCount() {
+    try { return _allKeys().length; } catch (e) { return 0; }
 }
 
 function getMetrics() {
@@ -55,127 +153,12 @@ function resetMetrics() {
     metrics.evictions = 0;
 }
 
-function get(type, act, key) {
-    if (!isReady()) return undefined;
-    try {
-        let stmt = db.prepare('SELECT value, expires FROM cache WHERE type = ? AND act = ? AND key = ?');
-        stmt.bind([type, act, key]);
-        if (stmt.step()) {
-            let row = stmt.get();
-            stmt.free();
-            let expires = row[1];
-            if (expires > 0 && Date.now() > expires) {
-                db.run('DELETE FROM cache WHERE type = ? AND act = ? AND key = ?', [type, act, key]);
-                metrics.evictions++;
-                metrics.misses++;
-                return undefined;
-            }
-            metrics.hits++;
-            try {
-                return JSON.parse(row[0]);
-            } catch (e) {
-                return row[0];
-            }
-        }
-        stmt.free();
-        metrics.misses++;
-        return undefined;
-    } catch (e) {
-        metrics.misses++;
-        return undefined;
-    }
-}
-
-function put(type, act, key, value, ttlMs) {
-    if (!isReady()) return;
-    try {
-        let ttl = (ttlMs !== undefined && ttlMs !== null) ? ttlMs : DEFAULT_TTL_MS;
-        let expires = ttl > 0 ? Date.now() + ttl : 0;
-        let serialized = (typeof value === 'string') ? value : JSON.stringify(value);
-        db.run(
-            'INSERT OR REPLACE INTO cache (type, act, key, value, expires) VALUES (?, ?, ?, ?, ?)',
-            [type, act, key, serialized, expires]
-        );
-        metrics.writes++;
-    } catch (e) {
-        console.warn('[cacheDb] Failed to write cache entry', e);
-    }
-}
-
-function remove(type, key) {
-    if (!isReady()) return;
-    try {
-        if (key) {
-            // Remove specific key across all acts for this type
-            db.run('DELETE FROM cache WHERE type = ? AND key = ?', [type, key]);
-        } else {
-            // Remove all entries for this type
-            db.run('DELETE FROM cache WHERE type = ?', [type]);
-        }
-    } catch (e) {
-        console.warn('[cacheDb] Failed to remove cache entry', e);
-    }
-}
-
-function removeByType(type) {
-    if (!isReady()) return;
-    try {
-        db.run('DELETE FROM cache WHERE type = ?', [type]);
-    } catch (e) {
-        console.warn('[cacheDb] Failed to clear type', e);
-    }
-}
-
-function clearAll() {
-    if (!isReady()) return;
-    try {
-        db.run('DELETE FROM cache');
-        metrics.evictions = 0;
-    } catch (e) {
-        console.warn('[cacheDb] Failed to clear all', e);
-    }
-}
-
-function evictExpired() {
-    if (!isReady()) return 0;
-    try {
-        let now = Date.now();
-        let countStmt = db.prepare('SELECT COUNT(*) FROM cache WHERE expires > 0 AND expires < ?');
-        countStmt.bind([now]);
-        let count = 0;
-        if (countStmt.step()) count = countStmt.get()[0];
-        countStmt.free();
-        if (count > 0) {
-            db.run('DELETE FROM cache WHERE expires > 0 AND expires < ?', [now]);
-            metrics.evictions += count;
-        }
-        return count;
-    } catch (e) {
-        return 0;
-    }
-}
-
-function entryCount() {
-    if (!isReady()) return 0;
-    try {
-        let stmt = db.prepare('SELECT COUNT(*) FROM cache');
-        let count = 0;
-        if (stmt.step()) count = stmt.get()[0];
-        stmt.free();
-        return count;
-    } catch (e) {
-        return 0;
-    }
-}
-
 function close() {
-    if (db) {
-        try { db.close(); } catch (e) { /* ignore */ }
-        db = null;
-    }
-    ready = false;
-    failed = false;
-    initPromise = null;
+    // Clear cache entries and reset state (mirrors SQLite DB destruction for test isolation)
+    clearAll();
+    useMemory = false;
+    memStore = {};
+    metrics = { hits: 0, misses: 0, writes: 0, evictions: 0 };
 }
 
 export const cacheDb = {

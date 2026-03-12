@@ -268,6 +268,7 @@ import Base64 from './base64.js';
 	am7model.inheritsFrom = function (o) {
 		let a = [];
 		if (typeof o == "string") o = am7model.getModel(o);
+		if (!o) return a;
 		a.push(o);
 		if (o.inherits) {
 			for (let h in o.inherits) {

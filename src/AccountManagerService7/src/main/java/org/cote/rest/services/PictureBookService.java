@@ -2,6 +2,7 @@ package org.cote.rest.services;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,9 +19,12 @@ import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.llm.PromptResourceUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
+import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -76,6 +80,9 @@ public class PictureBookService {
 
     // Default scene count cap for non-HQ mode
     private static final int MAX_SCENES_DEFAULT = 3;
+
+    private static final String NEG_PROMPT =
+        "blurry, lowres, bad anatomy, extra limbs, watermark, text, logo, cartoon, anime, nsfw, deformed, disfigured, ugly, duplicate, mutated, out of frame";
 
     // Genre → SD theme mapping
     private static final Map<String, String> GENRE_THEME_MAP = new HashMap<>();
@@ -330,15 +337,20 @@ public class PictureBookService {
             charPerson = IOSystem.getActiveContext().getAccessPoint().create(user, charPerson);
             if (charPerson == null) return null;
 
-            // Set narrative from extracted charData description if available
-            String desc = (String) charData.get("description");
-            if (desc != null && !desc.isEmpty()) {
-                try {
-                    charPerson.set("narrative", desc);
-                    IOSystem.getActiveContext().getAccessPoint().update(user, charPerson);
-                } catch (Exception e) {
-                    logger.warn("Failed to set narrative for " + name + ": " + e.getMessage());
+            // Build SD portrait prompt from extracted character data and store in narrative.
+            // Store full extracted JSON in description for future reference.
+            String portraitPrompt = NarrativeUtil.buildPortraitPromptFromExtractedData(name, charData);
+            String charDataJson = JSONUtil.exportObject(charData);
+            try {
+                if (portraitPrompt != null && !portraitPrompt.isEmpty()) {
+                    charPerson.set("narrative", portraitPrompt);
                 }
+                if (charDataJson != null) {
+                    charPerson.set(FieldNames.FIELD_DESCRIPTION, charDataJson);
+                }
+                IOSystem.getActiveContext().getAccessPoint().update(user, charPerson);
+            } catch (Exception e) {
+                logger.warn("Failed to set portrait prompt/description for " + name + ": " + e.getMessage());
             }
             return charPerson;
 
@@ -571,8 +583,12 @@ public class PictureBookService {
 
     /**
      * POST /scene/{sceneObjectId}/generate
-     * Generate SD image for one scene.
-     * Body: { chatConfig, sdConfig, promptOverride }
+     * Generate SD image for one scene using the 4-stage pipeline:
+     *   Stage 1: SDXL portrait generation per scene character (uses narrative prompt stored on charPerson)
+     *   Stage 2: SDXL landscape generation via LLM prompt
+     *   Stage 3: Stitch 3-panel reference composite [portrait1 | portrait2|landscape | landscape]
+     *   Stage 4: Flux Kontext composite from reference + scene description
+     * Body: { chatConfig, sdConfig: {steps,refinerSteps,cfg,hires}, promptOverride }
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -583,7 +599,6 @@ public class PictureBookService {
             String json, @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
-        // Load the scene note
         Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
         sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
         sq.planMost(false);
@@ -605,105 +620,151 @@ public class PictureBookService {
                 promptOverride = params.get("promptOverride");
                 BaseRecord sdConf = params.get("sdConfig");
                 if (sdConf != null) {
-                    Object sv = sdConf.get("steps");
-                    if (sv instanceof Number) steps = ((Number) sv).intValue();
-                    Object rv = sdConf.get("refinerSteps");
-                    if (rv instanceof Number) refinerSteps = ((Number) rv).intValue();
-                    Object cv = sdConf.get("cfg");
-                    if (cv instanceof Number) cfg = ((Number) cv).intValue();
-                    Object hv = sdConf.get("hires");
-                    if (hv instanceof Boolean) hires = (Boolean) hv;
+                    Object sv = sdConf.get("steps"); if (sv instanceof Number) steps = ((Number) sv).intValue();
+                    Object rv = sdConf.get("refinerSteps"); if (rv instanceof Number) refinerSteps = ((Number) rv).intValue();
+                    Object cv = sdConf.get("cfg"); if (cv instanceof Number) cfg = ((Number) cv).intValue();
+                    Object hv = sdConf.get("hires"); if (hv instanceof Boolean) hires = (Boolean) hv;
                 }
-            } catch (Exception e) {
-                logger.warn("Failed to parse generate request: " + e.getMessage());
-            }
+            } catch (Exception e) { logger.warn("Failed to parse generate request: " + e.getMessage()); }
         }
 
-        // Parse scene metadata from text field
+        String sdApiType = context.getInitParameter("sd.server.apiType");
+        String sdServer  = context.getInitParameter("sd.server");
+        if (sdApiType == null || sdServer == null)
+            return Response.status(500).entity("{\"error\":\"SD server not configured\"}").build();
+
         String sceneText = scene.get("text");
         Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();
         String setting = (String) sceneData.getOrDefault("setting", "");
-        String action = (String) sceneData.getOrDefault("action", "");
-        String mood = (String) sceneData.getOrDefault("mood", "");
+        String action  = (String) sceneData.getOrDefault("action", "");
+        String mood    = (String) sceneData.getOrDefault("mood", "");
 
-        // Build SD prompt: use override if provided, else call LLM
-        String sdPrompt = promptOverride;
-        if (sdPrompt == null || sdPrompt.isEmpty()) {
-            // Collect character narrations from scene characters
-            StringBuilder narBuilder = new StringBuilder();
+        BaseRecord chatConfig = null;
+        if (chatConfigName != null)
+            chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+
+        BaseRecord sdConfigRec;
+        try {
+            sdConfigRec = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+            sdConfigRec.set("steps", steps);
+            sdConfigRec.set("refinerSteps", refinerSteps);
+            sdConfigRec.set("cfg", cfg);
+            sdConfigRec.set("hires", hires);
+        } catch (Exception e) {
+            logger.error("Failed to create sdConfig: " + e.getMessage());
+            return Response.status(500).entity("{\"error\":\"SD config error\"}").build();
+        }
+
+        String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
+        if (sceneGroupPath == null) sceneGroupPath = "~/Chat";
+        SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType), sdServer);
+
+        // promptOverride: skip pipeline, direct SDXL generation
+        if (promptOverride != null && !promptOverride.isEmpty()) {
+            try {
+                sdConfigRec.set("description", promptOverride);
+                sdConfigRec.set("style", "illustration");
+                String imageName = "scene_" + sceneObjectId + "_" + System.currentTimeMillis();
+                List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfigRec, imageName, 1, hires, -1);
+                if (images == null || images.isEmpty())
+                    return Response.status(500).entity("{\"error\":\"SD generation failed\"}").build();
+                BaseRecord image = images.get(0);
+                IOSystem.getActiveContext().getAccessPoint().member(user, scene, image, null, true);
+                return Response.status(200).entity("{\"imageObjectId\":\"" + image.get(FieldNames.FIELD_OBJECT_ID) + "\"}").build();
+            } catch (Exception e) {
+                logger.error("Override SD generation failed: " + e.getMessage());
+                return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+            }
+        }
+
+        try {
+            // Stage 1: Portrait bytes for up to 2 scene characters
+            List<byte[]> portraitBytesList = new ArrayList<>();
+            List<String> portraitPromptList = new ArrayList<>();
             Object charsObj = sceneData.get("characters");
             if (charsObj instanceof List) {
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> sceneChars = (List<Map<String, Object>>) charsObj;
                 for (Map<String, Object> sc : sceneChars) {
+                    if (portraitBytesList.size() >= 2) break;
                     String cname = (String) sc.get("name");
-                    if (cname != null) {
-                        // Look up charPerson narrative
-                        Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, cname);
-                        cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                        cq.setRequest(new String[]{"id", FieldNames.FIELD_NAME, "narrative"});
-                        BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-                        if (cp != null) {
-                            String nar = cp.get("narrative");
-                            if (nar != null && !nar.isEmpty()) {
-                                narBuilder.append(cname).append(": ").append(nar).append("\n");
-                            }
-                        }
+                    if (cname == null) continue;
+                    Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, cname);
+                    cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                    cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender"});
+                    BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+                    if (cp == null) continue;
+                    String portraitPrompt = cp.get("narrative");
+                    if (portraitPrompt == null || portraitPrompt.isBlank()) {
+                        logger.warn("No portrait prompt (narrative) for: " + cname);
+                        continue;
                     }
+                    BaseRecord portCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+                    portCfg.set("steps", steps);
+                    portCfg.set("cfg", cfg);
+                    portCfg.set("hires", false);
+                    portCfg.set("description", portraitPrompt);
+                    portCfg.set("negativePrompt", NEG_PROMPT);
+                    String portName = "portrait_" + cname.replace(" ", "_") + "_" + System.currentTimeMillis();
+                    List<BaseRecord> portImages = sdu.createImage(user, sceneGroupPath, portCfg, portName, 1, false, -1);
+                    if (portImages == null || portImages.isEmpty()) { logger.warn("Portrait failed: " + cname); continue; }
+                    byte[] portBytes = portImages.get(0).get(FieldNames.FIELD_BYTE_STORE);
+                    if (portBytes == null || portBytes.length == 0) {
+                        try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
+                        continue;
+                    }
+                    portraitBytesList.add(portBytes);
+                    portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt));
+                    try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
                 }
             }
 
-            BaseRecord chatConfig = null;
-            if (chatConfigName != null) {
-                chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+            // Stage 2: Landscape generation
+            Map<String, String> landVars = new LinkedHashMap<>();
+            landVars.put("setting", setting);
+            landVars.put("mood", mood);
+            landVars.put("time", "");
+            landVars.put("style", "illustration");
+            String landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars);
+            if (landscapePrompt == null || landscapePrompt.isBlank()) {
+                logger.warn("Landscape prompt failed — falling back to setting text");
+                landscapePrompt = setting.isEmpty() ? "A detailed environment" : setting;
             }
+            SWTxt2Img landReq = SWUtil.newSceneTxt2Img(landscapePrompt, NEG_PROMPT, sdConfigRec);
+            landReq.setWidth(1024);
+            landReq.setHeight(768);
+            List<BaseRecord> landImages = sdu.createSceneImage(user, sceneGroupPath,
+                    "landscape_" + sceneObjectId + "_" + System.currentTimeMillis(), landReq, null, null);
+            if (landImages == null || landImages.isEmpty())
+                return Response.status(500).entity("{\"error\":\"Landscape generation failed\"}").build();
+            byte[] landscapeBytes = landImages.get(0).get(FieldNames.FIELD_BYTE_STORE);
+            try { IOSystem.getActiveContext().getAccessPoint().delete(user, landImages.get(0)); } catch (Exception ignored) {}
+            if (landscapeBytes == null || landscapeBytes.length == 0)
+                return Response.status(500).entity("{\"error\":\"Empty landscape image\"}").build();
 
-            Map<String, String> vars = new LinkedHashMap<>();
-            vars.put("setting", setting);
-            vars.put("action", action);
-            vars.put("mood", mood);
-            vars.put("charNarrations", narBuilder.toString());
-            sdPrompt = callLlm(user, chatConfig, "pictureBook.scene-image-prompt", vars);
-        }
+            // Stage 3: Stitch reference composite [portrait1 | portrait2|landscape | landscape]
+            byte[] leftBytes   = !portraitBytesList.isEmpty() ? portraitBytesList.get(0) : landscapeBytes;
+            byte[] centerBytes = portraitBytesList.size() > 1  ? portraitBytesList.get(1) : landscapeBytes;
+            byte[] refComposite = SDUtil.stitchSceneImages(leftBytes, centerBytes, landscapeBytes, 1024);
+            if (refComposite == null)
+                return Response.status(500).entity("{\"error\":\"Stitch failed\"}").build();
 
-        if (sdPrompt == null || sdPrompt.isEmpty()) {
-            return Response.status(500).entity("{\"error\":\"Failed to build SD prompt\"}").build();
-        }
-
-        // Build sdConfig entity and generate via SDUtil
-        String sdApiType = context.getInitParameter("sd.server.apiType");
-        String sdServer = context.getInitParameter("sd.server");
-        if (sdApiType == null || sdServer == null) {
-            return Response.status(500).entity("{\"error\":\"SD server not configured\"}").build();
-        }
-        try {
-            BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-            sdConfig.set("steps", steps);
-            sdConfig.set("refinerSteps", refinerSteps);
-            sdConfig.set("cfg", cfg);
-            sdConfig.set("hires", hires);
-            sdConfig.set("description", sdPrompt);
-            sdConfig.set("style", "illustration");
-
-            String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
-            if (sceneGroupPath == null) sceneGroupPath = "~/Chat";
-            String imageName = "scene_" + sceneObjectId + "_" + System.currentTimeMillis();
-            int seed = -1;
-
-            SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType), sdServer);
-            List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfig, imageName, 1, hires, seed);
-            if (images == null || images.isEmpty()) {
-                return Response.status(500).entity("{\"error\":\"SD generation failed\"}").build();
-            }
-            BaseRecord image = images.get(0);
-
-            // Link image to scene via membership
-            IOSystem.getActiveContext().getAccessPoint().member(user, scene, image, null, true);
-
-            String imageObjId = image.get(FieldNames.FIELD_OBJECT_ID);
-            return Response.status(200).entity("{\"imageObjectId\":\"" + imageObjId + "\"}").build();
+            // Stage 4: Flux Kontext composite
+            String leftDesc  = !portraitPromptList.isEmpty() ? portraitPromptList.get(0) : "";
+            String rightDesc = portraitPromptList.size() > 1  ? portraitPromptList.get(1) : "";
+            SWTxt2Img kontextReq = SWUtil.newKontextSceneTxt2Img(leftDesc, rightDesc, action, setting, sdConfigRec);
+            List<String> promptImages = new ArrayList<>();
+            promptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(refComposite));
+            kontextReq.setPromptImages(promptImages);
+            List<BaseRecord> finalImages = sdu.createSceneImage(user, sceneGroupPath,
+                    "scene_" + sceneObjectId + "_" + System.currentTimeMillis(), kontextReq, null, null);
+            if (finalImages == null || finalImages.isEmpty())
+                return Response.status(500).entity("{\"error\":\"Kontext composite generation failed\"}").build();
+            BaseRecord finalImage = finalImages.get(0);
+            IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
+            return Response.status(200).entity("{\"imageObjectId\":\"" + finalImage.get(FieldNames.FIELD_OBJECT_ID) + "\"}").build();
         } catch (Exception e) {
-            logger.error("Scene image generation failed: " + e.getMessage());
+            logger.error("Scene image generation pipeline failed: " + e.getMessage(), e);
             return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
         }
     }
