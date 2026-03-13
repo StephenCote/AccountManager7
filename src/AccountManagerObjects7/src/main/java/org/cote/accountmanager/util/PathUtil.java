@@ -19,6 +19,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 
 public abstract class PathUtil implements IPath {
@@ -89,13 +90,22 @@ public abstract class PathUtil implements IPath {
 		String[] pathE = path.split("/");
 		long parentId = 0L;
 
+		/// Determine if the model uses parentId or groupId hierarchy.
+		/// Models like data.data use groupId (directory-based), not parentId (parent-based).
+		/// For these models, intermediate path segments must be walked using auth.group,
+		/// and only the final segment is searched via findByNameInGroup.
+		ModelSchema ms = RecordFactory.getSchema(model);
+		boolean modelHasParentId = ms != null && ms.getFieldSchema(FieldNames.FIELD_PARENT_ID) != null;
+		boolean modelHasGroupId = !modelHasParentId && ms != null && ms.getFieldSchema(FieldNames.FIELD_GROUP_ID) != null;
+
+		/// Pre-collect non-empty segments to know which is the last one
+		String[] segments = java.util.Arrays.stream(pathE).filter(e -> e != null && e.length() > 0).toArray(String[]::new);
 
 		try {
-			for(String e : pathE) {
-				if(e == null || e.length() == 0) {
-					continue;
-				}
+			for(int si = 0; si < segments.length; si++) {
+				String e = segments[si];
 				String utype = type;
+				boolean isLastSegment = (si == segments.length - 1);
 
 				/// When trying to get type specific paths, allow to build off a singular base such as /home/{name} vs. duplicating /home/{name}
 				/// TODO: This needs to be configurable because it would also be helpful in the Community layout
@@ -109,7 +119,16 @@ public abstract class PathUtil implements IPath {
 					}
 				}
 
-				BaseRecord[] nodes = search.findByNameInParent(model, parentId, e, utype, organizationId);
+				BaseRecord[] nodes;
+				if(modelHasGroupId && !isLastSegment) {
+					/// Intermediate segments: walk auth.group hierarchy to find the container group
+					nodes = search.findByNameInParent(ModelNames.MODEL_GROUP, parentId, e, "DATA", organizationId);
+				} else if(modelHasGroupId) {
+					/// Final segment: find the model object within the resolved group
+					nodes = search.findByNameInGroup(model, parentId, e, organizationId);
+				} else {
+					nodes = search.findByNameInParent(model, parentId, e, utype, organizationId);
+				}
 				if(trace) {
 					logger.info("Found " + nodes.length + " " + model + " named " + e + " in #" + parentId);
 				}

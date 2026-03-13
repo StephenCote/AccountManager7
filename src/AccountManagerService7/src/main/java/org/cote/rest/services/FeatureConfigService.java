@@ -46,7 +46,7 @@ public class FeatureConfigService {
 	private static final List<Map<String, Object>> AVAILABLE_FEATURES = new ArrayList<>();
 	private static final Set<String> KNOWN_FEATURE_IDS = new HashSet<>();
 	private static final List<String> DEFAULT_FEATURES = Arrays.asList(
-		"core", "chat", "cardGame", "games", "testHarness", "iso42001", "biometrics", "schema", "webauthn", "accessRequests", "featureConfig"
+		"core", "chat", "cardGame", "games", "testHarness", "iso42001", "biometrics", "schema", "webauthn", "accessRequests", "featureConfig", "pictureBook"
 	);
 
 	static {
@@ -61,6 +61,7 @@ public class FeatureConfigService {
 		addFeature("webauthn", "Passkeys", "WebAuthn/FIDO2 passwordless authentication", false, new String[]{"core"});
 		addFeature("accessRequests", "Access Requests", "Self-service access request and approval workflow", false, new String[]{"core"});
 		addFeature("featureConfig", "Feature Config", "Server-side feature configuration (admin only)", false, new String[]{"core"});
+		addFeature("pictureBook", "Picture Book", "Generate illustrated picture books from story/document objects", false, new String[]{"core"});
 	}
 
 	private static void addFeature(String id, String label, String description, boolean required, String[] deps) {

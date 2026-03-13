@@ -103,9 +103,13 @@ function renderDialog(cfg, index) {
         closeBtn
     ]);
 
-    // Body
+    // Body — cfg.content may be a vnode, a string, or a component object {view:fn}
+    let contentVnode = cfg.content;
+    if (contentVnode && typeof contentVnode === 'object' && typeof contentVnode.view === 'function') {
+        contentVnode = m(contentVnode);
+    }
     let body = m('div', { class: 'am7-dialog-body' }, [
-        cfg.content || ''
+        contentVnode || ''
     ]);
 
     // Footer with actions
@@ -195,7 +199,23 @@ const Dialog = {
      * @param {boolean} cfg.destructive
      * @returns {Promise<boolean>}
      */
-    confirm: function (cfg) {
+    confirm: function (cfg, callback) {
+        // Backward-compat: confirm("message", callbackFn)
+        if (typeof cfg === 'string') {
+            let msg = cfg;
+            Dialog.open({
+                title: 'Confirm',
+                size: 'sm',
+                content: m('p', { class: 'text-gray-700 dark:text-gray-300' }, msg),
+                closable: true,
+                actions: [
+                    { label: 'Cancel', icon: 'cancel', onclick: function () { Dialog.close(); } },
+                    { label: 'Confirm', icon: 'check', primary: true, onclick: function () { Dialog.close(); if (callback) callback(); } }
+                ]
+            });
+            return;
+        }
+        // New API: confirm({title, message, ...}) → Promise
         return new Promise(function (resolve) {
             Dialog.open({
                 title: cfg.title || 'Confirm',
@@ -226,6 +246,28 @@ const Dialog = {
                 ]
             });
         });
+    },
+
+    /** Backward-compat: old Ux7 setDialog(cfg) → Dialog.open(cfg) */
+    setDialog: function (cfg) {
+        Dialog.open({
+            title: cfg.label || cfg.title || 'Dialog',
+            size: cfg.size > 80 ? 'xl' : cfg.size > 50 ? 'lg' : cfg.size > 30 ? 'md' : 'sm',
+            content: cfg.content || null,
+            closable: true,
+            onClose: cfg.cancel,
+            actions: cfg.actions || (cfg.ok ? [
+                { label: 'Cancel', onclick: function () { Dialog.close(); if (cfg.cancel) cfg.cancel(); } },
+                { label: 'OK', primary: true, onclick: function () { Dialog.close(); if (cfg.ok) cfg.ok(cfg.data); } }
+            ] : [
+                { label: 'Close', onclick: function () { Dialog.close(); } }
+            ])
+        });
+    },
+
+    /** Backward-compat: old Ux7 endDialog() → Dialog.close() */
+    endDialog: function () {
+        Dialog.close();
     },
 
     /**

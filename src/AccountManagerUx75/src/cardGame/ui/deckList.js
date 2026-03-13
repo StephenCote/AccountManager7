@@ -35,6 +35,12 @@ async function loadSavedDecks() {
         let deckStorage = storage().deckStorage;
         let gameStorage = storage().gameStorage;
         let campaignStorage = storage().campaignStorage;
+        if (!deckStorage || !gameStorage || !campaignStorage) {
+            console.warn("[CardGame v2] Storage not initialized yet — skipping deck load");
+            decksLoading = false;
+            m.redraw();
+            return;
+        }
         let names = await deckStorage.list();
         console.log("[CardGame v2] deckStorage.list returned:", names);
         let decks = [];

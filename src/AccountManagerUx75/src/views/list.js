@@ -630,9 +630,8 @@ function newListControl() {
         if (!content) {
             let thumb = getItemThumbnail(item);
             content = thumb
-                ? m('div', { class: 'flex justify-center items-center h-full' },
-                    m('img', { src: thumb.attrs.src, class: 'max-w-full max-h-full object-contain' }))
-                : m('div', { class: 'flex justify-center items-center h-full text-gray-400' }, 'No preview available');
+                ? m('img', { src: thumb.attrs.src, class: 'max-w-full max-h-full object-contain' })
+                : m('span', { class: 'text-gray-400' }, 'No preview available');
         }
 
         return m('div', {
@@ -659,8 +658,8 @@ function newListControl() {
                     'aria-label': 'Next item'
                 }, m('span', { class: 'material-symbols-outlined', style: 'font-size:20px', 'aria-hidden': 'true' }, 'chevron_right'))
             ]),
-            // Content — full-size fit to container
-            m('div', { class: 'flex-1 overflow-hidden p-2' }, content)
+            // Content — centered, fills available space
+            m('div', { class: 'flex-1 overflow-hidden p-2 flex justify-center items-center' }, content)
         ]);
     }
 

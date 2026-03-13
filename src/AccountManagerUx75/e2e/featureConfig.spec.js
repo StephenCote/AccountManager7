@@ -8,6 +8,7 @@ import { login, screenshot } from './helpers/auth.js';
  * Navigate to the Feature Config page via the aside menu button.
  */
 async function goToFeatureConfig(page) {
+    // Wait for a button whose text includes 'Features' (aside menu item: icon span + label span)
     await page.waitForFunction(() => {
         let buttons = Array.from(document.querySelectorAll('button'));
         return buttons.some(b => b.textContent.trim().includes('Features'));
@@ -15,7 +16,8 @@ async function goToFeatureConfig(page) {
 
     await page.evaluate(() => {
         let buttons = Array.from(document.querySelectorAll('button'));
-        let btn = buttons.find(b => b.textContent.trim() === 'Features');
+        // textContent includes the icon glyph + label (e.g. "tuneFeatures"), use includes()
+        let btn = buttons.find(b => b.textContent.trim().includes('Features'));
         if (btn) btn.click();
     });
     await page.waitForTimeout(1500);
@@ -27,7 +29,7 @@ test.describe('Feature Configuration admin panel', () => {
         await login(page);
         await goToFeatureConfig(page);
 
-        await expect(page.locator('text=Feature Configuration')).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('h2').filter({ hasText: 'Feature Configuration' })).toBeVisible({ timeout: 10000 });
         await screenshot(page, 'feature-config-page');
     });
 
@@ -36,11 +38,11 @@ test.describe('Feature Configuration admin panel', () => {
         await goToFeatureConfig(page);
 
         // Should see feature labels
-        await expect(page.locator('text=Core')).toBeVisible({ timeout: 5000 });
-        await expect(page.locator('text=LLM Chat')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('text=Core').first()).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('text=LLM Chat').first()).toBeVisible({ timeout: 5000 });
 
         // Core should have Required badge
-        await expect(page.locator('text=Required')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('text=Required').first()).toBeVisible({ timeout: 5000 });
 
         await screenshot(page, 'feature-config-toggles');
     });
@@ -80,7 +82,7 @@ test.describe('Feature Configuration admin panel', () => {
         await goToFeatureConfig(page);
 
         // Card Game depends on core and chat — should show "Depends on:" text
-        await expect(page.locator('text=Depends on:')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('text=Depends on:').first()).toBeVisible({ timeout: 5000 });
 
         await screenshot(page, 'feature-config-deps');
     });

@@ -40,8 +40,8 @@ test.describe('Games features', () => {
     test('tetris game grid renders', async ({ page }) => {
         await page.goto('/#!/game/tetris');
         await page.waitForURL(/.*#!\/game\/tetris/, { timeout: 10000 });
-        // Grid should render as a flex container with cube divs
-        let grid = page.locator('div[style*="display:flex"][style*="flex-wrap:wrap"]').first();
+        // Grid should render as a flex container with cube divs (browser normalizes inline styles with spaces)
+        let grid = page.locator('div[style*="display: flex"][style*="flex-wrap: wrap"], div[style*="display:flex"][style*="flex-wrap:wrap"]').first();
         await expect(grid).toBeVisible({ timeout: 10000 });
         await screenshot(page, 'tetris-grid');
     });

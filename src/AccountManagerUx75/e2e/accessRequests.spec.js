@@ -27,7 +27,7 @@ test.describe('Access Requests feature', () => {
         await login(page);
         await goToAccessRequests(page);
 
-        await expect(page.locator('text=Access Requests')).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('h2:has-text("Access Requests")')).toBeVisible({ timeout: 10000 });
         await expect(page.locator('text=My Requests')).toBeVisible({ timeout: 5000 });
         await screenshot(page, 'access-requests-page');
     });

@@ -104,7 +104,8 @@ import { am7model } from './model.js';
         let props = {
             oninput: inst.handleChange(fld),
             placeholder: inst.placeholder(fld),
-            name: fld
+            name: fld,
+            id: fld
         };
         let fprops = inst.viewProperties(fld);
         if (fprops) {
@@ -131,7 +132,7 @@ import { am7model } from './model.js';
                 ofld = defVal;
             }
             return m("select", { onchange: inst.handleChange(fld), class: "select-field-full" + extraCls,
-                disabled: ff && ff.readonly },
+                disabled: ff && ff.readonly, id: fld },
                 ofld.map((o, i) => m("option", { value: o, selected: (o == inst.api[fld]()) }, o)),
             );
         }

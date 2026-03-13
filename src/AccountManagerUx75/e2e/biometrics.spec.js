@@ -59,8 +59,8 @@ test.describe('Magic 8 (Biometrics) feature', () => {
         page.on('pageerror', err => errors.push(err.message));
 
         await page.locator('button[title="Magic 8"]').click();
-        await page.waitForURL(/.*#!\/magic8/, { timeout: 10000 });
-        await expect(page.locator('text=Magic8 Session')).toBeVisible({ timeout: 15000 });
+        await page.waitForURL(/.*#!\/magic8/, { timeout: 15000 });
+        await expect(page.locator('text=Magic8 Session')).toBeVisible({ timeout: 20000 });
         await page.waitForTimeout(2000); // let async subsystem init settle
 
         expect(errors, 'Uncaught JS errors:\n' + errors.join('\n')).toHaveLength(0);

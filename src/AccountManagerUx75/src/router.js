@@ -138,6 +138,20 @@ const routes = {
 
 function init() {
     window.addEventListener("beforeunload", takeDown);
+    // Mithril v2 listens for popstate, not hashchange. Bridge external hash
+    // changes (e.g. Playwright page.goto, browser address bar edits) so the
+    // router picks them up.
+    window.addEventListener('hashchange', function() {
+        try {
+            let hash = window.location.hash;
+            if (hash.startsWith('#!')) {
+                let route = hash.slice(2);
+                if (m.route.get() !== route) {
+                    m.route.set(route);
+                }
+            }
+        } catch(e) { /* router not yet initialised */ }
+    });
     refreshApplication();
 }
 

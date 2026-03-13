@@ -675,7 +675,7 @@ const chatView = {
     },
 
     view: function() {
-        return m("div", { class: "flex h-full w-full bg-white dark:bg-gray-950" }, [
+        return m("div", { class: "flex flex-1 w-full bg-white dark:bg-gray-950 min-h-0" }, [
             // Sidebar (hidden in fullscreen)
             fullMode ? null : renderSidebar(),
             // Main chat area
@@ -766,7 +766,10 @@ export const routes = {
         view: function() {
             return layout(
                 m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
-                    chatView.view()
+                    page.components.navigation ? m(page.components.navigation) : null,
+                    m("div", { style: "flex:1;display:flex;overflow:hidden;min-height:0" }, [
+                        chatView.view()
+                    ])
                 ])
             );
         }

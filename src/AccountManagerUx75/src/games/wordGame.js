@@ -313,17 +313,17 @@ async function startGame() {
     let am7chat = page.components.chat;
 
     promptCfg = await preparePrompt();
-    if (!promptCfg) { page.toast("error", "Could not start game without prompt config"); return; }
     endPromptCfg = await prepareEndPrompt();
-    if (!endPromptCfg) { page.toast("error", "Could not start game without end prompt config"); return; }
     chatCfg = await prepareChatConfig();
-    if (!chatCfg) { page.toast("error", "Could not start game without chat config"); return; }
 
-    if (am7chat) {
+    if (am7chat && promptCfg && chatCfg) {
         gameChat = await am7chat.getChatRequest(chatRequestName, chatCfg, promptCfg);
-        if (!gameChat) { page.toast("error", "Could not start game without chat request"); return; }
-        endGameChat = await am7chat.getChatRequest(endChatRequestName, chatCfg, endPromptCfg);
-        if (!endGameChat) { page.toast("error", "Could not start game without end chat request"); return; }
+        endGameChat = endPromptCfg ? await am7chat.getChatRequest(endChatRequestName, chatCfg, endPromptCfg) : null;
+        if (!gameChat) {
+            page.toast("warn", "AI phrase analysis unavailable — playing without AI");
+        }
+    } else {
+        page.toast("warn", "AI features unavailable — playing without AI");
     }
 
     await prepareWords();

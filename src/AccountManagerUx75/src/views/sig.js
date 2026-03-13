@@ -131,7 +131,7 @@ function orgFieldDesigner(i, e, v) {
 
 function organizationField() {
     return [
-        m("select", { id: "selOrganizationList", onchange: inst.handleChange("organization", toggleSpecify), class: "w-full page-select reactive-arrow" },
+        m("select", { id: "selOrganizationList", 'aria-label': "Organization", onchange: inst.handleChange("organization", toggleSpecify), class: "w-full page-select reactive-arrow" },
             organizations.map((o, i) => m("option", { value: o, selected: (o == inst.api.organization()) }, o)),
         ),
         m("input", {
@@ -165,7 +165,8 @@ signInPage.view = {
                     m("button", {
                         class: "btn btn-secondary w-full flex items-center justify-center gap-2",
                         disabled: passkeyLoading,
-                        onclick: doPasskeyLogin
+                        onclick: doPasskeyLogin,
+                        'aria-label': "Sign in with Passkey"
                     }, [
                         m("span", { class: "material-symbols-outlined text-base" }, "passkey"),
                         passkeyLoading ? "Authenticating..." : "Sign in with Passkey"

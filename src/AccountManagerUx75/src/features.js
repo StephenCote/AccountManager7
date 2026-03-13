@@ -11,6 +11,15 @@ const features = {
         routes: null,
         menuItems: []
     },
+    media: {
+        id: 'media',
+        label: 'Media Processing',
+        description: 'Audio player, PDF viewer, Stable Diffusion, rich text editor',
+        required: false,
+        deps: ['core'],
+        routes: () => import('./features/media.js'),
+        menuItems: []
+    },
     chat: {
         id: 'chat',
         label: 'LLM Chat',
@@ -114,10 +123,10 @@ const features = {
 
 const profiles = {
     minimal: ['core'],
-    standard: ['core', 'chat'],
+    standard: ['core', 'media', 'chat'],
     full: Object.keys(features),
-    gaming: ['core', 'chat', 'cardGame', 'games', 'biometrics'],
-    enterprise: ['core', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig']
+    gaming: ['core', 'media', 'chat', 'cardGame', 'games', 'biometrics'],
+    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig']
 };
 
 // --- Feature state ---

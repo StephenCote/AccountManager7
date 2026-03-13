@@ -29,8 +29,12 @@ export async function login(page, opts = {}) {
     // Click the Login button (rendered by form command system)
     await page.locator('button:has-text("Login")').click();
 
-    // Wait for navigation to main dashboard — Mithril uses #!/ hash prefix
-    await page.waitForURL(/.*#!\/main/, { timeout: 15000 });
+    // Wait for authenticated dashboard — element-based check is more reliable
+    // than waitForURL in Firefox where hash changes fire late
+    await page.waitForFunction(
+        () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
+        { timeout: 20000 }
+    );
 }
 
 /**

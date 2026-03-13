@@ -11,7 +11,7 @@ import { am7model } from '../core/model.js';
 // Import all card game subsystems
 import { gameConstants } from './constants/gameConstants.js';
 import { storage } from './state/storage.js';
-import { gameState } from './state/gameState.js';
+import { gameState, wireModules as wireGameStateModules } from './state/gameState.js';
 import { cardComponents } from './rendering/cardComponents.js';
 import { cardFace } from './rendering/cardFace.js';
 import { overlays } from './rendering/overlays.js';
@@ -44,6 +44,9 @@ import { layoutRenderer } from './designer/layoutRenderer.js';
 
 function getPage() { return am7model._page; }
 
+// ── Flat Engine namespace (mirrors Ux7 CardGame.Engine) ─────────
+const flatEngine = { ...effects, ...combat, ...encounters, ...actions };
+
 // ── Shared Application Context ──────────────────────────────────
 // All modules access shared state through NS (namespace)
 const NS = {
@@ -55,7 +58,7 @@ const NS = {
     Characters: characters,
     Themes: themes,
     ArtPipeline: artPipeline,
-    Engine: { Effects: effects, Combat: combat, Encounters: encounters, Actions: actions },
+    Engine: flatEngine,
     AI: { LlmBase: llmBase, Director: director, Narrator: narrator, ChatManager: chatManager, Voice: voice },
     UI: { DeckList: deckListUI, Builder: builder, DeckView: deckView, GameView: gameView, PhaseUI: phaseUI, ThreatUI: threatUI, ChatUI: chatUI, GameOverUI: gameOverUI },
     Designer: { DesignerCanvas: designerCanvas, ExportDialog: exportDialog, ExportPipeline: exportPipeline, IconPicker: iconPicker, LayoutConfig: layoutConfig, LayoutRenderer: layoutRenderer }
@@ -153,6 +156,22 @@ ctx.toggleFullMode = toggleFullMode;
 
 // Make ctx available to all modules
 NS.ctx = ctx;
+
+// Wire service module dependencies (replaces Ux7 window.CardGame.* namespace access)
+if (characters.wireContext) characters.wireContext(ctx, gameConstants, flatEngine);
+if (themes.wireContext) themes.wireContext(gameConstants, storage, characters, flatEngine);
+if (artPipeline.wireContext) artPipeline.wireContext(ctx, gameConstants, storage, characters, flatEngine, NS.Rendering);
+wireGameStateModules({ engine: flatEngine, characters, ai: { ...NS.AI, openTalkChat: chatUI.openTalkChat }, themes });
+
+// Initialize UI modules with the shared namespace
+if (deckListUI.init) deckListUI.init(NS);
+if (builder.init) builder.init(NS);
+if (deckView.init) deckView.init(NS);
+if (gameView.init) gameView.init(NS);
+if (phaseUI.init) phaseUI.init(NS);
+if (threatUI.init) threatUI.init(NS);
+if (chatUI.init) chatUI.init(NS);
+if (gameOverUI.init) gameOverUI.init(NS);
 
 // Wire late-bound references for encounters module
 if (encounters.wireEncounterRefs) {

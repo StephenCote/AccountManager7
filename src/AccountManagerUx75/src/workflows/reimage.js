@@ -4,6 +4,7 @@ import { am7client } from '../core/am7client.js';
 import { am7view } from '../core/view.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
+import { am7sd } from '../components/sdConfig.js';
 
 /**
  * Reimage workflow — opens SD config dialog, generates images for
@@ -75,7 +76,6 @@ function getCurrentWearLevel(inst) {
 let lastReimage = null;
 
 async function reimage(entity, inst) {
-    let am7sd = am7model._sd;
     let am7olio = am7model._olio;
     let isCharPerson = inst.model.name === 'olio.charPerson';
 

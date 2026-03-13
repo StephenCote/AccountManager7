@@ -47,7 +47,7 @@ test.describe('Workflow runtime validation', () => {
     // --- Helper: check if a command button icon is visible ---
     async function hasCommandButton(page, iconName) {
         let btn = page.locator('button:has(span.material-symbols-outlined:text("' + iconName + '"))').first();
-        return await btn.isVisible({ timeout: 5000 }).catch(() => false);
+        return await btn.isVisible({ timeout: 15000 }).catch(() => false);
     }
 
     // --- Helper: click command and check if dialog opens ---

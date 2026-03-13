@@ -136,18 +136,18 @@ describe('Vite config — bundle optimization', () => {
 });
 
 // --- Lazy component loading tests ---
-describe('main.js — lazy component loading', () => {
-    it('main.js uses lazyComponent for optional modules', async () => {
+describe('features/media.js — lazy component loading', () => {
+    it('media feature uses lazyComponent for optional modules', async () => {
         const fs = await import('fs');
         const path = await import('path');
-        const mainPath = path.default.resolve(import.meta.dirname, '../main.js');
-        const content = fs.default.readFileSync(mainPath, 'utf8');
+        const mediaPath = path.default.resolve(import.meta.dirname, '../features/media.js');
+        const content = fs.default.readFileSync(mediaPath, 'utf8');
         expect(content).toContain('lazyComponent');
-        expect(content).toContain("import('./components/pdfViewer.js')");
-        expect(content).toContain("import('./components/olio.js')");
-        expect(content).toContain("import('./components/audio.js')");
-        expect(content).toContain("import('./components/designer.js')");
-        expect(content).toContain("import('./components/emoji.js')");
+        expect(content).toContain("import('../components/pdfViewer.js')");
+        expect(content).toContain("import('../components/olio.js')");
+        expect(content).toContain("import('../components/audio.js')");
+        expect(content).toContain("import('../components/designer.js')");
+        expect(content).toContain("import('../components/emoji.js')");
     });
 });
 

@@ -51,7 +51,7 @@ function favoritesSection() {
         m("ul", { class: "p-2" },
             favItems.map(function (item) {
                 let type = item[am7model.jsonModelKey] || '';
-                let mod = am7model.getModel(type);
+                let mod = type ? am7model.getModel(type) : null;
                 let icon = (mod && mod.icon) ? mod.icon : 'description';
                 return m("li", { class: "py-1" },
                     m("button", {
@@ -78,10 +78,11 @@ const asideMenu = {
             if (mi.devOnly && !page.devMode) return false;
             return true;
         });
-        return m("aside", { class: "transition transition-0", style: "overflow-y:auto;max-height:100vh" }, [
-            m("div", { class: "p-4 border-b border-gray-200 dark:border-gray-700" }, [
+        return m("aside", { class: "transition transition-0", style: "display:flex;flex-direction:column;max-height:100vh" }, [
+            m("div", { class: "p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0" }, [
                 m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, "Categories")
             ]),
+            m("div", { style: "flex:1;overflow-y:auto;min-height:0" }, [
             m("ul", { class: "p-2" },
                 cats.map(function (cat) {
                     return m("li", { class: "py-1" },
@@ -147,6 +148,7 @@ const asideMenu = {
                 )
             ] : null,
             favoritesSection()
+            ]) // close scrollable div
         ]);
     }
 };
