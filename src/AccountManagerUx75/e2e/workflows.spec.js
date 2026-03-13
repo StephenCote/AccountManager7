@@ -6,7 +6,7 @@ test.describe('Workflow command registration', () => {
     let testInfo = {};
 
     test.beforeAll(async ({ request }) => {
-        testInfo = await setupTestUser(request, { suffix: 'workflow' });
+        testInfo = await setupTestUser(request, { suffix: 'wf' + Date.now().toString(36) });
     });
 
     test.afterAll(async ({ request }) => {

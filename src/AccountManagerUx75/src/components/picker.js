@@ -50,19 +50,11 @@ async function resolveContainer(type, altPath) {
         return null;
     }
 
-    if (am7model.isGroup(model) || am7model.isParent(model)) {
-        let path = altPath || am7client.currentOrganization;
-        if (!path) return null;
-        let grp = await page.makePath(type, "data", path);
-        return grp ? grp.objectId : null;
-    }
-
     // For auth types (role, permission), use user context
     if (type === "auth.role" || type === "auth.permission") {
         return new Promise(function(resolve) {
             am7client.user(type, "user", function(v) {
                 if (v && v.length > 0) {
-                    // Find the parent/directory
                     let parent = v[0];
                     resolve(parent.objectId || null);
                 } else {
@@ -72,6 +64,29 @@ async function resolveContainer(type, altPath) {
         });
     }
 
+    // Check if type has a groupId field (group-based objects like data.color,
+    // olio.charPerson, etc.) or is a group/parent type. The container is always
+    // an auth.group directory — matches Ux7's preparePicker pattern.
+    let hasGroupId = am7model.hasField(type, "groupId");
+    if (hasGroupId || am7model.isGroup(model) || am7model.isParent(model)) {
+        // Check system library path first (e.g., data.color → /Library/Colors)
+        let libraryPath = am7model.system && am7model.system.library && am7model.system.library[type];
+        let path = altPath || libraryPath || am7client.currentOrganization;
+        if (!path) return null;
+        let grp = await page.findObject("auth.group", "data", path);
+        if (!grp && path !== am7client.currentOrganization) {
+            // Fallback: try org root
+            grp = await page.findObject("auth.group", "data", am7client.currentOrganization);
+        }
+        return grp ? grp.objectId : null;
+    }
+
+    // system.user — no container needed
+    if (type === "system.user") {
+        return "__user__";
+    }
+
+    console.warn("[Picker] Unhandled type for container resolution:", type);
     return null;
 }
 
@@ -84,12 +99,11 @@ async function loadItems() {
     m.redraw();
 
     try {
-        let fields = pickerMode.filterField || null;
         let result = await new Promise(function(resolve) {
             am7client.list(
                 pickerMode.type,
                 pickerMode.containerId,
-                fields,
+                pickerMode.filterField || null,
                 pickerMode.start,
                 pickerMode.pageSize,
                 function(v) { resolve(v); }
@@ -98,7 +112,6 @@ async function loadItems() {
 
         if (result && Array.isArray(result)) {
             pickerMode.items = result;
-            // Estimate total from results — if full page returned, assume more exist
             pickerMode.total = result.length < pickerMode.pageSize
                 ? pickerMode.start + result.length
                 : pickerMode.start + pickerMode.pageSize + 1;
@@ -129,11 +142,15 @@ async function searchItems(query) {
         if (query && query.trim()) {
             q.field("name", query.trim() + "*");
         }
-        if (pickerMode.containerId) {
-            q.field("groupId", pickerMode.containerId);
+        // containerId is an objectId — use it to scope via groupId only if
+        // the type has a groupId field and it's not the special user sentinel.
+        if (pickerMode.containerId && pickerMode.containerId !== "__user__") {
+            // am7client.list uses objectId, but search needs numeric .id for groupId.
+            // Use the containerId to find the group's numeric id first,
+            // or just rely on loadItems which uses am7client.list (objectId-based).
+            // For search, skip groupId filter — it searches across the org.
         }
-        q.startRecord = pickerMode.start;
-        q.recordCount = pickerMode.pageSize;
+        q.range(pickerMode.start, pickerMode.pageSize);
 
         let result = await page.search(q);
         if (result && result.results) {
@@ -246,6 +263,27 @@ const ObjectPicker = {
         if (handler && item) {
             handler(item);
         }
+    },
+
+    /**
+     * Check if a field's picker format should be active based on required attributes.
+     * Matches Ux7 page.components.picker.validateFormat().
+     */
+    validateFormat: function(inst, field, format, useName) {
+        if (format === "picker" && field.pickerProperty && field.pickerProperty.requiredAttributes) {
+            if (!am7view.showField(inst, field.pickerProperty, useName)) {
+                return "text";
+            }
+        }
+        return format;
+    },
+
+    /**
+     * Check if the picker modal is currently open.
+     * Used by designer.js and other components to hide content behind picker.
+     */
+    inPickMode: function() {
+        return pickerMode.enabled;
     }
 };
 
@@ -263,7 +301,7 @@ ObjectPicker.PickerView = {
                 if (e.target === e.currentTarget) ObjectPicker.close();
             }
         }, [
-            m("div", { class: "absolute inset-0 bg-black/50" }),
+            m("div", { class: "absolute inset-0 bg-black/50", onclick: function() { ObjectPicker.close(); } }),
             m("div", { class: "relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col" }, [
                 // Header
                 m("div", { class: "flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0" }, [

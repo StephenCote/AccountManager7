@@ -216,7 +216,11 @@ import { cacheDb } from './cacheDb.js';
 
 	function deleteObject(sType,sObjId, fH){
 		delete cache[sType];
-
+		delete cache["COUNT"];
+		if (_cacheDbReady) {
+			cacheDb.removeByType(sType);
+			cacheDb.removeByType("COUNT");
+		}
 		return del(sModelSvc + "/" + sType + "/" + sObjId,fH);
 	}
 

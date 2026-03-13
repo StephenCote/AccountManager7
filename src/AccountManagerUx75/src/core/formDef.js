@@ -3872,7 +3872,8 @@ import { am7model } from './model.js';
                     pickerType: "data.color",
                     pickerProperty: {
                         selected: "{object}",
-                        entity: "eyeColor"
+                        entity: "eyeColor",
+                        path: "/Library/Colors"
                     }
                 }
             },
@@ -3885,7 +3886,8 @@ import { am7model } from './model.js';
                     pickerType: "data.color",
                     pickerProperty: {
                         selected: "{object}",
-                        entity: "hairColor"
+                        entity: "hairColor",
+                        path: "/Library/Colors"
                     }
                 }
 
@@ -4275,7 +4277,8 @@ import { am7model } from './model.js';
                     pickerType: "data.color",
                     pickerProperty: {
                         selected: "{object}",
-                        entity: "color"
+                        entity: "color",
+                        path: "/Library/Colors"
                     }
                 }
             },

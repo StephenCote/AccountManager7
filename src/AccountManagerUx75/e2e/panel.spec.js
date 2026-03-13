@@ -6,7 +6,7 @@ test.describe('Panel dashboard', () => {
     let testInfo = {};
 
     test.beforeAll(async ({ request }) => {
-        testInfo = await setupTestUser(request, { suffix: 'panel', noteCount: 1 });
+        testInfo = await setupTestUser(request, { suffix: 'pn' + Date.now().toString(36), noteCount: 1 });
     });
 
     test.afterAll(async ({ request }) => {

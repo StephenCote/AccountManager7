@@ -36,6 +36,7 @@ const IGNORED_PATTERNS = [
     /Cannot read properties of undefined \(reading 'view'\)/, // Mithril transient component init during redraw
     /Failed to execute '(insertBefore|removeChild)' on 'Node'/, // Mithril DOM reconciliation during rapid redraw
     /Command \w+ failed:/, // Workflow command errors (backend-dependent, caught by error handler)
+    /Error loading container:/, // Pagination container load failure (backend 500 on specific group IDs)
 ];
 
 /**

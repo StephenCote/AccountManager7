@@ -156,7 +156,7 @@ function newListControl() {
 
         // Search for child groups whose parentId matches this container
         let q = am7client.newQuery('auth.group');
-        q.entity.request = ['id', 'objectId', 'name', 'type', 'path', 'groupId', 'parentId'];
+        q.entity.request = ['id', 'objectId', 'name', 'type', 'path', 'parentId'];
         q.field('organizationId', page.user.organizationId);
 
         // Resolve containerId (objectId) to numeric id for parentId filter
@@ -179,7 +179,8 @@ function newListControl() {
                 childGroupsLoading = false;
                 let items = result;
                 if (result && result.results) items = result.results;
-                childGroups = (items || []).filter(function (g) {
+                if (!Array.isArray(items)) items = [];
+                childGroups = items.filter(function (g) {
                     return g.name && !g.name.match(/^\./);
                 });
                 m.redraw();

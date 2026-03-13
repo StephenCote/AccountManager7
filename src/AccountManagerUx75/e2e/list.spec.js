@@ -16,7 +16,7 @@ test.describe('List view', () => {
     let testInfo = {};
 
     test.beforeAll(async ({ request }) => {
-        testInfo = await setupTestUser(request, { suffix: 'list', noteCount: 3 });
+        testInfo = await setupTestUser(request, { suffix: 'ls' + Date.now().toString(36), noteCount: 3 });
     });
 
     test.afterAll(async ({ request }) => {
@@ -78,7 +78,7 @@ test.describe('List view — group navigation (15b)', () => {
     let testInfo = {};
 
     test.beforeAll(async ({ request }) => {
-        testInfo = await setupTestUser(request, { suffix: 'listnav', noteCount: 2 });
+        testInfo = await setupTestUser(request, { suffix: 'ln' + Date.now().toString(36), noteCount: 2 });
     });
 
     test.afterAll(async ({ request }) => {
@@ -211,7 +211,7 @@ test.describe('List view — search behavior (15b)', () => {
 
     test.beforeAll(async ({ request }) => {
         testInfo = await setupTestUser(request, {
-            suffix: 'srch',
+            suffix: 'sr' + Date.now().toString(36),
             noteCount: 3,
             notePrefix: 'SearchTestNote'
         });

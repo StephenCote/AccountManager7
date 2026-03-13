@@ -281,10 +281,11 @@ function newObjectPage() {
 
     // --- Picker integration ---
 
-    function preparePicker(type, callback) {
+    function preparePicker(type, callback, altPath) {
         if (page.components.picker) {
             return page.components.picker.open({
                 type: type,
+                altPath: altPath,
                 onSelect: function(selected) {
                     if (callback) callback(Array.isArray(selected) ? selected : [selected]);
                     cancelPicker();
@@ -298,6 +299,144 @@ function newObjectPage() {
         pickerMode.enabled = false;
         pickerMode.type = null;
         pickerMode.callback = null;
+        if (page.components.picker && page.components.picker.isOpen()) {
+            page.components.picker.close();
+        }
+        m.redraw();
+    }
+
+    /**
+     * Open picker for a foreign-key field, resolve the picked object back into
+     * the entity/instance API. Port of Ux7 object.js doFieldPicker.
+     */
+    function doFieldPicker(field, useName, altEntity, altPath, pickerHandler) {
+        let useEntity = altEntity || entity;
+        if (!useEntity || !field.pickerProperty) {
+            console.warn("[picker] Invalid entity or field property", useEntity, field);
+            return;
+        }
+        let type = entity ? entity[am7model.jsonModelKey] : undefined;
+        let setType = false;
+        let mat;
+
+        // Disconnected table picker: dynamic type from sibling DOM field
+        if (
+            field.pickerProperty.foreign && useName &&
+            (mat = useName.match(/(-\d+)$/)) != null &&
+            field.pickerType && field.pickerType.match(/^\./)
+        ) {
+            let el = document.querySelector("[name='" + field.pickerType.slice(1) + mat[1] + "']");
+            if (el) { type = el.value.toLowerCase(); setType = true; }
+        } else {
+            if (field.pickerType && field.pickerType !== 'self') type = field.pickerType;
+            if (type && type.match(/^\./)) {
+                type = (useEntity[type.slice(1)] || '').toLowerCase();
+            }
+        }
+
+        if (!type || type.match(/^unknown$/i)) return;
+
+        preparePicker(type, function(data) {
+            if (!data || !data.length) return;
+            let picked = data[0];
+
+            if (useEntity === (inst ? inst.entity : entity)) {
+                // Primary entity — use inst.api setters
+                if (field.pickerProperty.selected === '{object}') {
+                    if (field.pickerProperty.entity.match(/\./)) {
+                        let pv = field.pickerProperty.entity.split(".");
+                        if (pinst[pv[0]]) {
+                            pinst[pv[0]].api[pv[1]](picked);
+                        } else {
+                            console.warn("[picker] sub-instance not found:", pv[0]);
+                        }
+                    } else if (inst) {
+                        inst.api[field.pickerProperty.entity](picked);
+                    }
+                } else if (inst) {
+                    inst.api[field.pickerProperty.entity](picked[field.pickerProperty.selected]);
+                }
+                if (setType && inst) {
+                    inst.api[field.pickerType.slice(1)](type);
+                }
+            } else {
+                // Alternate entity (e.g. table row) — direct assignment
+                if (field.pickerProperty.selected === '{object}') {
+                    useEntity[field.pickerProperty.entity] = picked;
+                } else {
+                    useEntity[field.pickerProperty.entity] = picked[field.pickerProperty.selected];
+                }
+                if (setType) {
+                    useEntity[field.pickerType.slice(1)] = type;
+                }
+            }
+
+            updateChange();
+            if (inst && inst.action) inst.action(useName);
+            if (pickerHandler) pickerHandler(objectPage, inst, field, useName, picked);
+
+            // Clear server cache for parent type
+            let schemaKey = useEntity[am7model.jsonModelKey];
+            if (schemaKey && !schemaKey.match(/message/i)) {
+                am7client.clearCache(schemaKey, false, function() { m.redraw(); });
+            } else {
+                m.redraw();
+            }
+        }, altPath || field.pickerProperty.path);
+    }
+
+    /**
+     * Navigate to the object referenced by a picker field.
+     * Port of Ux7 object.js doFieldOpen.
+     */
+    async function doFieldOpen(field) {
+        if (!entity || !field.pickerProperty) return;
+        let prop = field.pickerProperty.entity;
+        let type = entity[am7model.jsonModelKey];
+        if (field.pickerType && field.pickerType !== 'self') type = field.pickerType;
+        if (type && type.match(/^\./)) {
+            type = (entity[type.slice(1)] || '').toLowerCase();
+        }
+
+        let id;
+        if (field.pickerProperty.selected === '{object}') {
+            id = entity[prop] ? entity[prop].objectId : null;
+        } else {
+            id = entity[prop];
+        }
+
+        if (!id || !type) {
+            console.warn("[picker] Missing id or type for field open:", id, type);
+            return;
+        }
+
+        // Resolve numeric or urn-style IDs to objectId
+        if (typeof id === 'number' || (typeof id === 'string' && id.match(/^am:/))) {
+            let obj2 = await page.openObject(type, id);
+            if (obj2) id = obj2.objectId;
+        }
+
+        m.route.set("/view/" + type + "/" + id);
+    }
+
+    /**
+     * Clear a picker field's value.
+     * Port of Ux7 object.js doFieldClear.
+     */
+    function doFieldClear(field) {
+        if (!entity || !inst || !field.pickerProperty) return;
+        let prop = field.pickerProperty.entity;
+        if (field.pickerProperty.selected === '{object}' || typeof entity[prop] === 'string') {
+            inst.api[prop](null);
+        } else if (typeof entity[prop] === 'number') {
+            inst.api[prop](0);
+        }
+        updateChange();
+
+        // Clear server cache if parentId changed
+        if (prop === 'parentId') {
+            am7client.clearCache(entity[am7model.jsonModelKey], false, function() {});
+        }
         m.redraw();
     }
 
@@ -324,6 +463,7 @@ function newObjectPage() {
             cancelPicker,
             resetValuesState,
             updateChange,
+            doFieldPicker, doFieldOpen, doFieldClear,
             modelField: function(fk, tfv, tf, inputName, defVal, isTable, entry, tableForm) {
                 return modelField(fk, tfv, tf);
             }
@@ -503,7 +643,8 @@ function newObjectPage() {
         let rendererCtx = {
             inst, entity, useEntity: entity, field, fieldView,
             name, useName: name, defVal, fieldClass, disabled, fHandler, show, objectPage,
-            foreignData, preparePicker, cancelPicker
+            foreignData, preparePicker, cancelPicker,
+            updateChange, doFieldPicker, doFieldOpen, doFieldClear
         };
 
         if (page.components.formFieldRenderers && page.components.formFieldRenderers.has(format)) {
@@ -641,6 +782,8 @@ function newObjectPage() {
         let thumb = getThumbnail();
         let cmds = getFormCommands();
 
+        let hasDragAndDrop = objectNew && form.fields && Object.values(form.fields).some(function(f) { return f.dragAndDrop; });
+
         let toolbarButtons = [
             thumb ? m('img', {
                 src: thumb,
@@ -649,6 +792,23 @@ function newObjectPage() {
             }) : null,
             page.iconButton('button' + altCls, 'save', '', doUpdate),
             page.iconButton('button', 'cancel', '', doCancel),
+            (hasDragAndDrop ? [
+                m('input', {
+                    type: 'file',
+                    id: 'toolbar-file-upload',
+                    multiple: true,
+                    class: 'hidden',
+                    onchange: function(e) {
+                        if (e.target.files && e.target.files.length && page.components.dnd) {
+                            page.components.dnd.uploadFiles(inst, e.target.files);
+                            e.target.value = '';
+                        }
+                    }
+                }),
+                page.iconButton('button', 'upload_file', '', function() {
+                    document.getElementById('toolbar-file-upload').click();
+                })
+            ] : ''),
             (!objectNew ? page.iconButton('button', 'delete_outline', '', doDelete) : ''),
             (!objectNew ? page.iconButton('button', 'content_copy', '', doCopy) : ''),
             page.iconButton('button' + (fullMode ? ' active' : ''),
@@ -753,6 +913,9 @@ function newObjectPage() {
     objectPage.getInstance = function () { return inst; };
     objectPage.resetEntity = resetEntity;
     objectPage.tabIndex = function () { return tabIndex; };
+    objectPage.preparePicker = preparePicker;
+    objectPage.cancelPicker = cancelPicker;
+    objectPage.picker = doFieldPicker;
 
     return objectPage;
 }

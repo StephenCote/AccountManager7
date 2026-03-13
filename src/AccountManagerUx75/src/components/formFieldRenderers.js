@@ -281,19 +281,51 @@ renderers.image = function(ctx) {
             dataUrl = buildMediaPath(useEntity);
         }
     }
-    // Profile portrait
+    // Profile portrait — click opens full-size image view
     else if (useEntity.profile && useEntity.profile.portrait && useEntity.profile.portrait.contentType) {
-        dataUrl = buildThumbnailPath(useEntity.profile.portrait, "96x96");
+        let pp = useEntity.profile.portrait;
+        dataUrl = buildThumbnailPath(pp, "96x96");
+        clickHandler = function() {
+            let page = getPage();
+            if (page && page.components && page.components.dialog) {
+                let fullUrl = buildMediaPath(pp);
+                page.components.dialog.open({
+                    title: pp.name || 'Portrait',
+                    size: 'lg',
+                    content: m('div', { class: 'flex flex-col items-center' }, [
+                        m('img', { src: fullUrl, class: 'max-w-full max-h-[70vh] rounded shadow', style: 'object-fit:contain' })
+                    ]),
+                    closable: true,
+                    actions: [{ label: 'Close', icon: 'close', onclick: function() { page.components.dialog.close(); } }]
+                });
+            }
+        };
     }
     // Direct portrait
     else if (useEntity.portrait && useEntity.portrait.contentType) {
-        dataUrl = buildThumbnailPath(useEntity.portrait, "96x96");
+        let pt = useEntity.portrait;
+        dataUrl = buildThumbnailPath(pt, "96x96");
+        clickHandler = function() {
+            let page = getPage();
+            if (page && page.components && page.components.dialog) {
+                let fullUrl = buildMediaPath(pt);
+                page.components.dialog.open({
+                    title: pt.name || 'Portrait',
+                    size: 'lg',
+                    content: m('div', { class: 'flex flex-col items-center' }, [
+                        m('img', { src: fullUrl, class: 'max-w-full max-h-[70vh] rounded shadow', style: 'object-fit:contain' })
+                    ]),
+                    closable: true,
+                    actions: [{ label: 'Close', icon: 'close', onclick: function() { page.components.dialog.close(); } }]
+                });
+            }
+        };
     }
 
     if (!dataUrl) return [m("span", "No image source")];
 
     return [m("img", {
-        class: fieldClass,
+        class: fieldClass + (clickHandler ? " cursor-pointer hover:opacity-80" : ""),
         name: ctx.useName,
         onclick: clickHandler,
         src: dataUrl
@@ -337,8 +369,22 @@ renderers.gallery = function(ctx) {
             }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "arrow_forward"))
         ]),
         m("img", {
-            class: "max-w-full rounded shadow cursor-pointer",
-            src: dataUrl
+            class: "max-w-full rounded shadow cursor-pointer hover:opacity-90",
+            src: dataUrl,
+            onclick: function() {
+                if (page && page.components && page.components.dialog && currentImage) {
+                    let fullUrl = buildMediaPath(currentImage);
+                    page.components.dialog.open({
+                        title: currentImage.name || ('Image ' + (currentIndex + 1)),
+                        size: 'lg',
+                        content: m('div', { class: 'flex flex-col items-center' }, [
+                            m('img', { src: fullUrl, class: 'max-w-full max-h-[70vh] rounded shadow', style: 'object-fit:contain' })
+                        ]),
+                        closable: true,
+                        actions: [{ label: 'Close', icon: 'close', onclick: function() { page.components.dialog.close(); } }]
+                    });
+                }
+            }
         })
     ])];
 };

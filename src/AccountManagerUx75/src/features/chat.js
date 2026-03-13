@@ -711,16 +711,12 @@ function scrollToBottom(el) {
 async function initChatView() {
     // Wire conversation manager callbacks
     ConversationManager.onSelect(pickSession);
-    ConversationManager.onDelete(async function(obj) {
-        try {
-            await LLMConnector.deleteSession(obj, false);
-            await ConversationManager.refresh();
-            if (inst && obj.objectId === inst.api.objectId()) {
-                doClear();
-                ConversationManager.autoSelectFirst();
-            }
-        } catch(e) {
-            page.toast("error", "Delete failed");
+    ConversationManager.onDelete(function(obj) {
+        // Session already deleted and list refreshed by ConversationManager —
+        // just clear the active view if it was the deleted session
+        if (inst && obj.objectId === inst.api.objectId()) {
+            doClear();
+            ConversationManager.autoSelectFirst();
         }
         m.redraw();
     });

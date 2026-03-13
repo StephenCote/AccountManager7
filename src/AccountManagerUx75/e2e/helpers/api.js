@@ -189,31 +189,38 @@ export async function setupTestUser(request, opts = {}) {
     const noteCount = opts.noteCount || 3;
     const notePrefix = opts.notePrefix || testUserName;
 
-    let ctx = await newApiContext();
+    // Phase 1: Admin creates user and sets credential
+    let adminCtx = await newApiContext();
+    let user;
     try {
-        await loginCtx(ctx, { org });
-
-        let user = await searchCtx(ctx, 'system.user', 'name', testUserName);
+        await loginCtx(adminCtx, { org });
+        user = await searchCtx(adminCtx, 'system.user', 'name', testUserName);
         if (!user || !user.objectId) {
-            user = await createUserCtx(ctx, testUserName);
+            user = await createUserCtx(adminCtx, testUserName);
         }
-
         if (user && user.objectId) {
-            await setCredentialCtx(ctx, user.objectId, testPassword);
+            await setCredentialCtx(adminCtx, user.objectId, testPassword);
         }
+        await logoutCtx(adminCtx);
+    } finally {
+        await adminCtx.dispose();
+    }
 
-        let notes = [];
-        let orgPath = org.replace(/^\//, '');
+    // Phase 2: Test user logs in to initialize home directory, then creates own notes
+    let userCtx = await newApiContext();
+    let notes = [];
+    try {
+        await loginCtx(userCtx, { org, user: testUserName, password: testPassword });
         for (let i = 1; i <= noteCount; i++) {
-            let note = await createNoteCtx(ctx, '/' + orgPath + '/Notes', notePrefix + ' Note ' + i, 'Test content ' + i);
+            let note = await createNoteCtx(userCtx, '~/Notes', notePrefix + ' Note ' + i, 'Test content ' + i);
             if (note && note.objectId) notes.push(note);
         }
-
-        await logoutCtx(ctx);
-        return { user, testUserName, testPassword, notes };
+        await logoutCtx(userCtx);
     } finally {
-        await ctx.dispose();
+        await userCtx.dispose();
     }
+
+    return { user, testUserName, testPassword, notes };
 }
 
 /**
@@ -317,7 +324,7 @@ export async function setupWorkflowTestData(request, opts = {}) {
     const testUserName = 'e2etest_' + suffix;
     const testPassword = 'password';
 
-    // Phase 1: Admin creates and configures the test user
+    // Phase 1: Admin creates the test user
     let adminCtx = await newApiContext();
     let user;
     try {
@@ -334,17 +341,23 @@ export async function setupWorkflowTestData(request, opts = {}) {
         await adminCtx.dispose();
     }
 
-    // Phase 2: Login as test user to create data in their home directory
+    // Phase 2: Login as test user to initialize their home directory
+    let initCtx = await newApiContext();
+    try {
+        await loginCtx(initCtx, { org, user: testUserName, password: testPassword });
+        await logoutCtx(initCtx);
+    } finally {
+        await initCtx.dispose();
+    }
+
+    // Phase 3: Test user creates their own test data (owns objects = can read them)
     let userCtx = await newApiContext();
     let charPerson = null, dataObject = null, note = null;
     let charDirId = null, dataDirId = null;
     try {
         await loginCtx(userCtx, { org, user: testUserName, password: testPassword });
 
-        // Ensure home subdirectories exist (~ = user's home dir)
         let charDir = await ensurePathCtx(userCtx, 'auth.group', 'data', '~/Characters');
-        let dataDir = await ensurePathCtx(userCtx, 'auth.group', 'data', '~/Data');
-
         if (charDir && charDir.id) {
             charDirId = charDir.objectId;
             charPerson = await createObjectCtx(userCtx, 'olio.charPerson', {
@@ -353,12 +366,13 @@ export async function setupWorkflowTestData(request, opts = {}) {
                 middleName: 'E2E',
                 lastName: 'Character',
                 gender: 'female',
-                alignment: 'NEUTRAL_GOOD',
+                alignment: 'neutralgood',
                 groupId: charDir.id,
                 groupPath: charDir.path
             });
         }
 
+        let dataDir = await ensurePathCtx(userCtx, 'auth.group', 'data', '~/Data');
         if (dataDir && dataDir.id) {
             dataDirId = dataDir.objectId;
             dataObject = await createObjectCtx(userCtx, 'data.data', {

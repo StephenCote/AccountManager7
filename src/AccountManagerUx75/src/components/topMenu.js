@@ -107,6 +107,15 @@ const topMenu = {
             profileImage(userName),
             m("button", {
                 class: "menu-button",
+                onclick: function () {
+                    am7client.clearCache(0, false);
+                    page.toast("info", "Cache cleared");
+                },
+                title: "Clear cache",
+                'aria-label': "Clear cache"
+            }, m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, "cached")),
+            m("button", {
+                class: "menu-button",
                 onclick: function () { page.logout(); },
                 title: "Logout",
                 'aria-label': "Logout"

@@ -17,6 +17,7 @@ import { newPaginationControl } from './components/pagination.js';
 import { initTheme } from './components/topMenu.js';
 import { startPolling, stopPolling } from './components/notifications.js';
 import { contextMenuComponent } from './components/contextMenu.js';
+import { ObjectPicker } from './components/picker.js';
 
 // Wire components onto page for cross-module access
 page.components.panel = panel;
@@ -51,7 +52,8 @@ function pageLayout(innerContent, navAttrs) {
         m(navigation, navAttrs || {}),
         m("main", { class: "flex-1 overflow-auto flex bg-white dark:bg-gray-900", role: "main" }, [
             innerContent
-        ])
+        ]),
+        m(ObjectPicker.PickerView)
     ]);
 }
 
