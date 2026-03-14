@@ -112,18 +112,12 @@ test.describe('Object field pickers', () => {
             let modal = page.locator('.fixed.inset-0.z-50');
             await expect(modal).toBeVisible({ timeout: 10000 });
 
-            // Wait for list view items or empty state to load
+            // Wait for picker content to load
             let itemRows = modal.locator('tr.list-tr, .group.relative.rounded-lg.border');
-            let noItems = modal.locator('text=No results');
-            let resultNav = modal.locator('.result-nav-outer');
-            // Wait for either items, empty state, or pagination to appear
-            await expect(itemRows.first().or(noItems).or(resultNav)).toBeVisible({ timeout: 15000 });
+            // Wait for either the toolbar or empty state text — both appear after data loads
+            await modal.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
 
             let hasItems = await itemRows.count() > 0;
-            let hasNoItems = await noItems.isVisible().catch(() => false);
-
-            // Either items loaded or empty state shown — both valid
-            expect(hasItems || hasNoItems || await resultNav.isVisible().catch(() => false)).toBeTruthy();
 
             if (hasItems) {
                 // Click the first item to select it
@@ -132,7 +126,7 @@ test.describe('Object field pickers', () => {
                 await expect(modal).not.toBeVisible({ timeout: 5000 });
                 await screenshot(page, 'picker-item-selected');
             } else {
-                // Close modal
+                // Close modal — no items is valid for test users
                 let closeBtn = modal.locator('button:has(span:text("close"))');
                 await closeBtn.click();
                 await screenshot(page, 'picker-no-items');
@@ -191,8 +185,10 @@ test.describe('Object field pickers', () => {
             let modal = page.locator('.fixed.inset-0.z-50');
             await expect(modal).toBeVisible({ timeout: 10000 });
 
-            // Wait for list content or navigation to load
-            await modal.locator('.result-nav-outer, tr.list-tr, text=No results').first().waitFor({ state: 'visible', timeout: 15000 });
+            // Wait for list content or empty state to load
+            let noItems2 = modal.locator('text=No results');
+            let itemRows2 = modal.locator('tr.list-tr, .group.relative.rounded-lg.border');
+            await noItems2.or(itemRows2.first()).waitFor({ state: 'visible', timeout: 15000 });
 
             // Home, Favorites, Library buttons
             let homeBtn = modal.locator('button[aria-label="My items"]');

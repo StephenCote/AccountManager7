@@ -1,0 +1,49 @@
+{
+	"name": "olio.outfitRequest",
+	"ioConstraints": ["unknown"],
+	"fields": [
+		{
+			"name": "characterId",
+			"type": "string"
+		},
+		{
+			"name": "apparelId",
+			"type": "string"
+		},
+		{
+			"name": "techTier",
+			"type": "int",
+			"default": 2
+		},
+		{
+			"name": "climate",
+			"type": "string"
+		},
+		{
+			"name": "style",
+			"type": "string"
+		},
+		{
+			"name": "hires",
+			"type": "boolean",
+			"default": false
+		},
+		{
+			"name": "seed",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "pieces",
+			"type": "string"
+		},
+		{
+			"name": "primaryColor",
+			"type": "string"
+		},
+		{
+			"name": "pattern",
+			"type": "string"
+		}
+	]
+}

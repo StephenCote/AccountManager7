@@ -7,7 +7,15 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
-import { setupWorkflowTestData, cleanupTestUser } from './helpers/api.js';
+import { setupWorkflowTestData, cleanupTestUser, apiLogin, apiLogout } from './helpers/api.js';
+import { request as pwRequest } from '@playwright/test';
+
+const BASE_URL = 'https://localhost:8899';
+const REST = BASE_URL + '/AccountManagerService7/rest';
+
+async function newApiContext() {
+    return pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
+}
 
 test.describe('charPerson features', () => {
     let testInfo = {};
@@ -194,5 +202,41 @@ test.describe('charPerson features', () => {
         }
         // No portrait is valid for test characters — just verify no console errors
         await screenshot(page, 'charperson-portrait-state');
+    });
+
+    test('outfit generate API returns valid response for charPerson', async () => {
+        if (!testInfo.charPerson || !testInfo.charPerson.objectId) {
+            test.skip(true, 'No charPerson created');
+            return;
+        }
+
+        let ctx = await newApiContext();
+        try {
+            await apiLogin(ctx, { user: testInfo.testUserName, password: testInfo.testPassword });
+
+            let resp = await ctx.post(REST + '/game/outfit/generate', {
+                headers: { 'Content-Type': 'application/json' },
+                data: {
+                    schema: 'olio.outfitRequest',
+                    characterId: testInfo.charPerson.objectId
+                }
+            });
+
+            let status = resp.status();
+            let body = await resp.text();
+            // Log the actual response for debugging
+            console.log('Outfit generate status:', status, 'body:', body.substring(0, 500));
+
+            // If 400, the error details help diagnose the issue
+            if (status === 400) {
+                console.error('Outfit generate 400 response:', body);
+            }
+
+            expect(status, 'Outfit generate should not return 400: ' + body).not.toBe(400);
+
+            await apiLogout(ctx);
+        } finally {
+            await ctx.dispose();
+        }
     });
 });

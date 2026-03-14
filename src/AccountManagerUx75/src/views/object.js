@@ -420,7 +420,7 @@ function newObjectPage() {
             if (obj2) id = obj2.objectId;
         }
 
-        m.route.set("/view/" + type + "/" + id);
+        m.route.set("/view/" + type + "/" + id, { key: Date.now() });
     }
 
     /**
@@ -889,6 +889,20 @@ function newObjectPage() {
             objectNew = vnode.attrs.new || (m.route.get() && m.route.get().match(/^\/new/gi));
             loadEntity();
             if (!objectNew && objectType) page.checkFavorites(objectType);
+        },
+        onbeforeupdate: function (vnode) {
+            // Detect route parameter changes (e.g. picker View button navigating to another object)
+            let newId = vnode.attrs.objectId || m.route.param('objectId');
+            let newType = vnode.attrs.type || m.route.param('type');
+            if (newId && newId !== objectId || newType && newType !== objectType) {
+                objectId = newId;
+                objectType = newType;
+                objectNew = false;
+                pinst = {};
+                foreignData = {};
+                valuesState = {};
+                loadEntity();
+            }
         },
         oncreate: function () {
             document.addEventListener('keydown', onKeyDown);
