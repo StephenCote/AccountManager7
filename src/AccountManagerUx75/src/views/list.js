@@ -36,6 +36,15 @@ function newListControl() {
     let infiniteScroll = false;
     let infiniteLoading = false;
 
+    // Picker mode state — when the list is embedded inside the ObjectPicker modal
+    let pickerHandler = null;      // onSelect callback
+    let pickerType = null;         // model type being picked
+    let pickerContainerId = null;  // current container objectId
+    let pickerUserContainerId = null;     // user's own path (~/Colors)
+    let pickerLibraryContainerId = null;  // shared library (/Library/Colors)
+    let pickerFavoritesContainerId = null; // user's Favorites bucket
+    let pickerActiveSource = 'home';      // 'home' | 'favorites' | 'library'
+
     // 11b-1: Group navigation state
     let childGroups = null;
     let childGroupsLoading = false;
@@ -114,7 +123,29 @@ function newListControl() {
     //  Navigation
     // ------------------------------------------------------------------
 
+    function pickerNavigateTo(containerId) {
+        pickerContainerId = containerId;
+        listContainerId = containerId;
+        childGroups = null;
+        groupPath = null;
+        pagination.new();
+        initParams(lastVnode || { attrs: {} });
+        updatePagination(lastVnode || { attrs: {} });
+        loadChildGroups(listContainerId);
+        loadGroupPath(listContainerId);
+    }
+
     function navigateUp() {
+        if (pickerMode) {
+            let pg = pagination.pages();
+            if (!pg.container || !pg.container.path) return;
+            let parentPath = pg.container.path.substring(0, pg.container.path.lastIndexOf('/'));
+            if (!parentPath) return;
+            page.findObject('auth.group', 'data', parentPath).then(function(grp) {
+                if (grp && grp.objectId) pickerNavigateTo(grp.objectId);
+            });
+            return;
+        }
         let pg = pagination.pages();
         if (!pg.container || !pg.container.path) return;
 
@@ -130,6 +161,17 @@ function newListControl() {
     }
 
     function navigateDown(sel) {
+        if (pickerMode) {
+            let obj = sel;
+            if (!obj) {
+                let idx = getSelectedIndices();
+                let pg = pagination.pages();
+                let results = pg.pageResults[pg.currentPage];
+                if (idx.length && results) obj = results[idx[0]];
+            }
+            if (obj && pickerHandler) pickerHandler(obj);
+            return;
+        }
         let idx = getSelectedIndices();
         let type = modType ? (modType.type || listType) : listType;
         let byParent = am7model.isParent(modType) && type !== 'auth.group';
@@ -238,6 +280,10 @@ function newListControl() {
     }
 
     function navigateToChildGroup(group) {
+        if (pickerMode) {
+            pickerNavigateTo(group.objectId);
+            return;
+        }
         let type = baseListType || listType;
         childGroups = null;
         groupPath = null;
@@ -291,9 +337,13 @@ function newListControl() {
                 return [sep, m('button', {
                     class: 'hover:text-blue-600 dark:hover:text-blue-400 hover:underline',
                     onclick: function () {
-                        childGroups = null;
-                        groupPath = null;
-                        m.route.set('/list/' + type + '/' + seg.objectId, { key: Date.now() });
+                        if (pickerMode) {
+                            pickerNavigateTo(seg.objectId);
+                        } else {
+                            childGroups = null;
+                            groupPath = null;
+                            m.route.set('/list/' + type + '/' + seg.objectId, { key: Date.now() });
+                        }
                     }
                 }, seg.name)];
             })
@@ -459,17 +509,20 @@ function newListControl() {
             let checked = !!(state && state.checked);
             let thumb = getItemThumbnail(item, thumbSize);
             let dndAttrs = {};
-            if (page.components.dnd) {
+            if (!pickerMode && page.components.dnd) {
                 dndAttrs.draggable = "true";
                 dndAttrs.ondragstart = page.components.dnd.dragStartHandler(item);
             }
 
             return m('div', Object.assign({
                 class: 'group relative rounded-lg border overflow-hidden cursor-pointer transition-shadow hover:shadow-md'
-                    + (checked ? ' border-blue-500 ring-2 ring-blue-300 dark:ring-blue-700' : ' border-gray-200 dark:border-gray-700'),
-                onclick: function() { selectResult(item); },
-                ondblclick: function() { navigateDown(item); },
-                oncontextmenu: function(e) { showListContextMenu(e, item); }
+                    + (pickerMode ? ' hover:border-blue-400 border-gray-200 dark:border-gray-700'
+                        : (checked ? ' border-blue-500 ring-2 ring-blue-300 dark:ring-blue-700' : ' border-gray-200 dark:border-gray-700')),
+                onclick: pickerMode
+                    ? function() { if (pickerHandler) pickerHandler(item); }
+                    : function() { selectResult(item); },
+                ondblclick: pickerMode ? undefined : function() { navigateDown(item); },
+                oncontextmenu: pickerMode ? undefined : function(e) { showListContextMenu(e, item); }
             }, dndAttrs), [
                 thumb
                     ? m('div', { class: 'aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center overflow-hidden' },
@@ -480,7 +533,7 @@ function newListControl() {
                     m('div', { class: 'text-xs font-medium text-gray-700 dark:text-gray-300 truncate' }, item.name || '(unnamed)'),
                     !isSmall && item.description ? m('div', { class: 'text-xs text-gray-400 truncate mt-0.5' }, item.description) : null
                 ]),
-                checked ? m('div', { class: 'absolute top-1 right-1' },
+                (!pickerMode && checked) ? m('div', { class: 'absolute top-1 right-1' },
                     m('span', { class: 'material-symbols-outlined text-blue-500', style: 'font-size:' + (isSmall ? '16px' : '20px') }, 'check_circle')
                 ) : null
             ]);
@@ -516,17 +569,19 @@ function newListControl() {
             let state = pagination.state(item);
             let checked = !!(state && state.checked);
             let dndAttrs = {};
-            if (page.components.dnd) {
+            if (!pickerMode && page.components.dnd) {
                 dndAttrs.draggable = "true";
                 dndAttrs.ondragstart = page.components.dnd.dragStartHandler(item);
             }
             return m('tr', Object.assign({
-                class: 'list-tr' + (checked ? ' list-tr-selected' : ''),
-                onclick: () => selectResult(item),
-                ondblclick: () => navigateDown(item),
-                oncontextmenu: (e) => showListContextMenu(e, item)
+                class: 'list-tr' + (checked && !pickerMode ? ' list-tr-selected' : '') + (pickerMode ? ' cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/30' : ''),
+                onclick: pickerMode
+                    ? () => { if (pickerHandler) pickerHandler(item); }
+                    : () => selectResult(item),
+                ondblclick: pickerMode ? undefined : () => navigateDown(item),
+                oncontextmenu: pickerMode ? undefined : (e) => showListContextMenu(e, item)
             }, dndAttrs), [
-                m('td', { class: 'list-td list-td-check' },
+                pickerMode ? null : m('td', { class: 'list-td list-td-check' },
                     m('input', {
                         type: 'checkbox',
                         checked,
@@ -541,7 +596,7 @@ function newListControl() {
         return m('table', { class: 'list-table' }, [
             m('thead', [
                 m('tr', [
-                    m('th', { class: 'list-th list-th-check' }, ''),
+                    pickerMode ? null : m('th', { class: 'list-th list-th-check' }, ''),
                     showThumb ? m('th', { class: 'list-th', style: 'width:40px' }, '') : null,
                     ...columns.map(c => m('th', { class: 'list-th' }, c))
                 ])
@@ -653,6 +708,10 @@ function newListControl() {
                 }, m('span', { class: 'material-symbols-outlined', style: 'font-size:20px', 'aria-hidden': 'true' }, 'chevron_left')),
                 m('span', { class: 'text-sm text-gray-600 dark:text-gray-300' },
                     (currentIdx + 1) + ' / ' + items.length + (item.name ? ' — ' + item.name : '')),
+                pickerMode ? m('button', {
+                    class: 'px-3 py-1 rounded bg-blue-500 text-white text-sm hover:bg-blue-600',
+                    onclick: function() { if (pickerHandler && item) pickerHandler(item); }
+                }, 'Select') : null,
                 m('button', {
                     class: 'p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700' + (currentIdx >= items.length - 1 ? ' opacity-30' : ''),
                     onclick: function() { galleryNav(1, items); },
@@ -728,7 +787,10 @@ function newListControl() {
 
     function doFilter(value) {
         navFilter = value && value.length ? value : null;
-        pagination.filter(navFilter);
+        pagination.new();
+        initParams(lastVnode);
+        updatePagination(lastVnode);
+        m.redraw();
     }
 
     // ------------------------------------------------------------------
@@ -741,17 +803,21 @@ function newListControl() {
 
         let buttons = [];
 
-        // Add / Edit / Delete
-        if (!modType || !modType.systemNew) {
-            buttons.push(iconBtn('button', 'add', '', addNew, 'Add new item'));
+        if (!pickerMode) {
+            // Add / Edit / Delete — only in normal mode
+            if (!modType || !modType.systemNew) {
+                buttons.push(iconBtn('button', 'add', '', addNew, 'Add new item'));
+            }
+            buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'edit', '', editSelected, 'Edit selected'));
+            buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'delete', '', deleteSelected, 'Delete selected'));
         }
-        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'edit', '', editSelected, 'Edit selected'));
-        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'delete', '', deleteSelected, 'Delete selected'));
 
-        // Navigate up/down for group navigation
-        if (isGroupNav) {
+        // Navigate up — useful in both normal and picker mode for group browsing
+        if (isGroupNav || pickerMode) {
             buttons.push(iconBtn('button', 'north_west', '', navigateUp, 'Navigate up'));
-            buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'south_east', '', () => navigateDown(), 'Navigate into'));
+            if (!pickerMode) {
+                buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'south_east', '', () => navigateDown(), 'Navigate into'));
+            }
         }
 
         // Grid/gallery toggle: table → small icons → large icons → gallery
@@ -759,19 +825,58 @@ function newListControl() {
         let gridLabels = ['Table view', 'Small icons', 'Large icons', 'Gallery view'];
         buttons.push(iconBtn('button', gridIcons[gridMode] || 'view_list', '', toggleGrid, gridLabels[gridMode] || 'Toggle view'));
 
-        // Bulk apply image tags
-        buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'label', '', bulkApplyTags, 'Apply tags to selected'));
+        // Picker mode: Home / Favorites / Library navigation buttons
+        if (pickerMode) {
+            if (pickerUserContainerId) {
+                buttons.push(iconBtn(
+                    'button' + (pickerActiveSource === 'home' ? ' active' : ''),
+                    'home', '', function() {
+                        if (pickerActiveSource === 'home') return;
+                        pickerActiveSource = 'home';
+                        pickerNavigateTo(pickerUserContainerId);
+                    },
+                    'My items'
+                ));
+            }
+            if (pickerFavoritesContainerId) {
+                buttons.push(iconBtn(
+                    'button' + (pickerActiveSource === 'favorites' ? ' active' : ''),
+                    'star', '', function() {
+                        if (pickerActiveSource === 'favorites') return;
+                        pickerActiveSource = 'favorites';
+                        pickerNavigateTo(pickerFavoritesContainerId);
+                    },
+                    'Favorites'
+                ));
+            }
+            if (pickerLibraryContainerId) {
+                buttons.push(iconBtn(
+                    'button' + (pickerActiveSource === 'library' ? ' active' : ''),
+                    'local_library', '', function() {
+                        if (pickerActiveSource === 'library') return;
+                        pickerActiveSource = 'library';
+                        pickerNavigateTo(pickerLibraryContainerId);
+                    },
+                    'Shared library'
+                ));
+            }
+        }
 
-        // Select all
-        buttons.push(iconBtn('button', 'select_all', '', selectAll, 'Select all'));
+        if (!pickerMode) {
+            // Bulk apply image tags
+            buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'label', '', bulkApplyTags, 'Apply tags to selected'));
 
-        // Full mode
-        buttons.push(iconBtn('button' + (fullMode ? ' active' : ''),
-            fullMode ? 'close_fullscreen' : 'open_in_new', '', toggleFullMode, fullMode ? 'Exit full mode' : 'Full mode'));
+            // Select all
+            buttons.push(iconBtn('button', 'select_all', '', selectAll, 'Select all'));
 
-        // Infinite scroll toggle
-        buttons.push(iconBtn('button' + (infiniteScroll ? ' active' : ''),
-            'all_inclusive', '', toggleInfiniteScroll, infiniteScroll ? 'Disable infinite scroll' : 'Enable infinite scroll'));
+            // Full mode
+            buttons.push(iconBtn('button' + (fullMode ? ' active' : ''),
+                fullMode ? 'close_fullscreen' : 'open_in_new', '', toggleFullMode, fullMode ? 'Exit full mode' : 'Full mode'));
+
+            // Infinite scroll toggle
+            buttons.push(iconBtn('button' + (infiniteScroll ? ' active' : ''),
+                'all_inclusive', '', toggleInfiniteScroll, infiniteScroll ? 'Disable infinite scroll' : 'Enable infinite scroll'));
+        }
 
         return buttons;
     }
@@ -833,6 +938,15 @@ function newListControl() {
 
     function initParams(vnode) {
         if (!vnode) return;
+
+        if (pickerMode) {
+            listType = pickerType || 'data';
+            modType = am7model.getModel(listType);
+            baseListType = listType;
+            listContainerId = pickerContainerId;
+            navigateByParent = false;
+            return;
+        }
 
         listType = vnode.attrs.type || m.route.param('type') || 'data';
         modType = am7model.getModel(listType);
@@ -966,6 +1080,67 @@ function newListControl() {
     // Expose internal helpers for testing (11b)
     listPage._testHelpers = function () {
         return { doSearch, clearSearch, navigateToChildGroup, renderGroupBreadcrumb, renderChildGroups };
+    };
+
+    // ------------------------------------------------------------------
+    //  Picker mode — embed list inside ObjectPicker modal
+    // ------------------------------------------------------------------
+
+    listPage.openForPicker = function(opts) {
+        pickerMode = true;
+        pickerHandler = opts.onSelect;
+        pickerType = opts.type;
+        pickerContainerId = opts.containerId;
+        pickerUserContainerId = opts.userContainerId || null;
+        pickerLibraryContainerId = opts.libraryContainerId || null;
+        pickerFavoritesContainerId = opts.favoritesContainerId || null;
+        // Determine which source we're starting at
+        if (opts.containerId === opts.libraryContainerId) pickerActiveSource = 'library';
+        else if (opts.containerId === opts.favoritesContainerId) pickerActiveSource = 'favorites';
+        else pickerActiveSource = 'home';
+
+        gridMode = 0;
+        fullMode = false;
+        searchQuery = '';
+        searchActive = false;
+        navFilter = null;
+        childGroups = null;
+        groupPath = null;
+
+        pagination.new();
+        pagination.setEmbeddedMode(true);
+
+        let fakeVnode = { attrs: { type: opts.type, objectId: opts.containerId } };
+        lastVnode = fakeVnode;
+        initParams(fakeVnode);
+        updatePagination(fakeVnode);
+
+        if (listContainerId) {
+            loadChildGroups(listContainerId);
+            loadGroupPath(listContainerId);
+        }
+    };
+
+    listPage.closePickerMode = function() {
+        pickerMode = false;
+        pickerHandler = null;
+        pickerType = null;
+        pickerContainerId = null;
+        pickerUserContainerId = null;
+        pickerLibraryContainerId = null;
+        pickerFavoritesContainerId = null;
+        pickerActiveSource = 'home';
+        pagination.setEmbeddedMode(false);
+        pagination.stop();
+        childGroups = null;
+        groupPath = null;
+        searchQuery = '';
+        searchActive = false;
+        navFilter = null;
+    };
+
+    listPage.isPickerMode = function() {
+        return pickerMode;
     };
 
     return listPage;

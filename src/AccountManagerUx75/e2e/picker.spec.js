@@ -112,13 +112,13 @@ test.describe('Object field pickers', () => {
             let modal = page.locator('.fixed.inset-0.z-50');
             await expect(modal).toBeVisible({ timeout: 10000 });
 
-            // Wait for items to load
+            // Wait for list view items to load
             await page.waitForTimeout(3000);
 
-            // Check if items or "No items found" message is shown
-            let itemButtons = modal.locator('button.w-full.text-left');
-            let noItems = modal.locator('text=No items found');
-            let hasItems = await itemButtons.count() > 0;
+            // Picker now uses embedded list view — items are table rows or grid cards
+            let itemRows = modal.locator('tr.list-tr, .group.relative.rounded-lg.border');
+            let noItems = modal.locator('text=No results');
+            let hasItems = await itemRows.count() > 0;
             let hasNoItems = await noItems.isVisible().catch(() => false);
 
             // Either items loaded or empty state shown — both valid
@@ -126,7 +126,7 @@ test.describe('Object field pickers', () => {
 
             if (hasItems) {
                 // Click the first item to select it
-                await itemButtons.first().click();
+                await itemRows.first().click();
                 // Modal should close after selection
                 await expect(modal).not.toBeVisible({ timeout: 5000 });
                 await screenshot(page, 'picker-item-selected');
@@ -163,6 +163,77 @@ test.describe('Object field pickers', () => {
             await clearBtn.click();
             await page.waitForTimeout(500);
             await screenshot(page, 'picker-cleared');
+        }
+    });
+
+    test('picker shows Home, Favorites, and Library buttons', async ({ page, browserName }) => {
+        test.skip(browserName === 'firefox', 'Firefox: form schema load hangs under concurrent test load');
+        if (!testInfo.charPerson || !testInfo.charPerson.objectId) {
+            test.skip(true, 'No charPerson created');
+            return;
+        }
+
+        await page.goto('/#!/view/olio.charPerson/' + testInfo.charPerson.objectId);
+        await page.waitForFunction(
+            () => window.location.hash.includes('/view/olio.charPerson/'),
+            { timeout: 15000 }
+        );
+
+        let inputs = page.locator('input, select, textarea');
+        await expect(inputs.first()).toBeVisible({ timeout: 30000 });
+
+        let findBtn = page.locator('button:has-text("Find")').first();
+        let hasPicker = await findBtn.isVisible({ timeout: 5000 }).catch(() => false);
+
+        if (hasPicker) {
+            await findBtn.click();
+            let modal = page.locator('.fixed.inset-0.z-50');
+            await expect(modal).toBeVisible({ timeout: 10000 });
+
+            // Wait for list to load
+            await page.waitForTimeout(2000);
+
+            // Home, Favorites, Library buttons
+            let homeBtn = modal.locator('button[aria-label="My items"]');
+            let favBtn = modal.locator('button[aria-label="Favorites"]');
+            let libraryBtn = modal.locator('button[aria-label="Shared library"]');
+
+            let hasHome = await homeBtn.isVisible({ timeout: 5000 }).catch(() => false);
+            let hasFav = await favBtn.isVisible({ timeout: 5000 }).catch(() => false);
+            let hasLibrary = await libraryBtn.isVisible({ timeout: 5000 }).catch(() => false);
+
+            // Home should be present (user path for data.color = ~/Colors)
+            expect(hasHome).toBeTruthy();
+            // Favorites should be present
+            expect(hasFav).toBeTruthy();
+            // Library should be present (data.color has /Library/Colors)
+            expect(hasLibrary).toBeTruthy();
+
+            // Home should be active initially (starts at user path)
+            await expect(homeBtn).toHaveClass(/active/);
+
+            // Click Library — should switch to shared library view
+            await libraryBtn.click();
+            await page.waitForTimeout(1000);
+            await expect(libraryBtn).toHaveClass(/active/);
+            await screenshot(page, 'picker-library-view');
+
+            // Click Favorites
+            await favBtn.click();
+            await page.waitForTimeout(1000);
+            await expect(favBtn).toHaveClass(/active/);
+            await screenshot(page, 'picker-favorites-view');
+
+            // Click Home — back to user path
+            await homeBtn.click();
+            await page.waitForTimeout(1000);
+            await expect(homeBtn).toHaveClass(/active/);
+            await screenshot(page, 'picker-my-items-view');
+
+            // Close modal
+            let closeBtn = modal.locator('button:has(span:text("close"))');
+            await closeBtn.click();
+            await expect(modal).not.toBeVisible({ timeout: 5000 });
         }
     });
 

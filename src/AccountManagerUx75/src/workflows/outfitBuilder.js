@@ -14,7 +14,18 @@ async function outfitBuilder(entity, inst) {
         return;
     }
 
+    // Ensure olio component is loaded — lazy import races with synchronous access
     let am7olio = am7model._olio;
+    if (!am7olio) {
+        try {
+            let olioModule = await import('../components/olio.js');
+            am7olio = olioModule.am7olio;
+            am7model._olio = am7olio;
+        } catch (e) {
+            page.toast('error', 'Outfit builder component not available');
+            return;
+        }
+    }
     let modelName = inst.model ? inst.model.name : null;
     let characterId = null;
     let gender = 'female';

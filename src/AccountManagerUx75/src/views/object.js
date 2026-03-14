@@ -117,14 +117,13 @@ function newObjectPage() {
             }
         } else if (objectId) {
             if (!ctx.contextObjects[objectId]) {
-                let q = am7view.viewQuery(am7model.newInstance(type));
-                q.field('objectId', objectId);
-                am7client.search(q, function (qr) {
-                    if (qr && qr.count) {
-                        ctx.contextObjects[objectId] = qr.results[0];
-                        resetEntity(qr.results[0]);
-                        m.redraw();
+                // Use getFull to load all nested foreign models (personality, statistics, etc.)
+                am7client.getFull(type, objectId).then(function (obj) {
+                    if (obj) {
+                        ctx.contextObjects[objectId] = obj;
+                        resetEntity(obj);
                     } else console.warn('Failed to load entity: ' + objectId);
+                    m.redraw();
                 });
             } else {
                 resetEntity(ctx.contextObjects[objectId]);
@@ -167,7 +166,7 @@ function newObjectPage() {
             try {
                 let v = await m.request({
                     method: upatch ? 'PATCH' : 'POST',
-                    url: am7client.base() + '/resource/' + e.entity[am7model.jsonModelKey],
+                    url: am7client.base() + '/model',
                     body: puint,
                     withCredentials: true,
                     background: true
@@ -178,7 +177,8 @@ function newObjectPage() {
                         Object.keys(v).forEach(function (j) { e.entity[j] = v[j]; });
                         if (inst.api[k]) inst.api[k](v);
                     }
-                    am7client.clearCache(e.entity[am7model.jsonModelKey], true);
+                    // Clear both client and server cache for sub-object type
+                    am7client.clearCache(e.entity[am7model.jsonModelKey], false);
                 }
             } catch (err) {
                 page.toast('error', 'Failed to save ' + k + ': ' + (err.message || err));
@@ -190,8 +190,10 @@ function newObjectPage() {
         // Save parent if it has its own changes
         if (!inst.changes.length) {
             if (subKeys.length) {
-                page.toast('success', 'Saved!');
+                // Clear parent type server cache so getFull returns fresh data
+                am7client.clearCache(entity[am7model.jsonModelKey], false);
                 page.clearContextObject(entity.objectId);
+                page.toast('success', 'Saved!');
             }
             m.redraw();
             return;
@@ -706,8 +708,9 @@ function newObjectPage() {
                 if (!mo) {
                     mo = am7model.newPrimitive(mf.baseModel);
                     if (inst.api[form.property]) inst.api[form.property](mo);
-                    mo[am7model.jsonModelKey] = mf.baseModel;
                 }
+                // Ensure schema key is set (getFull nested objects may omit it)
+                if (!mo[am7model.jsonModelKey]) mo[am7model.jsonModelKey] = mf.baseModel;
                 minst = am7model.prepareInstance(mo);
                 pinst[form.property] = minst;
 

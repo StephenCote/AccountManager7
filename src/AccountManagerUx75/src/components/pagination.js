@@ -44,6 +44,7 @@ function newPaginationControl() {
   let pages = newPagination();
 
   async function getSearchQuery() {
+    if (!pages.resultType) return null;
     let q = am7client.newQuery(pages.resultType);
     q.entity.request = getRequestFields(pages.resultType);
 
@@ -145,6 +146,7 @@ function newPaginationControl() {
 
   function updatePage(iPage) {
     if (requesting) return;
+    if (!pages.resultType) return;
     if (iPage <= 0 || iPage > pages.pageCount) {
       return;
     }
