@@ -36,7 +36,9 @@ const IGNORED_PATTERNS = [
     /Cannot read properties of undefined \(reading 'view'\)/, // Mithril transient component init during redraw
     /Failed to execute '(insertBefore|removeChild)' on 'Node'/, // Mithril DOM reconciliation during rapid redraw
     /Command \w+ failed:/, // Workflow command errors (backend-dependent, caught by error handler)
+    /Command function not found/, // Workflow command not registered for this model type
     /Error loading container:/, // Pagination container load failure (backend 500 on specific group IDs)
+    /SessionConfigEditor: Failed to load options/, // Magic8 config load failure (backend-dependent paths)
 ];
 
 /**

@@ -30,7 +30,7 @@ test.describe('Games features', () => {
 
     test('tetris loads and shows start button', async ({ page }) => {
         await page.goto('/#!/game/tetris');
-        await page.waitForURL(/.*#!\/game\/tetris/, { timeout: 10000 });
+        await page.waitForFunction(() => window.location.hash.includes('/game/tetris'), { timeout: 10000 });
         // Tetris scorecard has a start button
         let startBtn = page.locator('button >> span.material-symbols-outlined:has-text("start")');
         await expect(startBtn).toBeVisible({ timeout: 10000 });
@@ -39,7 +39,7 @@ test.describe('Games features', () => {
 
     test('tetris game grid renders', async ({ page }) => {
         await page.goto('/#!/game/tetris');
-        await page.waitForURL(/.*#!\/game\/tetris/, { timeout: 10000 });
+        await page.waitForFunction(() => window.location.hash.includes('/game/tetris'), { timeout: 10000 });
         // Grid should render as a flex container with cube divs (browser normalizes inline styles with spaces)
         let grid = page.locator('div[style*="display: flex"][style*="flex-wrap: wrap"], div[style*="display:flex"][style*="flex-wrap:wrap"]').first();
         await expect(grid).toBeVisible({ timeout: 10000 });
@@ -63,7 +63,7 @@ test.describe('Games features', () => {
 
     test('tetris active piece appears in grid after clicking start', async ({ page }) => {
         await page.goto('/#!/game/tetris');
-        await page.waitForURL(/.*#!\/game\/tetris/, { timeout: 10000 });
+        await page.waitForFunction(() => window.location.hash.includes('/game/tetris'), { timeout: 10000 });
         let startBtn = page.locator('button >> span.material-symbols-outlined:has-text("start")');
         await expect(startBtn).toBeVisible({ timeout: 10000 });
         await startBtn.click();
@@ -93,7 +93,7 @@ test.describe('Games features', () => {
 
     test('card game loads and shows deck list', async ({ page }) => {
         await page.goto('/#!/cardGame');
-        await page.waitForURL(/.*#!\/cardGame/, { timeout: 10000 });
+        await page.waitForFunction(() => window.location.hash.includes('/cardGame'), { timeout: 10000 });
         // CardGameApp starts on deckList screen — shows "Card Game" in header
         let heading = page.locator('text=Card Game');
         await expect(heading).toBeVisible({ timeout: 15000 });
@@ -102,7 +102,7 @@ test.describe('Games features', () => {
 
     test('card game shows builder or deck list content after loading', async ({ page }) => {
         await page.goto('/#!/cardGame');
-        await page.waitForURL(/.*#!\/cardGame/, { timeout: 10000 });
+        await page.waitForFunction(() => window.location.hash.includes('/cardGame'), { timeout: 10000 });
         await expect(page.locator('text=Card Game')).toBeVisible({ timeout: 15000 });
         // After backend call completes: with no saved decks → builder step tabs appear;
         // with saved decks → deck list with "New Deck" button appears.
@@ -119,14 +119,14 @@ test.describe('Games features', () => {
         page.on('pageerror', err => errors.push(err.message));
 
         const routes = [
-            { url: '/#!/game',          pattern: /.*#!\/game$/ },
-            { url: '/#!/game/tetris',   pattern: /.*#!\/game\/tetris/ },
-            { url: '/#!/game/wordGame', pattern: /.*#!\/game\/wordGame/ },
-            { url: '/#!/cardGame',      pattern: /.*#!\/cardGame/ },
+            { url: '/#!/game',          hash: '/game' },
+            { url: '/#!/game/tetris',   hash: '/game/tetris' },
+            { url: '/#!/game/wordGame', hash: '/game/wordGame' },
+            { url: '/#!/cardGame',      hash: '/cardGame' },
         ];
-        for (let { url, pattern } of routes) {
+        for (let { url, hash } of routes) {
             await page.goto(url);
-            await page.waitForURL(pattern, { timeout: 10000 });
+            await page.waitForFunction((h) => window.location.hash.includes(h), hash, { timeout: 10000 });
             await page.waitForTimeout(2500); // let lazy chunks and async init settle
         }
 
