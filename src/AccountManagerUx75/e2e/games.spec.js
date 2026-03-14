@@ -17,7 +17,7 @@ test.describe('Games features', () => {
 
     test('games menu shows available games', async ({ page }) => {
         await page.goto('/#!/game');
-        await page.waitForURL(/.*#!\/game$/, { timeout: 10000 });
+        await page.waitForFunction(() => window.location.hash.match(/\/game$/), { timeout: 10000 });
         let heading = page.locator('text=Mini Games');
         await expect(heading).toBeVisible({ timeout: 10000 });
         // Verify game buttons are present
@@ -79,13 +79,13 @@ test.describe('Games features', () => {
 
     test('word game board renders with player panels after start', async ({ page }) => {
         await page.goto('/#!/game/wordGame');
-        await page.waitForURL(/.*#!\/game\/wordGame/, { timeout: 10000 });
+        await page.waitForFunction(() => window.location.hash.includes('/game/wordGame'), { timeout: 10000 });
         let startBtn = page.locator('button:has-text("Start Game")');
         await expect(startBtn).toBeVisible({ timeout: 10000 });
         await startBtn.click();
-        // After start, player panels appear with h3 headings
-        await expect(page.locator('h3:has-text("Player 1")')).toBeVisible({ timeout: 8000 });
-        await expect(page.locator('h3:has-text("Player 2")')).toBeVisible();
+        // After start, prepareWords() fetches from backend — may take time under load
+        await expect(page.locator('h3:has-text("Player 1")')).toBeVisible({ timeout: 20000 });
+        await expect(page.locator('h3:has-text("Player 2")')).toBeVisible({ timeout: 5000 });
         await screenshot(page, 'wordgame-board');
     });
 
