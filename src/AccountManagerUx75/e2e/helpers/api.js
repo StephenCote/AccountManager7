@@ -154,9 +154,18 @@ async function listObjectsCtx(ctx, type, groupId, count) {
     return (result && result.results) ? result.results : [];
 }
 
+async function analyzeFaceCtx(ctx, imageDataUrl) {
+    let resp = await ctx.post(REST + '/face/analyze', {
+        headers: { 'Content-Type': 'application/json' },
+        data: { image_data: imageDataUrl }
+    });
+    return await safeJson(resp);
+}
+
 // ── Public exports (backward-compatible, use shared request fixture) ───
 
 export async function apiLogin(request, opts) { return loginCtx(request, opts); }
+export async function analyzeFace(request, imageDataUrl) { return analyzeFaceCtx(request, imageDataUrl); }
 export async function apiLogout(request) { return logoutCtx(request); }
 export async function searchByField(request, type, fieldName, fieldValue, fields) {
     return searchCtx(request, type, fieldName, fieldValue, fields);
@@ -304,11 +313,13 @@ const SHARED_PASSWORD = 'password';
 export async function ensureSharedTestUser(request, opts = {}) {
     const org = opts.org || '/Development';
 
+    // Phase 1: Admin creates the user if needed
     let ctx = await newApiContext();
+    let user;
     try {
         await loginCtx(ctx, { org });
 
-        let user = await searchCtx(ctx, 'system.user', 'name', SHARED_USER);
+        user = await searchCtx(ctx, 'system.user', 'name', SHARED_USER);
         if (!user || !user.objectId) {
             user = await createUserCtx(ctx, SHARED_USER);
             if (user && user.objectId) {
@@ -317,10 +328,20 @@ export async function ensureSharedTestUser(request, opts = {}) {
         }
 
         await logoutCtx(ctx);
-        return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
     } finally {
         await ctx.dispose();
     }
+
+    // Phase 2: Log in as shared user to initialize home directory
+    let userCtx = await newApiContext();
+    try {
+        await loginCtx(userCtx, { org, user: SHARED_USER, password: SHARED_PASSWORD });
+        await logoutCtx(userCtx);
+    } finally {
+        await userCtx.dispose();
+    }
+
+    return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
 }
 
 /**

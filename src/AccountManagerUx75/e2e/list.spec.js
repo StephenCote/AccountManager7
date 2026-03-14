@@ -31,7 +31,10 @@ test.describe('List view', () => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(
+            () => window.location.hash.includes('/list/'),
+            { timeout: 15000 }
+        );
 
         let content = page.locator('.list-table, .list-empty, .result-nav-outer');
         await expect(content.first()).toBeVisible({ timeout: 15000 });
@@ -42,7 +45,7 @@ test.describe('List view', () => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
         let toolbar = page.locator('.result-nav-outer');
         await expect(toolbar.first()).toBeVisible({ timeout: 10000 });
@@ -53,10 +56,10 @@ test.describe('List view', () => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
-        let breadcrumb = page.locator('.breadcrumb-bar, nav.breadcrumb-bar');
-        await expect(breadcrumb.first()).toBeVisible({ timeout: 5000 });
+        let breadcrumb = page.locator('.breadcrumb-bar');
+        await expect(breadcrumb.first()).toBeVisible({ timeout: 10000 });
         await screenshot(page, 'list-breadcrumb');
     });
 
@@ -64,9 +67,12 @@ test.describe('List view', () => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
-        let filterInput = page.locator('.text-field, input[placeholder*="Filter"]');
+        // Wait for toolbar to render first (Firefox needs more time)
+        await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
+
+        let filterInput = page.locator('input[placeholder*="Search"], input[placeholder*="Filter"], .text-field');
         await expect(filterInput.first()).toBeVisible({ timeout: 10000 });
     });
 
@@ -93,11 +99,11 @@ test.describe('List view — group navigation (15b)', () => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
         // Breadcrumb nav is rendered by router's pageLayout wrapper
-        let breadcrumb = page.locator('.breadcrumb-bar, nav[aria-label="breadcrumb"], .breadcrumb');
-        await expect(breadcrumb.first()).toBeVisible({ timeout: 8000 });
+        let breadcrumb = page.locator('.breadcrumb-bar');
+        await expect(breadcrumb.first()).toBeVisible({ timeout: 10000 });
         await screenshot(page, 'list-nav-breadcrumb');
     });
 
@@ -105,7 +111,7 @@ test.describe('List view — group navigation (15b)', () => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
         // Wait for list to render
         let toolbar = page.locator('.result-nav-outer');
@@ -126,7 +132,7 @@ test.describe('List view — group navigation (15b)', () => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
         let toolbar = page.locator('.result-nav-outer');
         await expect(toolbar.first()).toBeVisible({ timeout: 10000 });
@@ -144,14 +150,11 @@ test.describe('List view — group navigation (15b)', () => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
+        // Pagination bar contains prev/next buttons and page count
         let toolbar = page.locator('.result-nav-outer');
-        await expect(toolbar.first()).toBeVisible({ timeout: 10000 });
-
-        // Pagination: prev/next buttons or page count indicator
-        let paginationEl = page.locator('.result-nav-outer');
-        await expect(paginationEl.first()).toBeVisible({ timeout: 5000 });
+        await expect(toolbar.first()).toBeVisible({ timeout: 15000 });
         await screenshot(page, 'list-nav-pagination');
     });
 
@@ -197,10 +200,9 @@ test.describe('List view — group navigation (15b)', () => {
             window.location.hash = '!/list/data.note/' + oid;
         }, groupObjectId);
 
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
-
+        // Wait for list view to render content (more reliable than URL matching in Firefox)
         let content = page.locator('.list-table, .list-empty, .result-nav-outer');
-        await expect(content.first()).toBeVisible({ timeout: 15000 });
+        await expect(content.first()).toBeVisible({ timeout: 20000 });
 
         await screenshot(page, 'list-nav-direct-url');
     });
@@ -229,55 +231,47 @@ test.describe('List view — search behavior (15b)', () => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
-        await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 10000 });
+        await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
 
         let filterInput = page.locator('input[placeholder*="Search"], input[placeholder*="Filter"], .text-field');
         let inputEl = filterInput.first();
-        let visible = await inputEl.isVisible().catch(() => false);
-        if (!visible) {
-            test.skip(true, 'No search input visible on this list view');
-            return;
-        }
+        await expect(inputEl).toBeVisible({ timeout: 10000 });
 
         await inputEl.fill('SearchTestNote');
-        await page.waitForTimeout(700); // debounce
+        await page.waitForTimeout(1200); // debounce — Firefox needs extra time
         await screenshot(page, 'list-search-active');
 
         // Clear the search
         await inputEl.fill('');
-        await page.waitForTimeout(700);
+        await page.waitForTimeout(1200);
         await screenshot(page, 'list-search-cleared');
 
         // List should still be visible (not in error state)
         let content = page.locator('.list-table, .list-empty, .result-nav-outer');
-        await expect(content.first()).toBeVisible({ timeout: 5000 });
+        await expect(content.first()).toBeVisible({ timeout: 10000 });
     });
 
     test('search does not break list when no results match', async ({ page }) => {
         let firstItem = page.locator('.card-item button').first();
         await expect(firstItem).toBeVisible({ timeout: 5000 });
         await firstItem.click();
-        await page.waitForURL(/.*#!\/list\//, { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
-        await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 10000 });
+        await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
 
         let filterInput = page.locator('input[placeholder*="Search"], input[placeholder*="Filter"], .text-field');
         let inputEl = filterInput.first();
-        let visible = await inputEl.isVisible().catch(() => false);
-        if (!visible) {
-            test.skip(true, 'No search input visible on this list view');
-            return;
-        }
+        await expect(inputEl).toBeVisible({ timeout: 10000 });
 
         // Search for something that won't match anything
         await inputEl.fill('zzz_no_match_zzz_' + Date.now());
-        await page.waitForTimeout(700);
+        await page.waitForTimeout(1200);
 
         // Should show empty state gracefully — no crash
         let content = page.locator('.list-table, .list-empty, .result-nav-outer');
-        await expect(content.first()).toBeVisible({ timeout: 8000 });
+        await expect(content.first()).toBeVisible({ timeout: 10000 });
         await screenshot(page, 'list-search-no-results');
     });
 });

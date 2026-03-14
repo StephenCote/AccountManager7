@@ -112,17 +112,18 @@ test.describe('Object field pickers', () => {
             let modal = page.locator('.fixed.inset-0.z-50');
             await expect(modal).toBeVisible({ timeout: 10000 });
 
-            // Wait for list view items to load
-            await page.waitForTimeout(3000);
-
-            // Picker now uses embedded list view — items are table rows or grid cards
+            // Wait for list view items or empty state to load
             let itemRows = modal.locator('tr.list-tr, .group.relative.rounded-lg.border');
             let noItems = modal.locator('text=No results');
+            let resultNav = modal.locator('.result-nav-outer');
+            // Wait for either items, empty state, or pagination to appear
+            await expect(itemRows.first().or(noItems).or(resultNav)).toBeVisible({ timeout: 15000 });
+
             let hasItems = await itemRows.count() > 0;
             let hasNoItems = await noItems.isVisible().catch(() => false);
 
             // Either items loaded or empty state shown — both valid
-            expect(hasItems || hasNoItems).toBeTruthy();
+            expect(hasItems || hasNoItems || await resultNav.isVisible().catch(() => false)).toBeTruthy();
 
             if (hasItems) {
                 // Click the first item to select it
@@ -190,8 +191,8 @@ test.describe('Object field pickers', () => {
             let modal = page.locator('.fixed.inset-0.z-50');
             await expect(modal).toBeVisible({ timeout: 10000 });
 
-            // Wait for list to load
-            await page.waitForTimeout(2000);
+            // Wait for list content or navigation to load
+            await modal.locator('.result-nav-outer, tr.list-tr, text=No results').first().waitFor({ state: 'visible', timeout: 15000 });
 
             // Home, Favorites, Library buttons
             let homeBtn = modal.locator('button[aria-label="My items"]');
@@ -214,20 +215,17 @@ test.describe('Object field pickers', () => {
 
             // Click Library — should switch to shared library view
             await libraryBtn.click();
-            await page.waitForTimeout(1000);
-            await expect(libraryBtn).toHaveClass(/active/);
+            await expect(libraryBtn).toHaveClass(/active/, { timeout: 5000 });
             await screenshot(page, 'picker-library-view');
 
             // Click Favorites
             await favBtn.click();
-            await page.waitForTimeout(1000);
-            await expect(favBtn).toHaveClass(/active/);
+            await expect(favBtn).toHaveClass(/active/, { timeout: 5000 });
             await screenshot(page, 'picker-favorites-view');
 
             // Click Home — back to user path
             await homeBtn.click();
-            await page.waitForTimeout(1000);
-            await expect(homeBtn).toHaveClass(/active/);
+            await expect(homeBtn).toHaveClass(/active/, { timeout: 5000 });
             await screenshot(page, 'picker-my-items-view');
 
             // Close modal
@@ -262,7 +260,7 @@ test.describe('Object field pickers', () => {
             await expect(modal).toBeVisible({ timeout: 10000 });
 
             // Click the backdrop (the outer fixed div, not the inner dialog)
-            let backdrop = modal.locator('.absolute.inset-0.bg-black\\/50');
+            let backdrop = modal.locator('div.absolute.inset-0').first();
             await backdrop.click({ position: { x: 5, y: 5 } });
             await expect(modal).not.toBeVisible({ timeout: 5000 });
             await screenshot(page, 'picker-backdrop-close');

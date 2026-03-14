@@ -329,7 +329,7 @@ function newListControl() {
     function renderGroupBreadcrumb() {
         if (!groupPath || !groupPath.length) return null;
         let type = baseListType || listType;
-        return m('div', { class: 'flex items-center gap-1 px-2 py-1 text-sm text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800' },
+        return m('div', { class: 'breadcrumb-bar flex items-center gap-1 px-2 py-1 text-sm text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800' },
             groupPath.map(function (seg, i) {
                 let isLast = (i === groupPath.length - 1);
                 let sep = i > 0 ? m('span', { class: 'mx-0.5' }, '/') : null;
