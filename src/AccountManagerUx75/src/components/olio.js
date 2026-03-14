@@ -254,7 +254,8 @@ const OUTFIT_PRESETS = [
     { value: "casual", label: "Casual", icon: "weekend" },
     { value: "formal", label: "Formal", icon: "checkroom" },
     { value: "combat", label: "Combat", icon: "shield" },
-    { value: "travel", label: "Travel", icon: "hiking" }
+    { value: "travel", label: "Travel", icon: "hiking" },
+    { value: "intimate/sexy", label: "Intimate", icon: "bed" }
 ];
 
 const BODY_LOCATIONS = [
@@ -298,7 +299,7 @@ async function generateOutfit(characterId, techTier, climate, style) {
     m.redraw();
 
     try {
-        let body = { characterId: characterId };
+        let body = { schema: "loosebase", characterId: characterId };
         if (techTier !== undefined) body.techTier = techTier;
         if (climate) body.climate = climate;
         if (style) body.style = style;
@@ -319,7 +320,7 @@ async function generateOutfit(characterId, techTier, climate, style) {
         return resp;
     } catch (e) {
         console.error("Failed to generate outfit", e);
-        page.toast("error", "Failed to generate outfit: " + e.message);
+        page.toast("error", "Failed to generate outfit: " + (e.message || (typeof e === 'object' ? JSON.stringify(e) : e)));
         return null;
     } finally {
         outfitBuilderState.isLoading = false;
@@ -337,7 +338,7 @@ async function generateMannequinImages(apparelId, hires, style, seed) {
         let resp = await m.request({
             method: 'POST',
             url: am7client.base() + "/game/outfit/mannequin",
-            body: { apparelId, hires: hires || false, style: style || "fashion", seed: seed || 0 },
+            body: { schema: "loosebase", apparelId, hires: hires || false, style: style || "fashion", seed: seed || 0 },
             withCredentials: true
         });
 
@@ -348,7 +349,7 @@ async function generateMannequinImages(apparelId, hires, style, seed) {
         return resp;
     } catch (e) {
         console.error("Failed to generate mannequin images", e);
-        page.toast("error", "Failed to generate images: " + e.message);
+        page.toast("error", "Failed to generate images: " + (e.message || (typeof e === 'object' ? JSON.stringify(e) : e)));
         return [];
     } finally {
         outfitBuilderState.isLoading = false;
@@ -366,7 +367,7 @@ async function buildFromPieces(characterId, pieces, primaryColor, pattern) {
         let resp = await m.request({
             method: 'POST',
             url: am7client.base() + "/game/outfit/pieces",
-            body: { characterId, pieces, primaryColor: primaryColor || null, pattern: pattern || "solid" },
+            body: { schema: "loosebase", characterId, pieces, primaryColor: primaryColor || null, pattern: pattern || "solid" },
             withCredentials: true
         });
 
@@ -378,7 +379,7 @@ async function buildFromPieces(characterId, pieces, primaryColor, pattern) {
         return resp;
     } catch (e) {
         console.error("Failed to build outfit from pieces", e);
-        page.toast("error", "Failed to create outfit: " + e.message);
+        page.toast("error", "Failed to create outfit: " + (e.message || (typeof e === 'object' ? JSON.stringify(e) : e)));
         return null;
     } finally {
         outfitBuilderState.isLoading = false;

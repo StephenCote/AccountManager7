@@ -53,7 +53,7 @@ async function adoptCharacter(entity, inst) {
                             method: 'POST',
                             url: am7client.base() + '/game/adopt/' + (character.objectId || character.id),
                             withCredentials: true,
-                            body: {}
+                            body: { schema: "loosebase" }
                         });
                         if (result && result.adopted) {
                             page.toast('success', characterName + ' has been adopted into the world!');

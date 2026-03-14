@@ -190,6 +190,7 @@ function newObjectPage() {
         // Save parent if it has its own changes
         if (!inst.changes.length) {
             if (subKeys.length) {
+                pinst = {};
                 // Clear parent type server cache so getFull returns fresh data
                 am7client.clearCache(entity[am7model.jsonModelKey], false);
                 page.clearContextObject(entity.objectId);
@@ -207,7 +208,8 @@ function newObjectPage() {
                 page.toast('success', 'Saved!');
                 let wasNew = objectNew;
                 inst.resetChanges();
-                am7client.clearCache(entity[am7model.jsonModelKey], true);
+                pinst = {};
+                am7client.clearCache(entity[am7model.jsonModelKey], false);
                 if (!bpatch) entity = v;
                 page.clearContextObject(entity.objectId);
                 objectNew = false;

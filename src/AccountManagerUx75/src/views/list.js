@@ -129,8 +129,10 @@ function newListControl() {
         childGroups = null;
         groupPath = null;
         pagination.new();
-        initParams(lastVnode || { attrs: {} });
-        updatePagination(lastVnode || { attrs: {} });
+        let fakeVnode = { attrs: { type: pickerType, objectId: containerId } };
+        lastVnode = fakeVnode;
+        initParams(fakeVnode);
+        updatePagination(fakeVnode);
         loadChildGroups(listContainerId);
         loadGroupPath(listContainerId);
     }

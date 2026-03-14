@@ -236,8 +236,18 @@ export async function cleanupTestUser(request, userObjectId, opts = {}) {
         await loginCtx(ctx, { org });
 
         if (userName) {
+            // Delete leaf child groups first to avoid PathProvider errors during cascade
             let homeGroup = await findPathCtx(ctx, 'auth.group', 'data', '/home/' + userName).catch(() => null);
             if (homeGroup && homeGroup.objectId) {
+                // Delete known child groups before the parent
+                let childPaths = ['~/Notes', '~/Characters', '~/Data', '~/Colors', '~/Tags', '~/Apparel'];
+                for (let cp of childPaths) {
+                    let resolved = cp.replace('~', '/home/' + userName);
+                    let child = await findPathCtx(ctx, 'auth.group', 'data', resolved).catch(() => null);
+                    if (child && child.objectId) {
+                        await deleteObjectCtx(ctx, 'auth.group', child.objectId).catch(() => {});
+                    }
+                }
                 await deleteObjectCtx(ctx, 'auth.group', homeGroup.objectId).catch(() => {});
             }
 
