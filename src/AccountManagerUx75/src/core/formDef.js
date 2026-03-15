@@ -3996,12 +3996,12 @@ import { am7model } from './model.js';
             apparel: {
                 layout: 'half',
                 format: "table",
-                form: forms.entitylist
+                form: forms.memberlist
             },
             items: {
                 layout: 'half',
                 format: "table",
-                form: forms.entitylist
+                form: forms.memberlist
             }
         }
     };

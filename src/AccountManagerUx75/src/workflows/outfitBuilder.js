@@ -30,12 +30,16 @@ async function outfitBuilder(entity, inst) {
     let characterId = null;
     let gender = 'female';
     let currentApparel = null;
+    let storeObjectId = null;
 
     if (modelName === 'olio.charPerson') {
         characterId = inst.entity.objectId || inst.entity.id;
         gender = inst.entity.gender || 'female';
-        if (inst.entity.store && inst.entity.store.apparel && inst.entity.store.apparel.length > 0) {
-            currentApparel = inst.entity.store.apparel.find(a => a.inuse) || inst.entity.store.apparel[0];
+        if (inst.entity.store) {
+            storeObjectId = inst.entity.store.objectId;
+            if (inst.entity.store.apparel && inst.entity.store.apparel.length > 0) {
+                currentApparel = inst.entity.store.apparel.find(a => a.inuse) || inst.entity.store.apparel[0];
+            }
         }
     } else if (modelName === 'olio.apparel') {
         if (inst.entity.designer) {
@@ -49,6 +53,7 @@ async function outfitBuilder(entity, inst) {
         am7olio.outfitBuilderState.characterId = characterId;
         am7olio.outfitBuilderState.gender = gender;
         am7olio.outfitBuilderState.currentApparel = currentApparel;
+        am7olio.outfitBuilderState.storeObjectId = storeObjectId;
     }
 
     function renderContent() {
@@ -61,6 +66,7 @@ async function outfitBuilder(entity, inst) {
                 m(am7olio.OutfitBuilderPanel, {
                     characterId: characterId,
                     gender: gender,
+                    storeObjectId: storeObjectId,
                     onGenerate: async function (apparel) {
                         if (apparel && am7olio.outfitBuilderState) {
                             am7olio.outfitBuilderState.currentApparel = apparel;

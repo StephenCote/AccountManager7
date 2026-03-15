@@ -916,7 +916,21 @@ public class GameUtil {
 		if (climate == null) {
 			climate = "TEMPERATE";
 		}
-		return ApparelUtil.contextApparel(octx, person, techTier, CivilUtil.getClimateForTerrain(climate));
+		BaseRecord apparel = ApparelUtil.contextApparel(octx, person, techTier, CivilUtil.getClimateForTerrain(climate));
+		if (apparel == null) {
+			return null;
+		}
+
+		// Persist the apparel record to the database
+		IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
+
+		// Add apparel to the character's store
+		BaseRecord store = person.get(FieldNames.FIELD_STORE);
+		if (store != null) {
+			IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), store, OlioFieldNames.FIELD_APPAREL, apparel, null, true);
+		}
+
+		return apparel;
 	}
 
 	public static Map<String, Object> adoptCharacter(OlioContext octx, BaseRecord user, BaseRecord person) {

@@ -279,6 +279,7 @@ const WEAR_LEVELS = [
 
 let outfitBuilderState = {
     characterId: null,
+    storeObjectId: null,
     techTier: 2,
     climate: "TEMPERATE",
     preset: null,
@@ -316,6 +317,7 @@ async function generateOutfit(characterId, techTier, climate, style) {
             page.toast("success", "Outfit generated successfully");
             await am7client.clearCache("olio.apparel");
             await am7client.clearCache("olio.wearable");
+            await am7client.clearCache("olio.store");
         }
         return resp;
     } catch (e) {
@@ -329,6 +331,7 @@ async function generateOutfit(characterId, techTier, climate, style) {
     }
 }
 
+// Generate mannequin images for an apparel record via reimageApparel endpoint
 async function generateMannequinImages(apparelId, hires, style, seed) {
     let am7client = getClient();
     let page = getPage();
@@ -336,10 +339,16 @@ async function generateMannequinImages(apparelId, hires, style, seed) {
     m.redraw();
 
     try {
+        let body = {
+            hires: hires || false,
+            style: style || "",
+            seed: seed || 0
+        };
+
         let resp = await m.request({
             method: 'POST',
-            url: am7client.base() + "/game/outfit/mannequin",
-            body: { schema: "olio.outfitRequest", apparelId, hires: hires || false, style: style || "fashion", seed: seed || 0 },
+            url: am7client.base() + "/olio/apparel/" + apparelId + "/reimage",
+            body: body,
             withCredentials: true
         });
 
@@ -349,8 +358,15 @@ async function generateMannequinImages(apparelId, hires, style, seed) {
         }
         return resp;
     } catch (e) {
-        console.error("Failed to generate mannequin images", e);
-        page.toast("error", "Failed to generate images: " + (e.message || (typeof e === 'object' ? JSON.stringify(e) : e)));
+        let errMsg = e.message || (typeof e === 'object' ? JSON.stringify(e) : String(e));
+        let status = (e && e.code) || 0;
+        if (status === 404 || (errMsg && errMsg.indexOf('404') > -1)) {
+            console.warn("Reimage: apparel not accessible (404) — may need authorization");
+            page.toast("info", "Cannot generate images — apparel not accessible");
+        } else {
+            console.warn("Failed to generate mannequin images:", errMsg);
+            page.toast("error", "Failed to generate images: " + errMsg);
+        }
         return [];
     } finally {
         outfitBuilderState.isLoading = false;
@@ -358,40 +374,16 @@ async function generateMannequinImages(apparelId, hires, style, seed) {
     }
 }
 
-async function buildFromPieces(characterId, pieces, primaryColor, pattern) {
-    let am7client = getClient();
+async function buildFromPieces() {
     let page = getPage();
-    outfitBuilderState.isLoading = true;
-    m.redraw();
-
-    try {
-        let resp = await m.request({
-            method: 'POST',
-            url: am7client.base() + "/game/outfit/pieces",
-            body: { schema: "olio.outfitRequest", characterId, pieces, primaryColor: primaryColor || null, pattern: pattern || "solid" },
-            withCredentials: true
-        });
-
-        if (resp) {
-            outfitBuilderState.currentApparel = resp;
-            page.toast("success", "Custom outfit created");
-            await am7client.clearCache("olio.apparel");
-        }
-        return resp;
-    } catch (e) {
-        console.error("Failed to build outfit from pieces", e);
-        page.toast("error", "Failed to create outfit: " + (e.message || (typeof e === 'object' ? JSON.stringify(e) : e)));
-        return null;
-    } finally {
-        outfitBuilderState.isLoading = false;
-        m.redraw();
-    }
+    page.toast("info", "Build from pieces not yet available");
+    return null;
 }
 
 function getMannequinBaseUrl(gender, size) {
-    let am7client = getClient();
     let modelName = (gender === "male") ? "maleModel" : "femaleModel";
-    return am7client.base() + "/olio/mannequin/" + modelName + "/" + (size || "512x768");
+    let suffix = (size === "512x768" || !size) ? "x512" : "";
+    return "/media/" + modelName + (suffix ? suffix : "") + ".png";
 }
 
 // ── MannequinViewer Component ────────────────────────────────────
@@ -417,6 +409,7 @@ const MannequinViewer = {
                 m("img", {
                     src: baseUrl, alt: "Mannequin",
                     class: "absolute inset-0 w-full h-full object-contain",
+                    onload: function(e) { e.target.dataset.loaded = "true"; e.target.nextElementSibling.style.display = 'none'; },
                     onerror: function(e) { e.target.style.display = 'none'; }
                 }),
                 m("div", { class: "absolute inset-0 flex items-center justify-center text-gray-300 dark:text-gray-600" },
@@ -462,6 +455,7 @@ const OutfitBuilderPanel = {
     oninit: function(vnode) {
         if (vnode.attrs.characterId) outfitBuilderState.characterId = vnode.attrs.characterId;
         if (vnode.attrs.gender) outfitBuilderState.gender = vnode.attrs.gender;
+        if (vnode.attrs.storeObjectId) outfitBuilderState.storeObjectId = vnode.attrs.storeObjectId;
     },
     view: function(vnode) {
         let am7client = getClient();
@@ -541,11 +535,19 @@ const OutfitBuilderPanel = {
                 m("div", { class: "text-sm font-medium" }, outfitBuilderState.currentApparel.name || "Unnamed"),
                 m("div", { class: "text-xs text-gray-500 mt-1" }, outfitBuilderState.currentApparel.description || ""),
                 m("button", {
-                    class: "mt-2 flex items-center gap-1 px-3 py-1 rounded text-xs bg-purple-500 text-white hover:bg-purple-600",
+                    class: "flex items-center gap-1 px-3 py-1.5 mt-2 rounded text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700",
+                    disabled: outfitBuilderState.isLoading || !outfitBuilderState.currentApparel.objectId,
                     onclick: async function() {
+                        if (!outfitBuilderState.currentApparel.objectId) {
+                            page.toast("error", "Apparel has no objectId — cannot generate images");
+                            return;
+                        }
                         await generateMannequinImages(outfitBuilderState.currentApparel.objectId);
                     }
-                }, [m("span", { class: "material-symbols-outlined text-sm" }, "photo_camera"), "Generate Outfit Images"]),
+                }, [
+                    m("span", { class: "material-symbols-outlined text-sm" }, "photo_camera"),
+                    " Generate Outfit Images"
+                ]),
                 outfitBuilderState.mannequinImages.length > 0 ? m("div", { class: "flex flex-wrap gap-2 mt-2" },
                     outfitBuilderState.mannequinImages.map(function(img) {
                         let imgUrl = am7client.base().replace("/rest", "") + "/thumbnail/" +

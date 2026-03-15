@@ -1,9 +1,14 @@
 package org.cote.rest.services;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -214,10 +219,21 @@ public class OlioService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response reimageApparel(String json, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord imp = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
-		if(imp == null) {
-			logger.error("Invalid config");
-			return Response.status(400).entity(null).build();
+
+		// Parse config as a plain JSON map — no schema required
+		Map<String, Object> config = new HashMap<>();
+		try {
+			ObjectMapper om = new ObjectMapper();
+			config = om.readValue(json, new TypeReference<Map<String, Object>>(){});
+		} catch (Exception e) {
+			logger.error("Failed to parse reimage config: " + e.getMessage());
+			return Response.status(400).entity("{\"error\":\"Invalid JSON\"}").build();
+		}
+
+		// Build a LooseRecord from the parsed config for SDUtil compatibility
+		BaseRecord imp = new LooseRecord();
+		for(Map.Entry<String, Object> entry : config.entrySet()) {
+			imp.setValue(entry.getKey(), entry.getValue());
 		}
 		if(imp.get("model") == null) {
 			imp.setValue("model", context.getInitParameter("sd.model"));
@@ -245,8 +261,8 @@ public class OlioService {
 		String apparelName = apparel.get(FieldNames.FIELD_NAME);
 		String groupPath = "~/Gallery/Apparel/" + apparelName;
 
-		boolean hires = imp.get("hires") != null ? (Boolean)imp.get("hires") : false;
-		long seed = imp.get("seed") != null ? ((Number)imp.get("seed")).longValue() : -1;
+		boolean hires = config.containsKey("hires") && Boolean.TRUE.equals(config.get("hires"));
+		long seed = config.containsKey("seed") ? ((Number)config.get("seed")).longValue() : -1;
 
 		List<BaseRecord> images = sdu.generateMannequinImages(user, groupPath, apparel, imp, hires, seed);
 
