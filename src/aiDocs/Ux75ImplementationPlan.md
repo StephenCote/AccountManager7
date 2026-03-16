@@ -17,15 +17,22 @@
 **Bug Fix Sprint (2026-03-15):** Tag membership 404 fixed, member list rendering added, reimage fully ported from Ux7, OlioService LooseRecord crash fixed, searchFirst ported, mimeType→contentType fixed.
 **NEXT:** Phase 4 / ISO 42001 Compliance Dashboard (tracked in `aiDocs/ISO42001Plan.md`)
 
-### Known Open Issues (2026-03-15)
+### *** ALL BACKEND SERVICES ARE DEPLOYED AND RUNNING (localhost:8443) ***
+
+**Every service is live.** OlioService, SchemaService, WebAuthnService, AccessRequestService, VectorService, PictureBookService — ALL deployed. Do NOT write "needs backend" or "needs server redeploy." Test against the live backend. Always.
+
+### Known Open Issues (2026-03-16)
 
 | # | Issue | Severity | Notes |
 |---|-------|----------|-------|
-| 1 | Card Game runtime untested | Medium | Agent-generated, expect runtime errors against live backend |
-| 2 | Schema editor untested against backend | Low | Needs admin login + SchemaService deployed |
-| 3 | Reimage sequence generation edge cases | Medium | Full dress-up/dress-down ported but not end-to-end tested with live backend |
-| 4 | Reference image picker untested | Low | selectReferenceImage ported but not tested with actual image data |
-| 5 | OlioService backend rebuild needed | High | LooseRecord→null fix requires server redeploy |
+| 1 | Card Game runtime untested | Medium | Agent-generated, expect runtime errors — test in browser against live backend |
+| 2 | Schema editor untested | Low | Test with admin login against live SchemaService |
+| 3 | Reimage sequence generation edge cases | Medium | Full dress-up/dress-down ported — needs e2e test against live backend |
+| 4 | Reference image picker untested | Low | selectReferenceImage ported — test with actual image data |
+| 5 | OlioService sdConfig null | **Resolved** | SDUtil.java already has null→randomSDConfig() fallback |
+| 6 | olio.js describeWearable null safety | **Resolved** | Fixed optional chaining on color.name, pattern.name, location[0] |
+| 7 | olio.js OutfitBuilderPanel page undefined | **Resolved** | Added `let page = getPage()` in view function |
+| 8 | object.js $flex picker undefined tableType | **Resolved** | Added fallback to baseModel |
 
 ---
 
