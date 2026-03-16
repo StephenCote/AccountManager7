@@ -45,15 +45,15 @@ function describeWearable(wear) {
     let qual = wear.qualities ? wear.qualities[0] : null;
     let opac = qual?.opacity || 0.0;
     let shin = qual?.shininess || 0.0;
-    let col = wear?.color?.name.toLowerCase() || "";
+    let col = wear?.color?.name?.toLowerCase() || "";
 
     if (col) {
         col = col.replaceAll(/([\^\(\)]*)/g, "");
     }
     let fab = wear?.fabric?.toLowerCase() || "";
-    let pat = wear?.pattern?.name.toLowerCase() || "";
-    let loc = wear?.location[0]?.toLowerCase() || "";
-    let name = wear?.name;
+    let pat = wear?.pattern?.name?.toLowerCase() || "";
+    let loc = wear?.location?.[0]?.toLowerCase() || "";
+    let name = wear?.name || "";
     if (name.indexOf("pierc") > -1) {
         name = loc + " piercing";
         pat = "";
@@ -459,6 +459,7 @@ const OutfitBuilderPanel = {
     },
     view: function(vnode) {
         let am7client = getClient();
+        let page = getPage();
         let characterId = vnode.attrs.characterId || outfitBuilderState.characterId;
 
         return m("div", { class: "p-4 space-y-4" }, [

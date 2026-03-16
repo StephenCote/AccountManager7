@@ -530,7 +530,7 @@ function newObjectPage() {
                 onclick: function() {
                     let tableType = baseModel;
                     if (tableType === '$flex' && field.foreignType && mlInst) {
-                        tableType = mlInst.api[field.foreignType]();
+                        tableType = mlInst.api[field.foreignType]() || baseModel;
                     }
                     preparePicker(tableType, function(members) {
                         let aP = [];
