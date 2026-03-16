@@ -489,6 +489,24 @@ function searchByName(type, parentId, name) {
     return am7client.getByName(type, parentId, name);
 }
 
+async function searchFirst(model, groupId, name, objectId) {
+    let q = am7view.viewQuery(am7model.newInstance(model));
+    if (groupId) {
+        q.field("groupId", groupId);
+    }
+    if (name) {
+        q.field("name", name);
+    }
+    if (objectId) {
+        q.field("objectId", objectId);
+    }
+    let qr = await pageSearch(q);
+    if (qr && qr.results && qr.results.length) {
+        return qr.results[0];
+    }
+    return undefined;
+}
+
 function listByType(type) {
     let modType = am7model.getModel(type);
     if (!modType) {
@@ -605,6 +623,7 @@ const page = {
     findObject: findObject,
     listObjects: listObjects,
     searchByName: searchByName,
+    searchFirst: searchFirst,
     search: pageSearch,
     count: pageCount,
     deleteObject: deleteObject,

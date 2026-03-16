@@ -230,18 +230,6 @@ public class OlioService {
 			return Response.status(400).entity("{\"error\":\"Invalid JSON\"}").build();
 		}
 
-		// Build a LooseRecord from the parsed config for SDUtil compatibility
-		BaseRecord imp = new LooseRecord();
-		for(Map.Entry<String, Object> entry : config.entrySet()) {
-			imp.setValue(entry.getKey(), entry.getValue());
-		}
-		if(imp.get("model") == null) {
-			imp.setValue("model", context.getInitParameter("sd.model"));
-		}
-		if(imp.get("refinerModel") == null) {
-			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
-		}
-
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 
@@ -264,7 +252,9 @@ public class OlioService {
 		boolean hires = config.containsKey("hires") && Boolean.TRUE.equals(config.get("hires"));
 		long seed = config.containsKey("seed") ? ((Number)config.get("seed")).longValue() : -1;
 
-		List<BaseRecord> images = sdu.generateMannequinImages(user, groupPath, apparel, imp, hires, seed);
+		// Pass null for sdConfig — SDUtil.randomSDConfig() provides defaults.
+		// Style/hires/seed are handled via separate parameters.
+		List<BaseRecord> images = sdu.generateMannequinImages(user, groupPath, apparel, null, hires, seed);
 
 		if(images.isEmpty()) {
 			return Response.status(200).entity("[]").build();

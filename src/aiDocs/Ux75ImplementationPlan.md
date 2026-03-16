@@ -1,7 +1,7 @@
 # AccountManagerUx75 — Implementation Plan & Status
 
 **Extracted from:** `Ux7Redesign.md` Section 14
-**Last Updated:** 2026-03-11
+**Last Updated:** 2026-03-15
 **Design Reference:** See `Ux7Redesign.md` Sections 1-13 for requirements, architecture, and design specifications.
 
 ---
@@ -10,11 +10,22 @@
 
 **Project:** `AccountManagerUx75/` — 143 source files, ~73,000 lines
 **Build:** Vite 6.4.1, 161 modules, builds in ~4s
-**Tests:** 197 Vitest unit tests pass, 146 Playwright E2E tests pass (11 skipped), 16 spec files, Chromium + Firefox
+**Tests:** 197 Vitest unit tests pass, Playwright E2E tests (Chromium + Firefox)
 **Phase 16 completed:** 2026-03-11
 **Phase 15 completed:** 2026-03-11
 **Ux7 File Parity:** 100% — all major Ux7 features ported (5 intentionally deprecated). Phases 0-16 all COMPLETE.
+**Bug Fix Sprint (2026-03-15):** Tag membership 404 fixed, member list rendering added, reimage fully ported from Ux7, OlioService LooseRecord crash fixed, searchFirst ported, mimeType→contentType fixed.
 **NEXT:** Phase 4 / ISO 42001 Compliance Dashboard (tracked in `aiDocs/ISO42001Plan.md`)
+
+### Known Open Issues (2026-03-15)
+
+| # | Issue | Severity | Notes |
+|---|-------|----------|-------|
+| 1 | Card Game runtime untested | Medium | Agent-generated, expect runtime errors against live backend |
+| 2 | Schema editor untested against backend | Low | Needs admin login + SchemaService deployed |
+| 3 | Reimage sequence generation edge cases | Medium | Full dress-up/dress-down ported but not end-to-end tested with live backend |
+| 4 | Reference image picker untested | Low | selectReferenceImage ported but not tested with actual image data |
+| 5 | OlioService backend rebuild needed | High | LooseRecord→null fix requires server redeploy |
 
 ---
 

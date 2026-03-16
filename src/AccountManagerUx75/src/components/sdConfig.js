@@ -135,7 +135,7 @@ async function saveConfig(name, config, groupPath) {
     if (!obj) {
         obj = am7model.newPrimitive("data.data");
         obj.name = name;
-        obj.mimeType = "application/json";
+        obj.contentType = "application/json";
         obj.groupId = grp.id;
         obj.groupPath = grp.path;
         obj.dataBytesStore = btoa(JSON.stringify(saveObj));

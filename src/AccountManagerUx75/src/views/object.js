@@ -484,6 +484,173 @@ function newObjectPage() {
         return tle.render(ctx);
     }
 
+    /** Render a membership list field (foreign list with picker-based add/remove) */
+    function renderMemberListField(name, fieldView, field) {
+        // Capture entity/inst at render time — model-ref forms swap these temporarily
+        let mlEntity = entity;
+        let mlInst = inst;
+        let tableForm = fieldView.form;
+        let commands = tableForm.commands || {};
+        let baseModel = field.baseModel;
+
+        // Get items from entity
+        let items = null;
+        if (field.foreign && field.function && objectPage[field.function]) {
+            if (foreignData[name]) {
+                items = foreignData[name];
+            } else {
+                objectPage[field.function](name, field).then(function(data) {
+                    foreignData[name] = data || [];
+                    m.redraw();
+                });
+                return m("div", { class: "text-xs text-gray-400" }, "Loading...");
+            }
+        } else if (mlInst && mlInst.api[name]) {
+            let v = mlInst.api[name]();
+            if (Array.isArray(v)) items = v;
+        }
+        if (!items && mlEntity && mlEntity[name]) {
+            items = mlEntity[name];
+        }
+        if (!items) items = [];
+
+        // Selection tracking keyed by field name
+        let selKey = '_mlsel_' + name;
+        if (!foreignData[selKey]) foreignData[selKey] = {};
+        let sel = foreignData[selKey];
+        let hasSelected = Object.keys(sel).some(function(k) { return sel[k]; });
+
+        // Toolbar
+        let toolbarItems = [];
+
+        if (commands.new) {
+            toolbarItems.push(m("button", {
+                class: "p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300",
+                title: commands.new.label || "Add",
+                onclick: function() {
+                    let tableType = baseModel;
+                    if (tableType === '$flex' && field.foreignType && mlInst) {
+                        tableType = mlInst.api[field.foreignType]();
+                    }
+                    preparePicker(tableType, function(members) {
+                        let aP = [];
+                        members.forEach(function(mem) {
+                            aP.push(new Promise(function(res) {
+                                am7client.member(
+                                    mlEntity[am7model.jsonModelKey], mlEntity.objectId,
+                                    name,
+                                    mem[am7model.jsonModelKey], mem.objectId,
+                                    true,
+                                    function(v) { res(v); }
+                                );
+                            }));
+                        });
+                        Promise.all(aP).then(function() {
+                            if (!mlEntity[name]) mlEntity[name] = [];
+                            members.forEach(function(mem) {
+                                if (!mlEntity[name].some(function(e) { return e.objectId === mem.objectId; })) {
+                                    mlEntity[name].push(mem);
+                                }
+                            });
+                            foreignData[selKey] = {};
+                            m.redraw();
+                        });
+                    });
+                }
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, commands.new.icon || "add")));
+        }
+
+        if (commands.view) {
+            toolbarItems.push(m("button", {
+                class: "p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 " +
+                    (hasSelected ? "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" : "text-gray-300 dark:text-gray-600 pointer-events-none"),
+                title: commands.view.label || "View",
+                onclick: function() {
+                    if (!hasSelected) return;
+                    let idx = Object.keys(sel).find(function(k) { return sel[k]; });
+                    if (idx !== undefined) {
+                        let item = items[parseInt(idx)];
+                        if (item && item.objectId && item[am7model.jsonModelKey]) {
+                            m.route.set("/view/" + item[am7model.jsonModelKey] + "/" + item.objectId, { key: item.objectId });
+                        }
+                    }
+                }
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, commands.view.icon || "file_open")));
+        }
+
+        if (commands.delete) {
+            toolbarItems.push(m("button", {
+                class: "p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 " +
+                    (hasSelected ? "text-gray-500 hover:text-red-500" : "text-gray-300 dark:text-gray-600 pointer-events-none"),
+                title: commands.delete.label || "Remove",
+                onclick: function() {
+                    if (!hasSelected) return;
+                    let aP = [];
+                    let toRemove = [];
+                    Object.keys(sel).sort(function(a,b) { return parseInt(b) - parseInt(a); }).forEach(function(k) {
+                        if (!sel[k]) return;
+                        let idx = parseInt(k);
+                        let item = items[idx];
+                        if (!item) return;
+                        toRemove.push(idx);
+                        if (item.objectId) {
+                            aP.push(new Promise(function(res) {
+                                am7client.member(
+                                    mlEntity[am7model.jsonModelKey], mlEntity.objectId,
+                                    name,
+                                    item[am7model.jsonModelKey], item.objectId,
+                                    false,
+                                    function(v) { res(v); }
+                                );
+                            }));
+                        }
+                    });
+                    toRemove.forEach(function(idx) {
+                        if (mlEntity[name]) mlEntity[name].splice(idx, 1);
+                    });
+                    foreignData[selKey] = {};
+                    Promise.all(aP).then(function() { m.redraw(); });
+                }
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, commands.delete.icon || "delete_outline")));
+        }
+
+        toolbarItems.push(m("span", { class: "text-xs text-gray-400 dark:text-gray-500 ml-auto whitespace-nowrap" },
+            items.length + " item" + (items.length !== 1 ? "s" : "")
+        ));
+
+        // List rows
+        let listRows = [];
+        if (items.length === 0) {
+            listRows.push(m("div", { class: "px-3 py-2 text-sm text-gray-400 italic" }, "No items"));
+        } else {
+            items.forEach(function(item, idx) {
+                let isSelected = !!sel[idx];
+                let displayName = item.name || item.objectId || '(unnamed)';
+                listRows.push(m("div", {
+                    class: "flex items-center px-2 py-1.5 border-b border-gray-100 dark:border-gray-700/50 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                        + (isSelected ? " bg-blue-50 dark:bg-blue-900/20" : ""),
+                    onclick: function() {
+                        sel[idx] = !sel[idx];
+                        if (!sel[idx]) delete sel[idx];
+                        m.redraw();
+                    },
+                    ondblclick: function() {
+                        if (item.objectId && item[am7model.jsonModelKey]) {
+                            m.route.set("/view/" + item[am7model.jsonModelKey] + "/" + item.objectId, { key: item.objectId });
+                        }
+                    }
+                }, [
+                    m("span", { class: "text-sm text-gray-700 dark:text-gray-300 truncate flex-1" }, displayName)
+                ]));
+            });
+        }
+
+        return [m("div", { class: "rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900" }, [
+            m("div", { class: "flex items-center gap-2 px-2 py-1 border-b border-gray-200 dark:border-gray-700" }, toolbarItems),
+            m("div", { class: "max-h-64 overflow-y-auto" }, listRows)
+        ])];
+    }
+
     // --- Command system ---
 
     function getFormCommands() {
@@ -621,11 +788,15 @@ function newObjectPage() {
     }
 
     function modelField(name, fieldView, field) {
-        // List/table fields — delegate to tableListEditor
+        // List/table fields — delegate to tableListEditor or member list renderer
         if (field.type === 'list' && field.baseModel && fieldView.form) {
             let tle = page.components.tableListEditor;
             if (tle && tle.isStandardCrud(fieldView.form)) {
                 return renderTableField(name, fieldView, field);
+            }
+            // Non-standard CRUD form (member list with picker-based commands)
+            if (fieldView.form.commands) {
+                return renderMemberListField(name, fieldView, field);
             }
         }
 

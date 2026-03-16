@@ -17,6 +17,7 @@ async function reimageApparel(entity, inst) {
     }
 
     let am7sd = am7model._sd;
+    let sdModelList = await am7sd.fetchModels();
     let sdEntity = await am7sd.fetchTemplate(true);
     if (!sdEntity) {
         sdEntity = am7model.newPrimitive('olio.sdConfig');
@@ -48,11 +49,17 @@ async function reimageApparel(entity, inst) {
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Model'),
-                    m('input', { class: 'text-field-compact', value: cinst.api.model ? cinst.api.model() : '', oninput: function (e) { if (cinst.api.model) cinst.api.model(e.target.value); } })
+                    sdModelList.length > 0
+                        ? m('select', { class: 'text-field-compact', value: cinst.api.model ? cinst.api.model() : '', onchange: function (e) { if (cinst.api.model) cinst.api.model(e.target.value); } },
+                            [m('option', { value: '' }, '-- Select --')].concat(sdModelList.map(function (ml) { return m('option', { value: ml }, ml); })))
+                        : m('input', { class: 'text-field-compact', value: cinst.api.model ? cinst.api.model() : '', oninput: function (e) { if (cinst.api.model) cinst.api.model(e.target.value); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Refiner Model'),
-                    m('input', { class: 'text-field-compact', value: cinst.api.refinerModel ? cinst.api.refinerModel() : '', oninput: function (e) { if (cinst.api.refinerModel) cinst.api.refinerModel(e.target.value); } })
+                    sdModelList.length > 0
+                        ? m('select', { class: 'text-field-compact', value: cinst.api.refinerModel ? cinst.api.refinerModel() : '', onchange: function (e) { if (cinst.api.refinerModel) cinst.api.refinerModel(e.target.value); } },
+                            [m('option', { value: '' }, '-- Select --')].concat(sdModelList.map(function (ml) { return m('option', { value: ml }, ml); })))
+                        : m('input', { class: 'text-field-compact', value: cinst.api.refinerModel ? cinst.api.refinerModel() : '', oninput: function (e) { if (cinst.api.refinerModel) cinst.api.refinerModel(e.target.value); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Style'),
@@ -128,7 +135,7 @@ async function reimageApparel(entity, inst) {
                                 let selfieTag = await getOrCreateSharingTag('selfie', 'data.data');
                                 if (selfieTag) {
                                     for (let img of images) {
-                                        await am7client.member('data.tag', selfieTag.objectId, 'data.data', 'data.data', img.objectId, true);
+                                        await am7client.member('data.tag', selfieTag.objectId, null, 'data.data', img.objectId, true);
                                     }
                                 }
                             }
