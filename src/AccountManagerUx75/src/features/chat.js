@@ -18,7 +18,6 @@ import { ChatSetupWizard } from '../chat/ChatSetupWizard.js';
 import { AnalysisManager } from '../chat/AnalysisManager.js';
 import { LLMDebugPanel } from '../chat/LLMDebugPanel.js';
 import { am7chat } from '../chat/chatUtil.js';
-import { ChatConfigToolbar } from '../chat/ChatConfigToolbar.js';
 import { ObjectPicker } from '../components/picker.js';
 import { GossipPanel } from '../chat/GossipPanel.js';
 import { SceneGenerator } from '../chat/SceneGenerator.js';
@@ -75,6 +74,8 @@ function pickSession(obj) {
         if (MemoryPanel && chatCfg.chat) {
             MemoryPanel.loadForSession(chatCfg.chat, inst ? inst.api.objectId() : null);
         }
+        // Auto-start system-start sessions with no history
+        doAutoStart();
     }).catch(function(e) {
         console.warn("Failed to peek session", e);
     });
@@ -162,6 +163,35 @@ function newChatStream() {
         }
     };
     return cfg;
+}
+
+async function doAutoStart() {
+    if (!inst || !chatCfg.chat) return;
+    let startMode = chatCfg.chat.startMode;
+    if (startMode !== "system") return;
+    // Only auto-start if conversation has no messages yet
+    if (chatCfg.history.messages && chatCfg.history.messages.length > 0) return;
+    // Send empty string to trigger system-start
+    chatCfg.pending = true;
+    m.redraw();
+    try {
+        let stream = newChatStream();
+        page.chatStream = stream;
+        await LLMConnector.streamChat(inst.entity, "", stream);
+    } catch (e) {
+        try {
+            let resp = await LLMConnector.chat(inst.entity, "");
+            let content = LLMConnector.extractContent(resp);
+            if (content) {
+                if (!chatCfg.history.messages) chatCfg.history.messages = [];
+                chatCfg.history.messages.push({ role: "assistant", content: content });
+            }
+        } catch (e2) {
+            console.warn("Auto-start failed:", e2);
+        }
+    }
+    chatCfg.pending = false;
+    m.redraw();
 }
 
 async function doSend(message) {
@@ -317,19 +347,18 @@ function renderMessage(msg, idx) {
         ? "ml-auto bg-blue-600 text-white rounded-lg rounded-br-none"
         : "mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-lg rounded-bl-none";
 
-    // Phase 6c: Character avatar
+    // Character avatar — Ux7 style: 96x96 rounded-full, gender fallback icons
     let avatar = null;
-    if (!isUser && chatCfg.system && chatCfg.system.profile && chatCfg.system.profile.portrait) {
-        let pp = chatCfg.system.profile.portrait;
-        let thumbUrl = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + (pp.groupPath || "") + "/" + (pp.name || "") + "/48x48";
+    let char = isUser ? chatCfg.user : chatCfg.system;
+    if (char && char.profile && char.profile.portrait) {
+        let pp = char.profile.portrait;
+        let thumbUrl = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + (pp.groupPath || "") + "/" + (pp.name || "") + "/96x96";
         avatar = m("img", { src: thumbUrl, class: "w-8 h-8 rounded-full shrink-0 mt-1", onerror: function(e) { e.target.style.display = "none"; } });
+    } else if (char) {
+        let genderIcon = (char.gender === "female") ? "woman" : "man";
+        avatar = m("span", { class: "material-icons-outlined text-gray-400 shrink-0 mt-1", style: "font-size:28px" }, genderIcon);
     } else if (!isUser) {
         avatar = m("span", { class: "material-symbols-outlined text-gray-400 shrink-0 mt-1", style: "font-size:28px" }, "smart_toy");
-    }
-    if (isUser && chatCfg.user && chatCfg.user.profile && chatCfg.user.profile.portrait) {
-        let up = chatCfg.user.profile.portrait;
-        let thumbUrl = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + (up.groupPath || "") + "/" + (up.name || "") + "/48x48";
-        avatar = m("img", { src: thumbUrl, class: "w-8 h-8 rounded-full shrink-0 mt-1", onerror: function(e) { e.target.style.display = "none"; } });
     }
 
     return m("div", { class: "flex mb-3 gap-2 " + (isUser ? "justify-end" : "justify-start"), key: "msg-" + idx }, [
@@ -399,6 +428,66 @@ function toggleSidebar(panel) {
     m.redraw();
 }
 
+let configAccordionOpen = false;
+
+function renderConfigAccordion() {
+    if (!inst) return null;
+    let chatConfigName = chatCfg && chatCfg.chat ? chatCfg.chat.name : null;
+    let promptConfigName = null;
+    let promptTemplateName = null;
+    if (inst.api.promptConfig) {
+        let pc = inst.api.promptConfig();
+        if (pc && pc.name) promptConfigName = pc.name;
+    }
+    if (inst.api.promptTemplate) {
+        let pt = inst.api.promptTemplate();
+        if (pt && pt.name) promptTemplateName = pt.name;
+    }
+    let rating = chatCfg && chatCfg.chat && chatCfg.chat.rating ? chatCfg.chat.rating.toUpperCase() : null;
+    let model = chatCfg && chatCfg.chat && chatCfg.chat.model ? chatCfg.chat.model : null;
+
+    return m("div", { class: "border-t border-gray-200 dark:border-gray-600" }, [
+        m("button", {
+            class: "w-full text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+            onclick: function () { configAccordionOpen = !configAccordionOpen; }
+        }, [
+            m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "settings"),
+            " Config",
+            m("span", { class: "material-symbols-outlined ml-auto", style: "font-size:14px" }, configAccordionOpen ? "expand_less" : "expand_more")
+        ]),
+        configAccordionOpen ? m("div", { class: "px-3 py-2 space-y-1" }, [
+            configRow("Chat Config", chatConfigName, "settings", "chatConfig"),
+            configRow("Prompt", promptConfigName || promptTemplateName, "edit_note", "promptTemplate"),
+            model ? m("div", { class: "text-xs text-gray-400" }, "Model: " + model) : null,
+            rating ? m("div", { class: "text-xs text-gray-400" }, "Rating: " + rating) : null
+        ]) : null
+    ]);
+}
+
+function configRow(label, name, icon, libraryType) {
+    return m("div", { class: "flex items-center gap-1 text-xs" }, [
+        m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:14px" }, icon),
+        m("span", { class: "text-gray-500 dark:text-gray-400" }, label + ":"),
+        m("button", {
+            class: "text-blue-600 dark:text-blue-400 hover:underline truncate max-w-[120px]",
+            title: name || "None",
+            onclick: function () {
+                ObjectPicker.openLibrary({
+                    libraryType: libraryType,
+                    title: "Select " + label,
+                    onSelect: function (obj) {
+                        ContextPanel.attach(libraryType === "chatConfig" ? "chatConfig" : "promptTemplate", obj.objectId).then(function () {
+                            am7client.clearCache("olio.llm.chatRequest");
+                            doPeek();
+                        }).catch(function (e) { console.warn("Config attach failed:", e); });
+                        m.redraw();
+                    }
+                });
+            }
+        }, name || "None")
+    ]);
+}
+
 function renderSidebar() {
     let iconStrip = m("div", { class: "flex flex-col items-center py-2 gap-1 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 w-12 shrink-0" }, [
         sidebarIcon("forum", "conversations", "Sessions"),
@@ -410,7 +499,10 @@ function renderSidebar() {
 
     let panelContent = null;
     if (sidebarActivePanel === "conversations") {
-        panelContent = m(ConversationManager.SidebarView);
+        panelContent = m("div", { class: "flex flex-col flex-1 overflow-hidden" }, [
+            m(ConversationManager.SidebarView),
+            renderConfigAccordion()
+        ]);
     } else if (sidebarActivePanel === "context") {
         panelContent = m(ContextPanel.PanelView);
     } else if (sidebarActivePanel === "memories") {
@@ -586,32 +678,182 @@ function renderInput() {
 
 let showNewSession = false;
 let newSessionName = "";
+let newSessionSelectedChatConfig = null;
+let newSessionSelectedPromptConfig = null;
+let newSessionSelectedPromptTemplate = null;
+
+async function loadNewSessionDefaults() {
+    // List chat configs from library dir and pick first (prefer "Open Chat")
+    if (!newSessionSelectedChatConfig) {
+        try {
+            let dir = await LLMConnector.getLibraryGroup("chat");
+            if (dir && dir.objectId) {
+                let cfgs = await page.listObjects("olio.llm.chatConfig", dir.objectId, "name,objectId", 0, 50);
+                if (cfgs && cfgs.length) {
+                    let openChat = cfgs.find(function(c) { return c.name === "Open Chat"; });
+                    newSessionSelectedChatConfig = openChat || cfgs[0];
+                }
+            }
+        } catch(e) { /* ignore */ }
+        // Fall back to user's own configs
+        if (!newSessionSelectedChatConfig) {
+            let userCfgs = ConversationManager.getChatConfigs();
+            if (userCfgs && userCfgs.length > 0) newSessionSelectedChatConfig = userCfgs[0];
+        }
+    }
+
+    // List prompt templates from library dir, then fall back to prompt configs
+    if (!newSessionSelectedPromptTemplate && !newSessionSelectedPromptConfig) {
+        try {
+            let dir = await LLMConnector.getLibraryGroup("promptTemplate");
+            if (dir && dir.objectId) {
+                let tpls = await page.listObjects("olio.llm.promptTemplate", dir.objectId, "name,objectId", 0, 50);
+                if (tpls && tpls.length) {
+                    newSessionSelectedPromptTemplate = tpls[0];
+                }
+            }
+        } catch(e) { /* ignore */ }
+        if (!newSessionSelectedPromptTemplate) {
+            try {
+                let dir = await LLMConnector.getLibraryGroup("prompt");
+                if (dir && dir.objectId) {
+                    let pcs = await page.listObjects("olio.llm.promptConfig", dir.objectId, "name,objectId", 0, 50);
+                    if (pcs && pcs.length) {
+                        newSessionSelectedPromptConfig = pcs[0];
+                    }
+                }
+            } catch(e) { /* ignore */ }
+        }
+    }
+
+    m.redraw();
+}
+
+function randomSessionName() {
+    let a = ["turtle", "bunny", "kitty", "puppy", "duckling", "pony", "fishy", "birdie"];
+    let b = ["fluffy", "cute", "ornery", "obnoxious", "scratchy", "licky", "cuddly", "mangy"];
+    let c = ["little", "tiny", "enormous", "big", "skinny", "lumpy"];
+    return b[Math.floor(Math.random() * b.length)] + " " + c[Math.floor(Math.random() * c.length)] + " " + a[Math.floor(Math.random() * a.length)];
+}
+
+async function updateNewSessionDefaultName() {
+    let cc = newSessionSelectedChatConfig;
+    let pc = newSessionSelectedPromptConfig;
+    let pt = newSessionSelectedPromptTemplate;
+    if (!cc) { newSessionName = randomSessionName(); m.redraw(); return; }
+
+    // Load full chat config to get character names and rating
+    let fullCc = null;
+    try {
+        fullCc = await am7client.getFull("olio.llm.chatConfig", cc.objectId);
+    } catch(e) { /* ignore */ }
+
+    let name = "";
+    if (fullCc && fullCc.systemCharacter && fullCc.userCharacter) {
+        let sysName = fullCc.systemCharacter.firstName || (fullCc.systemCharacter.name || "").split(" ")[0];
+        let usrName = fullCc.userCharacter.firstName || (fullCc.userCharacter.name || "").split(" ")[0];
+        let rating = (fullCc.rating || "").toUpperCase();
+        name = sysName + " and " + usrName;
+        if (rating) name += " (" + rating + ")";
+    } else {
+        name = randomSessionName();
+    }
+
+    // Append prompt info
+    let promptName = pt ? pt.name : (pc ? pc.name : null);
+    if (promptName) name += " - " + promptName;
+
+    // Dedup against existing sessions
+    let existing = ConversationManager.getSessions() || [];
+    let baseName = name;
+    let counter = 1;
+    while (existing.some(function(s) { return s.name === name; })) {
+        counter++;
+        name = baseName + " " + counter;
+    }
+
+    newSessionName = name;
+    m.redraw();
+}
+
+function pickerField(label, selected, libraryType, onSelect) {
+    let displayName = selected ? (selected.name || selected.objectId) : "(none)";
+    function openPicker() {
+        ObjectPicker.openLibrary({
+            libraryType: libraryType,
+            title: "Select " + label,
+            onSelect: function(item) {
+                onSelect(item);
+                m.redraw();
+            }
+        });
+    }
+    return m("div", { class: "mb-3" }, [
+        m("label", { class: "block text-xs text-gray-500 dark:text-gray-400 mb-1" }, label),
+        m("div", { class: "flex items-center gap-1" }, [
+            m("span", {
+                class: "flex-1 px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white text-sm truncate"
+            }, displayName),
+            m("button", {
+                class: "p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+                title: "Find",
+                onclick: openPicker
+            }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "search")),
+            selected ? m("button", {
+                class: "p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+                title: "Clear",
+                onclick: function() { onSelect(null); m.redraw(); }
+            }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "backspace")) : null
+        ])
+    ]);
+}
 
 function renderNewSessionDialog() {
     if (!showNewSession) return null;
     return m("div", { class: "fixed inset-0 z-50 flex items-center justify-center" }, [
         m("div", { class: "absolute inset-0 bg-black/50", onclick: function() { showNewSession = false; m.redraw(); } }),
-        m("div", { class: "relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-sm mx-4 p-4" }, [
+        m("div", { class: "relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md mx-4 p-4" }, [
             m("h3", { class: "text-lg font-semibold text-gray-800 dark:text-white mb-4" }, "New Chat Session"),
-            m("input", {
-                type: "text",
-                class: "w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white text-sm mb-4",
-                placeholder: "Session name",
-                value: newSessionName,
-                oninput: function(e) { newSessionName = e.target.value; }
+            m("div", { class: "mb-3" }, [
+                m("label", { class: "block text-xs text-gray-500 dark:text-gray-400 mb-1" }, "Session Name"),
+                m("input", {
+                    type: "text",
+                    class: "w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white text-sm",
+                    placeholder: "Session name",
+                    value: newSessionName,
+                    oninput: function(e) { newSessionName = e.target.value; }
+                })
+            ]),
+            pickerField("Chat Config", newSessionSelectedChatConfig, "chatConfig", function(item) {
+                newSessionSelectedChatConfig = item;
+                updateNewSessionDefaultName();
             }),
-            m("div", { class: "flex justify-end gap-2" }, [
+            pickerField("Prompt Config", newSessionSelectedPromptConfig, "promptConfig", function(item) {
+                newSessionSelectedPromptConfig = item;
+                updateNewSessionDefaultName();
+            }),
+            pickerField("Prompt Template", newSessionSelectedPromptTemplate, "promptTemplate", function(item) {
+                newSessionSelectedPromptTemplate = item;
+                updateNewSessionDefaultName();
+            }),
+            m("div", { class: "flex justify-end gap-2 mt-4" }, [
                 m("button", {
                     class: "px-3 py-1.5 rounded text-sm border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800",
                     onclick: function() { showNewSession = false; m.redraw(); }
                 }, "Cancel"),
                 m("button", {
                     class: "px-3 py-1.5 rounded text-sm bg-blue-600 text-white hover:bg-blue-500",
+                    disabled: !newSessionSelectedChatConfig || (!newSessionSelectedPromptConfig && !newSessionSelectedPromptTemplate),
                     onclick: async function() {
                         if (!newSessionName.trim()) return;
                         showNewSession = false;
                         try {
-                            let req = await ConversationManager.createSession(newSessionName.trim());
+                            let req = await ConversationManager.createSession(
+                                newSessionName.trim(),
+                                newSessionSelectedChatConfig,
+                                newSessionSelectedPromptConfig,
+                                newSessionSelectedPromptTemplate
+                            );
                             if (req) {
                                 await ConversationManager.refresh();
                                 pickSession(req);
@@ -637,10 +879,15 @@ function renderEmptyState() {
             m("p", { class: "mt-4 text-gray-500 dark:text-gray-400" }, "Select a conversation or create a new one"),
             m("button", {
                 class: "mt-4 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-500",
-                onclick: function() {
+                onclick: async function() {
                     showNewSession = true;
-                    newSessionName = "Chat " + new Date().toLocaleString();
+                    newSessionSelectedChatConfig = null;
+                    newSessionSelectedPromptConfig = null;
+                    newSessionSelectedPromptTemplate = null;
+                    newSessionName = "";
                     m.redraw();
+                    await loadNewSessionDefaults();
+                    await updateNewSessionDefaultName();
                 }
             }, "New Session")
         ])
@@ -681,7 +928,6 @@ const chatView = {
             // Main chat area
             m("div", { class: "flex-1 flex flex-col min-w-0" }, [
                 renderToolbar(),
-                m(ChatConfigToolbar, { inst: inst, chatCfg: chatCfg, onConfigChange: function() { doPeek(); } }),
                 m(ChainManager.ProgressView),
                 // Messages area
                 inst ? m("div", {
@@ -722,10 +968,15 @@ async function initChatView() {
     });
 
     // Wire new session button in ConversationManager
-    ConversationManager.onNewSession(function() {
+    ConversationManager.onNewSession(async function() {
         showNewSession = true;
-        newSessionName = "Chat " + new Date().toLocaleString();
+        newSessionSelectedChatConfig = null;
+        newSessionSelectedPromptConfig = null;
+        newSessionSelectedPromptTemplate = null;
+        newSessionName = "";
         m.redraw();
+        await loadNewSessionDefaults();
+        await updateNewSessionDefaultName();
     });
 
     // Register policy event display

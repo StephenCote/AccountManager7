@@ -55,7 +55,61 @@ function newListControl() {
     let searchTimer = null;
     let searchActive = false;
 
+    // Column customization per model type (persisted in localStorage)
+    let columnConfigCache = {};
+    let columnPickerOpen = false;
+
+    function getColumnConfigKey(type) { return 'am7_columns_' + type; }
+
+    function getCustomColumns(type) {
+        if (columnConfigCache[type]) return columnConfigCache[type];
+        try {
+            let saved = localStorage.getItem(getColumnConfigKey(type));
+            if (saved) {
+                columnConfigCache[type] = JSON.parse(saved);
+                return columnConfigCache[type];
+            }
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    function saveCustomColumns(type, columns) {
+        columnConfigCache[type] = columns;
+        try { localStorage.setItem(getColumnConfigKey(type), JSON.stringify(columns)); } catch (e) { /* ignore */ }
+    }
+
+    function getColumns(type) {
+        let custom = getCustomColumns(type);
+        if (custom && custom.length) return custom;
+        // Default columns
+        let mod = am7model.getModel(type);
+        let columns = ['name'];
+        if (mod) {
+            let allFields = am7model.getModelFields(mod);
+            let fieldNames = allFields.map(f => f.name);
+            if (fieldNames.includes('description')) columns.push('description');
+            if (fieldNames.includes('groupPath')) columns.push('groupPath');
+            if (fieldNames.includes('type') && !columns.includes('type')) columns.push('type');
+        }
+        return columns;
+    }
+
+    function toggleColumnSort(col) {
+        let ent = pagination.entity;
+        if (ent.sort === col) {
+            ent.order = (ent.order === 'ascending') ? 'descending' : 'ascending';
+        } else {
+            ent.sort = col;
+            ent.order = 'ascending';
+        }
+        pagination.new();
+        initParams(lastVnode);
+        updatePagination(lastVnode);
+        m.redraw();
+    }
+
     let pagination = newPaginationControl();
+    pagination.setColumnProvider(getCustomColumns);
 
     // ------------------------------------------------------------------
     //  Helpers
@@ -551,15 +605,8 @@ function newListControl() {
         }
 
         let type = hasItems ? items[0][am7model.jsonModelKey] : null;
-        let mod = type ? am7model.getModel(type) : null;
-        let columns = ['name'];
-        if (mod) {
-            let allFields = am7model.getModelFields(mod);
-            let fieldNames = allFields.map(f => f.name);
-            if (fieldNames.includes('description')) columns.push('description');
-            if (fieldNames.includes('groupPath')) columns.push('groupPath');
-            if (fieldNames.includes('type') && !columns.includes('type')) columns.push('type');
-        }
+        let columns = type ? getColumns(type) : ['name'];
+        let ent = pagination.entity;
 
         let showThumb = hasItems && items.some(function(item) {
             let ct = item.contentType || '';
@@ -600,7 +647,17 @@ function newListControl() {
                 m('tr', [
                     pickerMode ? null : m('th', { class: 'list-th list-th-check' }, ''),
                     showThumb ? m('th', { class: 'list-th', style: 'width:40px' }, '') : null,
-                    ...columns.map(c => m('th', { class: 'list-th' }, c))
+                    ...columns.map(function(c) {
+                        let isSorted = ent.sort === c;
+                        let arrow = isSorted ? (ent.order === 'ascending' ? 'arrow_upward' : 'arrow_downward') : '';
+                        return m('th', {
+                            class: 'list-th cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800',
+                            onclick: function() { toggleColumnSort(c); }
+                        }, [
+                            m('span', c),
+                            arrow ? m('span', { class: 'material-symbols-outlined text-xs ml-1', style: 'font-size:14px;vertical-align:middle' }, arrow) : null
+                        ]);
+                    })
                 ])
             ]),
             childGroupRows,
@@ -802,11 +859,12 @@ function newListControl() {
     function toolbar(type) {
         let hasSelection = getSelectedIndices().length > 0;
         let isGroupNav = containerMode || type === 'auth.group' || (modType && am7model.isParent(modType));
+        let pg = pagination.pages();
 
         let buttons = [];
 
+        // ── CRUD buttons (normal mode only) ──
         if (!pickerMode) {
-            // Add / Edit / Delete — only in normal mode
             if (!modType || !modType.systemNew) {
                 buttons.push(iconBtn('button', 'add', '', addNew, 'Add new item'));
             }
@@ -814,7 +872,7 @@ function newListControl() {
             buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'delete', '', deleteSelected, 'Delete selected'));
         }
 
-        // Navigate up — useful in both normal and picker mode for group browsing
+        // ── Navigation (both modes) ──
         if (isGroupNav || pickerMode) {
             buttons.push(iconBtn('button', 'north_west', '', navigateUp, 'Navigate up'));
             if (!pickerMode) {
@@ -822,12 +880,77 @@ function newListControl() {
             }
         }
 
-        // Grid/gallery toggle: table → small icons → large icons → gallery
+        // ── Grid/gallery toggle (both modes) ──
         let gridIcons = ['view_list', 'grid_view', 'apps', 'view_carousel'];
         let gridLabels = ['Table view', 'Small icons', 'Large icons', 'Gallery view'];
         buttons.push(iconBtn('button', gridIcons[gridMode] || 'view_list', '', toggleGrid, gridLabels[gridMode] || 'Toggle view'));
 
-        // Picker mode: Home / Favorites / Library navigation buttons
+        // ── Admin/library button (both modes) — matches Ux7 getAdminButtons ──
+        if (am7model.system && am7model.system.library && am7model.system.library[baseListType || type]) {
+            let libActive = pg.container && pg.container.path && pg.container.path.match(/^\/Library/gi);
+            if (pickerMode) {
+                // In picker mode, navigate to library container
+                if (pickerLibraryContainerId) {
+                    buttons.push(iconBtn(
+                        'button' + (pickerActiveSource === 'library' ? ' active' : ''),
+                        'admin_panel_settings', '', function() {
+                            pickerActiveSource = 'library';
+                            pickerNavigateTo(pickerLibraryContainerId);
+                        },
+                        'System library'
+                    ));
+                }
+            } else {
+                buttons.push(iconBtn('button' + (libActive ? ' active' : ''), 'admin_panel_settings', '', async function() {
+                    let libPath = am7model.system.library[baseListType || type];
+                    let grp = await page.findObject("auth.group", "data", libPath);
+                    if (grp) {
+                        m.route.set('/list/' + (baseListType || type) + '/' + grp.objectId, { key: Date.now() });
+                    }
+                }, 'System library'));
+            }
+        }
+        // ── Type-specific action buttons (normal mode only, per Ux7 getActionButtons) ──
+        if (!pickerMode && type === 'olio.charPerson' && am7model.forms.commands && am7model.forms.commands.characterWizard) {
+            buttons.push(iconBtn('button', 'steppers', '', am7model.forms.commands.characterWizard, 'Character wizard'));
+        }
+
+        // ── Favorites (both modes) ──
+        if (pickerMode) {
+            // Picker mode: navigate within picker via pickerNavigateTo
+            if (pickerFavoritesContainerId) {
+                buttons.push(iconBtn(
+                    'button' + (pickerActiveSource === 'favorites' ? ' active' : ''),
+                    'favorite', '', function() {
+                        if (pickerActiveSource === 'favorites') return;
+                        pickerActiveSource = 'favorites';
+                        pickerNavigateTo(pickerFavoritesContainerId);
+                    },
+                    'Favorites'
+                ));
+            } else {
+                // No favorites container pre-resolved; resolve on click
+                buttons.push(iconBtn('button', 'favorite', '', async function() {
+                    let fav = await page.favorites();
+                    if (fav) {
+                        pickerFavoritesContainerId = fav.objectId;
+                        pickerActiveSource = 'favorites';
+                        pickerNavigateTo(fav.objectId);
+                    }
+                }, 'Favorites'));
+            }
+        } else {
+            // Normal mode: navigate via route
+            let isFavActive = pg.container && pg.container.name && pg.container.name.match(/favorites/gi);
+            buttons.push(iconBtn('button' + (isFavActive ? ' active' : ''), 'favorite', '', async function() {
+                let fav = await page.favorites();
+                if (fav) {
+                    m.route.set('/list/' + (baseListType || type) + '/' + fav.objectId, { key: Date.now() });
+                }
+            }, 'Favorites'));
+        }
+
+        // ── Picker source buttons (picker mode only) ──
         if (pickerMode) {
             if (pickerUserContainerId) {
                 buttons.push(iconBtn(
@@ -840,47 +963,70 @@ function newListControl() {
                     'My items'
                 ));
             }
-            if (pickerFavoritesContainerId) {
-                buttons.push(iconBtn(
-                    'button' + (pickerActiveSource === 'favorites' ? ' active' : ''),
-                    'star', '', function() {
-                        if (pickerActiveSource === 'favorites') return;
-                        pickerActiveSource = 'favorites';
-                        pickerNavigateTo(pickerFavoritesContainerId);
-                    },
-                    'Favorites'
-                ));
-            }
-            if (pickerLibraryContainerId) {
-                buttons.push(iconBtn(
-                    'button' + (pickerActiveSource === 'library' ? ' active' : ''),
-                    'local_library', '', function() {
-                        if (pickerActiveSource === 'library') return;
-                        pickerActiveSource = 'library';
-                        pickerNavigateTo(pickerLibraryContainerId);
-                    },
-                    'Shared library'
-                ));
-            }
         }
 
+        // ── Normal mode extras ──
         if (!pickerMode) {
-            // Bulk apply image tags
+            if (gridMode === 0) {
+                buttons.push(iconBtn('button' + (columnPickerOpen ? ' active' : ''), 'view_column', '', function() {
+                    columnPickerOpen = !columnPickerOpen;
+                    m.redraw();
+                }, 'Customize columns'));
+            }
             buttons.push(iconBtn('button' + (!hasSelection ? ' inactive' : ''), 'label', '', bulkApplyTags, 'Apply tags to selected'));
-
-            // Select all
             buttons.push(iconBtn('button', 'select_all', '', selectAll, 'Select all'));
-
-            // Full mode
             buttons.push(iconBtn('button' + (fullMode ? ' active' : ''),
                 fullMode ? 'close_fullscreen' : 'open_in_new', '', toggleFullMode, fullMode ? 'Exit full mode' : 'Full mode'));
-
-            // Infinite scroll toggle
             buttons.push(iconBtn('button' + (infiniteScroll ? ' active' : ''),
                 'all_inclusive', '', toggleInfiniteScroll, infiniteScroll ? 'Disable infinite scroll' : 'Enable infinite scroll'));
         }
 
         return buttons;
+    }
+
+    function renderColumnPicker(type) {
+        let resultType = baseListType || type;
+        let mod = am7model.getModel(resultType);
+        if (!mod) return null;
+        let allFields = am7model.getModelFields(mod).map(f => f.name).filter(f => !f.match(/^(id|ownerId|organizationId|organizationPath)$/));
+        let currentCols = getColumns(resultType);
+        return m('div', { class: 'px-3 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-1 items-center' }, [
+            m('span', { class: 'text-xs text-gray-500 mr-1' }, 'Columns:'),
+            ...allFields.map(function(f) {
+                let active = currentCols.includes(f);
+                return m('button', {
+                    class: 'px-1.5 py-0.5 rounded text-xs ' + (active
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'),
+                    onclick: function() {
+                        let cols = currentCols.slice();
+                        if (active) {
+                            cols = cols.filter(c => c !== f);
+                            if (!cols.length) cols = ['name'];
+                        } else {
+                            cols.push(f);
+                        }
+                        saveCustomColumns(resultType, cols);
+                        // Re-query to include new columns in request
+                        pagination.new();
+                        initParams(lastVnode);
+                        updatePagination(lastVnode);
+                        m.redraw();
+                    }
+                }, f);
+            }),
+            m('button', {
+                class: 'px-1.5 py-0.5 rounded text-xs bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 ml-2',
+                onclick: function() {
+                    columnConfigCache[resultType] = null;
+                    localStorage.removeItem(getColumnConfigKey(resultType));
+                    pagination.new();
+                    initParams(lastVnode);
+                    updatePagination(lastVnode);
+                    m.redraw();
+                }
+            }, 'Reset')
+        ]);
     }
 
     function filterInput() {
@@ -1014,7 +1160,14 @@ function newListControl() {
             // Re-read route params in case the route changed
             let newType = vnode.attrs.type || m.route.param('type');
             let newId = vnode.attrs.objectId || m.route.param('objectId');
-            if (newType !== listType || newId !== listContainerId) {
+            let newStart = vnode.attrs.startRecord || m.route.param('startRecord') || 0;
+            let newFilter = vnode.attrs.filter || m.route.param('filter') || '';
+            let pg = pagination.pages();
+            let curStart = pg.startRecord;
+            let curFilter = pg.filter || '';
+            let routeChanged = newType !== listType || newId !== listContainerId;
+            let paginationChanged = parseInt(newStart) !== curStart || newFilter !== curFilter;
+            if (routeChanged || paginationChanged) {
                 let oldContainerId = listContainerId;
                 initParams(vnode);
                 updatePagination(vnode);
@@ -1063,6 +1216,8 @@ function newListControl() {
                     pageButtons()
                 ])
             ]),
+            // Column picker panel
+            columnPickerOpen ? renderColumnPicker(type) : null,
             // List body
             m('div', {
                 style: 'flex:1;overflow:auto;padding:8px',

@@ -127,9 +127,18 @@ async function saveConfig(name, config, groupPath) {
         }
     }
 
-    let obj;
+    // Use search query (same as loadConfig) to reliably find existing config
+    // getByName URL-embeds the name which fails with dots/spaces, and may not return 'id'
+    let obj = null;
     try {
-        obj = await page.searchByName("data.data", grp.objectId, name);
+        let q = am7view.viewQuery(am7model.newInstance("data.data"));
+        q.entity.request.push("id");
+        q.field("groupId", grp.id);
+        q.field("name", name);
+        let qr = await page.search(q);
+        if (qr && qr.results && qr.results.length) {
+            obj = qr.results[0];
+        }
     } catch (e) { /* doesn't exist yet */ }
 
     if (!obj) {

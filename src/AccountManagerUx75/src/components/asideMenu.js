@@ -147,7 +147,38 @@ const asideMenu = {
                     })
                 )
             ] : null,
-            favoritesSection()
+            favoritesSection(),
+            // System actions
+            m("div", { class: "p-4 border-t border-gray-200 dark:border-gray-700" }, [
+                m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, "System")
+            ]),
+            m("ul", { class: "p-2" }, [
+                m("li", { class: "py-1" },
+                    m("button", {
+                        class: "w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2",
+                        onclick: function () {
+                            am7client.clearCache(0, false);
+                            page.toast("success", "Cache cleared");
+                        }
+                    }, [
+                        m("span", { class: "material-symbols-outlined material-icons-cm" }, "cached"),
+                        m("span", {}, "Clear Cache")
+                    ])
+                ),
+                m("li", { class: "py-1" },
+                    m("button", {
+                        class: "w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2",
+                        onclick: function () {
+                            am7client.cleanup(function () {
+                                page.toast("success", "Cleanup complete");
+                            });
+                        }
+                    }, [
+                        m("span", { class: "material-symbols-outlined material-icons-cm" }, "cleaning_services"),
+                        m("span", {}, "Cleanup")
+                    ])
+                )
+            ])
             ]) // close scrollable div
         ]);
     }

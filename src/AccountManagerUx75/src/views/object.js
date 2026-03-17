@@ -571,6 +571,7 @@ function newObjectPage() {
                     if (idx !== undefined) {
                         let item = items[parseInt(idx)];
                         if (item && item.objectId && item[am7model.jsonModelKey]) {
+                            page.context().listReturnUrl = m.route.get();
                             m.route.set("/view/" + item[am7model.jsonModelKey] + "/" + item.objectId, { key: item.objectId });
                         }
                     }
@@ -636,6 +637,7 @@ function newObjectPage() {
                     },
                     ondblclick: function() {
                         if (item.objectId && item[am7model.jsonModelKey]) {
+                            page.context().listReturnUrl = m.route.get();
                             m.route.set("/view/" + item[am7model.jsonModelKey] + "/" + item.objectId, { key: item.objectId });
                         }
                     }
@@ -861,6 +863,13 @@ function newObjectPage() {
     }
 
     function modelForm(active, type, form) {
+        // Custom render function — form provides its own Mithril vnode
+        if (form.render) {
+            if (!active) return m('div', { class: 'hidden' });
+            return m('div', { class: 'p-2' + (active ? '' : ' hidden') },
+                form.render(entity, inst, foreignData, objectPage));
+        }
+
         // Model ref forms: resolve sub-object and render its fields
         if (form.model && form.property) {
             if (!inst) return '';

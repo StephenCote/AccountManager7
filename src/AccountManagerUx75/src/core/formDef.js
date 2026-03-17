@@ -3987,7 +3987,136 @@ import { am7model } from './model.js';
                 format: "textlist"
             }
         },
-        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tagattributes"]
+        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "charImages", "groupinfo", "tagattributes"]
+    };
+
+    // Character image gallery — custom render tab
+    forms.charImages = {
+        label: "Images",
+        render: function(entity, inst, foreignData, objectPage) {
+            let am7client = am7model._client;
+            let page = am7model._page;
+            let cacheKey = '_charImages';
+            let loadingKey = '_charImagesLoading';
+            let indexKey = '_charImagesIdx';
+
+            // Load images from profile portrait group
+            if (!foreignData[cacheKey] && !foreignData[loadingKey]) {
+                foreignData[loadingKey] = true;
+                (async function() {
+                    let images = [];
+                    let profile = entity.profile;
+                    let portrait = profile ? profile.portrait : null;
+                    let profileOid = profile ? profile.objectId : null;
+                    if (profileOid && (!portrait || !portrait.groupId)) {
+                        let pq = am7model._view.viewQuery('identity.profile');
+                        pq.field('objectId', profileOid);
+                        pq.entity.request.push('portrait');
+                        let pqr = await page.search(pq);
+                        if (pqr && pqr.results && pqr.results.length) {
+                            portrait = pqr.results[0].portrait;
+                        }
+                    }
+                    if (portrait && portrait.groupId) {
+                        let q = am7client.newQuery('data.data');
+                        q.field('groupId', portrait.groupId);
+                        q.entity.request.push('id', 'objectId', 'name', 'groupId', 'groupPath', 'contentType', 'organizationPath');
+                        q.range(0, 200);
+                        q.sort('createdDate');
+                        q.order('descending');
+                        let qr = await page.search(q);
+                        if (qr && qr.results) {
+                            images = qr.results.filter(function(r) { return r.contentType && r.contentType.match(/^image\//i); });
+                        }
+                    }
+                    foreignData[cacheKey] = images;
+                    foreignData[loadingKey] = false;
+                    m.redraw();
+                })();
+                return m('div', { class: 'p-4 text-gray-400' }, 'Loading images...');
+            }
+            if (foreignData[loadingKey]) return m('div', { class: 'p-4 text-gray-400' }, 'Loading images...');
+
+            let images = foreignData[cacheKey] || [];
+            if (!images.length) return m('div', { class: 'p-4 text-gray-400' }, 'No images found');
+
+            let selectedIdx = foreignData[indexKey] || 0;
+            let selectedImage = images[selectedIdx];
+
+            function setProfilePic(img) {
+                let profile = entity.profile;
+                if (!profile || !profile.objectId) { page.toast('error', 'No profile'); return; }
+                page.patchObject({ schema: 'identity.profile', id: profile.id, image: img.name }).then(function() {
+                    page.toast('success', 'Profile image set to ' + img.name);
+                    am7client.clearCache('identity.profile');
+                });
+            }
+
+            function deleteImage(img, idx) {
+                page.components.dialog.confirm('Delete image ' + img.name + '?', async function() {
+                    await page.deleteObject('data.data', img.objectId);
+                    images.splice(idx, 1);
+                    if (selectedIdx >= images.length) foreignData[indexKey] = Math.max(0, images.length - 1);
+                    m.redraw();
+                });
+            }
+
+            function refreshGallery() {
+                delete foreignData[cacheKey];
+                delete foreignData[loadingKey];
+                m.redraw();
+            }
+
+            // Full-size preview of selected image
+            let previewUrl = selectedImage ? am7client.mediaDataPath(selectedImage, true, '512x512') : '';
+
+            return m('div', { class: 'space-y-3' }, [
+                // Toolbar
+                m('div', { class: 'flex items-center gap-2 text-sm' }, [
+                    m('span', { class: 'text-gray-500' }, images.length + ' image(s)'),
+                    m('button', { class: 'button text-xs', onclick: refreshGallery },
+                        [m('span', { class: 'material-symbols-outlined text-sm' }, 'refresh'), ' Refresh'])
+                ]),
+                // Preview
+                selectedImage ? m('div', { class: 'flex gap-3' }, [
+                    m('div', { class: 'flex-1' }, [
+                        m('img', {
+                            src: previewUrl,
+                            class: 'max-w-full max-h-80 rounded shadow cursor-pointer',
+                            style: 'object-fit: contain',
+                            onclick: function() {
+                                let fullUrl = am7client.mediaDataPath(selectedImage, false);
+                                page.components.dialog.open({
+                                    title: selectedImage.name,
+                                    size: 'lg',
+                                    content: m('div', { class: 'flex justify-center' },
+                                        m('img', { src: fullUrl, class: 'max-w-full max-h-[70vh]', style: 'object-fit: contain' })),
+                                    actions: [{ label: 'Close', icon: 'close', onclick: function() { page.components.dialog.close(); } }]
+                                });
+                            }
+                        }),
+                        m('div', { class: 'flex gap-1 mt-2' }, [
+                            m('button', { class: 'button text-xs', onclick: function() { setProfilePic(selectedImage); } },
+                                [m('span', { class: 'material-symbols-outlined text-sm' }, 'account_circle'), ' Set Profile']),
+                            m('button', { class: 'button text-xs text-red-500', onclick: function() { deleteImage(selectedImage, selectedIdx); } },
+                                [m('span', { class: 'material-symbols-outlined text-sm' }, 'delete'), ' Delete'])
+                        ]),
+                        m('div', { class: 'text-xs text-gray-500 mt-1' }, selectedImage.name)
+                    ])
+                ]) : null,
+                // Thumbnail grid
+                m('div', { class: 'grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1' },
+                    images.map(function(img, idx) {
+                        let thumbUrl = am7client.mediaDataPath(img, true, '96x96');
+                        let isSel = idx === selectedIdx;
+                        return m('div', {
+                            class: 'cursor-pointer rounded overflow-hidden border-2 ' + (isSel ? 'border-blue-500' : 'border-transparent hover:border-gray-300'),
+                            onclick: function() { foreignData[indexKey] = idx; }
+                        }, m('img', { src: thumbUrl, class: 'w-full aspect-square object-cover', alt: img.name }));
+                    })
+                )
+            ]);
+        }
     };
 
     forms.store = {
@@ -4075,7 +4204,6 @@ import { am7model } from './model.js';
                 icon: 'add',
                 field: {
                     label: "Dress Up",
-                    // NOTE: late-bound via am7model._olio.dressUp
                     command: function(o, i, n) { return am7model._olio.dressUp(o, i, n); }
                 }
             },
@@ -4085,7 +4213,6 @@ import { am7model } from './model.js';
                 icon: 'remove',
                 field: {
                     label: "Dress Down",
-                    // NOTE: late-bound via am7model._olio.dressDown
                     command: function(o, i, n) { return am7model._olio.dressDown(o, i, n); }
                 }
             },

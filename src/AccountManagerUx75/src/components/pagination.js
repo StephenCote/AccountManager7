@@ -193,6 +193,8 @@ function newPaginationControl() {
     }
   }
 
+  let _columnProvider = null;
+
   function getRequestFields(type) {
     let flds = am7model.queryFields(type);
     /// Pull additional fields from the decorator header map if available
@@ -204,6 +206,17 @@ function newPaginationControl() {
         flds.push(field);
       }
     });
+    // Include custom columns from list view column picker
+    if (_columnProvider) {
+      let extraCols = _columnProvider(type);
+      if (extraCols) {
+        extraCols.forEach(col => {
+          if (!flds.includes(col) && am7model.hasField(type, col)) {
+            flds.push(col);
+          }
+        });
+      }
+    }
     return flds;
   }
 
@@ -445,7 +458,8 @@ function newPaginationControl() {
     state: getPageState,
     button: paginationButton,
     stop: stopPaginating,
-    setEmbeddedMode: function (bEmbed) { embeddedMode = bEmbed; }
+    setEmbeddedMode: function (bEmbed) { embeddedMode = bEmbed; },
+    setColumnProvider: function (fn) { _columnProvider = fn; }
   };
 
   return pagination;

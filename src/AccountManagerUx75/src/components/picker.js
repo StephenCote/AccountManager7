@@ -112,16 +112,16 @@ const ObjectPicker = {
         pickerState.title = opts.title || "Select";
 
         // Resolve containers: user path, library, favorites
-        let userContainerId = null;
-        let libraryContainerId = null;
-        let favoritesContainerId = null;
+        let userContainerId = opts.userContainerId || null;
+        let libraryContainerId = opts.libraryContainerId || null;
+        let favoritesContainerId = opts.favoritesContainerId || null;
         let containerId = opts.containerId || null;
 
         if (!containerId) {
             // Resolve model default path (~/Colors), library (/Library/Colors), favorites
-            userContainerId = await resolveUserContainer(opts.type);
-            libraryContainerId = await resolveLibraryContainer(opts.type);
-            favoritesContainerId = await resolveFavoritesContainer();
+            if (!userContainerId) userContainerId = await resolveUserContainer(opts.type);
+            if (!libraryContainerId) libraryContainerId = await resolveLibraryContainer(opts.type);
+            if (!favoritesContainerId) favoritesContainerId = await resolveFavoritesContainer();
 
             // Start at user's own path; fall back to library; fall back to generic resolve
             containerId = userContainerId || libraryContainerId || await resolveContainer(opts.type);
@@ -158,6 +158,12 @@ const ObjectPicker = {
             promptConfig: "olio.llm.promptConfig",
             promptTemplate: "olio.llm.promptTemplate"
         };
+        // Backend library dir endpoint uses different names than frontend
+        let dirTypeMap = {
+            chatConfig: "chat",
+            promptConfig: "prompt",
+            promptTemplate: "promptTemplate"
+        };
         let modelType = typeMap[opts.libraryType];
         if (!modelType) {
             page.toast("warn", "Unknown library type: " + opts.libraryType);
@@ -171,16 +177,29 @@ const ObjectPicker = {
             page.toast("error", "Chat module not available");
             return;
         }
-        let dir = await dirMod.LLMConnector.getLibraryGroup(opts.libraryType);
+        let dirType = dirTypeMap[opts.libraryType] || opts.libraryType;
+        let dir = await dirMod.LLMConnector.getLibraryGroup(dirType);
         if (!dir || !dir.objectId) {
             page.toast("warn", "Library directory not found for " + opts.libraryType);
             return;
         }
 
+        // Resolve user container (model default group path ~/Chat) — matches Ux7 preparePicker
+        let userContId = null;
+        try { userContId = await resolveUserContainer(modelType); } catch(e) { /* ignore */ }
+        let favId = null;
+        try { let fav = await page.favorites(); if (fav) favId = fav.objectId; } catch(e) { /* ignore */ }
+
+        // Start at model default group path (~/Chat), fall back to library dir
+        let startId = userContId || dir.objectId;
+
         await ObjectPicker.open({
             type: modelType,
             title: opts.title || "Select " + opts.libraryType,
-            containerId: dir.objectId,
+            containerId: startId,
+            userContainerId: userContId,
+            libraryContainerId: dir.objectId,
+            favoritesContainerId: favId,
             onSelect: opts.onSelect
         });
     },
@@ -224,7 +243,7 @@ ObjectPicker.PickerView = {
         if (!pickerState.enabled) return null;
 
         return m("div", {
-            class: "fixed inset-0 z-50 flex items-center justify-center"
+            class: "fixed inset-0 z-[60] flex items-center justify-center"
         }, [
             m("div", { class: "absolute inset-0 bg-black/50", onclick: function() { ObjectPicker.close(); } }),
             m("div", {

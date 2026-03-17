@@ -138,9 +138,10 @@ async function reimage(entity, inst) {
 
     lastReimage = cinst;
 
-    if (isCharPerson && am7olio) {
-        await am7olio.setNarDescription(inst, cinst);
-    } else if (inst.api.objectId()) {
+    if (isCharPerson) {
+        if (am7olio) await am7olio.setNarDescription(inst, cinst);
+    } else if (inst.model.name === 'data.data' && inst.api.objectId()) {
+        // Only set referenceImageId for actual image objects, not for other model types
         cinst.entity.referenceImageId = inst.api.objectId();
     }
 

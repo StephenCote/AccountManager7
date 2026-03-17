@@ -23,6 +23,7 @@ const MCP_BLOCK_RE = /\[MCP_CONTEXT\s+type="([^"]*)"(?:\s+uri="([^"]*)")?\]([\s\
 
 function escapeHtmlAttr(str) {
     if (!str) return "";
+    if (typeof str !== "string") str = String(str);
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
               .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -35,7 +36,7 @@ const ChatTokenRenderer = {
      * Without: renders placeholder spans.
      */
     processImageTokens: function(content, msgRole, msgIndex, characters, state, onResolve) {
-        if (!content || content.indexOf("${image.") === -1) return content;
+        if (!content || typeof content !== "string" || content.indexOf("${image.") === -1) return content;
 
         // Full resolution when token library available
         if (typeof window !== "undefined" && window.am7imageTokens) {
@@ -81,7 +82,7 @@ const ChatTokenRenderer = {
      * Without: renders placeholder spans.
      */
     processAudioTokens: function(content, msgRole, msgIndex, characters, sessionId) {
-        if (!content || content.indexOf("${audio.") === -1) return content;
+        if (!content || typeof content !== "string" || content.indexOf("${audio.") === -1) return content;
 
         // Full audio when token library available
         if (typeof window !== "undefined" && window.am7audioTokens) {
@@ -185,6 +186,7 @@ const ChatTokenRenderer = {
      */
     processContent: function(content, options) {
         if (!content) return "";
+        if (typeof content !== "string") content = String(content);
         let opts = options || {};
         content = ChatTokenRenderer.pruneForDisplay(content, opts.hideThoughts !== false);
         content = ChatTokenRenderer.processMcpTokens(content, opts.debugMode);

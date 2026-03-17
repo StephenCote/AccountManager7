@@ -326,14 +326,17 @@ import { am7model } from './model.js';
     function getFormField(form, name) {
         let field;
         if (form) {
-            field = form.fields[name];
+            field = form.fields ? form.fields[name] : undefined;
             if (!field) {
                 let ff = (form.forms || []);
                 for (let fo in ff) {
                     let f = ff[fo];
-                    field = am7model.forms[f].fields[name];
-                    if (field) {
-                        break;
+                    let subForm = am7model.forms[f];
+                    if (subForm && subForm.fields) {
+                        field = subForm.fields[name];
+                        if (field) {
+                            break;
+                        }
                     }
                 };
             }

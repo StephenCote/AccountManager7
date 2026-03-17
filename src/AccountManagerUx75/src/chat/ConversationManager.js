@@ -128,8 +128,8 @@ function sessionItemView(session, isSelected) {
             onclick: e => { e.stopPropagation(); deleteSession(session); }
         }, "delete_outline"),
         icon ? m("span", {
-            class: "material-symbols-outlined flex-shrink-0",
-            style: "font-size: 16px; color: #9ca3af;"
+            class: "flex-shrink-0",
+            style: "font-size: 14px; color: #9ca3af; line-height: 1;"
         }, icon) : "",
         titleContent
     ]);
@@ -177,12 +177,12 @@ function metadataView() {
 
     rows.push(m("div", { class: "text-xs text-gray-400 flex items-center gap-1" }, [
         m("span", "Icon: "),
-        meta.chatIcon ? m("span", { class: "material-symbols-outlined", style: "font-size: 14px;" }, meta.chatIcon) : "",
+        meta.chatIcon ? m("span", { style: "font-size: 14px;" }, meta.chatIcon) : "",
         m("input", {
             type: "text",
             class: "flex-1 text-xs bg-transparent border-b border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 px-1",
             value: meta.chatIcon || "",
-            placeholder: "(material icon name)",
+            placeholder: "(emoji)",
             onchange: e => {
                 meta.chatIcon = e.target.value;
                 if (meta.objectId) ConversationManager.updateSessionIcon(meta.objectId, e.target.value);
@@ -239,26 +239,81 @@ const ConversationManager = {
         if (s) { s.chatIcon = icon; m.redraw(); }
     },
 
-    createSession: async function(name) {
-        let chatCfgs = chatConfigs || [];
-        let cc = chatCfgs.length > 0 ? chatCfgs[0] : null;
+    createSession: async function(name, chatCfgOverride, promptCfgOverride, promptTemplateOverride) {
+        // Resolve chatConfig: explicit override > user configs > library listing
+        let cc = chatCfgOverride || null;
         if (!cc) {
-            cc = await LLMConnector.resolveConfig("default");
+            let chatCfgs = chatConfigs || [];
+            cc = chatCfgs.length > 0 ? chatCfgs[0] : null;
+        }
+        if (!cc) {
+            try {
+                let dir = await LLMConnector.getLibraryGroup("chat");
+                if (dir && dir.objectId) {
+                    let { page: pg } = await import('../core/pageClient.js');
+                    let cfgs = await pg.listObjects("olio.llm.chatConfig", dir.objectId, "name,objectId", 0, 10);
+                    if (cfgs && cfgs.length) {
+                        let openChat = cfgs.find(function(c) { return c.name === "Open Chat"; });
+                        cc = openChat || cfgs[0];
+                    }
+                }
+            } catch(e) { /* ignore */ }
         }
         if (!cc) {
             console.error("[ConversationManager] No chatConfig available for new session");
+            page.toast("error", "Cannot create session: no chat configuration found.");
             return null;
         }
-        let pt = await LLMConnector.resolveTemplate("default");
+
         let chatReq = {
             schema: "olio.llm.chatRequest",
             name: name || "Chat " + Date.now(),
             chatConfig: { objectId: cc.objectId },
             uid: page.uid()
         };
-        if (pt) {
-            chatReq.promptTemplate = { objectId: pt.objectId };
+
+        // Attach prompt config/template if provided
+        if (promptCfgOverride && promptCfgOverride.objectId) {
+            chatReq.promptConfig = { objectId: promptCfgOverride.objectId };
         }
+        if (promptTemplateOverride && promptTemplateOverride.objectId) {
+            chatReq.promptTemplate = { objectId: promptTemplateOverride.objectId };
+        }
+        // If no prompt specified, list from library directories
+        if (!chatReq.promptConfig && !chatReq.promptTemplate) {
+            let userPcs = promptConfigs || [];
+            if (userPcs.length > 0) {
+                chatReq.promptConfig = { objectId: userPcs[0].objectId };
+            }
+            if (!chatReq.promptConfig && !chatReq.promptTemplate) {
+                try {
+                    let dir = await LLMConnector.getLibraryGroup("promptTemplate");
+                    if (dir && dir.objectId) {
+                        let { page: pg } = await import('../core/pageClient.js');
+                        let tpls = await pg.listObjects("olio.llm.promptTemplate", dir.objectId, "name,objectId", 0, 10);
+                        if (tpls && tpls.length) chatReq.promptTemplate = { objectId: tpls[0].objectId };
+                    }
+                } catch(e) { /* ignore */ }
+            }
+            if (!chatReq.promptConfig && !chatReq.promptTemplate) {
+                try {
+                    let dir = await LLMConnector.getLibraryGroup("prompt");
+                    if (dir && dir.objectId) {
+                        let { page: pg } = await import('../core/pageClient.js');
+                        let pcs = await pg.listObjects("olio.llm.promptConfig", dir.objectId, "name,objectId", 0, 10);
+                        if (pcs && pcs.length) chatReq.promptConfig = { objectId: pcs[0].objectId };
+                    }
+                } catch(e) { /* ignore */ }
+            }
+        }
+
+        // Validate: backend requires both chatConfig AND at least one prompt
+        if (!chatReq.promptConfig && !chatReq.promptTemplate) {
+            console.error("[ConversationManager] No promptConfig or promptTemplate available for new session");
+            page.toast("error", "Cannot create session: no prompt configuration found. Initialize the chat library first.");
+            return null;
+        }
+
         try {
             let { applicationPath } = await import('../core/config.js');
             let obj = await m.request({

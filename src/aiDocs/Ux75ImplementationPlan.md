@@ -1,7 +1,7 @@
 # AccountManagerUx75 — Implementation Plan & Status
 
 **Extracted from:** `Ux7Redesign.md` Section 14
-**Last Updated:** 2026-03-15
+**Last Updated:** 2026-03-16
 **Design Reference:** See `Ux7Redesign.md` Sections 1-13 for requirements, architecture, and design specifications.
 
 ---
@@ -15,6 +15,7 @@
 **Phase 15 completed:** 2026-03-11
 **Ux7 File Parity:** 100% — all major Ux7 features ported (5 intentionally deprecated). Phases 0-16 all COMPLETE.
 **Bug Fix Sprint (2026-03-15):** Tag membership 404 fixed, member list rendering added, reimage fully ported from Ux7, OlioService LooseRecord crash fixed, searchFirst ported, mimeType→contentType fixed.
+**Bug Fix Sprint (2026-03-16):** All 10 known issues resolved — olio eager loading, member Cancel nav, list pagination, SD config save, reference image, charPerson image gallery, list column sorting + customization. ChatConfigToolbar already existed for #10.
 **NEXT:** Phase 4 / ISO 42001 Compliance Dashboard (tracked in `aiDocs/ISO42001Plan.md`)
 
 ### *** ALL BACKEND SERVICES ARE DEPLOYED AND RUNNING (localhost:8443) ***
@@ -25,14 +26,22 @@
 
 | # | Issue | Severity | Notes |
 |---|-------|----------|-------|
-| 1 | Card Game runtime untested | Medium | Agent-generated, expect runtime errors — test in browser against live backend |
-| 2 | Schema editor untested | Low | Test with admin login against live SchemaService |
-| 3 | Reimage sequence generation edge cases | Medium | Full dress-up/dress-down ported — needs e2e test against live backend |
-| 4 | Reference image picker untested | Low | selectReferenceImage ported — test with actual image data |
-| 5 | OlioService sdConfig null | **Resolved** | SDUtil.java already has null→randomSDConfig() fallback |
-| 6 | olio.js describeWearable null safety | **Resolved** | Fixed optional chaining on color.name, pattern.name, location[0] |
-| 7 | olio.js OutfitBuilderPanel page undefined | **Resolved** | Added `let page = getPage()` in view function |
-| 8 | object.js $flex picker undefined tableType | **Resolved** | Added fallback to baseModel |
+| 1 | Member View Cancel → wrong destination | **Resolved** | object.js: member list view/dblclick now sets `listReturnUrl` to parent object URL |
+| 2 | DressUp from Apparel crashes — `_olio is undefined` | **Resolved** | main.js eagerly imports olio.js and wires `am7model._olio`; formDef.js commands simplified |
+| 3 | SD Config doesn't update after first save | **Resolved** | sdConfig.js `saveConfig` now uses search query (like loadConfig) instead of getByName which failed with dots/special chars in name |
+| 4 | Intermittent "Olio module isn't loaded" error | **Resolved** | Eliminated race condition — olio.js is eagerly loaded in main.js, not lazy-loaded |
+| 5 | Image gallery missing from charPerson | **Resolved** | Added `charImages` gallery tab to charPerson form: browse, preview, set profile pic, delete. Custom `form.render` support in object.js modelForm |
+| 6 | Reference image error in SDUtil | **Resolved** | reimage.js: `referenceImageId` only set for `data.data` objects, not arbitrary model types; charPerson always takes the `isCharPerson` branch |
+| 7 | List view pagination broken | **Resolved** | list.js `onupdate` now detects startRecord/filter query param changes (not just type/objectId) |
+| 8 | List view column sorting missing | **Resolved** | Column headers clickable with sort direction arrows; triggers pagination re-query via `toggleColumnSort()` |
+| 9 | List view columns not customizable per model type | **Resolved** | Column picker panel (view_column toolbar button), localStorage persistence per model type, selected columns included in query `request` array via `pagination.setColumnProvider()` |
+| 10 | Chat — no prompt config selector | **Resolved** | Already implemented: `ChatConfigToolbar.js` renders chat config + prompt template picker chips; uses `ObjectPicker.openLibrary()` + `ContextPanel.attach()` |
+| — | Card Game runtime untested | Low | Agent-generated, test in browser |
+| — | Schema editor untested | Low | Test with admin login |
+| — | OlioService sdConfig null | **Resolved** | SDUtil.java null→randomSDConfig() fallback |
+| — | olio.js describeWearable null safety | **Resolved** | Fixed optional chaining |
+| — | olio.js OutfitBuilderPanel page undefined | **Resolved** | Added `let page = getPage()` |
+| — | object.js $flex picker undefined tableType | **Resolved** | Added fallback to baseModel |
 
 ---
 

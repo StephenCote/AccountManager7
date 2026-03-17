@@ -18,12 +18,16 @@ import { tableEntry } from './components/tableEntry.js';
 import { tableListEditor } from './components/tableListEditor.js';
 import { membership } from './components/membership.js';
 
+// Eagerly load olio (dress system) — formDef.js command buttons need am7model._olio synchronously
+import { am7olio } from './components/olio.js';
+
 // Wire late-bound cross-module references
 // model.js needs am7view for prepareInstance()/newPrimitive()
 // view.js needs page/am7client for viewQuery()/showField()
 am7model._view = am7view;
 am7model._page = page;
 am7model._client = am7client;
+am7model._olio = am7olio;
 page.components.dialog = Dialog;
 page.components.picker = ObjectPicker;
 page.components.dnd = dnd;
