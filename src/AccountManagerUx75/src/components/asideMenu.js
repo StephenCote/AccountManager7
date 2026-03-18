@@ -157,7 +157,12 @@ const asideMenu = {
                     m("button", {
                         class: "w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2",
                         onclick: function () {
-                            am7client.clearCache(0, false);
+                            if (page.navigable) page.navigable.drawer(true);
+                            try {
+                                am7client.clearCache(0, false);
+                            } catch (e) {
+                                console.error("clearCache error:", e);
+                            }
                             page.toast("success", "Cache cleared");
                         }
                     }, [
@@ -169,6 +174,7 @@ const asideMenu = {
                     m("button", {
                         class: "w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2",
                         onclick: function () {
+                            if (page.navigable) page.navigable.drawer(true);
                             am7client.cleanup(function () {
                                 page.toast("success", "Cleanup complete");
                             });

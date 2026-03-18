@@ -1,11 +1,12 @@
 /**
  * SceneGenerator — SD scene generation config panel + generation (ESM)
- * Port of Ux7 chat.js scene generation and SD config panel.
+ * Uses shared SdConfigPanel for consistent config rendering across features.
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
 import { am7client } from '../core/am7client.js';
 import { applicationPath } from '../core/config.js';
+import { SdConfigPanel } from '../components/SdConfigPanel.js';
 
 // ── SD Config State (persisted to localStorage) ─────────────────────
 
@@ -21,13 +22,18 @@ let _onGenerated = null;
 function defaultConfig() {
     return {
         model: "",
-        style: "realistic",
+        refinerModel: "",
+        style: "photograph",
         steps: 30,
-        cfgScale: 7.5,
-        sampler: "Euler a",
-        width: 512,
-        height: 512,
-        negativePrompt: "low quality, blurry, deformed",
+        refinerSteps: 20,
+        cfg: 7,
+        refinerCfg: 7,
+        denoisingStrength: 0.65,
+        sampler: "dpmpp_2m",
+        scheduler: "Karras",
+        width: 1024,
+        height: 768,
+        hires: true,
         seed: -1
     };
 }
@@ -67,23 +73,11 @@ async function doGenerate() {
     m.redraw();
 
     try {
-        let body = {
-            model: sdConfig.model,
-            style: sdConfig.style,
-            steps: sdConfig.steps,
-            cfgScale: sdConfig.cfgScale,
-            sampler: sdConfig.sampler,
-            width: sdConfig.width,
-            height: sdConfig.height,
-            negativePrompt: sdConfig.negativePrompt,
-            seed: sdConfig.seed
-        };
-
         let result = await m.request({
             method: 'POST',
             url: applicationPath + "/rest/chat/" + encodeURIComponent(_sessionObjectId) + "/generateScene",
             withCredentials: true,
-            body: body
+            body: sdConfig
         });
 
         if (_onGenerated && result) {
@@ -97,19 +91,6 @@ async function doGenerate() {
 
     _generating = false;
     m.redraw();
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────
-
-function configField(label, content) {
-    return m("div", { class: "flex items-center justify-between gap-2 mb-2" }, [
-        m("label", { class: "text-xs text-gray-500 dark:text-gray-400 shrink-0 w-24" }, label),
-        m("div", { class: "flex-1" }, content)
-    ]);
-}
-
-function inputClass() {
-    return "w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white text-xs";
 }
 
 // ── Public API ──────────────────────────────────────────────────────
@@ -148,69 +129,8 @@ const SceneGenerator = {
                     }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "close"))
                 ]),
 
-                // Model
-                configField("Model", m("select", {
-                    class: inputClass(),
-                    value: sdConfig.model,
-                    onchange: function(e) { sdConfig.model = e.target.value; saveConfig(); }
-                }, [
-                    m("option", { value: "" }, "Default"),
-                    ...sdModels.map(function(mdl) {
-                        let name = typeof mdl === "string" ? mdl : mdl.name || mdl.title || "";
-                        return m("option", { value: name }, name);
-                    })
-                ])),
-
-                // Style
-                configField("Style", m("select", {
-                    class: inputClass(),
-                    value: sdConfig.style,
-                    onchange: function(e) { sdConfig.style = e.target.value; saveConfig(); }
-                }, ["realistic", "anime", "oil painting", "watercolor", "digital art", "photographic", "fantasy"].map(function(s) {
-                    return m("option", { value: s }, s);
-                }))),
-
-                // Steps
-                configField("Steps", m("input", {
-                    type: "number", min: 1, max: 150, class: inputClass(),
-                    value: sdConfig.steps,
-                    onchange: function(e) { sdConfig.steps = parseInt(e.target.value) || 30; saveConfig(); }
-                })),
-
-                // CFG Scale
-                configField("CFG Scale", m("input", {
-                    type: "number", min: 1, max: 30, step: 0.5, class: inputClass(),
-                    value: sdConfig.cfgScale,
-                    onchange: function(e) { sdConfig.cfgScale = parseFloat(e.target.value) || 7.5; saveConfig(); }
-                })),
-
-                // Sampler
-                configField("Sampler", m("select", {
-                    class: inputClass(),
-                    value: sdConfig.sampler,
-                    onchange: function(e) { sdConfig.sampler = e.target.value; saveConfig(); }
-                }, ["Euler a", "Euler", "DPM++ 2M Karras", "DPM++ SDE Karras", "DDIM", "LMS"].map(function(s) {
-                    return m("option", { value: s }, s);
-                }))),
-
-                // Dimensions
-                configField("Width", m("input", {
-                    type: "number", min: 256, max: 2048, step: 64, class: inputClass(),
-                    value: sdConfig.width,
-                    onchange: function(e) { sdConfig.width = parseInt(e.target.value) || 512; saveConfig(); }
-                })),
-                configField("Height", m("input", {
-                    type: "number", min: 256, max: 2048, step: 64, class: inputClass(),
-                    value: sdConfig.height,
-                    onchange: function(e) { sdConfig.height = parseInt(e.target.value) || 512; saveConfig(); }
-                })),
-
-                // Negative prompt
-                configField("Negative", m("textarea", {
-                    class: inputClass() + " resize-y min-h-[40px]",
-                    value: sdConfig.negativePrompt,
-                    oninput: function(e) { sdConfig.negativePrompt = e.target.value; saveConfig(); }
-                })),
+                // Shared SD config form
+                m(SdConfigPanel, { config: sdConfig, models: sdModels, onChange: saveConfig, compact: true }),
 
                 // Generate button
                 m("button", {

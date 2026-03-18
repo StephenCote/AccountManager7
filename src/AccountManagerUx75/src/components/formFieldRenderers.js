@@ -469,37 +469,45 @@ renderers.picker = function(ctx) {
         defVal = useEntity[field.pickerProperty.entity];
     }
 
-    if (valPick) fieldClass += " menu-icon";
-
     let view = [];
 
-    let inputAttrs = {
-        type: "text",
-        class: fieldClass,
-        name: ctx.useName,
-        value: defVal,
-        autocomplete: "off",
-        onchange: fHandler
-    };
-    if (ctx.disabled) inputAttrs.disabled = true;
-    view.push(m("input", inputAttrs));
-
-    // Picker buttons
     if (valPick) {
-        view.push(m("div", { class: "flex gap-1 mt-1" }, [
+        // Picker fields render as clickable label + icon buttons (not text inputs)
+        let openPicker = function() { if (ctx.doFieldPicker) ctx.doFieldPicker(field, ctx.useName, useEntity); };
+        view.push(m("div", { class: "w-full flex items-center gap-1 px-4 py-2 mt-2 border rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-black" }, [
+            m("span", {
+                class: "flex-1 text-sm text-gray-800 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400",
+                onclick: openPicker,
+                title: defVal || "(none)"
+            }, defVal || "(none)"),
             m("button", {
-                class: "text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800",
-                onclick: function() { if (ctx.doFieldPicker) ctx.doFieldPicker(field, ctx.useName, useEntity); }
-            }, [m("span", { class: "material-symbols-outlined", style: "font-size:14px" }, "search"), " Find"]),
+                class: "p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+                title: "Find",
+                onclick: openPicker
+            }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "search")),
             m("button", {
-                class: "text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700",
+                class: "p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+                title: "View",
                 onclick: function() { if (ctx.doFieldOpen) ctx.doFieldOpen(field); }
-            }, [m("span", { class: "material-symbols-outlined", style: "font-size:14px" }, "file_open"), " View"]),
+            }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "file_open")),
             m("button", {
-                class: "text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700",
+                class: "p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+                title: "Clear",
                 onclick: function() { if (ctx.doFieldClear) ctx.doFieldClear(field); }
-            }, [m("span", { class: "material-symbols-outlined", style: "font-size:14px" }, "backspace"), " Clear"])
+            }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "backspace"))
         ]));
+    } else {
+        // Non-picker text field fallback
+        let inputAttrs = {
+            type: "text",
+            class: (ctx.fieldClass || "") + " text-field-full",
+            name: ctx.useName,
+            value: defVal,
+            autocomplete: "off",
+            onchange: fHandler
+        };
+        if (ctx.disabled) inputAttrs.disabled = true;
+        view.push(m("input", inputAttrs));
     }
 
     return view;

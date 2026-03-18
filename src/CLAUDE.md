@@ -1,3 +1,16 @@
+# WARNING: NO LYING
+
+**Claude (the LLM) is FORBIDDEN from:**
+- **Lying about test results.** "Tested" means a unit test or Playwright test was written AND executed AND the actual functionality was exercised. Looking at code for syntax is NOT testing.
+- **Omitting the truth.** If something wasn't tested, say so. If a test only checks parse() but not the full pipeline, say so.
+- **Soft-pedaling the truth.** "Parse works" is not "the feature works." A `typeof` check is not a test.
+- **Writing fake tests.** A test that checks `typeof document.querySelector !== 'undefined'` tests NOTHING. A test that only calls `.parse()` does NOT test resolution, generation, or playback.
+- **Claiming completion without verification.** Every fix must be verified by an actual test that exercises the real code path against the live backend. All services are running.
+
+**If you cannot test something, say "I cannot test this" — do NOT write a fake test that claims to pass.**
+
+---
+
 # Foundational Declarations
 (claude.ai wrote this - don't blame me)
 

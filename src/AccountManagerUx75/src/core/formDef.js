@@ -3999,6 +3999,11 @@ import { am7model } from './model.js';
             let cacheKey = '_charImages';
             let loadingKey = '_charImagesLoading';
             let indexKey = '_charImagesIdx';
+            let viewModeKey = '_charImagesView'; // 'grid' | 'list'
+            let tagsKey = '_charImagesTags'; // objectId -> [{name, objectId}]
+            let tagsLoadingKey = '_charImagesTagsLoading';
+
+            if (!foreignData[viewModeKey]) foreignData[viewModeKey] = 'grid';
 
             // Load images from profile portrait group
             if (!foreignData[cacheKey] && !foreignData[loadingKey]) {
@@ -4041,7 +4046,30 @@ import { am7model } from './model.js';
             if (!images.length) return m('div', { class: 'p-4 text-gray-400' }, 'No images found');
 
             let selectedIdx = foreignData[indexKey] || 0;
+            if (selectedIdx >= images.length) selectedIdx = 0;
             let selectedImage = images[selectedIdx];
+            if (!foreignData[tagsKey]) foreignData[tagsKey] = {};
+
+            // Load tags for selected image
+            function loadTagsForImage(img) {
+                if (!img || foreignData[tagsLoadingKey] === img.objectId) return;
+                if (foreignData[tagsKey][img.objectId]) return;
+                foreignData[tagsLoadingKey] = img.objectId;
+                am7client.getImageTags(img.objectId, function(tags) {
+                    foreignData[tagsKey][img.objectId] = tags || [];
+                    foreignData[tagsLoadingKey] = null;
+                    m.redraw();
+                });
+            }
+            if (selectedImage) loadTagsForImage(selectedImage);
+
+            function navigate(delta) {
+                let newIdx = selectedIdx + delta;
+                if (newIdx >= 0 && newIdx < images.length) {
+                    foreignData[indexKey] = newIdx;
+                    m.redraw();
+                }
+            }
 
             function setProfilePic(img) {
                 let profile = entity.profile;
@@ -4055,8 +4083,18 @@ import { am7model } from './model.js';
             function deleteImage(img, idx) {
                 page.components.dialog.confirm('Delete image ' + img.name + '?', async function() {
                     await page.deleteObject('data.data', img.objectId);
+                    delete foreignData[tagsKey][img.objectId];
                     images.splice(idx, 1);
                     if (selectedIdx >= images.length) foreignData[indexKey] = Math.max(0, images.length - 1);
+                    m.redraw();
+                });
+            }
+
+            function autoTag(img) {
+                page.toast('info', 'Auto-tagging ' + img.name + '...');
+                am7client.applyImageTags(img.objectId, function() {
+                    delete foreignData[tagsKey][img.objectId];
+                    page.toast('success', 'Tags applied');
                     m.redraw();
                 });
             }
@@ -4064,22 +4102,61 @@ import { am7model } from './model.js';
             function refreshGallery() {
                 delete foreignData[cacheKey];
                 delete foreignData[loadingKey];
+                foreignData[tagsKey] = {};
                 m.redraw();
             }
 
-            // Full-size preview of selected image
+            let viewMode = foreignData[viewModeKey];
             let previewUrl = selectedImage ? am7client.mediaDataPath(selectedImage, true, '512x512') : '';
+            let currentTags = selectedImage ? (foreignData[tagsKey][selectedImage.objectId] || []) : [];
 
-            return m('div', { class: 'space-y-3' }, [
+            // Key handler for arrow navigation and delete
+            function onKeyDown(e) {
+                if (e.key === 'ArrowLeft') { navigate(-1); e.preventDefault(); }
+                else if (e.key === 'ArrowRight') { navigate(1); e.preventDefault(); }
+                else if (e.key === 'ArrowUp' && viewMode === 'grid') {
+                    let cols = window.innerWidth >= 768 ? 10 : (window.innerWidth >= 640 ? 8 : 6);
+                    navigate(-cols);
+                    e.preventDefault();
+                }
+                else if (e.key === 'ArrowDown' && viewMode === 'grid') {
+                    let cols = window.innerWidth >= 768 ? 10 : (window.innerWidth >= 640 ? 8 : 6);
+                    navigate(cols);
+                    e.preventDefault();
+                }
+                else if (e.key === 'Delete' && selectedImage) {
+                    deleteImage(selectedImage, selectedIdx);
+                    e.preventDefault();
+                }
+            }
+
+            return m('div', {
+                class: 'space-y-3 outline-none',
+                tabindex: 0,
+                onkeydown: onKeyDown,
+                oncreate: function(vnode) { vnode.dom.focus(); }
+            }, [
                 // Toolbar
-                m('div', { class: 'flex items-center gap-2 text-sm' }, [
+                m('div', { class: 'flex items-center gap-2 text-sm flex-wrap' }, [
                     m('span', { class: 'text-gray-500' }, images.length + ' image(s)'),
-                    m('button', { class: 'button text-xs', onclick: refreshGallery },
-                        [m('span', { class: 'material-symbols-outlined text-sm' }, 'refresh'), ' Refresh'])
+                    m('span', { class: 'text-gray-400 text-xs' }, '(' + (selectedIdx + 1) + '/' + images.length + ')'),
+                    m('button', {
+                        class: 'p-1 rounded ' + (viewMode === 'grid' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500'),
+                        title: 'Grid view',
+                        onclick: function() { foreignData[viewModeKey] = 'grid'; }
+                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'grid_view')),
+                    m('button', {
+                        class: 'p-1 rounded ' + (viewMode === 'list' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500'),
+                        title: 'List view',
+                        onclick: function() { foreignData[viewModeKey] = 'list'; }
+                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'view_list')),
+                    m('button', { class: 'p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500', title: 'Refresh', onclick: refreshGallery },
+                        m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'refresh'))
                 ]),
-                // Preview
-                selectedImage ? m('div', { class: 'flex gap-3' }, [
-                    m('div', { class: 'flex-1' }, [
+                // Preview + tags panel
+                selectedImage ? m('div', { class: 'flex gap-3 flex-wrap' }, [
+                    // Image preview
+                    m('div', { class: 'flex-shrink-0' }, [
                         m('img', {
                             src: previewUrl,
                             class: 'max-w-full max-h-80 rounded shadow cursor-pointer',
@@ -4094,18 +4171,47 @@ import { am7model } from './model.js';
                                     actions: [{ label: 'Close', icon: 'close', onclick: function() { page.components.dialog.close(); } }]
                                 });
                             }
-                        }),
-                        m('div', { class: 'flex gap-1 mt-2' }, [
-                            m('button', { class: 'button text-xs', onclick: function() { setProfilePic(selectedImage); } },
-                                [m('span', { class: 'material-symbols-outlined text-sm' }, 'account_circle'), ' Set Profile']),
-                            m('button', { class: 'button text-xs text-red-500', onclick: function() { deleteImage(selectedImage, selectedIdx); } },
-                                [m('span', { class: 'material-symbols-outlined text-sm' }, 'delete'), ' Delete'])
+                        })
+                    ]),
+                    // Info + tags + actions
+                    m('div', { class: 'flex-1 min-w-[200px]' }, [
+                        m('div', { class: 'text-sm font-medium text-gray-800 dark:text-white mb-1' }, selectedImage.name),
+                        // Action buttons
+                        m('div', { class: 'flex flex-wrap gap-1 mb-2' }, [
+                            m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300', onclick: function() { setProfilePic(selectedImage); } },
+                                [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'account_circle'), 'Set Profile']),
+                            m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-700 dark:text-green-300', onclick: function() { autoTag(selectedImage); } },
+                                [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'label'), 'Auto-Tag']),
+                            m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-700 dark:text-red-300', onclick: function() { deleteImage(selectedImage, selectedIdx); } },
+                                [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'delete'), 'Delete'])
                         ]),
-                        m('div', { class: 'text-xs text-gray-500 mt-1' }, selectedImage.name)
+                        // Tags
+                        m('div', { class: 'text-xs text-gray-500 dark:text-gray-400 mb-1' }, 'Tags:'),
+                        currentTags.length > 0 ? m('div', { class: 'flex flex-wrap gap-1' },
+                            currentTags.map(function(tag) {
+                                return m('span', { class: 'inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' },
+                                    tag.name || tag);
+                            })
+                        ) : m('span', { class: 'text-xs text-gray-400 italic' }, foreignData[tagsLoadingKey] === selectedImage.objectId ? 'Loading...' : 'No tags'),
+                        // Nav hint
+                        m('div', { class: 'text-xs text-gray-400 mt-3' }, 'Arrow keys to navigate, Delete to remove')
                     ])
                 ]) : null,
-                // Thumbnail grid
-                m('div', { class: 'grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1' },
+                // Image grid or list
+                viewMode === 'list' ? m('div', { class: 'divide-y divide-gray-200 dark:divide-gray-700' },
+                    images.map(function(img, idx) {
+                        let thumbUrl = am7client.mediaDataPath(img, true, '64x64');
+                        let isSel = idx === selectedIdx;
+                        return m('div', {
+                            class: 'flex items-center gap-3 px-2 py-1 cursor-pointer ' + (isSel ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-800'),
+                            onclick: function() { foreignData[indexKey] = idx; }
+                        }, [
+                            m('img', { src: thumbUrl, class: 'w-10 h-10 rounded object-cover flex-shrink-0', alt: img.name }),
+                            m('span', { class: 'text-sm text-gray-700 dark:text-gray-300 truncate' }, img.name),
+                            isSel ? m('span', { class: 'material-symbols-outlined text-blue-500 ml-auto', style: 'font-size:16px' }, 'check_circle') : null
+                        ]);
+                    })
+                ) : m('div', { class: 'grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1' },
                     images.map(function(img, idx) {
                         let thumbUrl = am7client.mediaDataPath(img, true, '96x96');
                         let isSel = idx === selectedIdx;
@@ -5293,19 +5399,6 @@ import { am7model } from './model.js';
                         entity: "policy"
                     },
                     label: "Policy"
-                }
-            },
-            promptTemplate: {
-                layout: 'one',
-                format: 'picker',
-                label: "Prompt Template (structured sections)",
-                field: {
-                    format: "picker",
-                    pickerType: "olio.llm.promptTemplate",
-                    pickerProperty: {
-                        selected: "{object}",
-                        entity: "promptTemplate"
-                    }
                 }
             },
             serverUrl:{

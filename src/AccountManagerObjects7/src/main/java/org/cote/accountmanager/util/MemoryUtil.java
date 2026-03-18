@@ -475,9 +475,12 @@ public class MemoryUtil {
 			}
 
 			/// JSON is the only supported extraction format.
-			/// If the LLM didn't return valid JSON, log and return empty.
+			/// If the LLM didn't return valid JSON, log full response for diagnosis.
 			if (memories.isEmpty()) {
-				logger.warn("No memories extracted from response: " + cleaned.substring(0, Math.min(200, cleaned.length())));
+				logger.warn("No memories extracted from response (length=" + cleaned.length() + "): " + cleaned.substring(0, Math.min(500, cleaned.length())));
+				if (cleaned.length() > 500) {
+					logger.debug("Full extraction response: " + cleaned);
+				}
 			}
 		} catch (Exception e) {
 			logger.error("Error parsing memory extraction response: " + e.getMessage());

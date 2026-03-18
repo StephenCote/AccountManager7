@@ -106,7 +106,8 @@ const ChatTokenRenderer = {
                 let state = window.am7audioTokens.state(btnId);
                 let icon = state === "playing" ? "stop" : "volume_up";
                 let replacement = '<button class="inline-flex items-center gap-1 bg-blue-100 dark:bg-blue-900 rounded px-2 py-0.5 text-xs cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800" '
-                    + 'data-audio-id="' + escapeHtmlAttr(btnId) + '">'
+                    + 'data-audio-id="' + escapeHtmlAttr(btnId) + '" '
+                    + 'data-audio-text="' + escapeHtmlAttr(tok.text) + '">'
                     + '<span class="material-symbols-outlined" style="font-size:14px;">' + icon + '</span>'
                     + '<span>' + escapeHtmlAttr(tok.text) + '</span></button>';
                 result = result.substring(0, tok.start) + replacement + result.substring(tok.end);

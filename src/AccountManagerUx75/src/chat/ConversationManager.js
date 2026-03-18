@@ -24,21 +24,27 @@ async function loadSessions() {
     loading = true;
     try {
         await am7client.clearCache(undefined, true);
-        let chatDir = await page.findObject("auth.group", "DATA", "~/Chat");
-        let reqDir = await page.findObject("auth.group", "DATA", "~/ChatRequests");
+        // Resolve both directories in parallel
+        let [chatDir, reqDir] = await Promise.all([
+            page.findObject("auth.group", "DATA", "~/Chat"),
+            page.findObject("auth.group", "DATA", "~/ChatRequests")
+        ]);
 
+        // Load configs and sessions in parallel
+        let promises = [];
         if (promptConfigs == null && chatDir) {
-            promptConfigs = await page.listObjects("olio.llm.promptConfig", chatDir.objectId, null, 0, 0) || [];
+            promises.push(page.listObjects("olio.llm.promptConfig", chatDir.objectId, null, 0, 0).then(function(v) { promptConfigs = v || []; }));
         }
         if (chatConfigs == null && chatDir) {
-            chatConfigs = await page.listObjects("olio.llm.chatConfig", chatDir.objectId, null, 0, 0) || [];
+            promises.push(page.listObjects("olio.llm.chatConfig", chatDir.objectId, null, 0, 0).then(function(v) { chatConfigs = v || []; }));
         }
         if (reqDir) {
-            sessions = await page.listObjects("olio.llm.chatRequest", reqDir.objectId,
-                "name,objectId,chatTitle,chatIcon,chatConfig,promptConfig,promptTemplate,session,sessionType,setting,contextType", 0, 0) || [];
+            promises.push(page.listObjects("olio.llm.chatRequest", reqDir.objectId,
+                "name,objectId,chatTitle,chatIcon,chatConfig,promptConfig,promptTemplate,session,sessionType,setting,contextType", 0, 0).then(function(v) { sessions = v || []; }));
         } else {
             sessions = [];
         }
+        await Promise.all(promises);
     } catch (e) {
         console.error("[ConversationManager] loadSessions failed:", e);
         sessions = sessions || [];
@@ -74,8 +80,8 @@ function deleteSession(session) {
     if (!session) return;
     LLMConnector.deleteSession(session, false, async function() {
         if (selectedObjectId === session.objectId) selectedObjectId = null;
-        if (onDeleteCallback) onDeleteCallback(session);
         await refresh();
+        if (onDeleteCallback) onDeleteCallback(session);
     });
 }
 

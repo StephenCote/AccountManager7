@@ -100,6 +100,7 @@ async function dressApparel(vapp, dressUpDir) {
 
     await am7client.clearCache("olio.apparel");
     let aq = am7view.viewQuery("olio.apparel");
+    aq.cache(false);
     aq.field("objectId", vapp.objectId);
     let aqr = await page.search(aq);
     let app;
@@ -122,6 +123,7 @@ async function dressApparel(vapp, dressUpDir) {
     }
 
     let q = am7view.viewQuery("olio.wearable");
+    q.cache(false);
     q.range(0, 20);
     let oids = wear.map(a => a.objectId).join(",");
     q.field("groupId", wear[0].groupId);
@@ -194,8 +196,7 @@ async function dressApparel(vapp, dressUpDir) {
     }
 
     if (!patch.length) {
-        page.toast("info", "No changes to make to " + app.name + " for level " + newLevel);
-        return true;
+        return false;
     }
 
     let aP = patch.map(p => page.patchObject(p));

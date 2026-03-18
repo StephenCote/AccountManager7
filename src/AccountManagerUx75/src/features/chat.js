@@ -23,11 +23,20 @@ import { GossipPanel } from '../chat/GossipPanel.js';
 import { SceneGenerator } from '../chat/SceneGenerator.js';
 import { ChainManager } from '../chat/ChainManager.js';
 import { ChatExport } from '../chat/ChatExport.js';
+import { am7imageTokens } from '../chat/imageTokens.js';
+
+// Ensure am7model._sd is loaded for image token generation (fetchTemplate)
+if (!am7model._sd) {
+    import('../components/sdConfig.js').then(function(mod) {
+        am7model._sd = mod.am7sd;
+    }).catch(function() {});
+}
 
 // ── Chat state ──────────────────────────────────────────────────────
 
 let inst = null;
 let chatCfg = newChatConfig();
+let resolvingImages = {};
 let hideThoughts = true;
 let sidebarCollapsed = true;
 let sidebarActivePanel = null; // null | "conversations" | "memories" | "context"
@@ -53,6 +62,7 @@ function newChatConfig() {
 function doClear() {
     inst = null;
     chatCfg = newChatConfig();
+    clearFormattedCache();
     ContextPanel.clear();
 }
 
@@ -106,6 +116,7 @@ async function doPeek() {
     if (h) {
         if (!h.messages) h.messages = [];
         chatCfg.history = h;
+        clearFormattedCache();
     }
     chatCfg.peek = false;
     m.redraw();
@@ -121,7 +132,122 @@ async function getHistory() {
     }
 }
 
+// ── Image token resolution (port of Ux7 chat.js:229-375) ────────────
+
+/**
+ * Patch resolved image tokens on the server session, then reload history.
+ * replacements: array of {from: unresolvedTokenStr, to: resolvedTokenStr}
+ */
+async function patchChatImageToken(replacements) {
+    if (!inst || !replacements || !replacements.length) return;
+    let entity = inst.entity;
+    if (!entity || !entity.session || !entity.sessionType) return;
+
+    try {
+        let q = am7client.newQuery(entity.sessionType);
+        q.field("id", entity.session.id);
+        q.cache(false);
+        let qr = await page.search(q);
+        if (qr && qr.results && qr.results.length > 0) {
+            let req = qr.results[0];
+            if (req.messages) {
+                let patched = false;
+                for (let i = req.messages.length - 1; i >= 0; i--) {
+                    let serverMsg = req.messages[i];
+                    if (!serverMsg.content) continue;
+                    for (let r of replacements) {
+                        if (serverMsg.content.indexOf(r.from) !== -1) {
+                            serverMsg.content = serverMsg.content.replace(r.from, r.to);
+                            patched = true;
+                        }
+                    }
+                }
+                if (patched) {
+                    await page.patchObject(req);
+                    // Reload history if not streaming
+                    if (!chatCfg.streaming) {
+                        let h = await getHistory();
+                        if (h) {
+                            if (!h.messages) h.messages = [];
+                            chatCfg.history = h;
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.error("patchChatImageToken server error:", e);
+    }
+}
+
+/**
+ * Resolve all image tokens in a message one at a time, patching after each.
+ * Port of Ux7 chat.js:322-375.
+ */
+async function resolveChatImages(msgIndex) {
+    if (!am7imageTokens) return;
+    // Skip during streaming
+    if (chatCfg.streaming) return;
+    let maxIterations = 10;
+    let iteration = 0;
+
+    while (iteration < maxIterations) {
+        iteration++;
+
+        let msgs = chatCfg.history ? chatCfg.history.messages : null;
+        if (!msgs || !msgs[msgIndex]) return;
+        let msg = msgs[msgIndex];
+        if (!msg.content) return;
+
+        let character = msg.role === "user" ? chatCfg.user : chatCfg.system;
+        if (!character) return;
+
+        let tokens = am7imageTokens.parse(msg.content);
+
+        // Find first unresolved token
+        let unresolvedToken = null;
+        for (let token of tokens) {
+            if (!token.id || !am7imageTokens.cache[token.id]) {
+                unresolvedToken = token;
+                break;
+            }
+        }
+
+        if (!unresolvedToken) break;
+
+        try {
+            let resolveOpts = {};
+            let resolved = await am7imageTokens.resolve(unresolvedToken, character, resolveOpts);
+            if (resolved && resolved.image) {
+                if (!unresolvedToken.id) {
+                    let newToken = "${image." + resolved.image.objectId + "." + unresolvedToken.tags.join(",") + "}";
+                    await patchChatImageToken([{ from: unresolvedToken.match, to: newToken }]);
+                }
+            } else {
+                break;
+            }
+        } catch (e) {
+            console.error("Error resolving image token:", unresolvedToken.match, e);
+            break;
+        }
+    }
+    // Clear memoized HTML so re-render picks up resolved images
+    clearFormattedCache();
+    m.redraw();
+}
+
 // ── Chat send ───────────────────────────────────────────────────────
+
+// Debounced redraw for streaming updates — max ~30fps to avoid layout thrashing in Firefox
+let _streamRedrawRaf = 0;
+function scheduleStreamRedraw() {
+    if (!_streamRedrawRaf) {
+        _streamRedrawRaf = requestAnimationFrame(function() {
+            _streamRedrawRaf = 0;
+            m.redraw();
+        });
+    }
+}
 
 function newChatStream() {
     let cfg = {
@@ -136,10 +262,11 @@ function newChatStream() {
         onchatupdate: function(id, data) {
             if (cfg.streamId !== id) return;
             chatCfg.streamText += (data || "");
-            m.redraw();
+            scheduleStreamRedraw();
         },
         onchatcomplete: function(id) {
             chatCfg.streaming = false;
+            chatCfg.pending = false;
             if (chatCfg.streamText) {
                 if (!chatCfg.history.messages) chatCfg.history.messages = [];
                 chatCfg.history.messages.push({ role: "assistant", content: chatCfg.streamText });
@@ -149,6 +276,7 @@ function newChatStream() {
                 if (h) {
                     if (!h.messages) h.messages = [];
                     chatCfg.history = h;
+                    clearFormattedCache();
                 }
                 m.redraw();
             });
@@ -156,6 +284,7 @@ function newChatStream() {
         },
         onchaterror: function(id, err) {
             chatCfg.streaming = false;
+            chatCfg.pending = false;
             chatCfg.streamText = "";
             page.chatStream = null;
             page.toast("error", "Chat error: " + (err || "unknown"));
@@ -174,10 +303,13 @@ async function doAutoStart() {
     // Send empty string to trigger system-start
     chatCfg.pending = true;
     m.redraw();
+    // Yield to renderer so pending indicator is visible before stream connects
+    await new Promise(function(r) { requestAnimationFrame(r); });
     try {
         let stream = newChatStream();
         page.chatStream = stream;
-        await LLMConnector.streamChat(inst.entity, "", stream);
+        LLMConnector.streamChat(inst.entity, "", stream);
+        // Don't clear pending here — onchatstart/onchatcomplete/onchaterror handle it
     } catch (e) {
         try {
             let resp = await LLMConnector.chat(inst.entity, "");
@@ -189,9 +321,9 @@ async function doAutoStart() {
         } catch (e2) {
             console.warn("Auto-start failed:", e2);
         }
+        chatCfg.pending = false;
+        m.redraw();
     }
-    chatCfg.pending = false;
-    m.redraw();
 }
 
 async function doSend(message) {
@@ -215,7 +347,8 @@ async function doSend(message) {
     try {
         let stream = newChatStream();
         page.chatStream = stream;
-        await LLMConnector.streamChat(inst.entity, message, stream);
+        LLMConnector.streamChat(inst.entity, message, stream);
+        // Don't clear pending here — onchatstart/onchatcomplete/onchaterror handle it
     } catch (e) {
         // Fallback to buffered chat
         try {
@@ -228,10 +361,9 @@ async function doSend(message) {
         } catch (e2) {
             page.toast("error", "Chat failed: " + (e2.message || e2));
         }
+        chatCfg.pending = false;
+        m.redraw();
     }
-
-    chatCfg.pending = false;
-    m.redraw();
 }
 
 async function doCancel() {
@@ -273,25 +405,78 @@ async function doDelete() {
 function toggleEditMode() {
     editMode = !editMode;
     deletedIndices.clear();
+    clearFormattedCache();
     m.redraw();
 }
 
 async function saveEdits() {
     if (!inst || !chatCfg.history.messages) return;
-    let messages = [];
-    chatCfg.history.messages.forEach(function(msg, idx) {
-        if (deletedIndices.has(idx)) return;
-        let el = document.getElementById("editMessage-" + idx);
-        let content = el ? el.value : msg.content;
-        messages.push({ role: msg.role, content: content });
-    });
+    let entity = inst.entity;
+    if (!entity || !entity.session || !entity.sessionType) {
+        console.error("No session available for edit save");
+        editMode = false;
+        deletedIndices.clear();
+        return;
+    }
 
-    // Update local state
-    chatCfg.history.messages = messages;
+    // Fetch the full server session record (bypasses client cache)
+    let q = am7client.newQuery(entity.sessionType);
+    q.field("id", entity.session.id);
+    q.cache(false);
+    let qr;
+    try {
+        qr = await page.search(q);
+    } catch (e) {
+        console.error("Failed to fetch session for edit save:", e);
+        editMode = false;
+        deletedIndices.clear();
+        return;
+    }
+    if (!qr || !qr.results || !qr.results.length) {
+        console.error("Server session record not found for edit save");
+        editMode = false;
+        deletedIndices.clear();
+        return;
+    }
+    let req = qr.results[0];
+    if (!req.messages || !req.messages.length) {
+        console.error("Server session has no messages");
+        editMode = false;
+        deletedIndices.clear();
+        return;
+    }
+
+    // Calculate offset: system/template messages at start of server record
+    // that are not shown in the display
+    let displayMsgs = chatCfg.history.messages;
+    let offset = req.messages.length - displayMsgs.length;
+    if (offset < 0) offset = 0;
+
+    // Apply edits from textareas (preserve roles)
+    for (let i = 0; i < displayMsgs.length; i++) {
+        if (deletedIndices.has(i)) continue;
+        let el = document.getElementById("editMessage-" + i);
+        if (el && (i + offset) < req.messages.length) {
+            req.messages[i + offset].content = el.value;
+        }
+    }
+
+    // Remove deleted messages (reverse order to preserve indices)
+    let sorted = Array.from(deletedIndices).sort(function(a, b) { return b - a; });
+    for (let idx of sorted) {
+        let serverIdx = idx + offset;
+        if (serverIdx >= 0 && serverIdx < req.messages.length) {
+            req.messages.splice(serverIdx, 1);
+        }
+    }
+
+    // Patch server with edited messages
+    await page.patchObject(req);
     editMode = false;
     deletedIndices.clear();
 
-    // Refresh from server
+    // Clear cache and refresh from server
+    am7client.clearCache();
     let h = await getHistory();
     if (h) {
         if (!h.messages) h.messages = [];
@@ -301,6 +486,36 @@ async function saveEdits() {
 }
 
 // ── Render helpers ──────────────────────────────────────────────────
+
+// Memoization cache: avoids re-running regex processing for unchanged messages.
+// Key = msg content + role, value = formatted HTML string.
+// Cleared on history reload or edit mode toggle.
+let _formattedCache = new Map();
+
+function clearFormattedCache() {
+    _formattedCache.clear();
+}
+
+function getFormattedContent(content, msg, idx) {
+    let cacheKey = msg.role + ":" + idx + ":" + content;
+    let cached = _formattedCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    let processed = ChatTokenRenderer.pruneForDisplay(content, hideThoughts);
+    if (hideThoughts) {
+        processed = processed.replace(/<think>[\s\S]*?<\/think>/g, "");
+    }
+    processed = formatContent(processed);
+    let characters = { system: chatCfg.system, user: chatCfg.user };
+    let sessionId = inst ? inst.api.objectId() : null;
+    processed = ChatTokenRenderer.processImageTokens(processed, msg.role, idx, characters, { resolvingImages: resolvingImages }, function(msgIdx) {
+        return resolveChatImages(msgIdx);
+    });
+    processed = ChatTokenRenderer.processAudioTokens(processed, msg.role, idx, characters, sessionId);
+
+    _formattedCache.set(cacheKey, processed);
+    return processed;
+}
 
 function renderMessage(msg, idx) {
     let isUser = msg.role === "user";
@@ -315,7 +530,7 @@ function renderMessage(msg, idx) {
         }, [
             m("div", { class: "max-w-[80%] w-full" }, [
                 m("div", { class: "flex items-center gap-1 mb-1" }, [
-                    m("span", { class: "text-xs opacity-60" }, isUser ? "You" : (chatCfg.system ? chatCfg.system.name : "Assistant")),
+                    m("span", { class: "text-xs opacity-60" }, isUser ? (chatCfg.user ? chatCfg.user.name : "You") : (chatCfg.system ? chatCfg.system.name : "Assistant")),
                     m("button", {
                         class: "text-xs px-1 rounded " + (isDeleted ? "text-green-500 hover:bg-green-50" : "text-red-400 hover:bg-red-50"),
                         onclick: function() {
@@ -335,25 +550,23 @@ function renderMessage(msg, idx) {
         ]);
     }
 
-    // Process tokens
-    content = ChatTokenRenderer.processContent(content);
-
-    // Hide <think> blocks if toggle is on
-    if (hideThoughts) {
-        content = content.replace(/<think>[\s\S]*?<\/think>/g, "");
-    }
-
     let bubbleClass = isUser
         ? "ml-auto bg-blue-600 text-white rounded-lg rounded-br-none"
         : "mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-lg rounded-bl-none";
 
-    // Character avatar — Ux7 style: 96x96 rounded-full, gender fallback icons
+    // Character avatar — Ux7 style: 96x96 rounded-full, gender fallback, onclick imageView
     let avatar = null;
     let char = isUser ? chatCfg.user : chatCfg.system;
     if (char && char.profile && char.profile.portrait) {
         let pp = char.profile.portrait;
         let thumbUrl = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + (pp.groupPath || "") + "/" + (pp.name || "") + "/96x96";
-        avatar = m("img", { src: thumbUrl, class: "w-8 h-8 rounded-full shrink-0 mt-1", onerror: function(e) { e.target.style.display = "none"; } });
+        avatar = m("img", {
+            src: thumbUrl,
+            class: (isUser ? "ml-2" : "mr-2") + " rounded-full shrink-0 mt-1 cursor-pointer",
+            style: "width:32px;height:32px",
+            onclick: function() { if (page.imageView) page.imageView(pp); },
+            onerror: function(e) { e.target.style.display = "none"; }
+        });
     } else if (char) {
         let genderIcon = (char.gender === "female") ? "woman" : "man";
         avatar = m("span", { class: "material-icons-outlined text-gray-400 shrink-0 mt-1", style: "font-size:28px" }, genderIcon);
@@ -361,11 +574,14 @@ function renderMessage(msg, idx) {
         avatar = m("span", { class: "material-symbols-outlined text-gray-400 shrink-0 mt-1", style: "font-size:28px" }, "smart_toy");
     }
 
+    // Use memoized formatted content to avoid re-running regex processing on every redraw
+    let formatted = getFormattedContent(content, msg, idx);
+
     return m("div", { class: "flex mb-3 gap-2 " + (isUser ? "justify-end" : "justify-start"), key: "msg-" + idx }, [
         !isUser ? avatar : null,
         m("div", { class: "max-w-[80%] px-4 py-2 text-sm " + bubbleClass }, [
-            m("div", { class: "text-xs opacity-60 mb-1" }, isUser ? "You" : (chatCfg.system ? chatCfg.system.name : "Assistant")),
-            m.trust(formatContent(content))
+            m("div", { class: "text-xs opacity-60 mb-1" }, isUser ? (chatCfg.user ? chatCfg.user.name : "You") : (chatCfg.system ? chatCfg.system.name : "Assistant")),
+            m.trust(formatted)
         ]),
         isUser ? avatar : null
     ]);
@@ -390,21 +606,61 @@ function formatContent(text) {
 
 function renderStreamingMessage() {
     if (!chatCfg.streaming || !chatCfg.streamText) return null;
-    let content = ChatTokenRenderer.processContent(chatCfg.streamText);
+    let content = ChatTokenRenderer.pruneForDisplay(chatCfg.streamText, hideThoughts);
     if (hideThoughts) {
         content = content.replace(/<think>[\s\S]*?<\/think>/g, "");
     }
+    let formatted = formatContent(content);
+    let characters = { system: chatCfg.system, user: chatCfg.user };
+    formatted = ChatTokenRenderer.processImageTokens(formatted, "assistant", -1, characters, { resolvingImages: {} }, null);
+    formatted = ChatTokenRenderer.processAudioTokens(formatted, "assistant", -1, characters, inst ? inst.api.objectId() : null);
     return m("div", { class: "flex mb-3 justify-start" }, [
         m("div", { class: "max-w-[80%] px-4 py-2 text-sm mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-lg rounded-bl-none" }, [
             m("div", { class: "text-xs opacity-60 mb-1" }, chatCfg.system ? chatCfg.system.name : "Assistant"),
-            m.trust(formatContent(content)),
+            m.trust(formatted),
             m("span", { class: "inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1" })
         ])
     ]);
 }
 
+// Ux7-style portrait header: system character left, user character right
+function renderPortraitHeader() {
+    if (!chatCfg.system && !chatCfg.user) return null;
+
+    function charIcon(char, side) {
+        if (!char) return null;
+        let marginClass = side === "left" ? "mr-2" : "ml-2";
+        if (char.profile && char.profile.portrait) {
+            let pp = char.profile.portrait;
+            let dataUrl = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/96x96";
+            return m("img", {
+                src: dataUrl,
+                class: marginClass + " rounded-full cursor-pointer",
+                style: "width:32px;height:32px",
+                onclick: function() { if (page.imageView) page.imageView(pp); }
+            });
+        }
+        let g = (char.gender === "female") ? "woman" : "man";
+        return m("span", { class: "material-icons-outlined text-gray-400 " + marginClass }, g);
+    }
+
+    return m("div", { class: "flex justify-between px-3 py-1.5 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-700" }, [
+        m("div", { class: "flex items-center" }, [
+            charIcon(chatCfg.system, "left"),
+            m("span", { class: "text-gray-400 text-sm" }, chatCfg.system ? chatCfg.system.name : "")
+        ]),
+        m("div", { class: "flex items-center" }, [
+            m("span", { class: "text-gray-400 text-sm" }, chatCfg.user ? chatCfg.user.name : ""),
+            charIcon(chatCfg.user, "right")
+        ])
+    ]);
+}
+
 function renderPendingIndicator() {
-    if (!chatCfg.pending || chatCfg.streaming) return null;
+    // Show pending when waiting for response AND no stream text has arrived yet.
+    // Once streamText is non-empty, renderStreamingMessage takes over.
+    if (!chatCfg.pending) return null;
+    if (chatCfg.streaming && chatCfg.streamText) return null;
     return m("div", { class: "flex justify-start mb-3" }, [
         m("div", { class: "px-4 py-2 text-sm mr-auto bg-gray-100 dark:bg-gray-800 rounded-lg" }, [
             m("div", { class: "flex items-center gap-2 text-gray-400" }, [
@@ -465,26 +721,31 @@ function renderConfigAccordion() {
 }
 
 function configRow(label, name, icon, libraryType) {
-    return m("div", { class: "flex items-center gap-1 text-xs" }, [
+    function openConfigPicker(e) {
+        e.stopPropagation();
+        ObjectPicker.openLibrary({
+            libraryType: libraryType,
+            title: "Select " + label,
+            onSelect: function (obj) {
+                ContextPanel.attach(libraryType === "chatConfig" ? "chatConfig" : "promptTemplate", obj.objectId).then(function () {
+                    am7client.clearCache("olio.llm.chatRequest");
+                    doPeek();
+                }).catch(function (e) { console.warn("Config attach failed:", e); });
+                m.redraw();
+            }
+        }).catch(function(err) {
+            console.error("[configRow] Picker open failed:", err);
+            page.toast("error", "Failed to open picker: " + (err.message || err));
+        });
+    }
+    return m("div", {
+        class: "flex items-center gap-1 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded px-1 py-0.5",
+        onclick: openConfigPicker,
+        title: name || "None"
+    }, [
         m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:14px" }, icon),
         m("span", { class: "text-gray-500 dark:text-gray-400" }, label + ":"),
-        m("button", {
-            class: "text-blue-600 dark:text-blue-400 hover:underline truncate max-w-[120px]",
-            title: name || "None",
-            onclick: function () {
-                ObjectPicker.openLibrary({
-                    libraryType: libraryType,
-                    title: "Select " + label,
-                    onSelect: function (obj) {
-                        ContextPanel.attach(libraryType === "chatConfig" ? "chatConfig" : "promptTemplate", obj.objectId).then(function () {
-                            am7client.clearCache("olio.llm.chatRequest");
-                            doPeek();
-                        }).catch(function (e) { console.warn("Config attach failed:", e); });
-                        m.redraw();
-                    }
-                });
-            }
-        }, name || "None")
+        m("span", { class: "text-blue-600 dark:text-blue-400 truncate max-w-[120px]" }, name || "None")
     ]);
 }
 
@@ -499,8 +760,10 @@ function renderSidebar() {
 
     let panelContent = null;
     if (sidebarActivePanel === "conversations") {
-        panelContent = m("div", { class: "flex flex-col flex-1 overflow-hidden" }, [
-            m(ConversationManager.SidebarView),
+        panelContent = m("div", { class: "flex flex-col h-full" }, [
+            m("div", { class: "flex-1 overflow-y-auto min-h-0" }, [
+                m(ConversationManager.SidebarView)
+            ]),
             renderConfigAccordion()
         ]);
     } else if (sidebarActivePanel === "context") {
@@ -529,12 +792,23 @@ function sidebarIcon(icon, panel, title) {
 // ── Toolbar ─────────────────────────────────────────────────────────
 
 function renderToolbar() {
-    let sessionName = inst ? (inst.api.name ? inst.api.name() : "Chat") : "No session";
+    let sessionMeta = inst ? ConversationManager.getSelectedSession() : null;
+    let sessionTitle = null;
+    let sessionIcon = null;
+    if (sessionMeta) {
+        sessionTitle = sessionMeta.chatTitle || sessionMeta.name || "Chat";
+        sessionIcon = sessionMeta.chatIcon || null;
+    } else if (inst) {
+        sessionTitle = inst.api.name ? inst.api.name() : "Chat";
+    } else {
+        sessionTitle = "No session";
+    }
     let bgActivity = LLMConnector.bgActivity;
 
     return m("div", { class: "flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0" }, [
         m("div", { class: "flex items-center gap-3" }, [
-            m("h2", { class: "text-sm font-semibold text-gray-800 dark:text-white truncate max-w-xs" }, sessionName),
+            sessionIcon ? m("span", { style: "font-size:16px; line-height:1;" }, sessionIcon) : null,
+            m("h2", { class: "text-sm font-semibold text-gray-800 dark:text-white truncate max-w-xs" }, sessionTitle),
             bgActivity && bgActivity.icon ? m("span", {
                 class: "material-symbols-outlined text-blue-500 animate-spin",
                 style: "font-size:16px",
@@ -792,7 +1066,8 @@ function pickerField(label, selected, libraryType, onSelect) {
         m("label", { class: "block text-xs text-gray-500 dark:text-gray-400 mb-1" }, label),
         m("div", { class: "flex items-center gap-1" }, [
             m("span", {
-                class: "flex-1 px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white text-sm truncate"
+                class: "flex-1 text-sm text-gray-800 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400",
+                onclick: openPicker
             }, displayName),
             m("button", {
                 class: "p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
@@ -802,7 +1077,7 @@ function pickerField(label, selected, libraryType, onSelect) {
             selected ? m("button", {
                 class: "p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
                 title: "Clear",
-                onclick: function() { onSelect(null); m.redraw(); }
+                onclick: function(e) { e.stopPropagation(); onSelect(null); m.redraw(); }
             }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "backspace")) : null
         ])
     ]);
@@ -929,6 +1204,8 @@ const chatView = {
             m("div", { class: "flex-1 flex flex-col min-w-0" }, [
                 renderToolbar(),
                 m(ChainManager.ProgressView),
+                // Portrait header (Ux7 style)
+                inst ? renderPortraitHeader() : null,
                 // Messages area
                 inst ? m("div", {
                     class: "flex-1 overflow-y-auto p-4",
@@ -950,8 +1227,14 @@ const chatView = {
     }
 };
 
+let _scrollRaf = 0;
 function scrollToBottom(el) {
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (_scrollRaf) cancelAnimationFrame(_scrollRaf);
+    _scrollRaf = requestAnimationFrame(function() {
+        _scrollRaf = 0;
+        if (el) el.scrollTop = el.scrollHeight;
+    });
 }
 
 async function initChatView() {
@@ -959,11 +1242,9 @@ async function initChatView() {
     ConversationManager.onSelect(pickSession);
     ConversationManager.onDelete(function(obj) {
         // Session already deleted and list refreshed by ConversationManager —
-        // just clear the active view if it was the deleted session
-        if (inst && obj.objectId === inst.api.objectId()) {
-            doClear();
-            ConversationManager.autoSelectFirst();
-        }
+        // always clear the active view, then auto-select next session
+        doClear();
+        ConversationManager.autoSelectFirst();
         m.redraw();
     });
 

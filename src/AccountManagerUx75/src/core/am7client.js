@@ -778,6 +778,19 @@ import { cacheDb } from './cacheDb.js';
 		return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 	}
 
+	function _handle401(e, url) {
+		if (e && e.code === 401) {
+			console.warn("[am7client] 401 Unauthorized on " + url + " — redirecting to login");
+			let currentRoute = m.route.get();
+			if (currentRoute && currentRoute !== "/sig") {
+				sessionStorage.setItem("am7.returnRoute", currentRoute);
+			}
+			m.route.set("/sig");
+			return true;
+		}
+		return false;
+	}
+
 	function get(url, fH){
 		return m.request({
 			method: 'GET',
@@ -789,6 +802,7 @@ import { cacheDb } from './cacheDb.js';
 			}
 			return x;
 		}).catch((x) =>{
+			if (_handle401(x, url)) return;
 			console.error("Failed to get " + url);
 			if(fH){
 				fH();
@@ -807,6 +821,7 @@ import { cacheDb } from './cacheDb.js';
 			}
 			return x;
 		}).catch((e) => {
+			if (_handle401(e, url)) return null;
 			console.error("Failed to delete " + url, e);
 			if(fH){
 				fH(null);
@@ -827,6 +842,7 @@ import { cacheDb } from './cacheDb.js';
 			}
 			return x;
 		}).catch((x) =>{
+			if (_handle401(x, url)) return;
 			console.error("Failed to post " + url, x);
 			if(fH){
 				fH();
@@ -845,6 +861,12 @@ import { cacheDb } from './cacheDb.js';
 				fH(x);
 			}
 			return x;
+		}).catch((x) => {
+			if (_handle401(x, url)) return;
+			console.error("Failed to patch " + url, x);
+			if(fH){
+				fH();
+			}
 		});
 	}
 

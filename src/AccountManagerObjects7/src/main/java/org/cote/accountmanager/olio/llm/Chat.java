@@ -1259,6 +1259,22 @@ public class Chat {
 		}
 
 		String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+
+		/// Total conversation memory cap — prevent unbounded memory growth.
+		/// Hard cap of 100 memories per conversation to avoid resource exhaustion.
+		int maxConversationMemories = 100;
+		try {
+			int configMax = chatConfig.get("maxConversationMemories");
+			if (configMax > 0) maxConversationMemories = configMax;
+		} catch (Exception e) { /* default 100 */ }
+		if (cfgObjId != null) {
+			List<BaseRecord> existingMemories = MemoryUtil.getConversationMemories(user, cfgObjId);
+			if (existingMemories.size() >= maxConversationMemories) {
+				logger.info("forceExtractMemories: conversation memory cap reached (" + existingMemories.size() + "/" + maxConversationMemories + ") — skipping extraction");
+				return java.util.Collections.emptyList();
+			}
+		}
+
 		int lastKeyframeAt = 0;
 		try { lastKeyframeAt = chatConfig.get("lastKeyframeAt"); } catch (Exception e) { /* default 0 */ }
 		/// Use keyFrameEvery (instance field with enforced minimum) as the chunk size.
