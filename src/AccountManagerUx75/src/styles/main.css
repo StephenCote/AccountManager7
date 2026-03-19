@@ -569,6 +569,70 @@
     to { transform: translateX(100%); }
 }
 
+/* Chat message markdown prose — scoped to chat bubbles so global heading styles don't apply */
+.chat-prose h1 { font-size: 1.25em; font-weight: 600; margin: 0.5em 0 0.25em; }
+.chat-prose h2 { font-size: 1.15em; font-weight: 600; margin: 0.5em 0 0.25em; }
+.chat-prose h3 { font-size: 1.05em; font-weight: 600; margin: 0.4em 0 0.2em; }
+.chat-prose h4, .chat-prose h5, .chat-prose h6 { font-size: 1em; font-weight: 600; margin: 0.3em 0 0.15em; }
+.chat-prose p { margin: 0.3em 0; }
+.chat-prose ul, .chat-prose ol { margin: 0.3em 0; padding-left: 1.5em; }
+.chat-prose ul { list-style-type: disc; }
+.chat-prose ol { list-style-type: decimal; }
+.chat-prose li { margin: 0.1em 0; }
+.chat-prose blockquote {
+    border-left: 3px solid #6b7280;
+    padding-left: 0.75em;
+    margin: 0.4em 0;
+    color: #9ca3af;
+    font-style: italic;
+}
+.chat-prose pre {
+    background: #111827;
+    color: #4ade80;
+    padding: 0.5em;
+    border-radius: 0.375em;
+    margin: 0.4em 0;
+    overflow-x: auto;
+    font-size: 0.8em;
+}
+.chat-prose code {
+    background: rgba(107, 114, 128, 0.2);
+    padding: 0.1em 0.3em;
+    border-radius: 0.25em;
+    font-size: 0.9em;
+}
+.chat-prose pre code {
+    background: transparent;
+    padding: 0;
+    font-size: inherit;
+}
+.chat-prose table {
+    border-collapse: collapse;
+    margin: 0.4em 0;
+    font-size: 0.85em;
+}
+.chat-prose th, .chat-prose td {
+    border: 1px solid #4b5563;
+    padding: 0.25em 0.5em;
+}
+.chat-prose th {
+    background: rgba(107, 114, 128, 0.15);
+    font-weight: 600;
+}
+.chat-prose hr {
+    border: none;
+    border-top: 1px solid #4b5563;
+    margin: 0.5em 0;
+}
+.chat-prose a {
+    color: #3b82f6;
+    text-decoration: underline;
+}
+.chat-prose img {
+    max-width: 100%;
+    border-radius: 0.375em;
+}
+
 /* Content layout — plain CSS (outside @layer to avoid Tailwind specificity issues) */
 div.content-outer {
     display: flex;

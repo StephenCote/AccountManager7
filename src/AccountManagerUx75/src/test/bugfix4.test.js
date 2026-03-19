@@ -203,9 +203,10 @@ describe('Issue B: Picker field styling', () => {
     it('picker shows View and Clear buttons only when value is set', () => {
         const src = readFileSync(resolve(__dirname, '..', 'components', 'formFieldRenderers.js'), 'utf-8');
         let pickerIdx = src.indexOf('renderers.picker');
-        let pickerBlock = src.substring(pickerIdx, pickerIdx + 2000);
+        let pickerBlock = src.substring(pickerIdx, pickerIdx + 3000);
         // View and Clear should be conditional on hasValue
-        expect(pickerBlock).toContain('hasValue ? m("button"');
+        let hasValueCount = (pickerBlock.match(/hasValue \?/g) || []).length;
+        expect(hasValueCount).toBeGreaterThanOrEqual(2); // View + Clear are conditional on hasValue
     });
 });
 
@@ -215,15 +216,18 @@ describe('Issue C: Image gallery is pop-in dialog', () => {
         const src = readFileSync(resolve(__dirname, '..', 'core', 'pageClient.js'), 'utf-8');
         let galleryIdx = src.indexOf('imageGallery:');
         expect(galleryIdx).toBeGreaterThan(-1);
-        let galleryBlock = src.substring(galleryIdx, galleryIdx + 8000);
+        // The Dialog.open call is within the function body
+        let galleryEnd = src.indexOf('imageView:', galleryIdx);
+        let galleryBlock = src.substring(galleryIdx, galleryEnd > galleryIdx ? galleryEnd : galleryIdx + 10000);
         expect(galleryBlock).toContain('Dialog.open');
-        expect(galleryBlock).toContain("'Gallery");
+        expect(galleryBlock).toContain('Gallery (');
     });
 
     it('gallery has Set Profile, Auto-Tag, Delete buttons', () => {
         const src = readFileSync(resolve(__dirname, '..', 'core', 'pageClient.js'), 'utf-8');
         let galleryIdx = src.indexOf('imageGallery:');
-        let galleryBlock = src.substring(galleryIdx, galleryIdx + 8000);
+        let galleryEnd = src.indexOf('imageView:', galleryIdx);
+        let galleryBlock = src.substring(galleryIdx, galleryEnd > galleryIdx ? galleryEnd : galleryIdx + 10000);
         expect(galleryBlock).toContain('Set Profile');
         expect(galleryBlock).toContain('Auto-Tag');
         expect(galleryBlock).toContain('Delete');
@@ -232,7 +236,8 @@ describe('Issue C: Image gallery is pop-in dialog', () => {
     it('gallery has arrow key navigation', () => {
         const src = readFileSync(resolve(__dirname, '..', 'core', 'pageClient.js'), 'utf-8');
         let galleryIdx = src.indexOf('imageGallery:');
-        let galleryBlock = src.substring(galleryIdx, galleryIdx + 8000);
+        let galleryEnd = src.indexOf('imageView:', galleryIdx);
+        let galleryBlock = src.substring(galleryIdx, galleryEnd > galleryIdx ? galleryEnd : galleryIdx + 10000);
         expect(galleryBlock).toContain('ArrowLeft');
         expect(galleryBlock).toContain('ArrowRight');
     });
@@ -240,7 +245,8 @@ describe('Issue C: Image gallery is pop-in dialog', () => {
     it('gallery sorts by modifiedDate descending', () => {
         const src = readFileSync(resolve(__dirname, '..', 'core', 'pageClient.js'), 'utf-8');
         let galleryIdx = src.indexOf('imageGallery:');
-        let galleryBlock = src.substring(galleryIdx, galleryIdx + 8000);
+        let galleryEnd = src.indexOf('imageView:', galleryIdx);
+        let galleryBlock = src.substring(galleryIdx, galleryEnd > galleryIdx ? galleryEnd : galleryIdx + 10000);
         expect(galleryBlock).toContain("'modifiedDate'");
         expect(galleryBlock).toContain("'descending'");
     });

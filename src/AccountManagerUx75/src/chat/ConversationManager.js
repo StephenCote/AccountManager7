@@ -23,24 +23,33 @@ async function loadSessions() {
     if (loading) return;
     loading = true;
     try {
-        await am7client.clearCache(undefined, true);
-        // Resolve both directories in parallel
+        // Do NOT clear cache here — loadSessions is called on initial render,
+        // and clearing cache every time causes severe performance degradation.
+        // Cache is cleared in refresh() only after create/delete operations.
+
+        // Resolve directories — uses am7client cache (fast on repeat calls).
+        // Wrap in Promise.resolve() because am7client returns cached values
+        // directly (not promises) on cache hit.
         let [chatDir, reqDir] = await Promise.all([
-            page.findObject("auth.group", "DATA", "~/Chat"),
-            page.findObject("auth.group", "DATA", "~/ChatRequests")
+            Promise.resolve(page.findObject("auth.group", "DATA", "~/Chat")),
+            Promise.resolve(page.findObject("auth.group", "DATA", "~/ChatRequests"))
         ]);
 
-        // Load configs and sessions in parallel
+        // Load configs and sessions in parallel.
+        // Sessions always reload (never rely on local cache after create/delete).
+        // Configs only reload when null (first load or after explicit refresh).
+        // Wrap in Promise.resolve() because am7client.list() returns either a
+        // cached value (not a promise) or a promise, depending on cache state.
         let promises = [];
         if (promptConfigs == null && chatDir) {
-            promises.push(page.listObjects("olio.llm.promptConfig", chatDir.objectId, null, 0, 0).then(function(v) { promptConfigs = v || []; }));
+            promises.push(Promise.resolve(page.listObjects("olio.llm.promptConfig", chatDir.objectId, null, 0, 0)).then(function(v) { promptConfigs = v || []; }));
         }
         if (chatConfigs == null && chatDir) {
-            promises.push(page.listObjects("olio.llm.chatConfig", chatDir.objectId, null, 0, 0).then(function(v) { chatConfigs = v || []; }));
+            promises.push(Promise.resolve(page.listObjects("olio.llm.chatConfig", chatDir.objectId, null, 0, 0)).then(function(v) { chatConfigs = v || []; }));
         }
         if (reqDir) {
-            promises.push(page.listObjects("olio.llm.chatRequest", reqDir.objectId,
-                "name,objectId,chatTitle,chatIcon,chatConfig,promptConfig,promptTemplate,session,sessionType,setting,contextType", 0, 0).then(function(v) { sessions = v || []; }));
+            promises.push(Promise.resolve(page.listObjects("olio.llm.chatRequest", reqDir.objectId,
+                "name,objectId,chatTitle,chatIcon,chatConfig,promptConfig,promptTemplate,session,sessionType,setting,contextType", 0, 0)).then(function(v) { sessions = v || []; }));
         } else {
             sessions = [];
         }
@@ -54,9 +63,12 @@ async function loadSessions() {
 }
 
 async function refresh() {
+    // Clear local cache so loadSessions() fetches fresh data from server.
+    am7client.clearCache("olio.llm.chatRequest", true);
     sessions = null;
     promptConfigs = null;
     chatConfigs = null;
+    loading = false; // Reset guard so loadSessions can run
     await loadSessions();
 }
 

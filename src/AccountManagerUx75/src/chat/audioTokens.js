@@ -5,7 +5,8 @@
 import m from 'mithril';
 import { applicationPath } from '../core/config.js';
 
-const TOKEN_REGEX = /\$\{audio\.text\s+"([^"]+)"\}/g;
+// Backend produces ${audio.TEXT} — arbitrary text after "audio." until closing }
+const TOKEN_REGEX = /\$\{audio\.([^}]+)\}/g;
 
 let buttonStates = {}; // btnId -> "idle" | "loading" | "playing"
 let audioElements = {}; // btnId -> HTMLAudioElement

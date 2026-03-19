@@ -18,7 +18,8 @@ if (typeof window !== "undefined") {
 }
 
 const IMAGE_TOKEN_RE = /\$\{image\.([^}]+)\}/g;
-const AUDIO_TOKEN_RE = /\$\{audio\.text\s+"([^"]+)"\}/g;
+// Backend produces ${audio.TEXT} — arbitrary text after "audio." until closing }
+const AUDIO_TOKEN_RE = /\$\{audio\.([^}]+)\}/g;
 // Backend uses XML format: <mcp:context type="..." uri="..." ephemeral="true">...</mcp:context>
 // Match the full tag and extract attributes in the handler function
 const MCP_BLOCK_RE = /<mcp:context\s+([^>]*)>([\s\S]*?)<\/mcp:context>/g;

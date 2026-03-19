@@ -24,6 +24,7 @@ import { SceneGenerator } from '../chat/SceneGenerator.js';
 import { ChainManager } from '../chat/ChainManager.js';
 import { ChatExport } from '../chat/ChatExport.js';
 import { am7imageTokens } from '../chat/imageTokens.js';
+import { marked } from 'marked';
 
 // Ensure am7model._sd is loaded for image token generation (fetchTemplate)
 if (!am7model._sd) {
@@ -409,17 +410,16 @@ async function doCancel() {
     m.redraw();
 }
 
-async function doDelete() {
+function doDelete() {
     if (!inst) return;
-    try {
-        await LLMConnector.deleteSession(inst.entity, false);
+    // Use the confirm dialog callback pattern — the actual deletion and UI refresh
+    // must happen INSIDE the callback, not after deleteSession returns (which is immediate).
+    LLMConnector.deleteSession(inst.entity, false, async function() {
         doClear();
         await ConversationManager.refresh();
         ConversationManager.autoSelectFirst();
-    } catch (e) {
-        page.toast("error", "Delete failed");
-    }
-    m.redraw();
+        m.redraw();
+    });
 }
 
 // ── Edit mode ───────────────────────────────────────────────────────
@@ -529,15 +529,33 @@ function getFormattedContent(content, msg, idx) {
     if (hideThoughts) {
         processed = processed.replace(/<think>[\s\S]*?<\/think>/g, "");
     }
-    // Strip/render MCP blocks BEFORE HTML escaping (formatContent escapes < and >)
+    // 1. Strip MCP blocks before markdown (they contain XML that marked would escape)
     processed = ChatTokenRenderer.processMcpTokens(processed, false);
-    processed = formatContent(processed);
+
+    // 2. Extract image/audio tokens into placeholders before markdown rendering.
+    //    marked.parse() would escape ${...} and the <img>/<button> HTML they produce.
     let characters = { system: chatCfg.system, user: chatCfg.user };
     let sessionId = inst ? inst.api.objectId() : null;
+    let placeholders = [];
     processed = ChatTokenRenderer.processImageTokens(processed, msg.role, idx, characters, { resolvingImages: resolvingImages }, function(msgIdx) {
         return resolveChatImages(msgIdx);
     });
     processed = ChatTokenRenderer.processAudioTokens(processed, msg.role, idx, characters, sessionId);
+    // Stash rendered HTML tokens as placeholders so marked doesn't escape them
+    let phIdx = 0;
+    processed = processed.replace(/<(?:img|button|span)\s[^>]*(?:data-token-key|data-audio-id)[^>]*>[\s\S]*?(?:<\/(?:button|span)>)?/g, function(match) {
+        let key = "\x00PH" + (phIdx++) + "\x00";
+        placeholders.push({ key: key, html: match });
+        return key;
+    });
+
+    // 3. Markdown rendering
+    processed = formatContent(processed);
+
+    // 4. Restore placeholders
+    for (let ph of placeholders) {
+        processed = processed.replace(ph.key, ph.html);
+    }
 
     _formattedCache.set(cacheKey, processed);
     return processed;
@@ -606,7 +624,7 @@ function renderMessage(msg, idx) {
 
     return m("div", { class: "flex mb-3 gap-2 " + (isUser ? "justify-end" : "justify-start"), key: "msg-" + idx }, [
         !isUser ? avatar : null,
-        m("div", { class: "max-w-[80%] px-4 py-2 text-sm " + bubbleClass }, [
+        m("div", { class: "max-w-[80%] px-4 py-2 text-sm chat-prose " + bubbleClass }, [
             m("div", { class: "text-xs opacity-60 mb-1" }, isUser ? (chatCfg.user ? chatCfg.user.name : "You") : (chatCfg.system ? chatCfg.system.name : "Assistant")),
             m.trust(formatted)
         ]),
@@ -614,21 +632,22 @@ function renderMessage(msg, idx) {
     ]);
 }
 
+// Configure marked for chat rendering — Ux7 uses marked.parse() for full markdown
+marked.setOptions({
+    breaks: true,       // Convert \n to <br>
+    gfm: true,          // GitHub-flavored markdown (tables, strikethrough, etc.)
+    headerIds: false,    // Don't generate id attributes on headers
+    mangle: false        // Don't mangle email addresses
+});
+
 function formatContent(text) {
     if (!text) return "";
-    // Basic markdown-like formatting
-    text = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    // Code blocks
-    text = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-gray-900 text-green-400 p-2 rounded my-2 overflow-x-auto text-xs"><code>$2</code></pre>');
-    // Inline code
-    text = text.replace(/`([^`]+)`/g, '<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded text-sm">$1</code>');
-    // Bold
-    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    // Italic
-    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    // Line breaks
-    text = text.replace(/\n/g, '<br>');
-    return text;
+    try {
+        return marked.parse(text);
+    } catch(e) {
+        // Fallback: escape and linebreak only
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>');
+    }
 }
 
 // During streaming, limit how many older messages we render to reduce Firefox layout work.
@@ -668,7 +687,7 @@ function renderStreamingMessage() {
         _streamCache.formatted = formatContent(content);
     }
     return m("div", { class: "flex mb-3 justify-start" }, [
-        m("div", { class: "max-w-[80%] px-4 py-2 text-sm mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-lg rounded-bl-none" }, [
+        m("div", { class: "max-w-[80%] px-4 py-2 text-sm chat-prose mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-lg rounded-bl-none" }, [
             m("div", { class: "text-xs opacity-60 mb-1" }, chatCfg.system ? chatCfg.system.name : "Assistant"),
             m.trust(_streamCache.formatted),
             m("span", { class: "inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1" })
@@ -1182,6 +1201,7 @@ function renderNewSessionDialog() {
                     onclick: async function() {
                         if (!newSessionName.trim()) return;
                         showNewSession = false;
+                        m.redraw(); // Close dialog immediately
                         try {
                             let req = await ConversationManager.createSession(
                                 newSessionName.trim(),
@@ -1190,6 +1210,7 @@ function renderNewSessionDialog() {
                                 newSessionSelectedPromptTemplate
                             );
                             if (req) {
+                                // Refresh list and select new session — single redraw at end
                                 await ConversationManager.refresh();
                                 pickSession(req);
                             }
@@ -1197,7 +1218,6 @@ function renderNewSessionDialog() {
                             page.toast("error", "Failed to create session");
                         }
                         newSessionName = "";
-                        m.redraw();
                     }
                 }, "Create")
             ])

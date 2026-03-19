@@ -890,7 +890,12 @@ import Base64 from './base64.js';
 			return inst.modelValue(n, "placeholder");
 		};
 
-		am7model.getModelFields(inst.model).forEach((f) => {
+		let _mFields = am7model.getModelFields(inst.model);
+		if (!_mFields) {
+			console.warn("[prepareInstance] No fields found for model:", inst.model ? inst.model.name : "(null)", "— using model.fields fallback");
+			_mFields = inst.model && inst.model.fields ? inst.model.fields : [];
+		}
+		_mFields.forEach((f) => {
 			inst.api[f.name] = (...v) => {
 				if (!f.readOnly && v.length) {
 					let val = decorateInOut(true, v[0], f);
