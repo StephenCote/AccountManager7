@@ -20,7 +20,7 @@ async function loadGossip(personId, opts) {
     try {
         let body = {
             personId: personId,
-            query: opts.query || "",
+            query: opts.query || "*",
             limit: opts.limit || 10,
             threshold: opts.threshold || 0.5
         };

@@ -325,6 +325,12 @@
 			"description": "Maximum number of concurrent LLM calls during map-reduce summarization. Ollama on a single GPU typically handles 2 concurrent calls; increase for multi-GPU or faster models. 0 = use default (2)."
 		},
 		{
+			"name": "maxConversationMemories",
+			"type": "int",
+			"default": 100,
+			"description": "Maximum number of memories per conversation to prevent unbounded memory growth. 0 = unlimited."
+		},
+		{
 			"name": "gossipEnabled",
 			"type": "boolean",
 			"default": false,
