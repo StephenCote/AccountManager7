@@ -138,11 +138,11 @@ test.describe('Audio TTS synthesize', () => {
         let result = await page.evaluate(async () => {
             let { applicationPath } = await import('/src/core/config.js');
             try {
-                let resp = await fetch(applicationPath + '/rest/chat/audio/synthesize', {
+                let resp = await fetch(applicationPath + '/rest/voice/test-audio-' + Date.now(), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
-                    body: JSON.stringify({ text: 'Hello world' })
+                    body: JSON.stringify({ text: 'Hello world', speed: 1.2, engine: 'piper', speaker: 'en_GB-alba-medium' })
                 });
                 let contentType = resp.headers.get('content-type') || '';
                 return { status: resp.status, ok: resp.ok, contentType, statusText: resp.statusText };

@@ -41,33 +41,59 @@ async function play(btnId, text) {
     m.redraw();
 
     try {
-        let referenceId = btnId || 'audio-' + Date.now();
-        let resp = await fetch(applicationPath + "/rest/voice/" + encodeURIComponent(referenceId), {
+        let voiceName = btnId || 'audio-' + Date.now();
+        let body = { text: text, speed: 1.2, engine: "piper", speaker: "en_GB-alba-medium" };
+        let resp = await fetch(applicationPath + "/rest/voice/" + encodeURIComponent(voiceName), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify({ text: text })
+            body: JSON.stringify(body)
         });
 
         if (!resp.ok) throw new Error("Synthesis failed: " + resp.status);
 
-        let blob = await resp.blob();
-        let url = URL.createObjectURL(blob);
-        let audio = new Audio(url);
-
-        audio.onended = function() {
-            buttonStates[btnId] = "idle";
-            URL.revokeObjectURL(url);
-            delete audioElements[btnId];
-            m.redraw();
-        };
-
-        audio.onerror = function() {
-            buttonStates[btnId] = "idle";
-            URL.revokeObjectURL(url);
-            delete audioElements[btnId];
-            m.redraw();
-        };
+        let contentType = resp.headers.get('content-type') || '';
+        let audio;
+        if (contentType.match(/audio|octet/)) {
+            // Binary audio response
+            let blob = await resp.blob();
+            let url = URL.createObjectURL(blob);
+            audio = new Audio(url);
+            audio.onended = function() {
+                buttonStates[btnId] = "idle";
+                URL.revokeObjectURL(url);
+                delete audioElements[btnId];
+                m.redraw();
+            };
+            audio.onerror = function() {
+                buttonStates[btnId] = "idle";
+                URL.revokeObjectURL(url);
+                delete audioElements[btnId];
+                m.redraw();
+            };
+        } else {
+            // JSON response with audio data (base64)
+            let data = await resp.json();
+            if (data && data.audio) {
+                let audioBlob = new Blob([Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))], { type: 'audio/wav' });
+                let url = URL.createObjectURL(audioBlob);
+                audio = new Audio(url);
+                audio.onended = function() {
+                    buttonStates[btnId] = "idle";
+                    URL.revokeObjectURL(url);
+                    delete audioElements[btnId];
+                    m.redraw();
+                };
+                audio.onerror = function() {
+                    buttonStates[btnId] = "idle";
+                    URL.revokeObjectURL(url);
+                    delete audioElements[btnId];
+                    m.redraw();
+                };
+            } else {
+                throw new Error("No audio data in response");
+            }
+        }
 
         audioElements[btnId] = audio;
         buttonStates[btnId] = "playing";

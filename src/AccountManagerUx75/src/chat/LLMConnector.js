@@ -204,11 +204,13 @@ const LLMConnector = {
         }
         session.message = message;
         session.uid = page.uid();
+        let timeoutMs = ((session.chatConfig && session.chatConfig.requestTimeout) || 120) * 1000;
         return m.request({
             method: 'POST',
             url: applicationPath + "/rest/chat/text",
             withCredentials: true,
-            body: session
+            body: session,
+            config: function(xhr) { xhr.timeout = timeoutMs; }
         });
     },
 
