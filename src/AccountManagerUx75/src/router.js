@@ -33,6 +33,7 @@ initTheme();
 // Create shared list and object page instances
 let listControl = newListControl();
 let objectPageControl = newObjectPage();
+page.objectPage = objectPageControl;
 let navigatorControl = newNavigatorControl();
 let explorerControl = newExplorerControl();
 
@@ -166,6 +167,14 @@ function takeDown() {
 async function refreshApplication() {
     let usr = await am7client.principal();
     let rt = window.location.hash.slice(window.location.hash.indexOf("/"));
+    // Restore saved return route from 401 redirect — only when authenticated
+    if (usr != null) {
+        let returnRoute = sessionStorage.getItem("am7.returnRoute");
+        if (returnRoute) {
+            sessionStorage.removeItem("am7.returnRoute");
+            rt = returnRoute;
+        }
+    }
     page.application = undefined;
     page.user = usr;
 

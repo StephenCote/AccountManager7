@@ -41,7 +41,8 @@ async function play(btnId, text) {
     m.redraw();
 
     try {
-        let resp = await fetch(applicationPath + "/rest/chat/audio/synthesize", {
+        let referenceId = btnId || 'audio-' + Date.now();
+        let resp = await fetch(applicationPath + "/rest/voice/" + encodeURIComponent(referenceId), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
