@@ -73,10 +73,11 @@ async function play(btnId, text) {
                 m.redraw();
             };
         } else {
-            // JSON response with audio data (base64)
+            // JSON response — server returns data.data record with dataBytesStore (base64 audio)
             let data = await resp.json();
-            if (data && data.audio) {
-                let audioBlob = new Blob([Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))], { type: 'audio/wav' });
+            let audioB64 = data ? (data.dataBytesStore || data.audio) : null;
+            if (audioB64) {
+                let audioBlob = new Blob([Uint8Array.from(atob(audioB64), c => c.charCodeAt(0))], { type: data.contentType || 'audio/wav' });
                 let url = URL.createObjectURL(audioBlob);
                 audio = new Audio(url);
                 audio.onended = function() {
@@ -92,7 +93,7 @@ async function play(btnId, text) {
                     m.redraw();
                 };
             } else {
-                throw new Error("No audio data in response");
+                throw new Error("No audio data in response (keys: " + (data ? Object.keys(data).join(",") : "null") + ")");
             }
         }
 

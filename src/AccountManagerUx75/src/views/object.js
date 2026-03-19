@@ -207,11 +207,11 @@ function newObjectPage() {
             if (v != null) {
                 page.toast('success', 'Saved!');
                 let wasNew = objectNew;
-                inst.resetChanges();
+                if (inst) inst.resetChanges();
                 pinst = {};
                 am7client.clearCache(entity[am7model.jsonModelKey], false);
                 if (!bpatch) entity = v;
-                page.clearContextObject(entity.objectId);
+                if (entity) page.clearContextObject(entity.objectId);
                 objectNew = false;
                 if (wasNew) {
                     m.route.set('/view/' + entity[am7model.jsonModelKey] + '/' + entity.objectId, { key: entity.objectId });

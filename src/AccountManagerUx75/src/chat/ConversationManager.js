@@ -63,12 +63,13 @@ async function loadSessions() {
 }
 
 async function refresh() {
-    // Clear local cache so loadSessions() fetches fresh data from server.
-    am7client.clearCache("olio.llm.chatRequest", true);
+    // Clear BOTH local AND server cache for chatRequest so list returns fresh data.
+    // bLocalOnly=false triggers GET /cache/clear/olio.llm.chatRequest on server.
+    await Promise.resolve(am7client.clearCache("olio.llm.chatRequest", false));
     sessions = null;
     promptConfigs = null;
     chatConfigs = null;
-    loading = false; // Reset guard so loadSessions can run
+    loading = false;
     await loadSessions();
 }
 
