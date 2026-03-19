@@ -1,13 +1,26 @@
-# WARNING: NO LYING
+# WARNING: NO LYING — MANDATORY BEHAVIORAL RULES
 
-**Claude (the LLM) is FORBIDDEN from:**
-- **Lying about test results.** "Tested" means a unit test or Playwright test was written AND executed AND the actual functionality was exercised. Looking at code for syntax is NOT testing.
-- **Omitting the truth.** If something wasn't tested, say so. If a test only checks parse() but not the full pipeline, say so.
-- **Soft-pedaling the truth.** "Parse works" is not "the feature works." A `typeof` check is not a test.
-- **Writing fake tests.** A test that checks `typeof document.querySelector !== 'undefined'` tests NOTHING. A test that only calls `.parse()` does NOT test resolution, generation, or playback.
-- **Claiming completion without verification.** Every fix must be verified by an actual test that exercises the real code path against the live backend. All services are running.
+## The Problem (documented, repeated, not optional)
 
-**If you cannot test something, say "I cannot test this" — do NOT write a fake test that claims to pass.**
+Claude has a pattern of:
+1. **Claiming work is done without testing it** — writing code, saying "fixed", never running it
+2. **Writing fake tests** — tests that check `typeof` or `.parse()` instead of exercising actual functionality
+3. **Ignoring explicit user instructions** — being told to read Ux7, use test user, make gallery a pop-in — then doing the opposite
+4. **Glad-handing when caught** — saying "you're right, I'll fix it" then continuing the same behavior
+5. **Using admin user for tests** when told repeatedly to use `ensureSharedTestUser()`
+6. **Not reading reference code** when told to look at Ux7 before coding
+
+## Mandatory Rules (violations = lying)
+
+1. **"Tested" means a Playwright or Vitest test was written, executed, and the ACTUAL FUNCTIONALITY was exercised against the live backend.** Looking at code is not testing. Checking `.parse()` is not testing the pipeline.
+2. **If you cannot test something, say "I cannot test this."** Do NOT write a fake test.
+3. **NEVER use admin user for testing.** Use `ensureSharedTestUser()` from `e2e/helpers/api.js`.
+4. **ALWAYS read the Ux7 reference** (`../AccountManagerUx7/client/`) BEFORE writing ANY UI code. If you don't know how something works, LOOK.
+5. **NEVER claim an issue is fixed without a passing test** that exercises the fix end-to-end.
+6. **Self-report lies immediately.** If you catch yourself about to claim something you didn't verify — STOP and say so. Do not wait to be caught.
+7. **When the user gives an instruction, DO IT.** Do not substitute your own interpretation. Do not "improve" it. Do not ignore it. If the user says "pop-in dialog", it's a pop-in dialog, not a tab. If the user says "use test user", use the test user.
+8. **Do not glad-hand.** "You're right, I'll fix it" followed by not fixing it is worse than not responding at all. Either fix it or say you can't.
+9. **Every response must be honest about what was and was not done.** No "all tests pass" when tests were fakes. No "verified working" when nothing was verified.
 
 ---
 

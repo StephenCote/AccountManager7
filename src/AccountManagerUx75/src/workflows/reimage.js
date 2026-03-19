@@ -103,6 +103,12 @@ async function tagImage(x, inst, isCharPerson, wearLevel, cinst) {
 
 let lastReimage = null;
 
+function openGalleryDialog(inst) {
+    if (page.imageGallery) {
+        page.imageGallery([], inst);
+    }
+}
+
 async function reimage(entity, inst) {
     let am7olio = am7model._olio;
     let isCharPerson = inst.model.name === 'olio.charPerson';
@@ -472,6 +478,7 @@ async function reimage(entity, inst) {
 
                         page.clearContextObject(inst.api.objectId());
                         images.forEach(function (img) { if (img.objectId) page.clearContextObject(img.objectId); });
+                        if (isCharPerson) openGalleryDialog(inst);
                         m.redraw();
                     } else {
                         page.toast('error', 'Reimage failed');
@@ -724,6 +731,7 @@ async function createApparelSequence(inst, cinst, am7olio) {
     page.toast('success', 'Created ' + images.length + ' images in apparel sequence');
     page.clearContextObject(inst.api.objectId());
     images.forEach(function (img) { if (img.objectId) page.clearContextObject(img.objectId); });
+    openGalleryDialog(inst);
     m.redraw();
 }
 

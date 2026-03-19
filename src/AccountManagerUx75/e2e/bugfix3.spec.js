@@ -4,13 +4,23 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
+import { ensureSharedTestUser } from './helpers/api.js';
+
+let _testUser = {};
+test.beforeAll(async ({ request }) => {
+    _testUser = await ensureSharedTestUser(request);
+});
+
+function testLogin(page) {
+    return login(page, { user: _testUser.testUserName, password: _testUser.testPassword });
+}
 
 // ── Test 9: Clear Cache / Cleanup toasts (#33) ─────────────────────
 
 test.describe('Issue #33: Clear Cache and Cleanup toasts', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('Clear Cache shows toast notification', async ({ page }) => {
@@ -71,7 +81,7 @@ test.describe('Issue #33: Clear Cache and Cleanup toasts', () => {
 test.describe('Issue #32: Picker field labels in new session dialog', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('new session dialog picker fields show as labels, not inputs', async ({ page }) => {
@@ -120,7 +130,7 @@ test.describe('Issue #32: Picker field labels in new session dialog', () => {
 test.describe('Issue #26: Scene generation with SdConfigPanel', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('scene generation button opens SdConfigPanel with all fields', async ({ page }) => {
@@ -198,7 +208,7 @@ test.describe('Issue #26: Scene generation with SdConfigPanel', () => {
 test.describe('Issue #28: Sidebar config picker click', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('config accordion is visible in sidebar and clickable', async ({ page }) => {
@@ -264,7 +274,7 @@ test.describe('Issue #28: Sidebar config picker click', () => {
 test.describe('Issue #24: Edit mode save', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('edit mode toggle and save button are visible', async ({ page }) => {
@@ -322,7 +332,7 @@ test.describe('Issue #31: 401 redirect to login with return URL', () => {
 
     test('_handle401 saves route and redirects via sessionStorage', async ({ page }) => {
         // Login first
-        await login(page);
+        await testLogin(page);
         await expect(page.locator('.panel-container').first()).toBeVisible({ timeout: 10000 });
 
         // Simulate what _handle401 does: save route and verify it persists
@@ -357,7 +367,7 @@ test.describe('Issue #31: 401 redirect to login with return URL', () => {
 
     test('after login, returns to saved route', async ({ page }) => {
         // First login normally to verify auth works
-        await login(page);
+        await testLogin(page);
         await expect(page.locator('.panel-container').first()).toBeVisible({ timeout: 10000 });
 
         // Set return route while authenticated
@@ -408,7 +418,7 @@ test.describe('Issue #31: 401 redirect to login with return URL', () => {
 test.describe('Issue #30: Audio token rendering', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('ChatTokenRenderer processes audio tokens correctly', async ({ page }) => {
@@ -440,7 +450,7 @@ test.describe('Issue #30: Audio token rendering', () => {
 test.describe('Issue #25: Image token processing', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('am7imageTokens is loaded and parse works', async ({ page }) => {
@@ -477,7 +487,7 @@ test.describe('Issue #25: Image token processing', () => {
 test.describe('Issue #29: Pending animation', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('pending indicator exists in chat view code', async ({ page }) => {
@@ -503,7 +513,7 @@ test.describe('Issue #29: Pending animation', () => {
 test.describe('Issue #27: Memoization cache', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('chat page loads and renders messages without excessive delay', async ({ page }) => {

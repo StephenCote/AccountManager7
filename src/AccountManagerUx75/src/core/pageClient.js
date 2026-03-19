@@ -351,15 +351,15 @@ function routeMessage(msg) {
         } else if (c1 === "policyEvent" || c1 === "autotuneEvent" || c1 === "evalProgress" || c1 === "interactionEvent") {
             import('../chat/LLMConnector.js').then(mod => {
                 mod.LLMConnector.handlePolicyEvent({ type: c1, data: msg.chirps[1] });
-                m.redraw();
+                _scheduleWsRedraw();
             }).catch(() => {});
-            return; // async — redraw handled in .then()
+            return;
         } else if (c1 === "memoryEvent") {
             import('../chat/LLMConnector.js').then(mod => {
                 mod.LLMConnector.handleMemoryEvent({ type: c1, data: msg.chirps[1] });
-                m.redraw();
+                _scheduleWsRedraw();
             }).catch(() => {});
-            return; // async — redraw handled in .then()
+            return;
         } else if (c1 === "chainEvent") {
             let eventType = msg.chirps[1];
             let eventData = null;
@@ -486,6 +486,10 @@ function listObjects(type, parentId, fields, start, count) {
 }
 
 function searchByName(type, parentId, name) {
+    return am7client.getByName(type, parentId, name);
+}
+
+function openObjectByName(type, parentId, name) {
     return am7client.getByName(type, parentId, name);
 }
 
@@ -623,6 +627,7 @@ const page = {
     findObject: findObject,
     listObjects: listObjects,
     searchByName: searchByName,
+    openObjectByName: openObjectByName,
     searchFirst: searchFirst,
     search: pageSearch,
     count: pageCount,
@@ -660,7 +665,171 @@ const page = {
     router: null,
     testMode: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get("testMode") === "true"),
     productionMode: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get("productionMode") === "true"),
-    formDef: am7model
+    formDef: am7model,
+    imageGallery: async function(images, charInst) {
+        let galleryImages = images || [];
+        if (charInst && charInst.entity) {
+            let entity = charInst.entity;
+            let profile = entity.profile;
+            let portrait = profile ? profile.portrait : null;
+            let profileOid = profile ? profile.objectId : null;
+            if (profileOid && (!portrait || !portrait.groupId)) {
+                let pq = am7view.viewQuery('identity.profile');
+                pq.field('objectId', profileOid);
+                pq.entity.request.push('portrait');
+                let pqr = await pageSearch(pq);
+                if (pqr && pqr.results && pqr.results.length) {
+                    portrait = pqr.results[0].portrait;
+                    if (entity.profile) entity.profile.portrait = portrait;
+                }
+            }
+            if (portrait && portrait.groupId) {
+                let q = am7client.newQuery('data.data');
+                q.field('groupId', portrait.groupId);
+                q.entity.request.push('id', 'objectId', 'name', 'groupId', 'groupPath', 'contentType', 'organizationPath');
+                q.range(0, 200);
+                q.sort('modifiedDate');
+                q.order('descending');
+                q.cache(false);
+                let qr = await am7client.search(q);
+                if (qr && qr.results) {
+                    let existingIds = new Set(qr.results.map(function(r) { return r.id; }));
+                    let newImgs = galleryImages.filter(function(img) { return !existingIds.has(img.id); });
+                    galleryImages = newImgs.concat(qr.results.filter(function(r) { return r.contentType && r.contentType.match(/^image\//i); }));
+                }
+            }
+        }
+        let idx = 0;
+        let viewMode = 'grid';
+        let tagsCache = {};
+
+        function loadTags(img) {
+            if (!img || tagsCache[img.objectId]) return;
+            tagsCache[img.objectId] = [];
+            am7client.getImageTags(img.objectId, function(tags) {
+                tagsCache[img.objectId] = tags || [];
+                m.redraw();
+            });
+        }
+
+        function renderGallery() {
+            let sel = galleryImages[idx];
+            if (sel) loadTags(sel);
+            let tags = sel ? (tagsCache[sel.objectId] || []) : [];
+            let previewUrl = sel ? am7client.mediaDataPath(sel, true, '512x512') : '';
+            return m('div', {
+                class: 'outline-none',
+                tabindex: 0,
+                oncreate: function(vn) { vn.dom.focus(); },
+                onkeydown: function(e) {
+                    if (e.key === 'ArrowLeft' && idx > 0) { idx--; m.redraw(); e.preventDefault(); }
+                    else if (e.key === 'ArrowRight' && idx < galleryImages.length - 1) { idx++; m.redraw(); e.preventDefault(); }
+                    else if (e.key === 'Delete' && sel) {
+                        Dialog.confirm('Delete ' + sel.name + '?', async function() {
+                            await deleteObject('data.data', sel.objectId);
+                            galleryImages.splice(idx, 1);
+                            if (idx >= galleryImages.length) idx = Math.max(0, galleryImages.length - 1);
+                            m.redraw();
+                        });
+                        e.preventDefault();
+                    }
+                }
+            }, [
+                // Toolbar
+                m('div', { class: 'flex items-center gap-2 text-sm mb-2' }, [
+                    m('span', { class: 'text-gray-500' }, galleryImages.length + ' image(s)'),
+                    m('span', { class: 'text-gray-400 text-xs' }, '(' + (idx + 1) + '/' + galleryImages.length + ')'),
+                    m('button', {
+                        class: 'p-1 rounded ' + (viewMode === 'grid' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'text-gray-500 hover:bg-gray-100'),
+                        onclick: function() { viewMode = 'grid'; m.redraw(); }
+                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'grid_view')),
+                    m('button', {
+                        class: 'p-1 rounded ' + (viewMode === 'list' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'text-gray-500 hover:bg-gray-100'),
+                        onclick: function() { viewMode = 'list'; m.redraw(); }
+                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'view_list'))
+                ]),
+                // Preview + info
+                sel ? m('div', { class: 'flex gap-3 mb-3 flex-wrap' }, [
+                    m('div', { class: 'flex-shrink-0' },
+                        m('img', { src: previewUrl, class: 'max-w-full max-h-80 rounded shadow cursor-pointer', style: 'object-fit:contain', onclick: function() { page.imageView(sel); } })
+                    ),
+                    m('div', { class: 'flex-1 min-w-[180px]' }, [
+                        m('div', { class: 'text-sm font-medium text-gray-800 dark:text-white mb-1' }, sel.name),
+                        m('div', { class: 'flex flex-wrap gap-1 mb-2' }, [
+                            m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200', onclick: function() {
+                                let profile = charInst && charInst.entity ? charInst.entity.profile : null;
+                                if (!profile) { addToast('error', 'No profile'); return; }
+                                patchObject({ schema: 'identity.profile', id: profile.id, portrait: { id: sel.id } }).then(function() {
+                                    addToast('success', 'Portrait set');
+                                    am7client.clearCache('identity.profile');
+                                });
+                            }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'account_circle'), 'Set Profile']),
+                            m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-200', onclick: function() {
+                                addToast('info', 'Auto-tagging...');
+                                am7client.applyImageTags(sel.objectId, function() {
+                                    delete tagsCache[sel.objectId];
+                                    addToast('success', 'Tags applied');
+                                    m.redraw();
+                                });
+                            }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'label'), 'Auto-Tag']),
+                            m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 hover:bg-red-200', onclick: function() {
+                                Dialog.confirm('Delete ' + sel.name + '?', async function() {
+                                    await deleteObject('data.data', sel.objectId);
+                                    galleryImages.splice(idx, 1);
+                                    if (idx >= galleryImages.length) idx = Math.max(0, galleryImages.length - 1);
+                                    m.redraw();
+                                });
+                            }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'delete'), 'Delete'])
+                        ]),
+                        m('div', { class: 'text-xs text-gray-500 mb-1' }, 'Tags:'),
+                        tags.length > 0 ? m('div', { class: 'flex flex-wrap gap-1' }, tags.map(function(t) {
+                            return m('span', { class: 'px-2 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' }, t.name || t);
+                        })) : m('span', { class: 'text-xs text-gray-400 italic' }, 'No tags'),
+                        m('div', { class: 'text-xs text-gray-400 mt-2' }, 'Arrow keys to navigate, Delete to remove')
+                    ])
+                ]) : null,
+                // Grid or list
+                viewMode === 'list' ? m('div', { class: 'divide-y divide-gray-200 dark:divide-gray-700 max-h-60 overflow-y-auto' },
+                    galleryImages.map(function(img, i) {
+                        let thumbUrl = am7client.mediaDataPath(img, true, '64x64');
+                        return m('div', { class: 'flex items-center gap-2 px-2 py-1 cursor-pointer ' + (i === idx ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-800'), onclick: function() { idx = i; m.redraw(); } }, [
+                            m('img', { src: thumbUrl, class: 'w-10 h-10 rounded object-cover flex-shrink-0' }),
+                            m('span', { class: 'text-sm text-gray-700 dark:text-gray-300 truncate' }, img.name),
+                            i === idx ? m('span', { class: 'material-symbols-outlined text-blue-500 ml-auto', style: 'font-size:16px' }, 'check_circle') : null
+                        ]);
+                    })
+                ) : m('div', { class: 'grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1 max-h-60 overflow-y-auto' },
+                    galleryImages.map(function(img, i) {
+                        let thumbUrl = am7client.mediaDataPath(img, true, '96x96');
+                        return m('div', { class: 'cursor-pointer rounded overflow-hidden border-2 ' + (i === idx ? 'border-blue-500' : 'border-transparent hover:border-gray-300'), onclick: function() { idx = i; m.redraw(); } },
+                            m('img', { src: thumbUrl, class: 'w-full aspect-square object-cover' }));
+                    })
+                )
+            ]);
+        }
+
+        Dialog.open({
+            title: 'Gallery (' + galleryImages.length + ' images)',
+            size: 'xl',
+            content: { view: renderGallery },
+            closable: true,
+            actions: [{ label: 'Close', icon: 'close', onclick: function() { Dialog.close(); } }]
+        });
+    },
+    imageView: function(imageObj) {
+        if (!imageObj) return;
+        let org = am7client.dotPath(am7client.currentOrganization);
+        let fullUrl = applicationPath + "/media/" + org + "/data.data" + (imageObj.groupPath || "") + "/" + (imageObj.name || "");
+        Dialog.open({
+            title: imageObj.name || 'Image',
+            size: 'lg',
+            content: m('div', { class: 'flex flex-col items-center' }, [
+                m('img', { src: fullUrl, class: 'max-w-full max-h-[70vh] rounded shadow', style: 'object-fit:contain' })
+            ]),
+            closable: true,
+            actions: [{ label: 'Close', icon: 'close', onclick: function() { Dialog.close(); } }]
+        });
+    }
 };
 
 export { page };

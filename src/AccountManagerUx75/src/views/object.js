@@ -996,6 +996,7 @@ function newObjectPage() {
             ] : ''),
             (!objectNew ? page.iconButton('button', 'delete_outline', '', doDelete) : ''),
             (!objectNew ? page.iconButton('button', 'content_copy', '', doCopy) : ''),
+            (!objectNew && objectType === 'olio.charPerson' ? page.iconButton('button', 'photo_library', '', function() { page.imageGallery([], inst); }) : ''),
             page.iconButton('button' + (fullMode ? ' active' : ''),
                 fullMode ? 'close_fullscreen' : 'open_in_new', '', toggleFullMode),
             (isDesignable() ? page.iconButton('button' + (designMode ? ' active' : ''),
@@ -1111,7 +1112,14 @@ function newObjectPage() {
     objectPage.getEntity = function () { return entity; };
     objectPage.getInstance = function () { return inst; };
     objectPage.resetEntity = resetEntity;
-    objectPage.tabIndex = function () { return tabIndex; };
+    objectPage.tabIndex = function (v) { if (v !== undefined) { tabIndex = v; } return tabIndex; };
+    objectPage.foreignData = function () { return foreignData; };
+    objectPage.switchToTab = function (formName) {
+        let form = inst ? inst.form : null;
+        if (!form || !form.forms) return;
+        let idx = form.forms.indexOf(formName);
+        if (idx >= 0) { tabIndex = idx + 1; m.redraw(); }
+    };
     objectPage.preparePicker = preparePicker;
     objectPage.cancelPicker = cancelPicker;
     objectPage.picker = doFieldPicker;

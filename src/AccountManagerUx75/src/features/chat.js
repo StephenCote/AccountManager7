@@ -43,6 +43,7 @@ let sidebarActivePanel = null; // null | "conversations" | "memories" | "context
 let editMode = false;
 let deletedIndices = new Set();
 let fullMode = false;
+let showPortraits = false;
 
 function newChatConfig() {
     return {
@@ -272,6 +273,8 @@ function newChatStream() {
                 chatCfg.history.messages.push({ role: "assistant", content: chatCfg.streamText });
             }
             chatCfg.streamText = "";
+            _streamCache.text = "";
+            _streamCache.formatted = "";
             getHistory().then(function(h) {
                 if (h) {
                     if (!h.messages) h.messages = [];
@@ -284,6 +287,8 @@ function newChatStream() {
         },
         onchaterror: function(id, err) {
             chatCfg.streaming = false;
+            _streamCache.text = "";
+            _streamCache.formatted = "";
             chatCfg.pending = false;
             chatCfg.streamText = "";
             page.chatStream = null;
@@ -419,10 +424,11 @@ async function saveEdits() {
         return;
     }
 
-    // Fetch the full server session record (bypasses client cache)
-    let q = am7client.newQuery(entity.sessionType);
+    // Fetch the full server session record with messages (Ux7 pattern: viewQuery + messages in request)
+    let q = am7view.viewQuery(am7model.newInstance(entity.sessionType));
     q.field("id", entity.session.id);
     q.cache(false);
+    q.entity.request.push("messages");
     let qr;
     try {
         qr = await page.search(q);
@@ -475,13 +481,12 @@ async function saveEdits() {
     editMode = false;
     deletedIndices.clear();
 
-    // Clear cache and refresh from server
+    // Clear cache and re-peek from server
     am7client.clearCache();
-    let h = await getHistory();
-    if (h) {
-        if (!h.messages) h.messages = [];
-        chatCfg.history = h;
-    }
+    clearFormattedCache();
+    chatCfg.peek = false;
+    chatCfg.history = { messages: [] };
+    await doPeek();
     m.redraw();
 }
 
@@ -494,6 +499,8 @@ let _formattedCache = new Map();
 
 function clearFormattedCache() {
     _formattedCache.clear();
+    _streamCache.text = "";
+    _streamCache.formatted = "";
 }
 
 function getFormattedContent(content, msg, idx) {
@@ -544,6 +551,7 @@ function renderMessage(msg, idx) {
                     id: "editMessage-" + idx,
                     class: "w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white text-sm resize-y min-h-[60px]",
                     value: content,
+                    oninput: function(e) { msg.content = e.target.value; },
                     disabled: isDeleted
                 })
             ])
@@ -604,55 +612,60 @@ function formatContent(text) {
     return text;
 }
 
+let _streamCache = { text: "", formatted: "" };
+
 function renderStreamingMessage() {
     if (!chatCfg.streaming || !chatCfg.streamText) return null;
-    let content = ChatTokenRenderer.pruneForDisplay(chatCfg.streamText, hideThoughts);
-    if (hideThoughts) {
-        content = content.replace(/<think>[\s\S]*?<\/think>/g, "");
+    let raw = chatCfg.streamText;
+    // Only reprocess if text actually changed
+    if (raw !== _streamCache.text) {
+        let content = ChatTokenRenderer.pruneForDisplay(raw, hideThoughts);
+        if (hideThoughts) {
+            content = content.replace(/<think>[\s\S]*?<\/think>/g, "");
+        }
+        _streamCache.text = raw;
+        _streamCache.formatted = formatContent(content);
     }
-    let formatted = formatContent(content);
-    let characters = { system: chatCfg.system, user: chatCfg.user };
-    formatted = ChatTokenRenderer.processImageTokens(formatted, "assistant", -1, characters, { resolvingImages: {} }, null);
-    formatted = ChatTokenRenderer.processAudioTokens(formatted, "assistant", -1, characters, inst ? inst.api.objectId() : null);
     return m("div", { class: "flex mb-3 justify-start" }, [
         m("div", { class: "max-w-[80%] px-4 py-2 text-sm mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-lg rounded-bl-none" }, [
             m("div", { class: "text-xs opacity-60 mb-1" }, chatCfg.system ? chatCfg.system.name : "Assistant"),
-            m.trust(formatted),
+            m.trust(_streamCache.formatted),
             m("span", { class: "inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1" })
         ])
     ]);
 }
 
-// Ux7-style portrait header: system character left, user character right
+// Portrait header: system character left, user character right — show/hide toggle, default off
 function renderPortraitHeader() {
     if (!chatCfg.system && !chatCfg.user) return null;
 
-    function charIcon(char, side) {
+    function charPortrait(char) {
         if (!char) return null;
-        let marginClass = side === "left" ? "mr-2" : "ml-2";
         if (char.profile && char.profile.portrait) {
             let pp = char.profile.portrait;
-            let dataUrl = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/96x96";
-            return m("img", {
-                src: dataUrl,
-                class: marginClass + " rounded-full cursor-pointer",
-                style: "width:32px;height:32px",
-                onclick: function() { if (page.imageView) page.imageView(pp); }
-            });
+            let thumbUrl = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
+            return m("div", { class: "flex flex-col items-center" }, [
+                m("img", {
+                    src: thumbUrl,
+                    class: "rounded-lg shadow cursor-pointer hover:opacity-90",
+                    style: "width:120px;height:120px;object-fit:cover",
+                    onclick: function() { page.imageView(pp); }
+                }),
+                m("span", { class: "text-xs text-gray-500 dark:text-gray-400 mt-1 truncate max-w-[120px]" }, char.name || "")
+            ]);
         }
         let g = (char.gender === "female") ? "woman" : "man";
-        return m("span", { class: "material-icons-outlined text-gray-400 " + marginClass }, g);
+        return m("div", { class: "flex flex-col items-center" }, [
+            m("span", { class: "material-icons-outlined text-gray-400", style: "font-size:48px" }, g),
+            m("span", { class: "text-xs text-gray-500 dark:text-gray-400 mt-1" }, char.name || "")
+        ]);
     }
 
-    return m("div", { class: "flex justify-between px-3 py-1.5 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-700" }, [
-        m("div", { class: "flex items-center" }, [
-            charIcon(chatCfg.system, "left"),
-            m("span", { class: "text-gray-400 text-sm" }, chatCfg.system ? chatCfg.system.name : "")
-        ]),
-        m("div", { class: "flex items-center" }, [
-            m("span", { class: "text-gray-400 text-sm" }, chatCfg.user ? chatCfg.user.name : ""),
-            charIcon(chatCfg.user, "right")
-        ])
+    if (!showPortraits) return null;
+
+    return m("div", { class: "flex justify-around items-end px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700" }, [
+        charPortrait(chatCfg.system),
+        charPortrait(chatCfg.user)
     ]);
 }
 
@@ -875,6 +888,12 @@ function renderToolbar() {
                     ChatExport.exportChat(chatCfg.history, name, "markdown", chatCfg);
                 }
             }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "download")) : null,
+            // Portrait toggle
+            (chatCfg.system || chatCfg.user) ? m("button", {
+                class: "p-1.5 rounded " + (showPortraits ? "text-blue-600 bg-blue-50 dark:bg-blue-900/30" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"),
+                title: showPortraits ? "Hide portraits" : "Show portraits",
+                onclick: function() { showPortraits = !showPortraits; m.redraw(); }
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "portrait")) : null,
             // Fullscreen toggle
             m("button", {
                 class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
@@ -1209,7 +1228,7 @@ const chatView = {
                 // Messages area
                 inst ? m("div", {
                     class: "flex-1 overflow-y-auto p-4",
-                    oncreate: function(vnode) { scrollToBottom(vnode.dom); },
+                    oncreate: function(vnode) { scrollToBottom(vnode.dom, true); },
                     onupdate: function(vnode) { scrollToBottom(vnode.dom); }
                 }, [
                     (chatCfg.history.messages || []).map(renderMessage),
@@ -1228,12 +1247,46 @@ const chatView = {
 };
 
 let _scrollRaf = 0;
-function scrollToBottom(el) {
+let _scrollLastMsgCount = 0;
+let _scrollLastStreamLen = 0;
+function scrollToBottom(el, force) {
     if (!el) return;
+    // Only scroll when content actually changed (new messages or streaming growth)
+    let msgCount = chatCfg.history.messages ? chatCfg.history.messages.length : 0;
+    let streamLen = chatCfg.streamText ? chatCfg.streamText.length : 0;
+    if (!force && msgCount === _scrollLastMsgCount && streamLen === _scrollLastStreamLen) return;
+    _scrollLastMsgCount = msgCount;
+    _scrollLastStreamLen = streamLen;
     if (_scrollRaf) cancelAnimationFrame(_scrollRaf);
     _scrollRaf = requestAnimationFrame(function() {
         _scrollRaf = 0;
         if (el) el.scrollTop = el.scrollHeight;
+    });
+}
+
+// Click delegation for inline chat images (rendered via m.trust with data-token-key)
+if (typeof document !== 'undefined') {
+    document.addEventListener('click', function(e) {
+        let img = e.target.closest('img[data-token-key]');
+        if (img && img.src) {
+            // Extract the full-size URL from the thumbnail URL (remove size suffix)
+            let src = img.src;
+            let fullSrc = src.replace(/\/\d+x\d+$/, '');
+            // Open in image viewer dialog
+            let Dialog = page.components.dialog;
+            if (Dialog) {
+                Dialog.open({
+                    title: img.alt || 'Image',
+                    size: 'lg',
+                    content: m('div', { class: 'flex flex-col items-center' }, [
+                        m('img', { src: fullSrc, class: 'max-w-full max-h-[70vh] rounded shadow', style: 'object-fit:contain' })
+                    ]),
+                    closable: true,
+                    actions: [{ label: 'Close', icon: 'close', onclick: function() { Dialog.close(); } }]
+                });
+                m.redraw();
+            }
+        }
     });
 }
 

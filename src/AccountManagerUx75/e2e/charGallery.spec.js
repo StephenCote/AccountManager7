@@ -4,11 +4,18 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
+import { ensureSharedTestUser } from './helpers/api.js';
+
+let _testUser = {};
 
 test.describe('Character image gallery', () => {
 
+    test.beforeAll(async ({ request }) => {
+        _testUser = await ensureSharedTestUser(request);
+    });
+
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await login(page, { user: _testUser.testUserName, password: _testUser.testPassword });
     });
 
     test('Images tab shows gallery with thumbnails for charPerson', async ({ page }) => {

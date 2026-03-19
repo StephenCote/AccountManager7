@@ -5,11 +5,21 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
+import { ensureSharedTestUser } from './helpers/api.js';
+
+let _testUser = {};
+test.beforeAll(async ({ request }) => {
+    _testUser = await ensureSharedTestUser(request);
+});
+
+function testLogin(page) {
+    return login(page, { user: _testUser.testUserName, password: _testUser.testPassword });
+}
 
 test.describe('Image token pipeline (live backend)', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('am7imageTokens.resolve() fetches existing image by UUID from server', async ({ page }) => {
@@ -182,7 +192,7 @@ test.describe('Image token pipeline (live backend)', () => {
 test.describe('Audio token pipeline (live backend)', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('audio synthesize endpoint returns audio blob', async ({ page }) => {
@@ -315,7 +325,7 @@ test.describe('Audio token pipeline (live backend)', () => {
 test.describe('Edit mode save (live backend)', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('editing a message and saving persists changes on server', async ({ page }) => {
@@ -421,7 +431,7 @@ test.describe('Edit mode save (live backend)', () => {
 test.describe('Scene generation (live backend)', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('scene generation sends correct POST to /generateScene', async ({ page }) => {
@@ -493,7 +503,7 @@ test.describe('Scene generation (live backend)', () => {
 test.describe('Auto-start pending animation (live backend)', () => {
 
     test.beforeEach(async ({ page }) => {
-        await login(page);
+        await testLogin(page);
     });
 
     test('pending indicator stays visible until stream text arrives', async ({ page }) => {

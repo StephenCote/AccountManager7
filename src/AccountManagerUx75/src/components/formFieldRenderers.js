@@ -285,41 +285,13 @@ renderers.image = function(ctx) {
     else if (useEntity.profile && useEntity.profile.portrait && useEntity.profile.portrait.contentType) {
         let pp = useEntity.profile.portrait;
         dataUrl = buildThumbnailPath(pp, "96x96");
-        clickHandler = function() {
-            let page = getPage();
-            if (page && page.components && page.components.dialog) {
-                let fullUrl = buildMediaPath(pp);
-                page.components.dialog.open({
-                    title: pp.name || 'Portrait',
-                    size: 'lg',
-                    content: m('div', { class: 'flex flex-col items-center' }, [
-                        m('img', { src: fullUrl, class: 'max-w-full max-h-[70vh] rounded shadow', style: 'object-fit:contain' })
-                    ]),
-                    closable: true,
-                    actions: [{ label: 'Close', icon: 'close', onclick: function() { page.components.dialog.close(); } }]
-                });
-            }
-        };
+        clickHandler = function() { let p = getPage(); if (p && p.imageView) p.imageView(pp); };
     }
     // Direct portrait
     else if (useEntity.portrait && useEntity.portrait.contentType) {
         let pt = useEntity.portrait;
         dataUrl = buildThumbnailPath(pt, "96x96");
-        clickHandler = function() {
-            let page = getPage();
-            if (page && page.components && page.components.dialog) {
-                let fullUrl = buildMediaPath(pt);
-                page.components.dialog.open({
-                    title: pt.name || 'Portrait',
-                    size: 'lg',
-                    content: m('div', { class: 'flex flex-col items-center' }, [
-                        m('img', { src: fullUrl, class: 'max-w-full max-h-[70vh] rounded shadow', style: 'object-fit:contain' })
-                    ]),
-                    closable: true,
-                    actions: [{ label: 'Close', icon: 'close', onclick: function() { page.components.dialog.close(); } }]
-                });
-            }
-        };
+        clickHandler = function() { let p = getPage(); if (p && p.imageView) p.imageView(pt); };
     }
 
     if (!dataUrl) return [m("span", "No image source")];
