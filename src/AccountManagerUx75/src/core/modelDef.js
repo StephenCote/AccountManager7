@@ -8886,12 +8886,12 @@
         {
           "name": "model",
           "type": "string",
-          "default": "dolphin-llama3"
+          "default": "qwen3:8b"
         },
         {
           "name": "analyzeModel",
           "type": "string",
-          "default": "dolphin-llama3"
+          "default": "qwen3:8b"
         },
         {
           "name": "userPrompt",

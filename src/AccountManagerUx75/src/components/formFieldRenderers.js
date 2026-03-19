@@ -444,29 +444,33 @@ renderers.picker = function(ctx) {
     let view = [];
 
     if (valPick) {
-        // Picker fields render as clickable label + icon buttons (not text inputs)
+        // Picker fields: plain text label (no border/input styling) + right-aligned icon buttons
+        // Clicking the text label opens the picker — matches Ux7 formFieldRenderers pattern
         let openPicker = function() { if (ctx.doFieldPicker) ctx.doFieldPicker(field, ctx.useName, useEntity); };
-        view.push(m("div", { class: "w-full flex items-center gap-1 px-4 py-2 mt-2 border rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-black" }, [
+        let hasValue = defVal && defVal !== "(none)";
+        view.push(m("div", { class: "w-full flex items-center gap-1 min-h-[36px]" }, [
             m("span", {
-                class: "flex-1 text-sm text-gray-800 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400",
+                class: "flex-1 text-sm truncate cursor-pointer " + (hasValue
+                    ? "text-gray-800 dark:text-white hover:text-blue-600 dark:hover:text-blue-400"
+                    : "text-gray-400 dark:text-gray-500 italic hover:text-blue-600 dark:hover:text-blue-400"),
                 onclick: openPicker,
                 title: defVal || "(none)"
             }, defVal || "(none)"),
             m("button", {
-                class: "p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+                class: "p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0",
                 title: "Find",
                 onclick: openPicker
             }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "search")),
-            m("button", {
-                class: "p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+            hasValue ? m("button", {
+                class: "p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0",
                 title: "View",
                 onclick: function() { if (ctx.doFieldOpen) ctx.doFieldOpen(field); }
-            }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "file_open")),
-            m("button", {
-                class: "p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
+            }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "file_open")) : null,
+            hasValue ? m("button", {
+                class: "p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0",
                 title: "Clear",
                 onclick: function() { if (ctx.doFieldClear) ctx.doFieldClear(field); }
-            }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "backspace"))
+            }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "backspace")) : null
         ]));
     } else {
         // Non-picker text field fallback

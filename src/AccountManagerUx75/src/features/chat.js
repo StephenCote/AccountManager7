@@ -105,8 +105,25 @@ async function doPeek() {
             let fullCc = await am7client.getFull("olio.llm.chatConfig", cc.objectId);
             if (fullCc) {
                 chatCfg.chat = fullCc;
-                if (fullCc.userCharacter) chatCfg.user = fullCc.userCharacter;
-                if (fullCc.systemCharacter) chatCfg.system = fullCc.systemCharacter;
+                // Resolve characters fully — getFull may return stubs with only objectId
+                if (fullCc.systemCharacter && fullCc.systemCharacter.objectId) {
+                    try {
+                        let fullSys = await am7client.getFull("olio.charPerson", fullCc.systemCharacter.objectId);
+                        chatCfg.system = fullSys || fullCc.systemCharacter;
+                    } catch(e2) {
+                        console.warn("Failed to resolve systemCharacter:", e2);
+                        chatCfg.system = fullCc.systemCharacter;
+                    }
+                }
+                if (fullCc.userCharacter && fullCc.userCharacter.objectId) {
+                    try {
+                        let fullUsr = await am7client.getFull("olio.charPerson", fullCc.userCharacter.objectId);
+                        chatCfg.user = fullUsr || fullCc.userCharacter;
+                    } catch(e2) {
+                        console.warn("Failed to resolve userCharacter:", e2);
+                        chatCfg.user = fullCc.userCharacter;
+                    }
+                }
             }
         } catch(e) {
             console.warn("Failed to load chatConfig:", e);
@@ -239,14 +256,14 @@ async function resolveChatImages(msgIndex) {
 
 // ── Chat send ───────────────────────────────────────────────────────
 
-// Debounced redraw for streaming updates — max ~30fps to avoid layout thrashing in Firefox
-let _streamRedrawRaf = 0;
+// Throttled redraw for streaming updates — ~15fps to avoid layout thrashing in Firefox
+let _streamRedrawTimer = 0;
 function scheduleStreamRedraw() {
-    if (!_streamRedrawRaf) {
-        _streamRedrawRaf = requestAnimationFrame(function() {
-            _streamRedrawRaf = 0;
+    if (!_streamRedrawTimer) {
+        _streamRedrawTimer = setTimeout(function() {
+            _streamRedrawTimer = 0;
             m.redraw();
-        });
+        }, 66); // ~15fps — smooth enough for text streaming, much easier on Firefox
     }
 }
 
@@ -512,6 +529,8 @@ function getFormattedContent(content, msg, idx) {
     if (hideThoughts) {
         processed = processed.replace(/<think>[\s\S]*?<\/think>/g, "");
     }
+    // Strip/render MCP blocks BEFORE HTML escaping (formatContent escapes < and >)
+    processed = ChatTokenRenderer.processMcpTokens(processed, false);
     processed = formatContent(processed);
     let characters = { system: chatCfg.system, user: chatCfg.user };
     let sessionId = inst ? inst.api.objectId() : null;
@@ -550,8 +569,8 @@ function renderMessage(msg, idx) {
                 m("textarea", {
                     id: "editMessage-" + idx,
                     class: "w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white text-sm resize-y min-h-[60px]",
-                    value: content,
-                    oninput: function(e) { msg.content = e.target.value; },
+                    // Use oncreate to set initial value ONCE — avoids Mithril redraw overwriting user edits
+                    oncreate: function(vnode) { vnode.dom.value = content; },
                     disabled: isDeleted
                 })
             ])
@@ -610,6 +629,28 @@ function formatContent(text) {
     // Line breaks
     text = text.replace(/\n/g, '<br>');
     return text;
+}
+
+// During streaming, limit how many older messages we render to reduce Firefox layout work.
+// When not streaming, render all messages.
+const MAX_VISIBLE_MESSAGES_STREAMING = 30;
+
+function renderMessages() {
+    let msgs = chatCfg.history.messages || [];
+    if (!chatCfg.streaming || msgs.length <= MAX_VISIBLE_MESSAGES_STREAMING) {
+        return msgs.map(renderMessage);
+    }
+    // During streaming with many messages, only render the tail
+    let start = msgs.length - MAX_VISIBLE_MESSAGES_STREAMING;
+    let truncated = m("div", {
+        class: "text-center text-xs text-gray-400 py-2",
+        key: "msg-truncated"
+    }, start + " earlier messages hidden during streaming");
+    let visible = [];
+    for (let i = start; i < msgs.length; i++) {
+        visible.push(renderMessage(msgs[i], i));
+    }
+    return [truncated].concat(visible);
 }
 
 let _streamCache = { text: "", formatted: "" };
@@ -787,7 +828,7 @@ function renderSidebar() {
 
     return m("div", { class: "flex h-full" }, [
         iconStrip,
-        m("div", { class: "w-64 border-r border-gray-200 dark:border-gray-700 overflow-y-auto bg-white dark:bg-gray-900" }, [
+        m("div", { class: "w-64 border-r border-gray-200 dark:border-gray-700 overflow-y-auto bg-white dark:bg-gray-900", style: "contain: layout style;" }, [
             panelContent
         ])
     ]);
@@ -1228,10 +1269,11 @@ const chatView = {
                 // Messages area
                 inst ? m("div", {
                     class: "flex-1 overflow-y-auto p-4",
+                    style: "contain: layout style;",
                     oncreate: function(vnode) { scrollToBottom(vnode.dom, true); },
                     onupdate: function(vnode) { scrollToBottom(vnode.dom); }
                 }, [
-                    (chatCfg.history.messages || []).map(renderMessage),
+                    renderMessages(),
                     renderStreamingMessage(),
                     renderPendingIndicator()
                 ]) : renderEmptyState(),

@@ -7,6 +7,7 @@ import m from 'mithril';
 import { page } from '../core/pageClient.js';
 import { am7model } from '../core/model.js';
 import { applicationPath } from '../core/config.js';
+import { ObjectPicker } from '../components/picker.js';
 
 let _contextData = null;
 let _sessionId = null;
@@ -248,6 +249,66 @@ function contextRefRowView(ref) {
     ]);
 }
 
+// ── Attach UI ────────────────────────────────────────────────────────
+
+let _attachMenuOpen = false;
+
+let _attachTypes = [
+    { label: "Document", icon: "description", type: "data.data", attachType: "context" },
+    { label: "Tag", icon: "label", type: "data.tag", attachType: "tag" },
+    { label: "Character", icon: "person", type: "olio.charPerson", attachType: "systemCharacter" },
+    { label: "Chat Config", icon: "settings", type: "olio.llm.chatConfig", attachType: "chatConfig" },
+    { label: "Prompt Config", icon: "edit_note", type: "olio.llm.promptConfig", attachType: "promptConfig" }
+];
+
+function openAttachPicker(attachDef) {
+    _attachMenuOpen = false;
+    ObjectPicker.open({
+        type: attachDef.type,
+        title: "Attach " + attachDef.label,
+        onSelect: function(item) {
+            if (item && item.objectId) {
+                let schema = item[am7model.jsonModelKey] || item.schema || attachDef.type;
+                // Map to correct attach type based on schema
+                let aType = attachDef.attachType;
+                if (aType === "context") {
+                    attach("context", item.objectId, schema);
+                } else {
+                    attach(aType, item.objectId);
+                }
+            }
+        }
+    }).catch(function(err) {
+        console.error("[ContextPanel] Picker open failed:", err);
+    });
+    m.redraw();
+}
+
+function attachMenuView() {
+    if (!_sessionId) return null;
+    return m("div", { class: "px-2 py-1.5 border-b border-gray-200 dark:border-gray-700" }, [
+        m("div", { class: "flex items-center gap-1" }, [
+            m("button", {
+                class: "flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-xs bg-blue-600 text-white hover:bg-blue-500",
+                onclick: function() { _attachMenuOpen = !_attachMenuOpen; }
+            }, [
+                m("span", { class: "material-symbols-outlined", style: "font-size: 14px;" }, "attach_file"),
+                "Attach"
+            ]),
+            m("span", { class: "text-xs text-gray-400 italic" }, "or drag & drop")
+        ]),
+        _attachMenuOpen ? m("div", { class: "mt-1.5 space-y-0.5" }, _attachTypes.map(function(t) {
+            return m("button", {
+                class: "w-full flex items-center gap-2 px-2 py-1 text-xs rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300",
+                onclick: function() { openAttachPicker(t); }
+            }, [
+                m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size: 14px;" }, t.icon),
+                t.label
+            ]);
+        })) : null
+    ]);
+}
+
 function panelContentView() {
     if (_loading && !_contextData) return m("div", { class: "text-xs text-gray-500 px-2 py-1" }, "Loading...");
     if (!_contextData) return m("div", { class: "text-xs text-gray-500 px-2 py-1" }, "No session selected");
@@ -307,26 +368,28 @@ const ContextPanel = {
     PanelView: {
         view: function() {
             let count = getBindingCount();
-            let label = "Context" + (count > 0 ? " (" + count + ")" : "");
             let isSummarizing = _contextData && _contextData.summarizing;
             return m("div", {
-                class: "border-t border-gray-200 dark:border-gray-600",
+                class: "flex flex-col h-full",
                 ondragover: e => e.preventDefault(),
                 ondrop: handleDrop
             }, [
-                m("button", {
-                    class: "w-full text-xs flex items-center justify-between px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700",
-                    onclick: () => { _expanded = !_expanded; }
-                }, [
-                    m("span", { class: "flex items-center" }, [
+                // Header
+                m("div", { class: "flex items-center justify-between px-2 py-1.5 border-b border-gray-200 dark:border-gray-700" }, [
+                    m("span", { class: "flex items-center text-xs font-semibold text-gray-700 dark:text-gray-200" }, [
                         isSummarizing
-                            ? m("span", { class: "material-symbols-outlined animate-spin mr-1 text-yellow-400", style: "font-size: 18px;" }, "progress_activity")
-                            : m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 18px;" }, "link"),
-                        isSummarizing ? m("span.text-yellow-400", "Summarizing...") : label
-                    ]),
-                    m("span", { class: "material-symbols-outlined", style: "font-size: 16px;" }, _expanded ? "expand_less" : "expand_more")
+                            ? m("span", { class: "material-symbols-outlined animate-spin mr-1 text-yellow-400", style: "font-size: 16px;" }, "progress_activity")
+                            : m("span", { class: "material-symbols-outlined mr-1 text-gray-400", style: "font-size: 16px;" }, "link"),
+                        "Context",
+                        count > 0 ? m("span", { class: "ml-1 px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 text-xs" }, count) : null
+                    ])
                 ]),
-                _expanded ? panelContentView() : ""
+                // Attach UI
+                attachMenuView(),
+                // Bindings list
+                m("div", { class: "flex-1 overflow-y-auto" }, [
+                    panelContentView()
+                ])
             ]);
         }
     }

@@ -19,7 +19,17 @@ if (typeof window !== "undefined") {
 
 const IMAGE_TOKEN_RE = /\$\{image\.([^}]+)\}/g;
 const AUDIO_TOKEN_RE = /\$\{audio\.text\s+"([^"]+)"\}/g;
-const MCP_BLOCK_RE = /\[MCP_CONTEXT\s+type="([^"]*)"(?:\s+uri="([^"]*)")?\]([\s\S]*?)\[\/MCP_CONTEXT\]/g;
+// Backend uses XML format: <mcp:context type="..." uri="..." ephemeral="true">...</mcp:context>
+// Match the full tag and extract attributes in the handler function
+const MCP_BLOCK_RE = /<mcp:context\s+([^>]*)>([\s\S]*?)<\/mcp:context>/g;
+// Also match self-closing <mcp:resource uri="..." tags="..." /> for inline media
+const MCP_RESOURCE_RE = /<mcp:resource\s+[^>]*?\/>/g;
+
+function mcpAttr(attrs, name) {
+    let re = new RegExp(name + '="([^"]*)"');
+    let m = re.exec(attrs);
+    return m ? m[1] : "";
+}
 
 function escapeHtmlAttr(str) {
     if (!str) return "";
@@ -129,19 +139,26 @@ const ChatTokenRenderer = {
      * In normal mode: strip all MCP blocks from display.
      */
     processMcpTokens: function(content, debugMode) {
-        if (!content || content.indexOf("[MCP_CONTEXT") === -1) return content;
+        if (!content || (content.indexOf("<mcp:context") === -1 && content.indexOf("<mcp:resource") === -1)) return content;
 
         if (!debugMode) {
-            return content.replace(MCP_BLOCK_RE, "").trim();
+            return content.replace(MCP_BLOCK_RE, "").replace(MCP_RESOURCE_RE, "").trim();
         }
 
-        return content.replace(MCP_BLOCK_RE, function(match, type, uri, body) {
+        // Strip inline resource tags in debug mode too (they render via image tokens)
+        content = content.replace(MCP_RESOURCE_RE, "");
+
+        return content.replace(MCP_BLOCK_RE, function(match, attrs, body) {
+            let type = mcpAttr(attrs, "type");
+            let uri = mcpAttr(attrs, "uri");
             let iconMap = {
                 memory: "psychology",
                 keyframe: "bookmark",
                 reminder: "notifications",
                 context: "description",
-                directive: "policy"
+                directive: "policy",
+                resource: "description",
+                reasoning: "lightbulb"
             };
             let icon = iconMap[type] || "data_object";
             let headerText = type || "context";
@@ -208,6 +225,7 @@ const ChatTokenRenderer = {
         content = content.replace(IMAGE_TOKEN_RE, "");
         content = content.replace(AUDIO_TOKEN_RE, "");
         content = content.replace(MCP_BLOCK_RE, "");
+        content = content.replace(MCP_RESOURCE_RE, "");
         return content.trim();
     },
 

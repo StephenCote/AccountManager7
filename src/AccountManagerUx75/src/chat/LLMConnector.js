@@ -27,6 +27,44 @@ let _errorState = {
     }
 };
 
+// ── Connection Tracking ─────────────────────────────────────────────
+// Tracks active LLM connections with hard timeouts to prevent Ollama infinite loops
+let _activeConnections = new Map();
+let _connectionIdCounter = 0;
+const DEFAULT_HARD_TIMEOUT_MS = 300000; // 5 minutes hard limit
+
+function trackConnection(sessionId, type) {
+    let id = ++_connectionIdCounter;
+    let conn = {
+        id: id,
+        sessionId: sessionId,
+        type: type, // "stream" | "buffered"
+        startTime: Date.now(),
+        timer: null
+    };
+    _activeConnections.set(id, conn);
+    return id;
+}
+
+function untrackConnection(connId) {
+    let conn = _activeConnections.get(connId);
+    if (conn) {
+        if (conn.timer) clearTimeout(conn.timer);
+        _activeConnections.delete(connId);
+    }
+}
+
+function startHardTimeout(connId, timeoutMs, onTimeout) {
+    let conn = _activeConnections.get(connId);
+    if (!conn) return;
+    let ms = timeoutMs || DEFAULT_HARD_TIMEOUT_MS;
+    conn.timer = setTimeout(function() {
+        console.warn("[LLMConnector] Hard timeout reached for connection " + connId + " (" + conn.type + ", session=" + conn.sessionId + ") after " + Math.round(ms / 1000) + "s");
+        _activeConnections.delete(connId);
+        if (onTimeout) onTimeout(connId, conn);
+    }, ms);
+}
+
 const LLMConnector = {
 
     // ── Config Management ────────────────────────────────────────────
@@ -205,13 +243,24 @@ const LLMConnector = {
         session.message = message;
         session.uid = page.uid();
         let timeoutMs = ((session.chatConfig && session.chatConfig.requestTimeout) || 300) * 1000;
-        return m.request({
-            method: 'POST',
-            url: applicationPath + "/rest/chat/text",
-            withCredentials: true,
-            body: session,
-            config: function(xhr) { xhr.timeout = timeoutMs; }
-        });
+        let connId = trackConnection(session.objectId, "buffered");
+        startHardTimeout(connId, timeoutMs);
+        try {
+            let result = await m.request({
+                method: 'POST',
+                url: applicationPath + "/rest/chat/text",
+                withCredentials: true,
+                body: session,
+                config: function(xhr) { xhr.timeout = timeoutMs; }
+            });
+            _errorState.reset();
+            return result;
+        } catch(e) {
+            _errorState.record(e);
+            throw e;
+        } finally {
+            untrackConnection(connId);
+        }
     },
 
     streamChat: function(session, message, callbacks) {
@@ -230,6 +279,30 @@ const LLMConnector = {
             uid: page.uid(),
             message: message
         };
+        // Track this stream connection with hard timeout
+        let timeoutMs = ((session.chatConfig && session.chatConfig.requestTimeout) || 300) * 1000;
+        let connId = trackConnection(session.objectId, "stream");
+        startHardTimeout(connId, timeoutMs, function(cid, conn) {
+            // Auto-cancel on hard timeout
+            console.warn("[LLMConnector] Auto-cancelling hung stream for session " + conn.sessionId);
+            LLMConnector.cancelStream(session);
+            if (callbacks && callbacks.onchaterror) {
+                callbacks.onchaterror(null, "Hard timeout: LLM connection exceeded " + Math.round(timeoutMs / 1000) + "s");
+            }
+        });
+
+        // Wrap callbacks to untrack on completion
+        let origComplete = callbacks.onchatcomplete;
+        let origError = callbacks.onchaterror;
+        callbacks.onchatcomplete = function(id) {
+            untrackConnection(connId);
+            if (origComplete) origComplete(id);
+        };
+        callbacks.onchaterror = function(id, err) {
+            untrackConnection(connId);
+            if (origError) origError(id, err);
+        };
+
         page.chatStream = callbacks;
         page.wss.send("chat", JSON.stringify(chatReq), undefined, schema);
     },
@@ -502,6 +575,35 @@ const LLMConnector = {
     // ── Error State ──────────────────────────────────────────────────
 
     errorState: _errorState,
+
+    // ── Connection Tracking ─────────────────────────────────────────
+
+    getActiveConnections: function() {
+        let result = [];
+        _activeConnections.forEach(function(conn) {
+            result.push({
+                id: conn.id,
+                sessionId: conn.sessionId,
+                type: conn.type,
+                elapsed: Math.round((Date.now() - conn.startTime) / 1000)
+            });
+        });
+        return result;
+    },
+
+    getActiveConnectionCount: function() {
+        return _activeConnections.size;
+    },
+
+    abortAllConnections: function() {
+        let count = _activeConnections.size;
+        _activeConnections.forEach(function(conn) {
+            if (conn.timer) clearTimeout(conn.timer);
+        });
+        _activeConnections.clear();
+        if (count > 0) console.warn("[LLMConnector] Aborted " + count + " active connections");
+        return count;
+    },
 
     // ── Memory Events ────────────────────────────────────────────────
 
