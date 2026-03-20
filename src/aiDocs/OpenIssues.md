@@ -169,6 +169,117 @@
 - [x] Toast z-index (z-50) confirmed higher than aside (z-20) — no CSS issue
 - [x] 8 Vitest tests added in `bugfix3.test.js` covering source verification
 
+## Issue #34: List Control — Incomplete Ux7 Port (2026-03-20)
+**Status:** OPEN — Analysis complete, fixes NOT started
+
+### 34a: Firefox performance — list view specifically
+**Severity:** HIGH
+**Root causes identified:**
+1. **32+ `m.redraw()` calls** in list.js — cascade redraws from async operations + pagination double-redraws. Example chain: `doSearch()` → `pagination.new()` → `m.redraw()` → `initParams()` → `updatePagination()` → `pagination.update()` → `doCount()` → `handleCount()` → `m.redraw()` — at least 2 redraws for one search action
+2. **Breadcrumb lazy-loading loop** — `buildBreadcrumbFromPath()` calls `am7client.find()` per segment, each callback calls `m.redraw()` individually. 5-segment path = 5 rapid redraws
+3. **Pagination double-redraws** — `handleCount()` calls `m.redraw()`, then `doSearchPage()` → `updatePage()` → `handleList()` → `m.redraw()`. Two redraws per data load
+4. **No render memoization** — `displayList()` rebuilds entire table/grid DOM on every redraw. 100+ tr/td nodes recreated every time
+5. **Full-page re-render** — router wraps listControl.renderContent() in `layout(pageLayout(...))` which re-renders navigation, picker overlay, toast, dialog stack on every list redraw
+6. **Dynamic event handler binding** — `onscroll: infiniteScroll && !carousel ? checkScrollPagination : undefined` forces Mithril to re-evaluate on every render
+
+**Proposed fixes (priority order):**
+- Batch pagination redraws: single redraw after both count + list APIs complete
+- Memoize list/carousel renders: cache output, rebuild only when data changes
+- Static scroll handler: bind once, check flags internally
+- Extract navigation/picker to persistent views outside route renders
+- Debounce breadcrumb redraws: batch segment updates into single redraw
+
+### 34b: Group navigation broken — can't go up, can't go adjacent
+**Severity:** HIGH
+**Problems identified:**
+1. **navigateUp() only handles `auth.group` type** — logs warning and does nothing for all other types. Ux7 has full parent-based navigation for `am7model.isParent()` types (data.directory, etc.) — Ux75 is completely missing this branch
+2. **UP button goes only one level** — `lastIndexOf('/')` gives parent, not ancestors. Multi-level up requires repeated clicks
+3. **No adjacent navigation** — can go into child groups but no sibling navigation
+4. **Child groups mixed in** — shown as a separate section above results, which is better than Ux7, but navigating into them and then back up is broken because navigateUp doesn't handle all types
+5. **Path resolution weaker than Ux7** — Ux7 uses `page.navigateToPath()` which validates type; Ux75 uses raw `page.findObject()` which silently fails on invalid paths
+
+### 34c: Carousel navigation broken — navigates pages, not results
+**Severity:** HIGH
+**Root cause:** `moveCarousel()` calls `pagination.next(pickerMode)` when index exceeds page length, which loads a new page but **never resets `pg.currentItem` to 0**. The carousel viewer displays stale index on new page data. Same bug exists in `navListKey()` — when `carousel` is false OR shift is held, arrow keys call `pagination.next/prev()` (page navigation) instead of `moveCarousel()` (item navigation).
+**Fix needed:** After `pagination.next()`, set `pg.currentItem = 0`. After `pagination.prev()`, `getCurrentResults()` already handles via `wentBack` flag but needs verification.
+
+### 34d: Example media content for carousel testing
+**Available test content:**
+- **AccountManagerObjects7/media/**: CardFox.pdf (33pg), YoureFired.mp4, speaker_0.mp3, airship.jpg, anaconda.jpg (4000x3000), antikythera.jpg, railplane.png, shark.webp, steampunk.png, sunflower.jpg (4000x3000), CardFox.txt
+- **AccountManagerObjects7/media/tiles/**: 26 PNG terrain tiles (512x512)
+- **AccountManagerUx7/media/**: Logo PNGs, character model PNGs (male/female at 512/1000px), SVGs, game JSON configs
+- These should be uploaded to a test group and used for carousel media preview verification
+
+### 34e: Design Analysis — What Ux75 Added vs Ux7 (2026-03-20)
+
+**Context:** Ux75 list.js is a complete rewrite from Ux7, not a port. This analysis catalogs every difference and honestly assesses whether each is an improvement, a regression, or unnecessary.
+
+#### Genuinely Better Than Ux7
+
+| Feature | What It Does | Why It's Better |
+|---------|-------------|-----------------|
+| **Breadcrumb navigation** | Clickable path segments above the list showing full group path. Each ancestor is clickable to navigate directly. | Ux7 had NO breadcrumb at all — users had to navigate up one level at a time or use the tree view. This is a real UX improvement for deep directory structures. |
+| **Per-model column defaults** | `MODEL_COLUMNS` map with sensible defaults for auth.group, data.data, olio.charPerson, etc. Falls back to model's query fields. | Ux7 hardcoded a single `defaultHeaderMap` for ALL types: `["_rowNum", "_icon", "id", "name", "modifiedDate", "age", "gender", "_tags", "_favorite"]`. This showed age/gender columns on data.data rows, which makes no sense. Ux75's per-type defaults are objectively correct. |
+| **Context menu (right-click)** | Right-click any item → Open, Edit, Delete. | Ux7 had no context menu. Users had to select items then find toolbar buttons. Adds discoverability. |
+| **Non-group item navigation fix (Fix A)** | Double-clicking a data.data item opens carousel instead of treating it as a container. | Ux7 would route to `/list/data.data/{objectId}`, pagination would try to load it as `auth.group`, and fail with "Error loading container." This was a real bug in Ux7. |
+| **Defensive null checks in pagination** | `getSearchQuery()` returns null if no resultType; `updatePage()` returns if no resultType. | Ux7 would throw unhandled errors on null types. |
+| **Column provider API** | `pagination.setColumnProvider(fn)` lets list control tell pagination which extra fields to include in queries. | Ux7 used `window.am7decorator.map()` statically — couldn't vary per-list. |
+| **Container lookup caching** | `containerCache` in pagination.js avoids re-querying the same group's numeric ID on every page change. | Ux7 re-queried every time. Genuine optimization for multi-page browsing. |
+
+#### Regressions From Ux7
+
+| Feature | What Was Lost | Impact |
+|---------|--------------|--------|
+| **Parent-based navigation in navigateUp()** | Ux7 had full `am7model.isParent()` branch: look up object, find parentId, navigate to parent. Ux75 removed this entirely — only handles `auth.group` type. | **HIGH** — any model with parent/child hierarchy (data.directory, data.note, etc.) cannot navigate up. |
+| **Embedded mode** | Ux7 had `embeddedMode` + `embeddedController` for inline list views (e.g., member lists in object view). Ux75 removed it. | **MEDIUM** — embedded lists in object view broken. |
+| **Drag-and-drop integration** | Ux7 had `dnd = page.components.dnd` with `dragProps()`, `doDragDecorate()`, `doDrop` on the container div. Ux75 has partial drag start but no drop handling and no drag decoration. | **MEDIUM** — can't drag items between groups. |
+| **Tag batch progress dialog** | Ux7's `applyTagsToList()` used `page.components.dialog.batchProgress()` — a progress dialog showing each item being processed. Ux75 uses `Promise.allSettled()` with a toast — no progress visibility. | **LOW** — functional but less informative. |
+| **Olio navigation button** | Ux7 had `getOlioButtons()` — a globe icon that navigated to `/Olio/Universes`. Ux75 removed it. | **LOW** — niche feature, but was useful for olio users. |
+| **Cloud/tag cloud button** | Ux7 had `openCloud()` for data.tag, auth.role, auth.group types. Ux75 removed it. | **LOW** — niche feature. |
+| **System library auto-creation** | Ux7's `openSystemLibrary()` could auto-create chat/prompt/policy libraries via `LLMConnector.initPromptLibrary()` etc. Ux75 only navigates to existing libraries. | **LOW** — first-time setup path missing. |
+| **Infinite scroll pagination** | Ux7 concatenated pages in `displayList()` and had `checkScrollPagination()` on the result list. Ux75 has the code but it's less tested and the scroll handler uses a conditional binding pattern that hurts Firefox. | **MEDIUM** — feature exists but is fragile. |
+
+#### Unnecessary Additions (Not In Ux7, Not Needed)
+
+| Feature | What It Does | Why It's Unnecessary |
+|---------|-------------|---------------------|
+| **Column customization via localStorage** | Users can toggle individual columns on/off, persisted in localStorage. | Users almost never customize columns. This adds `columnConfigCache`, `columnPickerOpen`, `getColumnConfigKey()`, `getCustomColumns()`, `saveCustomColumns()`, `renderColumnPicker()` — ~80 lines of code and a toolbar button for a feature with near-zero usage. Ux7 had none of this and nobody missed it. |
+| **Separate child group loading** | `loadChildGroups()` makes a separate API call to find child groups, stores them in `childGroups`, renders them as a section above results. | Ux7 didn't show child groups separately — you navigated via the tree or container mode. The child group display is visually nice but adds 50+ lines of code, a separate API call per navigation, and a loading flag (`childGroupsLoading`) that duplicates pagination's `requesting`. |
+| **Live debounced search** | `doSearch()` with 300ms debounce timer, separate `searchQuery`/`searchTimer`/`searchActive` state. | Ux7 already had `doFilter()` with a text input and Enter key. The live search adds 3 state variables, a timer, and a debounce mechanism for marginal UX improvement (users can type and wait instead of typing and pressing Enter). The debounce itself triggers cascade redraws that hurt Firefox. |
+| **Select All button** | Toolbar button to check/uncheck all items on current page. | Ux7 had a clickable "#" header cell that selected all. Ux75's separate toolbar button is redundant. |
+| **Infinite scroll toggle button** | Toolbar button to switch between pagination and infinite scroll. | Niche feature. Ux7 had `infiniteScroll` internally but no UI toggle — it was set programmatically. Adding a toolbar button clutters the toolbar for a feature most users don't want. |
+
+#### Just Different (No Clear Advantage Either Way)
+
+| Feature | Ux7 Approach | Ux75 Approach | Verdict |
+|---------|-------------|---------------|---------|
+| **Button factory** | `pagination.button(class, icon, label, handler)` via pagination component | `iconBtn(class, icon, label, handler, ariaLabel)` local to list.js | Ux75 adds aria-labels (accessibility win), but duplicates what pagination already provides. Wash. |
+| **Picker mode state** | Single `pickerMode` boolean + `pickerHandler` + `pickerCancel` callbacks | 6 variables: `pickerHandler`, `pickerType`, `pickerContainerId`, `pickerUserContainerId`, `pickerLibraryContainerId`, `pickerFavoritesContainerId`, `pickerActiveSource` | Ux75 supports more picker sources (home/library/favorites) but at massive state cost. Could be a single config object instead. |
+| **ES6 modules vs IIFE** | Global IIFE, `page.views.list = newListControl` | `export { newListControl }`, imported by router | Ux75 follows modern JS conventions. Neither is faster. |
+| **Route-based pagination** | `m.route.set(pagination.url(...))` to change page | Same, but also has `initParams(lastVnode)` + `updatePagination(lastVnode)` re-initialization | Ux75's `lastVnode` pattern is a code smell — it means state can't be derived from the route alone. |
+
+#### Design Flaws Unique to Ux75
+
+1. **`lastVnode` global** — storing a reference to the last Mithril vnode and using it to re-initialize state from toolbar button handlers. This breaks Mithril's unidirectional data flow and means state synchronization depends on a stale reference. Ux7 didn't need this because it derived state from route params.
+
+2. **Picker mode state explosion** — 6 variables where Ux7 had 3. The `pickerActiveSource` string ('home'|'library'|'favorites') with separate container ID per source is fragile. A single `pickerConfig` object would be cleaner.
+
+3. **Incomplete decorator refactor** — Ux75 has `components/decorator.js` with 3 basic functions, but list.js doesn't use it for rendering. The file exists but isn't wired up. Meanwhile, `page.components.decorator` is expected by pagination.js. Architectural confusion.
+
+4. **Rendering mixed into controller** — Ux7 cleanly separated list.js (state/controller) from decorator.js (rendering). Ux75 puts ALL rendering (table, grid, gallery, carousel, breadcrumb, child groups) into list.js — making it a 1300+ line monolith that's hard to maintain.
+
+#### Summary Verdict
+
+**Genuinely better than Ux7:** Breadcrumb, per-model columns, context menu, non-group navigation fix, defensive null checks, container cache, column provider API.
+
+**Regressions from Ux7:** Parent navigation, embedded mode, drag-drop, batch progress dialog, olio/cloud buttons, library auto-creation.
+
+**Unnecessary additions:** Column localStorage, child group display, live search (vs existing filter), select-all button, infinite scroll toggle.
+
+**The honest overall assessment:** Ux75 should have been a surgical enhancement to Ux7 — adding breadcrumb, per-model columns, and context menu while preserving everything else. Instead, it was a ground-up rewrite that lost functionality, added unnecessary features, created performance problems, and inflated the codebase from ~870 lines (Ux7 list.js + decorator.js combined) to ~1300 lines (Ux75 list.js alone) while still being incomplete.
+
+---
+
 ## Issue #31: 'Not Authenticated' error should redirect to login then back
 **Status:** Fixed (2026-03-18)
 - [x] Added `_handle401(e, url)` function in `am7client.js` — detects `e.code === 401`, saves current route to `sessionStorage("am7.returnRoute")`, redirects to `/sig`
