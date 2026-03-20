@@ -55,7 +55,7 @@ vi.mock('../core/am7client.js', () => ({
 }));
 
 import { panel } from '../components/panel.js';
-import { decorator } from '../components/decorator.js';
+import { am7decorator, defaultHeaderMap, getHeaders, getIcon, getFileTypeIcon, getTabularView, getGridListView, getCarouselView, renderMediaPreview } from '../components/decorator.js';
 
 describe('panel component', () => {
     it('should have a view function', () => {
@@ -89,32 +89,51 @@ describe('panel component', () => {
 });
 
 describe('decorator', () => {
-    it('should export tabularView function', () => {
-        expect(typeof decorator.tabularView).toBe('function');
+    it('should export am7decorator object with required methods', () => {
+        expect(typeof am7decorator.map).toBe('function');
+        expect(typeof am7decorator.icon).toBe('function');
+        expect(typeof am7decorator.fileIcon).toBe('function');
+        expect(typeof am7decorator.tabularView).toBe('function');
+        expect(typeof am7decorator.gridListView).toBe('function');
+        expect(typeof am7decorator.carouselView).toBe('function');
+        expect(typeof am7decorator.carouselItem).toBe('function');
+        expect(typeof am7decorator.renderMediaPreview).toBe('function');
     });
 
-    it('should export listItemView function', () => {
-        expect(typeof decorator.listItemView).toBe('function');
+    it('map() should return defaultHeaderMap', () => {
+        let map = am7decorator.map();
+        expect(Array.isArray(map)).toBe(true);
+        expect(map).toContain('_rowNum');
+        expect(map).toContain('_icon');
+        expect(map).toContain('name');
+        expect(map).toContain('_tags');
+        expect(map).toContain('_favorite');
+        expect(map).toBe(defaultHeaderMap);
     });
 
-    it('should export getDisplayFields function', () => {
-        expect(typeof decorator.getDisplayFields).toBe('function');
+    it('should export named functions', () => {
+        expect(typeof getHeaders).toBe('function');
+        expect(typeof getIcon).toBe('function');
+        expect(typeof getFileTypeIcon).toBe('function');
+        expect(typeof getTabularView).toBe('function');
+        expect(typeof getGridListView).toBe('function');
+        expect(typeof getCarouselView).toBe('function');
+        expect(typeof renderMediaPreview).toBe('function');
     });
 
-    it('should return default fields when no inst', () => {
-        let fields = decorator.getDisplayFields(null);
-        expect(fields).toEqual(['name', 'objectId']);
+    it('tabularView should return empty string for empty results', () => {
+        let result = getTabularView({ pagination: { pages: () => ({}) }, listType: 'data.data', onscroll: null }, []);
+        expect(result).toBe('');
     });
 
-    it('should return "No results" for empty items in tabularView', () => {
-        let result = decorator.tabularView([], null, null);
-        expect(result).toBeDefined();
-        expect(result.children).toBe('No results');
+    it('renderMediaPreview should return empty for null item', () => {
+        let result = renderMediaPreview(null);
+        expect(result).toBe('');
     });
 
-    it('should return "No results" for empty items in listItemView', () => {
-        let result = decorator.listItemView([], null, null);
-        expect(result).toBeDefined();
-        expect(result.children).toBe('No results');
+    it('modelHeaderMap should have per-model overrides', () => {
+        expect(am7decorator.modelHeaderMap['data.data']).toBeDefined();
+        expect(am7decorator.modelHeaderMap['auth.group']).toBeDefined();
+        expect(am7decorator.modelHeaderMap['data.data']).toContain('contentType');
     });
 });

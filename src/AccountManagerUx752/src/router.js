@@ -12,7 +12,7 @@ import { newListControl } from './views/list.js';
 import { newObjectPage } from './views/object.js';
 import { newNavigatorControl } from './views/navigator.js';
 import { newExplorerControl } from './views/explorer.js';
-import { decorator } from './components/decorator.js';
+import { am7decorator } from './components/decorator.js';
 import { newPaginationControl } from './components/pagination.js';
 import { initTheme } from './components/topMenu.js';
 import { startPolling, stopPolling } from './components/notifications.js';
@@ -22,7 +22,7 @@ import { ObjectPicker } from './components/picker.js';
 // Wire components onto page for cross-module access
 page.components.panel = panel;
 page.components.navigation = navigation;
-page.components.decorator = decorator;
+page.components.decorator = am7decorator;
 page.navigable = navigable();
 page.navigable.init();
 page.pagination = newPaginationControl;
