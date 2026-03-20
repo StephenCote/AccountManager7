@@ -104,7 +104,7 @@ function newPaginationControl() {
     pages.totalCount = v || 0;
 
     requesting = false;
-    m.redraw();
+    // No m.redraw() here — let the chain complete to handleList() for a single redraw
   }
 
   function handleList(v) {
@@ -318,7 +318,7 @@ function newPaginationControl() {
     }
     else {
       getSearchQuery().then((req) => {
-        if (!req) { requesting = false; handleCount(0); return; }
+        if (!req) { requesting = false; handleCount(0); m.redraw(); return; }
         req.recordCount = 0;
         page.count(req).then((v) => {
           handleCount(v);

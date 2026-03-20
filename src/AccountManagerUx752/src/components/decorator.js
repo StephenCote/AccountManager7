@@ -378,9 +378,19 @@ function getTabularRow(ctl, p, idx, map) {
     }));
 }
 
-// ── 11. tabularView (Ux7 lines 396-410) ─────────────────────────────
+// ── Render memoization helpers ──────────────────────────────────────
 
-function getTabularView(ctl, rset) {
+function checkedKey(pg) {
+    let keys = [];
+    for (let k in pg.pageState) {
+        if (pg.pageState[k].checked) keys.push(k);
+    }
+    return keys.sort().join(',');
+}
+
+// ── 11. tabularView (Ux7 lines 396-410) — with memoization ─────────
+
+function renderTabular(ctl, rset) {
     let results = (rset || []).map((p, i) => {
         return getTabularRow(ctl, p, i);
     });
@@ -393,6 +403,30 @@ function getTabularView(ctl, rset) {
     return m("div", { rid: 'resultList', onscroll: ctl.onscroll, class: "tabular-results-overflow" },
         table
     );
+}
+
+let _tabState = null;
+
+const TabularMemo = {
+    onbeforeupdate(vnode) {
+        let pg = vnode.attrs.ctl.pagination.pages();
+        let k = { data: vnode.attrs.rset, sort: pg.sort, order: pg.order,
+            start: pg.startRecord, type: vnode.attrs.ctl.listType, checked: checkedKey(pg) };
+        if (_tabState && _tabState.data === k.data && _tabState.sort === k.sort &&
+            _tabState.order === k.order && _tabState.start === k.start &&
+            _tabState.type === k.type && _tabState.checked === k.checked) {
+            return false;
+        }
+        _tabState = k;
+        return true;
+    },
+    view(vnode) {
+        return renderTabular(vnode.attrs.ctl, vnode.attrs.rset);
+    }
+};
+
+function getTabularView(ctl, rset) {
+    return m(TabularMemo, { ctl, rset });
 }
 
 // ── 12. getGridListItem (Ux7 lines 412-447) ─────────────────────────
@@ -480,9 +514,9 @@ function displayObjects(ctl) {
     return results;
 }
 
-// ── 13. gridListView (Ux7 lines 490-499) ────────────────────────────
+// ── 13. gridListView (Ux7 lines 490-499) — with memoization ────────
 
-function getGridListView(ctl) {
+function renderGridList(ctl) {
     let results = [];
     let gridMode = ctl.gridMode;
     let pages = ctl.pagination.pages();
@@ -493,6 +527,30 @@ function getGridListView(ctl) {
     }
 
     return m("div", { class: 'h-full overflow-hidden' }, m("div", { class: (gridMode == 1 ? 'image-grid-tile' : 'image-grid-5') }, results));
+}
+
+let _gridState = null;
+
+const GridMemo = {
+    onbeforeupdate(vnode) {
+        let ctl = vnode.attrs.ctl;
+        let pg = ctl.pagination.pages();
+        let data = pg.pageResults[pg.currentPage];
+        let k = { data, gridMode: ctl.gridMode, info: ctl.info, checked: checkedKey(pg) };
+        if (_gridState && _gridState.data === k.data && _gridState.gridMode === k.gridMode &&
+            _gridState.info === k.info && _gridState.checked === k.checked) {
+            return false;
+        }
+        _gridState = k;
+        return true;
+    },
+    view(vnode) {
+        return renderGridList(vnode.attrs.ctl);
+    }
+};
+
+function getGridListView(ctl) {
+    return m(GridMemo, { ctl });
 }
 
 // ── 14. carouselItem (Ux7 lines 500-525) ─────────────────────────────

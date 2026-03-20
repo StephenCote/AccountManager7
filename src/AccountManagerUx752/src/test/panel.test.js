@@ -121,9 +121,12 @@ describe('decorator', () => {
         expect(typeof renderMediaPreview).toBe('function');
     });
 
-    it('tabularView should return empty string for empty results', () => {
+    it('tabularView should return memoized component vnode for empty results', () => {
         let result = getTabularView({ pagination: { pages: () => ({}) }, listType: 'data.data', onscroll: null }, []);
-        expect(result).toBe('');
+        // Now returns a Mithril component vnode (TabularMemo wrapper) — empty check is inside view()
+        expect(result).toBeDefined();
+        expect(result.tag).toBeDefined();
+        expect(typeof result.tag.onbeforeupdate).toBe('function');
     });
 
     it('renderMediaPreview should return empty for null item', () => {

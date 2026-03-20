@@ -333,14 +333,20 @@ function newListControl() {
             if (!path) return;
             let parentPath = path.substring(0, path.lastIndexOf('/'));
             if (!parentPath) return;
-            // Resolve parent path to objectId via find (Ux7 navigateToPathId pattern)
-            am7client.find('auth.group', 'data', parentPath, function (v) {
-                if (!v) return;
+            // Resolve parent path via search query (avoids PathProvider field errors)
+            let pq = am7client.newQuery('auth.group');
+            pq.entity.request = ['id', 'objectId', 'name', 'path'];
+            let pf = pq.field('path', parentPath);
+            pf.comparator = 'equals';
+            pq.field('organizationId', page.user.organizationId);
+            page.search(pq).then(function (qr) {
+                if (!qr || !qr.results || !qr.results.length) return;
+                let id = qr.results[0].objectId;
                 if (embeddedMode || pickerMode) {
-                    navContainerId = v.objectId;
+                    navContainerId = id;
                     m.redraw();
                 } else {
-                    page.listByType(containerMode ? baseListType : type, v.objectId);
+                    page.listByType(containerMode ? baseListType : type, id);
                 }
             });
         } else if (am7model.isParent(modType) && navigateByParent) {
@@ -355,8 +361,15 @@ function newListControl() {
                 if (v != null) {
                     if (v.parentId == 0 && am7model.isGroup(modType)) {
                         console.warn('Navigate up from zero parent — resetting out of parent mode');
-                        am7client.find('auth.group', 'data', v.groupPath, function (g) {
-                            if (g) page.listByType(containerMode ? baseListType : useType, g.objectId, false);
+                        let gq = am7client.newQuery('auth.group');
+                        gq.entity.request = ['id', 'objectId', 'path'];
+                        let gf = gq.field('path', v.groupPath);
+                        gf.comparator = 'equals';
+                        gq.field('organizationId', page.user.organizationId);
+                        page.search(gq).then(function (gr) {
+                            if (gr && gr.results && gr.results.length) {
+                                page.listByType(containerMode ? baseListType : useType, gr.results[0].objectId, false);
+                            }
                         });
                     } else {
                         am7client.get(useType, v.parentId, function (v2) {
@@ -510,13 +523,19 @@ function newListControl() {
         groupPath[groupPath.length - 1].name = container.name || segments[segments.length - 1];
 
         // Batch segment resolution — single m.redraw() after all resolve
+        // Uses search queries instead of am7client.find to avoid PathProvider errors
         let pending = groupPath.length - 1;
         if (pending <= 0) { m.redraw(); return; }
         for (let i = 0; i < groupPath.length - 1; i++) {
             (function (idx, spath) {
-                am7client.find('auth.group', 'data', spath, function (v) {
-                    if (v && groupPath && groupPath[idx]) {
-                        groupPath[idx].objectId = v.objectId;
+                let sq = am7client.newQuery('auth.group');
+                sq.entity.request = ['id', 'objectId', 'name', 'path'];
+                let pf = sq.field('path', spath);
+                pf.comparator = 'equals';
+                sq.field('organizationId', page.user.organizationId);
+                page.search(sq).then(function (qr) {
+                    if (qr && qr.results && qr.results.length && groupPath && groupPath[idx]) {
+                        groupPath[idx].objectId = qr.results[0].objectId;
                     }
                     pending--;
                     if (pending <= 0) m.redraw();

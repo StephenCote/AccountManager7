@@ -19,6 +19,35 @@ import { startPolling, stopPolling } from './components/notifications.js';
 import { contextMenuComponent } from './components/contextMenu.js';
 import { ObjectPicker } from './components/picker.js';
 
+// --- Performance: guard components skip re-render when state unchanged ---
+
+let _navRoute = null;
+let _navHide = undefined;
+
+const NavGuard = {
+    onbeforeupdate(vnode) {
+        let route = m.route.get();
+        let hide = vnode.attrs.hideBreadcrumb;
+        if (route === _navRoute && hide === _navHide) return false;
+        _navRoute = route;
+        _navHide = hide;
+        return true;
+    },
+    view(vnode) {
+        return m(navigation, vnode.attrs);
+    }
+};
+
+const OverlayGuard = {
+    view() {
+        return [
+            m(contextMenuComponent),
+            page.loadToast(),
+            page.components.dialog.loadDialogs()
+        ];
+    }
+};
+
 // Wire components onto page for cross-module access
 page.components.panel = panel;
 page.components.navigation = navigation;
@@ -37,20 +66,18 @@ page.objectPage = objectPageControl;
 let navigatorControl = newNavigatorControl();
 let explorerControl = newExplorerControl();
 
-// Layout wrapper that renders dialogs + toast on every route
+// Layout wrapper that renders overlays via guarded component
 function layout(content) {
     return [
         content,
-        m(contextMenuComponent),
-        page.loadToast(),
-        page.components.dialog.loadDialogs()
+        m(OverlayGuard)
     ];
 }
 
-// Shared page layout: nav + scrollable content area
+// Shared page layout: nav (guarded) + scrollable content area
 function pageLayout(innerContent, navAttrs) {
     return m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
-        m(navigation, navAttrs || {}),
+        m(NavGuard, navAttrs || {}),
         m("main", { class: "flex-1 overflow-auto flex bg-white dark:bg-gray-900", role: "main" }, [
             innerContent
         ]),

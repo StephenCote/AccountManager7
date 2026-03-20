@@ -245,10 +245,10 @@ export async function cleanupTestUser(request, userObjectId, opts = {}) {
         await loginCtx(ctx, { org });
 
         if (userName) {
-            // Delete leaf child groups first to avoid PathProvider errors during cascade
+            // auth.group: use path find (works, PathProvider "name" warning is cosmetic)
+            // auth.role/permission: use search by name (avoids PathProvider errors)
             let homeGroup = await findPathCtx(ctx, 'auth.group', 'data', '/home/' + userName).catch(() => null);
             if (homeGroup && homeGroup.objectId) {
-                // Delete known child groups before the parent
                 let childPaths = ['~/Notes', '~/Characters', '~/Data', '~/Colors', '~/Tags', '~/Apparel'];
                 for (let cp of childPaths) {
                     let resolved = cp.replace('~', '/home/' + userName);
@@ -260,12 +260,12 @@ export async function cleanupTestUser(request, userObjectId, opts = {}) {
                 await deleteObjectCtx(ctx, 'auth.group', homeGroup.objectId).catch(() => {});
             }
 
-            let homeRole = await findPathCtx(ctx, 'auth.role', 'user', '/home/' + userName).catch(() => null);
+            let homeRole = await searchCtx(ctx, 'auth.role', 'name', userName, ['id', 'objectId', 'name']).catch(() => null);
             if (homeRole && homeRole.objectId) {
                 await deleteObjectCtx(ctx, 'auth.role', homeRole.objectId).catch(() => {});
             }
 
-            let homePerm = await findPathCtx(ctx, 'auth.permission', 'user', '/home/' + userName).catch(() => null);
+            let homePerm = await searchCtx(ctx, 'auth.permission', 'name', userName, ['id', 'objectId', 'name']).catch(() => null);
             if (homePerm && homePerm.objectId) {
                 await deleteObjectCtx(ctx, 'auth.permission', homePerm.objectId).catch(() => {});
             }
