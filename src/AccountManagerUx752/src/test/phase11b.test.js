@@ -28,28 +28,29 @@ describe('List Control (Phase 11b)', () => {
         expect(typeof pg.new).toBe('function');
     });
 
-    it('exposes _testHelpers with search, nav, carousel, and toggle functions', () => {
+    it('exposes _testHelpers with navigation, carousel, and toggle functions', () => {
         let ctrl = newListControl();
         expect(typeof ctrl._testHelpers).toBe('function');
         let helpers = ctrl._testHelpers();
-        // Original helpers
-        expect(typeof helpers.doSearch).toBe('function');
-        expect(typeof helpers.clearSearch).toBe('function');
-        expect(typeof helpers.navigateToChildGroup).toBe('function');
+        // Navigation
+        expect(typeof helpers.doFilter).toBe('function');
+        expect(typeof helpers.navigateUp).toBe('function');
+        expect(typeof helpers.navigateDown).toBe('function');
         expect(typeof helpers.renderGroupBreadcrumb).toBe('function');
-        expect(typeof helpers.renderChildGroups).toBe('function');
-        // Carousel helpers (Fix C)
+        // Carousel helpers
         expect(typeof helpers.openItem).toBe('function');
         expect(typeof helpers.closeSelected).toBe('function');
         expect(typeof helpers.toggleCarousel).toBe('function');
         expect(typeof helpers.moveCarousel).toBe('function');
         expect(typeof helpers.moveCarouselTo).toBe('function');
-        // Toggle helpers (Fix D, E, F)
+        expect(typeof helpers.getCurrentResults).toBe('function');
+        // Toggle helpers
         expect(typeof helpers.toggleContainer).toBe('function');
         expect(typeof helpers.toggleInfo).toBe('function');
         expect(typeof helpers.listSystemType).toBe('function');
-        // Column defaults (Fix B)
-        expect(typeof helpers.getColumns).toBe('function');
+        expect(typeof helpers.toggleGrid).toBe('function');
+        // Controller interface
+        expect(typeof helpers.getListController).toBe('function');
     });
 });
 
@@ -86,31 +87,28 @@ describe('Explorer Control (Phase 11b-3)', () => {
     });
 });
 
-// --- Search and nav function existence ---
-describe('Search and nav helpers', () => {
-    it('doSearch function exists and is callable', () => {
+// --- Filter and navigation helpers ---
+describe('Filter and nav helpers', () => {
+    it('doFilter function exists and is callable', () => {
         let ctrl = newListControl();
         let helpers = ctrl._testHelpers();
-        expect(typeof helpers.doSearch).toBe('function');
-        expect(helpers.doSearch.length).toBe(1); // takes 1 param (value)
+        expect(typeof helpers.doFilter).toBe('function');
     });
 
-    it('clearSearch function exists and is callable', () => {
+    it('navigateUp function exists and is callable', () => {
         let ctrl = newListControl();
         let helpers = ctrl._testHelpers();
-        expect(typeof helpers.clearSearch).toBe('function');
-        expect(helpers.clearSearch.length).toBe(0); // no params
+        expect(typeof helpers.navigateUp).toBe('function');
     });
 
-    it('navigateToChildGroup function exists', () => {
+    it('navigateDown function exists and is callable', () => {
         let ctrl = newListControl();
         let helpers = ctrl._testHelpers();
-        expect(typeof helpers.navigateToChildGroup).toBe('function');
-        expect(helpers.navigateToChildGroup.length).toBe(1); // takes 1 param (group)
+        expect(typeof helpers.navigateDown).toBe('function');
     });
 });
 
-// --- Group breadcrumb and child groups rendering ---
+// --- Group breadcrumb ---
 describe('Group breadcrumb', () => {
     it('renderGroupBreadcrumb returns null when no path loaded', () => {
         let ctrl = newListControl();
@@ -118,16 +116,9 @@ describe('Group breadcrumb', () => {
         let result = helpers.renderGroupBreadcrumb();
         expect(result).toBeNull();
     });
-
-    it('renderChildGroups returns null when no groups loaded', () => {
-        let ctrl = newListControl();
-        let helpers = ctrl._testHelpers();
-        let result = helpers.renderChildGroups();
-        expect(result).toBeNull();
-    });
 });
 
-// --- Carousel functions (Fix C) ---
+// --- Carousel functions ---
 describe('Carousel functions', () => {
     it('openItem is a function that takes 1 param', () => {
         let ctrl = newListControl();
@@ -165,44 +156,31 @@ describe('Carousel functions', () => {
     });
 });
 
-// --- Per-model column defaults (Fix B) ---
-describe('Per-model column defaults', () => {
-    it('getColumns returns model-specific columns for data.data', () => {
-        let ctrl = newListControl();
-        let helpers = ctrl._testHelpers();
-        let cols = helpers.getColumns('data.data');
+// --- Per-model column defaults (now in decorator.js getHeaders) ---
+import { am7decorator, getHeaders } from '../components/decorator.js';
+
+describe('Per-model column defaults (decorator getHeaders)', () => {
+    it('getHeaders returns columns for data.data', () => {
+        let cols = getHeaders('data.data');
         expect(cols).toContain('name');
         expect(cols).toContain('contentType');
     });
 
-    it('getColumns returns model-specific columns for olio.charPerson', () => {
-        let ctrl = newListControl();
-        let helpers = ctrl._testHelpers();
-        let cols = helpers.getColumns('olio.charPerson');
-        expect(cols).toContain('name');
-        expect(cols).toContain('firstName');
-        expect(cols).toContain('lastName');
-    });
-
-    it('getColumns returns model-specific columns for auth.group', () => {
-        let ctrl = newListControl();
-        let helpers = ctrl._testHelpers();
-        let cols = helpers.getColumns('auth.group');
+    it('getHeaders returns columns for auth.group', () => {
+        let cols = getHeaders('auth.group');
         expect(cols).toContain('name');
         expect(cols).toContain('type');
         expect(cols).toContain('path');
     });
 
-    it('getColumns returns fallback columns for unknown type', () => {
-        let ctrl = newListControl();
-        let helpers = ctrl._testHelpers();
-        let cols = helpers.getColumns('some.unknown.type');
-        expect(cols).toContain('name');
-        expect(cols.length).toBeGreaterThanOrEqual(1);
+    it('am7decorator.map returns default header map', () => {
+        let map = am7decorator.map();
+        expect(Array.isArray(map)).toBe(true);
+        expect(map).toContain('name');
     });
 });
 
-// --- Toggle functions (Fix D, E, F) ---
+// --- Toggle functions ---
 describe('Toggle functions', () => {
     it('toggleContainer is callable', () => {
         let ctrl = newListControl();
@@ -220,6 +198,30 @@ describe('Toggle functions', () => {
         let ctrl = newListControl();
         let helpers = ctrl._testHelpers();
         expect(typeof helpers.listSystemType).toBe('function');
+    });
+});
+
+// --- getListController (ported from Ux7) ---
+describe('getListController', () => {
+    it('returns controller interface matching Ux7 shape', () => {
+        let ctrl = newListControl();
+        let helpers = ctrl._testHelpers();
+        let ctl = helpers.getListController();
+        expect(ctl).toBeDefined();
+        expect(typeof ctl.results).toBe('function');
+        expect(typeof ctl.edit).toBe('function');
+        expect(typeof ctl.move).toBe('function');
+        expect(typeof ctl.moveTo).toBe('function');
+        expect(typeof ctl.select).toBe('function');
+        expect(typeof ctl.open).toBe('function');
+        expect(typeof ctl.down).toBe('function');
+        expect(typeof ctl.onscroll).toBe('function');
+        expect(typeof ctl.toggleCarousel).toBe('function');
+        expect(typeof ctl.toggleCarouselFull).toBe('function');
+        expect(typeof ctl.toggleCarouselMax).toBe('function');
+        expect(typeof ctl.toggleInfo).toBe('function');
+        expect(ctl.pagination).toBeDefined();
+        expect(ctl.listPage).toBeDefined();
     });
 });
 

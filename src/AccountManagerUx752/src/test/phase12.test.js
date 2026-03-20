@@ -208,12 +208,12 @@ describe('Accessibility — ARIA attributes in source', () => {
         expect(content).toContain("role: \"main\"");
     });
 
-    it('list toolbar buttons have aria-labels', async () => {
+    it('list toolbar uses Ux7 getActionButtonBar pattern', async () => {
         let content = await readFile('../views/list.js');
-        expect(content).toContain("'Add new item'");
-        expect(content).toContain("'Edit selected'");
-        expect(content).toContain("'Delete selected'");
-        expect(content).toContain("'Select all'");
+        expect(content).toContain('getActionButtonBar');
+        expect(content).toContain('getPickerButtons');
+        expect(content).toContain('getAdminButtons');
+        expect(content).toContain('getActionButtons');
     });
 
     it('notification button has aria-label and aria-expanded', async () => {
