@@ -215,7 +215,7 @@ function newListControl() {
         if (!pr) return;
         let idx = pr.findIndex(function (v) { return v.objectId === o.objectId; });
         if (idx > -1) {
-            page.components.pdf.clear();
+            if (page.components.pdf) page.components.pdf.clear();
             carousel = true;
             pg.currentItem = idx;
             m.redraw();
@@ -223,7 +223,7 @@ function newListControl() {
     }
 
     function openSelected() {
-        page.components.pdf.clear();
+        if (page.components.pdf) page.components.pdf.clear();
         let idx = getSelectedIndices();
         if (idx.length) {
             carousel = true;
@@ -272,7 +272,7 @@ function newListControl() {
     function moveCarousel(delta) {
         let pg = pagination.pages();
         let pr = pg.pageResults[pg.currentPage];
-        page.components.pdf.clear();
+        if (page.components.pdf) page.components.pdf.clear();
         wentBack = false;
 
         let idx = (pg.currentItem || 0) + delta;
@@ -333,12 +333,14 @@ function newListControl() {
             if (!path) return;
             let parentPath = path.substring(0, path.lastIndexOf('/'));
             if (!parentPath) return;
-            page.navigateToPath(type, modType, parentPath).then(function (id) {
+            // Resolve parent path to objectId via find (Ux7 navigateToPathId pattern)
+            am7client.find('auth.group', 'data', parentPath, function (v) {
+                if (!v) return;
                 if (embeddedMode || pickerMode) {
-                    navContainerId = id;
+                    navContainerId = v.objectId;
                     m.redraw();
                 } else {
-                    page.listByType(containerMode ? baseListType : type, id);
+                    page.listByType(containerMode ? baseListType : type, v.objectId);
                 }
             });
         } else if (am7model.isParent(modType) && navigateByParent) {
@@ -353,8 +355,8 @@ function newListControl() {
                 if (v != null) {
                     if (v.parentId == 0 && am7model.isGroup(modType)) {
                         console.warn('Navigate up from zero parent — resetting out of parent mode');
-                        page.navigateToPath(useType, modType, v.groupPath).then(function (id) {
-                            page.listByType(containerMode ? baseListType : useType, id, false);
+                        am7client.find('auth.group', 'data', v.groupPath, function (g) {
+                            if (g) page.listByType(containerMode ? baseListType : useType, g.objectId, false);
                         });
                     } else {
                         am7client.get(useType, v.parentId, function (v2) {
@@ -913,7 +915,7 @@ function newListControl() {
             update(vnode);
         },
         onremove: function () {
-            page.components.pdf.clear();
+            if (page.components.pdf) page.components.pdf.clear();
             navFilter = null;
             carousel = false;
             groupPath = null;

@@ -197,11 +197,12 @@ function newPaginationControl() {
 
   function getRequestFields(type) {
     let flds = am7model.queryFields(type);
-    /// Pull additional fields from the decorator header map if available
-    let decoratorMap = (page.components.decorator && typeof page.components.decorator.map === 'function')
-      ? page.components.decorator.map()
-      : [];
-    decoratorMap.forEach(field => {
+    /// Pull additional fields from the decorator's type-specific header map
+    let dec = page.components.decorator;
+    let decoratorFields = (dec && typeof dec.getHeaders === 'function')
+      ? dec.getHeaders(type)
+      : (dec && typeof dec.map === 'function' ? dec.map() : []);
+    decoratorFields.forEach(field => {
       if (!field.match(/^_/) && !flds.includes(field) && am7model.hasField(type, field)) {
         flds.push(field);
       }

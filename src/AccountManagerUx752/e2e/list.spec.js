@@ -36,7 +36,7 @@ test.describe('List view', () => {
             { timeout: 15000 }
         );
 
-        let content = page.locator('.list-table, .list-empty, .result-nav-outer');
+        let content = page.locator('.list-table, .tabular-results-table, .list-empty, .result-nav-outer');
         await expect(content.first()).toBeVisible({ timeout: 15000 });
         await screenshot(page, 'list-view');
     });
@@ -63,16 +63,15 @@ test.describe('List view', () => {
         await screenshot(page, 'list-breadcrumb');
     });
 
-    test('filter input is present', async ({ page }) => {
-        let firstItem = page.locator('.card-item button').first();
-        await expect(firstItem).toBeVisible({ timeout: 5000 });
-        await firstItem.click();
+    test('filter input is present for group types', async ({ page }) => {
+        // Navigate to auth.group list directly — filter only shows for group types
+        await page.goto(BASE_URL + '/AccountManagerUx752/#!/list/auth.group');
         await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
-        // Wait for toolbar to render first (Firefox needs more time)
+        // Wait for toolbar to render
         await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
 
-        let filterInput = page.locator('input[placeholder*="Search"], input[placeholder*="Filter"], .text-field');
+        let filterInput = page.locator('.text-field');
         await expect(filterInput.first()).toBeVisible({ timeout: 10000 });
     });
 
@@ -107,23 +106,20 @@ test.describe('List view — group navigation (15b)', () => {
         await screenshot(page, 'list-nav-breadcrumb');
     });
 
-    test('list toolbar has search/filter input that accepts text', async ({ page }) => {
-        let firstItem = page.locator('.card-item button').first();
-        await expect(firstItem).toBeVisible({ timeout: 5000 });
-        await firstItem.click();
+    test('list toolbar has search/filter input for group types', async ({ page }) => {
+        // Navigate to auth.group list — filter only renders for group types (Ux7 pattern)
+        await page.goto(BASE_URL + '/AccountManagerUx752/#!/list/auth.group');
         await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
-        // Wait for list to render
         let toolbar = page.locator('.result-nav-outer');
         await expect(toolbar.first()).toBeVisible({ timeout: 10000 });
 
-        // Search input: list.js renders it as a text input
-        let filterInput = page.locator('input[placeholder*="Search"], input[placeholder*="Filter"], .text-field');
+        let filterInput = page.locator('.text-field');
         await expect(filterInput.first()).toBeVisible({ timeout: 5000 });
 
-        // Type a search term — should not throw
+        // Type a filter term — should not throw
         await filterInput.first().fill('test');
-        await page.waitForTimeout(600); // debounce
+        await page.waitForTimeout(600);
         await filterInput.first().fill('');
         await screenshot(page, 'list-nav-search-input');
     });
@@ -201,7 +197,7 @@ test.describe('List view — group navigation (15b)', () => {
         }, groupObjectId);
 
         // Wait for list view to render content (more reliable than URL matching in Firefox)
-        let content = page.locator('.list-table, .list-empty, .result-nav-outer');
+        let content = page.locator('.list-table, .tabular-results-table, .list-empty, .result-nav-outer');
         await expect(content.first()).toBeVisible({ timeout: 20000 });
 
         await screenshot(page, 'list-nav-direct-url');
@@ -227,51 +223,50 @@ test.describe('List view — search behavior (15b)', () => {
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
     });
 
-    test('search input clears when X button or clear action is used', async ({ page }) => {
-        let firstItem = page.locator('.card-item button').first();
-        await expect(firstItem).toBeVisible({ timeout: 5000 });
-        await firstItem.click();
+    test('filter input clears and list remains visible', async ({ page }) => {
+        // Navigate to auth.group — filter only shows for group types (Ux7 pattern)
+        await page.goto(BASE_URL + '/AccountManagerUx752/#!/list/auth.group');
         await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
         await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
 
-        let filterInput = page.locator('input[placeholder*="Search"], input[placeholder*="Filter"], .text-field');
+        let filterInput = page.locator('.text-field');
         let inputEl = filterInput.first();
         await expect(inputEl).toBeVisible({ timeout: 10000 });
 
-        await inputEl.fill('SearchTestNote');
-        await page.waitForTimeout(1200); // debounce — Firefox needs extra time
-        await screenshot(page, 'list-search-active');
+        await inputEl.fill('TestFilter');
+        await page.waitForTimeout(600);
+        await screenshot(page, 'list-filter-active');
 
-        // Clear the search
+        // Clear the filter
         await inputEl.fill('');
-        await page.waitForTimeout(1200);
-        await screenshot(page, 'list-search-cleared');
+        await page.waitForTimeout(600);
+        await screenshot(page, 'list-filter-cleared');
 
         // List should still be visible (not in error state)
-        let content = page.locator('.list-table, .list-empty, .result-nav-outer');
+        let content = page.locator('.tabular-results-table, .list-empty, .result-nav-outer');
         await expect(content.first()).toBeVisible({ timeout: 10000 });
     });
 
-    test('search does not break list when no results match', async ({ page }) => {
-        let firstItem = page.locator('.card-item button').first();
-        await expect(firstItem).toBeVisible({ timeout: 5000 });
-        await firstItem.click();
+    test('filter with no results does not break list', async ({ page }) => {
+        // Navigate to auth.group — filter only shows for group types
+        await page.goto(BASE_URL + '/AccountManagerUx752/#!/list/auth.group');
         await page.waitForFunction(() => window.location.hash.includes('/list/'), { timeout: 15000 });
 
         await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
 
-        let filterInput = page.locator('input[placeholder*="Search"], input[placeholder*="Filter"], .text-field');
+        let filterInput = page.locator('.text-field');
         let inputEl = filterInput.first();
         await expect(inputEl).toBeVisible({ timeout: 10000 });
 
-        // Search for something that won't match anything
+        // Filter for something that won't match
         await inputEl.fill('zzz_no_match_zzz_' + Date.now());
+        await page.keyboard.press('Enter');
         await page.waitForTimeout(1200);
 
         // Should show empty state gracefully — no crash
-        let content = page.locator('.list-table, .list-empty, .result-nav-outer');
+        let content = page.locator('.tabular-results-table, .list-empty, .result-nav-outer');
         await expect(content.first()).toBeVisible({ timeout: 10000 });
-        await screenshot(page, 'list-search-no-results');
+        await screenshot(page, 'list-filter-no-results');
     });
 });
