@@ -1,0 +1,191 @@
+/**
+ * CardGame UI - Threat Response Phase (ESM)
+ * Shows threat card vs defender card, threat stats (ATK, DEF, HP, Loot),
+ * defense stack, AI auto-response after delay, and player defense card placement.
+ * Ported from Ux7 IIFE to ESM.
+ */
+import m from 'mithril';
+import { am7model } from '../../core/model.js';
+
+function getPage() { return am7model._page; }
+function getClient() { return am7model._client; }
+
+let NS = null;
+
+function init(namespace) {
+    NS = namespace;
+}
+
+// ── Threat Response Phase UI ─────────────────────────────────────
+let threatAutoRespondScheduled = false;  // Guard against multiple auto-responds
+
+function ThreatResponseUI() {
+    return {
+        oninit() {
+            // Reset auto-respond guard when component initializes
+            threatAutoRespondScheduled = false;
+        },
+        view() {
+            let ctxObj = NS?.ctx || {};
+            let gameState = ctxObj.gameState;
+            let GAME_PHASES = NS?.Constants?.GAME_PHASES || {};
+            let CardFace = NS?.Rendering?.CardFace;
+
+            if (!gameState || !gameState.threatResponse || !gameState.threatResponse.active) {
+                return null;
+            }
+
+            let tr = gameState.threatResponse;
+            let isEndThreat = tr.type === "end" || gameState.phase === GAME_PHASES.END_THREAT;
+            let responder = tr.responder;
+            let isPlayerResponder = responder === "player";
+            let actor = isPlayerResponder ? gameState.player : gameState.opponent;
+            let apRemaining = actor.threatResponseAP || 0;
+            let threats = tr.threats || [];
+            let defenseStack = tr.defenseStack || [];
+
+            // For AI opponent, auto-respond after delay (only schedule once)
+            if (!isPlayerResponder && !threatAutoRespondScheduled) {
+                threatAutoRespondScheduled = true;
+                console.log("[CardGame v2] Scheduling AI threat response");
+                setTimeout(() => {
+                    let gs = (NS?.ctx || {}).gameState;
+                    if (gs && gs.threatResponse && gs.threatResponse.active) {
+                        // AI places a defensive card if available
+                        let aiActor = isPlayerResponder ? gs.player : gs.opponent;
+                        let defenseCards = aiActor.hand.filter(c =>
+                            c.type === "action" && (c.name === "Block" || c.name === "Dodge") ||
+                            c.type === "item" && c.subtype === "armor"
+                        );
+                        if (defenseCards.length > 0 && aiActor.threatResponseAP > 0) {
+                            NS.GameState.placeThreatDefenseCard(defenseCards[0]);
+                            m.redraw();
+                        } else {
+                            NS.GameState.skipThreatResponse();
+                            m.redraw();
+                        }
+                    }
+                    threatAutoRespondScheduled = false;  // Reset for next threat
+                }, 1500);  // Give player time to see threat
+            }
+
+            // Get the threat and defender info
+            let threat = threats[0];
+            let defenderActor = threat?.target === "player" ? gameState.player : gameState.opponent;
+            let defenderName = threat?.target === "player" ? "You" : "Opponent";
+
+            return m("div", { class: "cg2-phase-panel cg2-threat-response-panel" }, [
+                m("h2", isEndThreat ? "End-of-Round Threat!" : "Threat Incoming!"),
+                m("p", { class: "cg2-threat-explain" },
+                    isEndThreat
+                        ? (isPlayerResponder
+                            ? "A threat emerges targeting you! Prepare to defend yourself!"
+                            : "A threat emerges targeting the opponent! They must defend...")
+                        : (isPlayerResponder
+                            ? "Your fumble attracted danger! Prepare to defend yourself!"
+                            : "Opponent's fumble attracted danger! They must defend...")
+                ),
+
+                // Two-card layout like initiative phase
+                m("div", { class: "cg2-init-cards cg2-threat-encounter" }, [
+                    // Threat card (left) — rendered using CardFace for consistency
+                    threat ? m("div", { class: "cg2-init-card-wrap cg2-threat-card-wrap" }, [
+                        m(CardFace, {
+                            compact: true,
+                            card: {
+                                type: "encounter",
+                                name: threat.name,
+                                subtype: (threat.creatureType || "Threat"),
+                                atk: threat.atk,
+                                def: threat.def,
+                                hp: threat.hp,
+                                rarity: threat.lootRarity || "COMMON",
+                                behavior: threat.behavior,
+                                loot: threat.lootItems
+                                    ? threat.lootItems.map(l => l.name)
+                                    : [(threat.lootRarity || "COMMON") + " Loot"],
+                                icon: threat.imageIcon || "pets",
+                                imageUrl: threat.imageUrl || null
+                            }
+                        })
+                    ]) : null,
+
+                    // VS indicator
+                    m("div", { class: "cg2-init-vs cg2-threat-vs" }, [
+                        m("span", { class: "material-symbols-outlined" }, "swords"),
+                        m("div", "VS")
+                    ]),
+
+                    // Defender card (right) — use character's actual card
+                    m("div", { class: "cg2-init-card-wrap cg2-defender-card-wrap" }, [
+                        defenderActor?.character
+                            ? m(CardFace, { card: defenderActor.character, compact: true })
+                            : m("div", { class: "cg2-defender-card" }, defenderName),
+                        // Defense stack & AP indicator overlay
+                        m("div", { class: "cg2-defender-overlay" }, [
+                            m("div", { class: "cg2-defender-stack-area" }, [
+                                m("div", { class: "cg2-defender-stack-label" }, "Defense Stack"),
+                                defenseStack.length > 0
+                                    ? m("div", { class: "cg2-defender-stack-cards" },
+                                        defenseStack.map(card =>
+                                            m("div", { class: "cg2-defender-stack-card" }, card.name)
+                                        )
+                                    )
+                                    : m("div", { class: "cg2-defender-stack-empty" }, isPlayerResponder ? "Click cards below" : "")
+                            ]),
+                            isPlayerResponder ? m("div", { class: "cg2-defender-ap" }, [
+                                m("span", { class: "material-symbols-outlined" }, "bolt"),
+                                " ", apRemaining, " / ", tr.bonusAP, " AP"
+                            ]) : null
+                        ])
+                    ])
+                ]),
+
+                // Action buttons
+                isPlayerResponder ? m("div", { class: "cg2-threat-actions" }, [
+                    apRemaining > 0
+                        ? m("button", {
+                            class: "cg2-btn cg2-btn-secondary",
+                            onclick: function() { NS.GameState.skipThreatResponse(); }
+                        }, "Skip Defense")
+                        : null,
+                    m("button", {
+                        class: "cg2-btn cg2-btn-warning",
+                        onclick: function() { NS.GameState.fleeFromThreat(); },
+                        title: "Flee: 1d20 + AGI vs DC " + (threat ? (threat.difficulty || ((threat.atk || 0) + (threat.def || 0))) : "?") + ". Pot is forfeited. Threat carries to next round."
+                    }, [
+                        m("span", { class: "material-symbols-outlined", style: "vertical-align: middle; margin-right: 4px" }, "directions_run"),
+                        "Flee (DC " + (threat ? (threat.difficulty || ((threat.atk || 0) + (threat.def || 0))) : "?") + ")"
+                    ]),
+                    m("button", {
+                        class: "cg2-btn cg2-btn-primary cg2-btn-threat",
+                        onclick: function() {
+                            let gs = (NS?.ctx || {}).gameState;
+                            let GP = NS?.Constants?.GAME_PHASES || {};
+                            console.log("[CardGame v2] Face Threat clicked, phase:", gs ? gs.phase : "null");
+                            if (gs && gs.phase === GP.THREAT_RESPONSE) {
+                                NS.GameState.resolveThreatCombat();
+                            } else if (gs && gs.phase === GP.END_THREAT) {
+                                NS.GameState.resolveEndThreatCombat();
+                            } else {
+                                console.warn("[CardGame v2] Face Threat: unexpected phase", gs ? gs.phase : "null");
+                                // Try to resolve anyway
+                                if (gs && gs.threatResponse && gs.threatResponse.active) {
+                                    NS.GameState.resolveThreatCombat();
+                                }
+                            }
+                        }
+                    }, [
+                        m("span", { class: "material-symbols-outlined", style: "vertical-align: middle; margin-right: 4px" }, "shield"),
+                        apRemaining > 0 ? "Face Threat Now" : "Resolve Combat"
+                    ])
+                ]) : m("div", { class: "cg2-threat-waiting" }, "Opponent is preparing defense...")
+            ]);
+        }
+    };
+}
+
+export const threatUI = {
+    init,
+    ThreatResponseUI
+};

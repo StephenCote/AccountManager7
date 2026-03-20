@@ -1,0 +1,537 @@
+/**
+ * CardGame Engine - Encounter & Threat System
+ * Threat creature generation, critical rewards, scenario cards,
+ * and beginning/end-of-round threat checks.
+ *
+ * Ported from Ux7 IIFE to ESM.
+ *
+ * Depends on: effects, combat, actions (shuffle), gameState (cardGameCtx),
+ *             themes (getActiveTheme -- late-bound)
+ */
+import m from 'mithril';
+import * as Effects from './effects.js';
+import { shuffle } from './actions.js';
+import { _setEncountersModule } from './combat.js';
+import { gameState as _gs } from '../state/gameState.js';
+
+// Late-bound references wired by CardGameApp
+let _appCtx = null;   // shared app context (viewingDeck, etc.)
+let _themes = null;    // themes service module
+
+/** Wire external references that cannot be imported statically */
+export function wireEncounterRefs(appCtx, themesModule) {
+    _appCtx = appCtx;
+    _themes = themesModule;
+}
+
+function getThemes() { return _themes; }
+function getAppCtx() { return _appCtx || {}; }
+
+// ── Balance Data Loader ─────────────────────────────────────────────
+let balanceData = null;
+export async function loadBalanceData() {
+    if (balanceData) return balanceData;
+    try {
+        balanceData = await m.request({ method: "GET", url: "media/cardGame/game-balance.json" });
+    } catch(e) {
+        console.warn("[CardGame] Could not load game-balance.json, using defaults");
+        balanceData = {};
+    }
+    return balanceData;
+}
+
+// ── Encounter Data (loaded from JSON) ─────────────────────────────
+// Defaults used if JSON fails to load
+export let THREAT_CREATURES = [
+    { id: "weak_beast", name: "Feral Beast", type: "animal", atk: 2, def: 1, hp: 8, imageIcon: "pets",
+      behavior: "Attacks lowest HP target", loot: ["Beast Hide"] },
+    { id: "scout", name: "Scout", type: "npc", atk: 3, def: 1, hp: 10, imageIcon: "face",
+      behavior: "Flanks weakest defender", loot: ["Scout's Blade"] },
+    { id: "venomous", name: "Venomous Creature", type: "animal", atk: 2, def: 2, hp: 12, imageIcon: "bug_report",
+      behavior: "Poison on hit (2 turns)", loot: ["Venom Sac"] },
+    { id: "thief", name: "Thief", type: "npc", atk: 4, def: 2, hp: 15, imageIcon: "person_alert",
+      behavior: "Steals item on crit", loot: ["Stolen Goods"] }
+];
+
+export let SCENARIO_CARDS = [
+    { id: "peaceful_respite", name: "Peaceful Respite", effect: "no_threat", description: "The area is calm.",
+      icon: "park", cardColor: "#43A047", weight: 40 },
+    { id: "ambush", name: "Ambush!", effect: "threat", description: "Enemies emerge from hiding!",
+      icon: "visibility_off", cardColor: "#C62828", threatBonus: 0, weight: 15 }
+];
+
+let encounterDataLoaded = false;
+
+export async function loadEncounterData() {
+    if (encounterDataLoaded) return;
+    try {
+        let data = await m.request({ method: "GET", url: "media/cardGame/encounters.json" });
+        if (data && data.threatCreatures) {
+            THREAT_CREATURES = data.threatCreatures;
+        }
+        if (data && data.scenarioCards) {
+            SCENARIO_CARDS = data.scenarioCards;
+        }
+        encounterDataLoaded = true;
+        console.log("[CardGame] Encounter data loaded:", THREAT_CREATURES.length, "creatures,", SCENARIO_CARDS.length, "scenarios");
+    } catch(e) {
+        console.warn("[CardGame] Could not load encounters.json, using defaults");
+        encounterDataLoaded = true;
+    }
+}
+
+export function getThreatCreatures() {
+    let base = balanceData?.threatCreatures || THREAT_CREATURES;
+    let activeTheme = getThemes()?.getActiveTheme?.();
+
+    // New: merge theme overrides into base templates by ID
+    if (activeTheme?.encounters?.threatOverrides?.length) {
+        let overrides = activeTheme.encounters.threatOverrides;
+        let overrideMap = {};
+        overrides.forEach(function(o) { if (o.id) overrideMap[o.id] = o; });
+        return base.map(function(creature) {
+            let override = overrideMap[creature.id];
+            if (override) {
+                return Object.assign({}, creature, override);
+            }
+            return Object.assign({}, creature);
+        });
+    }
+
+    // Legacy: full replacement still supported
+    if (activeTheme?.encounters?.threatCreatures?.length) {
+        return activeTheme.encounters.threatCreatures;
+    }
+    return base;
+}
+
+export function getScenarioCards() {
+    let base = balanceData?.scenarioCards || SCENARIO_CARDS;
+    let activeTheme = getThemes()?.getActiveTheme?.();
+
+    // New: merge theme overrides into base templates by ID
+    if (activeTheme?.encounters?.scenarioOverrides?.length) {
+        let overrides = activeTheme.encounters.scenarioOverrides;
+        let overrideMap = {};
+        overrides.forEach(function(o) { if (o.id) overrideMap[o.id] = o; });
+        return base.map(function(scenario) {
+            let override = overrideMap[scenario.id];
+            if (override) {
+                return Object.assign({}, scenario, override);
+            }
+            return Object.assign({}, scenario);
+        });
+    }
+
+    // Legacy: full replacement still supported
+    if (activeTheme?.encounters?.scenarioCards?.length) {
+        return activeTheme.encounters.scenarioCards;
+    }
+    return base;
+}
+
+// ── Critical Rewards ────────────────────────────────────────────────
+
+/**
+ * Generate a reward card for critical success (nat 20)
+ * Tries to pull a rare/epic card from deck, falls back to stat bonus
+ * @param {string} type - "attack" or "defense"
+ * @param {Object} actor - The actor receiving the reward
+ * @returns {Object} Generated reward card
+ */
+export function generateCriticalReward(type, actor) {
+    // Try to find a rare/epic card from the draw pile
+    let rarityOrder = ["LEGENDARY", "EPIC", "RARE", "UNCOMMON"];
+    let drawPile = actor.drawPile || [];
+
+    // Look for items/apparel matching the type
+    let typeMatch = type === "attack"
+        ? c => c.type === "item" && (c.subtype === "weapon" || c.atk > 0)
+        : c => (c.type === "item" || c.type === "apparel") && (c.subtype === "armor" || c.def > 0);
+
+    for (let rarity of rarityOrder) {
+        let candidates = drawPile.filter(c =>
+            c.rarity === rarity && typeMatch(c)
+        );
+        if (candidates.length > 0) {
+            let reward = { ...candidates[Math.floor(Math.random() * candidates.length)] };
+            // Remove from draw pile
+            let idx = drawPile.findIndex(c => c.name === reward.name);
+            if (idx >= 0) drawPile.splice(idx, 1);
+
+            reward.id = "crit-reward-" + Date.now();
+            reward.isCriticalReward = true;
+            console.log("[CardGame v2] Critical reward from deck:", reward.name);
+            return reward;
+        }
+    }
+
+    // Fallback: generate a simple stat bonus consumable
+    let bonus = type === "attack"
+        ? { type: "item", subtype: "consumable", name: "Critical Bonus", atk: 3, rarity: "RARE",
+            effect: "+3 ATK this round" }
+        : { type: "item", subtype: "consumable", name: "Critical Bonus", def: 3, rarity: "RARE",
+            effect: "+3 DEF this round" };
+
+    bonus.id = "crit-reward-" + Date.now();
+    bonus.isCriticalReward = true;
+    console.log("[CardGame v2] Critical reward (fallback):", bonus.name);
+    return bonus;
+}
+
+// Wire up the encounters module into combat for lazy cross-reference
+_setEncountersModule({ generateCriticalReward });
+
+// ── Threat Encounter Creation ───────────────────────────────────────
+
+/**
+ * Create a threat encounter based on difficulty
+ * @param {number} difficulty - Threat difficulty (affects stats and loot)
+ * @returns {Object} Threat encounter object
+ */
+export function createThreatEncounter(difficulty) {
+    let creatures = getThreatCreatures();
+    // Pick a creature based on difficulty
+    let creatureIdx = Math.min(Math.floor(difficulty / 2), creatures.length - 1);
+    let base = creatures[creatureIdx];
+
+    // Look for matching art from deck encounter cards
+    let imageUrl = null;
+    let ctx = getAppCtx();
+    let deckCards = ctx.viewingDeck?.cards || [];
+    let matchCard = deckCards.find(function(c) {
+        return c.type === "encounter" && c.name === base.name && c.imageUrl;
+    });
+    if (matchCard) {
+        imageUrl = matchCard.imageUrl;
+    }
+
+    // Scale stats based on difficulty
+    let scaleFactor = 1 + (difficulty - 4) * 0.1;
+    let threat = {
+        type: "encounter",
+        subtype: "threat",
+        creatureType: base.type || "monster",
+        name: base.name,
+        id: base.id || null,
+        difficulty: difficulty,
+        atk: Math.round(base.atk * scaleFactor),
+        def: Math.round(base.def * scaleFactor),
+        hp: Math.round(base.hp * scaleFactor),
+        maxHp: Math.round(base.hp * scaleFactor),
+        imageIcon: base.imageIcon,
+        imageUrl: imageUrl,
+        behavior: base.behavior || "Attacks target",
+        artPrompt: base.artPrompt || null,
+        isThreat: true,
+
+        // Loot items the threat drops when defeated
+        lootItems: (base.loot || []).map(name => ({
+            type: "item", subtype: "loot", name: name,
+            rarity: difficulty <= 4 ? "COMMON" : difficulty <= 8 ? "UNCOMMON" : "RARE"
+        })),
+
+        // Action stack representing the threat's attack
+        actionStack: {
+            coreAction: "Attack",
+            modifiers: difficulty >= 6 ? [{ name: "Ferocious", bonus: 1, type: "skill" }] : []
+        }
+    };
+
+    // Determine loot rarity based on difficulty
+    if (difficulty <= 4) {
+        threat.lootRarity = "COMMON";
+        threat.lootCount = 1;
+    } else if (difficulty <= 8) {
+        threat.lootRarity = "UNCOMMON";
+        threat.lootCount = 1;
+    } else {
+        threat.lootRarity = "RARE";
+        threat.lootCount = 2;
+    }
+
+    return threat;
+}
+
+// ── Beginning Threat Checks ─────────────────────────────────────────
+
+/**
+ * Check for Nat 1 on initiative and create beginning threats
+ * @param {Object} state - The current game state
+ * @returns {Array} Array of threat objects with target info
+ */
+export function checkNat1Threats(state) {
+    if (!state || !state.initiative) return [];
+
+    let threats = [];
+    let difficulty = state.round + 2;  // Beginning threat difficulty = round + 2
+
+    // Check player for Nat 1
+    if (state.initiative.playerRoll && state.initiative.playerRoll.raw === 1) {
+        let threat = createThreatEncounter(difficulty);
+        threat.target = "player";  // Threat attacks the fumbler
+        threats.push(threat);
+        console.log("[CardGame v2] BEGINNING THREAT! Player rolled Nat 1 - spawning", threat.name);
+    }
+
+    // Check opponent for Nat 1
+    if (state.initiative.opponentRoll && state.initiative.opponentRoll.raw === 1) {
+        let threat = createThreatEncounter(difficulty);
+        threat.target = "opponent";  // Threat attacks the fumbler
+        threats.push(threat);
+        console.log("[CardGame v2] BEGINNING THREAT! Opponent rolled Nat 1 - spawning", threat.name);
+    }
+
+    // Max 2 beginning threats (one per player Nat 1)
+    return threats.slice(0, 2);
+}
+
+/**
+ * Store beginning threats for THREAT_RESPONSE phase
+ * (No longer inserts into action bar - combat handled in separate phase)
+ * @param {Object} state - The current game state
+ * @param {Array} threats - Array of threat objects
+ */
+export function insertBeginningThreats(state, threats) {
+    if (!state || !threats || threats.length === 0) return;
+
+    // Store threats for THREAT_RESPONSE phase
+    state.beginningThreats = threats;
+
+    console.log("[CardGame v2] Beginning threats queued for response phase:", threats.length, "threats");
+}
+
+// ── Scenario Card Drawing ───────────────────────────────────────────
+
+/**
+ * Draw a scenario card using weighted random selection
+ * @returns {Object} Selected scenario card
+ */
+export function drawScenarioCard() {
+    let cards = getScenarioCards();
+    let totalWeight = cards.reduce((sum, card) => sum + card.weight, 0);
+    let roll = Math.random() * totalWeight;
+    let cumulative = 0;
+
+    for (let card of cards) {
+        cumulative += card.weight;
+        if (roll <= cumulative) {
+            return { type: "scenario", ...card };
+        }
+    }
+    return { type: "scenario", ...cards[0] };  // Fallback
+}
+
+// ── End-of-Round Threat Check ───────────────────────────────────────
+
+/**
+ * Check for end-of-round threat from scenario card
+ * @param {Object} state - The current game state
+ * @returns {Object|null} End threat info or null if no threat
+ */
+export function checkEndThreat(state) {
+    let scenario = drawScenarioCard();
+    console.log("[CardGame v2] Scenario card drawn:", scenario.name);
+
+    // Look for matching scenario art from deck
+    let ctx = getAppCtx();
+    let deckCards = ctx.viewingDeck?.cards || [];
+    let matchCard = deckCards.find(function(c) {
+        return c.type === "scenario" && c.id === scenario.id && c.imageUrl;
+    });
+    if (matchCard) {
+        scenario.imageUrl = matchCard.imageUrl;
+    }
+
+    let result = { scenario: scenario, threat: null, bonusApplied: null };
+
+    if (scenario.effect === "threat") {
+        let difficulty = state.round + 3 + (scenario.threatBonus || 0);
+        let threat = createThreatEncounter(difficulty);
+        // End threats target the round WINNER (or random on tie)
+        if (state.roundWinner === "tie") {
+            threat.target = Math.random() < 0.5 ? "player" : "opponent";
+        } else {
+            threat.target = state.roundWinner;
+        }
+        result.threat = threat;
+    } else if (scenario.bonus) {
+        // Apply non-threat bonus effects
+        let winner = state.roundWinner;
+        let targetActor = winner === "player" ? state.player
+            : winner === "opponent" ? state.opponent : null;
+
+        if (scenario.bonus === "loot") {
+            // Generate a loot item and look up art from deck
+            let lootCard = generateScenarioLoot(state, scenario);
+            if (lootCard) {
+                // Try to find matching loot art
+                let lootArt = deckCards.find(function(c) {
+                    return c.type === "loot" && c.name === lootCard.name && c.imageUrl;
+                });
+                if (lootArt) lootCard.imageUrl = lootArt.imageUrl;
+
+                // Give to round winner, or player on tie
+                let recipient = targetActor || state.player;
+                recipient.hand.push(lootCard);
+                result.bonusApplied = { type: "loot", card: lootCard, target: winner || "player" };
+                console.log("[CardGame v2] Scenario loot:", lootCard.name, "\u2192", winner || "player");
+            }
+        } else if (scenario.bonus === "heal") {
+            let amount = scenario.bonusAmount || 3;
+            let playerBefore = state.player.hp;
+            let oppBefore = state.opponent.hp;
+            state.player.hp = Math.min(state.player.maxHp, state.player.hp + amount);
+            state.opponent.hp = Math.min(state.opponent.maxHp, state.opponent.hp + amount);
+            result.bonusApplied = {
+                type: "heal", amount: amount,
+                playerHealed: state.player.hp - playerBefore,
+                opponentHealed: state.opponent.hp - oppBefore
+            };
+            console.log("[CardGame v2] Scenario heal:", amount, "HP to both");
+        } else if (scenario.bonus === "energy") {
+            let amount = scenario.bonusAmount || 2;
+            let playerBefore = state.player.energy;
+            let oppBefore = state.opponent.energy;
+            state.player.energy = Math.min(state.player.maxEnergy, state.player.energy + amount);
+            state.opponent.energy = Math.min(state.opponent.maxEnergy, state.opponent.energy + amount);
+            result.bonusApplied = {
+                type: "energy", amount: amount,
+                playerRestored: state.player.energy - playerBefore,
+                opponentRestored: state.opponent.energy - oppBefore
+            };
+            console.log("[CardGame v2] Scenario energy:", amount, "to both");
+        }
+    }
+
+    return result;
+}
+
+/**
+ * Generate a loot item from scenario lootPool, theme overrides, theme cardPool, or a generic fallback
+ */
+function generateScenarioLoot(state, scenario) {
+    // Priority 1: Scenario-specific lootPool
+    let scenarioPool = scenario?.lootPool;
+    if (scenarioPool && scenarioPool.length > 0) {
+        let pick = scenarioPool[Math.floor(Math.random() * scenarioPool.length)];
+        return Object.assign({ type: "item", subtype: "consumable" }, pick);
+    }
+
+    // Priority 2: Theme scenario override lootPool
+    let activeTheme = getThemes()?.getActiveTheme?.();
+    if (activeTheme?.encounters?.scenarioOverrides) {
+        let override = activeTheme.encounters.scenarioOverrides.find(function(o) {
+            return o.id === scenario?.id && o.lootPool && o.lootPool.length > 0;
+        });
+        if (override) {
+            let pick = override.lootPool[Math.floor(Math.random() * override.lootPool.length)];
+            return Object.assign({ type: "item", subtype: "consumable" }, pick);
+        }
+    }
+
+    // Priority 3: Theme cardPool consumables
+    let pool = activeTheme?.cardPool || [];
+    let consumables = pool.filter(function(c) {
+        return c.type === "item" && c.subtype === "consumable";
+    });
+    if (consumables.length > 0) {
+        let pick = consumables[Math.floor(Math.random() * consumables.length)];
+        return Object.assign({}, pick);
+    }
+
+    // Fallback generic loot
+    return {
+        type: "item", subtype: "consumable", name: "Found Supplies",
+        rarity: "UNCOMMON", effect: "Restore 5 HP",
+        artPrompt: "a bundle of salvaged supplies"
+    };
+}
+
+// ── Treasure Vault ──────────────────────────────────────────────────
+
+/**
+ * Assemble a treasure vault deck from the theme's cardPool and treasureVault config.
+ * Pulls EPIC/LEGENDARY items + boss threats into a shuffled deck.
+ * @param {Object} themeConfig - Full theme configuration
+ * @returns {Array} Shuffled vault deck of cards
+ */
+export function assembleTreasureVault(themeConfig) {
+    if (!themeConfig || !themeConfig.treasureVault) return [];
+    let vault = themeConfig.treasureVault;
+    let pool = themeConfig.cardPool || [];
+    let deck = [];
+
+    // Gather EPIC/LEGENDARY items from cardPool
+    let epicLegendary = pool.filter(function(c) {
+        return c.rarity === "EPIC" || c.rarity === "LEGENDARY";
+    });
+
+    // Add items by vault category config (limited by count)
+    function addFromPool(filter, count) {
+        let candidates = epicLegendary.filter(filter);
+        let shuffled = shuffle(candidates);
+        for (let i = 0; i < Math.min(count, shuffled.length); i++) {
+            let card = Object.assign({}, shuffled[i]);
+            card._vaultItem = true;
+            deck.push(card);
+        }
+    }
+
+    if (vault.legendaryWeapons) {
+        addFromPool(function(c) { return c.type === "item" && c.subtype === "weapon" && c.rarity === "LEGENDARY"; }, vault.legendaryWeapons.count || 2);
+    }
+    if (vault.epicWeapons) {
+        addFromPool(function(c) { return c.type === "item" && c.subtype === "weapon" && c.rarity === "EPIC"; }, vault.epicWeapons.count || 3);
+    }
+    if (vault.epicApparel) {
+        addFromPool(function(c) { return c.type === "apparel" && c.rarity === "EPIC"; }, vault.epicApparel.count || 3);
+    }
+    if (vault.epicConsumables) {
+        addFromPool(function(c) { return c.type === "item" && c.subtype === "consumable" && c.rarity === "EPIC"; }, vault.epicConsumables.count || 2);
+    }
+    if (vault.epicSkills) {
+        addFromPool(function(c) { return c.type === "skill" && (c.rarity === "EPIC" || c.rarity === "RARE"); }, vault.epicSkills.count || 3);
+    }
+    if (vault.legendaryMagic) {
+        addFromPool(function(c) { return c.type === "magic" && c.rarity === "LEGENDARY"; }, vault.legendaryMagic.count || 2);
+    }
+
+    // Add boss threats
+    if (vault.bossThreats && vault.bossThreats.count > 0) {
+        let diffRange = vault.bossThreats.difficultyRange || [12, 16];
+        for (let i = 0; i < vault.bossThreats.count; i++) {
+            let diff = diffRange[0] + Math.floor(Math.random() * (diffRange[1] - diffRange[0] + 1));
+            let boss = createThreatEncounter(diff);
+            boss._vaultBoss = true;
+            boss.rarity = "LEGENDARY";
+            boss.name = "Boss: " + boss.name;
+            deck.push(boss);
+        }
+    }
+
+    let shuffledDeck = shuffle(deck);
+    console.log("[CardGame v2] Treasure vault assembled:", shuffledDeck.length, "cards",
+        "(" + shuffledDeck.filter(function(c) { return c._vaultBoss; }).length + " bosses)");
+    return shuffledDeck;
+}
+
+/**
+ * Draw the top card from the treasure vault.
+ * @param {Object} state - Game state with treasureVault
+ * @param {string} triggerName - What triggered the draw (for logging)
+ * @returns {Object|null} { type: "boss"|"item", card } or null if vault empty
+ */
+export function drawFromVault(state, triggerName) {
+    if (!state.treasureVault || !state.treasureVault.deck || state.treasureVault.deck.length === 0) {
+        console.log("[CardGame v2] Vault draw (" + triggerName + "): vault empty");
+        return null;
+    }
+    let card = state.treasureVault.deck.shift();
+    state.treasureVault.drawn.push(card);
+    let drawType = card._vaultBoss ? "boss" : "item";
+    console.log("[CardGame v2] Vault draw (" + triggerName + "):", drawType, "-", card.name);
+    return { type: drawType, card: card };
+}
+
+console.log('[CardGame] Engine/encounters loaded');

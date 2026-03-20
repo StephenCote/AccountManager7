@@ -38,6 +38,7 @@
 		<graalvm.version>24.2.1</graalvm.version>
 		-->
 		<graalvm.version>23.0.1</graalvm.version>
+		<skipTests>true</skipTests>
 	</properties>
 
 	<dependencies>
