@@ -8,6 +8,8 @@ import { page } from '../core/pageClient.js';
 import { am7model } from '../core/model.js';
 import { applicationPath } from '../core/config.js';
 import { ObjectPicker } from '../components/picker.js';
+import { FileUpload } from '../components/fileUpload.js';
+import { am7client } from '../core/am7client.js';
 
 let _contextData = null;
 let _sessionId = null;
@@ -108,6 +110,21 @@ function stopSummarizePoller() {
 function handleDrop(e) {
     e.preventDefault();
     if (!_sessionId) return;
+
+    // Native file drop — upload and attach
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        let file = e.dataTransfer.files[0];
+        let userHome = am7client.currentUser ? am7client.currentUser.homeDirectory : null;
+        let uploadPath = userHome ? userHome.path + "/Chat/Attachments" : "~/Chat/Attachments";
+        FileUpload.upload(file, {
+            groupPath: uploadPath,
+            name: file.name,
+            onComplete: handleFileUpload
+        }).catch(function(err) { console.warn("[ContextPanel] File upload failed:", err); });
+        return;
+    }
+
+    // Internal DnD system (objects from list/navigator)
     let dnd = page.components.dnd;
     if (!dnd || !dnd.workingSet || dnd.workingSet.length === 0) return;
     let item = dnd.workingSet[0];
@@ -252,8 +269,10 @@ function contextRefRowView(ref) {
 // ── Attach UI ────────────────────────────────────────────────────────
 
 let _attachMenuOpen = false;
+let _uploadMode = false;
 
 let _attachTypes = [
+    { label: "Upload File", icon: "cloud_upload", type: "upload", attachType: "upload" },
     { label: "Document", icon: "description", type: "data.data", attachType: "context" },
     { label: "Tag", icon: "label", type: "data.tag", attachType: "tag" },
     { label: "Character", icon: "person", type: "olio.charPerson", attachType: "systemCharacter" },
@@ -263,13 +282,17 @@ let _attachTypes = [
 
 function openAttachPicker(attachDef) {
     _attachMenuOpen = false;
+    if (attachDef.attachType === "upload") {
+        _uploadMode = true;
+        m.redraw();
+        return;
+    }
     ObjectPicker.open({
         type: attachDef.type,
         title: "Attach " + attachDef.label,
         onSelect: function(item) {
             if (item && item.objectId) {
                 let schema = item[am7model.jsonModelKey] || item.schema || attachDef.type;
-                // Map to correct attach type based on schema
                 let aType = attachDef.attachType;
                 if (aType === "context") {
                     attach("context", item.objectId, schema);
@@ -284,8 +307,36 @@ function openAttachPicker(attachDef) {
     m.redraw();
 }
 
+async function handleFileUpload(result) {
+    _uploadMode = false;
+    if (result && result.objectId) {
+        await attach("context", result.objectId, result[am7model.jsonModelKey] || "data.data");
+    }
+    m.redraw();
+}
+
 function attachMenuView() {
     if (!_sessionId) return null;
+
+    // File upload zone (shown when Upload File is selected)
+    if (_uploadMode) {
+        let userHome = am7client.currentUser ? am7client.currentUser.homeDirectory : null;
+        let uploadPath = userHome ? userHome.path + "/Chat/Attachments" : "~/Chat/Attachments";
+        return m("div", { class: "px-2 py-1.5 border-b border-gray-200 dark:border-gray-700" }, [
+            m("div", { class: "flex items-center justify-between mb-1" }, [
+                m("span", { class: "text-xs font-medium text-gray-600 dark:text-gray-300" }, "Upload File"),
+                m("button", {
+                    class: "text-xs text-gray-400 hover:text-gray-600",
+                    onclick: function() { _uploadMode = false; }
+                }, "Cancel")
+            ]),
+            m(FileUpload.View, {
+                groupPath: uploadPath,
+                onComplete: handleFileUpload
+            })
+        ]);
+    }
+
     return m("div", { class: "px-2 py-1.5 border-b border-gray-200 dark:border-gray-700" }, [
         m("div", { class: "flex items-center gap-1" }, [
             m("button", {

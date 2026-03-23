@@ -12,6 +12,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "file-icon-vectors": "^1.0.0",
     "marked": "^17.0.4",
     "material-icons": "^1.13.14",
     "material-symbols": "^0.40.2",

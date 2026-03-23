@@ -62,12 +62,15 @@ describe('sdConfig utility', () => {
 
     it('applyConfig should skip excluded fields (seed, groupId, etc.)', async () => {
         let { am7sd } = await import('../components/sdConfig.js');
-        let cinst = { api: { steps: (v) => { cinst._steps = v; }, cfg: (v) => { cinst._cfg = v; }, seed: (v) => { cinst._seed = v; } }, _steps: 0, _cfg: 0, _seed: 0 };
+        // applyConfig writes directly to cinst.entity (bypasses decorators to avoid double-conversion)
+        let cinst = { entity: { steps: 0, cfg: 0, seed: 0 } };
         am7sd.applyConfig(cinst, { steps: 30, cfg: 7, seed: 12345, groupId: 999 });
-        expect(cinst._steps).toBe(30);
-        expect(cinst._cfg).toBe(7);
+        expect(cinst.entity.steps).toBe(30);
+        expect(cinst.entity.cfg).toBe(7);
         // seed is in APPLY_EXCLUDE list, should NOT be applied
-        expect(cinst._seed).toBe(0);
+        expect(cinst.entity.seed).toBe(0);
+        // groupId is in APPLY_EXCLUDE list
+        expect(cinst.entity.groupId).toBeUndefined();
     });
 
     it('fillStyleDefaults populates photograph fields', async () => {

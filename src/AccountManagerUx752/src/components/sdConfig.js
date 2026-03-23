@@ -154,15 +154,20 @@ async function saveConfig(name, config, groupPath) {
         patch[am7model.jsonModelKey] = "data.data";
         await page.patchObject(patch);
     }
+    // Clear cache so subsequent loadConfig finds the updated data
+    am7model._client.clearCache("data.data");
     return true;
 }
 
 // ── applyConfig ───────────────────────────────────────────────────
 function applyConfig(cinst, config) {
     if (!config) return;
+    // Write directly to entity — saved values are already in entity format
+    // (raw doubles, not decorator-scaled). Using cinst.api[k]() would
+    // double-apply the decorator (e.g., 0.75 → decorateIn → 0.0075).
     for (let k in config) {
-        if (!APPLY_EXCLUDE.includes(k) && cinst.api[k]) {
-            cinst.api[k](config[k]);
+        if (!APPLY_EXCLUDE.includes(k)) {
+            cinst.entity[k] = config[k];
         }
     }
 }

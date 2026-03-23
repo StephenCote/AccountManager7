@@ -136,7 +136,7 @@ function renderDialog(cfg, index) {
         ? 'am7-dialog-drawer am7-animate-in'
         : 'am7-dialog am7-dialog-' + (cfg.size || 'md') + ' am7-animate-in';
 
-    let container = m('div', { class: containerClass }, [header, body, footer]);
+    let container = m('div', { class: containerClass, style: { width: '100%' } }, [header, body, footer]);
 
     return m('div', backdropAttrs, [container]);
 }

@@ -1,6 +1,7 @@
 // Styles
 import 'material-icons/iconfont/material-icons.css';
 import 'material-symbols/outlined.css';
+import 'file-icon-vectors/dist/file-icon-vectors.min.css';
 import './styles/main.css';
 import './styles/pageStyle.css';
 
