@@ -2,3 +2,5 @@ node_modules/
 dist/
 .env.local
 *.log
+e2e/results/
+e2e/screenshots/
