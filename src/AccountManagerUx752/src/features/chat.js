@@ -319,7 +319,7 @@ function newChatStream() {
 
 async function doAutoStart() {
     if (!inst || !chatCfg.chat) return;
-    let startMode = chatCfg.chat.startMode;
+    let startMode = (chatCfg.chat.startMode || "").toLowerCase();
     if (startMode !== "system") return;
     // Only auto-start if conversation has no messages yet
     if (chatCfg.history.messages && chatCfg.history.messages.length > 0) return;

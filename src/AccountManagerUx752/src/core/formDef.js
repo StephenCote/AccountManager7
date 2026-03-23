@@ -5349,21 +5349,6 @@ import { am7model } from './model.js';
                 hint: "Maximum gossip memories to suggest (1-20)"
             },
 
-            // Deprecated — retained for backward compat; use promptTemplate on chatRequest
-            promptTemplate: {
-                layout: 'one',
-                format: 'picker',
-                label: "Prompt Template (deprecated)",
-                field: {
-                    format: "picker",
-                    pickerType: "olio.llm.promptTemplate",
-                    pickerProperty: {
-                        selected: "{object}",
-                        entity: "promptTemplate"
-                    }
-                }
-            },
-
         },
         forms: ["episodectl", "chatOptionsRef", "groupinfo", "attributes"]
 

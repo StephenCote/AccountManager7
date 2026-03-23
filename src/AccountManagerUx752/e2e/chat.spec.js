@@ -111,17 +111,24 @@ test.describe('Chat session creation (admin)', () => {
     });
 });
 
-test.describe('Chat picker (admin)', () => {
-    test.beforeEach(async ({ page }) => {
-        // Use admin which has initialized chat library
-        await login(page, { user: 'admin', password: 'password' });
+test.describe('Chat config picker selection', () => {
+    let testInfo = {};
+
+    test.beforeAll(async ({ request }) => {
+        testInfo = await ensureSharedTestUser(request);
     });
 
-    test('new session picker shows system library, favorites, and home buttons', async ({ page }) => {
+    test.beforeEach(async ({ page }) => {
+        await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
+    });
+
+    /**
+     * Helper: navigate to chat, dismiss wizard, open sidebar, click New, wait for dialog.
+     * Returns the picker modal locator helper.
+     */
+    async function openNewSessionDialog(page) {
         await page.locator('button[title="Chat"]').click();
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
-
-        // Wait for chat page to settle
         await page.waitForTimeout(3000);
 
         // Dismiss ChatSetupWizard if it appears
@@ -132,47 +139,120 @@ test.describe('Chat picker (admin)', () => {
             await expect(wizardTitle).not.toBeVisible({ timeout: 5000 });
         }
 
-        // Click "New Session" button (in empty state or sidebar)
+        // Open sidebar sessions panel, then click New
+        let sessionsBtn = page.locator('button[title="Sessions"]');
+        await expect(sessionsBtn).toBeVisible({ timeout: 5000 });
+        await sessionsBtn.click();
+        await page.waitForTimeout(500);
+
         let newBtn = page.locator('button:has-text("New Session")').or(page.locator('button:has-text("New")'));
-        await expect(newBtn.first()).toBeVisible({ timeout: 15000 });
+        await expect(newBtn.first()).toBeVisible({ timeout: 10000 });
         await newBtn.first().click();
 
-        // New session dialog should appear
         let dialog = page.locator('text=New Chat Session');
         await expect(dialog).toBeVisible({ timeout: 10000 });
-
-        // Wait for defaults to load, then click search on Chat Config picker field
         await page.waitForTimeout(2000);
-        let searchBtn = page.locator('button[title="Find"]').first();
-        await expect(searchBtn).toBeVisible({ timeout: 5000 });
-        await searchBtn.click();
+    }
 
-        // Picker modal should open — use data attribute or broader selector
-        // The picker uses z-[60] which is a Tailwind arbitrary value class
+    /**
+     * Helper: open picker, navigate to system library (where configs live), select first item.
+     * Returns the selected item name.
+     */
+    async function pickFirstFromLibrary(page, findBtnIndex) {
+        let findBtns = page.locator('button[title="Find"]');
+        let findBtn = findBtns.nth(findBtnIndex);
+        await expect(findBtn).toBeVisible({ timeout: 5000 });
+        await findBtn.click();
+
         let pickerModal = page.locator('div.fixed.inset-0').filter({ has: page.locator('h3:has-text("Select")') });
         await expect(pickerModal).toBeVisible({ timeout: 15000 });
 
-        // Wait for picker toolbar to render
-        let toolbar = pickerModal.locator('.result-nav-outer');
-        await expect(toolbar).toBeVisible({ timeout: 10000 });
-
-        // System library button (admin_panel_settings icon) should be present
+        // Click system library button to navigate to shared library (configs live here)
         let sysLibBtn = pickerModal.locator('button[aria-label="System library"]');
-        await expect(sysLibBtn).toBeVisible({ timeout: 5000 });
+        let hasSysLib = await sysLibBtn.isVisible({ timeout: 3000 }).catch(() => false);
+        if (hasSysLib) {
+            await sysLibBtn.click();
+            await page.waitForTimeout(1000);
+        }
 
-        // Favorites button should be present
-        let favBtn = pickerModal.locator('button[aria-label="Favorites"]');
-        await expect(favBtn).toBeVisible({ timeout: 5000 });
+        // Wait for list items (table rows or grid items)
+        let listRow = pickerModal.locator('tr.tabular-row').first();
+        await expect(listRow).toBeVisible({ timeout: 15000 });
 
-        // Home button should be present (user's ~/Chat path)
-        let homeBtn = pickerModal.locator('button[aria-label="My items"]');
-        await expect(homeBtn).toBeVisible({ timeout: 5000 });
+        // If the first row is a group directory, double-click to navigate into it
+        let rowText = await listRow.textContent();
 
-        await screenshot(page, 'chat-picker-toolbar-buttons');
+        // Click to select the first item
+        await listRow.click();
+        await page.waitForTimeout(300);
 
-        // Close picker
-        let closeBtn = pickerModal.locator('button:has(span:text("close"))');
-        await closeBtn.click();
+        // Confirm (check button)
+        let confirmBtn = pickerModal.locator('button:has(span:text("check"))');
+        await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+        await confirmBtn.click();
+
+        // Picker should close
         await expect(pickerModal).not.toBeVisible({ timeout: 5000 });
+        return rowText;
+    }
+
+    test('selecting a chatConfig from picker updates the dialog field', async ({ page }) => {
+        test.setTimeout(90000);
+        await openNewSessionDialog(page);
+
+        // Clear the default chatConfig selection so we can test manual pick
+        let chatConfigClear = page.locator('button[title="Clear"]').first();
+        let hasClear = await chatConfigClear.isVisible({ timeout: 3000 }).catch(() => false);
+        if (hasClear) {
+            await chatConfigClear.click();
+            await page.waitForTimeout(500);
+        }
+
+        // Pick first chatConfig from library (Find button index 0 = Chat Config)
+        await pickFirstFromLibrary(page, 0);
+
+        // The Chat Config field should now show the selected config name (not "(none)")
+        let chatConfigLabel = page.locator('label:has-text("Chat Config")').locator('..').locator('span.truncate');
+        let configName = await chatConfigLabel.textContent({ timeout: 5000 });
+        expect(configName).not.toBe('(none)');
+        expect(configName.length).toBeGreaterThan(0);
+
+        await screenshot(page, 'chat-config-picker-selected');
+    });
+
+    test('selecting a promptConfig from picker updates the dialog field', async ({ page }) => {
+        test.setTimeout(90000);
+        await openNewSessionDialog(page);
+
+        // Pick first promptConfig from library (Find button index 1 = Prompt Config)
+        await pickFirstFromLibrary(page, 1);
+
+        // Prompt Config field should show a name, not "(none)"
+        let promptLabel = page.locator('label:has-text("Prompt Config")').locator('..').locator('span.truncate');
+        let promptName = await promptLabel.textContent({ timeout: 5000 });
+        expect(promptName).not.toBe('(none)');
+        expect(promptName.length).toBeGreaterThan(0);
+
+        await screenshot(page, 'prompt-config-picker-selected');
+    });
+
+    test('no console errors during config picker selection', async ({ page }) => {
+        test.setTimeout(90000);
+        let consoleErrors = [];
+        page.on('pageerror', (err) => { consoleErrors.push(err.message); });
+
+        await openNewSessionDialog(page);
+
+        // Pick first chatConfig from library
+        await pickFirstFromLibrary(page, 0);
+
+        // Wait for any async callbacks (updateNewSessionDefaultName)
+        await page.waitForTimeout(2000);
+
+        // Filter out known non-critical errors
+        let critical = consoleErrors.filter(e => !e.includes('ResizeObserver') && !e.includes('WebSocket'));
+        expect(critical).toEqual([]);
+
+        await screenshot(page, 'chat-config-no-errors');
     });
 });

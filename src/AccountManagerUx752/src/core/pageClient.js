@@ -686,7 +686,7 @@ const page = {
             if (portrait && portrait.groupId) {
                 let q = am7client.newQuery('data.data');
                 q.field('groupId', portrait.groupId);
-                q.entity.request.push('id', 'objectId', 'name', 'groupId', 'groupPath', 'contentType', 'organizationPath');
+                q.entity.request.push('id', 'objectId', 'name', 'groupId', 'groupPath', 'contentType', 'organizationPath', 'attributes', 'description', 'tags');
                 q.range(0, 200);
                 q.sort('modifiedDate');
                 q.order('descending');
@@ -705,22 +705,47 @@ const page = {
 
         function loadTags(img) {
             if (!img || tagsCache[img.objectId]) return;
+            // Use tags from query if available
+            if (Array.isArray(img.tags) && img.tags.length) {
+                tagsCache[img.objectId] = img.tags;
+                return;
+            }
             tagsCache[img.objectId] = [];
-            am7client.getImageTags(img.objectId, function(tags) {
-                tagsCache[img.objectId] = tags || [];
-                m.redraw();
-            });
+            // Fall back to member listing (participation lookup)
+            try {
+                let p = am7client.members('data.data', img.objectId, 'data.tag', 0, 50, function(tags) {
+                    tagsCache[img.objectId] = (Array.isArray(tags) ? tags : []);
+                    m.redraw();
+                });
+                if (p && p.catch) p.catch(function() { tagsCache[img.objectId] = []; });
+            } catch(e) { /* ignore */ }
+        }
+
+        let galleryRef = null;
+        function refocusGallery() { if (galleryRef) galleryRef.focus(); }
+
+        function getImageAttrs(img) {
+            if (!img) return [];
+            let attrs = [];
+            if (img.attributes && img.attributes.length) {
+                img.attributes.forEach(function(a) {
+                    if (a.name && a.values && a.values.length) attrs.push({ name: a.name, value: a.values[0] });
+                });
+            }
+            return attrs;
         }
 
         function renderGallery() {
             let sel = galleryImages[idx];
             if (sel) loadTags(sel);
             let tags = sel ? (tagsCache[sel.objectId] || []) : [];
+            let attrs = getImageAttrs(sel);
             let previewUrl = sel ? am7client.mediaDataPath(sel, true, '512x512') : '';
             return m('div', {
-                class: 'outline-none',
+                class: 'outline-none overflow-hidden w-full',
                 tabindex: 0,
-                oncreate: function(vn) { vn.dom.focus(); },
+                oncreate: function(vn) { galleryRef = vn.dom; vn.dom.focus(); },
+                onremove: function() { galleryRef = null; },
                 onkeydown: function(e) {
                     if (e.key === 'ArrowLeft' && idx > 0) { idx--; m.redraw(); e.preventDefault(); }
                     else if (e.key === 'ArrowRight' && idx < galleryImages.length - 1) { idx++; m.redraw(); e.preventDefault(); }
@@ -739,23 +764,41 @@ const page = {
                 m('div', { class: 'flex items-center gap-2 text-sm mb-2' }, [
                     m('span', { class: 'text-gray-500' }, galleryImages.length + ' image(s)'),
                     m('span', { class: 'text-gray-400 text-xs' }, '(' + (idx + 1) + '/' + galleryImages.length + ')'),
+                    idx > 0 ? m('button', {
+                        class: 'p-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800',
+                        title: 'Previous (←)',
+                        onclick: function() { idx--; refocusGallery(); m.redraw(); }
+                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'arrow_back')) : null,
+                    idx < galleryImages.length - 1 ? m('button', {
+                        class: 'p-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800',
+                        title: 'Next (→)',
+                        onclick: function() { idx++; refocusGallery(); m.redraw(); }
+                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'arrow_forward')) : null,
                     m('button', {
                         class: 'p-1 rounded ' + (viewMode === 'grid' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'text-gray-500 hover:bg-gray-100'),
-                        onclick: function() { viewMode = 'grid'; m.redraw(); }
+                        onclick: function() { viewMode = 'grid'; refocusGallery(); m.redraw(); }
                     }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'grid_view')),
                     m('button', {
                         class: 'p-1 rounded ' + (viewMode === 'list' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'text-gray-500 hover:bg-gray-100'),
-                        onclick: function() { viewMode = 'list'; m.redraw(); }
+                        onclick: function() { viewMode = 'list'; refocusGallery(); m.redraw(); }
                     }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'view_list'))
                 ]),
                 // Preview + info
-                sel ? m('div', { class: 'flex gap-3 mb-3 flex-wrap' }, [
+                sel ? m('div', { class: 'flex gap-3 mb-3 flex-wrap overflow-hidden min-w-0' }, [
                     m('div', { class: 'flex-shrink-0' },
-                        m('img', { src: previewUrl, class: 'max-w-full max-h-80 rounded shadow cursor-pointer', style: 'object-fit:contain', onclick: function() { page.imageView(sel); } })
+                        m('a', { href: previewUrl.replace('512x512', '0x0'), target: '_blank' },
+                            m('img', { src: previewUrl, class: 'max-w-full max-h-80 rounded shadow cursor-pointer', style: 'object-fit:contain', title: 'Click to open full size' })
+                        )
                     ),
-                    m('div', { class: 'flex-1 min-w-[180px]' }, [
+                    m('div', { class: 'flex-1 min-w-[180px] overflow-hidden' }, [
                         m('div', { class: 'text-sm font-medium text-gray-800 dark:text-white mb-1' }, sel.name),
                         m('div', { class: 'flex flex-wrap gap-1 mb-2' }, [
+                            m('a', {
+                                class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 no-underline',
+                                href: '#!/view/data.data/' + sel.objectId,
+                                target: '_blank',
+                                onclick: function(e) { e.stopPropagation(); }
+                            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'open_in_new'), 'Open']),
                             m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200', onclick: function() {
                                 let profile = charInst && charInst.entity ? charInst.entity.profile : null;
                                 if (!profile) { addToast('error', 'No profile'); return; }
@@ -763,6 +806,7 @@ const page = {
                                     addToast('success', 'Portrait set');
                                     am7client.clearCache('identity.profile');
                                 });
+                                refocusGallery();
                             }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'account_circle'), 'Set Profile']),
                             m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-200', onclick: function() {
                                 addToast('info', 'Auto-tagging...');
@@ -771,6 +815,7 @@ const page = {
                                     addToast('success', 'Tags applied');
                                     m.redraw();
                                 });
+                                refocusGallery();
                             }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'label'), 'Auto-Tag']),
                             m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 hover:bg-red-200', onclick: function() {
                                 Dialog.confirm('Delete ' + sel.name + '?', async function() {
@@ -781,18 +826,24 @@ const page = {
                                 });
                             }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'delete'), 'Delete'])
                         ]),
-                        m('div', { class: 'text-xs text-gray-500 mb-1' }, 'Tags:'),
-                        tags.length > 0 ? m('div', { class: 'flex flex-wrap gap-1' }, tags.map(function(t) {
-                            return m('span', { class: 'px-2 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' }, t.name || t);
-                        })) : m('span', { class: 'text-xs text-gray-400 italic' }, 'No tags'),
-                        m('div', { class: 'text-xs text-gray-400 mt-2' }, 'Arrow keys to navigate, Delete to remove')
+                        sel.description ? m('div', { class: 'text-xs text-gray-500 italic mb-1 break-words overflow-hidden', style: 'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical' }, sel.description) : null,
+                        tags.length > 0 ? m('div', { class: 'mb-1' }, [
+                            m('div', { class: 'flex flex-wrap gap-1' }, tags.map(function(t) {
+                                let label = (t && typeof t === 'object') ? (t.name || t.objectId || '') : String(t || '');
+                                return m('span', { class: 'px-2 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' }, label);
+                            }))
+                        ]) : null,
+                        attrs.length > 0 ? m('div', { class: 'flex flex-wrap gap-1 mb-1' }, attrs.map(function(a) {
+                            return m('span', { class: 'px-2 py-0.5 rounded-full text-xs bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300' }, String(a.name || '') + ': ' + String(a.value || ''));
+                        })) : null,
+                        m('div', { class: 'text-xs text-gray-400 mt-2' }, '← → to navigate, Delete to remove')
                     ])
                 ]) : null,
                 // Grid or list
                 viewMode === 'list' ? m('div', { class: 'divide-y divide-gray-200 dark:divide-gray-700 max-h-60 overflow-y-auto' },
                     galleryImages.map(function(img, i) {
                         let thumbUrl = am7client.mediaDataPath(img, true, '64x64');
-                        return m('div', { class: 'flex items-center gap-2 px-2 py-1 cursor-pointer ' + (i === idx ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-800'), onclick: function() { idx = i; m.redraw(); } }, [
+                        return m('div', { class: 'flex items-center gap-2 px-2 py-1 cursor-pointer ' + (i === idx ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-800'), onclick: function() { idx = i; refocusGallery(); m.redraw(); } }, [
                             m('img', { src: thumbUrl, class: 'w-10 h-10 rounded object-cover flex-shrink-0' }),
                             m('span', { class: 'text-sm text-gray-700 dark:text-gray-300 truncate' }, img.name),
                             i === idx ? m('span', { class: 'material-symbols-outlined text-blue-500 ml-auto', style: 'font-size:16px' }, 'check_circle') : null
@@ -801,7 +852,7 @@ const page = {
                 ) : m('div', { class: 'grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1 max-h-60 overflow-y-auto' },
                     galleryImages.map(function(img, i) {
                         let thumbUrl = am7client.mediaDataPath(img, true, '96x96');
-                        return m('div', { class: 'cursor-pointer rounded overflow-hidden border-2 ' + (i === idx ? 'border-blue-500' : 'border-transparent hover:border-gray-300'), onclick: function() { idx = i; m.redraw(); } },
+                        return m('div', { class: 'cursor-pointer rounded overflow-hidden border-2 ' + (i === idx ? 'border-blue-500' : 'border-transparent hover:border-gray-300'), onclick: function() { idx = i; refocusGallery(); m.redraw(); } },
                             m('img', { src: thumbUrl, class: 'w-full aspect-square object-cover' }));
                     })
                 )

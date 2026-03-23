@@ -320,7 +320,20 @@ function getTabularRow(ctl, p, idx, map) {
     let props = Object.assign(dndDragProps(p), {
         class: cls,
         onselectstart: function () { return false; },
-        ondblclick: function () { if (ctl.containerMode) ctl.down(p); else ctl.open(p); },
+        ondblclick: function () {
+            if (ctl.pickerMode) {
+                // In picker mode: double-click groups to navigate, items to select+confirm
+                let objType = p[am7model.jsonModelKey] || ctl.listType;
+                let objModel = am7model.getModel(objType);
+                if (objModel && (am7model.isGroup(objModel) || objType === 'auth.group')) {
+                    ctl.down(p);
+                } else {
+                    ctl.select(p);
+                    ctl.confirmPick && ctl.confirmPick();
+                }
+            } else if (ctl.containerMode) { ctl.down(p); }
+            else { ctl.open(p); }
+        },
         onclick: function () { ctl.select(p); }
     });
     let attr = "[draggable]";
@@ -454,8 +467,17 @@ function getGridListItem(ctl, p) {
     if (gridMode == 2) gridCellCls = "image-grid-item-1";
     let props = Object.assign(dndDragProps(p), {
         ondblclick: function () {
-            if (ctl.containerMode) ctl.down(p);
-            else ctl.open(p);
+            if (ctl.pickerMode) {
+                let objType = p[am7model.jsonModelKey] || ctl.listType;
+                let objModel = am7model.getModel(objType);
+                if (objModel && (am7model.isGroup(objModel) || objType === 'auth.group')) {
+                    ctl.down(p);
+                } else {
+                    ctl.select(p);
+                    ctl.confirmPick && ctl.confirmPick();
+                }
+            } else if (ctl.containerMode) { ctl.down(p); }
+            else { ctl.open(p); }
         },
         onclick: function () {
             ctl.select(p);

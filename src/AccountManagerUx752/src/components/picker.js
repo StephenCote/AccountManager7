@@ -138,10 +138,14 @@ const ObjectPicker = {
             userContainerId: userContainerId,
             libraryContainerId: libraryContainerId,
             favoritesContainerId: favoritesContainerId,
-            onSelect: function(item) {
+            onSelect: function(items) {
                 let handler = pickerState.handler;
                 ObjectPicker.close();
-                if (handler && item) handler(item);
+                if (handler && items) {
+                    // getSelected() returns array; unwrap for single-select
+                    let item = Array.isArray(items) ? items[0] : items;
+                    if (item) handler(item);
+                }
             }
         });
 
@@ -248,7 +252,7 @@ ObjectPicker.PickerView = {
             m("div", { class: "absolute inset-0 bg-black/50", onclick: function() { ObjectPicker.close(); } }),
             m("div", {
                 class: "relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-4xl mx-4 flex flex-col",
-                style: "max-height:85vh",
+                style: "height:85vh;max-height:85vh",
                 onclick: function(e) { e.stopPropagation(); }
             }, [
                 // Header — title and close button
@@ -260,7 +264,7 @@ ObjectPicker.PickerView = {
                     }, m("span", { class: "material-symbols-outlined" }, "close"))
                 ]),
                 // Embedded list view — toolbar, breadcrumbs, grid/table, pagination
-                m("div", { class: "flex-1 overflow-hidden flex flex-col", style: "min-height:300px" }, [
+                m("div", { class: "flex-1 overflow-auto flex flex-col", style: "min-height:0" }, [
                     pickerListControl.renderContent({ attrs: {} })
                 ])
             ])

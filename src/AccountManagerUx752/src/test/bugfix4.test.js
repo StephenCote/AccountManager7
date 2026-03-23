@@ -126,18 +126,17 @@ describe('Issue J: LLM connection tracking', () => {
     });
 });
 
-describe('Issue H: promptTemplate in chatConfig form', () => {
+describe('Issue H: promptTemplate removed from chatConfig form (moved to chatRequest)', () => {
 
-    it('formDef chatConfig has promptTemplate field defined', () => {
+    it('formDef chatConfig does NOT have promptTemplate (field is on chatRequest model)', () => {
         const src = readFileSync(resolve(__dirname, '..', 'core', 'formDef.js'), 'utf-8');
         // Find the chatConfig form section
         let cfgIdx = src.indexOf('forms.chatConfig');
         expect(cfgIdx).toBeGreaterThan(-1);
-        // The chatConfig form is large; search in a wide window
+        // The chatConfig form should NOT reference promptTemplate — it's a chatRequest field
         let nextFormIdx = src.indexOf('forms.', cfgIdx + 1);
         let cfgBlock = src.substring(cfgIdx, nextFormIdx > cfgIdx ? nextFormIdx : cfgIdx + 20000);
-        expect(cfgBlock).toContain('promptTemplate');
-        expect(cfgBlock).toContain('olio.llm.promptTemplate');
+        expect(cfgBlock).not.toContain('promptTemplate');
     });
 });
 

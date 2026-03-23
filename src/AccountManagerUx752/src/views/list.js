@@ -680,6 +680,9 @@ function newListControl() {
             move: moveCarousel,
             moveTo: moveCarouselTo,
             select: selectResult,
+            confirmPick: function() {
+                if (pickerMode && pickerHandler) pickerHandler(getSelected());
+            },
             open: openItem,
             down: navigateDown,
             onscroll: checkScrollPagination,

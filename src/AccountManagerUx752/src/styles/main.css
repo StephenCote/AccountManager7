@@ -471,7 +471,7 @@
     /* Dialog system */
     .am7-dialog-backdrop {
         @apply fixed inset-0 bg-black/50
-        flex items-center justify-center
+        flex items-center justify-center p-4
     }
     .am7-dialog-backdrop.am7-animate-in {
         animation: am7-fadeIn 150ms ease-out forwards;
@@ -507,7 +507,7 @@
         @apply text-lg font-semibold text-gray-900 dark:text-white
     }
     .am7-dialog-body {
-        @apply flex-1 overflow-y-auto px-6 py-4
+        @apply flex-1 overflow-y-auto overflow-x-hidden px-6 py-4 min-w-0
     }
     .am7-dialog-footer {
         @apply flex items-center justify-end gap-2 px-6 py-4

@@ -287,8 +287,14 @@ async function reimage(entity, inst) {
                     }))
                 ]),
                 m('div', [
-                    m('label', { class: 'field-label' }, 'Denoising'),
-                    m('input', { class: 'text-field-compact', type: 'range', min: 0, max: 1, step: 0.05, value: cinst.entity.denoisingStrength || 0.75, oninput: function (e) { cinst.entity.denoisingStrength = parseFloat(e.target.value); } })
+                    m('label', { class: 'field-label' }, 'Denoising: ' + (cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75)),
+                    m('input', { class: 'text-field-compact', type: 'range', min: 0, max: 100, step: 5,
+                        value: cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75,
+                        oninput: function (e) {
+                            if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(parseInt(e.target.value));
+                            else cinst.entity.denoisingStrength = parseFloat(e.target.value) / 100;
+                        }
+                    })
                 ])
             ]),
 
@@ -468,11 +474,11 @@ async function reimage(entity, inst) {
                         // Save SD config for this character
                         let saveEntity = Object.assign({}, cinst.entity);
                         saveEntity.shared = false;
-                        am7sd.saveConfig(charConfigName, saveEntity);
+                        await am7sd.saveConfig(charConfigName, saveEntity);
 
                         // If shared was checked, also save to shared config
                         if (cinst.entity.shared) {
-                            am7sd.saveConfig('sharedSD.json', cinst.entity);
+                            await am7sd.saveConfig('sharedSD.json', cinst.entity);
                             cinst.entity.shared = false;
                         }
 

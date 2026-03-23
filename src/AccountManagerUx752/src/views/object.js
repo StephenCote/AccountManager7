@@ -512,6 +512,29 @@ function newObjectPage() {
         if (!items && mlEntity && mlEntity[name]) {
             items = mlEntity[name];
         }
+        // Participation-based fields (e.g., tags): getFull doesn't populate them,
+        // so re-query with the field explicitly requested
+        if ((!items || !items.length) && field.participation && mlEntity && mlEntity.objectId) {
+            let cacheKey = '_part_' + name;
+            if (foreignData[cacheKey] !== undefined) {
+                items = foreignData[cacheKey];
+            } else {
+                foreignData[cacheKey] = null;
+                let entityType = mlEntity[am7model.jsonModelKey];
+                let q = am7client.newQuery(entityType);
+                q.field('objectId', mlEntity.objectId);
+                q.entity.request = ['id', 'objectId', name];
+                page.search(q).then(function(qr) {
+                    if (qr && qr.results && qr.results.length && Array.isArray(qr.results[0][name])) {
+                        foreignData[cacheKey] = qr.results[0][name];
+                    } else {
+                        foreignData[cacheKey] = [];
+                    }
+                    m.redraw();
+                }).catch(function() { foreignData[cacheKey] = []; m.redraw(); });
+                return m("div", { class: "text-xs text-gray-400" }, "Loading...");
+            }
+        }
         if (!items) items = [];
 
         // Selection tracking keyed by field name
@@ -619,14 +642,27 @@ function newObjectPage() {
             items.length + " item" + (items.length !== 1 ? "s" : "")
         ));
 
+        // Column definitions from table form fields
+        let columns = Object.keys(tableForm.fields || {});
+        if (!columns.length) columns = ['name'];
+
         // List rows
         let listRows = [];
+        // Header row
+        if (items.length > 0 && columns.length > 1) {
+            listRows.push(m("div", { class: "flex items-center px-2 py-1 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50" },
+                columns.map(function(col) {
+                    let fv = tableForm.fields[col];
+                    let label = (fv && fv.label) ? fv.label : col.charAt(0).toUpperCase() + col.slice(1);
+                    return m("span", { class: "text-xs font-medium text-gray-500 dark:text-gray-400 flex-1 truncate" }, label);
+                })
+            ));
+        }
         if (items.length === 0) {
             listRows.push(m("div", { class: "px-3 py-2 text-sm text-gray-400 italic" }, "No items"));
         } else {
             items.forEach(function(item, idx) {
                 let isSelected = !!sel[idx];
-                let displayName = item.name || item.objectId || '(unnamed)';
                 listRows.push(m("div", {
                     class: "flex items-center px-2 py-1.5 border-b border-gray-100 dark:border-gray-700/50 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
                         + (isSelected ? " bg-blue-50 dark:bg-blue-900/20" : ""),
@@ -641,9 +677,11 @@ function newObjectPage() {
                             m.route.set("/view/" + item[am7model.jsonModelKey] + "/" + item.objectId, { key: item.objectId });
                         }
                     }
-                }, [
-                    m("span", { class: "text-sm text-gray-700 dark:text-gray-300 truncate flex-1" }, displayName)
-                ]));
+                }, columns.map(function(col) {
+                    let val = item[col];
+                    let display = (val != null && typeof val === 'object') ? (val.name || val.objectId || '') : String(val || '');
+                    return m("span", { class: "text-sm text-gray-700 dark:text-gray-300 truncate flex-1" }, display);
+                })));
             });
         }
 
