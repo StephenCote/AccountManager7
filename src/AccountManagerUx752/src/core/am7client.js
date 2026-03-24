@@ -156,6 +156,7 @@ import { cacheDb } from './cacheDb.js';
 		if(!sType){
 			cache = {};
 			if (_cacheDbReady) cacheDb.clearAll();
+			clearLocalStorageCache();
 			return (bLocalOnly ? Promise.resolve(true) : get(sCache + "/clearAll",fH));
 		}
 		else{
@@ -167,8 +168,23 @@ import { cacheDb } from './cacheDb.js';
 			}
 			delete cache["COUNT"];
 			if (_cacheDbReady) cacheDb.removeByType("COUNT");
+			clearLocalStorageCache(sType);
 			return (bLocalOnly ? Promise.resolve(true) : get(sCache + "/clear/" + sType,fH));
 		}
+	}
+
+	function clearLocalStorageCache(type) {
+		try {
+			if (typeof localStorage === 'undefined') return;
+			let keysToRemove = [];
+			for (var i = 0; i < localStorage.length; i++) {
+				var key = localStorage.key(i);
+				if (key && key.startsWith("am7_")) {
+					if (!type || key.indexOf(type) > -1) keysToRemove.push(key);
+				}
+			}
+			keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+		} catch(e) { /* localStorage not available */ }
 	}
 
 	function removeFromCache(vType, sObjId){

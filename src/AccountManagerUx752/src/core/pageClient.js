@@ -371,6 +371,24 @@ function routeMessage(msg) {
             if (page.gameStream) {
                 page.gameStream.routePushMessage(c1, ...msg.chirps.slice(1));
             }
+        } else if (c1 === "clearCache") {
+            // Server-initiated cache clear — purge local caches only (no server call back)
+            let cacheType = msg.chirps[1] || "all";
+            console.log("[WebSocket] Server requested cache clear:", cacheType);
+            am7client.clearCache(cacheType === "all" ? 0 : cacheType, true);
+            // Also clear localStorage cache
+            try {
+                if (typeof localStorage !== 'undefined') {
+                    if (cacheType === "all") {
+                        let keysToRemove = [];
+                        for (let i = 0; i < localStorage.length; i++) {
+                            let key = localStorage.key(i);
+                            if (key && key.startsWith("am7_")) keysToRemove.push(key);
+                        }
+                        keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+                    }
+                }
+            } catch(e) { /* localStorage not available */ }
         } else if (c1 === "accessRequestUpdate") {
             // Access request status change notification — notify registered listeners
             let eventData = null;
@@ -790,8 +808,8 @@ const page = {
                 fullView && sel ? m('div', { class: 'flex flex-col items-center mb-3' }, [
                     m('img', {
                         src: am7client.mediaDataPath(sel, true, '1024x1024'),
-                        class: 'max-w-full max-h-[70vh] rounded shadow cursor-pointer',
-                        style: 'object-fit:contain',
+                        class: 'max-w-full rounded shadow cursor-pointer',
+                        style: 'object-fit:contain;max-height:70vh',
                         title: 'Click to return to gallery',
                         onclick: function() { fullView = false; }
                     }),

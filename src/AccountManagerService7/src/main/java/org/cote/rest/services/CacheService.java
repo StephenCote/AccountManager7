@@ -32,6 +32,7 @@ import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.policy.CachePolicyUtil;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.service.util.ServiceUtil;
+import org.cote.sockets.WebSocketService;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
@@ -80,6 +81,7 @@ public class CacheService {
 		logger.info("Request to clear all caches");
 		clearAuthorizationCache(request);
 		clearCaches();
+		WebSocketService.chirpAllSessions(new String[] {"clearCache", "all"});
 		return Response.status(200).entity(true).build();
 	}
 
@@ -99,9 +101,10 @@ public class CacheService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response clearFactoryCache(@PathParam("type") String type, @Context HttpServletRequest request){
 		logger.info("Request to clear cache on: " + type);
-		
+
 		CacheUtil.clearCacheByModel(type);
 		clearAuthorizationCache(request);
+		WebSocketService.chirpAllSessions(new String[] {"clearCache", type});
 		return Response.status(200).entity(true).build();
 	}
 

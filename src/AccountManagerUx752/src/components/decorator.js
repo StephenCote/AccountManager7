@@ -348,10 +348,9 @@ function getTabularRow(ctl, p, idx, map) {
         else if (h == "_tags") {
             let rawTags = p.tags || [];
             let allTags = rawTags.filter((t) => {
-                if (!t || !t.name) {
-                    console.warn("Invalid tag found on object:", p.objectId || p.id, "tag:", t);
-                    return false;
-                }
+                if (!t) return false;
+                // Tag references may lack name (minimal projection) — use type or id as fallback
+                if (!t.name) t.name = t.type || ('#' + (t.id || t.objectId || '?'));
                 return true;
             });
             let maxVisible = 3;

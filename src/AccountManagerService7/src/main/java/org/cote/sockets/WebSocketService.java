@@ -534,6 +534,20 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		return true;
 	}
 	
+	/// Broadcast a chirp to ALL connected WebSocket sessions.
+	/// Used by CacheService to notify all clients to clear their local caches.
+	public static void chirpAllSessions(String[] chirps) {
+		for (Session session : sessions) {
+			if (session.isOpen()) {
+				try {
+					sendMessage(session, chirps, false, false, true);
+				} catch (Exception e) {
+					logger.warn("Failed to chirp session " + session.getId() + ": " + e.getMessage());
+				}
+			}
+		}
+	}
+
 	public static void cleanupUserSession(BaseRecord user) {
 		if(user != null) {
 			String u2 = user.get(FieldNames.FIELD_URN);
