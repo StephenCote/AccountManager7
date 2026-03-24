@@ -5744,13 +5744,30 @@ import { am7model } from './model.js';
     /// Body shape midpoint profiles.
     /// Each shape sets its driver stats to the midpoint of that body type's range.
     /// Stats use 0–20 scale; midpoints represent the typical center of each shape's distribution.
+    /// Body shape midpoint profiles — stat distributions that the server's body type
+    /// classifier will recognize as the intended shape.
+    ///
+    /// Server classification (BodyStatsProvider.java):
+    ///   Male shapes:
+    ///     V_TAPER:           avg(physStr, athleticism, maxHealth)  [athleticism=avg(physStr,physEnd,agi,spd)]
+    ///     RECTANGLE:         avg(speed, agility, manualDexterity)
+    ///     ROUND:             avg(physEnd, mentEnd, normPotential)
+    ///   Female shapes:
+    ///     HOURGLASS:         avg(physStr, agility, physicalAppearance) [physApp=avg(physStr,agi,maxHealth)]
+    ///     RECTANGLE:         avg(speed, agility, manualDexterity)
+    ///     ROUND:             avg(physEnd, mentEnd, normPotential)
+    ///     INVERTED_TRIANGLE: avg(physStr, athleticism)
+    ///     PEAR:              avg(maximumHealth, normPotential)  [maxHealth=avg(physStr,physEnd,mentStr,mentEnd,charisma)]
+    ///
+    /// normPotential = min(20, potential/7.5)
+    /// For PEAR to beat ROUND: need high maxHealth (via charisma+mentStr) with moderate physEnd/mentEnd
     let bodyShapeMidpoints = {
-        V_TAPER:            { physicalStrength: 16, physicalEndurance: 14, agility: 12, speed: 10, manualDexterity: 10, charisma: 12, mentalEndurance: 10, potential: 80 },
-        HOURGLASS:          { physicalStrength: 12, physicalEndurance: 10, agility: 16, speed: 12, manualDexterity: 12, charisma: 16, mentalEndurance: 12, potential: 85 },
-        RECTANGLE:          { physicalStrength: 10, physicalEndurance: 12, agility: 14, speed: 16, manualDexterity: 16, charisma: 10, mentalEndurance: 12, potential: 80 },
-        ROUND:              { physicalStrength: 10, physicalEndurance: 16, agility: 8,  speed: 8,  manualDexterity: 10, charisma: 12, mentalEndurance: 16, potential: 95 },
-        INVERTED_TRIANGLE:  { physicalStrength: 18, physicalEndurance: 14, agility: 10, speed: 10, manualDexterity: 10, charisma: 12, mentalEndurance: 10, potential: 80 },
-        PEAR:               { physicalStrength: 10, physicalEndurance: 14, agility: 10, speed: 10, manualDexterity: 12, charisma: 14, mentalEndurance: 14, potential: 98 }
+        V_TAPER:            { physicalStrength: 16, physicalEndurance: 14, agility: 12, speed: 10, manualDexterity: 10, mentalStrength: 10, mentalEndurance: 10, charisma: 10, potential: 80 },
+        HOURGLASS:          { physicalStrength: 14, physicalEndurance: 10, agility: 14, speed: 10, manualDexterity: 10, mentalStrength: 10, mentalEndurance: 10, charisma: 14, potential: 80 },
+        RECTANGLE:          { physicalStrength: 10, physicalEndurance: 10, agility: 14, speed: 16, manualDexterity: 16, mentalStrength: 10, mentalEndurance: 10, charisma: 10, potential: 80 },
+        ROUND:              { physicalStrength: 10, physicalEndurance: 16, agility: 6,  speed: 6,  manualDexterity: 8,  mentalStrength: 8,  mentalEndurance: 16, charisma: 8,  potential: 120 },
+        INVERTED_TRIANGLE:  { physicalStrength: 18, physicalEndurance: 14, agility: 10, speed: 10, manualDexterity: 10, mentalStrength: 10, mentalEndurance: 10, charisma: 10, potential: 80 },
+        PEAR:               { physicalStrength: 10, physicalEndurance: 10, agility: 8,  speed: 8,  manualDexterity: 10, mentalStrength: 16, mentalEndurance: 10, charisma: 18, potential: 140 }
     };
 
     function applyBodyShapeFloors(inst) {
@@ -5775,8 +5792,15 @@ import { am7model } from './model.js';
         let gender = inst.entity.gender;
         if (!shape || !gender) return;
 
+        shape = shape.toUpperCase();
         let isMale = gender === 'male';
-        shape = mapShapeForGender(shape.toUpperCase(), isMale);
+
+        // PEAR and HOURGLASS are female-specific shapes
+        // For males selecting these, remap to closest male equivalent
+        if (isMale) {
+            if (shape === 'PEAR') shape = 'ROUND';
+            else if (shape === 'HOURGLASS') shape = 'V_TAPER';
+        }
 
         let profile = bodyShapeMidpoints[shape];
         if (!profile) return;

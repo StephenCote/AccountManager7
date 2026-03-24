@@ -88,6 +88,7 @@ async function tagImage(x, inst, isCharPerson, wearLevel, cinst) {
         await am7client.patchAttribute(x, 'wearLevel', wearLevel.level + '/' + wearLevel.index);
         await applySharingTag(x, wearLevel.level);
     }
+    page.toast('info', 'Auto-tagging ' + (x.name || 'image') + '...', 5000);
     await am7client.applyImageTags(x.objectId);
     if (isCharPerson) {
         let nameTag = await getOrCreateSharingTag(inst.api.name(), inst.model.name);
@@ -427,6 +428,9 @@ async function reimage(entity, inst) {
 
                     Dialog.close();
 
+                    // Clear prior toast messages before starting generation
+                    page.clearToast();
+
                     // Call narrate before reimage for charPerson — updates narrative
                     // from NarrativeUtil with current outfit, action, setting
                     if (isCharPerson && am7model.forms && am7model.forms.commands && am7model.forms.commands.narrate) {
@@ -463,7 +467,16 @@ async function reimage(entity, inst) {
                                     od[am7model.jsonModelKey] = 'identity.profile';
                                     await page.patchObject(od);
                                 }
+                                // Seed may not be in the reimage response — fetch full image if needed
                                 let seedAttr = (x.attributes || []).filter(function (a) { return a.name === 'seed'; });
+                                if (!seedAttr.length && x.objectId) {
+                                    try {
+                                        let fullImg = await am7client.getFull('data.data', x.objectId);
+                                        if (fullImg && fullImg.attributes) {
+                                            seedAttr = fullImg.attributes.filter(function (a) { return a.name === 'seed'; });
+                                        }
+                                    } catch(e) { /* ignore */ }
+                                }
                                 if (seedAttr.length) {
                                     baseSeed = seedAttr[0].value;
                                     await am7client.patchAttribute(inst.entity, 'preferredSeed', baseSeed);
@@ -583,6 +596,7 @@ async function selectReferenceImage(inst, cinst, isCharPerson) {
 // --- Apparel sequence generator ---
 
 async function createApparelSequence(inst, cinst, am7olio) {
+    page.clearToast();
     if (!am7olio) { page.toast('error', 'Olio module not loaded'); return; }
 
     let storeRef = inst.api.store();
