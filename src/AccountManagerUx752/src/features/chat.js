@@ -166,6 +166,7 @@ async function patchChatImageToken(replacements) {
         let q = am7client.newQuery(entity.sessionType);
         q.field("id", entity.session.id);
         q.cache(false);
+        q.entity.request.push("id", "objectId", "messages");
         let qr = await page.search(q);
         if (qr && qr.results && qr.results.length > 0) {
             let req = qr.results[0];
@@ -425,6 +426,11 @@ function doDelete() {
 // ── Edit mode ───────────────────────────────────────────────────────
 
 function toggleEditMode() {
+    if (editMode && deletedIndices.size > 0) {
+        // Exiting edit mode with pending deletions — save them
+        saveEdits();
+        return;
+    }
     editMode = !editMode;
     deletedIndices.clear();
     clearFormattedCache();
@@ -432,79 +438,78 @@ function toggleEditMode() {
 }
 
 async function saveEdits() {
-    if (!inst || !chatCfg.history.messages) return;
-    let entity = inst.entity;
-    if (!entity || !entity.session || !entity.sessionType) {
-        console.error("No session available for edit save");
-        editMode = false;
-        deletedIndices.clear();
-        return;
-    }
-
-    // Fetch the full server session record with messages (Ux7 pattern: viewQuery + messages in request)
-    let q = am7view.viewQuery(am7model.newInstance(entity.sessionType));
-    q.field("id", entity.session.id);
-    q.cache(false);
-    q.entity.request.push("messages");
-    let qr;
+    page.toast("info", "Saving edits...");
     try {
-        qr = await page.search(q);
+        if (!inst || !chatCfg.history.messages) {
+            page.toast("error", "Save failed: no active session or history");
+            editMode = false; deletedIndices.clear(); return;
+        }
+        let entity = inst.entity;
+        if (!entity || !entity.session || !entity.sessionType) {
+            page.toast("error", "Save failed: no session data (session=" + !!entity?.session + " type=" + !!entity?.sessionType + ")");
+            editMode = false; deletedIndices.clear(); return;
+        }
+
+        // Fetch the full server session record with messages
+        let q = am7client.newQuery(entity.sessionType);
+        q.field("id", entity.session.id);
+        q.cache(false);
+        q.entity.request.push("id", "objectId", "messages");
+        let qr = await page.search(q);
+        if (!qr || !qr.results || !qr.results.length) {
+            page.toast("error", "Save failed: server session not found");
+            editMode = false; deletedIndices.clear(); return;
+        }
+        let req = qr.results[0];
+        if (!req.messages || !req.messages.length) {
+            page.toast("error", "Save failed: server session has no messages");
+            editMode = false; deletedIndices.clear(); return;
+        }
+
+        // Calculate offset: system/template messages at start of server record
+        // that are not shown in the display
+        let displayMsgs = chatCfg.history.messages;
+        let offset = req.messages.length - displayMsgs.length;
+        if (offset < 0) offset = 0;
+
+        // Apply edits from textareas (preserve roles)
+        for (let i = 0; i < displayMsgs.length; i++) {
+            if (deletedIndices.has(i)) continue;
+            let el = document.getElementById("editMessage-" + i);
+            if (el && (i + offset) < req.messages.length) {
+                req.messages[i + offset].content = el.value;
+            }
+        }
+
+        // Remove deleted messages (reverse order to preserve indices)
+        let deleteCount = deletedIndices.size;
+        let sorted = Array.from(deletedIndices).sort(function(a, b) { return b - a; });
+        for (let idx of sorted) {
+            let serverIdx = idx + offset;
+            if (serverIdx >= 0 && serverIdx < req.messages.length) {
+                req.messages.splice(serverIdx, 1);
+            }
+        }
+
+        // Patch server with edited messages
+        await page.patchObject(req);
+        editMode = false;
+        deletedIndices.clear();
+
+        // Update local history from the patched messages (skip system/template prefix)
+        let displayMessages = req.messages.slice(offset);
+        chatCfg.history = { messages: displayMessages };
+        clearFormattedCache();
+        am7client.clearCache(entity.sessionType, true);
+        page.toast("success", "Saved (" + deleteCount + " deleted, " + displayMessages.length + " remaining)");
+        m.redraw();
     } catch (e) {
-        console.error("Failed to fetch session for edit save:", e);
+        page.toast("error", "Save failed: " + (e.message || e));
+        console.error("[saveEdits] Error:", e);
         editMode = false;
         deletedIndices.clear();
-        return;
+        m.redraw();
     }
-    if (!qr || !qr.results || !qr.results.length) {
-        console.error("Server session record not found for edit save");
-        editMode = false;
-        deletedIndices.clear();
-        return;
-    }
-    let req = qr.results[0];
-    if (!req.messages || !req.messages.length) {
-        console.error("Server session has no messages");
-        editMode = false;
-        deletedIndices.clear();
-        return;
-    }
-
-    // Calculate offset: system/template messages at start of server record
-    // that are not shown in the display
-    let displayMsgs = chatCfg.history.messages;
-    let offset = req.messages.length - displayMsgs.length;
-    if (offset < 0) offset = 0;
-
-    // Apply edits from textareas (preserve roles)
-    for (let i = 0; i < displayMsgs.length; i++) {
-        if (deletedIndices.has(i)) continue;
-        let el = document.getElementById("editMessage-" + i);
-        if (el && (i + offset) < req.messages.length) {
-            req.messages[i + offset].content = el.value;
-        }
-    }
-
-    // Remove deleted messages (reverse order to preserve indices)
-    let sorted = Array.from(deletedIndices).sort(function(a, b) { return b - a; });
-    for (let idx of sorted) {
-        let serverIdx = idx + offset;
-        if (serverIdx >= 0 && serverIdx < req.messages.length) {
-            req.messages.splice(serverIdx, 1);
-        }
-    }
-
-    // Patch server with edited messages
-    await page.patchObject(req);
-    editMode = false;
-    deletedIndices.clear();
-
-    // Clear cache and re-peek from server
-    am7client.clearCache();
-    clearFormattedCache();
-    chatCfg.peek = false;
-    chatCfg.history = { messages: [] };
-    await doPeek();
-    m.redraw();
 }
 
 // ── Render helpers ──────────────────────────────────────────────────

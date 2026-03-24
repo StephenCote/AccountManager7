@@ -44,8 +44,13 @@ test.describe('Chat message delete', () => {
             if (!req) return { error: 'ChatRequest failed' };
             log.push('Created session: ' + req.name);
 
-            // Check session and sessionType
-            let fullReq = await am7client.getFull('olio.llm.chatRequest', req.objectId);
+            // Use search to get session and sessionType (getFull may 404 for chatRequest)
+            let q0 = am7client.newQuery('olio.llm.chatRequest');
+            q0.field('objectId', req.objectId);
+            q0.entity.request.push('id', 'objectId', 'name', 'session', 'sessionType');
+            let qr0 = await pg.search(q0);
+            let fullReq = qr0 && qr0.results && qr0.results.length ? qr0.results[0] : null;
+            if (!fullReq) return { error: 'ChatRequest search failed', log };
             log.push('session: ' + JSON.stringify(fullReq.session));
             log.push('sessionType: ' + fullReq.sessionType);
 
