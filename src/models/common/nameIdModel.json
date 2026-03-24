@@ -1,8 +1,0 @@
-{
-"name": "common.nameId",
-"inherits": ["common.name", "common.base", "policy.controlsExt", "data.tagsExt"],
-"abstract": true,
-"query": ["name"],
-"fields": [
-
-]}
