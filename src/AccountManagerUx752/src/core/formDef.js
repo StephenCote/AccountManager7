@@ -5735,20 +5735,41 @@ import { am7model } from './model.js';
         return shape;
     }
 
-    function floorStat(statInst, field, floor) {
-        let current = statInst.api[field]() || 0;
-        if (current < floor) {
-            statInst.api[field](floor);
-            return true;
-        }
-        return false;
+    /// Set stat to midpoint value for the body shape.
+    /// Always applies — this is an authoritative reset, not a floor.
+    function midStat(statInst, field, value) {
+        statInst.api[field](value);
     }
 
+    /// Body shape midpoint profiles.
+    /// Each shape sets its driver stats to the midpoint of that body type's range.
+    /// Stats use 0–20 scale; midpoints represent the typical center of each shape's distribution.
+    let bodyShapeMidpoints = {
+        V_TAPER:            { physicalStrength: 16, physicalEndurance: 14, agility: 12, speed: 10, manualDexterity: 10, charisma: 12, mentalEndurance: 10, potential: 80 },
+        HOURGLASS:          { physicalStrength: 12, physicalEndurance: 10, agility: 16, speed: 12, manualDexterity: 12, charisma: 16, mentalEndurance: 12, potential: 85 },
+        RECTANGLE:          { physicalStrength: 10, physicalEndurance: 12, agility: 14, speed: 16, manualDexterity: 16, charisma: 10, mentalEndurance: 12, potential: 80 },
+        ROUND:              { physicalStrength: 10, physicalEndurance: 16, agility: 8,  speed: 8,  manualDexterity: 10, charisma: 12, mentalEndurance: 16, potential: 95 },
+        INVERTED_TRIANGLE:  { physicalStrength: 18, physicalEndurance: 14, agility: 10, speed: 10, manualDexterity: 10, charisma: 12, mentalEndurance: 10, potential: 80 },
+        PEAR:               { physicalStrength: 10, physicalEndurance: 14, agility: 10, speed: 10, manualDexterity: 12, charisma: 14, mentalEndurance: 14, potential: 98 }
+    };
+
     function applyBodyShapeFloors(inst) {
-        let op = inst.observers.find(o => o.pinst);
-        if (!op) return;
-        let statInst = op.pinst().statistics;
-        if (!statInst) return;
+        // Access statistics sub-instance via the object view's pinst cache
+        let pinstCache = inst._pinst ? inst._pinst() : null;
+        let statInst = pinstCache ? pinstCache.statistics : null;
+
+        // Lazily create statistics sub-instance if tab hasn't been activated yet
+        if (!statInst && pinstCache && inst.entity && inst.entity.statistics) {
+            let statsEntity = inst.entity.statistics;
+            if (!statsEntity[am7model.jsonModelKey]) statsEntity[am7model.jsonModelKey] = 'olio.statistics';
+            statInst = am7model.prepareInstance(statsEntity);
+            pinstCache.statistics = statInst;
+        }
+
+        if (!statInst || !statInst.api) {
+            console.warn("[applyBodyShapeFloors] statistics not available on entity");
+            return;
+        }
 
         let shape = inst.entity.bodyShape;
         let gender = inst.entity.gender;
@@ -5757,36 +5778,14 @@ import { am7model } from './model.js';
         let isMale = gender === 'male';
         shape = mapShapeForGender(shape.toUpperCase(), isMale);
 
-        switch (shape) {
-            case 'V_TAPER':
-                floorStat(statInst, 'physicalStrength', 14);
-                floorStat(statInst, 'physicalEndurance', 12);
-                break;
-            case 'HOURGLASS':
-                floorStat(statInst, 'physicalStrength', 12);
-                floorStat(statInst, 'agility', 14);
-                break;
-            case 'RECTANGLE':
-                floorStat(statInst, 'speed', 14);
-                floorStat(statInst, 'agility', 14);
-                floorStat(statInst, 'manualDexterity', 14);
-                break;
-            case 'ROUND':
-                floorStat(statInst, 'physicalEndurance', 14);
-                floorStat(statInst, 'mentalEndurance', 14);
-                if ((statInst.api.potential() || 0) < 90) statInst.api.potential(90);
-                break;
-            case 'INVERTED_TRIANGLE':
-                floorStat(statInst, 'physicalStrength', 16);
-                floorStat(statInst, 'physicalEndurance', 12);
-                break;
-            case 'PEAR':
-                floorStat(statInst, 'physicalEndurance', 12);
-                floorStat(statInst, 'mentalEndurance', 12);
-                floorStat(statInst, 'charisma', 12);
-                if ((statInst.api.potential() || 0) < 98) statInst.api.potential(98);
-                break;
-        }
+        let profile = bodyShapeMidpoints[shape];
+        if (!profile) return;
+
+        Object.keys(profile).forEach(function(field) {
+            if (statInst.api[field]) {
+                statInst.api[field](profile[field]);
+            }
+        });
         m.redraw();
     }
 

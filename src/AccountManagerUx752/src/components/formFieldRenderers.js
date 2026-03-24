@@ -448,9 +448,10 @@ renderers.picker = function(ctx) {
         // Clicking the text label opens the picker — matches Ux7 formFieldRenderers pattern
         let openPicker = function() { if (ctx.doFieldPicker) ctx.doFieldPicker(field, ctx.useName, useEntity); };
         let hasValue = defVal && defVal !== "(none)";
-        view.push(m("div", { class: "w-full flex items-center gap-1 min-h-[36px]" }, [
+        // Match text-field-full styling: same border, padding, rounded, mt-2, height
+        view.push(m("div", { class: "w-full flex items-center gap-1 px-4 py-2 mt-2 border rounded-md bg-white dark:bg-black dark:text-white border-gray-300 dark:border-gray-600" }, [
             m("span", {
-                class: "flex-1 text-sm truncate cursor-pointer " + (hasValue
+                class: "flex-1 truncate cursor-pointer " + (hasValue
                     ? "text-gray-800 dark:text-white hover:text-blue-600 dark:hover:text-blue-400"
                     : "text-gray-400 dark:text-gray-500 italic hover:text-blue-600 dark:hover:text-blue-400"),
                 onclick: openPicker,

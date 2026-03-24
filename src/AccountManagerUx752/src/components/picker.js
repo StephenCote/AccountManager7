@@ -30,8 +30,13 @@ let pickerListControl = newListControl();
 async function resolveUserContainer(type) {
     let userPath = am7view.pathForType(type);
     if (!userPath) return null;
-    let grp = await page.makePath("auth.group", "data", userPath);
-    return grp ? grp.objectId : null;
+    try {
+        let grp = await page.makePath("auth.group", "data", userPath);
+        return grp ? (grp.objectId || grp.id) : null;
+    } catch(e) {
+        console.warn("[Picker] resolveUserContainer failed for", type, e);
+        return null;
+    }
 }
 
 /**
@@ -41,8 +46,13 @@ async function resolveUserContainer(type) {
 async function resolveLibraryContainer(type) {
     let libraryPath = am7model.system && am7model.system.library && am7model.system.library[type];
     if (!libraryPath) return null;
-    let grp = await page.findObject("auth.group", "data", libraryPath);
-    return grp ? grp.objectId : null;
+    try {
+        let grp = await page.findObject("auth.group", "data", libraryPath);
+        return grp ? (grp.objectId || grp.id) : null;
+    } catch(e) {
+        console.warn("[Picker] resolveLibraryContainer failed for", type, e);
+        return null;
+    }
 }
 
 /**
@@ -120,7 +130,14 @@ const ObjectPicker = {
         if (!containerId) {
             // Resolve model default path (~/Colors), library (/Library/Colors), favorites
             if (!userContainerId) userContainerId = await resolveUserContainer(opts.type);
-            if (!libraryContainerId) libraryContainerId = await resolveLibraryContainer(opts.type);
+            if (!libraryContainerId) {
+                // Use explicit library path from field definition if provided
+                if (opts.libraryPath) {
+                    let grp = await page.findObject("auth.group", "data", opts.libraryPath);
+                    if (grp) libraryContainerId = grp.objectId;
+                }
+                if (!libraryContainerId) libraryContainerId = await resolveLibraryContainer(opts.type);
+            }
             if (!favoritesContainerId) favoritesContainerId = await resolveFavoritesContainer();
 
             // Start at user's own path; fall back to library; fall back to generic resolve

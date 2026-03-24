@@ -63,6 +63,8 @@ function newObjectPage() {
                 if (form) am7model.forms[fname] = form;
             }
             inst = am7model.prepareInstance(entity, form);
+            // Expose pinst cache so formDef viewProperties (e.g., bodyShape onchange) can access sub-instances
+            inst._pinst = function() { return pinst; };
         }
     }
 
@@ -285,16 +287,17 @@ function newObjectPage() {
 
     // --- Picker integration ---
 
-    function preparePicker(type, callback, altPath) {
+    function preparePicker(type, callback, opts) {
         if (page.components.picker) {
-            return page.components.picker.open({
+            let pickerOpts = {
                 type: type,
-                altPath: altPath,
                 onSelect: function(selected) {
                     if (callback) callback(Array.isArray(selected) ? selected : [selected]);
                     cancelPicker();
                 }
-            });
+            };
+            if (opts) Object.assign(pickerOpts, opts);
+            return page.components.picker.open(pickerOpts);
         }
         return Promise.resolve(null);
     }
@@ -340,6 +343,8 @@ function newObjectPage() {
 
         if (!type || type.match(/^unknown$/i)) return;
 
+        // Pass pickerProperty.path as library container hint so picker resolves user default first
+        let pickerLibPath = field.pickerProperty ? field.pickerProperty.path : null;
         preparePicker(type, function(data) {
             if (!data || !data.length) return;
             let picked = data[0];
@@ -386,7 +391,7 @@ function newObjectPage() {
             } else {
                 m.redraw();
             }
-        }, altPath || field.pickerProperty.path);
+        }, pickerLibPath ? { libraryPath: pickerLibPath } : undefined);
     }
 
     /**
@@ -593,9 +598,10 @@ function newObjectPage() {
                     let idx = Object.keys(sel).find(function(k) { return sel[k]; });
                     if (idx !== undefined) {
                         let item = items[parseInt(idx)];
-                        if (item && item.objectId && item[am7model.jsonModelKey]) {
+                        let itemType = item ? (item[am7model.jsonModelKey] || item.schema || baseModel) : null;
+                        if (item && item.objectId && itemType) {
                             page.context().listReturnUrl = m.route.get();
-                            m.route.set("/view/" + item[am7model.jsonModelKey] + "/" + item.objectId, { key: item.objectId });
+                            m.route.set("/view/" + itemType + "/" + item.objectId, { key: item.objectId });
                         }
                     }
                 }
@@ -672,9 +678,10 @@ function newObjectPage() {
                         m.redraw();
                     },
                     ondblclick: function() {
-                        if (item.objectId && item[am7model.jsonModelKey]) {
+                        let iType = item[am7model.jsonModelKey] || item.schema || baseModel;
+                        if (item.objectId && iType) {
                             page.context().listReturnUrl = m.route.get();
-                            m.route.set("/view/" + item[am7model.jsonModelKey] + "/" + item.objectId, { key: item.objectId });
+                            m.route.set("/view/" + iType + "/" + item.objectId, { key: item.objectId });
                         }
                     }
                 }, columns.map(function(col) {

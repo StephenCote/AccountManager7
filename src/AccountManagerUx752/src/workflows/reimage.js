@@ -122,12 +122,13 @@ async function reimage(entity, inst) {
     }
     let cinst = lastReimage || am7model.prepareInstance(sdEntity, am7model.forms.sdConfig);
 
-    // Preferred defaults
+    // Preferred defaults — applied before config load, overridden by saved config
     function tempApplyDefaults() {
         cinst.api.steps(40);
         cinst.api.refinerSteps(40);
         cinst.api.cfg(5);
         cinst.api.refinerCfg(5);
+        if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(75);
     }
 
     tempApplyDefaults();
@@ -415,7 +416,23 @@ async function reimage(entity, inst) {
                     let images = [];
                     let wearLevel = isCharPerson ? getCurrentWearLevel(inst) : null;
 
+                    // Save config BEFORE closing dialog so values persist
+                    let saveEntity = Object.assign({}, cinst.entity);
+                    saveEntity.shared = false;
+                    await am7sd.saveConfig(charConfigName, saveEntity);
+                    if (cinst.entity.shared) {
+                        await am7sd.saveConfig('sharedSD.json', cinst.entity);
+                        cinst.entity.shared = false;
+                    }
+
                     Dialog.close();
+
+                    // Call narrate before reimage for charPerson — updates narrative
+                    // from NarrativeUtil with current outfit, action, setting
+                    if (isCharPerson && am7model.forms && am7model.forms.commands && am7model.forms.commands.narrate) {
+                        page.toast('info', 'Updating narrative...', -1);
+                        await am7model.forms.commands.narrate(undefined, inst);
+                    }
 
                     for (let i = 0; i < count; i++) {
                         page.toast('info', 'Creating image ' + (i + 1) + ' of ' + count + '...', -1);
@@ -470,17 +487,6 @@ async function reimage(entity, inst) {
 
                     if (images.length > 0) {
                         page.toast('success', 'Created ' + images.length + ' image(s)');
-
-                        // Save SD config for this character
-                        let saveEntity = Object.assign({}, cinst.entity);
-                        saveEntity.shared = false;
-                        await am7sd.saveConfig(charConfigName, saveEntity);
-
-                        // If shared was checked, also save to shared config
-                        if (cinst.entity.shared) {
-                            await am7sd.saveConfig('sharedSD.json', cinst.entity);
-                            cinst.entity.shared = false;
-                        }
 
                         page.clearContextObject(inst.api.objectId());
                         images.forEach(function (img) { if (img.objectId) page.clearContextObject(img.objectId); });

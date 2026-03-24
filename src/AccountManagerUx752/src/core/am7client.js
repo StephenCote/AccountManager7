@@ -425,14 +425,9 @@ import { cacheDb } from './cacheDb.js';
 			console.error("Invalid objectId (" + sObjectId + ")");
 			return;
 		}
-		let sType = "data.data";
-		var o = getFromCache(sType, "GET", sObjectId);
-		if(o){
-			if(fH) fH(o);
-			return o;
-		}
+		// Always call server — do NOT use cache for tag application
 		var f = fH;
-		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,"GET",sObjectId,v);} if(f) f(v);};
+		var fc = function(v){if(f) f(v);};
 	    return get(sTagSvc + "/apply/" + sObjectId, fc);
 	}
 	function getByObjectId(sType,sObjectId, fH){

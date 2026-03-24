@@ -622,8 +622,19 @@ function newListControl() {
             if (npath) { openPath(npath); return; }
         }
 
-        let red = embeddedMode || pickerMode;
-        pagination.filter(navFilter, red);
+        if (embeddedMode || pickerMode) {
+            // In picker/embedded mode: reset pagination and re-fetch with filter
+            // If filter cleared, revert to the picker's default container
+            if (!navFilter && pickerContainerId) {
+                listContainerId = pickerContainerId;
+            }
+            pagination.new();
+            let rc = (gridMode === 1) ? defaultIconRecordCount : defaultRecordCount;
+            pagination.update(listType, listContainerId, navigateByParent, navFilter, 0, rc, systemList);
+            m.redraw();
+        } else {
+            pagination.filter(navFilter, false);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -703,6 +714,34 @@ function newListControl() {
             buttons.push(pagination.button('button', 'check', '', function () { pickerHandler(getSelected()); }));
             if (pickerCancel) {
                 buttons.push(pagination.button('button', 'close', '', function () { pickerCancel(); }));
+            }
+            // Source navigation: Home, System/Library, Favorites
+            if (pickerUserContainerId) {
+                buttons.push(pagination.button(
+                    'button' + (pickerActiveSource === 'home' ? ' active bg-blue-100 dark:bg-blue-900' : ''),
+                    'home', '', function () {
+                        pickerActiveSource = 'home';
+                        pickerNavigateTo(pickerUserContainerId);
+                    }
+                ));
+            }
+            if (pickerLibraryContainerId) {
+                buttons.push(pagination.button(
+                    'button' + (pickerActiveSource === 'library' ? ' active bg-orange-100 dark:bg-orange-900' : ''),
+                    'admin_panel_settings', '', function () {
+                        pickerActiveSource = 'library';
+                        pickerNavigateTo(pickerLibraryContainerId);
+                    }
+                ));
+            }
+            if (pickerFavoritesContainerId) {
+                buttons.push(pagination.button(
+                    'button' + (pickerActiveSource === 'favorites' ? ' active bg-yellow-100 dark:bg-yellow-900' : ''),
+                    'star', '', function () {
+                        pickerActiveSource = 'favorites';
+                        pickerNavigateTo(pickerFavoritesContainerId);
+                    }
+                ));
             }
         }
         return buttons;

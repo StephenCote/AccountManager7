@@ -186,15 +186,15 @@ describe('MCP format in chat.js rendering pipeline', () => {
 
 describe('Issue B: Picker field styling', () => {
 
-    it('picker renderer does not have bordered input styling', () => {
+    it('picker renderer has bordered styling matching text fields', () => {
         const src = readFileSync(resolve(__dirname, '..', 'components', 'formFieldRenderers.js'), 'utf-8');
         let pickerIdx = src.indexOf('renderers.picker');
         expect(pickerIdx).toBeGreaterThan(-1);
         let pickerBlock = src.substring(pickerIdx, pickerIdx + 2000);
-        // Should NOT have input-like border styling in the picker branch
-        expect(pickerBlock).not.toContain('border rounded-md border-gray-300');
-        expect(pickerBlock).not.toContain('bg-white dark:bg-black');
-        // Should have plain text label
+        // Should have bordered styling matching adjacent text fields
+        expect(pickerBlock).toContain('border rounded-md');
+        expect(pickerBlock).toContain('bg-white dark:bg-black');
+        // Should have clickable text label
         expect(pickerBlock).toContain('cursor-pointer');
         expect(pickerBlock).toContain('"(none)"');
     });
