@@ -5,6 +5,7 @@ export default defineConfig({
   root: '.',
   plugins: [basicSsl()],
   server: {
+    host: true,
     port: 8899,
     proxy: {
       '/AccountManagerService7/wss': {
