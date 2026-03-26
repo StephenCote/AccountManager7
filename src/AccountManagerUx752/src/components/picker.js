@@ -31,7 +31,7 @@ async function resolveUserContainer(type) {
     let userPath = am7view.pathForType(type);
     if (!userPath) return null;
     try {
-        let grp = await page.makePath("auth.group", "data", userPath);
+        let grp = await page.makePath("auth.group", "DATA", userPath);
         return grp ? (grp.objectId || grp.id) : null;
     } catch(e) {
         console.warn("[Picker] resolveUserContainer failed for", type, e);
@@ -47,7 +47,7 @@ async function resolveLibraryContainer(type) {
     let libraryPath = am7model.system && am7model.system.library && am7model.system.library[type];
     if (!libraryPath) return null;
     try {
-        let grp = await page.findObject("auth.group", "data", libraryPath);
+        let grp = await page.findObject("auth.group", "DATA", libraryPath);
         return grp ? (grp.objectId || grp.id) : null;
     } catch(e) {
         console.warn("[Picker] resolveLibraryContainer failed for", type, e);
@@ -95,7 +95,7 @@ async function resolveContainer(type) {
 
         // Last resort: org root
         if (am7client.currentOrganization) {
-            let grp = await page.findObject("auth.group", "data", am7client.currentOrganization);
+            let grp = await page.findObject("auth.group", "DATA", am7client.currentOrganization);
             return grp ? grp.objectId : null;
         }
         return null;
@@ -264,7 +264,7 @@ ObjectPicker.PickerView = {
         if (!pickerState.enabled) return null;
 
         return m("div", {
-            class: "fixed inset-0 z-[60] flex items-center justify-center"
+            class: "am7-picker-overlay fixed inset-0 z-[60] flex items-center justify-center"
         }, [
             m("div", { class: "absolute inset-0 bg-black/50", onclick: function() { ObjectPicker.close(); } }),
             m("div", {

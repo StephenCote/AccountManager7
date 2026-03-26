@@ -3970,7 +3970,21 @@ import { am7model } from './model.js';
                     command: narrate
                 }
             },
-            // Phase 13f: vectorize/summarize buttons removed — MCP + memory handles automatically
+            voice: {
+                layout: 'one',
+                format: 'picker',
+                label: "Voice",
+                field: {
+                    readOnly: false,
+                    requiredAttributes: [],
+                    pickerType: "identity.voice",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "profile.voice",
+                        path: "~/Voices"
+                    }
+                }
+            },
             description: {
                 layout: "full",
             },
@@ -3987,7 +4001,7 @@ import { am7model } from './model.js';
                 format: "textlist"
             }
         },
-        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tagattributes"]
+        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "groupinfo", "tagattributes"]
     };
 
     forms.store = {

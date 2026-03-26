@@ -528,6 +528,7 @@ function newObjectPage() {
                 let entityType = mlEntity[am7model.jsonModelKey];
                 let q = am7client.newQuery(entityType);
                 q.field('objectId', mlEntity.objectId);
+                if (page.user && page.user.organizationId) q.field('organizationId', page.user.organizationId);
                 q.entity.request = ['id', 'objectId', name];
                 page.search(q).then(function(qr) {
                     if (qr && qr.results && qr.results.length && Array.isArray(qr.results[0][name])) {

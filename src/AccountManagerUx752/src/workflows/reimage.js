@@ -291,10 +291,11 @@ async function reimage(entity, inst) {
                 m('div', [
                     m('label', { class: 'field-label' }, 'Denoising: ' + (cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75)),
                     m('input', { class: 'text-field-compact', type: 'range', min: 0, max: 100, step: 5,
-                        value: cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75,
+                        value: String(cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75),
                         oninput: function (e) {
-                            if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(parseInt(e.target.value));
-                            else cinst.entity.denoisingStrength = parseFloat(e.target.value) / 100;
+                            let v = parseInt(e.target.value);
+                            if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(v);
+                            else cinst.entity.denoisingStrength = v / 100;
                         }
                     })
                 ])

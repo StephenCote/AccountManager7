@@ -38,7 +38,7 @@ function dndDragDecorate(item) {
 
 function getFileTypeIcon(p, i) {
     let mtIco = "";
-    if (p.contentType && p.name && p.name.indexOf(".") > 0) {
+    if (p.name && p.name.indexOf(".") > 0) {
         let ext = p.name.substring(p.name.lastIndexOf(".") + 1, p.name.length).toLowerCase();
         mtIco = m("span", { class: "fontLabel" + (i && i > 0 ? "-" + i : "") + " fiv-cla fiv-icon-" + ext });
     }
@@ -74,8 +74,8 @@ function getThumbnail(ctl, p) {
         let icoCls = "image-grid-image carousel-item-img";
         icon = m("img", { class: icoCls, src: icoPath });
     }
-    else if (p.contentType && p.name && p.name.indexOf(".") > 0) {
-        let ext = p.name.substring(p.name.lastIndexOf(".") + 1, p.name.length);
+    else if (p.name && p.name.indexOf(".") > 0) {
+        let ext = p.name.substring(p.name.lastIndexOf(".") + 1, p.name.length).toLowerCase();
         icon = m("span", { class: "fontLabel-" + (gridMode == 1 ? "6" : "10") + " fiv-cla fiv-icon-" + ext });
     }
     else {
@@ -126,7 +126,7 @@ function getIcon(p) {
         }
         icon = m("img", { height: 48, width: 48, src: icoPath });
     }
-    else if (p.contentType && p.name && p.name.indexOf(".") > 0) {
+    else if (p.name && p.name.indexOf(".") > 0) {
         icon = getFileTypeIcon(p, 3);
     }
     else {

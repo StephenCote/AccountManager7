@@ -701,10 +701,17 @@ const page = {
                     if (entity.profile) entity.profile.portrait = portrait;
                 }
             }
-            if (portrait && portrait.groupId) {
+            // Resolve gallery group: portrait's group, or fall back to ~/Gallery
+            let galleryGroupId = portrait ? portrait.groupId : null;
+            if (!galleryGroupId) {
+                try {
+                    let galleryDir = await makePath("auth.group", "DATA", "~/Gallery");
+                    if (galleryDir) galleryGroupId = galleryDir.id;
+                } catch(e) { /* ignore */ }
+            }
+            if (galleryGroupId) {
                 let q = am7client.newQuery('data.data');
-                q.field('groupId', portrait.groupId);
-                q.entity.request.push('id', 'objectId', 'name', 'groupId', 'groupPath', 'contentType', 'organizationPath', 'attributes', 'description', 'tags');
+                q.field('groupId', galleryGroupId);
                 q.range(0, 200);
                 q.sort('modifiedDate');
                 q.order('descending');
@@ -721,23 +728,49 @@ const page = {
         let viewMode = 'grid';
         let fullView = false;
         let tagsCache = {};
+        let detailCache = {};
+
+        // Lazy-load details (attributes, description, tags) for selected image only
+        // Uses targeted query to avoid fetching dataBytesStore (full image binary)
+        function loadDetails(img) {
+            if (!img || !img.objectId || detailCache[img.objectId]) return;
+            detailCache[img.objectId] = { loading: true };
+            let q = am7client.newQuery('data.data');
+            q.field('objectId', img.objectId);
+            q.entity.request = ['id', 'objectId', 'attributes', 'description', 'tags'];
+            q.cache(false);
+            am7client.search(q).then(function(qr) {
+                if (qr && qr.results && qr.results.length) {
+                    let full = qr.results[0];
+                    img.attributes = full.attributes;
+                    img.description = full.description;
+                    if (Array.isArray(full.tags) && full.tags.length) {
+                        tagsCache[img.objectId] = full.tags;
+                    }
+                }
+                detailCache[img.objectId] = { loaded: true };
+                m.redraw();
+            }).catch(function() { detailCache[img.objectId] = { loaded: true }; m.redraw(); });
+        }
 
         function loadTags(img) {
             if (!img || tagsCache[img.objectId]) return;
-            // Use tags from query if available
+            // Use tags from query or detail cache if available
             if (Array.isArray(img.tags) && img.tags.length) {
                 tagsCache[img.objectId] = img.tags;
                 return;
             }
-            tagsCache[img.objectId] = [];
-            // Fall back to member listing (participation lookup)
-            try {
-                let p = am7client.members('data.data', img.objectId, 'data.tag', 0, 50, function(tags) {
-                    tagsCache[img.objectId] = (Array.isArray(tags) ? tags : []);
-                    m.redraw();
-                });
-                if (p && p.catch) p.catch(function() { tagsCache[img.objectId] = []; });
-            } catch(e) { /* ignore */ }
+            // Tags are loaded by loadDetails — only fall back to membership if details already loaded
+            if (detailCache[img.objectId] && detailCache[img.objectId].loaded) {
+                tagsCache[img.objectId] = [];
+                try {
+                    let p = am7client.members('data.data', img.objectId, 'data.tag', 0, 50, function(tags) {
+                        tagsCache[img.objectId] = (Array.isArray(tags) ? tags : []);
+                        m.redraw();
+                    });
+                    if (p && p.catch) p.catch(function() { tagsCache[img.objectId] = []; });
+                } catch(e) { /* ignore */ }
+            }
         }
 
         let galleryRef = null;
@@ -756,7 +789,7 @@ const page = {
 
         function renderGallery() {
             let sel = galleryImages[idx];
-            if (sel) loadTags(sel);
+            if (sel) { loadDetails(sel); loadTags(sel); }
             let tags = sel ? (tagsCache[sel.objectId] || []) : [];
             let attrs = getImageAttrs(sel);
             let previewUrl = sel ? am7client.mediaDataPath(sel, true, '512x512') : '';
@@ -878,12 +911,12 @@ const page = {
                         m('div', { class: 'text-xs text-gray-400 mt-2' }, '← → to navigate, Delete to remove')
                     ])
                 ]) : null,
-                // Grid or list
+                // Grid or list — lazy-load thumbnails via loading="lazy"
                 viewMode === 'list' ? m('div', { class: 'divide-y divide-gray-200 dark:divide-gray-700 max-h-60 overflow-y-auto' },
                     galleryImages.map(function(img, i) {
                         let thumbUrl = am7client.mediaDataPath(img, true, '64x64');
                         return m('div', { key: 'gal-' + (img.objectId || i), class: 'flex items-center gap-2 px-2 py-1 cursor-pointer ' + (i === idx ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-800'), onclick: function() { idx = i; refocusGallery(); } }, [
-                            m('img', { src: thumbUrl, class: 'w-10 h-10 rounded object-cover flex-shrink-0' }),
+                            m('img', { src: thumbUrl, loading: 'lazy', class: 'w-10 h-10 rounded object-cover flex-shrink-0' }),
                             m('span', { class: 'text-sm text-gray-700 dark:text-gray-300 truncate' }, img.name),
                             i === idx ? m('span', { class: 'material-symbols-outlined text-blue-500 ml-auto', style: 'font-size:16px' }, 'check_circle') : null
                         ]);
@@ -892,7 +925,7 @@ const page = {
                     galleryImages.map(function(img, i) {
                         let thumbUrl = am7client.mediaDataPath(img, true, '96x96');
                         return m('div', { key: 'gal-' + (img.objectId || i), class: 'cursor-pointer rounded overflow-hidden border-2 ' + (i === idx ? 'border-blue-500' : 'border-transparent hover:border-gray-300'), onclick: function() { idx = i; refocusGallery(); } },
-                            m('img', { src: thumbUrl, class: 'w-full aspect-square object-cover' }));
+                            m('img', { src: thumbUrl, loading: 'lazy', class: 'w-full aspect-square object-cover' }));
                     })
                 )
             ]);

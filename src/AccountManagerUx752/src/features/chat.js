@@ -805,7 +805,7 @@ function configRow(label, name, icon, libraryType) {
             libraryType: libraryType,
             title: "Select " + label,
             onSelect: function (obj) {
-                ContextPanel.attach(libraryType === "chatConfig" ? "chatConfig" : "promptConfig", obj.objectId).then(function () {
+                ContextPanel.attach(libraryType, obj.objectId).then(function () {
                     am7client.clearCache("olio.llm.chatRequest");
                     doPeek();
                 }).catch(function (e) { console.warn("Config attach failed:", e); });

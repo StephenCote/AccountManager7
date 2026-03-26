@@ -613,7 +613,12 @@ function newListControl() {
     // ------------------------------------------------------------------
 
     function doFilter() {
-        let el = document.querySelector('[id=listFilter]');
+        // Scope search to our own list control's container to avoid grabbing
+        // the wrong input when picker and main list both have listFilter
+        let scope = pickerMode
+            ? document.querySelector('.am7-picker-overlay [id=listFilter]')
+            : document.querySelector('.result-nav-outer [id=listFilter]');
+        let el = scope || document.querySelector('[id=listFilter]');
         navFilter = el ? el.value : null;
         if (navFilter && !navFilter.length) navFilter = null;
 
