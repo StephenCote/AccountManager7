@@ -865,7 +865,7 @@ const page = {
                                 });
                             }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'delete'), 'Delete'])
                         ]),
-                        sel.description ? m('div', { class: 'text-xs text-gray-500 italic mb-1 overflow-hidden text-ellipsis', style: 'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;word-break:break-all' }, sel.description) : null,
+                        sel.description ? m('div', { class: 'text-xs text-gray-500 italic mb-1 overflow-hidden text-ellipsis', style: 'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow-wrap:anywhere;word-break:break-word;max-width:100%' }, sel.description) : null,
                         tags.length > 0 ? m('div', { class: 'mb-1' }, [
                             m('div', { class: 'flex flex-wrap gap-1' }, tags.map(function(t) {
                                 let label = (t && typeof t === 'object') ? (t.name || t.objectId || '') : String(t || '');

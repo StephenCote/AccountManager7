@@ -41,6 +41,18 @@ async function play(btnId, text) {
     buttonStates[btnId] = "loading";
     m.redraw();
 
+    // Pre-create Audio element in user gesture context (before any async)
+    // This preserves the click gesture for autoplay policy
+    let audio = new Audio();
+    audioElements[btnId] = audio;
+
+    function cleanup(url) {
+        buttonStates[btnId] = "idle";
+        if (url) URL.revokeObjectURL(url);
+        delete audioElements[btnId];
+        m.redraw();
+    }
+
     try {
         let voiceName = btnId || 'audio-' + Date.now();
         let body = { text: text, speed: 1.2, engine: "piper", speaker: "en_GB-alba-medium" };
@@ -54,55 +66,30 @@ async function play(btnId, text) {
         if (!resp.ok) throw new Error("Synthesis failed: " + resp.status);
 
         let contentType = resp.headers.get('content-type') || '';
-        let audio;
+        let url;
         if (contentType.match(/audio|octet/)) {
-            // Binary audio response
             let blob = await resp.blob();
-            let url = URL.createObjectURL(blob);
-            audio = new Audio(url);
-            audio.onended = function() {
-                buttonStates[btnId] = "idle";
-                URL.revokeObjectURL(url);
-                delete audioElements[btnId];
-                m.redraw();
-            };
-            audio.onerror = function() {
-                buttonStates[btnId] = "idle";
-                URL.revokeObjectURL(url);
-                delete audioElements[btnId];
-                m.redraw();
-            };
+            url = URL.createObjectURL(blob);
         } else {
-            // JSON response — server returns data.data record with dataBytesStore (base64 audio)
             let data = await resp.json();
             let audioB64 = data ? (data.dataBytesStore || data.audio) : null;
-            if (audioB64) {
-                let audioBlob = new Blob([Uint8Array.from(atob(audioB64), c => c.charCodeAt(0))], { type: data.contentType || 'audio/wav' });
-                let url = URL.createObjectURL(audioBlob);
-                audio = new Audio(url);
-                audio.onended = function() {
-                    buttonStates[btnId] = "idle";
-                    URL.revokeObjectURL(url);
-                    delete audioElements[btnId];
-                    m.redraw();
-                };
-                audio.onerror = function() {
-                    buttonStates[btnId] = "idle";
-                    URL.revokeObjectURL(url);
-                    delete audioElements[btnId];
-                    m.redraw();
-                };
-            } else {
-                throw new Error("No audio data in response (keys: " + (data ? Object.keys(data).join(",") : "null") + ")");
-            }
+            if (!audioB64) throw new Error("No audio data in response (keys: " + (data ? Object.keys(data).join(",") : "null") + ")");
+            let audioBlob = new Blob([Uint8Array.from(atob(audioB64), c => c.charCodeAt(0))], { type: data.contentType || 'audio/wav' });
+            url = URL.createObjectURL(audioBlob);
         }
 
-        audioElements[btnId] = audio;
+        audio.src = url;
+        audio.onended = function() { cleanup(url); };
+        audio.onerror = function() { cleanup(url); };
         buttonStates[btnId] = "playing";
-        audio.play();
+        audio.play().catch(function(e) {
+            console.warn("[audioTokens] autoplay blocked:", e);
+            cleanup(url);
+        });
     } catch(e) {
         console.warn("[audioTokens] play failed:", e);
         buttonStates[btnId] = "idle";
+        delete audioElements[btnId];
     }
 
     m.redraw();
@@ -130,7 +117,10 @@ function processContent(content) {
     let result = content;
     for (let i = tokens.length - 1; i >= 0; i--) {
         let token = tokens[i];
-        let btnId = "audio-" + i + "-" + token.text.substring(0, 10).replace(/\W/g, "");
+        // Include text hash for uniqueness across different content
+        let textHash = 0;
+        for (let ci = 0; ci < token.text.length; ci++) { textHash = ((textHash << 5) - textHash + token.text.charCodeAt(ci)) | 0; }
+        let btnId = "audio-" + i + "-" + Math.abs(textHash) + "-" + token.text.substring(0, 10).replace(/\W/g, "");
         register(btnId, token.text);
 
         let st = state(btnId);

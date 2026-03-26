@@ -598,10 +598,13 @@ function newObjectPage() {
                     let idx = Object.keys(sel).find(function(k) { return sel[k]; });
                     if (idx !== undefined) {
                         let item = items[parseInt(idx)];
-                        let itemType = item ? (item[am7model.jsonModelKey] || item.schema || baseModel) : null;
-                        if (item && item.objectId && itemType) {
+                        let itemType = baseModel || (item ? item[am7model.jsonModelKey] : null);
+                        let oid = item ? (item.objectId || item.urn) : null;
+                        if (item && oid && itemType) {
                             page.context().listReturnUrl = m.route.get();
-                            m.route.set("/view/" + itemType + "/" + item.objectId, { key: item.objectId });
+                            m.route.set("/view/" + itemType + "/" + oid, { key: oid });
+                        } else {
+                            console.warn("[memberList] Cannot open selected item — missing objectId or type", item);
                         }
                     }
                 }
@@ -678,10 +681,13 @@ function newObjectPage() {
                         m.redraw();
                     },
                     ondblclick: function() {
-                        let iType = item[am7model.jsonModelKey] || item.schema || baseModel;
-                        if (item.objectId && iType) {
+                        let iType = baseModel || item[am7model.jsonModelKey];
+                        let oid = item.objectId || item.urn;
+                        if (oid && iType) {
                             page.context().listReturnUrl = m.route.get();
-                            m.route.set("/view/" + iType + "/" + item.objectId, { key: item.objectId });
+                            m.route.set("/view/" + iType + "/" + oid, { key: oid });
+                        } else {
+                            console.warn("[memberList] Cannot open item — missing objectId or type", item);
                         }
                     }
                 }, columns.map(function(col) {

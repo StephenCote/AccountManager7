@@ -6,6 +6,7 @@ import './styles/main.css';
 import './styles/pageStyle.css';
 
 // Core modules
+import m from 'mithril';
 import { am7model } from './core/model.js';
 import { am7view } from './core/view.js';
 import { am7client } from './core/am7client.js';
@@ -73,11 +74,16 @@ page.components.form = form.component;
 import { object_v2 } from './components/object_v2.js';
 page.components.object_v2 = object_v2.component;
 
-// Expose internals for dev console and E2E testing
+// Expose internals for dev console, debugging, and E2E testing
 if (typeof window !== 'undefined') {
     window.Dialog = Dialog;
     window.__am7page = page;
     window.__am7model = am7model;
+    // Friendly aliases for console debugging
+    window.am7page = page;
+    window.am7model = am7model;
+    window.am7client = am7client;
+    window.m = m;
 }
 
 // Start the application

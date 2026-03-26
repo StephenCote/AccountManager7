@@ -109,10 +109,21 @@ const ChatTokenRenderer = {
                 }
             }
 
+            // Build unique audio IDs: charName + sessionId + role + msgIndex + tokenIndex + textHash
+            // Prevents reuse across different sessions/messages (Ux7 pattern)
+            let charName = '';
+            if (characters) {
+                let c = (msgRole === "assistant") ? characters.system : characters.user;
+                if (c && c.name) charName = c.name.replace(/\W/g, '').substring(0, 20);
+            }
+            let sid = sessionId ? String(sessionId).substring(0, 8) : 'nosess';
+
             let result = content;
             for (let i = tokens.length - 1; i >= 0; i--) {
                 let tok = tokens[i];
-                let btnId = "audio_" + msgIndex + "_" + i;
+                let textHash = 0;
+                for (let ci = 0; ci < tok.text.length; ci++) { textHash = ((textHash << 5) - textHash + tok.text.charCodeAt(ci)) | 0; }
+                let btnId = charName + "-" + sid + "-" + msgRole + "-" + msgIndex + "-" + i + "-" + Math.abs(textHash);
                 window.am7audioTokens.register(btnId, tok.text, profileId, sessionId);
                 let state = window.am7audioTokens.state(btnId);
                 let icon = state === "playing" ? "stop" : "volume_up";
