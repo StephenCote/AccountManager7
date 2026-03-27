@@ -416,6 +416,82 @@ renderers["object-link"] = function(ctx) {
     ];
 };
 
+// ── Voice Picker (profile sub-object) ────────────────────────────────
+// Custom renderer for voice on charPerson main tab.
+// Reads/writes entity.profile.voice directly and patches identity.profile.
+
+renderers.voicePicker = function(ctx) {
+    let useEntity = ctx.useEntity || ctx.entity;
+    let profile = useEntity ? useEntity.profile : null;
+    let voice = profile ? profile.voice : null;
+    let voiceName = voice ? (voice.name || voice.objectId || '') : '';
+    let hasValue = !!voice;
+    let page = getPage();
+    let client = getClient();
+
+    function openPicker() {
+        if (!page || !page.components || !page.components.picker) return;
+        let pickerType = 'identity.voice';
+        let pickerPath = '~/Voices';
+        page.components.picker.open({
+            type: pickerType,
+            title: 'Select Voice',
+            libraryPath: pickerPath,
+            onSelect: function(items) {
+                let picked = Array.isArray(items) ? items[0] : items;
+                if (!picked || !profile) return;
+                // Update entity reference
+                profile.voice = picked;
+                // Patch profile directly
+                let od = { voice: { id: picked.id } };
+                if (profile.id) od.id = profile.id;
+                else if (profile.objectId) od.objectId = profile.objectId;
+                od[am7model.jsonModelKey] = 'identity.profile';
+                page.patchObject(od);
+                if (client) client.clearCache('identity.profile', false);
+                m.redraw();
+            }
+        });
+    }
+
+    function clearVoice() {
+        if (!profile) return;
+        profile.voice = null;
+        let od = { voice: null };
+        if (profile.id) od.id = profile.id;
+        else if (profile.objectId) od.objectId = profile.objectId;
+        od[am7model.jsonModelKey] = 'identity.profile';
+        page.patchObject(od);
+        if (client) client.clearCache('identity.profile', false);
+        m.redraw();
+    }
+
+    return [m("div", { class: "w-full flex items-center gap-1 px-4 py-2 mt-2 border rounded-md bg-white dark:bg-black dark:text-white border-gray-300 dark:border-gray-600" }, [
+        m("span", {
+            class: "flex-1 truncate cursor-pointer " + (hasValue
+                ? "text-gray-800 dark:text-white hover:text-blue-600 dark:hover:text-blue-400"
+                : "text-gray-400 dark:text-gray-500 italic hover:text-blue-600 dark:hover:text-blue-400"),
+            onclick: openPicker,
+            title: voiceName || "(none)"
+        }, voiceName || "(none)"),
+        m("button", {
+            class: "p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0",
+            title: "Find",
+            onclick: openPicker
+        }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "search")),
+        hasValue ? m("button", {
+            class: "p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0",
+            title: "View",
+            onclick: function() { m.route.set('/view/identity.voice/' + voice.objectId); }
+        }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "file_open")) : null,
+        hasValue ? m("button", {
+            class: "p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0",
+            title: "Clear",
+            onclick: clearVoice
+        }, m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, "backspace")) : null
+    ])];
+};
+
 // ── Picker ──────────────────────────────────────────────────────────
 
 renderers.picker = function(ctx) {

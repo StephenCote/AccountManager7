@@ -2,55 +2,51 @@ import { test, expect } from '@playwright/test';
 import { setupWorkflowTestData, cleanupTestUser } from './helpers/api.js';
 import { login, screenshot } from './helpers/auth.js';
 
-test('voice profile: select, save, reload, verify persistence', async ({ page, request }) => {
+test('voice picker on main tab: select, save, persist', async ({ page, request }) => {
     let wfData = await setupWorkflowTestData(request);
     if (!wfData.charPerson) { test.skip('No test data'); return; }
 
     let errors = [];
     page.on('pageerror', err => { errors.push(err.message); });
-    page.on('console', msg => {
-        if (msg.text().includes('[save]') || msg.text().includes('[picker]'))
-            console.log('PAGE:', msg.text());
-        if (msg.type() === 'error' && !msg.text().includes('404') && !msg.text().includes('Favorites'))
-            console.log('ERR:', msg.text());
-    });
 
     await login(page, { user: wfData.testUserName, password: wfData.testPassword });
 
-    // Create a voice object via the app's REST API (as the logged-in user)
+    // Create a voice object
     let voiceCreated = await page.evaluate(async () => {
         try {
-            // Ensure ~/Voices directory
             let dirResp = await fetch('/AccountManagerService7/rest/path/make/auth.group/DATA/' + encodeURIComponent('B64-' + btoa('~/Voices')), { credentials: 'include' });
-            let dir = null;
-            try { dir = await dirResp.json(); } catch(e2) { return { error: 'dir parse failed: ' + dirResp.status }; }
-            if (!dir || !dir.id) return { error: 'no dir id', dir: dir };
-
-            // Create voice object
+            let dir = await dirResp.json();
+            if (!dir || !dir.id) return null;
             let voice = { schema: 'identity.voice', name: 'piper-kristin', engine: 'piper', speaker: 'en_US-kristin-medium', speed: 1.2, groupId: dir.id, groupPath: dir.path };
             let createResp = await fetch('/AccountManagerService7/rest/model', {
                 method: 'POST', credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(voice)
             });
-            let created = null;
-            try { created = await createResp.json(); } catch(e2) { return { error: 'create parse failed: ' + createResp.status }; }
-            return created && created.objectId ? created : { error: 'no objectId', created: created, status: createResp.status };
-        } catch(e) { return { error: e.message }; }
+            let created = await createResp.json();
+            return created && created.objectId ? created : null;
+        } catch(e) { return null; }
     });
-    console.log('Voice created:', voiceCreated ? (voiceCreated.name || JSON.stringify(voiceCreated)) : 'null');
-    if (!voiceCreated || voiceCreated.error) { console.log('Create failed:', JSON.stringify(voiceCreated)); test.skip('Could not create voice object'); return; }
+    console.log('Voice created:', voiceCreated ? voiceCreated.name : 'FAILED');
+    if (!voiceCreated) { test.skip('Could not create voice'); return; }
 
     await page.goto('#!/view/olio.charPerson/' + wfData.charPerson.objectId);
     await page.waitForTimeout(4000);
 
-    // Navigate to Profile tab
+    // 1. Verify Profile tab is gone
     let profileTab = page.locator('button:has-text("Profile")');
-    await expect(profileTab).toBeVisible({ timeout: 5000 });
-    await profileTab.click();
-    await page.waitForTimeout(2000);
+    let hasProfileTab = await profileTab.isVisible({ timeout: 2000 }).catch(() => false);
+    console.log('Profile tab visible:', hasProfileTab);
+    expect(hasProfileTab).toBe(false);
 
-    // Click voice picker
+    // 2. Voice label on main Character tab
+    let voiceLabel = page.locator('label:has-text("Voice")');
+    let hasVoice = await voiceLabel.isVisible({ timeout: 5000 }).catch(() => false);
+    console.log('Voice label on main tab:', hasVoice);
+    expect(hasVoice).toBe(true);
+    await screenshot(page, 'voice-01-main-tab');
+
+    // 3. Click voice picker text to open
     let voiceText = page.locator('span.cursor-pointer:near(label:has-text("Voice"))').first();
     await expect(voiceText).toBeVisible({ timeout: 3000 });
     console.log('Voice before:', await voiceText.textContent());
@@ -61,58 +57,37 @@ test('voice profile: select, save, reload, verify persistence', async ({ page, r
     let picker = page.locator('.am7-picker-overlay');
     await expect(picker).toBeVisible({ timeout: 3000 });
 
+    // 4. Select voice
     let pickerRows = picker.locator('tbody tr, tr:has(td)');
     let rowCount = await pickerRows.count();
-    console.log('Picker rows:', rowCount);
+    console.log('Picker voice rows:', rowCount);
     expect(rowCount).toBeGreaterThan(0);
 
-    // Select the voice we created
     await pickerRows.first().click();
     await page.waitForTimeout(500);
     let confirmBtn = picker.locator('button:has(span:text("check"))');
     await expect(confirmBtn).toBeVisible({ timeout: 2000 });
     await confirmBtn.click();
     await page.waitForTimeout(2000);
-    await screenshot(page, 'voice-03-selected');
+    await screenshot(page, 'voice-02-selected');
 
     let afterValue = await voiceText.textContent().catch(() => '');
     console.log('Voice after selection:', afterValue);
     expect(afterValue).not.toBe('(none)');
 
-    // Monitor network for PATCH requests
-    let patchRequests = [];
-    page.on('request', req => {
-        if (req.method() === 'PATCH' || (req.method() === 'POST' && req.url().includes('/model'))) {
-            let body = req.postData();
-            if (body && (body.includes('voice') || body.includes('profile'))) {
-                patchRequests.push({ url: req.url(), method: req.method(), body: body.substring(0, 500) });
-            }
-        }
-    });
+    // 5. Wait for the direct patch to complete, then reload
+    await page.waitForTimeout(2000);
 
-    // Save
-    let saveBtn = page.locator('button:has(span:text("save"))');
-    await expect(saveBtn).toBeVisible({ timeout: 3000 });
-    await saveBtn.click();
-    await page.waitForTimeout(3000);
-    await screenshot(page, 'voice-04-saved');
-    console.log('PATCH requests during save:', JSON.stringify(patchRequests, null, 2));
-
-    // Check voice still shows after save (not cleared)
-    let postSaveValue = await voiceText.textContent().catch(() => '');
-    console.log('Voice after save:', postSaveValue);
-
-    // Reload and verify persistence
+    // 6. Reload and verify persistence (no save button needed - voicePicker patches directly)
     await page.goto('#!/view/olio.charPerson/' + wfData.charPerson.objectId);
     await page.waitForTimeout(4000);
-    await page.locator('button:has-text("Profile")').click();
-    await page.waitForTimeout(2000);
-    await screenshot(page, 'voice-05-reloaded');
+    await screenshot(page, 'voice-03-reloaded');
 
     let reloadedValue = await page.locator('span.cursor-pointer:near(label:has-text("Voice"))').first().textContent().catch(() => '');
     console.log('Voice after reload:', reloadedValue);
     expect(reloadedValue).toBe(afterValue);
 
+    // 7. Check server actually got a MODIFY for identity.profile
     let realErrors = errors.filter(e => !e.includes('404'));
     if (realErrors.length > 0) {
         console.log('ERRORS:');

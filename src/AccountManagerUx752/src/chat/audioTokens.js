@@ -33,21 +33,47 @@ function register(btnId, text, profileId, sessionId) {
     }
 }
 
+// Resolve voice profile: fetch profile → get voice ref → fetch full voice → load XTTS sample
+// Matches Ux7 gameState.js resolveVoiceProfile pattern
 async function resolveVoice(profileId) {
     if (!profileId) return null;
     if (voiceCache[profileId]) return voiceCache[profileId];
     try {
-        let resp = await fetch(applicationPath + "/rest/model/identity.profile/" + encodeURIComponent(profileId) + "/full", { credentials: "include" });
-        if (!resp.ok) return null;
-        let profile = await resp.json();
-        if (profile && profile.voice) {
-            let v = profile.voice;
-            let resolved = { engine: v.engine || "piper", speaker: v.speaker || "en_GB-alba-medium", speakerId: v.speakerId, speed: v.speed || 1.2 };
-            voiceCache[profileId] = resolved;
-            return resolved;
+        // 1. Get profile to find voice reference
+        let profResp = await fetch(applicationPath + "/rest/model/identity.profile/" + encodeURIComponent(profileId) + "/full", { credentials: "include" });
+        if (!profResp.ok) return null;
+        let profile = await profResp.json();
+        if (!profile || !profile.voice) return null;
+
+        let voiceId = profile.voice.objectId || profile.voice;
+        if (!voiceId) return null;
+
+        // 2. Get the full voice object (has engine, speaker, voiceSample ref)
+        let voiceResp = await fetch(applicationPath + "/rest/model/identity.voice/" + encodeURIComponent(voiceId) + "/full", { credentials: "include" });
+        if (!voiceResp.ok) return null;
+        let voice = await voiceResp.json();
+        if (!voice) return null;
+
+        let resolved = { engine: voice.engine || "piper", speaker: voice.speaker || "en_GB-alba-medium", speakerId: voice.speakerId, speed: voice.speed || 1.2 };
+
+        // 3. For XTTS, load the voice sample base64 data
+        if (resolved.engine === "xtts" && voice.voiceSample) {
+            let sampleId = voice.voiceSample.objectId || voice.voiceSample;
+            let sampleResp = await fetch(applicationPath + "/rest/model/data.data/" + encodeURIComponent(sampleId) + "/full", { credentials: "include" });
+            if (sampleResp.ok) {
+                let sample = await sampleResp.json();
+                if (sample && sample.dataBytesStore) {
+                    resolved.voiceSample = sample.dataBytesStore;
+                }
+            }
         }
-    } catch(e) { /* ignore */ }
-    return null;
+
+        voiceCache[profileId] = resolved;
+        return resolved;
+    } catch(e) {
+        console.warn("[audioTokens] resolveVoice failed:", e);
+        return null;
+    }
 }
 
 function state(btnId) {
@@ -83,6 +109,11 @@ async function play(btnId, text) {
         if (bp && bp.profileId) {
             voiceSettings = await resolveVoice(bp.profileId);
         }
+        // Fall back to piper if XTTS has no voice sample loaded
+        if (voiceSettings && voiceSettings.engine === 'xtts' && !voiceSettings.voiceSample) {
+            console.warn("[audioTokens] XTTS voice has no sample data, falling back to piper");
+            voiceSettings = null;
+        }
         let body = {
             text: text,
             speed: voiceSettings ? voiceSettings.speed : 1.2,
@@ -91,6 +122,9 @@ async function play(btnId, text) {
         };
         if (voiceSettings && voiceSettings.speakerId != null && voiceSettings.speakerId >= 0) {
             body.speaker_id = voiceSettings.speakerId;
+        }
+        if (voiceSettings && voiceSettings.voiceSample) {
+            body.voice_sample = voiceSettings.voiceSample;
         }
         let resp = await fetch(applicationPath + "/rest/voice/" + encodeURIComponent(voiceName), {
             method: "POST",

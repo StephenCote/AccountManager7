@@ -3970,6 +3970,14 @@ import { am7model } from './model.js';
                     command: narrate
                 }
             },
+            voice: {
+                layout: 'one',
+                format: 'voicePicker',
+                label: "Voice",
+                field: {
+                    label: "Voice"
+                }
+            },
             description: {
                 layout: "full",
             },
@@ -3986,7 +3994,7 @@ import { am7model } from './model.js';
                 format: "textlist"
             }
         },
-        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tagattributes"]
+        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "groupinfo", "tagattributes"]
     };
 
     forms.store = {
