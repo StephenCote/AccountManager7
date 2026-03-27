@@ -10,6 +10,8 @@ const TOKEN_REGEX = /\$\{audio\.([^}]+)\}/g;
 
 let buttonStates = {}; // btnId -> "idle" | "loading" | "playing"
 let audioElements = {}; // btnId -> HTMLAudioElement
+let buttonProfiles = {}; // btnId -> { profileId, sessionId }
+let voiceCache = {}; // profileId -> resolved voice settings
 
 function parse(content) {
     if (!content) return [];
@@ -26,6 +28,26 @@ function register(btnId, text, profileId, sessionId) {
     if (!buttonStates[btnId]) {
         buttonStates[btnId] = "idle";
     }
+    if (profileId) {
+        buttonProfiles[btnId] = { profileId, sessionId };
+    }
+}
+
+async function resolveVoice(profileId) {
+    if (!profileId) return null;
+    if (voiceCache[profileId]) return voiceCache[profileId];
+    try {
+        let resp = await fetch(applicationPath + "/rest/model/identity.profile/" + encodeURIComponent(profileId) + "/full", { credentials: "include" });
+        if (!resp.ok) return null;
+        let profile = await resp.json();
+        if (profile && profile.voice) {
+            let v = profile.voice;
+            let resolved = { engine: v.engine || "piper", speaker: v.speaker || "en_GB-alba-medium", speakerId: v.speakerId, speed: v.speed || 1.2 };
+            voiceCache[profileId] = resolved;
+            return resolved;
+        }
+    } catch(e) { /* ignore */ }
+    return null;
 }
 
 function state(btnId) {
@@ -55,7 +77,21 @@ async function play(btnId, text) {
 
     try {
         let voiceName = btnId || 'audio-' + Date.now();
-        let body = { text: text, speed: 1.2, engine: "piper", speaker: "en_GB-alba-medium" };
+        // Resolve character voice profile if available, otherwise use defaults
+        let voiceSettings = null;
+        let bp = buttonProfiles[btnId];
+        if (bp && bp.profileId) {
+            voiceSettings = await resolveVoice(bp.profileId);
+        }
+        let body = {
+            text: text,
+            speed: voiceSettings ? voiceSettings.speed : 1.2,
+            engine: voiceSettings ? voiceSettings.engine : "piper",
+            speaker: voiceSettings ? voiceSettings.speaker : "en_GB-alba-medium"
+        };
+        if (voiceSettings && voiceSettings.speakerId != null && voiceSettings.speakerId >= 0) {
+            body.speaker_id = voiceSettings.speakerId;
+        }
         let resp = await fetch(applicationPath + "/rest/voice/" + encodeURIComponent(voiceName), {
             method: "POST",
             headers: { "Content-Type": "application/json" },

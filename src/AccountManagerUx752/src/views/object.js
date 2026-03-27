@@ -318,6 +318,9 @@ function newObjectPage() {
      */
     function doFieldPicker(field, useName, altEntity, altPath, pickerHandler) {
         let useEntity = altEntity || entity;
+        // Capture current inst at call time — module-level inst may be restored
+        // to the parent by the time the async picker callback fires
+        let capturedInst = inst;
         if (!useEntity || !field.pickerProperty) {
             console.warn("[picker] Invalid entity or field property", useEntity, field);
             return;
@@ -349,24 +352,46 @@ function newObjectPage() {
             if (!data || !data.length) return;
             let picked = data[0];
 
-            if (useEntity === (inst ? inst.entity : entity)) {
-                // Primary entity — use inst.api setters
+            if (useEntity === (capturedInst ? capturedInst.entity : entity)) {
+                // Primary entity — use captured inst's api setters
                 if (field.pickerProperty.selected === '{object}') {
                     if (field.pickerProperty.entity.match(/\./)) {
                         let pv = field.pickerProperty.entity.split(".");
+                        // Lazily create sub-instance if tab hasn't been activated yet
+                        if (!pinst[pv[0]] && entity[pv[0]]) {
+                            let subEntity = entity[pv[0]];
+                            if (subEntity[am7model.jsonModelKey]) {
+                                pinst[pv[0]] = am7model.prepareInstance(subEntity);
+                            }
+                        }
                         if (pinst[pv[0]]) {
                             pinst[pv[0]].api[pv[1]](picked);
+                            // Immediate patch for sub-object reference fields
+                            let subEnt = entity[pv[0]];
+                            let subSchema = (subEnt ? subEnt[am7model.jsonModelKey] : null)
+                                || (pinst[pv[0]].model ? pinst[pv[0]].model.name : null);
+                            let subId = subEnt ? (subEnt.id || subEnt.objectId) : null;
+                            if (subId && subSchema) {
+                                let od = {};
+                                if (subEnt.id) od.id = subEnt.id;
+                                else od.objectId = subEnt.objectId;
+                                od[pv[1]] = { id: picked.id };
+                                od[am7model.jsonModelKey] = subSchema;
+                                page.patchObject(od);
+                            } else {
+                                console.warn("[picker] Cannot patch — missing id or schema for", pv[0], subEnt);
+                            }
                         } else {
                             console.warn("[picker] sub-instance not found:", pv[0]);
                         }
-                    } else if (inst) {
-                        inst.api[field.pickerProperty.entity](picked);
+                    } else if (capturedInst) {
+                        capturedInst.api[field.pickerProperty.entity](picked);
                     }
-                } else if (inst) {
-                    inst.api[field.pickerProperty.entity](picked[field.pickerProperty.selected]);
+                } else if (capturedInst) {
+                    capturedInst.api[field.pickerProperty.entity](picked[field.pickerProperty.selected]);
                 }
-                if (setType && inst) {
-                    inst.api[field.pickerType.slice(1)](type);
+                if (setType && capturedInst) {
+                    capturedInst.api[field.pickerType.slice(1)](type);
                 }
             } else {
                 // Alternate entity (e.g. table row) — direct assignment
@@ -381,8 +406,8 @@ function newObjectPage() {
             }
 
             updateChange();
-            if (inst && inst.action) inst.action(useName);
-            if (pickerHandler) pickerHandler(objectPage, inst, field, useName, picked);
+            if (capturedInst && capturedInst.action) capturedInst.action(useName);
+            if (pickerHandler) pickerHandler(objectPage, capturedInst, field, useName, picked);
 
             // Clear server cache for parent type
             let schemaKey = useEntity[am7model.jsonModelKey];
@@ -869,11 +894,23 @@ function newObjectPage() {
         let annot = inst.validationErrors[name] ? am7view.errorLabel(inst.validationErrors[name]) : '';
         if (!show) fieldClass += ' hidden';
 
+        // Capture current inst/entity for the renderer context — module-level
+        // inst/entity are temporarily swapped for model-ref sub-forms and restored
+        // after render, so click handlers must use the captured values
+        let capturedInst = inst;
+        let capturedEntity = entity;
+        let boundDoFieldPicker = function(f, n, altE, altP, ph) {
+            // Temporarily set inst/entity back to what they were during render
+            let saved = inst; let savedE = entity;
+            inst = capturedInst; entity = capturedEntity;
+            doFieldPicker(f, n, altE, altP, ph);
+            inst = saved; entity = savedE;
+        };
         let rendererCtx = {
-            inst, entity, useEntity: entity, field, fieldView,
+            inst: capturedInst, entity: capturedEntity, useEntity: capturedEntity, field, fieldView,
             name, useName: name, defVal, fieldClass, disabled, fHandler, show, objectPage,
             foreignData, preparePicker, cancelPicker,
-            updateChange, doFieldPicker, doFieldOpen, doFieldClear
+            updateChange, doFieldPicker: boundDoFieldPicker, doFieldOpen, doFieldClear
         };
 
         if (page.components.formFieldRenderers && page.components.formFieldRenderers.has(format)) {
@@ -957,7 +994,18 @@ function newObjectPage() {
                     else if (mo.id) q.field('id', mo.id);
                     am7client.search(q, function (qr) {
                         if (qr && qr.count) {
-                            pinst[form.property] = am7model.prepareInstance(qr.results[0]);
+                            // Merge fresh data into existing instance to preserve pending changes
+                            let existing = pinst[form.property];
+                            let fresh = qr.results[0];
+                            if (existing && existing.entity) {
+                                Object.keys(fresh).forEach(function(k) {
+                                    if (!existing.changes || existing.changes.indexOf(k) === -1) {
+                                        existing.entity[k] = fresh[k];
+                                    }
+                                });
+                            } else {
+                                pinst[form.property] = am7model.prepareInstance(fresh);
+                            }
                         }
                     });
                 }

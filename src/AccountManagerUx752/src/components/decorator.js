@@ -64,21 +64,21 @@ function getThumbnail(ctl, p) {
         icon = m("img", { class: icoCls, src: icoPath });
     }
     else if (p.contentType && p.contentType.match(/^image/)) {
-        let icoPath = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name + "/" + (gridMode == 1 ? "256x256" : "512x512");
+        let isAnimated = p.contentType.match(/gif$/) || p.contentType.match(/webp$/);
+        let icoPath = isAnimated
+            ? applicationPath + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name
+            : applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name + "/" + (gridMode == 1 ? "256x256" : "512x512");
         if (p.dataBytesStore && p.dataBytesStore.length) {
             icoPath = "data:" + p.contentType + ";base64," + p.dataBytesStore;
-        }
-        if (gridMode == 2 && (p.contentType.match(/gif$/) || p.contentType.match(/webp$/))) {
-            icoPath = applicationPath + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name;
         }
         let icoCls = "image-grid-image carousel-item-img";
         icon = m("img", { class: icoCls, src: icoPath });
     }
-    else if (p.name && p.name.indexOf(".") > 0) {
+    else if (p.contentType && p.name && p.name.indexOf(".") > 0) {
         let ext = p.name.substring(p.name.lastIndexOf(".") + 1, p.name.length).toLowerCase();
         icon = m("span", { class: "fontLabel-" + (gridMode == 1 ? "6" : "10") + " fiv-cla fiv-icon-" + ext });
     }
-    else {
+    if (!icon) {
         let icoCls = "material-symbols-outlined";
         let col = "";
         let sty = "";
@@ -120,16 +120,24 @@ function getIcon(p) {
         icon = m("img", { height: 48, width: 48, src: icoPath });
     }
     else if (p.contentType && p.contentType.match(/^image/)) {
-        let icoPath = applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name + "/48x48";
+        let isAnimated = p.contentType.match(/gif$/) || p.contentType.match(/webp$/);
+        let icoPath = isAnimated
+            ? applicationPath + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name
+            : applicationPath + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name + "/48x48";
         if (p.dataBytesStore && p.dataBytesStore.length) {
             icoPath = "data:" + p.contentType + ";base64," + p.dataBytesStore;
         }
-        icon = m("img", { height: 48, width: 48, src: icoPath });
+        icon = m("img", { height: 48, width: 48, src: icoPath, style: 'object-fit:cover' });
     }
-    else if (p.name && p.name.indexOf(".") > 0) {
+    else if (p.contentType && p.name && p.name.indexOf(".") > 0) {
         icon = getFileTypeIcon(p, 3);
     }
-    else {
+    else if (!p.contentType && p.name && p.name.lastIndexOf(".") > 0) {
+        // No contentType but has file extension — try FIV icon as fallback
+        let fIcon = getFileTypeIcon(p, 3);
+        if (fIcon) icon = fIcon;
+    }
+    if (!icon) {
         icoCls = "material-symbols-outlined";
         let col = "";
         let sty = "";

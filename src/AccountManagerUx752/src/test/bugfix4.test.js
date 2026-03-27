@@ -223,22 +223,16 @@ describe('Issue C: Image gallery is pop-in dialog', () => {
     });
 
     it('gallery has Set Profile, Auto-Tag, Delete buttons', () => {
-        const src = readFileSync(resolve(__dirname, '..', 'core', 'pageClient.js'), 'utf-8');
-        let galleryIdx = src.indexOf('imageGallery:');
-        let galleryEnd = src.indexOf('imageView:', galleryIdx);
-        let galleryBlock = src.substring(galleryIdx, galleryEnd > galleryIdx ? galleryEnd : galleryIdx + 10000);
-        expect(galleryBlock).toContain('Set Profile');
-        expect(galleryBlock).toContain('Auto-Tag');
-        expect(galleryBlock).toContain('Delete');
+        const src = readFileSync(resolve(__dirname, '..', 'components', 'imageViewer.js'), 'utf-8');
+        expect(src).toContain('Set Profile');
+        expect(src).toContain('Auto-Tag');
+        expect(src).toContain('Delete');
     });
 
     it('gallery has arrow key navigation', () => {
-        const src = readFileSync(resolve(__dirname, '..', 'core', 'pageClient.js'), 'utf-8');
-        let galleryIdx = src.indexOf('imageGallery:');
-        let galleryEnd = src.indexOf('imageView:', galleryIdx);
-        let galleryBlock = src.substring(galleryIdx, galleryEnd > galleryIdx ? galleryEnd : galleryIdx + 10000);
-        expect(galleryBlock).toContain('ArrowLeft');
-        expect(galleryBlock).toContain('ArrowRight');
+        const src = readFileSync(resolve(__dirname, '..', 'components', 'imageViewer.js'), 'utf-8');
+        expect(src).toContain('ArrowLeft');
+        expect(src).toContain('ArrowRight');
     });
 
     it('gallery sorts by modifiedDate descending', () => {

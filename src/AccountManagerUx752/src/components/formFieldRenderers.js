@@ -373,7 +373,8 @@ renderers.audio = function(ctx) {
         class: "",
         id: ctx.useName,
         preload: "auto",
-        controls: "controls"
+        controls: "controls",
+        autoplay: "autoplay"
     }, m("source", { src: apath, type: amt }))];
 };
 

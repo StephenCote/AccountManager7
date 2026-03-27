@@ -4,6 +4,7 @@ import { am7model } from './model.js';
 import { am7view } from './view.js';
 import { uwm, am7client } from './am7client.js';
 import { Dialog } from '../components/dialogCore.js';
+import { FullCanvasViewer, GridPreview, injectCSS as ivCSS } from '../components/imageViewer.js';
 
 // --- Context ---
 
@@ -725,13 +726,11 @@ const page = {
             }
         }
         let idx = 0;
-        let viewMode = 'grid';
         let fullView = false;
         let tagsCache = {};
         let detailCache = {};
 
-        // Lazy-load details (attributes, description, tags) for selected image only
-        // Uses targeted query to avoid fetching dataBytesStore (full image binary)
+        // Lazy-load details (attributes, description, tags) for selected image
         function loadDetails(img) {
             if (!img || !img.objectId || detailCache[img.objectId]) return;
             detailCache[img.objectId] = { loading: true };
@@ -749,32 +748,8 @@ const page = {
                     }
                 }
                 detailCache[img.objectId] = { loaded: true };
-                m.redraw();
-            }).catch(function() { detailCache[img.objectId] = { loaded: true }; m.redraw(); });
+            }).catch(function() { detailCache[img.objectId] = { loaded: true }; });
         }
-
-        function loadTags(img) {
-            if (!img || tagsCache[img.objectId]) return;
-            // Use tags from query or detail cache if available
-            if (Array.isArray(img.tags) && img.tags.length) {
-                tagsCache[img.objectId] = img.tags;
-                return;
-            }
-            // Tags are loaded by loadDetails — only fall back to membership if details already loaded
-            if (detailCache[img.objectId] && detailCache[img.objectId].loaded) {
-                tagsCache[img.objectId] = [];
-                try {
-                    let p = am7client.members('data.data', img.objectId, 'data.tag', 0, 50, function(tags) {
-                        tagsCache[img.objectId] = (Array.isArray(tags) ? tags : []);
-                        m.redraw();
-                    });
-                    if (p && p.catch) p.catch(function() { tagsCache[img.objectId] = []; });
-                } catch(e) { /* ignore */ }
-            }
-        }
-
-        let galleryRef = null;
-        function refocusGallery() { if (galleryRef) galleryRef.focus(); }
 
         function getImageAttrs(img) {
             if (!img) return [];
@@ -787,148 +762,59 @@ const page = {
             return attrs;
         }
 
+        ivCSS();
+
         function renderGallery() {
-            let sel = galleryImages[idx];
-            if (sel) { loadDetails(sel); loadTags(sel); }
-            let tags = sel ? (tagsCache[sel.objectId] || []) : [];
-            let attrs = getImageAttrs(sel);
-            let previewUrl = sel ? am7client.mediaDataPath(sel, true, '512x512') : '';
-            return m('div', {
-                class: 'outline-none overflow-hidden w-full',
-                tabindex: 0,
-                oncreate: function(vn) { galleryRef = vn.dom; vn.dom.focus(); },
-                onremove: function() { galleryRef = null; },
-                onkeydown: function(e) {
-                    if (e.key === 'Escape' && fullView) { fullView = false; m.redraw(); e.preventDefault(); return; }
-                    if (e.key === 'ArrowLeft' && idx > 0) { idx--; fullView = false; m.redraw(); e.preventDefault(); }
-                    else if (e.key === 'ArrowRight' && idx < galleryImages.length - 1) { idx++; fullView = false; m.redraw(); e.preventDefault(); }
-                    else if (e.key === 'Delete' && sel) {
-                        Dialog.confirm('Delete ' + sel.name + '?', async function() {
-                            await deleteObject('data.data', sel.objectId);
+            if (fullView) {
+                return m(FullCanvasViewer, {
+                    images: galleryImages,
+                    index: idx,
+                    onClose: function() { fullView = false; },
+                    onIndexChange: function(i) { idx = i; },
+                    onDelete: function(img) {
+                        Dialog.confirm('Delete ' + img.name + '?', async function() {
+                            await deleteObject('data.data', img.objectId);
                             galleryImages.splice(idx, 1);
                             if (idx >= galleryImages.length) idx = Math.max(0, galleryImages.length - 1);
                             m.redraw();
                         });
-                        e.preventDefault();
                     }
+                });
+            }
+            return m(GridPreview, {
+                images: galleryImages,
+                index: idx,
+                onIndexChange: function(i) { idx = i; },
+                onFullView: function() { fullView = true; },
+                charInst: charInst,
+                detailLoader: loadDetails,
+                tagsFor: function(img) { return tagsCache[img.objectId] || []; },
+                attrsFor: getImageAttrs,
+                onSetProfile: function(img) {
+                    let profile = charInst && charInst.entity ? charInst.entity.profile : null;
+                    if (!profile) { addToast('error', 'No profile'); return; }
+                    patchObject({ schema: 'identity.profile', id: profile.id, portrait: { id: img.id } }).then(function() {
+                        addToast('success', 'Portrait set');
+                        am7client.clearCache('identity.profile');
+                    });
+                },
+                onAutoTag: function(img) {
+                    addToast('info', 'Auto-tagging...');
+                    am7client.applyImageTags(img.objectId, function() {
+                        delete tagsCache[img.objectId];
+                        addToast('success', 'Tags applied');
+                        m.redraw();
+                    });
+                },
+                onDelete: function(img) {
+                    Dialog.confirm('Delete ' + img.name + '?', async function() {
+                        await deleteObject('data.data', img.objectId);
+                        galleryImages.splice(idx, 1);
+                        if (idx >= galleryImages.length) idx = Math.max(0, galleryImages.length - 1);
+                        m.redraw();
+                    });
                 }
-            }, [
-                // Toolbar
-                m('div', { class: 'flex items-center gap-2 text-sm mb-2' }, [
-                    m('span', { class: 'text-gray-500' }, galleryImages.length + ' image(s)'),
-                    m('span', { class: 'text-gray-400 text-xs' }, '(' + (idx + 1) + '/' + galleryImages.length + ')'),
-                    idx > 0 ? m('button', {
-                        class: 'p-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800',
-                        title: 'Previous (←)',
-                        onclick: function() { idx--; refocusGallery(); }
-                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'arrow_back')) : null,
-                    idx < galleryImages.length - 1 ? m('button', {
-                        class: 'p-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800',
-                        title: 'Next (→)',
-                        onclick: function() { idx++; refocusGallery(); }
-                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'arrow_forward')) : null,
-                    m('button', {
-                        class: 'p-1 rounded ' + (viewMode === 'grid' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'text-gray-500 hover:bg-gray-100'),
-                        onclick: function() { viewMode = 'grid'; refocusGallery(); }
-                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'grid_view')),
-                    m('button', {
-                        class: 'p-1 rounded ' + (viewMode === 'list' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'text-gray-500 hover:bg-gray-100'),
-                        onclick: function() { viewMode = 'list'; refocusGallery(); }
-                    }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'view_list'))
-                ]),
-                // Preview + info
-                // Full-view overlay: image sized to fit dialog
-                fullView && sel ? m('div', { class: 'flex flex-col items-center mb-3' }, [
-                    m('img', {
-                        src: am7client.mediaDataPath(sel, true, '1024x1024'),
-                        class: 'max-w-full rounded shadow cursor-pointer',
-                        style: 'object-fit:contain;max-height:70vh',
-                        title: 'Click to return to gallery',
-                        onclick: function() { fullView = false; }
-                    }),
-                    m('div', { class: 'flex gap-2 mt-2' }, [
-                        m('button', { class: 'text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200', onclick: function() { fullView = false; } },
-                            [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'arrow_back'), ' Back']),
-                        m('a', { class: 'text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 no-underline inline-flex items-center gap-1', href: am7client.mediaDataPath(sel, false), target: '_blank' },
-                            [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'open_in_new'), 'New Tab'])
-                    ])
-                ]) : null,
-                // Normal preview + info (hidden in full-view)
-                sel && !fullView ? m('div', { class: 'flex gap-3 mb-3 overflow-hidden min-w-0' }, [
-                    m('div', { class: 'flex-shrink-0', style: 'max-width:50%' },
-                        m('img', {
-                            src: previewUrl, class: 'max-w-full max-h-80 rounded shadow cursor-pointer', style: 'object-fit:contain',
-                            title: 'Click for full view',
-                            onclick: function() { fullView = true; }
-                        })
-                    ),
-                    m('div', { class: 'flex-1 min-w-0 overflow-hidden' }, [
-                        m('div', { class: 'text-sm font-medium text-gray-800 dark:text-white mb-1' }, sel.name),
-                        m('div', { class: 'flex flex-wrap gap-1 mb-2' }, [
-                            m('a', {
-                                class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 no-underline',
-                                href: '#!/view/data.data/' + sel.objectId,
-                                target: '_blank',
-                                onclick: function(e) { e.stopPropagation(); }
-                            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'open_in_new'), 'Open']),
-                            m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200', onclick: function() {
-                                let profile = charInst && charInst.entity ? charInst.entity.profile : null;
-                                if (!profile) { addToast('error', 'No profile'); return; }
-                                patchObject({ schema: 'identity.profile', id: profile.id, portrait: { id: sel.id } }).then(function() {
-                                    addToast('success', 'Portrait set');
-                                    am7client.clearCache('identity.profile');
-                                });
-                                refocusGallery();
-                            }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'account_circle'), 'Set Profile']),
-                            m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 hover:bg-green-200', onclick: function() {
-                                addToast('info', 'Auto-tagging...');
-                                am7client.applyImageTags(sel.objectId, function() {
-                                    delete tagsCache[sel.objectId];
-                                    addToast('success', 'Tags applied');
-                                    m.redraw();
-                                });
-                                refocusGallery();
-                            }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'label'), 'Auto-Tag']),
-                            m('button', { class: 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 hover:bg-red-200', onclick: function() {
-                                Dialog.confirm('Delete ' + sel.name + '?', async function() {
-                                    await deleteObject('data.data', sel.objectId);
-                                    galleryImages.splice(idx, 1);
-                                    if (idx >= galleryImages.length) idx = Math.max(0, galleryImages.length - 1);
-                                    m.redraw();
-                                });
-                            }}, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'delete'), 'Delete'])
-                        ]),
-                        sel.description ? m('div', { class: 'text-xs text-gray-500 italic mb-1 overflow-hidden text-ellipsis', style: 'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow-wrap:anywhere;word-break:break-word;max-width:100%' }, sel.description) : null,
-                        tags.length > 0 ? m('div', { class: 'mb-1' }, [
-                            m('div', { class: 'flex flex-wrap gap-1' }, tags.map(function(t) {
-                                let label = (t && typeof t === 'object') ? (t.name || t.objectId || '') : String(t || '');
-                                return m('span', { class: 'px-2 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' }, label);
-                            }))
-                        ]) : null,
-                        attrs.length > 0 ? m('div', { class: 'flex flex-wrap gap-1 mb-1' }, attrs.map(function(a) {
-                            return m('span', { class: 'px-2 py-0.5 rounded-full text-xs bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300' }, String(a.name || '') + ': ' + String(a.value || ''));
-                        })) : null,
-                        m('div', { class: 'text-xs text-gray-400 mt-2' }, '← → to navigate, Delete to remove')
-                    ])
-                ]) : null,
-                // Grid or list — lazy-load thumbnails via loading="lazy"
-                viewMode === 'list' ? m('div', { class: 'divide-y divide-gray-200 dark:divide-gray-700 max-h-60 overflow-y-auto' },
-                    galleryImages.map(function(img, i) {
-                        let thumbUrl = am7client.mediaDataPath(img, true, '64x64');
-                        return m('div', { key: 'gal-' + (img.objectId || i), class: 'flex items-center gap-2 px-2 py-1 cursor-pointer ' + (i === idx ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-800'), onclick: function() { idx = i; refocusGallery(); } }, [
-                            m('img', { src: thumbUrl, loading: 'lazy', class: 'w-10 h-10 rounded object-cover flex-shrink-0' }),
-                            m('span', { class: 'text-sm text-gray-700 dark:text-gray-300 truncate' }, img.name),
-                            i === idx ? m('span', { class: 'material-symbols-outlined text-blue-500 ml-auto', style: 'font-size:16px' }, 'check_circle') : null
-                        ]);
-                    })
-                ) : m('div', { class: 'grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1 max-h-60 overflow-y-auto' },
-                    galleryImages.map(function(img, i) {
-                        let thumbUrl = am7client.mediaDataPath(img, true, '96x96');
-                        return m('div', { key: 'gal-' + (img.objectId || i), class: 'cursor-pointer rounded overflow-hidden border-2 ' + (i === idx ? 'border-blue-500' : 'border-transparent hover:border-gray-300'), onclick: function() { idx = i; refocusGallery(); } },
-                            m('img', { src: thumbUrl, loading: 'lazy', class: 'w-full aspect-square object-cover' }));
-                    })
-                )
-            ]);
+            });
         }
 
         Dialog.open({

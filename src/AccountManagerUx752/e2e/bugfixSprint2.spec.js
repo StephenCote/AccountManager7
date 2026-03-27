@@ -3,7 +3,7 @@
  * Tests navigate through the real UI against live backend
  */
 import { test, expect } from '@playwright/test';
-import { ensureSharedTestUser, cleanupTestUser, apiLogin } from './helpers/api.js';
+import { ensureSharedTestUser, cleanupTestUser, setupWorkflowTestData, apiLogin } from './helpers/api.js';
 import { login, screenshot } from './helpers/auth.js';
 
 let testInfo;
@@ -224,5 +224,50 @@ test.describe('Bug Fix Sprint 2', () => {
             errors.forEach(e => console.log('  -', e));
         }
         console.log('Total JS errors:', errors.length);
+    });
+
+    test('gallery opens on charPerson without JS errors', async ({ page, request }) => {
+        // Create a test user with charPerson data
+        let wfData = await setupWorkflowTestData(request);
+        if (!wfData.charPerson || !wfData.charPerson.objectId) {
+            test.skip('Could not create charPerson test data');
+            return;
+        }
+
+        let errors = [];
+        page.on('pageerror', err => { errors.push(err.message); });
+
+        await login(page, { user: wfData.testUserName, password: wfData.testPassword });
+
+        // Navigate directly to the charPerson object view
+        await page.goto('#!/view/olio.charPerson/' + wfData.charPerson.objectId);
+        await page.waitForTimeout(4000);
+        await screenshot(page, 'sprint2-gallery-char-view');
+
+        // Check no JS errors on page load
+        let loadErrors = errors.length;
+        console.log('Errors after page load:', loadErrors);
+
+        // Find and click gallery button
+        let galleryBtn = page.locator('button:has(span:text("photo_library"))');
+        let hasGallery = await galleryBtn.isVisible({ timeout: 5000 }).catch(() => false);
+        console.log('Gallery button visible:', hasGallery);
+
+        if (hasGallery) {
+            await galleryBtn.click();
+            await page.waitForTimeout(3000);
+            await screenshot(page, 'sprint2-gallery-opened');
+
+            // Check for new JS errors after gallery open
+            let galleryErrors = errors.slice(loadErrors);
+            if (galleryErrors.length > 0) {
+                console.log('Gallery JS errors:');
+                galleryErrors.forEach(e => console.log('  -', e));
+            }
+            expect(galleryErrors.length).toBe(0);
+        }
+
+        // Cleanup
+        await cleanupTestUser(request, wfData.user?.objectId, { userName: wfData.testUserName });
     });
 });

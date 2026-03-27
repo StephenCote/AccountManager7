@@ -6,6 +6,7 @@ import { page } from '../core/pageClient.js';
 import { am7decorator } from '../components/decorator.js';
 import { newPaginationControl } from '../components/pagination.js';
 import { panel } from '../components/panel.js';
+import { FullCanvasViewer, GridPreview, renderContent, injectCSS as ivCSS } from '../components/imageViewer.js';
 
 // ---------------------------------------------------------------------------
 //  newListControl  --  factory that returns a list-page controller + view
@@ -55,6 +56,10 @@ function newListControl() {
 
     // Tagging batch state
     let taggingInProgress = false;
+
+    // Grid/gallery mode state
+    let gridSelectedIdx = 0;
+    let gridFullView = false;
 
     let dnd;
     let pagination = newPaginationControl();
@@ -215,9 +220,9 @@ function newListControl() {
         if (!pr) return;
         let idx = pr.findIndex(function (v) { return v.objectId === o.objectId; });
         if (idx > -1) {
-            if (page.components.pdf) page.components.pdf.clear();
-            carousel = true;
-            pg.currentItem = idx;
+            gridSelectedIdx = idx;
+            gridMode = 1;
+            gridFullView = true;
             m.redraw();
         }
     }
@@ -590,18 +595,13 @@ function newListControl() {
         m.redraw();
     }
 
-    // Adaptive record counts (Fix H): table=10, small=40, large=10
+    // Toggle grid mode: table(0) ↔ icon/gallery(1)
     function toggleGrid(bOff) {
         if (typeof bOff === 'boolean' && !bOff) gridMode = 0;
-        else gridMode = (gridMode + 1) % 3;   // 0,1,2 — carousel is separate
-        let rc = (gridMode === 1) ? defaultIconRecordCount : defaultRecordCount;
-        if (embeddedMode || pickerMode) {
-            pagination.new();
-            pagination.update(listType, listContainerId, navigateByParent, navFilter, 0, rc, systemList);
-            m.redraw();
-        } else {
-            m.route.set(pagination.url(1, rc), { key: Date.now() });
-        }
+        else gridMode = gridMode > 0 ? 0 : 1;
+        gridFullView = false;
+        gridSelectedIdx = 0;
+        m.redraw();
     }
 
     function checkScrollPagination() {
@@ -667,7 +667,8 @@ function newListControl() {
                 }
                 break;
             case 27: // Escape
-                if (carousel) toggleCarousel();
+                if (gridFullView) { gridFullView = false; m.redraw(); }
+                else if (carousel) toggleCarousel();
                 else if (gridMode > 0) toggleGrid(false);
                 else if (fullMode) toggleCarouselFull();
                 break;
@@ -824,15 +825,13 @@ function newListControl() {
                 pagination.button('button' + (disableUp ? ' inactive' : ''), 'north_west', '', navigateUp),
                 pagination.button('button' + (!selected ? ' inactive' : ''), 'south_east', '', navigateDown)
             ];
-        } else if (!pickerMode) {
-            optButton = pagination.button('button' + (carousel ? ' active' : ''), 'view_carousel', '', toggleCarousel);
         }
         return optButton;
     }
 
     function getPageToggleButtons(type) {
         let buttons = [];
-        buttons.push(pagination.button('button' + (gridMode > 0 ? ' active' : ''), gridMode <= 1 ? 'apps' : 'grid_view', '', toggleGrid));
+        buttons.push(pagination.button('button' + (gridMode > 0 ? ' active' : ''), 'apps', '', toggleGrid));
         if (!embeddedMode && (!containerMode || !type.match(/^auth\.group$/gi)) && modType && modType.group) {
             buttons.push(pagination.button('button' + (navigateByParent ? ' inactive' : (containerMode ? ' active' : '')), 'group_work', '', toggleContainer));
         }
@@ -877,10 +876,40 @@ function newListControl() {
 
         let ctl = getListController();
         let content;
-        if (carousel) {
-            content = am7decorator.carouselItem(ctl);
-        } else if (gridMode > 0) {
-            content = am7decorator.gridListView(ctl);
+        if (gridMode > 0) {
+            // Gallery-style grid + preview using GridPreview
+            ivCSS();
+            let results = getCurrentResults() || [];
+            if (gridSelectedIdx >= results.length) gridSelectedIdx = Math.max(0, results.length - 1);
+
+            if (gridFullView) {
+                return m(FullCanvasViewer, {
+                    images: results,
+                    index: gridSelectedIdx,
+                    onClose: function() { gridFullView = false; },
+                    onIndexChange: function(i) { gridSelectedIdx = i; }
+                });
+            }
+
+            content = m(GridPreview, {
+                images: results,
+                index: gridSelectedIdx,
+                onIndexChange: function(i) { gridSelectedIdx = i; },
+                onFullView: function() { gridFullView = true; },
+                onDelete: function(img) {
+                    page.components.dialog.confirm('Delete ' + img.name + '?', async function() {
+                        await page.deleteObject(listType, img.objectId);
+                        let pg = pagination.pages();
+                        let r = pg.pageResults[pg.currentPage];
+                        if (r) {
+                            let ix = r.findIndex(function(x) { return x.objectId === img.objectId; });
+                            if (ix > -1) r.splice(ix, 1);
+                        }
+                        if (gridSelectedIdx >= (r ? r.length : 0)) gridSelectedIdx = Math.max(0, (r ? r.length : 0) - 1);
+                        m.redraw();
+                    });
+                }
+            });
         } else {
             let rset;
             let pg = pagination.pages();
@@ -896,10 +925,10 @@ function newListControl() {
                 m('div', { class: 'result-nav-outer' }, [
                     m('div', { class: 'result-nav-inner' }, [
                         m('div', { class: 'result-nav tab-container' }, buttons),
-                        m('nav', { class: 'result-nav' }, [pagination.pageButtons()])
+                        gridMode === 0 ? m('nav', { class: 'result-nav' }, [pagination.pageButtons()]) : null
                     ])
                 ]),
-                !carousel ? renderGroupBreadcrumb() : null,
+                renderGroupBreadcrumb(),
                 content
             ])
         ]);
@@ -984,17 +1013,16 @@ function newListControl() {
             if (page.components.pdf) page.components.pdf.clear();
             navFilter = null;
             carousel = false;
+            gridFullView = false;
+            gridMode = 0;
             groupPath = null;
             document.documentElement.removeEventListener('keydown', navListKey);
             pagination.stop();
         },
         view: function (vnode) {
             let v;
-            if (vnode.attrs.pickerMode || (!carousel && vnode.attrs.embeddedMode)) {
+            if (vnode.attrs.pickerMode || vnode.attrs.embeddedMode) {
                 v = getListViewInner(vnode.attrs.type);
-            } else if (carousel) {
-                if (vnode.attrs.embeddedMode) v = am7decorator.carouselItem(getListController());
-                else v = am7decorator.carouselView(getListController());
             } else {
                 v = getListView();
             }

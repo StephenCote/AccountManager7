@@ -8,6 +8,7 @@ import './styles/pageStyle.css';
 // Core modules
 import m from 'mithril';
 import { am7model } from './core/model.js';
+import { applicationPath } from './core/config.js';
 import { am7view } from './core/view.js';
 import { am7client } from './core/am7client.js';
 import { page } from './core/pageClient.js';
@@ -30,6 +31,7 @@ am7model._view = am7view;
 am7model._page = page;
 am7model._client = am7client;
 am7model._olio = am7olio;
+am7model._appPath = applicationPath;
 page.components.dialog = Dialog;
 page.components.picker = ObjectPicker;
 page.components.dnd = dnd;

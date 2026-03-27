@@ -3504,7 +3504,7 @@ import { am7model } from './model.js';
             if (p && p.getInstance()?.entity?.profile) {
                 let od = {id: p.getInstance().entity.profile.id, voice: {id: data.id}};
                 p.getInstance().entity.profile.voice = data;
-                od[am7model.jsonModelKey] = "identity.voice";
+                od[am7model.jsonModelKey] = "identity.profile";
                 am7model._page.patchObject(od);
 
             }
@@ -3970,21 +3970,6 @@ import { am7model } from './model.js';
                     command: narrate
                 }
             },
-            voice: {
-                layout: 'one',
-                format: 'picker',
-                label: "Voice",
-                field: {
-                    readOnly: false,
-                    requiredAttributes: [],
-                    pickerType: "identity.voice",
-                    pickerProperty: {
-                        selected: "{object}",
-                        entity: "profile.voice",
-                        path: "~/Voices"
-                    }
-                }
-            },
             description: {
                 layout: "full",
             },
@@ -4001,7 +3986,7 @@ import { am7model } from './model.js';
                 format: "textlist"
             }
         },
-        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "groupinfo", "tagattributes"]
+        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tagattributes"]
     };
 
     forms.store = {
@@ -4482,39 +4467,6 @@ import { am7model } from './model.js';
     forms.profile = {
         label: "Profile",
         fields: {
-            portrait: {
-                layout: 'one',
-                format: 'image',
-                field: {
-                    label: "Profile",
-                    pickerType: "data.data",
-                    pickerProperty: {
-                        selected: "{object}",
-                        entity: "portrait"
-                    }
-                }
-            },
-            pickProfile: {
-                format: "button",
-                layout: "one",
-                icon: 'run_circle',
-                requiredAttributes: [],
-                field: {
-                    label: "Pick Profile",
-                    command: pickProfile
-                }
-            },
-            pickVoice: {
-                format: "button",
-                layout: "one",
-                icon: 'run_circle',
-                requiredAttributes: [],
-                field: {
-                    label: "Pick Voice",
-                    pickerType: "identity.voice",
-                    command: pickVoice
-                }
-            },
             voice: {
                 layout: 'one',
                 format: 'picker',
@@ -4530,7 +4482,6 @@ import { am7model } from './model.js';
                     }
                 }
             }
-
         }
     };
 
