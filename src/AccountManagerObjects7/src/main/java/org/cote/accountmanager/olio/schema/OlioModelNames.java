@@ -70,6 +70,7 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_SESSION_CONTEXT = "olio.llm.sessionContext";
 	public static final String MODEL_CONTEXT_RESULT = "olio.llm.contextResult";
 	public static final String MODEL_OUTFIT_REQUEST = "olio.outfitRequest";
+	public static final String MODEL_PICTURE_BOOK_REQUEST = "olio.pictureBookRequest";
 	
 	//static {
 	private static boolean prep = false; 
@@ -83,7 +84,8 @@ public class OlioModelNames extends ModelNames {
 		MODEL_OLLAMA_MESSAGE, MODEL_OLLAMA_REQUEST, MODEL_OLLAMA_RESPONSE,
 		MODEL_OPENAI_MESSAGE, MODEL_OPENAI_REQUEST, MODEL_OPENAI_RESPONSE, MODEL_OPENAI_CHOICE, MODEL_OPENAI_CONTEXT, MODEL_OPENAI_CITATION, MODEL_OPENAI_USAGE, MODEL_OPENAI_FILTER_RESULT, MODEL_OPENAI_FILTER_RESULTS, MODEL_OPENAI_DATA, MODEL_OPENAI_INPUT,
 		MODEL_PLAYER_STATE,
-		MODEL_OUTFIT_REQUEST
+		MODEL_OUTFIT_REQUEST,
+		MODEL_PICTURE_BOOK_REQUEST
 	);
 	
 	public static void use() {

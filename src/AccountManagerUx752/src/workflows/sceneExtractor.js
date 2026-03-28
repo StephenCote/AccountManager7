@@ -28,7 +28,7 @@ function pbBase() {
  * @returns {Promise<Array>}
  */
 async function extractScenes(workObjectId, chatConfigName, count) {
-    let body = { count: count || MAX_SCENES_DEFAULT };
+    let body = { schema: 'olio.pictureBookRequest', count: count || MAX_SCENES_DEFAULT };
     if (chatConfigName) body.chatConfig = chatConfigName;
     let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-scenes-only', {
         method: 'POST',
@@ -44,7 +44,7 @@ async function extractScenes(workObjectId, chatConfigName, count) {
  * Returns .pictureBookMeta JSON.
  */
 async function fullExtract(workObjectId, chatConfigName, count, genre) {
-    let body = { count: count || MAX_SCENES_DEFAULT };
+    let body = { schema: 'olio.pictureBookRequest', count: count || MAX_SCENES_DEFAULT };
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (genre) body.genre = genre;
     let resp = await fetch(pbBase() + '/' + workObjectId + '/extract', {
@@ -65,7 +65,7 @@ async function fullExtract(workObjectId, chatConfigName, count, genre) {
  * @returns {Promise<{imageObjectId: string}>}
  */
 async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promptOverride) {
-    let body = { sdConfig: Object.assign({}, DEFAULT_SD_CONFIG, sdConfig || {}) };
+    let body = { schema: 'olio.pictureBookRequest', sdConfig: Object.assign({}, DEFAULT_SD_CONFIG, sdConfig || {}) };
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (promptOverride) body.promptOverride = promptOverride;
     let resp = await fetch(pbBase() + '/scene/' + sceneObjectId + '/generate', {
@@ -82,7 +82,7 @@ async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promp
  * @returns {Promise<{blurb: string}>}
  */
 async function regenerateBlurb(sceneObjectId, chatConfigName) {
-    let body = {};
+    let body = { schema: 'olio.pictureBookRequest' };
     if (chatConfigName) body.chatConfig = chatConfigName;
     let resp = await fetch(pbBase() + '/scene/' + sceneObjectId + '/blurb', {
         method: 'POST',
@@ -145,11 +145,11 @@ const imageRecordCache = {};
  * @returns {Promise<string|null>} media URL or null
  */
 async function resolveImageUrl(objectId) {
-    if (!objectId) return null;
+    if (!objectId || typeof objectId !== 'string') return null;
     if (imageRecordCache[objectId]) return buildImageUrl(imageRecordCache[objectId]);
     try {
         let rec = await am7client.get('data.data', objectId);
-        if (rec && rec.groupPath && rec.name) {
+        if (rec && typeof rec.groupPath === 'string' && typeof rec.name === 'string') {
             imageRecordCache[objectId] = rec;
             return buildImageUrl(rec);
         }
@@ -163,7 +163,9 @@ async function resolveImageUrl(objectId) {
  * Build media URL from a data.data record with groupPath + name.
  */
 function buildImageUrl(rec) {
+    if (!rec || typeof rec.groupPath !== 'string' || typeof rec.name !== 'string') return null;
     let org = am7client.dotPath(am7client.currentOrganization);
+    if (!org) return null;
     return applicationPath + '/media/' + org + '/data.data' + rec.groupPath + '/' + rec.name;
 }
 

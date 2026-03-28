@@ -188,7 +188,7 @@ import Base64 from './base64.js';
 			let ft = am7model.getModel(sLType);
 			// ft.inherits && ft.inherits.find(s => s == "directory") != null
 			if (ft && am7model.isGroup(ft)) {
-				let sDP = sPath || am7model._view?.path(sLType);
+				let sDP = sPath || am7model._view?.pathForType(sLType) || am7model._view?.path(sLType);
 				if (sLType == "auth.group") o.path = sDP;
 				else o.groupPath = sDP;
 			}

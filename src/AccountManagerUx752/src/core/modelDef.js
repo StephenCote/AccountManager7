@@ -9715,6 +9715,32 @@
       ]
     },
        {
+      "name": "olio.pictureBookRequest",
+      "ioConstraints": [
+        "unknown"
+      ],
+      "fields": [
+        {
+          "name": "count",
+          "type": "int"
+        },
+        {
+          "name": "chatConfig",
+          "type": "string",
+          "maxLength": 128
+        },
+        {
+          "name": "genre",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "promptOverride",
+          "type": "string"
+        }
+      ]
+    },
+       {
       "name": "olio.sd.config",
       "ioConstraints": [
         "unknown"

@@ -95,6 +95,22 @@ public class PictureBookService {
 
     // ----- Helpers -------------------------------------------------------
 
+    private static final String PB_REQUEST_SCHEMA = "olio.pictureBookRequest";
+
+    /**
+     * Ensure the JSON body has a schema field so the deserializer can parse it.
+     */
+    private String ensureSchema(String json) {
+        if (json == null) return null;
+        OlioModelNames.use();
+        String trimmed = json.trim();
+        if (trimmed.contains("\"schema\"")) return json;
+        if (trimmed.startsWith("{")) {
+            return "{\"schema\":\"" + PB_REQUEST_SCHEMA + "\"," + trimmed.substring(1);
+        }
+        return json;
+    }
+
     /**
      * Resolve the work record from its objectId.
      */
@@ -412,7 +428,7 @@ public class PictureBookService {
         String chatConfigName = null;
         if (json != null && !json.trim().isEmpty()) {
             try {
-                params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+                params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
                 Object countObj = params.get("count");
                 if (countObj instanceof Number) count = ((Number) countObj).intValue();
                 chatConfigName = params.get("chatConfig");
@@ -466,7 +482,7 @@ public class PictureBookService {
         String genre = null;
         if (json != null && !json.trim().isEmpty()) {
             try {
-                BaseRecord params = JSONUtil.importObject(json, LooseRecord.class,
+                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
                         RecordDeserializerConfig.getUnfilteredModule());
                 Object countObj = params.get("count");
                 if (countObj instanceof Number) count = ((Number) countObj).intValue();
@@ -614,7 +630,7 @@ public class PictureBookService {
 
         if (json != null && !json.trim().isEmpty()) {
             try {
-                BaseRecord params = JSONUtil.importObject(json, LooseRecord.class,
+                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
                         RecordDeserializerConfig.getUnfilteredModule());
                 chatConfigName = params.get("chatConfig");
                 promptOverride = params.get("promptOverride");
@@ -791,7 +807,7 @@ public class PictureBookService {
         String chatConfigName = null;
         if (json != null && !json.trim().isEmpty()) {
             try {
-                BaseRecord params = JSONUtil.importObject(json, LooseRecord.class,
+                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
                         RecordDeserializerConfig.getUnfilteredModule());
                 chatConfigName = params.get("chatConfig");
             } catch (Exception e) {
@@ -898,7 +914,7 @@ public class PictureBookService {
         List<String> newOrder = new ArrayList<>();
         if (json != null && !json.trim().isEmpty()) {
             try {
-                BaseRecord params = JSONUtil.importObject(json, LooseRecord.class,
+                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
                         RecordDeserializerConfig.getUnfilteredModule());
                 Object scenesObj = params.get("scenes");
                 if (scenesObj instanceof List) {

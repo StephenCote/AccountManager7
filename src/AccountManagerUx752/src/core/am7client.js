@@ -1210,8 +1210,10 @@ import { cacheDb } from './cacheDb.js';
 
 
 	function mediaDataPath(oObj, bThumb, sSize){
+		if(!oObj || !oObj.groupPath || !oObj.name) return "";
 		if(!sSize) sSize = "100x100";
-		return applicationPath + "/" + (bThumb ? "thumbnail" : "media") + "/" + am7client.dotPath(oObj.organizationPath) + "/data.data" + oObj.groupPath + "/" + oObj.name + (bThumb ? "/" + sSize : "");
+		let org = oObj.organizationPath || sCurrentOrganization;
+		return applicationPath + "/" + (bThumb ? "thumbnail" : "media") + "/" + am7client.dotPath(org) + "/data.data" + oObj.groupPath + "/" + oObj.name + (bThumb ? "/" + sSize : "");
 	}
 
 	function getIsRequestable(sType,sId,fH){

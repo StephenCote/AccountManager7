@@ -28,7 +28,7 @@ async function loadWorks() {
     try {
         let q = am7client.newQuery('data.data');
         q.range(0, 50);
-        let qr = await am7client.list(q);
+        let qr = await am7client.search(q);
         if (qr && qr.results) {
             works = qr.results.filter(function (w) {
                 let ct = w.contentType || '';
