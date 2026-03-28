@@ -5,7 +5,8 @@ import { Dialog } from '../components/dialogCore.js';
 import {
     MAX_SCENES_DEFAULT, DEFAULT_SD_CONFIG,
     extractScenes, fullExtract, generateSceneImage,
-    regenerateBlurb, loadPictureBook, resetPictureBook
+    regenerateBlurb, loadPictureBook, resetPictureBook,
+    resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
 
 /**
@@ -49,6 +50,7 @@ let genCancelled = false;
 
 // Step 5
 let metaScenes = [];
+let step5ImageUrls = {};  // imageObjectId → resolved media URL
 
 function resetState() {
     step = 1;
@@ -68,6 +70,7 @@ function resetState() {
     genProgress = {};
     genCancelled = false;
     metaScenes = [];
+    step5ImageUrls = {};
 }
 
 // ── Step helpers ──────────────────────────────────────────────────────
@@ -375,15 +378,18 @@ function renderStep5() {
     let targets = metaScenes.length ? metaScenes : (scenes.length ? scenes : extractedScenes);
     return m('div', { class: 'p-4 space-y-3' }, [
         m('h3', { class: 'font-medium mb-2' }, 'Picture Book — ' + workName),
+        m('div', { class: 'text-sm text-gray-500 mb-3' },
+            targets.length + ' scene' + (targets.length !== 1 ? 's' : '') + ' generated.'),
         m('div', { class: 'grid grid-cols-2 gap-4 max-h-96 overflow-y-auto' },
             targets.map(function (s) {
+                let imgUrl = s.imageObjectId ? step5ImageUrls[s.imageObjectId] : null;
                 return m('div', {
                     key: s.objectId || s.title,
                     class: 'border dark:border-gray-700 rounded overflow-hidden'
                 }, [
-                    s.imageObjectId
+                    imgUrl
                         ? m('img', {
-                            src: am7client.mediaUrl({ objectId: s.imageObjectId }),
+                            src: imgUrl,
                             class: 'w-full object-cover',
                             style: 'max-height:160px'
                         })
@@ -496,11 +502,20 @@ function buildActions() {
                 } catch (e) {
                     metaScenes = scenes;
                 }
+                let targets = metaScenes.length ? metaScenes : scenes;
+                step5ImageUrls = await resolveAllImageUrls(targets);
                 step = 5;
                 m.redraw();
             }
         });
     } else if (step === 5) {
+        actions.push({
+            label: 'Open in Viewer', icon: 'open_in_new',
+            onclick: function () {
+                Dialog.close();
+                m.route.set('/picture-book/' + workObjectId);
+            }
+        });
         actions.push({
             label: 'Done', icon: 'check', primary: true,
             onclick: function () { Dialog.close(); }

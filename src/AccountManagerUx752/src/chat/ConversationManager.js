@@ -146,10 +146,10 @@ function sessionItemView(session, isSelected) {
             style: "font-size: 16px;",
             onclick: e => { e.stopPropagation(); deleteSession(session); }
         }, "delete_outline"),
-        icon ? m("span", {
-            class: "flex-shrink-0",
-            style: "font-size: 14px; color: #9ca3af; line-height: 1;"
-        }, icon) : "",
+        icon ? (icon.match(/^[a-z0-9_]+$/)
+            ? m("span", { class: "material-symbols-outlined flex-shrink-0 text-gray-400", style: "font-size:16px" }, icon)
+            : m("span", { class: "flex-shrink-0", style: "font-size:14px; line-height:1;" }, icon)
+        ) : "",
         titleContent
     ]);
 }

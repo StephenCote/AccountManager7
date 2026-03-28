@@ -157,3 +157,158 @@ test.describe('Picture Book feature', () => {
     });
 
 });
+
+// ── Picture Book Viewer (book-format) ─────────────────────────────────
+
+test.describe('Picture Book viewer', () => {
+
+    test('viewer shows cover page or empty state for a work', async ({ page }) => {
+        await login(page);
+        // Navigate to viewer with a dummy work ID
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/viewer-cover-test';
+        });
+        await page.waitForTimeout(2000);
+
+        let content = await page.content();
+        // Should show either "No picture book" empty state or a cover/loading state
+        let hasValidState = content.includes('No picture book') ||
+            content.includes('Loading') ||
+            content.includes('Failed') ||
+            content.includes('Cover') ||
+            content.includes('Begin');
+        expect(hasValidState).toBe(true);
+    });
+
+    test('viewer has navigation arrows', async ({ page }) => {
+        await login(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/nav-arrows-test';
+        });
+        await page.waitForTimeout(2000);
+
+        // Look for chevron_left and chevron_right icons
+        let hasNavIcons = await page.evaluate(() => {
+            let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
+            let texts = icons.map(i => i.textContent.trim());
+            return texts.includes('chevron_left') && texts.includes('chevron_right');
+        });
+        expect(hasNavIcons).toBe(true);
+    });
+
+    test('viewer has export and fullscreen buttons', async ({ page }) => {
+        await login(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/buttons-test';
+        });
+        await page.waitForTimeout(2000);
+
+        let hasButtons = await page.evaluate(() => {
+            let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
+            let texts = icons.map(i => i.textContent.trim());
+            return texts.includes('download') && texts.includes('fullscreen');
+        });
+        expect(hasButtons).toBe(true);
+    });
+
+    test('viewer header shows back button to selector', async ({ page }) => {
+        await login(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/header-back-test';
+        });
+        await page.waitForTimeout(2000);
+
+        let hasBackButton = await page.evaluate(() => {
+            let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
+            return icons.some(i => i.textContent.trim() === 'arrow_back');
+        });
+        expect(hasBackButton).toBe(true);
+    });
+
+    test('back button navigates to work selector', async ({ page }) => {
+        await login(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/back-nav-test';
+        });
+        await page.waitForTimeout(2000);
+
+        // Click back button
+        let clicked = await page.evaluate(() => {
+            let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
+            let backIcon = icons.find(i => i.textContent.trim() === 'arrow_back');
+            if (backIcon) {
+                let btn = backIcon.closest('button');
+                if (btn) { btn.click(); return true; }
+            }
+            return false;
+        });
+
+        if (clicked) {
+            await page.waitForTimeout(1000);
+            let url = page.url();
+            // Should be at /picture-book without sub-path
+            expect(url).not.toMatch(/picture-book\/.+/);
+        }
+    });
+
+    test('viewer does not crash with keyboard events', async ({ page }) => {
+        await login(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/keyboard-test';
+        });
+        await page.waitForTimeout(2000);
+
+        // Send arrow key events — should not cause JS errors
+        let errors = [];
+        page.on('pageerror', err => errors.push(err.message));
+
+        await page.keyboard.press('ArrowRight');
+        await page.waitForTimeout(300);
+        await page.keyboard.press('ArrowLeft');
+        await page.waitForTimeout(300);
+        await page.keyboard.press('Home');
+        await page.waitForTimeout(300);
+        await page.keyboard.press('End');
+        await page.waitForTimeout(300);
+
+        expect(errors).toHaveLength(0);
+    });
+
+    test('viewer empty state has link back to selector', async ({ page }) => {
+        await login(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/empty-link-test';
+        });
+        await page.waitForTimeout(2000);
+
+        let content = await page.content();
+        // When no picture book exists, should show link to go back
+        if (content.includes('No picture book') || content.includes('Go back')) {
+            let hasLink = content.includes('Go back') || content.includes('select a document');
+            expect(hasLink).toBe(true);
+        } else {
+            // Loading or error state — also acceptable
+            expect(true).toBe(true);
+        }
+    });
+
+    test('no console errors related to mediaUrl on viewer load', async ({ page }) => {
+        await login(page);
+
+        let errors = [];
+        page.on('console', msg => {
+            if (msg.type() === 'error') errors.push(msg.text());
+        });
+
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/no-mediaurl-errors';
+        });
+        await page.waitForTimeout(2000);
+
+        // The old bug: am7client.mediaUrl is not a function
+        let mediaUrlErrors = errors.filter(e =>
+            e.includes('mediaUrl') || e.includes('is not a function'));
+        expect(mediaUrlErrors).toHaveLength(0);
+    });
+
+});

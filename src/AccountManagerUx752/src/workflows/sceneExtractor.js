@@ -132,6 +132,59 @@ async function resetPictureBook(workObjectId) {
     return resp.json();
 }
 
+// ── Image URL resolution ─────────────────────────────────────────────
+// Scene meta stores imageObjectId (UUID) but media URLs require groupPath + name.
+// Fetch the image record once, cache it, build URL using am7client.currentOrganization.
+
+const imageRecordCache = {};
+
+/**
+ * Resolve an image objectId to a displayable media URL.
+ * Fetches the data.data record to get groupPath + name, caches result.
+ * @param {string} objectId
+ * @returns {Promise<string|null>} media URL or null
+ */
+async function resolveImageUrl(objectId) {
+    if (!objectId) return null;
+    if (imageRecordCache[objectId]) return buildImageUrl(imageRecordCache[objectId]);
+    try {
+        let rec = await am7client.get('data.data', objectId);
+        if (rec && rec.groupPath && rec.name) {
+            imageRecordCache[objectId] = rec;
+            return buildImageUrl(rec);
+        }
+    } catch (e) {
+        console.warn('resolveImageUrl failed for ' + objectId, e);
+    }
+    return null;
+}
+
+/**
+ * Build media URL from a data.data record with groupPath + name.
+ */
+function buildImageUrl(rec) {
+    let org = am7client.dotPath(am7client.currentOrganization);
+    return applicationPath + '/media/' + org + '/data.data' + rec.groupPath + '/' + rec.name;
+}
+
+/**
+ * Resolve all imageObjectIds in a scenes array. Returns map: objectId → URL.
+ */
+async function resolveAllImageUrls(scenes) {
+    let urls = {};
+    let promises = scenes
+        .filter(s => s.imageObjectId)
+        .map(async s => {
+            urls[s.imageObjectId] = await resolveImageUrl(s.imageObjectId);
+        });
+    await Promise.all(promises);
+    return urls;
+}
+
+function clearImageCache() {
+    Object.keys(imageRecordCache).forEach(k => delete imageRecordCache[k]);
+}
+
 /**
  * Build .pictureBookMeta structure from scene array (client-side helper).
  */
@@ -162,5 +215,9 @@ export {
     loadPictureBook,
     reorderScenes,
     resetPictureBook,
-    buildMeta
+    buildMeta,
+    resolveImageUrl,
+    resolveAllImageUrls,
+    clearImageCache,
+    buildImageUrl
 };

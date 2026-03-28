@@ -878,7 +878,10 @@ function renderToolbar() {
 
     return m("div", { class: "flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shrink-0" }, [
         m("div", { class: "flex items-center gap-3" }, [
-            sessionIcon ? m("span", { style: "font-size:16px; line-height:1;" }, sessionIcon) : null,
+            sessionIcon ? (sessionIcon.match(/^[a-z0-9_]+$/)
+                ? m("span", { class: "material-symbols-outlined text-gray-400", style: "font-size:18px" }, sessionIcon)
+                : m("span", { style: "font-size:16px; line-height:1;" }, sessionIcon)
+            ) : null,
             m("h2", { class: "text-sm font-semibold text-gray-800 dark:text-white truncate max-w-xs" }, sessionTitle),
             bgActivity && bgActivity.icon ? m("span", {
                 class: "material-symbols-outlined text-blue-500 animate-spin",

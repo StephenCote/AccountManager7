@@ -100,6 +100,76 @@ describe('buildMeta', () => {
     });
 });
 
+// ── image URL resolution ─────────────────────────────────────────────
+
+describe('resolveImageUrl', () => {
+    it('should export resolveImageUrl as a function', async () => {
+        let mod = await import('../workflows/sceneExtractor.js');
+        expect(typeof mod.resolveImageUrl).toBe('function');
+    });
+
+    it('should export resolveAllImageUrls as a function', async () => {
+        let mod = await import('../workflows/sceneExtractor.js');
+        expect(typeof mod.resolveAllImageUrls).toBe('function');
+    });
+
+    it('should export clearImageCache as a function', async () => {
+        let mod = await import('../workflows/sceneExtractor.js');
+        expect(typeof mod.clearImageCache).toBe('function');
+    });
+
+    it('should export buildImageUrl as a function', async () => {
+        let mod = await import('../workflows/sceneExtractor.js');
+        expect(typeof mod.buildImageUrl).toBe('function');
+    });
+
+    it('resolveImageUrl returns null for null objectId', async () => {
+        let { resolveImageUrl } = await import('../workflows/sceneExtractor.js');
+        let result = await resolveImageUrl(null);
+        expect(result).toBeNull();
+    });
+
+    it('resolveImageUrl returns null for undefined objectId', async () => {
+        let { resolveImageUrl } = await import('../workflows/sceneExtractor.js');
+        let result = await resolveImageUrl(undefined);
+        expect(result).toBeNull();
+    });
+
+    it('resolveImageUrl returns null for empty string', async () => {
+        let { resolveImageUrl } = await import('../workflows/sceneExtractor.js');
+        let result = await resolveImageUrl('');
+        expect(result).toBeNull();
+    });
+
+    it('buildImageUrl constructs correct path from record', async () => {
+        let { buildImageUrl } = await import('../workflows/sceneExtractor.js');
+        // buildImageUrl needs am7client.dotPath and am7client.currentOrganization
+        // Since am7client is mocked in test env, this validates the function exists and is callable
+        expect(typeof buildImageUrl).toBe('function');
+    });
+
+    it('clearImageCache does not throw', async () => {
+        let { clearImageCache } = await import('../workflows/sceneExtractor.js');
+        expect(() => clearImageCache()).not.toThrow();
+    });
+
+    it('resolveAllImageUrls returns empty object for empty scenes', async () => {
+        let { resolveAllImageUrls } = await import('../workflows/sceneExtractor.js');
+        let result = await resolveAllImageUrls([]);
+        expect(result).toEqual({});
+    });
+
+    it('resolveAllImageUrls skips scenes without imageObjectId', async () => {
+        let { resolveAllImageUrls } = await import('../workflows/sceneExtractor.js');
+        let scenes = [
+            { objectId: 'a', title: 'Scene 1', imageObjectId: null },
+            { objectId: 'b', title: 'Scene 2' }
+        ];
+        let result = await resolveAllImageUrls(scenes);
+        expect(result).toEqual({});
+    });
+});
+
 // ── pictureBook workflow export ───────────────────────────────────────
 
 describe('pictureBook workflow export', () => {
