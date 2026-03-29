@@ -131,6 +131,7 @@ function onKeyDown(e) {
 }
 
 async function loadViewer(workObjectId) {
+    if (!workObjectId || workObjectId === 'undefined') return;
     viewerLoading = true;
     viewerError = null;
     viewerScenes = [];
@@ -142,15 +143,54 @@ async function loadViewer(workObjectId) {
     m.redraw();
     try {
         // Fetch the work name from the actual record (try data.note then data.data)
-        let workRec = await am7client.get('data.note', workObjectId).catch(function () { return null; });
-        if (!workRec) workRec = await am7client.get('data.data', workObjectId).catch(function () { return null; });
+        let workRec = null;
+        try { workRec = await am7client.get('data.note', workObjectId); } catch (e) {}
+        if (!workRec) { try { workRec = await am7client.get('data.data', workObjectId); } catch (e) {} }
         if (workRec && workRec.name) {
             viewerWorkName = workRec.name;
             m.redraw();
         }
 
-        let scenes = await loadPictureBook(workObjectId);
+        let scenes = [];
+        try { scenes = await loadPictureBook(workObjectId); } catch (e) { /* meta may not exist */ }
         viewerScenes = Array.isArray(scenes) ? scenes : [];
+
+        // Fallback: if meta-based GET /scenes returned empty, search for scene notes
+        // in the work's Scenes/ subdirectory directly
+        if (!viewerScenes.length && workRec) {
+            let gp = workRec.groupPath || '';
+            if (!gp || gp === 'undefined') {
+                // groupPath is virtual — not always populated. Skip fallback.
+            } else {
+            let scenesPath = gp + '/Scenes';
+            try {
+                let grp = null;
+                try { grp = await am7client.find('auth.group', 'data', scenesPath); } catch (e) {}
+                if (grp && grp.id) {
+                    let q = am7client.newQuery('data.note');
+                    q.field('groupId', grp.id);
+                    q.range(0, 20);
+                    let qr = await am7client.search(q);
+                    if (qr && qr.results && qr.results.length > 0) {
+                        viewerScenes = qr.results.map(function (n, i) {
+                            let parsed = {};
+                            try { parsed = JSON.parse(n.text || '{}'); } catch (e) {}
+                            return {
+                                objectId: n.objectId,
+                                title: n.name || parsed.title || 'Scene ' + (i + 1),
+                                description: parsed.blurb || parsed.summary || '',
+                                imageObjectId: parsed.imageObjectId || null,
+                                characters: parsed.characters || []
+                            };
+                        });
+                    }
+                }
+            } catch (e) {
+                // Scenes/ subdirectory may not exist
+            }
+            } // end else (gp valid)
+        }
+
         if (viewerScenes.length) {
             imageUrls = await resolveAllImageUrls(viewerScenes);
         }
@@ -184,7 +224,7 @@ async function saveBlurb() {
         let resp = await fetch(
             applicationPath + '/rest/olio/picture-book/scene/' + scene.objectId + '/blurb', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + am7client.getToken() },
+                headers: { 'Content-Type': 'application/json' }, credentials: 'include',
                 body: JSON.stringify({ schema: 'olio.pictureBookRequest' })
             });
         // Update local state regardless
@@ -220,7 +260,7 @@ async function regenBlurb() {
 async function fetchImageAsBase64(url) {
     try {
         let resp = await fetch(url, {
-            headers: { 'Authorization': 'Bearer ' + am7client.getToken() }
+            credentials: 'include'
         });
         if (!resp.ok) return null;
         let blob = await resp.blob();

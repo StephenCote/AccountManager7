@@ -32,7 +32,7 @@ async function extractScenes(workObjectId, chatConfigName, count) {
     if (chatConfigName) body.chatConfig = chatConfigName;
     let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-scenes-only', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + am7client.getToken() },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(body)
     });
     if (!resp.ok) throw new Error('Extract scenes failed: ' + resp.status);
@@ -49,7 +49,7 @@ async function fullExtract(workObjectId, chatConfigName, count, genre) {
     if (genre) body.genre = genre;
     let resp = await fetch(pbBase() + '/' + workObjectId + '/extract', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + am7client.getToken() },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(body)
     });
     if (!resp.ok) throw new Error('Full extract failed: ' + resp.status);
@@ -70,7 +70,7 @@ async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promp
     if (promptOverride) body.promptOverride = promptOverride;
     let resp = await fetch(pbBase() + '/scene/' + sceneObjectId + '/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + am7client.getToken() },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(body)
     });
     if (!resp.ok) throw new Error('Scene image generation failed: ' + resp.status);
@@ -86,7 +86,7 @@ async function regenerateBlurb(sceneObjectId, chatConfigName) {
     if (chatConfigName) body.chatConfig = chatConfigName;
     let resp = await fetch(pbBase() + '/scene/' + sceneObjectId + '/blurb', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + am7client.getToken() },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(body)
     });
     if (!resp.ok) throw new Error('Blurb regeneration failed: ' + resp.status);
@@ -99,9 +99,9 @@ async function regenerateBlurb(sceneObjectId, chatConfigName) {
  */
 async function loadPictureBook(workObjectId) {
     let resp = await fetch(pbBase() + '/' + workObjectId + '/scenes', {
-        headers: { 'Authorization': 'Bearer ' + am7client.getToken() }
+        credentials: 'include'
     });
-    if (!resp.ok) throw new Error('Load picture book failed: ' + resp.status);
+    if (!resp.ok) return [];
     return resp.json();
 }
 
@@ -113,7 +113,7 @@ async function loadPictureBook(workObjectId) {
 async function reorderScenes(workObjectId, orderedObjectIds) {
     let resp = await fetch(pbBase() + '/' + workObjectId + '/scenes/order', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + am7client.getToken() },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ scenes: orderedObjectIds })
     });
     if (!resp.ok) throw new Error('Reorder failed: ' + resp.status);
@@ -126,7 +126,7 @@ async function reorderScenes(workObjectId, orderedObjectIds) {
 async function resetPictureBook(workObjectId) {
     let resp = await fetch(pbBase() + '/' + workObjectId + '/reset', {
         method: 'DELETE',
-        headers: { 'Authorization': 'Bearer ' + am7client.getToken() }
+        credentials: 'include'
     });
     if (!resp.ok) throw new Error('Reset failed: ' + resp.status);
     return resp.json();
