@@ -176,6 +176,22 @@ if (homeDir && homeDir.id) {
 
 ---
 
+## 7. `olio.pictureBookRequest` Model Missing Fields (Priority: HIGH — FIXED)
+
+### Problem
+The `sdConfig` field was missing from `pictureBookRequestModel.json`. The `generateSceneImage` endpoint sends `sdConfig` as a nested object, but the deserializer fails with:
+```
+FieldException: newFieldInstance: Field sdConfig was not found on model olio.pictureBookRequest
+```
+
+### Fix (Applied)
+Added `sdConfig` field to the model as an ephemeral `olio.sdConfig` model reference. **Requires backend rebuild.**
+
+### LLM Timeout Note
+The chatConfig used for testing has low timeouts. Complex LLM tasks (character extraction, blurb regeneration) may need more time. Consider adding a `timeout` field to `pictureBookRequest` or using higher defaults in the service.
+
+---
+
 ## Execution Order
 
 1. **Prompt template pattern** (#1) — standalone, no dependencies

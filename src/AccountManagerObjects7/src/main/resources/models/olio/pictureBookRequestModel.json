@@ -19,6 +19,13 @@
 		{
 			"name": "promptOverride",
 			"type": "string"
+		},
+		{
+			"name": "sdConfig",
+			"type": "model",
+			"baseModel": "olio.sd.config",
+			"foreign": false,
+			"ephemeral": true
 		}
 	]
 }
