@@ -218,6 +218,28 @@ public class PictureBookService {
     }
 
     /**
+     * Update a scene note's text JSON with the generated imageObjectId.
+     * This persists the image reference so the viewer fallback can find it.
+     */
+    @SuppressWarnings("unchecked")
+    private void updateSceneImageId(BaseRecord user, BaseRecord scene, String imageObjectId) {
+        try {
+            String existingText = scene.get("text");
+            Map<String, Object> textData = new LinkedHashMap<>();
+            if (existingText != null && !existingText.isEmpty()) {
+                try {
+                    textData = JSONUtil.getMap(existingText.getBytes(), String.class, Object.class);
+                } catch (Exception ex) { /* ignore parse errors */ }
+            }
+            textData.put("imageObjectId", imageObjectId);
+            scene.set("text", JSONUtil.exportObject(textData));
+            IOSystem.getActiveContext().getAccessPoint().update(user, scene);
+        } catch (Exception e) {
+            logger.warn("Failed to update scene imageObjectId: " + e.getMessage());
+        }
+    }
+
+    /**
      * Parse LLM JSON response into a list of maps, stripping markdown fences if present.
      */
     @SuppressWarnings("unchecked")
@@ -687,8 +709,10 @@ public class PictureBookService {
                 if (images == null || images.isEmpty())
                     return Response.status(500).entity("{\"error\":\"SD generation failed\"}").build();
                 BaseRecord image = images.get(0);
+                String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
                 IOSystem.getActiveContext().getAccessPoint().member(user, scene, image, null, true);
-                return Response.status(200).entity("{\"imageObjectId\":\"" + image.get(FieldNames.FIELD_OBJECT_ID) + "\"}").build();
+                updateSceneImageId(user, scene, imageOid);
+                return Response.status(200).entity("{\"imageObjectId\":\"" + imageOid + "\"}").build();
             } catch (Exception e) {
                 logger.error("Override SD generation failed: " + e.getMessage());
                 return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
@@ -779,8 +803,10 @@ public class PictureBookService {
             if (finalImages == null || finalImages.isEmpty())
                 return Response.status(500).entity("{\"error\":\"Kontext composite generation failed\"}").build();
             BaseRecord finalImage = finalImages.get(0);
+            String finalImageOid = finalImage.get(FieldNames.FIELD_OBJECT_ID);
             IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
-            return Response.status(200).entity("{\"imageObjectId\":\"" + finalImage.get(FieldNames.FIELD_OBJECT_ID) + "\"}").build();
+            updateSceneImageId(user, scene, finalImageOid);
+            return Response.status(200).entity("{\"imageObjectId\":\"" + finalImageOid + "\"}").build();
         } catch (Exception e) {
             logger.error("Scene image generation pipeline failed: " + e.getMessage(), e);
             return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();

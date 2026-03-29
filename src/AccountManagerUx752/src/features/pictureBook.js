@@ -170,6 +170,10 @@ async function loadViewer(workObjectId) {
                     let q = am7client.newQuery('data.note');
                     q.field('groupId', grp.id);
                     q.range(0, 20);
+                    // Must request 'text' field — not in default query fields for data.note
+                    if (q.entity.request && q.entity.request.indexOf('text') < 0) {
+                        q.entity.request.push('text');
+                    }
                     let qr = await am7client.search(q);
                     if (qr && qr.results && qr.results.length > 0) {
                         viewerScenes = qr.results.map(function (n, i) {
