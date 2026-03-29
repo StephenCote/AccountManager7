@@ -1,6 +1,6 @@
 {
 	"name": "olio.pictureBookRequest",
-	"ioConstraint": ["unknown"],
+	"ioConstraints": ["unknown"],
 	"fields": [
 		{
 			"name": "count",

@@ -48,6 +48,18 @@ async function reimageApparel(entity, inst) {
                     m('input', { class: 'text-field-compact', type: 'number', value: cinst.api.refinerSteps(), oninput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
+                    m('label', { class: 'field-label' }, 'CFG Scale'),
+                    m('input', { class: 'text-field-compact', type: 'number', min: 1, max: 30, step: 0.5,
+                        value: cinst.api.cfg ? cinst.api.cfg() : 5,
+                        oninput: function (e) { if (cinst.api.cfg) cinst.api.cfg(parseFloat(e.target.value) || 5); } })
+                ]),
+                m('div', [
+                    m('label', { class: 'field-label' }, 'Denoising Strength'),
+                    m('input', { class: 'text-field-compact', type: 'number', min: 0, max: 1, step: 0.05,
+                        value: cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 0.75,
+                        oninput: function (e) { if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(parseFloat(e.target.value) || 0.75); } })
+                ]),
+                m('div', [
                     m('label', { class: 'field-label' }, 'Model'),
                     sdModelList.length > 0
                         ? m('select', { class: 'text-field-compact', value: cinst.api.model ? cinst.api.model() : '', onchange: function (e) { if (cinst.api.model) cinst.api.model(e.target.value); } },
@@ -75,6 +87,10 @@ async function reimageApparel(entity, inst) {
                 ])
             ]),
             m('div', { class: 'flex items-center gap-2 mt-2' }, [
+                m('input', { type: 'checkbox', id: 'hires-cb', checked: cinst.api.hires ? cinst.api.hires() : false, onchange: function (e) { if (cinst.api.hires) cinst.api.hires(e.target.checked); } }),
+                m('label', { for: 'hires-cb', class: 'text-sm' }, 'HiRes')
+            ]),
+            m('div', { class: 'flex items-center gap-2 mt-1' }, [
                 m('input', { type: 'checkbox', id: 'shared-cb', checked: cinst.entity.shared || false, onchange: function (e) { cinst.entity.shared = e.target.checked; } }),
                 m('label', { for: 'shared-cb', class: 'text-sm' }, 'Save as shared config')
             ])

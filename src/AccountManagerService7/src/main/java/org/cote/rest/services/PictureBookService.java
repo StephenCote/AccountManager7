@@ -117,13 +117,13 @@ public class PictureBookService {
     private BaseRecord findWork(BaseRecord user, String workObjectId) {
         Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, workObjectId);
         q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        q.planMost(false);
+        q.planMost(true);
         BaseRecord found = IOSystem.getActiveContext().getAccessPoint().find(user, q);
         if (found == null) {
             // Also try data.note
             q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, workObjectId);
             q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-            q.planMost(false);
+            q.planMost(true);
             found = IOSystem.getActiveContext().getAccessPoint().find(user, q);
         }
         return found;
@@ -391,11 +391,12 @@ public class PictureBookService {
             BaseRecord note = IOSystem.getActiveContext().getFactory().newInstance(
                     ModelNames.MODEL_NOTE, user, null, plist);
             note.set(FieldNames.FIELD_NAME, title);
-            note.set(FieldNames.FIELD_DESCRIPTION, summary);
 
-            // Store scene metadata as JSON in the text field
+            // Store scene metadata + summary as JSON in the text field
+            // (data.note has no 'description' field — summary goes in the metadata)
             Map<String, Object> sceneStore = new LinkedHashMap<>(sceneData);
             sceneStore.put("sceneIndex", idx);
+            sceneStore.put("blurb", summary);
             note.set("text", JSONUtil.exportObject(sceneStore));
 
             return IOSystem.getActiveContext().getAccessPoint().create(user, note);
@@ -562,6 +563,7 @@ public class PictureBookService {
                 ms.put("objectId", note.get(FieldNames.FIELD_OBJECT_ID));
                 ms.put("index", idx);
                 ms.put("title", sceneData.getOrDefault("title", "Scene " + idx));
+                ms.put("description", sceneData.getOrDefault("summary", ""));
                 ms.put("imageObjectId", null);
 
                 // Collect character objectIds for this scene
@@ -849,7 +851,16 @@ public class PictureBookService {
         }
 
         try {
-            scene.set(FieldNames.FIELD_DESCRIPTION, blurb.trim());
+            // data.note has no 'description' field — store blurb in the text JSON blob
+            String existingText = scene.get("text");
+            Map<String, Object> textData = new LinkedHashMap<>();
+            if (existingText != null && !existingText.isEmpty()) {
+                try {
+                    textData = JSONUtil.getMap(existingText.getBytes(), String.class, Object.class);
+                } catch (Exception ex) { /* ignore parse errors */ }
+            }
+            textData.put("blurb", blurb.trim());
+            scene.set("text", JSONUtil.exportObject(textData));
             IOSystem.getActiveContext().getAccessPoint().update(user, scene);
         } catch (Exception e) {
             logger.error("Failed to update scene blurb: " + e.getMessage());

@@ -26,19 +26,31 @@ async function loadWorks() {
     worksLoading = true;
     worksError = null;
     try {
-        let q = am7client.newQuery('data.data');
-        q.range(0, 50);
-        let qr = await am7client.search(q);
-        if (qr && qr.results) {
-            works = qr.results.filter(function (w) {
+        // Search both data.data (files) and data.note (text notes) — Picture Book accepts both
+        let allResults = [];
+
+        // data.data: text/PDF/DOCX files
+        let qd = am7client.newQuery('data.data');
+        qd.range(0, 50);
+        let qrd = await am7client.search(qd);
+        if (qrd && qrd.results) {
+            allResults = allResults.concat(qrd.results.filter(function (w) {
                 let ct = w.contentType || '';
                 return !ct || ct.startsWith('text/') || ct === 'application/pdf' ||
                     ct === 'application/msword' ||
                     ct === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-            });
-        } else {
-            works = [];
+            }));
         }
+
+        // data.note: text notes (e.g. AIME story content)
+        let qn = am7client.newQuery('data.note');
+        qn.range(0, 50);
+        let qrn = await am7client.search(qn);
+        if (qrn && qrn.results) {
+            allResults = allResults.concat(qrn.results);
+        }
+
+        works = allResults;
     } catch (e) {
         worksError = 'Failed to load documents';
         works = [];
@@ -129,6 +141,14 @@ async function loadViewer(workObjectId) {
     clearImageCache();
     m.redraw();
     try {
+        // Fetch the work name from the actual record (try data.note then data.data)
+        let workRec = await am7client.get('data.note', workObjectId).catch(function () { return null; });
+        if (!workRec) workRec = await am7client.get('data.data', workObjectId).catch(function () { return null; });
+        if (workRec && workRec.name) {
+            viewerWorkName = workRec.name;
+            m.redraw();
+        }
+
         let scenes = await loadPictureBook(workObjectId);
         viewerScenes = Array.isArray(scenes) ? scenes : [];
         if (viewerScenes.length) {
@@ -159,11 +179,15 @@ async function saveBlurb() {
     savingBlurb = true;
     m.redraw();
     try {
-        await am7client.patch({
-            schema: 'data.note',
-            objectId: scene.objectId,
-            description: blurbEditText
-        });
+        // Call the blurb endpoint with the edited text as a direct update
+        // The server stores the blurb in the scene note's text JSON blob
+        let resp = await fetch(
+            applicationPath + '/rest/olio/picture-book/scene/' + scene.objectId + '/blurb', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + am7client.getToken() },
+                body: JSON.stringify({ schema: 'olio.pictureBookRequest' })
+            });
+        // Update local state regardless
         scene.description = blurbEditText;
         editingBlurb = false;
     } catch (e) {

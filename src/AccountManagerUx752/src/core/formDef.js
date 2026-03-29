@@ -623,12 +623,6 @@ import { am7model } from './model.js';
                 icon: 'fact_check',
                 function: 'makeFact',
                 requiredAttribute: "objectId"
-            },
-            reimage: {
-                label: 'Reimage',
-                icon: 'auto_awesome',
-                function: 'reimage',
-                requiredAttribute: "objectId"
             }
         },
         query: ["stream", "compressionType", "vaulted", "enciphered"],
