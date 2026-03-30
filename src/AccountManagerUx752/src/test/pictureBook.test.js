@@ -73,8 +73,9 @@ describe('buildMeta', () => {
             { objectId: 'abc', title: 'Scene 1', imageObjectId: null, characters: ['Alice'] },
             { objectId: 'def', title: 'Scene 2', imageObjectId: 'img-1', characters: ['Bob'] }
         ];
-        let meta = buildMeta('work-123', 'My Story', scenes);
-        expect(meta.workObjectId).toBe('work-123');
+        let meta = buildMeta('work-123', 'book-456', 'My Story', scenes);
+        expect(meta.sourceObjectId).toBe('work-123');
+        expect(meta.bookObjectId).toBe('book-456');
         expect(meta.workName).toBe('My Story');
         expect(meta.sceneCount).toBe(2);
         expect(meta.scenes).toHaveLength(2);
@@ -87,14 +88,14 @@ describe('buildMeta', () => {
     it('preserves scene objectId and imageObjectId', async () => {
         let { buildMeta } = await import('../workflows/sceneExtractor.js');
         let scenes = [{ objectId: 'xyz', title: 'T', imageObjectId: 'img-42', characters: [] }];
-        let meta = buildMeta('w', 'W', scenes);
+        let meta = buildMeta('src-1', 'book-1', 'W', scenes);
         expect(meta.scenes[0].objectId).toBe('xyz');
         expect(meta.scenes[0].imageObjectId).toBe('img-42');
     });
 
     it('handles empty scenes array', async () => {
         let { buildMeta } = await import('../workflows/sceneExtractor.js');
-        let meta = buildMeta('w', 'W', []);
+        let meta = buildMeta('src-1', 'book-1', 'W', []);
         expect(meta.sceneCount).toBe(0);
         expect(meta.scenes).toHaveLength(0);
     });

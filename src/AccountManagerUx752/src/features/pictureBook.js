@@ -3,8 +3,8 @@
  * Phase 16 completion: sequential page viewer with cover, export, keyboard nav.
  *
  * Routes:
- *   /picture-book              — Work selector (browse documents)
- *   /picture-book/:workObjectId — Book viewer (cover + scene pages)
+ *   /picture-book                — Work selector (browse existing books + create new)
+ *   /picture-book/:bookObjectId  — Book viewer (cover + scene pages, bookObjectId = book group objectId)
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -20,13 +20,18 @@ import { pictureBookFromId } from '../workflows/pictureBook.js';
 
 // ── Work Selector View ────────────────────────────────────────────────
 
+/**
+ * Open a document picker for selecting a source document, then launch the
+ * wizard to create a new picture book from it.
+ */
 function openDocumentPicker(type) {
     ObjectPicker.open({
         type: type,
         title: 'Select ' + (type === 'data.note' ? 'Note' : 'Document'),
         onSelect: function (item) {
             if (item && item.objectId) {
-                m.route.set('/picture-book/' + item.objectId);
+                // Open the wizard dialog for this source document
+                pictureBookFromId(item.objectId, item.name || 'Untitled');
             }
         }
     });
@@ -42,6 +47,7 @@ async function loadExistingBooks() {
     m.redraw();
     try {
         // Search for .pictureBookMeta notes — each one represents an extracted picture book
+        // With decoupled identity, meta lives under ~/PictureBooks/{bookName}/
         let q = am7client.newQuery('data.note');
         q.field('name', '.pictureBookMeta');
         q.range(0, 20);
@@ -53,28 +59,11 @@ async function loadExistingBooks() {
             for (let meta of qr.results) {
                 let parsed = {};
                 try { parsed = JSON.parse(meta.text || '{}'); } catch (e) {}
-                if (parsed.workObjectId) {
+                // Use bookObjectId if available, fall back to workObjectId for legacy books
+                let bookId = parsed.bookObjectId || parsed.workObjectId;
+                if (bookId) {
                     existingBooks.push({
-                        workObjectId: parsed.workObjectId,
-                        workName: parsed.workName || 'Untitled',
-                        sceneCount: parsed.sceneCount || 0,
-                        extractedAt: parsed.extractedAt || ''
-                    });
-                }
-            }
-        }
-        // Also search for data.data .pictureBookMeta (legacy format)
-        let q2 = am7client.newQuery('data.data');
-        q2.field('name', '.pictureBookMeta');
-        q2.range(0, 20);
-        let qr2 = await am7client.search(q2);
-        if (qr2 && qr2.results) {
-            for (let meta of qr2.results) {
-                let parsed = {};
-                try { parsed = JSON.parse(meta.description || '{}'); } catch (e) {}
-                if (parsed.workObjectId && !existingBooks.some(function (b) { return b.workObjectId === parsed.workObjectId; })) {
-                    existingBooks.push({
-                        workObjectId: parsed.workObjectId,
+                        bookObjectId: bookId,
                         workName: parsed.workName || 'Untitled',
                         sceneCount: parsed.sceneCount || 0,
                         extractedAt: parsed.extractedAt || ''
@@ -104,9 +93,9 @@ var workSelectorView = {
                 m('div', { class: 'grid grid-cols-1 gap-2' },
                     existingBooks.map(function (b) {
                         return m('div', {
-                            key: b.workObjectId,
+                            key: b.bookObjectId,
                             class: 'flex items-center justify-between border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20',
-                            onclick: function () { m.route.set('/picture-book/' + b.workObjectId); }
+                            onclick: function () { m.route.set('/picture-book/' + b.bookObjectId); }
                         }, [
                             m('div', { class: 'flex items-center gap-3' }, [
                                 m('span', { class: 'material-symbols-outlined text-amber-500' }, 'auto_stories'),
@@ -154,7 +143,7 @@ var workSelectorView = {
 
 // ── Picture Book Viewer ───────────────────────────────────────────────
 
-let viewerWorkId = null;
+let viewerBookId = null;
 let viewerWorkName = '';
 let viewerScenes = [];
 let imageUrls = {};      // imageObjectId → resolved media URL
@@ -190,8 +179,8 @@ function onKeyDown(e) {
     else if (e.key === 'Escape' && fullscreen) { e.preventDefault(); fullscreen = false; m.redraw(); }
 }
 
-async function loadViewer(workObjectId) {
-    if (!workObjectId || workObjectId === 'undefined') return;
+async function loadViewer(bookObjectId) {
+    if (!bookObjectId || bookObjectId === 'undefined') return;
     viewerLoading = true;
     viewerError = null;
     viewerScenes = [];
@@ -202,92 +191,21 @@ async function loadViewer(workObjectId) {
     clearImageCache();
     m.redraw();
     try {
-        // Fetch the work record with groupPath (virtual field — must be explicitly requested)
-        let workRec = null;
-        for (let wType of ['data.note', 'data.data']) {
-            try {
-                let q = am7client.newQuery(wType);
-                q.field('objectId', workObjectId);
-                q.range(0, 1);
-                if (q.entity.request.indexOf('groupPath') < 0) q.entity.request.push('groupPath');
-                // Only request 'text' for data.note — data.data doesn't have a text field
-                if (wType === 'data.note' && q.entity.request.indexOf('text') < 0) q.entity.request.push('text');
-                let qr = await am7client.search(q);
-                if (qr && qr.results && qr.results.length > 0) { workRec = qr.results[0]; break; }
-            } catch (e) {}
-        }
-        if (workRec && workRec.name) {
-            viewerWorkName = workRec.name;
-            m.redraw();
-        }
-
-        // Check for .pictureBookMeta to get the user-specified book name
-        if (workRec && workRec.groupPath) {
-            try {
-                let mq = am7client.newQuery('data.note');
-                mq.field('name', '.pictureBookMeta');
-                if (mq.entity.request.indexOf('text') < 0) mq.entity.request.push('text');
-                if (mq.entity.request.indexOf('groupPath') < 0) mq.entity.request.push('groupPath');
-                // scope to the work's group
-                let mgrp = null;
-                try { mgrp = await am7client.find('auth.group', 'data', workRec.groupPath); } catch (e) {}
-                if (mgrp && mgrp.id) mq.field('groupId', mgrp.id);
-                mq.range(0, 1);
-                let mqr = await am7client.search(mq);
-                if (mqr && mqr.results && mqr.results.length > 0) {
-                    let metaParsed = {};
-                    try { metaParsed = JSON.parse(mqr.results[0].text || '{}'); } catch (e) {}
-                    if (metaParsed.workName) {
-                        viewerWorkName = metaParsed.workName;
-                        m.redraw();
-                    }
-                }
-            } catch (e) {}
-        }
+        // Resolve book group name for the title
+        try {
+            let q = am7client.newQuery('auth.group');
+            q.field('objectId', bookObjectId);
+            q.range(0, 1);
+            let qr = await am7client.search(q);
+            if (qr && qr.results && qr.results.length > 0) {
+                viewerWorkName = qr.results[0].name || '';
+                m.redraw();
+            }
+        } catch (e) {}
 
         let scenes = [];
-        try { scenes = await loadPictureBook(workObjectId); } catch (e) { /* meta may not exist */ }
+        try { scenes = await loadPictureBook(bookObjectId); } catch (e) { /* meta may not exist */ }
         viewerScenes = Array.isArray(scenes) ? scenes : [];
-
-        // Fallback: if meta-based GET /scenes returned empty, search for scene notes
-        // in the work's Scenes/ subdirectory directly
-        if (!viewerScenes.length && workRec) {
-            let gp = workRec.groupPath || '';
-            if (!gp || gp === 'undefined') {
-                // groupPath is virtual — not always populated. Skip fallback.
-            } else {
-            let scenesPath = gp + '/Scenes';
-            try {
-                let grp = null;
-                try { grp = await am7client.find('auth.group', 'data', scenesPath); } catch (e) {}
-                if (grp && grp.id) {
-                    let q = am7client.newQuery('data.note');
-                    q.field('groupId', grp.id);
-                    q.range(0, 20);
-                    // Must request 'text' field — not in default query fields for data.note
-                    if (q.entity.request && q.entity.request.indexOf('text') < 0) {
-                        q.entity.request.push('text');
-                    }
-                    let qr = await am7client.search(q);
-                    if (qr && qr.results && qr.results.length > 0) {
-                        viewerScenes = qr.results.map(function (n, i) {
-                            let parsed = {};
-                            try { parsed = JSON.parse(n.text || '{}'); } catch (e) {}
-                            return {
-                                objectId: n.objectId,
-                                title: n.name || parsed.title || 'Scene ' + (i + 1),
-                                description: parsed.blurb || parsed.summary || '',
-                                imageObjectId: parsed.imageObjectId || null,
-                                characters: parsed.characters || []
-                            };
-                        });
-                    }
-                }
-            } catch (e) {
-                // Scenes/ subdirectory may not exist
-            }
-            } // end else (gp valid)
-        }
 
         if (viewerScenes.length) {
             imageUrls = await resolveAllImageUrls(viewerScenes);
@@ -643,7 +561,7 @@ function renderHeader() {
             title: 'Delete picture book',
             onclick: function () {
                 if (!confirm('Delete this picture book? Scenes, characters, and images will be removed.')) return;
-                resetPictureBook(viewerWorkId).then(function () {
+                resetPictureBook(viewerBookId).then(function () {
                     page.toast('success', 'Picture book deleted');
                     viewerScenes = [];
                     imageUrls = {};
@@ -689,10 +607,10 @@ function renderPageDots() {
 var pictureBookView = {
     oninit: function (vnode) {
         // Only init on first call (route oninit) — skip when re-rendered as m(component)
-        if (vnode.attrs.workObjectId) {
-            viewerWorkId = vnode.attrs.workObjectId;
+        if (vnode.attrs.bookObjectId) {
+            viewerBookId = vnode.attrs.bookObjectId;
             viewerWorkName = 'Loading...';
-            loadViewer(viewerWorkId).then(function () {
+            loadViewer(viewerBookId).then(function () {
                 if (viewerScenes.length && viewerScenes[0].workName) {
                     viewerWorkName = viewerScenes[0].workName;
                 }
@@ -723,7 +641,7 @@ var pictureBookView = {
                     m('button', {
                         class: 'btn btn-primary px-6 py-2',
                         onclick: function () {
-                            pictureBookFromId(viewerWorkId, viewerWorkName);
+                            pictureBookFromId(viewerBookId, viewerWorkName);
                         }
                     }, [
                         m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'auto_awesome'),
@@ -751,7 +669,7 @@ export const routes = {
         oninit: function () { workSelectorView.oninit(); },
         view: function () { return layout(pageLayout(workSelectorView.view())); }
     },
-    '/picture-book/:workObjectId': {
+    '/picture-book/:bookObjectId': {
         oninit: function (vnode) { pictureBookView.oninit(vnode); },
         oncreate: function () { pictureBookView.oncreate(); },
         onremove: function () { pictureBookView.onremove(); },

@@ -1389,5 +1389,14 @@ import { cacheDb } from './cacheDb.js';
 		cacheEntryCount: function() { return _cacheDbReady ? cacheDb.entryCount() : Object.keys(cache).length; }
 	};
 
+	// Sync currentOrganization property with internal sCurrentOrganization
+	// The router sets am7client.currentOrganization after UI login, but mediaDataPath
+	// reads sCurrentOrganization. This getter/setter keeps them in sync.
+	Object.defineProperty(am7client, 'currentOrganization', {
+		get: function() { return sCurrentOrganization; },
+		set: function(v) { sCurrentOrganization = v; },
+		configurable: true
+	});
+
 export { uwm, am7client };
 export default am7client;

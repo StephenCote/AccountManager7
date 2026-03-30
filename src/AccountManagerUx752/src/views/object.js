@@ -146,13 +146,36 @@ function newObjectPage() {
 
         // Collect sub-object changes
         let subKeys = [];
+        let embeddedKeys = []; // Sub-objects with ioConstraints "unknown" — must save with parent
         Object.keys(pinst).forEach(function (k) {
             if (k.endsWith('_loaded')) return;
             let e = pinst[k];
-            if (e && e.changes && e.changes.length) subKeys.push(k);
+            if (e && e.changes && e.changes.length) {
+                // Check if sub-model is embedded (ioConstraints: ["unknown"])
+                let subModelName = e.entity[am7model.jsonModelKey];
+                let subModel = subModelName ? am7model.getModel(subModelName) : null;
+                let isEmbedded = subModel && subModel.ioConstraints
+                    && subModel.ioConstraints.length === 1
+                    && subModel.ioConstraints[0] === 'unknown';
+                if (isEmbedded) {
+                    embeddedKeys.push(k);
+                } else {
+                    subKeys.push(k);
+                }
+            }
         });
 
-        // Remove sub-object property names from parent changes
+        // Embedded sub-objects: merge changes into parent entity so they're saved with the parent patch
+        embeddedKeys.forEach(function (k) {
+            let e = pinst[k];
+            e.changes.forEach(function (field) {
+                if (inst.entity[k]) inst.entity[k][field] = e.entity[field];
+            });
+            inst.change(k);
+            e.resetChanges();
+        });
+
+        // Remove independently-saved sub-object property names from parent changes
         subKeys.forEach(function (k) { inst.unchange(k); });
 
         let hasAnyChanges = inst.changes.length > 0 || subKeys.length > 0;

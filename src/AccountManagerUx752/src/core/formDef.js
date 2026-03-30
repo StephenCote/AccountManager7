@@ -4967,39 +4967,53 @@ import { am7model } from './model.js';
                 field: {
                     label: "Apply LLM Options Preset",
                     command: function(objectPage, inst, fieldName) {
-                        let presetView = {
-                            view: function() {
-                                return m("div", { class: "p-2" }, Object.keys(chatOptionsPresets).map(function(name) {
-                                    let p = chatOptionsPresets[name];
-                                    return m("div", {
-                                        class: "p-3 mb-2 cursor-pointer rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700",
-                                        onclick: function() {
-                                            am7model._page.components.dialog.endDialog();
-                                            Object.keys(p).forEach(function(k) {
-                                                if (k !== "desc") {
-                                                    inst.entity[k] = p[k];
-                                                    inst.change(k);
+                        let { Dialog } = am7model._dialogCore || {};
+                        if (!Dialog) {
+                            try { Dialog = am7model._page.Dialog || window.am7Dialog; } catch(e) {}
+                        }
+                        if (!Dialog) {
+                            // Lazy import dialogCore
+                            import('../components/dialogCore.js').then(function(mod) {
+                                am7model._dialogCore = mod;
+                                showPresetDialog(mod.Dialog, inst);
+                            });
+                        } else {
+                            showPresetDialog(Dialog, inst);
+                        }
+
+                        function showPresetDialog(Dlg, inst) {
+                            Dlg.open({
+                                title: 'LLM Chat Options Presets',
+                                size: 'md',
+                                content: {
+                                    view: function() {
+                                        return m("div", { class: "p-2 space-y-2" }, Object.keys(chatOptionsPresets).map(function(name) {
+                                            let p = chatOptionsPresets[name];
+                                            return m("div", {
+                                                class: "p-3 cursor-pointer rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700",
+                                                onclick: function() {
+                                                    Dlg.close();
+                                                    Object.keys(p).forEach(function(k) {
+                                                        if (k !== "desc") {
+                                                            inst.entity[k] = p[k];
+                                                            inst.change(k);
+                                                        }
+                                                    });
+                                                    am7model._page.toast("info", "Applied preset: " + name, 3000);
+                                                    m.redraw();
                                                 }
-                                            });
-                                            am7model._page.toast("info", "Applied preset: " + name, 3000);
-                                            m.redraw();
-                                        }
-                                    }, [
-                                        m("div", { class: "font-medium" }, name),
-                                        m("div", { class: "text-xs text-gray-500" }, p.desc),
-                                        m("div", { class: "text-xs text-gray-400 mt-1" },
-                                            "temp=" + p.temperature + " top_p=" + p.top_p + " top_k=" + p.top_k + " repeat=" + p.repeat_penalty + " ctx=" + p.num_ctx)
-                                    ]);
-                                }));
-                            }
-                        };
-                        am7model._page.components.dialog.setDialog({
-                            label: "LLM Chat Options Presets",
-                            entityType: "chatOptionsPreset",
-                            size: 50,
-                            data: { entity: {}, view: presetView },
-                            cancel: function() { am7model._page.components.dialog.endDialog(); }
-                        });
+                                            }, [
+                                                m("div", { class: "font-medium text-sm" }, name),
+                                                m("div", { class: "text-xs text-gray-500" }, p.desc),
+                                                m("div", { class: "text-xs text-gray-400 mt-1" },
+                                                    "temp=" + p.temperature + " top_p=" + p.top_p + " top_k=" + p.top_k + " repeat=" + p.repeat_penalty + " ctx=" + p.num_ctx)
+                                            ]);
+                                        }));
+                                    }
+                                },
+                                actions: [{ label: 'Cancel', onclick: function() { Dlg.close(); } }]
+                            });
+                        }
                     }
                 }
             },

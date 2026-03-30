@@ -4,7 +4,7 @@ import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import {
     MAX_SCENES_DEFAULT, DEFAULT_SD_CONFIG,
-    extractScenes, fullExtract, generateSceneImage,
+    extractScenes, extractChunked, fullExtract, generateSceneImage,
     regenerateBlurb, loadPictureBook, resetPictureBook,
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
@@ -23,7 +23,8 @@ import { ObjectPicker } from '../components/picker.js';
 // ── Wizard state ──────────────────────────────────────────────────────
 
 let step = 1;
-let workObjectId = null;
+let workObjectId = null;  // Source document objectId (for extract API)
+let bookObjectId = null;  // Book group objectId (for scenes/viewer/reset APIs)
 let workName = '';
 
 // Step 1
@@ -66,6 +67,7 @@ let step5ImageUrls = {};  // imageObjectId → resolved media URL
 
 function resetState() {
     step = 1;
+    bookObjectId = null;
     method = 'auto';
     bookName = '';
     chatConfigName = null;
@@ -119,6 +121,7 @@ async function doFullExtract() {
     m.redraw();
     try {
         let meta = await fullExtract(workObjectId, chatConfigName, sceneCount, genre || null, bookName || workName);
+        bookObjectId = meta.bookObjectId || null;
         metaScenes = meta.scenes || [];
         scenes = metaScenes;
         extractedScenes = metaScenes.map(s => ({
@@ -155,6 +158,57 @@ async function doExtractScenesOnly() {
         extractError = e.message || 'Extraction failed';
     }
     extracting = false;
+    m.redraw();
+}
+
+async function doExtractChunked() {
+    extracting = true;
+    extractError = null;
+    m.redraw();
+    try {
+        let result = await extractChunked(workObjectId, chatConfigName);
+        if (!result || !result.sceneList || !result.sceneList.length) {
+            extractError = 'No scenes returned from chunked extraction';
+        } else {
+            extractedScenes = result.sceneList;
+            collectCharacters();
+            step = 2;
+        }
+    } catch (e) {
+        extractError = e.message || 'Chunked extraction failed';
+    }
+    extracting = false;
+    m.redraw();
+}
+
+function addManualScene() {
+    extractedScenes.push({
+        index: extractedScenes.length,
+        title: 'New Scene',
+        blurb: '',
+        setting: '',
+        action: '',
+        mood: '',
+        characters: [],
+        diffusionPrompt: '',
+        userEdited: true
+    });
+    m.redraw();
+}
+
+function removeScene(idx) {
+    extractedScenes.splice(idx, 1);
+    extractedScenes.forEach(function (s, i) { s.index = i; });
+    m.redraw();
+}
+
+function moveScene(idx, dir) {
+    let newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= extractedScenes.length) return;
+    let tmp = extractedScenes[idx];
+    extractedScenes[idx] = extractedScenes[newIdx];
+    extractedScenes[newIdx] = tmp;
+    extractedScenes.forEach(function (s, i) { s.index = i; });
     m.redraw();
 }
 
@@ -307,34 +361,71 @@ function renderStep1() {
 function renderStep2() {
     return m('div', { class: 'p-4 space-y-3' }, [
         m('div', { class: 'flex justify-between items-center mb-2' }, [
-            m('h3', { class: 'font-medium' }, 'Extracted Scenes (' + extractedScenes.length + ')'),
-            m('button', {
-                class: 'btn text-sm',
-                disabled: extracting,
-                onclick: function () { doExtractScenesOnly(); }
-            }, extracting ? 'Re-extracting...' : 'Re-extract')
+            m('h3', { class: 'font-medium' }, 'Scene List (' + extractedScenes.length + ')'),
+            m('div', { class: 'flex gap-2' }, [
+                m('button', {
+                    class: 'btn text-xs',
+                    onclick: function () { addManualScene(); }
+                }, [m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'add'), 'Add Scene']),
+                m('button', {
+                    class: 'btn text-xs',
+                    disabled: extracting,
+                    onclick: function () { doExtractScenesOnly(); }
+                }, extracting ? 'Extracting...' : 'Re-extract')
+            ])
         ]),
         extracting ? m('div', { class: 'text-sm text-gray-500' }, 'Extracting scenes...') :
-        m('div', { class: 'space-y-2 max-h-80 overflow-y-auto' },
+        m('div', { class: 'space-y-2 max-h-[28rem] overflow-y-auto' },
             extractedScenes.map(function (s, i) {
-                return m('div', { key: i, class: 'border dark:border-gray-700 rounded p-3 text-sm space-y-1' }, [
-                    m('div', { class: 'flex gap-2 items-start' }, [
-                        m('span', { class: 'text-gray-400 text-xs mt-0.5 w-4' }, String(i + 1) + '.'),
+                return m('div', { key: 'scene-' + i, class: 'border dark:border-gray-700 rounded p-3 text-sm space-y-2' }, [
+                    // Header: number + title + reorder/remove buttons
+                    m('div', { class: 'flex gap-2 items-center' }, [
+                        m('span', { class: 'text-gray-400 text-xs w-5 shrink-0' }, String(i + 1) + '.'),
                         m('input', {
-                            class: 'text-field-full text-sm font-medium',
+                            class: 'text-field-full text-sm font-medium flex-1',
                             value: s.title || '',
                             placeholder: 'Scene title',
-                            oninput: function (e) { extractedScenes[i].title = e.target.value; }
-                        })
+                            oninput: function (e) { extractedScenes[i].title = e.target.value; s.userEdited = true; }
+                        }),
+                        m('button', {
+                            class: 'text-gray-400 hover:text-gray-600 p-0.5',
+                            disabled: i === 0,
+                            onclick: function () { moveScene(i, -1); }
+                        }, m('span', { class: 'material-symbols-outlined text-sm' }, 'arrow_upward')),
+                        m('button', {
+                            class: 'text-gray-400 hover:text-gray-600 p-0.5',
+                            disabled: i === extractedScenes.length - 1,
+                            onclick: function () { moveScene(i, 1); }
+                        }, m('span', { class: 'material-symbols-outlined text-sm' }, 'arrow_downward')),
+                        m('button', {
+                            class: 'text-red-400 hover:text-red-600 p-0.5',
+                            onclick: function () { removeScene(i); }
+                        }, m('span', { class: 'material-symbols-outlined text-sm' }, 'close'))
                     ]),
+                    // Blurb
                     m('textarea', {
                         class: 'w-full text-field-full text-xs', rows: 2,
-                        value: s.summary || s.description || '',
-                        placeholder: 'Scene summary',
-                        oninput: function (e) { extractedScenes[i].summary = e.target.value; }
+                        value: s.blurb || s.summary || s.description || '',
+                        placeholder: 'Scene description/blurb',
+                        oninput: function (e) {
+                            extractedScenes[i].blurb = e.target.value;
+                            extractedScenes[i].summary = e.target.value;
+                            s.userEdited = true;
+                        }
                     }),
+                    // Diffusion prompt (collapsible)
+                    m('details', { class: 'text-xs' }, [
+                        m('summary', { class: 'cursor-pointer text-gray-500 hover:text-gray-700' }, 'Diffusion Prompt'),
+                        m('textarea', {
+                            class: 'w-full text-field-full text-xs mt-1', rows: 2,
+                            value: s.diffusionPrompt || '',
+                            placeholder: 'Stable Diffusion prompt for illustration',
+                            oninput: function (e) { extractedScenes[i].diffusionPrompt = e.target.value; s.userEdited = true; }
+                        })
+                    ]),
+                    // Characters
                     m('div', { class: 'text-gray-500 text-xs' }, 'Characters: ' +
-                        (Array.isArray(s.characters) ? s.characters.map(c => (typeof c === 'string' ? c : c.name)).join(', ') : '—'))
+                        (Array.isArray(s.characters) ? s.characters.map(function (c) { return typeof c === 'string' ? c : c.name; }).join(', ') : '—'))
                 ]);
             })
         )
@@ -564,9 +655,15 @@ function buildActions() {
             actions.push({
                 label: extracting ? 'Extracting...' : 'Extract Scenes',
                 icon: 'auto_awesome',
-                primary: true,
                 disabled: extracting,
                 onclick: doExtractScenesOnly
+            });
+            actions.push({
+                label: extracting ? 'Extracting...' : 'Chunked Extract',
+                icon: 'stacks',
+                primary: true,
+                disabled: extracting,
+                onclick: doExtractChunked
             });
             actions.push({
                 label: extracting ? 'Extracting...' : 'Extract Everything',
@@ -596,11 +693,14 @@ function buildActions() {
             onclick: function () { step = 4; m.redraw(); }
         });
     } else if (step === 4) {
+        let targets = scenes.length ? scenes : extractedScenes;
+        let allGenerated = targets.length > 0 && targets.every(function (s) { return s.imageObjectId; });
         actions.push({
-            label: 'View Picture Book', icon: 'auto_stories', primary: true,
+            label: 'View Picture Book', icon: 'auto_stories',
+            primary: allGenerated, disabled: !allGenerated,
             onclick: async function () {
                 try {
-                    metaScenes = await loadPictureBook(workObjectId);
+                    metaScenes = await loadPictureBook(bookObjectId || workObjectId);
                 } catch (e) {
                     metaScenes = scenes;
                 }
@@ -615,7 +715,7 @@ function buildActions() {
             label: 'Open in Viewer', icon: 'open_in_new',
             onclick: function () {
                 Dialog.close();
-                m.route.set('/picture-book/' + workObjectId);
+                m.route.set('/picture-book/' + (bookObjectId || workObjectId));
             }
         });
         actions.push({

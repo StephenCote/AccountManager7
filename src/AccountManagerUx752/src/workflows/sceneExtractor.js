@@ -22,7 +22,7 @@ function pbBase() {
 
 /**
  * Extract scenes only (no character creation). Returns raw scene JSON array.
- * @param {string} workObjectId
+ * @param {string} workObjectId - source document objectId
  * @param {string|null} chatConfigName
  * @param {number} count
  * @returns {Promise<Array>}
@@ -41,7 +41,8 @@ async function extractScenes(workObjectId, chatConfigName, count) {
 
 /**
  * Full extraction — scenes + characters + charPerson creation.
- * Returns .pictureBookMeta JSON.
+ * Creates ~/PictureBooks/{bookName}/ group. Returns .pictureBookMeta JSON with bookObjectId.
+ * @param {string} workObjectId - source document objectId
  */
 async function fullExtract(workObjectId, chatConfigName, count, genre, bookName) {
     let body = { schema: 'olio.pictureBookRequest', count: count || MAX_SCENES_DEFAULT };
@@ -54,6 +55,25 @@ async function fullExtract(workObjectId, chatConfigName, count, genre, bookName)
         body: JSON.stringify(body)
     });
     if (!resp.ok) throw new Error('Full extract failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Chunked scene extraction — processes full text in chunks with running context.
+ * Returns { sceneList: [...], extractionComplete: true, chunksProcessed: N }
+ * @param {string} workObjectId - source document objectId
+ * @param {string|null} chatConfigName
+ * @returns {Promise<{sceneList: Array, extractionComplete: boolean, chunksProcessed: number}>}
+ */
+async function extractChunked(workObjectId, chatConfigName) {
+    let body = { schema: 'olio.pictureBookRequest' };
+    if (chatConfigName) body.chatConfig = chatConfigName;
+    let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-chunked', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('Chunked extract failed: ' + resp.status);
     return resp.json();
 }
 
@@ -96,10 +116,11 @@ async function regenerateBlurb(sceneObjectId, chatConfigName) {
 
 /**
  * Load ordered scene list from .pictureBookMeta.
+ * @param {string} bookObjectId - book group objectId (under ~/PictureBooks/)
  * @returns {Promise<Array>}
  */
-async function loadPictureBook(workObjectId) {
-    let resp = await fetch(pbBase() + '/' + workObjectId + '/scenes', {
+async function loadPictureBook(bookObjectId) {
+    let resp = await fetch(pbBase() + '/' + bookObjectId + '/scenes', {
         credentials: 'include'
     });
     if (!resp.ok) return [];
@@ -108,11 +129,11 @@ async function loadPictureBook(workObjectId) {
 
 /**
  * Reorder scenes.
- * @param {string} workObjectId
+ * @param {string} bookObjectId - book group objectId
  * @param {string[]} orderedObjectIds
  */
-async function reorderScenes(workObjectId, orderedObjectIds) {
-    let resp = await fetch(pbBase() + '/' + workObjectId + '/scenes/order', {
+async function reorderScenes(bookObjectId, orderedObjectIds) {
+    let resp = await fetch(pbBase() + '/' + bookObjectId + '/scenes/order', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ scenes: orderedObjectIds })
@@ -122,10 +143,11 @@ async function reorderScenes(workObjectId, orderedObjectIds) {
 }
 
 /**
- * Reset (delete Scenes/ and Characters/ groups + meta).
+ * Reset (delete entire book group under ~/PictureBooks/).
+ * @param {string} bookObjectId - book group objectId
  */
-async function resetPictureBook(workObjectId) {
-    let resp = await fetch(pbBase() + '/' + workObjectId + '/reset', {
+async function resetPictureBook(bookObjectId) {
+    let resp = await fetch(pbBase() + '/' + bookObjectId + '/reset', {
         method: 'DELETE',
         credentials: 'include'
     });
@@ -196,10 +218,15 @@ function clearImageCache() {
 
 /**
  * Build .pictureBookMeta structure from scene array (client-side helper).
+ * @param {string} sourceObjectId - source document objectId
+ * @param {string} bookObjectId - book group objectId
+ * @param {string} workName - book display name
+ * @param {Array} scenes
  */
-function buildMeta(workObjectId, workName, scenes) {
+function buildMeta(sourceObjectId, bookObjectId, workName, scenes) {
     return {
-        workObjectId,
+        sourceObjectId,
+        bookObjectId,
         workName: workName || '',
         sceneCount: scenes.length,
         scenes: scenes.map((s, i) => ({
@@ -218,6 +245,7 @@ export {
     DEFAULT_SD_CONFIG,
     MAX_SCENES_DEFAULT,
     extractScenes,
+    extractChunked,
     fullExtract,
     generateSceneImage,
     regenerateBlurb,

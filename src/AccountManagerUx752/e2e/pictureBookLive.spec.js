@@ -29,7 +29,8 @@ function saveScreenshot(pg, name) {
 
 // Shared state across all tests in this describe block
 let testInfo = {};
-let workObjectId = null;
+let workObjectId = null;     // Source document objectId (for extract API)
+let bookObjectId = null;     // Book group objectId (for scenes/viewer/reset APIs)
 let chatConfigName = null;
 let extractedScenes = [];  // populated by Phase B
 let generatedImageId = null;
@@ -107,22 +108,29 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
         if (workObjectId && chatConfigName) {
             await apiLogin(request, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            // Reset any previous extraction
-            await request.fetch(REST + '/olio/picture-book/' + workObjectId + '/reset', {
-                method: 'DELETE'
-            }).catch(() => {});
+            // Reset any previous extraction (bookObjectId not yet known — reset by workObjectId if legacy)
+            if (bookObjectId) {
+                await request.fetch(REST + '/olio/picture-book/' + bookObjectId + '/reset', {
+                    method: 'DELETE'
+                }).catch(() => {});
+            }
 
-            // Full extract
+            // Full extract — creates ~/PictureBooks/{bookName}/ and returns bookObjectId
             let extractResp = await request.post(REST + '/olio/picture-book/' + workObjectId + '/extract', {
                 data: {
                     schema: 'olio.pictureBookRequest',
                     count: 3,
                     genre: 'contemporary',
-                    chatConfig: chatConfigName
+                    chatConfig: chatConfigName,
+                    bookName: 'AIME Test Book'
                 }
             });
             let extractBody;
             try { extractBody = await extractResp.json(); } catch (e) { extractBody = null; }
+            if (extractBody && extractBody.bookObjectId) {
+                bookObjectId = extractBody.bookObjectId;
+                console.log('=== Setup: Book group created: bookObjectId=' + bookObjectId + ' ===');
+            }
             if (extractBody && extractBody.scenes && extractBody.scenes.length > 0) {
                 extractedScenes = extractBody.scenes;
                 console.log('=== Setup: Extracted ' + extractedScenes.length + ' scenes ===');
@@ -190,17 +198,19 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
                 let { applicationPath } = await import('/src/core/config.js');
                 let log = [];
 
-                // Reset first
-                let resetResp = await fetch(applicationPath + '/rest/olio/picture-book/' + args.workObjectId + '/reset', {
-                    method: 'DELETE', credentials: 'include'
-                }).catch(() => ({ status: 0 }));
-                log.push('Reset: ' + (resetResp.status || 'error'));
+                // Reset first (use bookObjectId if available, otherwise skip)
+                if (args.bookObjectId) {
+                    let resetResp = await fetch(applicationPath + '/rest/olio/picture-book/' + args.bookObjectId + '/reset', {
+                        method: 'DELETE', credentials: 'include'
+                    }).catch(() => ({ status: 0 }));
+                    log.push('Reset: ' + (resetResp.status || 'error'));
+                }
 
-                // Full extract
+                // Full extract — creates ~/PictureBooks/{bookName}/ and returns bookObjectId
                 let resp = await fetch(applicationPath + '/rest/olio/picture-book/' + args.workObjectId + '/extract', {
                     method: 'POST', credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ schema: 'olio.pictureBookRequest', count: 3, genre: 'contemporary', chatConfig: args.chatConfigName })
+                    body: JSON.stringify({ schema: 'olio.pictureBookRequest', count: 3, genre: 'contemporary', chatConfig: args.chatConfigName, bookName: 'AIME Test Book' })
                 });
                 log.push('Extract status: ' + resp.status);
 
@@ -224,55 +234,27 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
                     }
                 }
 
-                // Verify via GET /scenes (may be empty if .pictureBookMeta save failed)
-                let scenesResp = await fetch(applicationPath + '/rest/olio/picture-book/' + args.workObjectId + '/scenes', {
+                // Capture bookObjectId from extract response
+                let newBookObjectId = meta ? meta.bookObjectId : null;
+                log.push('bookObjectId: ' + newBookObjectId);
+
+                // Verify via GET /scenes using bookObjectId
+                let scenesId = newBookObjectId || args.bookObjectId || args.workObjectId;
+                let scenesResp = await fetch(applicationPath + '/rest/olio/picture-book/' + scenesId + '/scenes', {
                     credentials: 'include'
                 });
                 let scenes = await scenesResp.json().catch(() => []);
                 log.push('GET /scenes: ' + (Array.isArray(scenes) ? scenes.length : 'N/A'));
 
-                // If GET /scenes is empty but extract returned scenes, try to manually save the meta
-                // via the model API to work around AccessPoint permission bug on .pictureBookMeta
-                if (meta && meta.scenes && meta.scenes.length > 0 && (!Array.isArray(scenes) || scenes.length === 0)) {
-                    log.push('WORKAROUND: Saving meta manually via /rest/model');
-                    let metaJson = JSON.stringify(meta);
-                    // Get ~/Data group to get groupId
-                    let grpResp = await fetch(applicationPath + '/rest/path/make/auth.group/data/' +
-                        'B64-' + btoa('~/Data').replace(/=/g, '%3D'),
-                        { credentials: 'include' });
-                    let grp = null;
-                    try { grp = await grpResp.json(); } catch(e) {}
-                    if (grp && grp.id) {
-                        let createResp = await fetch(applicationPath + '/rest/model', {
-                            method: 'POST', credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                schema: 'data.data',
-                                name: '.pictureBookMeta',
-                                groupId: grp.id,
-                                groupPath: grp.path,
-                                contentType: 'application/json',
-                                description: metaJson
-                            })
-                        });
-                        log.push('Meta create status: ' + createResp.status);
-                        // Re-check GET /scenes
-                        let recheck = await fetch(applicationPath + '/rest/olio/picture-book/' + args.workObjectId + '/scenes', {
-                            credentials: 'include'
-                        });
-                        scenes = await recheck.json().catch(() => []);
-                        log.push('GET /scenes (after workaround): ' + (Array.isArray(scenes) ? scenes.length : 'N/A'));
-                    }
-                }
-
                 return {
                     status: resp.status,
                     meta,
+                    bookObjectId: newBookObjectId,
                     scenes: Array.isArray(scenes) ? scenes : [],
                     scenesFromGet: Array.isArray(scenes) ? scenes.length : 0,
                     log
                 };
-            }, { workObjectId, chatConfigName, userName: testInfo.testUserName });
+            }, { workObjectId, bookObjectId, chatConfigName, userName: testInfo.testUserName });
 
             console.log('=== B.2 Full Extraction ===');
             result.log.forEach(l => console.log('  ' + l));
@@ -289,15 +271,17 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
                 expect(s.title).toBeTruthy();
             }
 
+            // Capture bookObjectId from extract response
+            if (result.bookObjectId) bookObjectId = result.bookObjectId;
+
             // Save for later tests — use extract response if GET /scenes is still empty
             extractedScenes = result.scenes.length ? result.scenes : (result.meta.scenes || []);
             if (result.scenesFromGet > 0) {
                 expect(result.scenesFromGet).toBe(result.meta.scenes.length);
             } else {
-                console.log('  WARNING: GET /scenes returned 0 — meta save may have failed');
-                console.log('  Using extract response scenes for subsequent tests');
+                console.log('  WARNING: GET /scenes returned 0');
             }
-            console.log('VERIFIED: ' + sc + ' scenes extracted, ' + extractedScenes.length + ' available for tests');
+            console.log('VERIFIED: ' + sc + ' scenes extracted, ' + extractedScenes.length + ' available, bookObjectId=' + bookObjectId);
         });
 
         test('B.3 GET /scenes returns valid data', async ({ page }) => {
@@ -306,9 +290,10 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
+            let scenesId = bookObjectId || workObjectId;
             let result = await page.evaluate(async (args) => {
                 let { applicationPath } = await import('/src/core/config.js');
-                let resp = await fetch(applicationPath + '/rest/olio/picture-book/' + args.workObjectId + '/scenes', {
+                let resp = await fetch(applicationPath + '/rest/olio/picture-book/' + args.scenesId + '/scenes', {
                     credentials: 'include'
                 });
                 if (!resp.ok) return { status: resp.status, scenes: [] };
@@ -323,7 +308,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
                         characterCount: Array.isArray(s.characters) ? s.characters.length : 0
                     })) : []
                 };
-            }, { workObjectId });
+            }, { scenesId });
 
             console.log('=== B.3 GET /scenes ===');
             result.scenes.forEach((s, i) => {
@@ -690,7 +675,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!extractedScenes.length, 'No scenes from extraction');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
             await saveScreenshot(page, 'D1-cover');
 
@@ -728,7 +713,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             let text = await page.evaluate(() => document.body.innerText);
@@ -748,7 +733,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             // Click Begin
@@ -794,7 +779,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             // Go to page 1
@@ -835,7 +820,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
             await page.keyboard.press('ArrowRight');
             await page.waitForTimeout(1000);
@@ -857,7 +842,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!generatedImageId, 'No image generated in B.4');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForFunction(() => {
                 let text = document.body.innerText;
                 return !text.includes('Loading') && (text.includes('Begin') || text.includes('Page '));
@@ -907,7 +892,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             let totalDots = await page.evaluate(() => document.querySelectorAll('button.rounded-full').length);
@@ -949,7 +934,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             let totalDots = await page.evaluate(() => document.querySelectorAll('button.rounded-full').length);
@@ -988,7 +973,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             // On cover
@@ -1017,7 +1002,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             // End → last page
@@ -1048,7 +1033,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             let totalDots = await page.evaluate(() => document.querySelectorAll('button.rounded-full').length);
@@ -1082,7 +1067,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             let errors = [];
             page.on('pageerror', err => errors.push(err.message));
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             await page.keyboard.press('ArrowLeft');
@@ -1104,7 +1089,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             let errors = [];
             page.on('pageerror', err => errors.push(err.message));
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             await page.keyboard.press('End');
@@ -1135,7 +1120,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             // Click fullscreen
@@ -1163,7 +1148,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             // Enter fullscreen
@@ -1190,7 +1175,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             // Enter fullscreen
@@ -1231,7 +1216,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
             await page.keyboard.press('ArrowRight');
             await page.waitForTimeout(1000);
@@ -1257,7 +1242,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
             await page.keyboard.press('ArrowRight');
             await page.waitForTimeout(1000);
@@ -1305,7 +1290,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             let errors = [];
             page.on('pageerror', err => errors.push(err.message));
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
             await page.keyboard.press('ArrowRight');
             await page.waitForTimeout(1000);
@@ -1352,7 +1337,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             let btnState = await page.evaluate(() => {
@@ -1375,7 +1360,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, 'No scenes from extraction');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             let downloadPromise = page.waitForEvent('download', { timeout: 30000 }).catch(() => null);
@@ -1495,7 +1480,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             await page.evaluate(() => { window.location.hash = '#!/picture-book'; });
             await page.waitForTimeout(3000);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
 
             await page.keyboard.press('ArrowRight');
@@ -1529,7 +1514,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             await page.evaluate(() => { window.location.hash = '#!/picture-book'; });
             await page.waitForTimeout(3000);
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
             await page.keyboard.press('ArrowRight');
             await page.waitForTimeout(500);
@@ -1554,7 +1539,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
                 }
             });
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
+            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
             await page.keyboard.press('ArrowRight');
             await page.waitForTimeout(500);

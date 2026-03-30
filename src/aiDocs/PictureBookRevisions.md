@@ -360,6 +360,41 @@ Each picture book gets its own named group under a `~/PictureBooks/` directory:
 
 ---
 
+## 15. ChatConfig Options Not Saving (Priority: HIGH)
+
+### Problem
+Changes to chatConfig options (chatOptions sub-form) are not persisting on save. Same pattern as the charPerson voice field save issue — foreign model sub-form changes aren't being included in the patch/update.
+
+### Root Cause (Likely)
+The `chatOptions` field is a foreign model reference on `olio.llm.chatConfig`. When editing via the object page sub-form, the nested entity changes aren't tracked by `instance.changes` / `instance.patch()`. The save operation sends a patch without the `chatOptions` field, so the backend doesn't update it.
+
+### Investigation Needed
+- Check how `charPerson` voice save was fixed previously
+- Check if `chatOptions` is in the patch when saving
+- May need explicit `background: true` async sub-object save pattern (same as model ref forms from Phase 16)
+
+### Files to Check
+- `views/object.js` — save handler, sub-form save logic
+- `core/formDef.js` — chatConfig / chatOptionsRef form definition
+
+---
+
+## 14. ChatConfig: Missing LLM Chat Option Presets (Priority: MEDIUM — FIXED)
+
+### Problem
+When viewing/editing a chatConfig object, the "Apply LLM Chat Option Presets" feature is missing. This was available in Ux7/Ux75 and allows quickly setting common configurations (temperature, top_p, etc.) from predefined presets.
+
+### Investigation Needed
+- Check how Ux7 implements chat option presets (`../AccountManagerUx7/client/`)
+- Check if `chatOptions` field on `olio.llm.chatConfig` model has preset support
+- May be a formDef command or a field renderer feature
+
+### Files to Check
+- `core/formDef.js` — chatConfig form definition
+- Ux7 reference: `../AccountManagerUx7/client/chat/` or similar
+
+---
+
 ## 13. List View: Missing Parent/Group Navigation for Dual-Hierarchy Objects (Priority: MEDIUM)
 
 ### Problem
@@ -377,6 +412,93 @@ For objects with both `groupId` and `parentId`:
 - `views/list.js` — breadcrumb rendering, navigation handlers
 - `components/pagination.js` — may need parent-aware pagination
 - Check Ux7 reference for how dual-hierarchy navigation was handled
+
+---
+
+## 16. Chunked Scene Extraction with User Editing (Priority: HIGH — Design)
+
+### Problem
+Current extraction sends the entire story text (truncated at 8000 chars) to the LLM in one shot. This:
+- Loses content beyond 8000 chars
+- Gives the LLM no running context — scenes cluster at the start
+- Produces generic blurbs and no usable diffusion prompts
+- User has no control over scene selection before generation begins
+
+### Proposed Flow
+
+**Phase 1 — Chunked Summarization**
+1. Split source text into chunks (e.g., 2000-char segments with overlap)
+2. For each chunk, send to LLM with the **running scene list** as context:
+   - System prompt: "You are extracting visual scenes from a narrative. Here are scenes found so far: {previousScenes}. Continue identifying new scenes or revise existing ones."
+   - User prompt: "Extract scenes from this segment: {chunk}"
+3. LLM returns: additions, revisions to existing scenes, or no changes
+4. Accumulate into an in-memory scene list: `[{title, blurb, setting, action, mood, characters, diffusionPrompt}]`
+5. After all chunks processed, the list covers the full narrative arc
+
+**Phase 2 — User Editing**
+1. Present the scene list in the wizard (new Step 2)
+2. User can:
+   - **Edit** title, blurb, diffusion prompt for any scene
+   - **Remove** scenes they don't want
+   - **Add** manual scenes
+   - **Reorder** scenes via drag or up/down arrows
+3. Each scene shows a preview of its diffusion prompt
+4. "Regenerate prompt" button per scene — re-runs LLM to build a new diffusion prompt from the scene data
+
+**Phase 3 — Book Generation**
+1. User confirms the final scene list
+2. Backend creates scene notes from the confirmed list (no LLM needed — data is ready)
+3. Image generation uses the user-approved diffusion prompts (no separate prompt-building LLM step)
+4. Characters are extracted from the confirmed scene list
+
+### Data Structure (in-memory, saved to meta)
+```json
+{
+  "sceneList": [
+    {
+      "index": 0,
+      "title": "The Wilted Bouquet",
+      "blurb": "Introverts slouch in romantic glow, clutching leathery petals...",
+      "setting": "Dimly lit upscale bar, phone screens glowing on small tables",
+      "action": "Singles sit alone with phones, tears melting through foundation",
+      "mood": "Melancholic, somber, blue-tinted lighting",
+      "characters": ["Introvert", "Service Staff"],
+      "diffusionPrompt": "dimly lit upscale bar interior, single tables with phone screens glowing blue, lonely figure slouched over drink, tears on cheeks, heavy makeup, wilted flower bouquet on table, cinematic noir lighting, illustration style",
+      "userEdited": false
+    }
+  ],
+  "extractionComplete": true,
+  "chunksProcessed": 4
+}
+```
+
+### Changes Needed
+
+**Backend:**
+- New endpoint: `POST /{workObjectId}/extract-chunked` — accepts chunk index + previous scene list, returns updated scene list
+- OR: do all chunking server-side in the existing `extract` endpoint (simpler)
+- Store `sceneList` in the meta alongside the existing `scenes` array
+
+**Frontend (wizard):**
+- Step 1: Source + config (existing)
+- **Step 2 (new): Scene list editor** — table/card view of extracted scenes with inline editing
+  - Title, blurb, diffusion prompt all editable
+  - Add/remove/reorder buttons
+  - "Regenerate prompt" per scene
+- Step 3: Characters (derived from confirmed scenes)
+- Step 4: Image generation (uses confirmed diffusion prompts directly)
+- Step 5: View/export
+
+**Prompt templates needed:**
+- `pictureBook.extract-chunk` — chunked extraction with running context
+- `pictureBook.diffusion-prompt` — build SD prompt from scene data (already exists as `scene-image-prompt`)
+
+### Benefits
+- Full text coverage regardless of length
+- Running context prevents scene clustering
+- User controls exactly which scenes appear
+- Diffusion prompts are visible and editable before generation
+- No wasted LLM/SD calls on scenes the user doesn't want
 
 ---
 

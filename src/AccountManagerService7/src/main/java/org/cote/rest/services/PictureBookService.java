@@ -58,13 +58,13 @@ import jakarta.ws.rs.core.Response;
  * Auto-registered via RestServiceConfig packages("org.cote.rest.services").
  *
  * Endpoints under /olio/picture-book:
- *   POST /{workObjectId}/extract              — Full LLM extraction: scenes + characters
+ *   POST /{workObjectId}/extract              — Full LLM extraction: scenes + characters → creates ~/PictureBooks/{bookName}/
  *   POST /{workObjectId}/extract-scenes-only  — Scene extraction only (no character creation)
  *   POST /scene/{sceneObjectId}/generate      — Generate SD image for one scene
  *   POST /scene/{sceneObjectId}/blurb         — Regenerate scene blurb via LLM
- *   GET  /{workObjectId}/scenes               — Ordered scene list from .pictureBookMeta
- *   PUT  /{workObjectId}/scenes/order         — Reorder scenes
- *   DELETE /{workObjectId}/reset              — Delete Scenes/ and Characters/ groups
+ *   GET  /{bookObjectId}/scenes               — Ordered scene list from .pictureBookMeta (bookObjectId = book group objectId)
+ *   PUT  /{bookObjectId}/scenes/order         — Reorder scenes
+ *   DELETE /{bookObjectId}/reset              — Delete entire book group
  */
 @DeclareRoles({"admin", "user"})
 @Path("/olio/picture-book")
@@ -96,6 +96,7 @@ public class PictureBookService {
     // ----- Helpers -------------------------------------------------------
 
     private static final String PB_REQUEST_SCHEMA = "olio.pictureBookRequest";
+    private static final String PICTURE_BOOKS_DIR = "PictureBooks";
 
     /**
      * Ensure the JSON body has a schema field so the deserializer can parse it.
@@ -112,7 +113,7 @@ public class PictureBookService {
     }
 
     /**
-     * Resolve the work record from its objectId.
+     * Resolve the work record (source document) from its objectId.
      */
     private BaseRecord findWork(BaseRecord user, String workObjectId) {
         Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, workObjectId);
@@ -127,6 +128,39 @@ public class PictureBookService {
             found = IOSystem.getActiveContext().getAccessPoint().find(user, q);
         }
         return found;
+    }
+
+    /**
+     * Find the ~/PictureBooks/ parent directory, creating it if needed.
+     */
+    private BaseRecord ensurePictureBooksDir(BaseRecord user) {
+        long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+        return IOSystem.getActiveContext().getPathUtil().makePath(user,
+                ModelNames.MODEL_GROUP, "~/Data/" + PICTURE_BOOKS_DIR, GroupEnumType.DATA.toString(), orgId);
+    }
+
+    /**
+     * Find or create a named book group under ~/PictureBooks/{bookName}/.
+     */
+    private BaseRecord ensureBookGroup(BaseRecord user, String bookName) {
+        long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+        String bookPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + bookName;
+        BaseRecord grp = IOSystem.getActiveContext().getPathUtil().makePath(user,
+                ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId);
+        if (grp != null) {
+            try { grp.set(FieldNames.FIELD_PATH, bookPath); } catch (Exception e) { /* already set */ }
+        }
+        return grp;
+    }
+
+    /**
+     * Find a book group by its objectId (auth.group).
+     */
+    private BaseRecord findBookGroup(BaseRecord user, String bookGroupObjectId) {
+        Query q = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_OBJECT_ID, bookGroupObjectId);
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        q.planMost(true);
+        return IOSystem.getActiveContext().getAccessPoint().find(user, q);
     }
 
     /**
@@ -153,16 +187,14 @@ public class PictureBookService {
     }
 
     /**
-     * Find or create a sub-group of the work's group.
+     * Find or create a sub-group under a given parent group path.
      */
-    private BaseRecord ensureSubGroup(BaseRecord user, BaseRecord work, String subName) {
-        String workGroupPath = work.get(FieldNames.FIELD_GROUP_PATH);
-        if (workGroupPath == null || workGroupPath.isEmpty()) return null;
-        String subPath = workGroupPath + "/" + subName;
+    private BaseRecord ensureSubGroup(BaseRecord user, String parentGroupPath, String subName) {
+        if (parentGroupPath == null || parentGroupPath.isEmpty()) return null;
+        String subPath = parentGroupPath + "/" + subName;
         BaseRecord grp = IOSystem.getActiveContext().getPathUtil().makePath(user,
                 ModelNames.MODEL_GROUP, subPath, GroupEnumType.DATA.toString(),
                 (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        // Ensure path is set (virtual field may not be populated by makePath)
         if (grp != null) {
             try { grp.set(FieldNames.FIELD_PATH, subPath); } catch (Exception e) { /* already set */ }
         }
@@ -170,14 +202,13 @@ public class PictureBookService {
     }
 
     /**
-     * Load the .pictureBookMeta record from the work's group.
-     * Uses data.note (text field has no length limit) instead of data.data (description capped at 512).
+     * Load the .pictureBookMeta record from a group path.
+     * Uses data.note (text field has no length limit).
      */
-    private BaseRecord loadMeta(BaseRecord user, BaseRecord work) {
-        String workGroupPath = work.get(FieldNames.FIELD_GROUP_PATH);
-        if (workGroupPath == null) return null;
+    private BaseRecord loadMeta(BaseRecord user, String groupPath) {
+        if (groupPath == null) return null;
         BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                ModelNames.MODEL_GROUP, workGroupPath, GroupEnumType.DATA.toString(),
+                ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(),
                 (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
         if (grp == null) return null;
 
@@ -189,15 +220,14 @@ public class PictureBookService {
     }
 
     /**
-     * Save .pictureBookMeta JSON to the work's group as a data.note (text field, no length limit).
+     * Save .pictureBookMeta JSON to a group as a data.note (text field, no length limit).
      */
     @SuppressWarnings("unchecked")
-    private BaseRecord saveMeta(BaseRecord user, BaseRecord work, Map<String, Object> meta) {
-        String workGroupPath = work.get(FieldNames.FIELD_GROUP_PATH);
-        if (workGroupPath == null) return null;
+    private BaseRecord saveMeta(BaseRecord user, String groupPath, Map<String, Object> meta) {
+        if (groupPath == null) return null;
         String metaJson = JSONUtil.exportObject(meta);
 
-        BaseRecord existing = loadMeta(user, work);
+        BaseRecord existing = loadMeta(user, groupPath);
         if (existing != null) {
             try {
                 existing.set("text", metaJson);
@@ -210,7 +240,7 @@ public class PictureBookService {
         }
 
         // Create new data.note
-        ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, workGroupPath);
+        ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
         plist.parameter(FieldNames.FIELD_NAME, ".pictureBookMeta");
         try {
             BaseRecord newRec = IOSystem.getActiveContext().getFactory().newInstance(
@@ -298,10 +328,42 @@ public class PictureBookService {
 
     /**
      * Call the LLM with a prompt template substitution.
+     * Resolves prompt by: 1) user's ~/Chat group, 2) system library, 3) classpath resource.
      */
     private String callLlm(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars) {
-        String system = PromptResourceUtil.getString(promptName, "system");
-        String userTpl = PromptResourceUtil.getString(promptName, "user");
+        String system = null;
+        String userTpl = null;
+
+        // Try user-customizable prompt template first (user's group → system library)
+        try {
+            BaseRecord pt = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_PROMPT_TEMPLATE, promptName, null);
+            if (pt != null) {
+                // Compose system and user strings from sections
+                @SuppressWarnings("unchecked")
+                List<BaseRecord> sections = pt.get("sections");
+                if (sections != null) {
+                    StringBuilder sysBuf = new StringBuilder();
+                    StringBuilder usrBuf = new StringBuilder();
+                    for (BaseRecord sec : sections) {
+                        String role = sec.get("role");
+                        @SuppressWarnings("unchecked")
+                        List<String> lines = sec.get("lines");
+                        if (lines == null) continue;
+                        String text = String.join("\n", lines);
+                        if ("system".equals(role)) sysBuf.append(text).append("\n");
+                        else if ("user".equals(role)) usrBuf.append(text).append("\n");
+                    }
+                    if (sysBuf.length() > 0) system = sysBuf.toString().trim();
+                    if (usrBuf.length() > 0) userTpl = usrBuf.toString().trim();
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Prompt template lookup failed for " + promptName + ": " + e.getMessage());
+        }
+
+        // Fallback to classpath resource
+        if (system == null) system = PromptResourceUtil.getString(promptName, "system");
+        if (userTpl == null) userTpl = PromptResourceUtil.getString(promptName, "user");
         if (system == null || userTpl == null) {
             logger.warn("Prompt template not found: " + promptName);
             return null;
@@ -507,6 +569,136 @@ public class PictureBookService {
     }
 
     /**
+     * POST /{workObjectId}/extract-chunked
+     * Chunked scene extraction — splits text into ~2000-char chunks with overlap,
+     * processes each chunk with the LLM using running scene context.
+     * Returns a sceneList array covering the full narrative arc.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{workObjectId:[0-9A-Za-z\\-]+}/extract-chunked")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response extractChunked(@PathParam("workObjectId") String workObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord work = findWork(user, workObjectId);
+        if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
+
+        String chatConfigName = null;
+        if (json != null && !json.trim().isEmpty()) {
+            try {
+                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
+                        RecordDeserializerConfig.getUnfilteredModule());
+                chatConfigName = params.get("chatConfig");
+            } catch (Exception e) {
+                logger.warn("Failed to parse chunked extract request: " + e.getMessage());
+            }
+        }
+
+        String text = extractWorkText(user, work);
+        if (text == null || text.isEmpty()) {
+            return Response.status(400).entity("{\"error\":\"No text content found\"}").build();
+        }
+
+        BaseRecord chatConfig = null;
+        if (chatConfigName != null) {
+            chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+        }
+
+        // Split text into ~2000-char chunks with ~200-char overlap
+        int chunkSize = 2000;
+        int overlap = 200;
+        List<String> chunks = new ArrayList<>();
+        int pos = 0;
+        while (pos < text.length()) {
+            int end = Math.min(pos + chunkSize, text.length());
+            // Try to break at a sentence boundary
+            if (end < text.length()) {
+                int lastPeriod = text.lastIndexOf('.', end);
+                int lastNewline = text.lastIndexOf('\n', end);
+                int breakAt = Math.max(lastPeriod, lastNewline);
+                if (breakAt > pos + chunkSize / 2) end = breakAt + 1;
+            }
+            chunks.add(text.substring(pos, end));
+            pos = end - overlap;
+            if (pos < 0) pos = 0;
+            if (end >= text.length()) break;
+        }
+
+        // Process each chunk with running scene context
+        List<Map<String, Object>> sceneList = new ArrayList<>();
+        for (int ci = 0; ci < chunks.size(); ci++) {
+            String previousJson = sceneList.isEmpty() ? "[]" : JSONUtil.exportObject(sceneList);
+            Map<String, String> vars = new LinkedHashMap<>();
+            vars.put("previousScenes", previousJson);
+            vars.put("chunk", chunks.get(ci));
+
+            String llmResp = callLlm(user, chatConfig, "pictureBook.extract-chunk", vars);
+            if (llmResp == null || llmResp.isEmpty()) continue;
+
+            Map<String, Object> chunkResult = parseLlmJsonObject(llmResp);
+
+            // Process additions
+            Object addObj = chunkResult.get("additions");
+            if (addObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> additions = (List<Map<String, Object>>) addObj;
+                for (Map<String, Object> scene : additions) {
+                    scene.put("index", sceneList.size());
+                    scene.put("userEdited", false);
+                    sceneList.add(scene);
+                }
+            }
+
+            // Process revisions — match by title
+            Object revObj = chunkResult.get("revisions");
+            if (revObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> revisions = (List<Map<String, Object>>) revObj;
+                for (Map<String, Object> rev : revisions) {
+                    String revTitle = (String) rev.get("title");
+                    if (revTitle == null) continue;
+                    for (int si = 0; si < sceneList.size(); si++) {
+                        String existingTitle = (String) sceneList.get(si).get("title");
+                        if (revTitle.equals(existingTitle)) {
+                            // Merge revision fields into existing scene
+                            Map<String, Object> existing = sceneList.get(si);
+                            for (Map.Entry<String, Object> e : rev.entrySet()) {
+                                if (!"title".equals(e.getKey()) && e.getValue() != null) {
+                                    existing.put(e.getKey(), e.getValue());
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Process removals — match by title
+            Object remObj = chunkResult.get("removals");
+            if (remObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<String> removals = (List<String>) remObj;
+                sceneList.removeIf(s -> removals.contains(s.get("title")));
+            }
+
+            logger.info("Chunk " + (ci + 1) + "/" + chunks.size() + " processed: " + sceneList.size() + " scenes total");
+        }
+
+        // Re-index scenes
+        for (int i = 0; i < sceneList.size(); i++) {
+            sceneList.get(i).put("index", i);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sceneList", sceneList);
+        result.put("extractionComplete", true);
+        result.put("chunksProcessed", chunks.size());
+        return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+    }
+
+    /**
      * POST /{workObjectId}/extract
      * Full extraction: scenes + characters + outfit + narrate.
      * Returns .pictureBookMeta JSON.
@@ -551,9 +743,18 @@ public class PictureBookService {
             chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
         }
 
-        // Ensure sub-groups
-        BaseRecord scenesGroup = ensureSubGroup(user, work, "Scenes");
-        BaseRecord charsGroup = ensureSubGroup(user, work, "Characters");
+        // Create book group under ~/PictureBooks/{bookName}/
+        String effectiveBookName = (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME);
+        BaseRecord bookGroup = ensureBookGroup(user, effectiveBookName);
+        if (bookGroup == null) {
+            return Response.status(500).entity("{\"error\":\"Failed to create book group\"}").build();
+        }
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        if (bookGroupPath == null) bookGroupPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + effectiveBookName;
+
+        // Ensure sub-groups under book group
+        BaseRecord scenesGroup = ensureSubGroup(user, bookGroupPath, "Scenes");
+        BaseRecord charsGroup = ensureSubGroup(user, bookGroupPath, "Characters");
         if (scenesGroup == null || charsGroup == null) {
             return Response.status(500).entity("{\"error\":\"Failed to create sub-groups\"}").build();
         }
@@ -631,16 +832,17 @@ public class PictureBookService {
             idx++;
         }
 
-        // Build and save .pictureBookMeta
+        // Build and save .pictureBookMeta in the book group
         Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("workObjectId", workObjectId);
-        meta.put("workName", (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME));
+        meta.put("sourceObjectId", workObjectId);
+        meta.put("bookObjectId", bookGroup.get(FieldNames.FIELD_OBJECT_ID));
+        meta.put("workName", effectiveBookName);
         meta.put("sceneCount", metaScenes.size());
         meta.put("scenes", metaScenes);
         meta.put("extractedAt", ZonedDateTime.now().toString());
         meta.put("generatedAt", null);
 
-        saveMeta(user, work, meta);
+        saveMeta(user, bookGroupPath, meta);
 
         return Response.status(200).entity(JSONUtil.exportObject(meta)).build();
     }
@@ -971,20 +1173,22 @@ public class PictureBookService {
     }
 
     /**
-     * GET /{workObjectId}/scenes
+     * GET /{bookObjectId}/scenes
      * Returns ordered scene list from .pictureBookMeta.
+     * bookObjectId is the objectId of the book group under ~/PictureBooks/.
      */
     @RolesAllowed({"admin", "user"})
     @GET
-    @Path("/{workObjectId:[0-9A-Za-z\\-]+}/scenes")
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scenes")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response listScenes(@PathParam("workObjectId") String workObjectId,
+    public Response listScenes(@PathParam("bookObjectId") String bookObjectId,
             @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord work = findWork(user, workObjectId);
-        if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
+        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        if (bookGroup == null) return Response.status(404).entity("{\"error\":\"Book not found\"}").build();
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
 
-        BaseRecord metaRec = loadMeta(user, work);
+        BaseRecord metaRec = loadMeta(user, bookGroupPath);
         if (metaRec == null) {
             // No meta yet — return empty
             return Response.status(200).entity("[]").build();
@@ -998,9 +1202,44 @@ public class PictureBookService {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);
-            Object scenes = meta.get("scenes");
-            if (scenes == null) return Response.status(200).entity("[]").build();
-            return Response.status(200).entity(JSONUtil.exportObject(scenes)).build();
+            Object scenesObj = meta.get("scenes");
+            if (scenesObj == null) return Response.status(200).entity("[]").build();
+
+            // Merge current blurb from each scene note into the meta's description field
+            // so blurb edits persist across page reloads
+            if (scenesObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> scenesList = (List<Map<String, Object>>) scenesObj;
+                for (Map<String, Object> scene : scenesList) {
+                    String sceneOid = (String) scene.get("objectId");
+                    if (sceneOid == null) continue;
+                    try {
+                        Query noteQ = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneOid);
+                        noteQ.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                        noteQ.planMost(true);
+                        BaseRecord sceneNote = IOSystem.getActiveContext().getAccessPoint().find(user, noteQ);
+                        if (sceneNote != null) {
+                            String text = sceneNote.get("text");
+                            if (text != null && !text.isEmpty()) {
+                                Map<String, Object> textData = JSONUtil.getMap(text.getBytes(), String.class, Object.class);
+                                String blurb = (String) textData.get("blurb");
+                                if (blurb != null && !blurb.isEmpty()) {
+                                    scene.put("description", blurb);
+                                }
+                                // Also merge imageObjectId if present
+                                String imgOid = (String) textData.get("imageObjectId");
+                                if (imgOid != null) {
+                                    scene.put("imageObjectId", imgOid);
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        // Non-fatal — scene keeps its original description
+                    }
+                }
+            }
+
+            return Response.status(200).entity(JSONUtil.exportObject(scenesObj)).build();
         } catch (Exception e) {
             logger.error("Failed to parse meta: " + e.getMessage());
             return Response.status(500).entity("{\"error\":\"Failed to read meta\"}").build();
@@ -1008,19 +1247,19 @@ public class PictureBookService {
     }
 
     /**
-     * PUT /{workObjectId}/scenes/order
+     * PUT /{bookObjectId}/scenes/order
      * Reorder scenes. Body: { scenes: ["objectId1", ...] }
      */
     @RolesAllowed({"admin", "user"})
     @PUT
-    @Path("/{workObjectId:[0-9A-Za-z\\-]+}/scenes/order")
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scenes/order")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response reorderScenes(@PathParam("workObjectId") String workObjectId,
+    public Response reorderScenes(@PathParam("bookObjectId") String bookObjectId,
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord work = findWork(user, workObjectId);
-        if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
+        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        if (bookGroup == null) return Response.status(404).entity("{\"error\":\"Book not found\"}").build();
 
         List<String> newOrder = new ArrayList<>();
         if (json != null && !json.trim().isEmpty()) {
@@ -1040,7 +1279,8 @@ public class PictureBookService {
             }
         }
 
-        BaseRecord metaRec = loadMeta(user, work);
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        BaseRecord metaRec = loadMeta(user, bookGroupPath);
         if (metaRec == null) return Response.status(404).entity("{\"error\":\"Meta not found\"}").build();
 
         String metaJson = metaRec.get("text");
@@ -1068,7 +1308,7 @@ public class PictureBookService {
                         });
             }
             meta.put("scenes", reordered);
-            saveMeta(user, work, meta);
+            saveMeta(user, bookGroupPath, meta);
             return Response.status(200).entity("{\"reordered\":true}").build();
         } catch (Exception e) {
             logger.error("Failed to reorder scenes: " + e.getMessage());
@@ -1077,45 +1317,26 @@ public class PictureBookService {
     }
 
     /**
-     * DELETE /{workObjectId}/reset
-     * Delete Scenes/ and Characters/ sub-groups for a work.
+     * DELETE /{bookObjectId}/reset
+     * Delete the entire book group (Scenes/, Characters/, meta) under ~/PictureBooks/.
      */
     @RolesAllowed({"admin", "user"})
     @DELETE
-    @Path("/{workObjectId:[0-9A-Za-z\\-]+}/reset")
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/reset")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response reset(@PathParam("workObjectId") String workObjectId,
+    public Response reset(@PathParam("bookObjectId") String bookObjectId,
             @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord work = findWork(user, workObjectId);
-        if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
+        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        if (bookGroup == null) return Response.status(404).entity("{\"error\":\"Book not found\"}").build();
 
-        String workGroupPath = work.get(FieldNames.FIELD_GROUP_PATH);
+        // Delete the entire book group — removes Scenes/, Characters/, and meta in one operation
         boolean ok = true;
-
-        for (String sub : new String[]{"Scenes", "Characters"}) {
-            String subPath = workGroupPath + "/" + sub;
-            BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                    ModelNames.MODEL_GROUP, subPath, GroupEnumType.DATA.toString(),
-                    (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-            if (grp != null) {
-                try {
-                    IOSystem.getActiveContext().getAccessPoint().delete(user, grp);
-                } catch (Exception e) {
-                    logger.warn("Failed to delete " + sub + " group: " + e.getMessage());
-                    ok = false;
-                }
-            }
-        }
-
-        // Delete meta record
-        BaseRecord metaRec = loadMeta(user, work);
-        if (metaRec != null) {
-            try {
-                IOSystem.getActiveContext().getAccessPoint().delete(user, metaRec);
-            } catch (Exception e) {
-                logger.warn("Failed to delete meta: " + e.getMessage());
-            }
+        try {
+            IOSystem.getActiveContext().getAccessPoint().delete(user, bookGroup);
+        } catch (Exception e) {
+            logger.warn("Failed to delete book group: " + e.getMessage());
+            ok = false;
         }
 
         return Response.status(200).entity("{\"reset\":" + ok + "}").build();
