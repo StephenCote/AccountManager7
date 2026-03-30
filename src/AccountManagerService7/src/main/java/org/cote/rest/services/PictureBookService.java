@@ -452,7 +452,6 @@ public class PictureBookService {
             if (charPerson == null) return null;
 
             // Build SD portrait prompt from extracted character data and store in narrative.
-            // Store full extracted JSON in description for future reference.
             String portraitPrompt = NarrativeUtil.buildPortraitPromptFromExtractedData(name, charData);
             // Fallback: if NarrativeUtil returned null, build a basic prompt from character data
             if (portraitPrompt == null || portraitPrompt.isEmpty()) {
@@ -464,15 +463,11 @@ public class PictureBookService {
                 if (!role.isEmpty()) portraitPrompt += ", " + role;
                 portraitPrompt += ", detailed face, cinematic lighting, high quality";
             }
-            String charDataJson = JSONUtil.exportObject(charData);
             try {
                 charPerson.set("narrative", portraitPrompt);
-                if (charDataJson != null) {
-                    charPerson.set(FieldNames.FIELD_DESCRIPTION, charDataJson);
-                }
                 IOSystem.getActiveContext().getAccessPoint().update(user, charPerson);
             } catch (Exception e) {
-                logger.warn("Failed to set portrait prompt/description for " + name + ": " + e.getMessage());
+                logger.warn("Failed to set portrait prompt for " + name + ": " + e.getMessage(), e);
             }
             return charPerson;
 
