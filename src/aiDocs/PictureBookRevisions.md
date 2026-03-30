@@ -75,24 +75,30 @@ private String callLlm(BaseRecord user, BaseRecord chatConfig, String promptName
 
 ---
 
-## 2. `.pictureBookMeta` Save Bug (Priority: HIGH)
+## 2. `.pictureBookMeta` Save Bug (Priority: HIGH) — ROOT CAUSE FOUND
 
 ### Problem
-`AccessPoint.create()` denies creation of `data.data` records named `.pictureBookMeta` in the user's home group via the internal factory path, even though the same user can create `data.data` via the REST model endpoint.
+`saveMeta()` stores the entire meta JSON in `data.data.description`, but `description` has `maxLength: 512`. The meta JSON with 3 scenes is ~1200 characters → **RecordValidator rejects it**.
 
-### Root Cause
-Unknown — possibly a factory/parameter-list authorization path difference vs the REST model endpoint path. The `findWork()` fix (`planMost(true)`) populates `groupPath` correctly, but the `create` still fails with "Failed to add record."
+### Server Log Evidence
+```
+ERROR RecordValidator - description value '{"workObjectId":"...","sceneCount":3,"scenes":[...]}' exceeds maximum length 512
+ERROR RecordUtil - WriterException: Record failed validation in IO DATABASE
+```
 
-### Investigation Needed
-- Compare the `AccessPoint.create()` code path from `saveMeta()` vs `ModelService.create()`
-- Check if `ParameterList`-based factory sets different ownership/authorization context
-- Check if `.` prefix in name triggers any special handling
+### Fix
+Store the meta JSON in a field without a 512 char limit. Options:
+1. **Use `dataBytesStore`** — store as byte blob (unlimited size)
+2. **Use a `data.note` instead of `data.data`** — `data.note.text` has no maxLength
+3. **Increase `description` maxLength** on `data.data` model (affects all data.data records)
+
+**Recommended: Option 2** — change `saveMeta`/`loadMeta` to use a `data.note` named `.pictureBookMeta` instead of `data.data`. The `text` field on `data.note` is unlimited. This also eliminates the "Failed to add record" issue seen with test users (which was likely a secondary symptom of the validation failure).
+
+### Files Changed
+- `PictureBookService.java` — `saveMeta()` and `loadMeta()`: change `MODEL_DATA` to `MODEL_NOTE`, use `text` field instead of `description`
 
 ### Workaround (Currently Active)
 Frontend `loadViewer()` has a fallback: when GET /scenes returns empty, it searches the `Scenes/` subdirectory for `data.note` records directly and parses their `text` JSON for scene data.
-
-### Proper Fix
-Once root cause is identified, fix `saveMeta()` so GET /scenes works without the fallback.
 
 ---
 
@@ -189,6 +195,151 @@ Added `sdConfig` field to the model as an ephemeral `olio.sdConfig` model refere
 
 ### LLM Timeout Note
 The chatConfig used for testing has low timeouts. Complex LLM tasks (character extraction, blurb regeneration) may need more time. Consider adding a `timeout` field to `pictureBookRequest` or using higher defaults in the service.
+
+---
+
+## 8. Work Selector: Use Picker Control (Priority: HIGH)
+
+### Problem
+The work selector at `#!/picture-book` uses an unbound list (`am7client.search` with no group filter) to show documents. This returns ALL `data.data` and `data.note` records across ALL groups — inefficient, shows test artifacts, and doesn't follow the established UX pattern.
+
+### Fix
+Replace the custom list with the existing ObjectPicker component. The picker provides:
+- Scoped navigation (user's home directory)
+- Search/filter built in
+- Consistent UX with the rest of the app
+- Proper pagination
+
+### Files Changed
+- `features/pictureBook.js` — replace `loadWorks()` + `workSelectorView` with picker-based selection
+
+---
+
+## 9. Viewer Empty State: Add "Extract" Action (Priority: HIGH)
+
+### Problem
+When a document is selected that has no scenes extracted yet, the viewer shows "No picture book found for this work. Go back to select a document." — a dead end. There's no way to trigger extraction from the viewer.
+
+### Fix
+Replace the empty state message with an action panel that lets the user:
+1. **Extract scenes** — call the Picture Book wizard dialog (already exists in `workflows/pictureBook.js`) or call the extract endpoint directly
+2. Show chatConfig selector + scene count + genre hint (same as wizard Step 1)
+3. After extraction completes, reload the viewer with the new scenes
+
+The wizard dialog (`pictureBook` workflow) already has all the extraction UI. The simplest approach: add a "Generate Picture Book" button to the empty state that opens the wizard dialog for this work.
+
+### Files Changed
+- `features/pictureBook.js` — empty state in viewer, import and call `pictureBook` workflow
+
+---
+
+## 10. Character Portrait Prompt/Description Fails After Creation (Priority: HIGH)
+
+### Problem
+During full extraction, `createCharPerson` successfully creates the `olio.charPerson` record but then fails to set the portrait prompt and description:
+```
+AUDIT PERMIT system.user steve to ADD olio.charPerson Various Singles
+WARN PictureBookService - Failed to set portrait prompt/description for Various Singles: null
+```
+
+### Root Cause
+After `AccessPoint.create(user, charPerson)`, the code tries to set `narrative` and `description` fields on the returned record. The `null` in the error suggests `NarrativeUtil.buildPortraitPromptFromExtractedData()` is returning null, OR the `set()` call on the created record fails because the record returned by `create` is a partial record (identity fields only) and doesn't support setting fields.
+
+### Investigation Needed
+- Check if `AccessPoint.create` returns a full record or partial (identity-only)
+- Check if `NarrativeUtil.buildPortraitPromptFromExtractedData` handles the LLM character data format correctly
+- The character data comes from `parseLlmJsonObject(llmChar)` — the LLM response may not match the expected format
+- After `create`, may need to re-fetch the full record before setting fields, then `update`
+
+### Files
+- `PictureBookService.java` — `createCharPerson()` lines 340-377
+
+---
+
+## 11. List View Missing Icons — File Extension Treated as ContentType (Priority: MEDIUM)
+
+### Problem
+In the list view (e.g., when browsing chatConfig via picker), icons are missing. Objects with names ending in `.abc` (or any dot-separated suffix) have their name suffix incorrectly treated as a contentType, which causes the icon resolver to fail or show a wrong icon.
+
+### Root Cause
+The list view or icon resolver is parsing the object name's file extension as a MIME type hint, even for non-file objects like `olio.llm.chatConfig`. This is a recurring bug — it was fixed before but has regressed.
+
+### Investigation Needed
+- Check `objectViewDef.js` or `decorator.js` for name-based contentType inference
+- Check the list view's icon/thumbnail resolver for `.` splitting on object names
+- Fix: only infer contentType from name extension for `data.data` objects (actual files), not for other model types
+
+### Files to Check
+- `components/objectViewDef.js`
+- `components/decorator.js` or `views/list.js`
+
+---
+
+## 12. Decouple Picture Book Identity from Source Document (Priority: HIGH)
+
+### Problem
+Picture book data (Scenes/, Characters/, .pictureBookMeta) is stored as subdirectories of the source document's group path. This means:
+- Picture book name = source document name (no independent naming)
+- Can't have multiple picture books from the same document
+- All extractions overwrite each other
+- No clean way to browse/manage/delete picture books independently
+
+### Current Storage
+```
+~/Data/
+  AIME.pdf                    ← source
+  .pictureBookMeta            ← meta
+  Scenes/                     ← shared across all extractions
+  Characters/                 ← shared
+```
+
+### Proposed Storage
+Each picture book gets its own named group under a `~/PictureBooks/` directory:
+```
+~/PictureBooks/
+  AIME - Dark Noir/           ← user-named picture book
+    .pictureBookMeta
+    Scenes/
+    Characters/
+  AIME - Watercolor/           ← different version, same source
+    .pictureBookMeta
+    Scenes/
+    Characters/
+```
+
+### Changes Needed
+- **New field in wizard Step 1:** "Picture Book Name" (defaults to source doc name, editable)
+- **Backend `extract`:** Create named group under `~/PictureBooks/`, store all data there
+- **Backend `findWork`:** Still resolves the source document for text extraction
+- **Meta:** Add `sourceObjectId` field pointing back to the source document
+- **Work selector:** Browse `~/PictureBooks/` groups instead of source documents
+- **Delete:** Delete the entire picture book group (clean, one operation)
+- **Reset:** Only resets Scenes/Characters under the picture book group, not the source
+
+### Files Changed
+- `PictureBookService.java` — all endpoints: resolve paths relative to picture book group
+- `features/pictureBook.js` — work selector browses ~/PictureBooks/
+- `workflows/pictureBook.js` — wizard Step 1 adds name field
+
+---
+
+## 13. List View: Missing Parent/Group Navigation for Dual-Hierarchy Objects (Priority: MEDIUM)
+
+### Problem
+`data.note` has both `groupId` (directory hierarchy) and `parentId` (parent-child hierarchy). The list view allows navigating DOWN into group children but:
+- No way to navigate UP in the group hierarchy (no breadcrumb back to parent group)
+- No parent-based navigation at all (can't navigate up/down via `parentId`)
+
+### Expected Behavior
+For objects with both `groupId` and `parentId`:
+- Group breadcrumb trail with clickable segments to navigate up
+- Parent navigation (click to view parent, list children by parentId)
+- Toggle or indication of which hierarchy is being browsed
+
+### Files to Check
+- `views/list.js` — breadcrumb rendering, navigation handlers
+- `components/pagination.js` — may need parent-aware pagination
+- Check Ux7 reference for how dual-hierarchy navigation was handled
 
 ---
 

@@ -385,6 +385,30 @@ function newListControl() {
                     }
                 }
             });
+        } else if (am7model.isGroup(modType || am7model.getModel(type))) {
+            // Group-based model (data.note, data.data, etc.) — navigate to parent group
+            let pg2 = pagination.pages();
+            if (pg2.container && pg2.container.path) {
+                let path = pg2.container.path;
+                let parentPath = path.substring(0, path.lastIndexOf('/'));
+                if (parentPath) {
+                    let pq = am7client.newQuery('auth.group');
+                    pq.entity.request = ['id', 'objectId', 'name', 'path'];
+                    let pf = pq.field('path', parentPath);
+                    pf.comparator = 'equals';
+                    pq.field('organizationId', page.user.organizationId);
+                    page.search(pq).then(function (qr) {
+                        if (!qr || !qr.results || !qr.results.length) return;
+                        let id = qr.results[0].objectId;
+                        if (embeddedMode || pickerMode) {
+                            navContainerId = id;
+                            m.redraw();
+                        } else {
+                            page.listByType(containerMode ? baseListType : type, id);
+                        }
+                    });
+                }
+            }
         } else {
             console.error('navigateUp: unhandled type ' + type);
         }

@@ -11,83 +11,143 @@ import { page } from '../core/pageClient.js';
 import { am7client } from '../core/am7client.js';
 import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
+import { ObjectPicker } from '../components/picker.js';
 import {
     loadPictureBook, reorderScenes, regenerateBlurb, resetPictureBook,
     resolveImageUrl, resolveAllImageUrls, clearImageCache
 } from '../workflows/sceneExtractor.js';
+import { pictureBookFromId } from '../workflows/pictureBook.js';
 
 // ── Work Selector View ────────────────────────────────────────────────
 
-let works = [];
-let worksLoading = false;
-let worksError = null;
+function openDocumentPicker(type) {
+    ObjectPicker.open({
+        type: type,
+        title: 'Select ' + (type === 'data.note' ? 'Note' : 'Document'),
+        onSelect: function (item) {
+            if (item && item.objectId) {
+                m.route.set('/picture-book/' + item.objectId);
+            }
+        }
+    });
+}
 
-async function loadWorks() {
-    worksLoading = true;
-    worksError = null;
+// ── Existing picture books ───────────────────────────────────────────
+
+let existingBooks = [];
+let existingLoading = false;
+
+async function loadExistingBooks() {
+    existingLoading = true;
+    m.redraw();
     try {
-        // Search both data.data (files) and data.note (text notes) — Picture Book accepts both
-        let allResults = [];
-
-        // data.data: text/PDF/DOCX files
-        let qd = am7client.newQuery('data.data');
-        qd.range(0, 50);
-        let qrd = await am7client.search(qd);
-        if (qrd && qrd.results) {
-            allResults = allResults.concat(qrd.results.filter(function (w) {
-                let ct = w.contentType || '';
-                return !ct || ct.startsWith('text/') || ct === 'application/pdf' ||
-                    ct === 'application/msword' ||
-                    ct === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-            }));
+        // Search for .pictureBookMeta notes — each one represents an extracted picture book
+        let q = am7client.newQuery('data.note');
+        q.field('name', '.pictureBookMeta');
+        q.range(0, 20);
+        if (q.entity.request.indexOf('text') < 0) q.entity.request.push('text');
+        if (q.entity.request.indexOf('groupPath') < 0) q.entity.request.push('groupPath');
+        let qr = await am7client.search(q);
+        existingBooks = [];
+        if (qr && qr.results) {
+            for (let meta of qr.results) {
+                let parsed = {};
+                try { parsed = JSON.parse(meta.text || '{}'); } catch (e) {}
+                if (parsed.workObjectId) {
+                    existingBooks.push({
+                        workObjectId: parsed.workObjectId,
+                        workName: parsed.workName || 'Untitled',
+                        sceneCount: parsed.sceneCount || 0,
+                        extractedAt: parsed.extractedAt || ''
+                    });
+                }
+            }
         }
-
-        // data.note: text notes (e.g. AIME story content)
-        let qn = am7client.newQuery('data.note');
-        qn.range(0, 50);
-        let qrn = await am7client.search(qn);
-        if (qrn && qrn.results) {
-            allResults = allResults.concat(qrn.results);
+        // Also search for data.data .pictureBookMeta (legacy format)
+        let q2 = am7client.newQuery('data.data');
+        q2.field('name', '.pictureBookMeta');
+        q2.range(0, 20);
+        let qr2 = await am7client.search(q2);
+        if (qr2 && qr2.results) {
+            for (let meta of qr2.results) {
+                let parsed = {};
+                try { parsed = JSON.parse(meta.description || '{}'); } catch (e) {}
+                if (parsed.workObjectId && !existingBooks.some(function (b) { return b.workObjectId === parsed.workObjectId; })) {
+                    existingBooks.push({
+                        workObjectId: parsed.workObjectId,
+                        workName: parsed.workName || 'Untitled',
+                        sceneCount: parsed.sceneCount || 0,
+                        extractedAt: parsed.extractedAt || ''
+                    });
+                }
+            }
         }
-
-        works = allResults;
     } catch (e) {
-        worksError = 'Failed to load documents';
-        works = [];
+        existingBooks = [];
     }
-    worksLoading = false;
+    existingLoading = false;
     m.redraw();
 }
 
 var workSelectorView = {
-    oninit: function () { loadWorks(); },
+    oninit: function () { loadExistingBooks(); },
     view: function () {
         return m('div', { class: 'p-4 max-w-3xl' }, [
             m('div', { class: 'flex items-center gap-2 mb-4' }, [
                 m('span', { class: 'material-symbols-outlined text-2xl' }, 'auto_stories'),
                 m('h2', { class: 'text-xl font-semibold' }, 'Picture Book')
             ]),
-            m('p', { class: 'text-sm text-gray-500 mb-4' },
-                'Select a document to generate an illustrated picture book.'),
 
-            worksLoading ? m('div', { class: 'text-sm text-gray-500' }, 'Loading documents...') :
-            worksError ? m('div', { class: 'text-red-500 text-sm' }, worksError) :
-            works.length === 0 ? m('div', { class: 'text-sm text-gray-500 italic' }, 'No documents found.') :
-            m('div', { class: 'grid grid-cols-1 gap-2' },
-                works.map(function (w) {
-                    return m('div', {
-                        key: w.objectId,
-                        class: 'flex items-center justify-between border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800',
-                        onclick: function () { m.route.set('/picture-book/' + w.objectId); }
-                    }, [
-                        m('div', [
-                            m('div', { class: 'font-medium text-sm' }, w.name || 'Untitled'),
-                            m('div', { class: 'text-xs text-gray-500' }, w.contentType || 'text/plain')
-                        ]),
-                        m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
-                    ]);
-                })
-            )
+            // Existing picture books
+            existingBooks.length > 0 ? m('div', { class: 'mb-6' }, [
+                m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Existing Picture Books'),
+                m('div', { class: 'grid grid-cols-1 gap-2' },
+                    existingBooks.map(function (b) {
+                        return m('div', {
+                            key: b.workObjectId,
+                            class: 'flex items-center justify-between border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20',
+                            onclick: function () { m.route.set('/picture-book/' + b.workObjectId); }
+                        }, [
+                            m('div', { class: 'flex items-center gap-3' }, [
+                                m('span', { class: 'material-symbols-outlined text-amber-500' }, 'auto_stories'),
+                                m('div', [
+                                    m('div', { class: 'font-medium text-sm' }, b.workName),
+                                    m('div', { class: 'text-xs text-gray-500' }, b.sceneCount + ' scene' + (b.sceneCount !== 1 ? 's' : ''))
+                                ])
+                            ]),
+                            m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
+                        ]);
+                    })
+                )
+            ]) : existingLoading ? m('div', { class: 'text-sm text-gray-500 mb-6' }, 'Loading...') : null,
+
+            // New picture book
+            m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' },
+                existingBooks.length > 0 ? 'Create New' : 'Select a document'),
+            m('div', { class: 'flex flex-col gap-3' }, [
+                m('button', {
+                    class: 'flex items-center gap-3 border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-left',
+                    onclick: function () { openDocumentPicker('data.note'); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined text-blue-500' }, 'note'),
+                    m('div', [
+                        m('div', { class: 'font-medium text-sm' }, 'Browse Notes'),
+                        m('div', { class: 'text-xs text-gray-500' }, 'Text notes with story content')
+                    ]),
+                    m('span', { class: 'material-symbols-outlined text-gray-400 ml-auto' }, 'chevron_right')
+                ]),
+                m('button', {
+                    class: 'flex items-center gap-3 border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-left',
+                    onclick: function () { openDocumentPicker('data.data'); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined text-green-500' }, 'description'),
+                    m('div', [
+                        m('div', { class: 'font-medium text-sm' }, 'Browse Documents'),
+                        m('div', { class: 'text-xs text-gray-500' }, 'PDF, DOCX, and text files')
+                    ]),
+                    m('span', { class: 'material-symbols-outlined text-gray-400 ml-auto' }, 'chevron_right')
+                ])
+            ])
         ]);
     }
 };
@@ -159,6 +219,30 @@ async function loadViewer(workObjectId) {
         if (workRec && workRec.name) {
             viewerWorkName = workRec.name;
             m.redraw();
+        }
+
+        // Check for .pictureBookMeta to get the user-specified book name
+        if (workRec && workRec.groupPath) {
+            try {
+                let mq = am7client.newQuery('data.note');
+                mq.field('name', '.pictureBookMeta');
+                if (mq.entity.request.indexOf('text') < 0) mq.entity.request.push('text');
+                if (mq.entity.request.indexOf('groupPath') < 0) mq.entity.request.push('groupPath');
+                // scope to the work's group
+                let mgrp = null;
+                try { mgrp = await am7client.find('auth.group', 'data', workRec.groupPath); } catch (e) {}
+                if (mgrp && mgrp.id) mq.field('groupId', mgrp.id);
+                mq.range(0, 1);
+                let mqr = await am7client.search(mq);
+                if (mqr && mqr.results && mqr.results.length > 0) {
+                    let metaParsed = {};
+                    try { metaParsed = JSON.parse(mqr.results[0].text || '{}'); } catch (e) {}
+                    if (metaParsed.workName) {
+                        viewerWorkName = metaParsed.workName;
+                        m.redraw();
+                    }
+                }
+            } catch (e) {}
         }
 
         let scenes = [];
@@ -254,19 +338,28 @@ async function saveBlurb() {
 async function regenBlurb() {
     let scene = currentScene();
     if (!scene || !scene.objectId) return;
-    savingBlurb = true;
-    m.redraw();
-    try {
-        let result = await regenerateBlurb(scene.objectId, null);
-        if (result && result.blurb) {
-            scene.description = result.blurb;
-            blurbEditText = result.blurb;
+
+    // Pick chatConfig before regenerating — blurb endpoint needs an LLM config
+    ObjectPicker.openLibrary({
+        libraryType: 'chatConfig',
+        title: 'Select Chat Config for Regeneration',
+        onSelect: async function (item) {
+            if (!item || !item.name) return;
+            savingBlurb = true;
+            m.redraw();
+            try {
+                let result = await regenerateBlurb(scene.objectId, item.name);
+                if (result && result.blurb) {
+                    scene.description = result.blurb;
+                    blurbEditText = result.blurb;
+                }
+            } catch (e) {
+                page.toast('error', 'Blurb regeneration failed');
+            }
+            savingBlurb = false;
+            m.redraw();
         }
-    } catch (e) {
-        page.toast('error', 'Blurb regeneration failed');
-    }
-    savingBlurb = false;
-    m.redraw();
+    });
 }
 
 // ── Export as self-contained HTML ──────────────────────────────────────
@@ -544,6 +637,24 @@ function renderHeader() {
         }, m('span', { class: 'material-symbols-outlined text-lg' },
             exporting ? 'hourglass_empty' : 'download')),
 
+        // Delete picture book
+        !fullscreen && viewerScenes.length ? m('button', {
+            class: 'text-red-400 hover:text-red-600',
+            title: 'Delete picture book',
+            onclick: function () {
+                if (!confirm('Delete this picture book? Scenes, characters, and images will be removed.')) return;
+                resetPictureBook(viewerWorkId).then(function () {
+                    page.toast('success', 'Picture book deleted');
+                    viewerScenes = [];
+                    imageUrls = {};
+                    currentPage = 0;
+                    m.redraw();
+                }).catch(function () {
+                    page.toast('error', 'Failed to delete');
+                });
+            }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null,
+
         // Fullscreen toggle
         m('button', {
             class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
@@ -577,14 +688,16 @@ function renderPageDots() {
 
 var pictureBookView = {
     oninit: function (vnode) {
-        viewerWorkId = vnode.attrs.workObjectId;
-        viewerWorkName = 'Loading...';
-        loadViewer(viewerWorkId).then(function () {
-            // Try to get work name from first scene meta or keep default
-            if (viewerScenes.length && viewerScenes[0].workName) {
-                viewerWorkName = viewerScenes[0].workName;
-            }
-        });
+        // Only init on first call (route oninit) — skip when re-rendered as m(component)
+        if (vnode.attrs.workObjectId) {
+            viewerWorkId = vnode.attrs.workObjectId;
+            viewerWorkName = 'Loading...';
+            loadViewer(viewerWorkId).then(function () {
+                if (viewerScenes.length && viewerScenes[0].workName) {
+                    viewerWorkName = viewerScenes[0].workName;
+                }
+            });
+        }
     },
     oncreate: function () {
         document.addEventListener('keydown', onKeyDown);
@@ -603,12 +716,25 @@ var pictureBookView = {
             viewerLoading ? m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading picture book...') :
             viewerError ? m('div', { class: 'text-red-500 text-sm text-center py-12' }, viewerError) :
             viewerScenes.length === 0
-                ? m('div', { class: 'text-sm text-gray-500 italic text-center py-12' }, [
-                    'No picture book found for this work. ',
-                    m('a', {
-                        class: 'text-blue-500 underline cursor-pointer',
-                        onclick: function () { m.route.set('/picture-book'); }
-                    }, 'Go back to select a document.')
+                ? m('div', { class: 'text-center py-12' }, [
+                    m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 mb-4' }, 'auto_stories'),
+                    m('div', { class: 'text-sm text-gray-500 mb-6' },
+                        'No picture book has been generated for this document yet.'),
+                    m('button', {
+                        class: 'btn btn-primary px-6 py-2',
+                        onclick: function () {
+                            pictureBookFromId(viewerWorkId, viewerWorkName);
+                        }
+                    }, [
+                        m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'auto_awesome'),
+                        'Generate Picture Book'
+                    ]),
+                    m('div', { class: 'mt-4' }, [
+                        m('a', {
+                            class: 'text-blue-500 underline cursor-pointer text-xs',
+                            onclick: function () { m.route.set('/picture-book'); }
+                        }, 'or select a different document')
+                    ])
                 ])
                 : m('div', { class: 'flex-1 overflow-y-auto max-w-3xl mx-auto w-full' }, [
                     currentPage === 0 ? renderCover() : renderScenePage(),

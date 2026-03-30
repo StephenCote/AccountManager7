@@ -8,6 +8,7 @@ import {
     regenerateBlurb, loadPictureBook, resetPictureBook,
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
+import { ObjectPicker } from '../components/picker.js';
 
 /**
  * Picture Book workflow — multi-step wizard launched from a data.data or data.note object.
@@ -27,7 +28,7 @@ let workName = '';
 
 // Step 1
 let method = 'auto';
-let chatConfigOptions = [];
+let bookName = '';
 let chatConfigName = null;
 let sceneCount = MAX_SCENES_DEFAULT;
 let genre = '';
@@ -55,7 +56,7 @@ let step5ImageUrls = {};  // imageObjectId → resolved media URL
 function resetState() {
     step = 1;
     method = 'auto';
-    chatConfigOptions = [];
+    bookName = '';
     chatConfigName = null;
     sceneCount = MAX_SCENES_DEFAULT;
     genre = '';
@@ -75,21 +76,7 @@ function resetState() {
 
 // ── Step helpers ──────────────────────────────────────────────────────
 
-async function loadChatConfigs() {
-    try {
-        let dir = await page.findObject('auth.group', 'data', '~/Chat');
-        if (!dir) return;
-        let q = am7client.newQuery('olio.llm.chatConfig');
-        q.field('groupId', dir.id);
-        q.range(0, 50);
-        let qr = await am7client.search(q);
-        if (qr && qr.results) {
-            chatConfigOptions = qr.results.map(r => r.name || r.objectId);
-        }
-    } catch (e) {
-        chatConfigOptions = [];
-    }
-}
+// chatConfig is now selected via ObjectPicker — no preload needed
 
 function collectCharacters() {
     let seen = {};
@@ -110,7 +97,7 @@ async function doFullExtract() {
     extractError = null;
     m.redraw();
     try {
-        let meta = await fullExtract(workObjectId, chatConfigName, sceneCount, genre || null);
+        let meta = await fullExtract(workObjectId, chatConfigName, sceneCount, genre || null, bookName || workName);
         metaScenes = meta.scenes || [];
         scenes = metaScenes;
         extractedScenes = metaScenes.map(s => ({
@@ -194,7 +181,18 @@ async function doGenerateOne(s) {
 
 function renderStep1() {
     return m('div', { class: 'p-4 space-y-4' }, [
-        m('div', { class: 'text-sm text-gray-600 dark:text-gray-400 mb-2' }, 'Work: ' + workName),
+        m('div', { class: 'text-sm text-gray-600 dark:text-gray-400 mb-2' }, 'Source: ' + workName),
+
+        // Picture book name
+        m('div', [
+            m('label', { class: 'field-label' }, 'Picture Book Name'),
+            m('input', {
+                class: 'text-field-full text-sm',
+                placeholder: workName || 'My Picture Book',
+                value: bookName,
+                oninput: function (e) { bookName = e.target.value; }
+            })
+        ]),
 
         // Method toggle
         m('div', { class: 'flex gap-4 mb-3' }, [
@@ -219,13 +217,23 @@ function renderStep1() {
         method === 'auto' ? m('div', { class: 'space-y-3' }, [
             m('div', [
                 m('label', { class: 'field-label' }, 'Chat Config'),
-                m('select', {
-                    class: 'text-field-full text-sm',
-                    value: chatConfigName || '',
-                    onchange: function (e) { chatConfigName = e.target.value || null; }
+                m('div', {
+                    class: 'text-field-full text-sm cursor-pointer flex items-center justify-between',
+                    onclick: function () {
+                        ObjectPicker.openLibrary({
+                            libraryType: 'chatConfig',
+                            title: 'Select Chat Config',
+                            onSelect: function (item) {
+                                if (item && item.name) {
+                                    chatConfigName = item.name;
+                                    m.redraw();
+                                }
+                            }
+                        });
+                    }
                 }, [
-                    m('option', { value: '' }, '(default)'),
-                    chatConfigOptions.map(name => m('option', { key: name, value: name }, name))
+                    m('span', { class: chatConfigName ? '' : 'text-gray-400' }, chatConfigName || '(click to select)'),
+                    m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
                 ])
             ]),
             m('div', { class: 'grid grid-cols-2 gap-3' }, [
@@ -536,17 +544,17 @@ async function pictureBook(entity, inst) {
     resetState();
     workObjectId = inst.api.objectId ? inst.api.objectId() : (entity ? entity.objectId : null);
     workName = inst.api.name ? inst.api.name() : (entity ? entity.name : 'Untitled');
+    bookName = workName; // default to source name, user can edit
 
     if (!workObjectId) {
         page.toast('error', 'Cannot open Picture Book: no objectId');
         return;
     }
 
-    await loadChatConfigs();
-
     Dialog.open({
         title: 'Picture Book — ' + workName,
         size: 'xl',
+        closable: false,
         content: {
             view: function () {
                 return m('div', [
@@ -559,5 +567,24 @@ async function pictureBook(entity, inst) {
     });
 }
 
-export { pictureBook };
+/**
+ * Simplified entry point — opens the wizard with just an objectId and name.
+ * Used by the viewer empty state when no inst/entity is available.
+ */
+async function pictureBookFromId(objectId, name) {
+    console.log('[PictureBook] pictureBookFromId called: objectId=' + objectId + ' name=' + name);
+    if (!objectId) {
+        page.toast('error', 'No document selected');
+        return;
+    }
+    let fakeInst = {
+        api: {
+            objectId: function () { return objectId; },
+            name: function () { return name || 'Untitled'; }
+        }
+    };
+    await pictureBook(null, fakeInst);
+}
+
+export { pictureBook, pictureBookFromId };
 export default pictureBook;

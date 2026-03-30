@@ -43,10 +43,11 @@ async function extractScenes(workObjectId, chatConfigName, count) {
  * Full extraction — scenes + characters + charPerson creation.
  * Returns .pictureBookMeta JSON.
  */
-async function fullExtract(workObjectId, chatConfigName, count, genre) {
+async function fullExtract(workObjectId, chatConfigName, count, genre, bookName) {
     let body = { schema: 'olio.pictureBookRequest', count: count || MAX_SCENES_DEFAULT };
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (genre) body.genre = genre;
+    if (bookName) body.bookName = bookName;
     let resp = await fetch(pbBase() + '/' + workObjectId + '/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',

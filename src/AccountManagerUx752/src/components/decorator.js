@@ -74,7 +74,7 @@ function getThumbnail(ctl, p) {
         let icoCls = "image-grid-image carousel-item-img";
         icon = m("img", { class: icoCls, src: icoPath });
     }
-    else if (p.contentType && p.name && p.name.indexOf(".") > 0) {
+    else if (p.contentType && p.name && p.name.indexOf(".") > 0 && p.schema === 'data.data') {
         let ext = p.name.substring(p.name.lastIndexOf(".") + 1, p.name.length).toLowerCase();
         icon = m("span", { class: "fontLabel-" + (gridMode == 1 ? "6" : "10") + " fiv-cla fiv-icon-" + ext });
     }
@@ -129,11 +129,11 @@ function getIcon(p) {
         }
         icon = m("img", { height: 48, width: 48, src: icoPath, style: 'object-fit:cover' });
     }
-    else if (p.contentType && p.name && p.name.indexOf(".") > 0) {
+    else if (p.contentType && p.name && p.name.indexOf(".") > 0 && p.schema === 'data.data') {
         icon = getFileTypeIcon(p, 3);
     }
-    else if (!p.contentType && p.name && p.name.lastIndexOf(".") > 0) {
-        // No contentType but has file extension — try FIV icon as fallback
+    else if (!p.contentType && p.name && p.name.lastIndexOf(".") > 0 && p.schema === 'data.data') {
+        // No contentType but has file extension — try FIV icon as fallback (data.data only)
         let fIcon = getFileTypeIcon(p, 3);
         if (fIcon) icon = fIcon;
     }

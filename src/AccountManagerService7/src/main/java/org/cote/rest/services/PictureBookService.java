@@ -165,7 +165,8 @@ public class PictureBookService {
     }
 
     /**
-     * Load or create the .pictureBookMeta data record in the work's group.
+     * Load the .pictureBookMeta record from the work's group.
+     * Uses data.note (text field has no length limit) instead of data.data (description capped at 512).
      */
     private BaseRecord loadMeta(BaseRecord user, BaseRecord work) {
         String workGroupPath = work.get(FieldNames.FIELD_GROUP_PATH);
@@ -175,14 +176,15 @@ public class PictureBookService {
                 (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
         if (grp == null) return null;
 
-        Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
+        Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
         q.field(FieldNames.FIELD_NAME, ".pictureBookMeta");
         q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        q.planMost(true);
         return IOSystem.getActiveContext().getAccessPoint().find(user, q);
     }
 
     /**
-     * Save .pictureBookMeta JSON blob to the work's group.
+     * Save .pictureBookMeta JSON to the work's group as a data.note (text field, no length limit).
      */
     @SuppressWarnings("unchecked")
     private BaseRecord saveMeta(BaseRecord user, BaseRecord work, Map<String, Object> meta) {
@@ -193,7 +195,7 @@ public class PictureBookService {
         BaseRecord existing = loadMeta(user, work);
         if (existing != null) {
             try {
-                existing.set(FieldNames.FIELD_DESCRIPTION, metaJson);
+                existing.set("text", metaJson);
                 IOSystem.getActiveContext().getAccessPoint().update(user, existing);
                 return existing;
             } catch (Exception e) {
@@ -202,14 +204,13 @@ public class PictureBookService {
             }
         }
 
-        // Create new
+        // Create new data.note
         ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, workGroupPath);
         plist.parameter(FieldNames.FIELD_NAME, ".pictureBookMeta");
         try {
             BaseRecord newRec = IOSystem.getActiveContext().getFactory().newInstance(
-                    ModelNames.MODEL_DATA, user, null, plist);
-            newRec.set(FieldNames.FIELD_DESCRIPTION, metaJson);
-            newRec.set(FieldNames.FIELD_CONTENT_TYPE, "application/json");
+                    ModelNames.MODEL_NOTE, user, null, plist);
+            newRec.set("text", metaJson);
             return IOSystem.getActiveContext().getAccessPoint().create(user, newRec);
         } catch (Exception e) {
             logger.error("Failed to create meta: " + e.getMessage());
@@ -375,6 +376,14 @@ public class PictureBookService {
             charPerson = IOSystem.getActiveContext().getAccessPoint().create(user, charPerson);
             if (charPerson == null) return null;
 
+            // Re-fetch the full record — create returns identity-only partial
+            String cpOid = charPerson.get(FieldNames.FIELD_OBJECT_ID);
+            Query refetch = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, cpOid);
+            refetch.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+            refetch.planMost(false);
+            charPerson = IOSystem.getActiveContext().getAccessPoint().find(user, refetch);
+            if (charPerson == null) return null;
+
             // Build SD portrait prompt from extracted character data and store in narrative.
             // Store full extracted JSON in description for future reference.
             String portraitPrompt = NarrativeUtil.buildPortraitPromptFromExtractedData(name, charData);
@@ -503,6 +512,7 @@ public class PictureBookService {
         int count = MAX_SCENES_DEFAULT;
         String chatConfigName = null;
         String genre = null;
+        String bookName = null;
         if (json != null && !json.trim().isEmpty()) {
             try {
                 BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
@@ -511,6 +521,7 @@ public class PictureBookService {
                 if (countObj instanceof Number) count = ((Number) countObj).intValue();
                 chatConfigName = params.get("chatConfig");
                 genre = params.get("genre");
+                bookName = params.get("bookName");
             } catch (Exception e) {
                 logger.warn("Failed to parse extract request: " + e.getMessage());
             }
@@ -610,7 +621,7 @@ public class PictureBookService {
         // Build and save .pictureBookMeta
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("workObjectId", workObjectId);
-        meta.put("workName", work.get(FieldNames.FIELD_NAME));
+        meta.put("workName", (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME));
         meta.put("sceneCount", metaScenes.size());
         meta.put("scenes", metaScenes);
         meta.put("extractedAt", ZonedDateTime.now().toString());
@@ -916,7 +927,7 @@ public class PictureBookService {
             return Response.status(200).entity("[]").build();
         }
 
-        String metaJson = metaRec.get(FieldNames.FIELD_DESCRIPTION);
+        String metaJson = metaRec.get("text");
         if (metaJson == null || metaJson.isEmpty()) {
             return Response.status(200).entity("[]").build();
         }
@@ -969,7 +980,7 @@ public class PictureBookService {
         BaseRecord metaRec = loadMeta(user, work);
         if (metaRec == null) return Response.status(404).entity("{\"error\":\"Meta not found\"}").build();
 
-        String metaJson = metaRec.get(FieldNames.FIELD_DESCRIPTION);
+        String metaJson = metaRec.get("text");
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);

@@ -112,10 +112,14 @@ function renderDialog(cfg, index) {
         contentVnode || ''
     ]);
 
-    // Footer with actions
+    // Footer with actions (supports array or {view:fn} component returning array)
     let footer = null;
-    if (cfg.actions && cfg.actions.length > 0) {
-        let buttons = cfg.actions.map(function (act) {
+    let actions = cfg.actions;
+    if (actions && typeof actions === 'object' && typeof actions.view === 'function') {
+        actions = actions.view();
+    }
+    if (actions && actions.length > 0) {
+        let buttons = actions.map(function (act) {
             let btnClass = 'am7-dialog-btn ';
             if (act.destructive) btnClass += 'am7-dialog-btn-destructive';
             else if (act.primary) btnClass += 'am7-dialog-btn-primary';
