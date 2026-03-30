@@ -858,72 +858,34 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, workObjectId);
-            await page.waitForTimeout(5000);
-
-            // Debug: check what the viewer loaded
-            let viewerDebug = await page.evaluate(() => {
-                let allImgs = document.querySelectorAll('img');
-                return {
-                    imgCount: allImgs.length,
-                    imgSrcs: Array.from(allImgs).map(i => i.src).slice(0, 5),
-                    bodyText: document.body.innerText.substring(0, 300)
-                };
-            });
-            console.log('  E.3 DEBUG cover: imgs=' + viewerDebug.imgCount + ' srcs=' + JSON.stringify(viewerDebug.imgSrcs));
-
-            await page.keyboard.press('ArrowRight');
+            await page.waitForFunction(() => {
+                let text = document.body.innerText;
+                return !text.includes('Loading') && (text.includes('Begin') || text.includes('Page '));
+            }, { timeout: 15000 }).catch(() => {});
             await page.waitForTimeout(2000);
 
-            let imgState = await page.evaluate(() => {
-                let imgs = document.querySelectorAll('img');
-                let sceneImg = null;
-                for (let img of imgs) {
-                    if (img.src && img.src.includes('/media/')) {
-                        sceneImg = img;
-                        break;
+            // Navigate through ALL pages looking for an image (B.4 only generates for one scene)
+            let totalDots = await page.evaluate(() => document.querySelectorAll('button.rounded-full').length);
+            let imgState = { found: false };
+            for (let i = 0; i < totalDots; i++) {
+                if (i > 0) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(1000); }
+                let check = await page.evaluate(() => {
+                    let imgs = document.querySelectorAll('img');
+                    for (let img of imgs) {
+                        if (img.src && img.src.includes('/media/')) {
+                            return {
+                                found: true,
+                                src: img.src,
+                                hasUndefined: img.src.includes('undefined'),
+                                hasObject: img.src.includes('[object'),
+                                loaded: img.complete && img.naturalWidth > 0
+                            };
+                        }
                     }
-                }
-                if (!sceneImg) return { found: false };
-                return {
-                    found: true,
-                    src: sceneImg.src,
-                    hasUndefined: sceneImg.src.includes('undefined'),
-                    hasObject: sceneImg.src.includes('[object'),
-                    loaded: sceneImg.complete && sceneImg.naturalWidth > 0
-                };
-            });
-
-            // Check what scenes the viewer loaded and their imageObjectIds
-            let sceneDebug = await page.evaluate(async () => {
-                let { am7client } = await import('/src/core/am7client.js');
-                // Search scene notes to see their text content
-                let grpResp = await fetch('/AccountManagerService7/rest/path/find/auth.group/data/' +
-                    encodeURIComponent('B64-' + btoa('~/Data/Scenes').replace(/=/g, '%3D')),
-                    { credentials: 'include' });
-                let grp = null;
-                try { grp = await grpResp.json(); } catch(e) {}
-                if (!grp || !grp.id) return { error: 'no Scenes group' };
-
-                let q = am7client.newQuery('data.note');
-                q.field('groupId', grp.id);
-                q.range(0, 10);
-                if (q.entity.request.indexOf('text') < 0) q.entity.request.push('text');
-                let qr = await am7client.search(q);
-                if (!qr || !qr.results) return { error: 'no search results' };
-
-                return qr.results.map(n => {
-                    let parsed = {};
-                    try { parsed = JSON.parse(n.text || '{}'); } catch(e) {}
-                    return {
-                        name: n.name,
-                        hasImageOid: !!parsed.imageObjectId,
-                        imageOid: parsed.imageObjectId || null,
-                        hasBlurb: !!(parsed.blurb || parsed.summary),
-                        textLen: (n.text || '').length
-                    };
+                    return { found: false };
                 });
-            });
-            console.log('  E.3 Scene notes: ' + JSON.stringify(sceneDebug));
+                if (check.found) { imgState = check; break; }
+            }
 
             console.log('=== E.3 Image Display ===');
             console.log('  Found: ' + imgState.found);

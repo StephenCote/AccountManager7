@@ -142,10 +142,20 @@ async function loadViewer(workObjectId) {
     clearImageCache();
     m.redraw();
     try {
-        // Fetch the work name from the actual record (try data.note then data.data)
+        // Fetch the work record with groupPath (virtual field — must be explicitly requested)
         let workRec = null;
-        try { workRec = await am7client.get('data.note', workObjectId); } catch (e) {}
-        if (!workRec) { try { workRec = await am7client.get('data.data', workObjectId); } catch (e) {} }
+        for (let wType of ['data.note', 'data.data']) {
+            try {
+                let q = am7client.newQuery(wType);
+                q.field('objectId', workObjectId);
+                q.range(0, 1);
+                if (q.entity.request.indexOf('groupPath') < 0) q.entity.request.push('groupPath');
+                // Only request 'text' for data.note — data.data doesn't have a text field
+                if (wType === 'data.note' && q.entity.request.indexOf('text') < 0) q.entity.request.push('text');
+                let qr = await am7client.search(q);
+                if (qr && qr.results && qr.results.length > 0) { workRec = qr.results[0]; break; }
+            } catch (e) {}
+        }
         if (workRec && workRec.name) {
             viewerWorkName = workRec.name;
             m.redraw();
