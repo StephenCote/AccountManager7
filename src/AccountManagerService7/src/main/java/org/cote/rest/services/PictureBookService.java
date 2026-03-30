@@ -159,9 +159,14 @@ public class PictureBookService {
         String workGroupPath = work.get(FieldNames.FIELD_GROUP_PATH);
         if (workGroupPath == null || workGroupPath.isEmpty()) return null;
         String subPath = workGroupPath + "/" + subName;
-        return IOSystem.getActiveContext().getPathUtil().makePath(user,
+        BaseRecord grp = IOSystem.getActiveContext().getPathUtil().makePath(user,
                 ModelNames.MODEL_GROUP, subPath, GroupEnumType.DATA.toString(),
                 (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        // Ensure path is set (virtual field may not be populated by makePath)
+        if (grp != null) {
+            try { grp.set(FieldNames.FIELD_PATH, subPath); } catch (Exception e) { /* already set */ }
+        }
+        return grp;
     }
 
     /**
@@ -387,11 +392,19 @@ public class PictureBookService {
             // Build SD portrait prompt from extracted character data and store in narrative.
             // Store full extracted JSON in description for future reference.
             String portraitPrompt = NarrativeUtil.buildPortraitPromptFromExtractedData(name, charData);
+            // Fallback: if NarrativeUtil returned null, build a basic prompt from character data
+            if (portraitPrompt == null || portraitPrompt.isEmpty()) {
+                String appearance = (String) charData.getOrDefault("appearance", "");
+                String role = (String) charData.getOrDefault("role", "");
+                String gender2 = (String) charData.getOrDefault("gender", "person");
+                portraitPrompt = "portrait of " + name + ", " + gender2;
+                if (!appearance.isEmpty()) portraitPrompt += ", " + appearance;
+                if (!role.isEmpty()) portraitPrompt += ", " + role;
+                portraitPrompt += ", detailed face, cinematic lighting, high quality";
+            }
             String charDataJson = JSONUtil.exportObject(charData);
             try {
-                if (portraitPrompt != null && !portraitPrompt.isEmpty()) {
-                    charPerson.set("narrative", portraitPrompt);
-                }
+                charPerson.set("narrative", portraitPrompt);
                 if (charDataJson != null) {
                     charPerson.set(FieldNames.FIELD_DESCRIPTION, charDataJson);
                 }
@@ -662,6 +675,7 @@ public class PictureBookService {
         int refinerSteps = DEFAULT_REFINER_STEPS;
         int cfg = DEFAULT_CFG;
         boolean hires = DEFAULT_HIRES;
+        int seed = -1;
 
         if (json != null && !json.trim().isEmpty()) {
             try {
@@ -675,6 +689,7 @@ public class PictureBookService {
                     Object rv = sdConf.get("refinerSteps"); if (rv instanceof Number) refinerSteps = ((Number) rv).intValue();
                     Object cv = sdConf.get("cfg"); if (cv instanceof Number) cfg = ((Number) cv).intValue();
                     Object hv = sdConf.get("hires"); if (hv instanceof Boolean) hires = (Boolean) hv;
+                    Object seedV = sdConf.get("seed"); if (seedV instanceof Number) seed = ((Number) seedV).intValue();
                 }
             } catch (Exception e) { logger.warn("Failed to parse generate request: " + e.getMessage()); }
         }
@@ -701,6 +716,7 @@ public class PictureBookService {
             sdConfigRec.set("refinerSteps", refinerSteps);
             sdConfigRec.set("cfg", cfg);
             sdConfigRec.set("hires", hires);
+            sdConfigRec.set("seed", seed);
         } catch (Exception e) {
             logger.error("Failed to create sdConfig: " + e.getMessage());
             return Response.status(500).entity("{\"error\":\"SD config error\"}").build();
@@ -723,7 +739,11 @@ public class PictureBookService {
                 String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
                 IOSystem.getActiveContext().getAccessPoint().member(user, scene, image, null, true);
                 updateSceneImageId(user, scene, imageOid);
-                return Response.status(200).entity("{\"imageObjectId\":\"" + imageOid + "\"}").build();
+                Map<String, Object> genResult = new LinkedHashMap<>();
+                genResult.put("imageObjectId", imageOid);
+                genResult.put("prompt", promptOverride);
+                genResult.put("seed", sdConfigRec.get("seed"));
+                return Response.status(200).entity(JSONUtil.exportObject(genResult)).build();
             } catch (Exception e) {
                 logger.error("Override SD generation failed: " + e.getMessage());
                 return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
@@ -732,45 +752,83 @@ public class PictureBookService {
 
         try {
             // Stage 1: Portrait bytes for up to 2 scene characters
+            // Characters may be stored as [{name:...}] maps or as objectId strings
             List<byte[]> portraitBytesList = new ArrayList<>();
             List<String> portraitPromptList = new ArrayList<>();
             Object charsObj = sceneData.get("characters");
             if (charsObj instanceof List) {
                 @SuppressWarnings("unchecked")
-                List<Map<String, Object>> sceneChars = (List<Map<String, Object>>) charsObj;
-                for (Map<String, Object> sc : sceneChars) {
+                List<Object> charItems = (List<Object>) charsObj;
+                for (Object charItem : charItems) {
                     if (portraitBytesList.size() >= 2) break;
-                    String cname = (String) sc.get("name");
-                    if (cname == null) continue;
-                    Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, cname);
-                    cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                    cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender"});
-                    BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+                    String cname = null;
+                    String charOid = null;
+                    if (charItem instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> cmap = (Map<String, Object>) charItem;
+                        cname = (String) cmap.get("name");
+                    } else if (charItem instanceof String) {
+                        charOid = (String) charItem;
+                    }
+
+                    BaseRecord cp = null;
+                    try {
+                        if (charOid != null) {
+                            Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charOid);
+                            cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                            cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender"});
+                            cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+                        } else if (cname != null) {
+                            // Search by name — scope to scene's parent group's Characters/ sibling
+                            String charGroupPath = sceneGroupPath.replace("/Scenes", "/Characters");
+                            BaseRecord charGrp = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                                    ModelNames.MODEL_GROUP, charGroupPath, GroupEnumType.DATA.toString(),
+                                    (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                            if (charGrp != null) {
+                                Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, cname);
+                                cq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
+                                cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                                cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender"});
+                                cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+                            }
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Failed to find character: " + (cname != null ? cname : charOid) + ": " + e.getMessage());
+                        continue;
+                    }
+
                     if (cp == null) continue;
-                    String portraitPrompt = cp.get("narrative");
-                    if (portraitPrompt == null || portraitPrompt.isBlank()) {
-                        logger.warn("No portrait prompt (narrative) for: " + cname);
+                    if (cname == null) cname = cp.get(FieldNames.FIELD_NAME);
+                    String portraitPrompt2 = cp.get("narrative");
+                    if (portraitPrompt2 == null || portraitPrompt2.isBlank()) {
+                        logger.warn("No portrait prompt (narrative) for: " + cname + " — skipping portrait");
                         continue;
                     }
-                    BaseRecord portCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-                    portCfg.set("steps", steps);
-                    portCfg.set("cfg", cfg);
-                    portCfg.set("hires", false);
-                    portCfg.set("description", portraitPrompt);
-                    portCfg.set("negativePrompt", NEG_PROMPT);
-                    String portName = "portrait_" + cname.replace(" ", "_") + "_" + System.currentTimeMillis();
-                    List<BaseRecord> portImages = sdu.createImage(user, sceneGroupPath, portCfg, portName, 1, false, -1);
-                    if (portImages == null || portImages.isEmpty()) { logger.warn("Portrait failed: " + cname); continue; }
-                    byte[] portBytes = portImages.get(0).get(FieldNames.FIELD_BYTE_STORE);
-                    if (portBytes == null || portBytes.length == 0) {
+                    try {
+                        BaseRecord portCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+                        portCfg.set("steps", steps);
+                        portCfg.set("cfg", cfg);
+                        portCfg.set("hires", false);
+                        portCfg.set("seed", seed);
+                        portCfg.set("description", portraitPrompt2);
+                        portCfg.set("negativePrompt", NEG_PROMPT);
+                        String portName = "portrait_" + cname.replace(" ", "_") + "_" + System.currentTimeMillis();
+                        List<BaseRecord> portImages = sdu.createImage(user, sceneGroupPath, portCfg, portName, 1, false, -1);
+                        if (portImages == null || portImages.isEmpty()) { logger.warn("Portrait generation failed: " + cname); continue; }
+                        byte[] portBytes = portImages.get(0).get(FieldNames.FIELD_BYTE_STORE);
+                        if (portBytes == null || portBytes.length == 0) {
+                            try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
+                            continue;
+                        }
+                        portraitBytesList.add(portBytes);
+                        portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
                         try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
-                        continue;
+                    } catch (Exception e) {
+                        logger.warn("Portrait generation error for " + cname + ": " + e.getMessage());
                     }
-                    portraitBytesList.add(portBytes);
-                    portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt));
-                    try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
                 }
             }
+            logger.info("Stage 1 complete: " + portraitBytesList.size() + " portraits generated");
 
             // Stage 2: Landscape generation
             Map<String, String> landVars = new LinkedHashMap<>();
@@ -817,7 +875,12 @@ public class PictureBookService {
             String finalImageOid = finalImage.get(FieldNames.FIELD_OBJECT_ID);
             IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
             updateSceneImageId(user, scene, finalImageOid);
-            return Response.status(200).entity("{\"imageObjectId\":\"" + finalImageOid + "\"}").build();
+            String compositePrompt = action + " " + setting;
+            Map<String, Object> genResult2 = new LinkedHashMap<>();
+            genResult2.put("imageObjectId", finalImageOid);
+            genResult2.put("prompt", compositePrompt);
+            genResult2.put("seed", sdConfigRec.get("seed"));
+            return Response.status(200).entity(JSONUtil.exportObject(genResult2)).build();
         } catch (Exception e) {
             logger.error("Scene image generation pipeline failed: " + e.getMessage(), e);
             return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();

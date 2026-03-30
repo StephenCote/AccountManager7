@@ -48,6 +48,17 @@ let scenes = [];  // from meta or Step 2
 let generating = false;
 let genProgress = {};  // objectId → 'pending'|'generating'|'done'|'error'
 let genCancelled = false;
+let sdSteps = 20;
+let sdRefinerSteps = 20;
+let sdCfg = 5;
+let sdHires = false;
+let sdStyle = 'illustration';
+let sdSeed = -1;
+let sdModelList = [];
+let sdModel = '';
+let sdRefinerModel = '';
+let lastUsedSeed = -1;   // persist seed from first generation
+let lastPrompt = '';      // last LLM-generated image prompt
 
 // Step 5
 let metaScenes = [];
@@ -70,6 +81,16 @@ function resetState() {
     generating = false;
     genProgress = {};
     genCancelled = false;
+    sdSteps = 20;
+    sdRefinerSteps = 20;
+    sdCfg = 5;
+    sdHires = false;
+    sdStyle = 'illustration';
+    sdSeed = -1;
+    sdModel = '';
+    sdRefinerModel = '';
+    lastUsedSeed = -1;
+    lastPrompt = '';
     metaScenes = [];
     step5ImageUrls = {};
 }
@@ -137,6 +158,16 @@ async function doExtractScenesOnly() {
     m.redraw();
 }
 
+function buildSdConfig() {
+    let cfg = { steps: sdSteps, refinerSteps: sdRefinerSteps, cfg: sdCfg, hires: sdHires, style: sdStyle };
+    if (sdModel) cfg.model = sdModel;
+    if (sdRefinerModel) cfg.refinerModel = sdRefinerModel;
+    // After first image, reuse the same seed for consistency
+    if (lastUsedSeed > 0) cfg.seed = lastUsedSeed;
+    else if (sdSeed > 0) cfg.seed = sdSeed;
+    return cfg;
+}
+
 async function doGenerateAll() {
     generating = true;
     genCancelled = false;
@@ -149,8 +180,11 @@ async function doGenerateAll() {
         genProgress[oid] = 'generating';
         m.redraw();
         try {
-            let result = await generateSceneImage(oid, DEFAULT_SD_CONFIG, chatConfigName, null);
+            let result = await generateSceneImage(oid, buildSdConfig(), chatConfigName, null);
             s.imageObjectId = result.imageObjectId;
+            // Capture seed from first generation for consistency
+            if (result.seed && lastUsedSeed < 0) lastUsedSeed = result.seed;
+            if (result.prompt) lastPrompt = result.prompt;
             genProgress[oid] = 'done';
         } catch (e) {
             genProgress[oid] = 'error';
@@ -167,8 +201,10 @@ async function doGenerateOne(s) {
     genProgress[oid] = 'generating';
     m.redraw();
     try {
-        let result = await generateSceneImage(oid, DEFAULT_SD_CONFIG, chatConfigName, null);
+        let result = await generateSceneImage(oid, buildSdConfig(), chatConfigName, null);
         s.imageObjectId = result.imageObjectId;
+        if (result.seed && lastUsedSeed < 0) lastUsedSeed = result.seed;
+        if (result.prompt) lastPrompt = result.prompt;
         genProgress[oid] = 'done';
     } catch (e) {
         genProgress[oid] = 'error';
@@ -336,6 +372,59 @@ function renderStep3() {
     ]);
 }
 
+function renderSdConfig() {
+    return m('div', { class: 'border dark:border-gray-700 rounded p-3 mb-3 space-y-2' }, [
+        m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-1' }, 'SD Configuration'),
+        m('div', { class: 'grid grid-cols-3 gap-2' }, [
+            m('div', [
+                m('label', { class: 'field-label text-xs' }, 'Steps'),
+                m('input', { class: 'text-field-compact text-xs', type: 'number', min: 1, max: 50,
+                    value: sdSteps, oninput: function (e) { sdSteps = parseInt(e.target.value) || 20; } })
+            ]),
+            m('div', [
+                m('label', { class: 'field-label text-xs' }, 'CFG'),
+                m('input', { class: 'text-field-compact text-xs', type: 'number', min: 1, max: 30, step: 0.5,
+                    value: sdCfg, oninput: function (e) { sdCfg = parseFloat(e.target.value) || 5; } })
+            ]),
+            m('div', [
+                m('label', { class: 'field-label text-xs' }, 'Seed'),
+                m('div', { class: 'flex gap-1' }, [
+                    m('input', { class: 'text-field-compact text-xs', style: 'flex:1', type: 'number',
+                        value: lastUsedSeed > 0 ? lastUsedSeed : sdSeed,
+                        oninput: function (e) { sdSeed = parseInt(e.target.value) || -1; lastUsedSeed = -1; } }),
+                    m('button', { class: 'text-gray-400 hover:text-gray-600', title: 'Random',
+                        onclick: function () { sdSeed = -1; lastUsedSeed = -1; } },
+                        m('span', { class: 'material-symbols-outlined text-sm' }, 'casino'))
+                ])
+            ]),
+            m('div', [
+                m('label', { class: 'field-label text-xs' }, 'Style'),
+                m('input', { class: 'text-field-compact text-xs', value: sdStyle,
+                    oninput: function (e) { sdStyle = e.target.value; } })
+            ]),
+            m('div', [
+                m('label', { class: 'field-label text-xs' }, 'Refiner Steps'),
+                m('input', { class: 'text-field-compact text-xs', type: 'number', min: 0, max: 50,
+                    value: sdRefinerSteps, oninput: function (e) { sdRefinerSteps = parseInt(e.target.value) || 0; } })
+            ]),
+            m('div', { class: 'flex items-end pb-1' }, [
+                m('label', { class: 'flex items-center gap-1 text-xs cursor-pointer' }, [
+                    m('input', { type: 'checkbox', checked: sdHires,
+                        onchange: function (e) { sdHires = e.target.checked; } }),
+                    'HiRes'
+                ])
+            ])
+        ]),
+        lastUsedSeed > 0 ? m('div', { class: 'text-xs text-gray-500 mt-1' },
+            'Seed locked: ' + lastUsedSeed + ' (from first generation)') : null,
+        lastPrompt ? m('div', { class: 'mt-2' }, [
+            m('div', { class: 'text-xs font-medium text-gray-500' }, 'Last prompt used:'),
+            m('div', { class: 'text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded p-2 mt-1 max-h-20 overflow-y-auto' },
+                lastPrompt)
+        ]) : null
+    ]);
+}
+
 function renderStep4() {
     let targets = scenes.length ? scenes : extractedScenes;
     return m('div', { class: 'p-4 space-y-3' }, [
@@ -354,7 +443,12 @@ function renderStep4() {
                     }, 'Generate All (' + targets.filter(s => s.objectId).length + ')')
             ])
         ]),
-        m('div', { class: 'space-y-2 max-h-80 overflow-y-auto' },
+
+        // SD config panel
+        renderSdConfig(),
+
+        // Scene list
+        m('div', { class: 'space-y-2 max-h-60 overflow-y-auto' },
             targets.map(function (s) {
                 let oid = s.objectId;
                 let status = oid ? (genProgress[oid] || (s.imageObjectId ? 'done' : 'pending')) : 'no-id';

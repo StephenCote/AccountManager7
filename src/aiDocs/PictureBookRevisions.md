@@ -256,7 +256,44 @@ After `AccessPoint.create(user, charPerson)`, the code tries to set `narrative` 
 
 ---
 
-## 11. List View Missing Icons — File Extension Treated as ContentType (Priority: MEDIUM)
+## 11. Image Generation Pipeline Failures (Priority: HIGH)
+
+### Multiple issues in `generateSceneImage`:
+
+#### 11a. CharPerson created with wrong groupPath
+Characters are created in `~/Data/Characters/` but the charPerson record's `groupPath` resolves to the character NAME (e.g., `/Lonely Adult`) instead of the actual directory path. This causes `PolicyUtil.getResourcePolicy` to fail with "Group could not be found" when the image pipeline tries to read the charPerson.
+
+**Root Cause:** `createCharPerson` uses `ParameterList(FIELD_PATH, charsGroup.get(FIELD_PATH))` and `ParameterList(FIELD_NAME, name)`. The factory resolves `groupPath` from the path parameter, but `groupPath` is virtual and might get set to the name portion. After `AccessPoint.create` returns a partial record, the re-fetch via `planMost(false)` might not populate `groupPath` correctly.
+
+**Evidence:**
+```
+"groupPath" : "/Lonely Adult"   ← WRONG (should be /home/steve/Data/Characters or similar)
+"groupId" : 15074               ← group ID doesn't match any existing group
+```
+
+#### 11b. No portrait prompt (narrative) for characters
+After `createCharPerson`, the code tries to set `narrative` from `NarrativeUtil.buildPortraitPromptFromExtractedData`. This returns null because the LLM character extraction may not return fields in the expected format. Without a narrative, the portrait generation step has no prompt → empty portrait → broken composite.
+
+**Evidence:**
+```
+WARN PictureBookService - No portrait prompt (narrative) for: Abandoned Single 1
+```
+
+#### 11c. Scene image pipeline crashes on null portrait
+The 4-stage pipeline (portrait → landscape → stitch → kontext) doesn't gracefully handle missing portraits. If no charPerson portraits can be generated, the pipeline crashes instead of falling back to landscape-only generation.
+
+### Fix Strategy
+1. Fix `createCharPerson` groupPath by using the group's actual path, not relying on virtual field
+2. If `NarrativeUtil.buildPortraitPromptFromExtractedData` returns null, generate a basic portrait prompt from the character name + scene description
+3. If portrait generation fails, skip the portrait stages and go straight to landscape → scene image (skip the composite)
+4. Add null checks throughout the 4-stage pipeline
+
+### Files Changed
+- `PictureBookService.java` — `createCharPerson()`, `generateSceneImage()` pipeline stages
+
+---
+
+## 12. List View Missing Icons — File Extension Treated as ContentType (Priority: MEDIUM)
 
 ### Problem
 In the list view (e.g., when browsing chatConfig via picker), icons are missing. Objects with names ending in `.abc` (or any dot-separated suffix) have their name suffix incorrectly treated as a contentType, which causes the icon resolver to fail or show a wrong icon.
