@@ -555,6 +555,12 @@ function listByType(type) {
 
 // --- Favorites ---
 
+async function systemLibrary(model) {
+    let libPath = am7model.system && am7model.system.library && am7model.system.library[model];
+    if (!libPath) return null;
+    return await findObject('auth.group', 'data', libPath);
+}
+
 let favGroup = null;
 
 async function favorites() {
@@ -655,6 +661,7 @@ const page = {
     patchObject: patchObject,
     makePath: makePath,
     listByType: listByType,
+    systemLibrary: systemLibrary,
     favorites: favorites,
     isFavorite: isFavorite,
     toggleFavorite: toggleFavorite,

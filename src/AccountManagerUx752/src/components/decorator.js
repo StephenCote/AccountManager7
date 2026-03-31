@@ -181,10 +181,12 @@ let defaultHeaderMap = [
 // ── modelHeaderMap — per-model column overrides (approved by Stephen)
 
 let modelHeaderMap = {
-    'auth.group':           ["_rowNum", "_icon", "name", "type", "path", "_favorite"],
-    'data.data':            ["_rowNum", "_icon", "name", "contentType", "description", "_tags", "_favorite"],
-    'olio.llm.chatConfig':  ["_rowNum", "_icon", "name", "model", "rating", "_favorite"],
-    'olio.llm.chatRequest': ["_rowNum", "_icon", "name", "chatTitle", "modifiedDate", "_favorite"]
+    'auth.group':               ["_rowNum", "_icon", "name", "type", "path", "_favorite"],
+    'data.data':                ["_rowNum", "_icon", "name", "contentType", "description", "_tags", "_favorite"],
+    'olio.llm.chatConfig':      ["_rowNum", "_icon", "name", "model", "rating", "_favorite"],
+    'olio.llm.chatRequest':     ["_rowNum", "_icon", "name", "chatTitle", "modifiedDate", "_favorite"],
+    'olio.llm.promptConfig':    ["_rowNum", "_icon", "name", "description", "_favorite"],
+    'olio.llm.promptTemplate':  ["_rowNum", "_icon", "name", "description", "_favorite"]
 };
 
 // ── 6. getHeaders (Ux7 lines 203-208) + modelHeaderMap lookup ────────

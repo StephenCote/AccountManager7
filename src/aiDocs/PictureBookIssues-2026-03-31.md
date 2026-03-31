@@ -64,6 +64,16 @@ PictureBook prompt templates existed on classpath (`olio/llm/prompts/pictureBook
 **Fix:** Created 6 library-format template files in `olio/llm/templates/` and added names to `PROMPT_TEMPLATE_TEMPLATE_NAMES`. After rebuild, call `POST /rest/chat/library/prompt/init` to bootstrap them into the system library.
 **Files:** `ChatUtil.java`, `olio/llm/templates/promptTemplate.pictureBook.*.json` (6 new files)
 
+### Issue #39b — Prompt template picker opens at user dir (empty), not library dir ✅ FIXED
+`ObjectPicker.openLibrary()` was defaulting `startId` to `userContId || dir.objectId` — the user's `~/Chat` dir (which has 0 templates) instead of the shared library. Changed to always start at the library dir for `openLibrary()` calls.
+**Fix:** `picker.js` line 215: `let startId = dir.objectId` (was `userContId || dir.objectId`)
+**Files:** `picker.js`
+
+### Issue #39c — List control missing column headers for prompt template/config types ✅ FIXED
+`modelHeaderMap` in `decorator.js` had no entries for `olio.llm.promptTemplate` or `olio.llm.promptConfig`, causing fallback to `defaultHeaderMap` which showed groupPath as a column.
+**Fix:** Added both types to `modelHeaderMap` with `[_rowNum, _icon, name, description, _favorite]`.
+**Files:** `decorator.js`
+
 ### Issue #38 — Deleted picture books still appear in work selector list
 After deleting a picture book via the viewer's delete button, the book still shows in the `/picture-book` work selector list. The `reset` endpoint deletes the book group + meta, but `loadExistingBooks()` searches for `.pictureBookMeta` notes — the search results may be cached, or the delete isn't fully cascading the meta note. Possible causes:
 1. `loadExistingBooks()` doesn't re-query after navigating back from deleted book
