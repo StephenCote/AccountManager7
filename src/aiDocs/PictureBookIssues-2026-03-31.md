@@ -81,6 +81,26 @@ After deleting a picture book via the viewer's delete button, the book still sho
 3. Client-side `existingBooks` array isn't cleared on re-entry
 **Files:** `features/pictureBook.js` (loadExistingBooks, workSelectorView), `PictureBookService.java` (reset)
 
+### Issue #40 — Group navigation broken in list view
+Cannot navigate up to parent group from the list view. Needs investigation — may be related to breadcrumb `objectId` resolution or `navigateByParent` logic.
+**Files:** `list.js` (breadcrumb click handlers, `openPath`)
+
+### Issue #41 — Prompt template sections appear empty in form view
+When opening a prompt template in the object form, the `sections` list shows items (system, user) but expanding a section shows no prompt content. Error: `Invalid type model.js:62` when clicking expand — `tableListEditor.js:156 openEditor` fails because the section model type isn't recognized.
+**Files:** `tableListEditor.js`, `model.js`, `object.js`
+
+### Issue #42 — PictureBookService uses hand-rolled JSON maps instead of models
+All internal data structures (`Map<String, Object>`, `LinkedHashMap`) should be replaced with proper AM7 model definitions. Current code hand-rolls meta, scene data, and generate results as raw JSON maps instead of using `RecordFactory.newInstance()`. Design doc specifies model-based approach.
+**Files:** `PictureBookService.java` — needs models for: pictureBookMeta, sceneData, generateResult, createFromScenesResponse
+
+### Issue #43 — `page.systemLibrary()` was missing from Ux752 ✅ FIXED
+Ux7 had `systemLibrary()` on the page object; Ux752 did not. Caused `TypeError: systemLibrary is not a function` when clicking system library button.
+**Fix:** Added `systemLibrary()` to `pageClient.js`, exported on `page` object.
+
+### Issue #44 — ChatService `/library/init` used ObjectMapper instead of AM7 pattern ✅ FIXED
+Used Jackson `ObjectMapper`/`JsonNode` for parsing instead of `JSONUtil.importObject` with `LooseRecord`.
+**Fix:** Replaced with `JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule())`.
+
 ---
 
 ## Verification Checklist (after rebuild)

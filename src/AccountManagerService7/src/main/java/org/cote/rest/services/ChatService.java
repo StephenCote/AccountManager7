@@ -231,15 +231,15 @@ public class ChatService {
 		String serverUrl = null;
 		String model = null;
 		String serviceType = null;
-		try {
-			ObjectMapper om = new ObjectMapper();
-			JsonNode body = om.readTree(json);
-			serverUrl = body.has("serverUrl") ? body.get("serverUrl").asText() : null;
-			model = body.has("model") ? body.get("model").asText() : null;
-			serviceType = body.has("serviceType") ? body.get("serviceType").asText() : null;
-		} catch (Exception e) {
-			logger.error("Failed to parse library init request body", e);
-			return Response.status(400).entity("{\"error\":\"Invalid request body\"}").build();
+		if (json != null && !json.trim().isEmpty()) {
+			try {
+				BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+				serverUrl = params.get("serverUrl");
+				model = params.get("model");
+				serviceType = params.get("serviceType");
+			} catch (Exception e) {
+				logger.warn("Failed to parse library init request: " + e.getMessage());
+			}
 		}
 		ChatLibraryUtil.populateDefaults(user, serverUrl, model, serviceType);
 		return Response.status(200).entity("{\"status\":\"ok\"}").build();

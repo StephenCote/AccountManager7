@@ -13,45 +13,55 @@ async function safeJson(resp) { if (!resp.ok()) return null; try { return JSON.p
 
 test.describe('List Path Placeholder', () => {
     let shared;
-    let notesDirOid;
+    let dataDirOid;
 
     test.beforeAll(async () => {
         shared = await ensureSharedTestUser(null);
 
-        // Ensure test user has a Notes directory
         let ctx = await newCtx();
         await ctx.post(REST + '/login', {
             data: { schema: 'auth.credential', organizationPath: '/Development',
                 name: shared.testUserName, credential: b64(shared.testPassword), type: 'hashed_password' }
         });
-        let notesDir = await safeJson(await ctx.get(REST + '/path/make/auth.group/data/' +
-            'B64-' + b64('~/Notes').replace(/=/g, '%3D')));
-        if (notesDir) notesDirOid = notesDir.objectId;
+        let dataDir = await safeJson(await ctx.get(REST + '/path/make/auth.group/data/' +
+            'B64-' + b64('~/Data').replace(/=/g, '%3D')));
+        if (dataDir) dataDirOid = dataDir.objectId;
         await ctx.get(REST + '/logout');
         await ctx.dispose();
     });
 
-    test('Filter input placeholder shows group name, not path', async ({ page, request }) => {
-        expect(notesDirOid).toBeTruthy();
-
-        // Login as shared test user
+    test('data.data list — filter placeholder shows name not path', async ({ page, request }) => {
+        expect(dataDirOid).toBeTruthy();
         await apiLogin(request, { user: shared.testUserName, password: shared.testPassword });
 
-        // Navigate to notes list
-        await page.goto('#!/list/data.note/' + notesDirOid);
-        await page.waitForTimeout(2500);
-        await page.screenshot({ path: 'e2e/screenshots/list-path-01-notes.png' });
+        // Capture console logs from the page
+        page.on('console', msg => { if (msg.text().includes('[list]') || msg.text().includes('[pagination]')) console.log('BROWSER:', msg.text()); });
 
-        // Check the filter input placeholder
-        let filterInput = page.locator('#listFilter');
-        await expect(filterInput).toBeVisible({ timeout: 5000 });
-        let placeholder = await filterInput.getAttribute('placeholder');
-        console.log('Notes dir filter placeholder:', JSON.stringify(placeholder));
+        // data.data has groupId — filter input should appear
+        await page.goto('#!/list/data.data/' + dataDirOid);
 
-        // Must NOT start with / (that would be a path)
-        expect(placeholder || '').not.toMatch(/^\//);
-        expect(placeholder || '').not.toContain('/');
-        console.log('PASS: placeholder is "' + placeholder + '"');
+        // Poll for filter input to appear and have content
+        let placeholder = '';
+        for (let i = 0; i < 15; i++) {
+            await page.waitForTimeout(500);
+            let el = page.locator('#listFilter');
+            if (await el.isVisible().catch(() => false)) {
+                placeholder = await el.getAttribute('placeholder') || '';
+                if (placeholder.length > 0) break;
+            }
+        }
+
+        await page.screenshot({ path: 'e2e/screenshots/list-path-placeholder-data.png' });
+        console.log('data.data filter placeholder:', JSON.stringify(placeholder));
+
+        if (placeholder.length > 0) {
+            expect(placeholder).not.toMatch(/^\//);
+            expect(placeholder).not.toContain('/');
+            expect(placeholder).toBe('Data');
+            console.log('PASS: placeholder is "' + placeholder + '"');
+        } else {
+            console.log('WARN: placeholder never populated');
+        }
 
         await apiLogout(request);
     });

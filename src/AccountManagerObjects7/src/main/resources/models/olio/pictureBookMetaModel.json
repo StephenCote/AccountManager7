@@ -1,0 +1,18 @@
+{
+	"name": "olio.pictureBookMeta",
+	"ioConstraints": ["unknown"],
+	"fields": [
+		{ "name": "sourceObjectId", "type": "string", "maxLength": 64 },
+		{ "name": "bookObjectId", "type": "string", "maxLength": 64 },
+		{ "name": "workName", "type": "string", "maxLength": 256 },
+		{ "name": "sceneCount", "type": "int" },
+		{
+			"name": "scenes",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.pictureBookScene"
+		},
+		{ "name": "extractedAt", "type": "string", "maxLength": 64 },
+		{ "name": "generatedAt", "type": "string", "maxLength": 64 }
+	]
+}

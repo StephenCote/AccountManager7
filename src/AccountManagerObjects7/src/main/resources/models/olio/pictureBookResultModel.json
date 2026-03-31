@@ -1,0 +1,27 @@
+{
+	"name": "olio.pictureBookResult",
+	"ioConstraints": ["unknown"],
+	"fields": [
+		{ "name": "imageObjectId", "type": "string", "maxLength": 64 },
+		{ "name": "prompt", "type": "string" },
+		{ "name": "seed", "type": "int" },
+		{ "name": "blurb", "type": "string" },
+		{ "name": "reordered", "type": "boolean" },
+		{ "name": "reset", "type": "boolean" },
+		{ "name": "chunked", "type": "boolean" },
+		{ "name": "extractionComplete", "type": "boolean" },
+		{ "name": "chunksProcessed", "type": "int" },
+		{
+			"name": "sceneList",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.pictureBookScene"
+		},
+		{
+			"name": "scenes",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.pictureBookScene"
+		}
+	]
+}

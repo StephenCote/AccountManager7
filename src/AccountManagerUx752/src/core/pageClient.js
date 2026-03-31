@@ -390,6 +390,11 @@ function routeMessage(msg) {
                     }
                 }
             } catch(e) { /* localStorage not available */ }
+        } else if (c1 === "bgActivity") {
+            import('../chat/LLMConnector.js').then(mod => {
+                mod.LLMConnector.setBgActivity(msg.chirps[1] || null, msg.chirps[2] || null);
+            }).catch(() => {});
+            return;
         } else if (c1 === "accessRequestUpdate") {
             // Access request status change notification — notify registered listeners
             let eventData = null;
@@ -497,7 +502,9 @@ function makePath(type, subType, path) {
 }
 
 function findObject(type, subType, path) {
-    return am7client.find(type, subType, path);
+    let result = am7client.find(type, subType, path);
+    // am7client.find returns a raw object on cache hit, Promise on cache miss — normalize
+    return (result && typeof result.then === 'function') ? result : Promise.resolve(result);
 }
 
 function listObjects(type, parentId, fields, start, count) {

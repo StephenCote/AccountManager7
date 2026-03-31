@@ -10,6 +10,7 @@ import {
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
 import { ObjectPicker } from '../components/picker.js';
+import { LLMConnector } from '../chat/LLMConnector.js';
 
 /**
  * Picture Book workflow — multi-step wizard launched from a data.data or data.note object.
@@ -956,6 +957,15 @@ function renderStep5() {
     ]);
 }
 
+function renderBgActivity() {
+    let bg = LLMConnector.bgActivity;
+    if (!bg || !bg.label) return null;
+    return m('div', { class: 'flex items-center gap-2 px-4 py-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded mx-4 mb-2' }, [
+        m('span', { class: 'material-symbols-outlined text-base animate-spin' }, bg.icon || 'progress_activity'),
+        m('span', bg.label)
+    ]);
+}
+
 function renderStepContent() {
     if (step === 1) return renderStep1();
     if (step === 2) return renderStep2();
@@ -1122,6 +1132,7 @@ async function pictureBook(entity, inst) {
             view: function () {
                 return m('div', [
                     renderProgressBar(),
+                    renderBgActivity(),
                     renderStepContent()
                 ]);
             }

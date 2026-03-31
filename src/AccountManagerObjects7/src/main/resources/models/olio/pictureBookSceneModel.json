@@ -1,0 +1,24 @@
+{
+	"name": "olio.pictureBookScene",
+	"ioConstraints": ["unknown"],
+	"fields": [
+		{ "name": "objectId", "type": "string", "maxLength": 64 },
+		{ "name": "index", "type": "int" },
+		{ "name": "title", "type": "string", "maxLength": 256 },
+		{ "name": "description", "type": "string" },
+		{ "name": "summary", "type": "string" },
+		{ "name": "setting", "type": "string" },
+		{ "name": "action", "type": "string" },
+		{ "name": "mood", "type": "string" },
+		{ "name": "blurb", "type": "string" },
+		{ "name": "diffusionPrompt", "type": "string" },
+		{ "name": "imageObjectId", "type": "string", "maxLength": 64 },
+		{ "name": "sceneIndex", "type": "int" },
+		{ "name": "userEdited", "type": "boolean" },
+		{
+			"name": "characters",
+			"type": "list",
+			"baseType": "string"
+		}
+	]
+}

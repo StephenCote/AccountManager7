@@ -475,7 +475,9 @@ function renderHeader() {
                     viewerScenes = [];
                     imageUrls = {};
                     currentPage = 0;
-                    m.redraw();
+                    am7client.clearCache('data.note', true);
+                    am7client.clearCache('auth.group', true);
+                    m.route.set('/picture-book');
                 }).catch(function () {
                     page.toast('error', 'Failed to delete');
                 });

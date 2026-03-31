@@ -37,6 +37,7 @@ import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
+import org.cote.sockets.WebSocketService;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
@@ -223,10 +224,9 @@ public class PictureBookService {
     /**
      * Save .pictureBookMeta JSON to a group as a data.note (text field, no length limit).
      */
-    @SuppressWarnings("unchecked")
-    private BaseRecord saveMeta(BaseRecord user, String groupPath, Map<String, Object> meta) {
+    private BaseRecord saveMeta(BaseRecord user, String groupPath, BaseRecord meta) {
         if (groupPath == null) return null;
-        String metaJson = JSONUtil.exportObject(meta);
+        String metaJson = toJson(meta);
 
         BaseRecord existing = loadMeta(user, groupPath);
         if (existing != null) {
@@ -391,6 +391,14 @@ public class PictureBookService {
             }
         }
         try {
+            // Fall back to default chat config if none provided
+            if (chatConfig == null) {
+                chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, "generalChat");
+            }
+            if (chatConfig == null) {
+                logger.error("No chat config available — cannot call LLM for " + promptName);
+                return null;
+            }
             Chat chat = new Chat(user, chatConfig, null);
             OpenAIRequest req = chat.newRequest(chat.getModel());
             req.setStream(false);
@@ -431,6 +439,9 @@ public class PictureBookService {
 
         List<Map<String, Object>> sceneList = new ArrayList<>();
         for (int ci = 0; ci < chunks.size(); ci++) {
+            WebSocketService.chirpUser(user, new String[] {
+                "bgActivity", "auto_awesome", "Extracting chunk " + (ci + 1) + "/" + chunks.size() + "..."
+            });
             String previousJson = sceneList.isEmpty() ? "[]" : JSONUtil.exportObject(sceneList);
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("previousScenes", previousJson);
@@ -478,6 +489,9 @@ public class PictureBookService {
         for (int i = 0; i < sceneList.size(); i++) {
             sceneList.get(i).put("index", i);
         }
+        WebSocketService.chirpUser(user, new String[] {
+            "bgActivity", "", ""
+        });
         return sceneList;
     }
 
@@ -499,6 +513,73 @@ public class PictureBookService {
     private String genreToTheme(String genre) {
         if (genre == null) return null;
         return GENRE_THEME_MAP.getOrDefault(genre.toLowerCase(), null);
+    }
+
+    /**
+     * Build a pictureBookMeta record using the typed model.
+     */
+    private BaseRecord buildMeta(String sourceObjectId, String bookObjectId, String workName, List<BaseRecord> scenes) {
+        try {
+            BaseRecord meta = RecordFactory.newInstance(OlioModelNames.MODEL_PICTURE_BOOK_META);
+            meta.set("sourceObjectId", sourceObjectId);
+            meta.set("bookObjectId", bookObjectId);
+            meta.set("workName", workName);
+            meta.set("sceneCount", scenes.size());
+            meta.set("scenes", scenes);
+            meta.set("extractedAt", ZonedDateTime.now().toString());
+            return meta;
+        } catch (Exception e) {
+            logger.error("Failed to build meta: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Build a pictureBookScene record from scene data + note objectId.
+     */
+    @SuppressWarnings("unchecked")
+    private BaseRecord buildSceneEntry(BaseRecord note, Map<String, Object> sceneData, int idx, Map<String, String> charObjectIds) {
+        try {
+            BaseRecord scene = RecordFactory.newInstance(OlioModelNames.MODEL_PICTURE_BOOK_SCENE);
+            scene.set(FieldNames.FIELD_OBJECT_ID, note.get(FieldNames.FIELD_OBJECT_ID));
+            scene.set("index", idx);
+            scene.set("title", sceneData.getOrDefault("title", "Scene " + idx));
+            scene.set(FieldNames.FIELD_DESCRIPTION, sceneData.getOrDefault("summary", ""));
+            List<String> charIds = new ArrayList<>();
+            Object charsObj = sceneData.get("characters");
+            if (charsObj instanceof List && charObjectIds != null) {
+                for (Object sc : (List<Object>) charsObj) {
+                    String cn = null;
+                    if (sc instanceof Map) cn = (String) ((Map<String, Object>) sc).get("name");
+                    else if (sc instanceof String) cn = (String) sc;
+                    if (cn != null && charObjectIds.containsKey(cn)) charIds.add(charObjectIds.get(cn));
+                }
+            }
+            scene.set("characters", charIds);
+            return scene;
+        } catch (Exception e) {
+            logger.error("Failed to build scene entry: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Build a pictureBookResult response record.
+     */
+    private BaseRecord buildResult() {
+        try {
+            return RecordFactory.newInstance(OlioModelNames.MODEL_PICTURE_BOOK_RESULT);
+        } catch (Exception e) {
+            logger.error("Failed to create result: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Serialize a model record to JSON for HTTP response.
+     */
+    private String toJson(BaseRecord rec) {
+        return rec.toFullString();
     }
 
     /**
@@ -662,12 +743,14 @@ public class PictureBookService {
         // Auto-chunk if text exceeds 8000 chars
         if (text.length() > 8000) {
             List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text);
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("sceneList", sceneList);
-            result.put("extractionComplete", true);
-            result.put("chunksProcessed", -1);
-            result.put("chunked", true);
-            return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+            BaseRecord result = buildResult();
+            try {
+                result.set("sceneList", sceneList);
+                result.set("extractionComplete", true);
+                result.set("chunksProcessed", -1);
+                result.set("chunked", true);
+            } catch (Exception e) { logger.warn("Failed to build chunked result: " + e.getMessage()); }
+            return Response.status(200).entity(toJson(result)).build();
         }
 
         // Short text — single-shot extraction
@@ -720,11 +803,13 @@ public class PictureBookService {
         }
 
         List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("sceneList", sceneList);
-        result.put("extractionComplete", true);
-        result.put("chunksProcessed", -1);
-        return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+        BaseRecord result = buildResult();
+        try {
+            result.set("sceneList", sceneList);
+            result.set("extractionComplete", true);
+            result.set("chunksProcessed", -1);
+        } catch (Exception e) { logger.warn("Failed to build chunked result: " + e.getMessage()); }
+        return Response.status(200).entity(toJson(result)).build();
     }
 
     /**
@@ -830,50 +915,22 @@ public class PictureBookService {
         }
 
         // Create scene data.note records
-        List<Map<String, Object>> metaScenes = new ArrayList<>();
+        List<BaseRecord> metaScenes = new ArrayList<>();
         int idx = 0;
         for (Map<String, Object> sceneData : extractedScenes) {
             BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx);
             if (note != null) {
-                Map<String, Object> ms = new LinkedHashMap<>();
-                ms.put("objectId", note.get(FieldNames.FIELD_OBJECT_ID));
-                ms.put("index", idx);
-                ms.put("title", sceneData.getOrDefault("title", "Scene " + idx));
-                ms.put("description", sceneData.getOrDefault("summary", ""));
-                ms.put("imageObjectId", null);
-
-                // Collect character objectIds for this scene
-                List<String> sceneCharIds = new ArrayList<>();
-                Object charsObj = sceneData.get("characters");
-                if (charsObj instanceof List) {
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> scs = (List<Map<String, Object>>) charsObj;
-                    for (Map<String, Object> sc : scs) {
-                        String cname = (String) sc.get("name");
-                        if (cname != null && charObjectIds.containsKey(cname)) {
-                            sceneCharIds.add(charObjectIds.get(cname));
-                        }
-                    }
-                }
-                ms.put("characters", sceneCharIds);
-                metaScenes.add(ms);
+                BaseRecord sceneEntry = buildSceneEntry(note, sceneData, idx, charObjectIds);
+                if (sceneEntry != null) metaScenes.add(sceneEntry);
             }
             idx++;
         }
 
-        // Build and save .pictureBookMeta in the book group
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("sourceObjectId", workObjectId);
-        meta.put("bookObjectId", bookGroup.get(FieldNames.FIELD_OBJECT_ID));
-        meta.put("workName", effectiveBookName);
-        meta.put("sceneCount", metaScenes.size());
-        meta.put("scenes", metaScenes);
-        meta.put("extractedAt", ZonedDateTime.now().toString());
-        meta.put("generatedAt", null);
-
+        // Build and save .pictureBookMeta
+        BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
         saveMeta(user, bookGroupPath, meta);
 
-        return Response.status(200).entity(JSONUtil.exportObject(meta)).build();
+        return Response.status(200).entity(toJson(meta)).build();
     }
 
     /**
@@ -1002,48 +1059,21 @@ public class PictureBookService {
         }
 
         // Create scene notes
-        List<Map<String, Object>> metaScenes = new ArrayList<>();
+        List<BaseRecord> metaScenes = new ArrayList<>();
         int idx = 0;
         for (Map<String, Object> sceneData : sceneList) {
             BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx);
             if (note != null) {
-                Map<String, Object> ms = new LinkedHashMap<>();
-                ms.put("objectId", note.get(FieldNames.FIELD_OBJECT_ID));
-                ms.put("index", idx);
-                ms.put("title", sceneData.getOrDefault("title", "Scene " + idx));
-                ms.put("description", sceneData.getOrDefault("summary", sceneData.getOrDefault("blurb", "")));
-                ms.put("imageObjectId", null);
-
-                List<String> sceneCharIds = new ArrayList<>();
-                Object charsObj = sceneData.get("characters");
-                if (charsObj instanceof List) {
-                    List<Object> scs = (List<Object>) charsObj;
-                    for (Object sc : scs) {
-                        String cn = null;
-                        if (sc instanceof Map) cn = (String) ((Map<String, Object>) sc).get("name");
-                        else if (sc instanceof String) cn = (String) sc;
-                        if (cn != null && charObjectIds.containsKey(cn)) sceneCharIds.add(charObjectIds.get(cn));
-                    }
-                }
-                ms.put("characters", sceneCharIds);
-                metaScenes.add(ms);
+                BaseRecord sceneEntry = buildSceneEntry(note, sceneData, idx, charObjectIds);
+                if (sceneEntry != null) metaScenes.add(sceneEntry);
             }
             idx++;
         }
 
-        // Build and save meta
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("sourceObjectId", workObjectId);
-        meta.put("bookObjectId", bookGroup.get(FieldNames.FIELD_OBJECT_ID));
-        meta.put("workName", effectiveBookName);
-        meta.put("sceneCount", metaScenes.size());
-        meta.put("scenes", metaScenes);
-        meta.put("extractedAt", ZonedDateTime.now().toString());
-        meta.put("generatedAt", null);
-
+        BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
         saveMeta(user, bookGroupPath, meta);
 
-        return Response.status(200).entity(JSONUtil.exportObject(meta)).build();
+        return Response.status(200).entity(toJson(meta)).build();
     }
 
     /**
@@ -1151,11 +1181,11 @@ public class PictureBookService {
                 String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
                 IOSystem.getActiveContext().getAccessPoint().member(user, scene, image, null, true);
                 updateSceneImageId(user, scene, imageOid);
-                Map<String, Object> genResult = new LinkedHashMap<>();
-                genResult.put("imageObjectId", imageOid);
-                genResult.put("prompt", promptOverride);
-                genResult.put("seed", extractSeedFromImage(image));
-                return Response.status(200).entity(JSONUtil.exportObject(genResult)).build();
+                BaseRecord genResult = buildResult();
+                genResult.set("imageObjectId", imageOid);
+                genResult.set("prompt", promptOverride);
+                genResult.set("seed", extractSeedFromImage(image));
+                return Response.status(200).entity(toJson(genResult)).build();
             } catch (Exception e) {
                 logger.error("Override SD generation failed: " + e.getMessage());
                 return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
@@ -1164,6 +1194,7 @@ public class PictureBookService {
 
         try {
             // Stage 1: Portrait bytes for up to 2 scene characters
+            WebSocketService.chirpUser(user, new String[] { "bgActivity", "face", "Generating portraits..." });
             // Characters may be stored as [{name:...}] maps or as objectId strings
             List<byte[]> portraitBytesList = new ArrayList<>();
             List<String> portraitPromptList = new ArrayList<>();
@@ -1251,6 +1282,7 @@ public class PictureBookService {
             logger.info("Stage 1 complete: " + portraitBytesList.size() + " portraits generated");
 
             // Stage 2: Landscape generation
+            WebSocketService.chirpUser(user, new String[] { "bgActivity", "landscape", "Generating landscape..." });
             Map<String, String> landVars = new LinkedHashMap<>();
             landVars.put("setting", setting);
             landVars.put("mood", mood);
@@ -1274,6 +1306,7 @@ public class PictureBookService {
                 return Response.status(500).entity("{\"error\":\"Empty landscape image\"}").build();
 
             // Stage 3: Stitch reference composite [portrait1 | portrait2|landscape | landscape]
+            WebSocketService.chirpUser(user, new String[] { "bgActivity", "auto_awesome_mosaic", "Stitching reference..." });
             byte[] leftBytes   = !portraitBytesList.isEmpty() ? portraitBytesList.get(0) : landscapeBytes;
             byte[] centerBytes = portraitBytesList.size() > 1  ? portraitBytesList.get(1) : landscapeBytes;
             byte[] refComposite = SDUtil.stitchSceneImages(leftBytes, centerBytes, landscapeBytes, 1024);
@@ -1281,6 +1314,7 @@ public class PictureBookService {
                 return Response.status(500).entity("{\"error\":\"Stitch failed\"}").build();
 
             // Stage 4: Flux Kontext composite
+            WebSocketService.chirpUser(user, new String[] { "bgActivity", "image", "Compositing scene..." });
             String leftDesc  = !portraitPromptList.isEmpty() ? portraitPromptList.get(0) : "";
             String rightDesc = portraitPromptList.size() > 1  ? portraitPromptList.get(1) : "";
             SWTxt2Img kontextReq = SWUtil.newKontextSceneTxt2Img(leftDesc, rightDesc, action, setting, sdConfigRec);
@@ -1296,12 +1330,14 @@ public class PictureBookService {
             IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
             updateSceneImageId(user, scene, finalImageOid);
             String compositePrompt = action + " " + setting;
-            Map<String, Object> genResult2 = new LinkedHashMap<>();
-            genResult2.put("imageObjectId", finalImageOid);
-            genResult2.put("prompt", compositePrompt);
-            genResult2.put("seed", extractSeedFromImage(finalImage));
-            return Response.status(200).entity(JSONUtil.exportObject(genResult2)).build();
+            WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
+            BaseRecord genResult = buildResult();
+            genResult.set("imageObjectId", finalImageOid);
+            genResult.set("prompt", compositePrompt);
+            genResult.set("seed", extractSeedFromImage(finalImage));
+            return Response.status(200).entity(toJson(genResult)).build();
         } catch (Exception e) {
+            WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
             logger.error("Scene image generation pipeline failed: " + e.getMessage(), e);
             return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
         }
@@ -1387,7 +1423,13 @@ public class PictureBookService {
             return Response.status(500).entity("{\"error\":\"Failed to save blurb\"}").build();
         }
 
-        return Response.status(200).entity("{\"blurb\":" + JSONUtil.exportObject(blurb.trim()) + "}").build();
+        try {
+            BaseRecord blurbResult = buildResult();
+            blurbResult.set("blurb", blurb.trim());
+            return Response.status(200).entity(toJson(blurbResult)).build();
+        } catch (Exception ex) {
+            return Response.status(200).entity("{\"blurb\":" + JSONUtil.exportObject(blurb.trim()) + "}").build();
+        }
     }
 
     /**
@@ -1503,16 +1545,15 @@ public class PictureBookService {
 
         String metaJson = metaRec.get("text");
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);
-            Object scenesObj = meta.get("scenes");
-            if (!(scenesObj instanceof List)) return Response.status(400).entity("{\"error\":\"No scenes in meta\"}").build();
+            BaseRecord meta = JSONUtil.importObject(metaJson, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+            if (meta == null) return Response.status(400).entity("{\"error\":\"Failed to parse meta\"}").build();
 
             @SuppressWarnings("unchecked")
-            List<Map<String, Object>> scenes = (List<Map<String, Object>>) scenesObj;
+            List<BaseRecord> scenes = meta.get("scenes");
+            if (scenes == null || scenes.isEmpty()) return Response.status(400).entity("{\"error\":\"No scenes in meta\"}").build();
 
             // Rebuild list in new order
-            List<Map<String, Object>> reordered = new ArrayList<>();
+            List<BaseRecord> reordered = new ArrayList<>();
             for (int i = 0; i < newOrder.size(); i++) {
                 final String oid = newOrder.get(i);
                 final int newIdx = i;
@@ -1520,14 +1561,16 @@ public class PictureBookService {
                         .filter(s -> oid.equals(s.get("objectId")))
                         .findFirst()
                         .ifPresent(s -> {
-                            Map<String, Object> copy = new LinkedHashMap<>(s);
-                            copy.put("index", newIdx);
-                            reordered.add(copy);
+                            try { s.set("index", newIdx); } catch (Exception ex) { /* ignore */ }
+                            reordered.add(s);
                         });
             }
-            meta.put("scenes", reordered);
+            meta.set("scenes", reordered);
             saveMeta(user, bookGroupPath, meta);
-            return Response.status(200).entity("{\"reordered\":true}").build();
+
+            BaseRecord result = buildResult();
+            result.set("reordered", true);
+            return Response.status(200).entity(toJson(result)).build();
         } catch (Exception e) {
             logger.error("Failed to reorder scenes: " + e.getMessage());
             return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
@@ -1586,6 +1629,12 @@ public class PictureBookService {
             ok = false;
         }
 
-        return Response.status(200).entity("{\"reset\":" + ok + "}").build();
+        try {
+            BaseRecord resetResult = buildResult();
+            resetResult.set("reset", ok);
+            return Response.status(200).entity(toJson(resetResult)).build();
+        } catch (Exception ex) {
+            return Response.status(200).entity("{\"reset\":" + ok + "}").build();
+        }
     }
 }

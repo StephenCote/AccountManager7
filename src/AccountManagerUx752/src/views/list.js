@@ -873,9 +873,12 @@ function newListControl() {
     function getGroupSearchButtons() {
         let buttons = [];
         if (am7model.isGroup(modType)) {
-            let plc = '';
             let cnt = pagination.pages().container;
-            if (cnt && cnt.name) plc = cnt.name;
+            let plc = '';
+            if (cnt) {
+                if (cnt.name) plc = cnt.name;
+                else if (cnt.path) plc = cnt.path.split('/').filter(function(s) { return s.length; }).pop() || '';
+            }
             buttons.push(textField('text-field', 'listFilter', plc, function (e) { if (e.which === 13) doFilter(); }));
             buttons.push(pagination.button('button', 'search', null, doFilter));
         }

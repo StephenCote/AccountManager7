@@ -74,12 +74,13 @@ function newPaginationControl() {
       let id = containerCache[pages.containerId];
       if (!id) {
         let gq = am7client.newQuery(pages.containerType);
-        gq.entity.request = ["id", "objectId"];
+        gq.entity.request = ["id", "objectId", "name", "path"];
         gq.field("objectId", pages.containerId);
         let g = await page.search(gq);
         if (g && g.results && g.results.length) {
           id = g.results[0].id;
           containerCache[pages.containerId] = id;
+          pages.container = g.results[0];
         }
       }
       if (id) {
