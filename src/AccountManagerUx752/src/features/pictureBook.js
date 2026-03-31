@@ -13,7 +13,7 @@ import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
 import { ObjectPicker } from '../components/picker.js';
 import {
-    loadPictureBook, reorderScenes, regenerateBlurb, resetPictureBook,
+    loadPictureBook, reorderScenes, resetPictureBook,
     resolveImageUrl, resolveAllImageUrls, clearImageCache
 } from '../workflows/sceneExtractor.js';
 import { pictureBookFromId } from '../workflows/pictureBook.js';
@@ -152,10 +152,7 @@ let viewerLoading = false;
 let viewerError = null;
 let fullscreen = false;
 
-// Blurb editing
-let editingBlurb = false;
-let blurbEditText = '';
-let savingBlurb = false;
+// Blurb editing removed — viewer is read-only; editing done via wizard
 
 // Export
 let exporting = false;
@@ -166,12 +163,10 @@ function currentScene() { return currentPage > 0 ? viewerScenes[currentPage - 1]
 function goToPage(n) {
     let max = totalPages() - 1;
     currentPage = Math.max(0, Math.min(n, max));
-    editingBlurb = false;
     m.redraw();
 }
 
 function onKeyDown(e) {
-    if (editingBlurb) return;
     if (e.key === 'ArrowRight' || e.key === 'Right') { e.preventDefault(); goToPage(currentPage + 1); }
     else if (e.key === 'ArrowLeft' || e.key === 'Left') { e.preventDefault(); goToPage(currentPage - 1); }
     else if (e.key === 'Home') { e.preventDefault(); goToPage(0); }
@@ -186,7 +181,6 @@ async function loadViewer(bookObjectId) {
     viewerScenes = [];
     imageUrls = {};
     currentPage = 0;
-    editingBlurb = false;
     fullscreen = false;
     clearImageCache();
     m.redraw();
@@ -227,58 +221,7 @@ function getCoverImageUrl() {
     return getImageUrl(viewerScenes[0].imageObjectId);
 }
 
-// ── Blurb editing ─────────────────────────────────────────────────────
-
-async function saveBlurb() {
-    let scene = currentScene();
-    if (!scene || !scene.objectId) return;
-    savingBlurb = true;
-    m.redraw();
-    try {
-        // Call the blurb endpoint with the edited text as a direct update
-        // The server stores the blurb in the scene note's text JSON blob
-        let resp = await fetch(
-            applicationPath + '/rest/olio/picture-book/scene/' + scene.objectId + '/blurb', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-                body: JSON.stringify({ schema: 'olio.pictureBookRequest' })
-            });
-        // Update local state regardless
-        scene.description = blurbEditText;
-        editingBlurb = false;
-    } catch (e) {
-        page.toast('error', 'Failed to save blurb');
-    }
-    savingBlurb = false;
-    m.redraw();
-}
-
-async function regenBlurb() {
-    let scene = currentScene();
-    if (!scene || !scene.objectId) return;
-
-    // Pick chatConfig before regenerating — blurb endpoint needs an LLM config
-    ObjectPicker.openLibrary({
-        libraryType: 'chatConfig',
-        title: 'Select Chat Config for Regeneration',
-        onSelect: async function (item) {
-            if (!item || !item.name) return;
-            savingBlurb = true;
-            m.redraw();
-            try {
-                let result = await regenerateBlurb(scene.objectId, item.name);
-                if (result && result.blurb) {
-                    scene.description = result.blurb;
-                    blurbEditText = result.blurb;
-                }
-            } catch (e) {
-                page.toast('error', 'Blurb regeneration failed');
-            }
-            savingBlurb = false;
-            m.redraw();
-        }
-    });
-}
+// Blurb editing removed — viewer is read-only; use "Edit Book" to reopen wizard
 
 // ── Export as self-contained HTML ──────────────────────────────────────
 
@@ -440,11 +383,12 @@ function renderScenePage() {
             style: 'font-family: Georgia, serif;'
         }, scene.title || 'Untitled Scene'),
 
-        // Blurb
+        // Blurb (read-only)
         m('div', { class: 'max-w-2xl w-full px-4' },
-            editingBlurb
-                ? renderBlurbEditor()
-                : renderBlurbDisplay(scene)
+            m('p', {
+                class: 'text-base text-gray-700 dark:text-gray-300 text-center italic',
+                style: 'line-height: 1.8; font-family: Georgia, serif;'
+            }, (scene.description || scene.summary || '') || m('em', { class: 'text-gray-400 not-italic' }, 'No blurb yet.'))
         ),
 
         // Character badges
@@ -466,49 +410,7 @@ function renderScenePage() {
     ]);
 }
 
-function renderBlurbDisplay(scene) {
-    let text = scene.description || scene.summary || '';
-    return m('div', { class: 'flex items-start gap-2' }, [
-        m('p', {
-            class: 'flex-1 text-base text-gray-700 dark:text-gray-300 text-center italic',
-            style: 'line-height: 1.8; font-family: Georgia, serif;'
-        }, text || m('em', { class: 'text-gray-400 not-italic' }, 'No blurb yet.')),
-        !fullscreen ? m('button', {
-            class: 'text-gray-400 hover:text-gray-600 shrink-0 mt-1',
-            title: 'Edit blurb',
-            onclick: function () {
-                blurbEditText = text;
-                editingBlurb = true;
-            }
-        }, m('span', { class: 'material-symbols-outlined text-sm' }, 'edit')) : null
-    ]);
-}
-
-function renderBlurbEditor() {
-    return m('div', { class: 'space-y-2 w-full' }, [
-        m('textarea', {
-            class: 'w-full text-field-full text-sm', rows: 4,
-            value: blurbEditText,
-            oninput: function (e) { blurbEditText = e.target.value; }
-        }),
-        m('div', { class: 'flex gap-2 justify-center' }, [
-            m('button', {
-                class: 'btn btn-primary text-xs px-3 py-1',
-                disabled: savingBlurb,
-                onclick: saveBlurb
-            }, savingBlurb ? 'Saving...' : 'Save'),
-            m('button', {
-                class: 'btn text-xs px-3 py-1',
-                disabled: savingBlurb,
-                onclick: regenBlurb
-            }, 'Regenerate via AI'),
-            m('button', {
-                class: 'text-gray-500 text-xs px-2',
-                onclick: function () { editingBlurb = false; }
-            }, 'Cancel')
-        ])
-    ]);
-}
+// renderBlurbDisplay and renderBlurbEditor removed — viewer is read-only
 
 // ── Render: Navigation ────────────────────────────────────────────────
 
@@ -545,6 +447,13 @@ function renderHeader() {
             disabled: currentPage >= total - 1,
             onclick: function () { goToPage(currentPage + 1); }
         }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right')),
+
+        // Edit Book — reopen wizard
+        !fullscreen && viewerScenes.length ? m('button', {
+            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+            title: 'Edit Book',
+            onclick: function () { pictureBookFromId(viewerBookId, viewerWorkName); }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'edit')) : null,
 
         // Export
         m('button', {

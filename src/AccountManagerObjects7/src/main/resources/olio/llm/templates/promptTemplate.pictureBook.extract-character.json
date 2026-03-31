@@ -1,0 +1,31 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "pictureBook.extract-character",
+	"description": "Character detail extraction — physical appearance, clothing, and personality for SD portrait generation",
+	"role": "system",
+	"sections": [
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "system",
+			"role": "system",
+			"priority": 10,
+			"lines": [
+				"You are a character description specialist preparing input for Stable Diffusion image generation. Extract thorough physical and costume descriptions from source text. Be specific about ethnicity, hair color, eye color, build, approximate age, and detailed clothing. Do not invent details not supported by the text; note gaps as null. Return only valid JSON — no prose, no commentary. /no_think"
+			]
+		},
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "user",
+			"role": "user",
+			"priority": 10,
+			"lines": [
+				"From the story below, extract all available physical and costume details for the character named '{name}'. Return JSON only:",
+				"{\"name\":\"...\",\"gender\":\"male|female|other\",\"age_approx\":\"...\",\"physical\":{\"height\":\"...\",\"build\":\"...\",\"hair\":\"...\",\"eyes\":\"...\",\"skin\":\"...\",\"distinguishing\":\"...\"},\"clothing_style\":\"...\",\"outfit_notes\":\"detailed clothing description\",\"personality_hint\":\"...\"}",
+				"",
+				"STORY:",
+				"{text}"
+			]
+		}
+	],
+	"sectionOrder": ["system"]
+}

@@ -1,0 +1,33 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "pictureBook.scene-blurb",
+	"description": "Scene blurb generation — literary picture book captions with sensory detail",
+	"role": "system",
+	"sections": [
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "system",
+			"role": "system",
+			"priority": 10,
+			"lines": [
+				"Write engaging, literary picture book captions. Use present tense. Include specific sensory details. Avoid generic summaries. Maximum 3 sentences. Return only the caption text — no quotes, no labels, no JSON. /no_think"
+			]
+		},
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "user",
+			"role": "user",
+			"priority": 10,
+			"lines": [
+				"Write a 2-3 sentence picture book caption.",
+				"TITLE: {title}",
+				"SETTING: {setting}",
+				"ACTION: {action}",
+				"CHARACTERS: {characterList}",
+				"",
+				"Caption:"
+			]
+		}
+	],
+	"sectionOrder": ["system"]
+}

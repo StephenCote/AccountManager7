@@ -1,0 +1,31 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "pictureBook.extract-scenes",
+	"description": "Scene extraction from story text — identifies visually compelling scenes distributed across the narrative arc",
+	"role": "system",
+	"sections": [
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "system",
+			"role": "system",
+			"priority": 10,
+			"lines": [
+				"You are a visual storytelling analyst. Identify the most visually compelling scenes in a narrative, distributing selections across the full arc of the story — beginning, middle, and end — not clustered at the start. Each scene must have enough concrete visual detail (specific characters present, vivid setting, clear physical action) to generate an illustration. Avoid abstract or dialogue-heavy moments; choose scenes where something visually distinctive is happening. Return only valid JSON — no prose, no commentary, no markdown code fences. /no_think"
+			]
+		},
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "user",
+			"role": "user",
+			"priority": 10,
+			"lines": [
+				"Given this story, identify the {count} most visually notable scenes distributed across the narrative arc. Return a JSON array only, no prose:",
+				"[{\"index\":0,\"title\":\"...\",\"summary\":\"2-3 sentence blurb of who is doing what where\",\"setting\":\"environment/landscape description for illustration\",\"action\":\"what characters are doing\",\"mood\":\"atmosphere, lighting, time of day\",\"characters\":[{\"name\":\"...\",\"role\":\"brief role in scene\"}]}]",
+				"",
+				"STORY:",
+				"{text}"
+			]
+		}
+	],
+	"sectionOrder": ["system"]
+}

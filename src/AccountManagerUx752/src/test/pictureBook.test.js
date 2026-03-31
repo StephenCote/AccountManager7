@@ -18,9 +18,9 @@ describe('sceneExtractor module exports', () => {
         expect(DEFAULT_SD_CONFIG.style).toBe('illustration');
     });
 
-    it('should export MAX_SCENES_DEFAULT as 3', async () => {
+    it('should export MAX_SCENES_DEFAULT as -1 (no max, backend decides)', async () => {
         let { MAX_SCENES_DEFAULT } = await import('../workflows/sceneExtractor.js');
-        expect(MAX_SCENES_DEFAULT).toBe(3);
+        expect(MAX_SCENES_DEFAULT).toBe(-1);
     });
 
     it('should export extractScenes as a function', async () => {
@@ -31,6 +31,11 @@ describe('sceneExtractor module exports', () => {
     it('should export fullExtract as a function', async () => {
         let mod = await import('../workflows/sceneExtractor.js');
         expect(typeof mod.fullExtract).toBe('function');
+    });
+
+    it('should export createFromScenes as a function', async () => {
+        let mod = await import('../workflows/sceneExtractor.js');
+        expect(typeof mod.createFromScenes).toBe('function');
     });
 
     it('should export generateSceneImage as a function', async () => {

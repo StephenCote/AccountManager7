@@ -1,0 +1,34 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "pictureBook.extract-chunk",
+	"description": "Chunked scene extraction — processes text segments with running scene context for long documents",
+	"role": "system",
+	"sections": [
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "system",
+			"role": "system",
+			"priority": 10,
+			"lines": [
+				"You are a visual storytelling analyst extracting scenes from a narrative in chunks. You receive a running list of previously identified scenes and a new text segment. Identify new visually compelling scenes in this segment, or revise existing scenes if this segment provides better detail. Each scene must have concrete visual detail: specific characters, vivid setting, clear physical action. Avoid abstract or dialogue-heavy moments. Return only valid JSON — no prose, no commentary, no markdown code fences. /no_think"
+			]
+		},
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "user",
+			"role": "user",
+			"priority": 10,
+			"lines": [
+				"Previously identified scenes:",
+				"{previousScenes}",
+				"",
+				"Extract new scenes or revise existing ones from this text segment. Return a JSON object with three arrays:",
+				"{\"additions\":[{\"title\":\"...\",\"blurb\":\"2-3 sentence description\",\"setting\":\"environment description\",\"action\":\"what characters are doing\",\"mood\":\"atmosphere, lighting\",\"characters\":[{\"name\":\"...\",\"role\":\"brief role\"}],\"diffusionPrompt\":\"detailed stable diffusion prompt for illustration\"}],\"revisions\":[{\"title\":\"existing scene title to revise\",\"blurb\":\"updated blurb\",\"setting\":\"updated setting\",\"action\":\"updated action\",\"mood\":\"updated mood\",\"characters\":[...],\"diffusionPrompt\":\"updated prompt\"}],\"removals\":[]}",
+				"",
+				"TEXT SEGMENT:",
+				"{chunk}"
+			]
+		}
+	],
+	"sectionOrder": ["system"]
+}

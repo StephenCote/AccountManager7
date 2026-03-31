@@ -14,7 +14,8 @@ const DEFAULT_SD_CONFIG = {
     style: 'illustration'
 };
 
-const MAX_SCENES_DEFAULT = 3;
+// Scene count: -1 = no max (backend decides), positive int = explicit cap
+const MAX_SCENES_DEFAULT = -1;
 
 function pbBase() {
     return applicationPath + '/rest/olio/picture-book';
@@ -27,9 +28,11 @@ function pbBase() {
  * @param {number} count
  * @returns {Promise<Array>}
  */
-async function extractScenes(workObjectId, chatConfigName, count) {
-    let body = { schema: 'olio.pictureBookRequest', count: count || MAX_SCENES_DEFAULT };
+async function extractScenes(workObjectId, chatConfigName, count, promptTemplateOverride) {
+    let body = { schema: 'olio.pictureBookRequest' };
+    if (count != null && count > 0) body.count = count;
     if (chatConfigName) body.chatConfig = chatConfigName;
+    if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
     let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-scenes-only', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -44,9 +47,11 @@ async function extractScenes(workObjectId, chatConfigName, count) {
  * Creates ~/PictureBooks/{bookName}/ group. Returns .pictureBookMeta JSON with bookObjectId.
  * @param {string} workObjectId - source document objectId
  */
-async function fullExtract(workObjectId, chatConfigName, count, genre, bookName) {
-    let body = { schema: 'olio.pictureBookRequest', count: count || MAX_SCENES_DEFAULT };
+async function fullExtract(workObjectId, chatConfigName, count, genre, bookName, promptTemplateOverride) {
+    let body = { schema: 'olio.pictureBookRequest' };
+    if (count != null && count > 0) body.count = count;
     if (chatConfigName) body.chatConfig = chatConfigName;
+    if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
     if (genre) body.genre = genre;
     if (bookName) body.bookName = bookName;
     let resp = await fetch(pbBase() + '/' + workObjectId + '/extract', {
@@ -78,6 +83,31 @@ async function extractChunked(workObjectId, chatConfigName) {
 }
 
 /**
+ * Create book from user-curated scenes — creates book group, scene notes, characters, meta.
+ * @param {string} workObjectId - source document objectId
+ * @param {string|null} chatConfigName
+ * @param {string|null} genre
+ * @param {string|null} bookName
+ * @param {Array} sceneList - user-curated scenes from Step 2
+ * @param {Array|null} characters - user-edited character data from Step 3
+ * @returns {Promise<Object>} meta with bookObjectId
+ */
+async function createFromScenes(workObjectId, chatConfigName, genre, bookName, sceneList, characters) {
+    let body = { schema: 'olio.pictureBookRequest', sceneList: sceneList };
+    if (chatConfigName) body.chatConfig = chatConfigName;
+    if (genre) body.genre = genre;
+    if (bookName) body.bookName = bookName;
+    if (characters && characters.length) body.characters = characters;
+    let resp = await fetch(pbBase() + '/' + workObjectId + '/create-from-scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('Create from scenes failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
  * Generate SD image for one scene.
  * @param {string} sceneObjectId
  * @param {object|null} sdConfig  overrides — merged with DEFAULT_SD_CONFIG
@@ -85,10 +115,11 @@ async function extractChunked(workObjectId, chatConfigName) {
  * @param {string|null} promptOverride  skip LLM prompt build if set
  * @returns {Promise<{imageObjectId: string}>}
  */
-async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promptOverride) {
+async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promptOverride, promptTemplateOverride) {
     let body = { schema: 'olio.pictureBookRequest', sdConfig: Object.assign({}, DEFAULT_SD_CONFIG, sdConfig || {}) };
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (promptOverride) body.promptOverride = promptOverride;
+    if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
     let resp = await fetch(pbBase() + '/scene/' + sceneObjectId + '/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -247,6 +278,7 @@ export {
     extractScenes,
     extractChunked,
     fullExtract,
+    createFromScenes,
     generateSceneImage,
     regenerateBlurb,
     loadPictureBook,

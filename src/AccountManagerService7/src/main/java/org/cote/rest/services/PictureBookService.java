@@ -33,6 +33,7 @@ import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
@@ -78,8 +79,8 @@ public class PictureBookService {
     private static final int DEFAULT_CFG = 5;
     private static final boolean DEFAULT_HIRES = false;
 
-    // Default scene count cap for non-HQ mode
-    private static final int MAX_SCENES_DEFAULT = 3;
+    // Default scene count when not specified — LLM decides actual count
+    private static final int MAX_SCENES_DEFAULT = 10;
 
     private static final String NEG_PROMPT =
         "blurry, lowres, bad anatomy, extra limbs, watermark, text, logo, cartoon, anime, nsfw, deformed, disfigured, ugly, duplicate, mutated, out of frame";
@@ -330,7 +331,21 @@ public class PictureBookService {
      * Call the LLM with a prompt template substitution.
      * Resolves prompt by: 1) user's ~/Chat group, 2) system library, 3) classpath resource.
      */
+    /**
+     * Call LLM with optional prompt template override name.
+     */
+    private String callLlm(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars, String overrideName) {
+        if (overrideName != null && !overrideName.isEmpty()) {
+            promptName = overrideName;
+        }
+        return callLlmInternal(user, chatConfig, promptName, vars);
+    }
+
     private String callLlm(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars) {
+        return callLlmInternal(user, chatConfig, promptName, vars);
+    }
+
+    private String callLlmInternal(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars) {
         String system = null;
         String userTpl = null;
 
@@ -389,6 +404,93 @@ public class PictureBookService {
             logger.error("LLM call failed for " + promptName + ": " + e.getMessage());
         }
         return null;
+    }
+
+    /**
+     * Internal chunked extraction — shared by extract-scenes-only (auto-chunk) and extract-chunked.
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text) {
+        int chunkSize = 2000;
+        int overlap = 200;
+        List<String> chunks = new ArrayList<>();
+        int pos = 0;
+        while (pos < text.length()) {
+            int end = Math.min(pos + chunkSize, text.length());
+            if (end < text.length()) {
+                int lastPeriod = text.lastIndexOf('.', end);
+                int lastNewline = text.lastIndexOf('\n', end);
+                int breakAt = Math.max(lastPeriod, lastNewline);
+                if (breakAt > pos + chunkSize / 2) end = breakAt + 1;
+            }
+            chunks.add(text.substring(pos, end));
+            pos = end - overlap;
+            if (pos < 0) pos = 0;
+            if (end >= text.length()) break;
+        }
+
+        List<Map<String, Object>> sceneList = new ArrayList<>();
+        for (int ci = 0; ci < chunks.size(); ci++) {
+            String previousJson = sceneList.isEmpty() ? "[]" : JSONUtil.exportObject(sceneList);
+            Map<String, String> vars = new LinkedHashMap<>();
+            vars.put("previousScenes", previousJson);
+            vars.put("chunk", chunks.get(ci));
+            String llmResp = callLlm(user, chatConfig, "pictureBook.extract-chunk", vars);
+            if (llmResp == null || llmResp.isEmpty()) continue;
+            Map<String, Object> chunkResult = parseLlmJsonObject(llmResp);
+
+            Object addObj = chunkResult.get("additions");
+            if (addObj instanceof List) {
+                List<Map<String, Object>> additions = (List<Map<String, Object>>) addObj;
+                for (Map<String, Object> scene : additions) {
+                    scene.put("index", sceneList.size());
+                    scene.put("userEdited", false);
+                    sceneList.add(scene);
+                }
+            }
+            Object revObj = chunkResult.get("revisions");
+            if (revObj instanceof List) {
+                List<Map<String, Object>> revisions = (List<Map<String, Object>>) revObj;
+                for (Map<String, Object> rev : revisions) {
+                    String revTitle = (String) rev.get("title");
+                    if (revTitle == null) continue;
+                    for (int si = 0; si < sceneList.size(); si++) {
+                        String existingTitle = (String) sceneList.get(si).get("title");
+                        if (revTitle.equals(existingTitle)) {
+                            Map<String, Object> existing = sceneList.get(si);
+                            for (Map.Entry<String, Object> e : rev.entrySet()) {
+                                if (!"title".equals(e.getKey()) && e.getValue() != null) {
+                                    existing.put(e.getKey(), e.getValue());
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            Object remObj = chunkResult.get("removals");
+            if (remObj instanceof List) {
+                List<String> removals = (List<String>) remObj;
+                sceneList.removeIf(s -> removals.contains(s.get("title")));
+            }
+            logger.info("Chunk " + (ci + 1) + "/" + chunks.size() + " processed: " + sceneList.size() + " scenes total");
+        }
+        for (int i = 0; i < sceneList.size(); i++) {
+            sceneList.get(i).put("index", i);
+        }
+        return sceneList;
+    }
+
+    /**
+     * Extract the actual seed from a generated image record's attributes.
+     * SDUtil stores it as AttributeUtil.addAttribute(data, "seed", seedl).
+     */
+    private int extractSeedFromImage(BaseRecord image) {
+        try {
+            int seedVal = AttributeUtil.getAttributeValue(image, "seed", -1);
+            if (seedVal > 0) return seedVal;
+        } catch (Exception e) { /* attribute may not exist */ }
+        return -1;
     }
 
     /**
@@ -451,9 +553,9 @@ public class PictureBookService {
             charPerson = IOSystem.getActiveContext().getAccessPoint().find(user, refetch);
             if (charPerson == null) return null;
 
-            // Build SD portrait prompt from extracted character data and store in narrative.
+            // Build SD portrait prompt from extracted character data.
+            // narrative is a foreign model (olio.narrative) — set sdPrompt on it, not a raw string.
             String portraitPrompt = NarrativeUtil.buildPortraitPromptFromExtractedData(name, charData);
-            // Fallback: if NarrativeUtil returned null, build a basic prompt from character data
             if (portraitPrompt == null || portraitPrompt.isEmpty()) {
                 String appearance = (String) charData.getOrDefault("appearance", "");
                 String role = (String) charData.getOrDefault("role", "");
@@ -464,7 +566,13 @@ public class PictureBookService {
                 portraitPrompt += ", detailed face, cinematic lighting, high quality";
             }
             try {
-                charPerson.set("narrative", portraitPrompt);
+                BaseRecord narrative = charPerson.get("narrative");
+                if (narrative == null) {
+                    narrative = RecordFactory.newInstance(OlioModelNames.MODEL_NARRATIVE);
+                    charPerson.set("narrative", narrative);
+                }
+                narrative.set("sdPrompt", portraitPrompt);
+                narrative.set("physicalDescription", portraitPrompt);
                 IOSystem.getActiveContext().getAccessPoint().update(user, charPerson);
             } catch (Exception e) {
                 logger.warn("Failed to set portrait prompt for " + name + ": " + e.getMessage(), e);
@@ -511,8 +619,9 @@ public class PictureBookService {
 
     /**
      * POST /{workObjectId}/extract-scenes-only
-     * LLM scene extraction only — no character creation.
-     * Returns raw scene JSON array for client review.
+     * Smart scene extraction — auto-chunks if text > 8000 chars.
+     * Returns raw scene JSON array for client review (short text)
+     * or { sceneList, extractionComplete, chunksProcessed } (chunked).
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -525,38 +634,48 @@ public class PictureBookService {
         BaseRecord work = findWork(user, workObjectId);
         if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
 
-        BaseRecord params = null;
         int count = MAX_SCENES_DEFAULT;
         String chatConfigName = null;
+        String promptTemplateOverride = null;
         if (json != null && !json.trim().isEmpty()) {
             try {
-                params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
                 Object countObj = params.get("count");
                 if (countObj instanceof Number) count = ((Number) countObj).intValue();
                 chatConfigName = params.get("chatConfig");
+                promptTemplateOverride = params.get("promptTemplate");
             } catch (Exception e) {
                 logger.warn("Failed to parse extract request body: " + e.getMessage());
             }
         }
-        // Cap scene count in default mode
-        if (count > MAX_SCENES_DEFAULT) count = MAX_SCENES_DEFAULT;
 
         String text = extractWorkText(user, work);
         if (text == null || text.isEmpty()) {
             return Response.status(400).entity("{\"error\":\"No text content found in work\"}").build();
         }
 
-        // Load chat config
         BaseRecord chatConfig = null;
         if (chatConfigName != null) {
             chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
         }
 
+        // Auto-chunk if text exceeds 8000 chars
+        if (text.length() > 8000) {
+            List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("sceneList", sceneList);
+            result.put("extractionComplete", true);
+            result.put("chunksProcessed", -1);
+            result.put("chunked", true);
+            return Response.status(200).entity(JSONUtil.exportObject(result)).build();
+        }
+
+        // Short text — single-shot extraction
         Map<String, String> vars = new LinkedHashMap<>();
         vars.put("count", String.valueOf(count));
-        vars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
+        vars.put("text", text);
 
-        String llmResponse = callLlm(user, chatConfig, "pictureBook.extract-scenes", vars);
+        String llmResponse = callLlm(user, chatConfig, "pictureBook.extract-scenes", vars, promptTemplateOverride);
         List<Map<String, Object>> scenes = parseLlmJsonArray(llmResponse);
 
         return Response.status(200).entity(JSONUtil.exportObject(scenes,
@@ -565,9 +684,8 @@ public class PictureBookService {
 
     /**
      * POST /{workObjectId}/extract-chunked
-     * Chunked scene extraction — splits text into ~2000-char chunks with overlap,
-     * processes each chunk with the LLM using running scene context.
-     * Returns a sceneList array covering the full narrative arc.
+     * Chunked scene extraction — delegates to extractChunkedInternal.
+     * Kept for backward compatibility; extract-scenes-only now auto-chunks.
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -601,95 +719,11 @@ public class PictureBookService {
             chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
         }
 
-        // Split text into ~2000-char chunks with ~200-char overlap
-        int chunkSize = 2000;
-        int overlap = 200;
-        List<String> chunks = new ArrayList<>();
-        int pos = 0;
-        while (pos < text.length()) {
-            int end = Math.min(pos + chunkSize, text.length());
-            // Try to break at a sentence boundary
-            if (end < text.length()) {
-                int lastPeriod = text.lastIndexOf('.', end);
-                int lastNewline = text.lastIndexOf('\n', end);
-                int breakAt = Math.max(lastPeriod, lastNewline);
-                if (breakAt > pos + chunkSize / 2) end = breakAt + 1;
-            }
-            chunks.add(text.substring(pos, end));
-            pos = end - overlap;
-            if (pos < 0) pos = 0;
-            if (end >= text.length()) break;
-        }
-
-        // Process each chunk with running scene context
-        List<Map<String, Object>> sceneList = new ArrayList<>();
-        for (int ci = 0; ci < chunks.size(); ci++) {
-            String previousJson = sceneList.isEmpty() ? "[]" : JSONUtil.exportObject(sceneList);
-            Map<String, String> vars = new LinkedHashMap<>();
-            vars.put("previousScenes", previousJson);
-            vars.put("chunk", chunks.get(ci));
-
-            String llmResp = callLlm(user, chatConfig, "pictureBook.extract-chunk", vars);
-            if (llmResp == null || llmResp.isEmpty()) continue;
-
-            Map<String, Object> chunkResult = parseLlmJsonObject(llmResp);
-
-            // Process additions
-            Object addObj = chunkResult.get("additions");
-            if (addObj instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> additions = (List<Map<String, Object>>) addObj;
-                for (Map<String, Object> scene : additions) {
-                    scene.put("index", sceneList.size());
-                    scene.put("userEdited", false);
-                    sceneList.add(scene);
-                }
-            }
-
-            // Process revisions — match by title
-            Object revObj = chunkResult.get("revisions");
-            if (revObj instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> revisions = (List<Map<String, Object>>) revObj;
-                for (Map<String, Object> rev : revisions) {
-                    String revTitle = (String) rev.get("title");
-                    if (revTitle == null) continue;
-                    for (int si = 0; si < sceneList.size(); si++) {
-                        String existingTitle = (String) sceneList.get(si).get("title");
-                        if (revTitle.equals(existingTitle)) {
-                            // Merge revision fields into existing scene
-                            Map<String, Object> existing = sceneList.get(si);
-                            for (Map.Entry<String, Object> e : rev.entrySet()) {
-                                if (!"title".equals(e.getKey()) && e.getValue() != null) {
-                                    existing.put(e.getKey(), e.getValue());
-                                }
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Process removals — match by title
-            Object remObj = chunkResult.get("removals");
-            if (remObj instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<String> removals = (List<String>) remObj;
-                sceneList.removeIf(s -> removals.contains(s.get("title")));
-            }
-
-            logger.info("Chunk " + (ci + 1) + "/" + chunks.size() + " processed: " + sceneList.size() + " scenes total");
-        }
-
-        // Re-index scenes
-        for (int i = 0; i < sceneList.size(); i++) {
-            sceneList.get(i).put("index", i);
-        }
-
+        List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sceneList", sceneList);
         result.put("extractionComplete", true);
-        result.put("chunksProcessed", chunks.size());
+        result.put("chunksProcessed", -1);
         return Response.status(200).entity(JSONUtil.exportObject(result)).build();
     }
 
@@ -843,6 +877,176 @@ public class PictureBookService {
     }
 
     /**
+     * POST /{workObjectId}/create-from-scenes
+     * Takes user-curated scene list from Step 2, creates book group, scene notes,
+     * extracts + creates charPerson records, saves meta. Returns bookObjectId.
+     * Body: { bookName, chatConfig, genre, sceneList: [...], characters: [...] }
+     */
+    @SuppressWarnings("unchecked")
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{workObjectId:[0-9A-Za-z\\-]+}/create-from-scenes")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createFromScenes(@PathParam("workObjectId") String workObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord work = findWork(user, workObjectId);
+        if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
+
+        String chatConfigName = null;
+        String genre = null;
+        String bookName = null;
+        List<Map<String, Object>> sceneList = new ArrayList<>();
+        List<Map<String, Object>> charDataList = new ArrayList<>();
+        if (json != null && !json.trim().isEmpty()) {
+            try {
+                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
+                        RecordDeserializerConfig.getUnfilteredModule());
+                chatConfigName = params.get("chatConfig");
+                genre = params.get("genre");
+                bookName = params.get("bookName");
+                Object sl = params.get("sceneList");
+                if (sl instanceof List) sceneList = (List<Map<String, Object>>) sl;
+                Object cl = params.get("characters");
+                if (cl instanceof List) charDataList = (List<Map<String, Object>>) cl;
+            } catch (Exception e) {
+                logger.warn("Failed to parse create-from-scenes request: " + e.getMessage());
+            }
+        }
+        if (sceneList.isEmpty()) {
+            return Response.status(400).entity("{\"error\":\"sceneList is required\"}").build();
+        }
+
+        String effectiveBookName = (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME);
+        BaseRecord bookGroup = ensureBookGroup(user, effectiveBookName);
+        if (bookGroup == null) {
+            return Response.status(500).entity("{\"error\":\"Failed to create book group\"}").build();
+        }
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        if (bookGroupPath == null) bookGroupPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + effectiveBookName;
+
+        BaseRecord scenesGroup = ensureSubGroup(user, bookGroupPath, "Scenes");
+        BaseRecord charsGroup = ensureSubGroup(user, bookGroupPath, "Characters");
+        if (scenesGroup == null || charsGroup == null) {
+            return Response.status(500).entity("{\"error\":\"Failed to create sub-groups\"}").build();
+        }
+
+        BaseRecord chatConfig = null;
+        if (chatConfigName != null) {
+            chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+        }
+
+        // Extract text for LLM character extraction (if no pre-built character data)
+        String text = extractWorkText(user, work);
+
+        // If character data was provided from Step 3, use it directly; otherwise extract from scenes
+        if (charDataList.isEmpty()) {
+            // Collect unique character names from scene list
+            Map<String, Map<String, Object>> uniqueChars = new LinkedHashMap<>();
+            for (Map<String, Object> scene : sceneList) {
+                Object charsObj = scene.get("characters");
+                if (charsObj instanceof List) {
+                    List<Object> sceneChars = (List<Object>) charsObj;
+                    for (Object sc : sceneChars) {
+                        String cname = null;
+                        Map<String, Object> cmap = null;
+                        if (sc instanceof Map) {
+                            cmap = (Map<String, Object>) sc;
+                            cname = (String) cmap.get("name");
+                        } else if (sc instanceof String) {
+                            cname = (String) sc;
+                            cmap = new LinkedHashMap<>();
+                            cmap.put("name", cname);
+                        }
+                        if (cname != null && !cname.isEmpty() && !uniqueChars.containsKey(cname)) {
+                            uniqueChars.put(cname, cmap);
+                        }
+                    }
+                }
+            }
+            for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) {
+                charDataList.add(entry.getValue());
+            }
+        }
+
+        // Create charPerson records — use LLM for detail extraction if needed
+        Map<String, String> charObjectIds = new LinkedHashMap<>();
+        for (Map<String, Object> charData : charDataList) {
+            String cname = (String) charData.get("name");
+            if (cname == null || cname.isEmpty()) continue;
+
+            // If appearance is missing and we have text, use LLM to extract details
+            if ((charData.get("appearance") == null || ((String) charData.getOrDefault("appearance", "")).isEmpty())
+                    && text != null && !text.isEmpty() && chatConfig != null) {
+                Map<String, String> charVars = new LinkedHashMap<>();
+                charVars.put("name", cname);
+                charVars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
+                String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
+                Map<String, Object> llmData = parseLlmJsonObject(llmChar);
+                if (!llmData.isEmpty()) {
+                    // Merge LLM data without overwriting user edits
+                    for (Map.Entry<String, Object> e : llmData.entrySet()) {
+                        if (!charData.containsKey(e.getKey()) || charData.get(e.getKey()) == null
+                                || ((charData.get(e.getKey()) instanceof String) && ((String) charData.get(e.getKey())).isEmpty())) {
+                            charData.put(e.getKey(), e.getValue());
+                        }
+                    }
+                }
+            }
+
+            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre);
+            if (cp != null) {
+                charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
+            }
+        }
+
+        // Create scene notes
+        List<Map<String, Object>> metaScenes = new ArrayList<>();
+        int idx = 0;
+        for (Map<String, Object> sceneData : sceneList) {
+            BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx);
+            if (note != null) {
+                Map<String, Object> ms = new LinkedHashMap<>();
+                ms.put("objectId", note.get(FieldNames.FIELD_OBJECT_ID));
+                ms.put("index", idx);
+                ms.put("title", sceneData.getOrDefault("title", "Scene " + idx));
+                ms.put("description", sceneData.getOrDefault("summary", sceneData.getOrDefault("blurb", "")));
+                ms.put("imageObjectId", null);
+
+                List<String> sceneCharIds = new ArrayList<>();
+                Object charsObj = sceneData.get("characters");
+                if (charsObj instanceof List) {
+                    List<Object> scs = (List<Object>) charsObj;
+                    for (Object sc : scs) {
+                        String cn = null;
+                        if (sc instanceof Map) cn = (String) ((Map<String, Object>) sc).get("name");
+                        else if (sc instanceof String) cn = (String) sc;
+                        if (cn != null && charObjectIds.containsKey(cn)) sceneCharIds.add(charObjectIds.get(cn));
+                    }
+                }
+                ms.put("characters", sceneCharIds);
+                metaScenes.add(ms);
+            }
+            idx++;
+        }
+
+        // Build and save meta
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("sourceObjectId", workObjectId);
+        meta.put("bookObjectId", bookGroup.get(FieldNames.FIELD_OBJECT_ID));
+        meta.put("workName", effectiveBookName);
+        meta.put("sceneCount", metaScenes.size());
+        meta.put("scenes", metaScenes);
+        meta.put("extractedAt", ZonedDateTime.now().toString());
+        meta.put("generatedAt", null);
+
+        saveMeta(user, bookGroupPath, meta);
+
+        return Response.status(200).entity(JSONUtil.exportObject(meta)).build();
+    }
+
+    /**
      * POST /scene/{sceneObjectId}/generate
      * Generate SD image for one scene using the 4-stage pipeline:
      *   Stage 1: SDXL portrait generation per scene character (uses narrative prompt stored on charPerson)
@@ -868,11 +1072,15 @@ public class PictureBookService {
 
         String chatConfigName = null;
         String promptOverride = null;
+        String promptTemplateOverride = null;
         int steps = DEFAULT_STEPS;
         int refinerSteps = DEFAULT_REFINER_STEPS;
         int cfg = DEFAULT_CFG;
         boolean hires = DEFAULT_HIRES;
         int seed = -1;
+        String sdModelName = null;
+        String sdRefinerModelName = null;
+        double denoisingStrength = -1;
 
         if (json != null && !json.trim().isEmpty()) {
             try {
@@ -880,6 +1088,7 @@ public class PictureBookService {
                         RecordDeserializerConfig.getUnfilteredModule());
                 chatConfigName = params.get("chatConfig");
                 promptOverride = params.get("promptOverride");
+                promptTemplateOverride = params.get("promptTemplate");
                 BaseRecord sdConf = params.get("sdConfig");
                 if (sdConf != null) {
                     Object sv = sdConf.get("steps"); if (sv instanceof Number) steps = ((Number) sv).intValue();
@@ -887,6 +1096,9 @@ public class PictureBookService {
                     Object cv = sdConf.get("cfg"); if (cv instanceof Number) cfg = ((Number) cv).intValue();
                     Object hv = sdConf.get("hires"); if (hv instanceof Boolean) hires = (Boolean) hv;
                     Object seedV = sdConf.get("seed"); if (seedV instanceof Number) seed = ((Number) seedV).intValue();
+                    Object mv = sdConf.get("model"); if (mv instanceof String) sdModelName = (String) mv;
+                    Object rmv = sdConf.get("refinerModel"); if (rmv instanceof String) sdRefinerModelName = (String) rmv;
+                    Object dv = sdConf.get("denoisingStrength"); if (dv instanceof Number) denoisingStrength = ((Number) dv).doubleValue();
                 }
             } catch (Exception e) { logger.warn("Failed to parse generate request: " + e.getMessage()); }
         }
@@ -914,6 +1126,9 @@ public class PictureBookService {
             sdConfigRec.set("cfg", cfg);
             sdConfigRec.set("hires", hires);
             sdConfigRec.set("seed", seed);
+            if (sdModelName != null && !sdModelName.isEmpty()) sdConfigRec.set("model", sdModelName);
+            if (sdRefinerModelName != null && !sdRefinerModelName.isEmpty()) sdConfigRec.set("refinerModel", sdRefinerModelName);
+            if (denoisingStrength >= 0) sdConfigRec.set("denoisingStrength", denoisingStrength);
         } catch (Exception e) {
             logger.error("Failed to create sdConfig: " + e.getMessage());
             return Response.status(500).entity("{\"error\":\"SD config error\"}").build();
@@ -939,7 +1154,7 @@ public class PictureBookService {
                 Map<String, Object> genResult = new LinkedHashMap<>();
                 genResult.put("imageObjectId", imageOid);
                 genResult.put("prompt", promptOverride);
-                genResult.put("seed", sdConfigRec.get("seed"));
+                genResult.put("seed", extractSeedFromImage(image));
                 return Response.status(200).entity(JSONUtil.exportObject(genResult)).build();
             } catch (Exception e) {
                 logger.error("Override SD generation failed: " + e.getMessage());
@@ -996,7 +1211,15 @@ public class PictureBookService {
 
                     if (cp == null) continue;
                     if (cname == null) cname = cp.get(FieldNames.FIELD_NAME);
-                    String portraitPrompt2 = cp.get("narrative");
+                    // narrative is a foreign model (olio.narrative) — read sdPrompt from it
+                    String portraitPrompt2 = null;
+                    BaseRecord cpNarrative = cp.get("narrative");
+                    if (cpNarrative != null) {
+                        portraitPrompt2 = cpNarrative.get("sdPrompt");
+                        if (portraitPrompt2 == null || portraitPrompt2.isBlank()) {
+                            portraitPrompt2 = cpNarrative.get("physicalDescription");
+                        }
+                    }
                     if (portraitPrompt2 == null || portraitPrompt2.isBlank()) {
                         logger.warn("No portrait prompt (narrative) for: " + cname + " — skipping portrait");
                         continue;
@@ -1033,7 +1256,7 @@ public class PictureBookService {
             landVars.put("mood", mood);
             landVars.put("time", "");
             landVars.put("style", "illustration");
-            String landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars);
+            String landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
             if (landscapePrompt == null || landscapePrompt.isBlank()) {
                 logger.warn("Landscape prompt failed — falling back to setting text");
                 landscapePrompt = setting.isEmpty() ? "A detailed environment" : setting;
@@ -1076,7 +1299,7 @@ public class PictureBookService {
             Map<String, Object> genResult2 = new LinkedHashMap<>();
             genResult2.put("imageObjectId", finalImageOid);
             genResult2.put("prompt", compositePrompt);
-            genResult2.put("seed", sdConfigRec.get("seed"));
+            genResult2.put("seed", extractSeedFromImage(finalImage));
             return Response.status(200).entity(JSONUtil.exportObject(genResult2)).build();
         } catch (Exception e) {
             logger.error("Scene image generation pipeline failed: " + e.getMessage(), e);
@@ -1313,7 +1536,8 @@ public class PictureBookService {
 
     /**
      * DELETE /{bookObjectId}/reset
-     * Delete the entire book group (Scenes/, Characters/, meta) under ~/PictureBooks/.
+     * Delete the book group contents (Scenes/, Characters/, meta) then the group itself.
+     * Explicit child deletion — AccessPoint.delete on a group does NOT cascade.
      */
     @RolesAllowed({"admin", "user"})
     @DELETE
@@ -1325,8 +1549,36 @@ public class PictureBookService {
         BaseRecord bookGroup = findBookGroup(user, bookObjectId);
         if (bookGroup == null) return Response.status(404).entity("{\"error\":\"Book not found\"}").build();
 
-        // Delete the entire book group — removes Scenes/, Characters/, and meta in one operation
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
         boolean ok = true;
+
+        // Delete sub-groups (Scenes/, Characters/) and their contents
+        for (String sub : new String[]{"Scenes", "Characters"}) {
+            String subPath = bookGroupPath + "/" + sub;
+            BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                    ModelNames.MODEL_GROUP, subPath, GroupEnumType.DATA.toString(),
+                    (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
+            if (grp != null) {
+                try {
+                    IOSystem.getActiveContext().getAccessPoint().delete(user, grp);
+                } catch (Exception e) {
+                    logger.warn("Failed to delete " + sub + " group: " + e.getMessage());
+                    ok = false;
+                }
+            }
+        }
+
+        // Delete .pictureBookMeta record
+        BaseRecord metaRec = loadMeta(user, bookGroupPath);
+        if (metaRec != null) {
+            try {
+                IOSystem.getActiveContext().getAccessPoint().delete(user, metaRec);
+            } catch (Exception e) {
+                logger.warn("Failed to delete meta: " + e.getMessage());
+            }
+        }
+
+        // Delete the book group itself
         try {
             IOSystem.getActiveContext().getAccessPoint().delete(user, bookGroup);
         } catch (Exception e) {

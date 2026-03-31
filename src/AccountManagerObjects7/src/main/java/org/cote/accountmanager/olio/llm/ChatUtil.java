@@ -460,7 +460,9 @@ public class ChatUtil {
 	/// --- Prompt Template Templates (new composable format) ---
 	private static final String PROMPT_TEMPLATE_TEMPLATE_PREFIX = "olio/llm/templates/promptTemplate.";
 	private static final String[] PROMPT_TEMPLATE_TEMPLATE_NAMES = {
-		"contentAnalysis", "coding", "summary"
+		"contentAnalysis", "coding", "summary",
+		"pictureBook.extract-scenes", "pictureBook.extract-chunk", "pictureBook.extract-character",
+		"pictureBook.scene-blurb", "pictureBook.landscape-prompt", "pictureBook.scene-image-prompt"
 	};
 
 	public static String[] getPromptTemplateTemplateNames() {
