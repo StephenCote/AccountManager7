@@ -466,7 +466,14 @@ function newListControl() {
 
         if (libType && typeof LLMConnector !== 'undefined') {
             let grp = await LLMConnector.getLibraryGroup(libType);
-            if (grp) { navigateToPathId(grp); return; }
+            if (grp) {
+                // Ensure prompt templates are up to date (idempotent, admin-only)
+                if (libType === 'prompt' || libType === 'promptTemplate') {
+                    await LLMConnector.initPromptLibrary().catch(function () {});
+                }
+                navigateToPathId(grp);
+                return;
+            }
             if (libType === 'chat') {
                 if (typeof ChatSetupWizard !== 'undefined') {
                     ChatSetupWizard.show(function () { openSystemLibrary(); });
@@ -868,7 +875,7 @@ function newListControl() {
         if (am7model.isGroup(modType)) {
             let plc = '';
             let cnt = pagination.pages().container;
-            if (cnt && cnt.path) plc = cnt.path;
+            if (cnt && cnt.name) plc = cnt.name;
             buttons.push(textField('text-field', 'listFilter', plc, function (e) { if (e.which === 13) doFilter(); }));
             buttons.push(pagination.button('button', 'search', null, doFilter));
         }

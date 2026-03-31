@@ -26,11 +26,26 @@
 			"maxLength": 256
 		},
 		{
+			"name": "promptTemplate",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
 			"name": "sdConfig",
 			"type": "model",
 			"baseModel": "olio.sd.config",
 			"foreign": false,
 			"ephemeral": true
+		},
+		{
+			"name": "sceneList",
+			"type": "list",
+			"baseType": "model"
+		},
+		{
+			"name": "characters",
+			"type": "list",
+			"baseType": "model"
 		}
 	]
 }
