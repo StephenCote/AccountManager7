@@ -201,8 +201,27 @@ const ObjectPicker = {
         let dirType = dirTypeMap[opts.libraryType] || opts.libraryType;
         let dir = await dirMod.LLMConnector.getLibraryGroup(dirType);
         if (!dir || !dir.objectId) {
+            // Library dir doesn't exist — try init
+            if (dirType === 'prompt' || dirType === 'promptTemplate') {
+                await dirMod.LLMConnector.initPromptLibrary();
+            }
+            dir = await dirMod.LLMConnector.getLibraryGroup(dirType);
+        }
+        if (!dir || !dir.objectId) {
             page.toast("warn", "Library directory not found for " + opts.libraryType);
             return;
+        }
+
+        // Quick check: if library is missing expected templates, re-init
+        if (dirType === 'promptTemplate') {
+            let q = am7client.newQuery('olio.llm.promptTemplate');
+            q.field('groupId', dir.id);
+            q.field('name', 'pictureBook.extract-scenes');
+            q.range(0, 1);
+            let qr = await am7client.search(q);
+            if (!qr || !qr.results || !qr.results.length) {
+                await dirMod.LLMConnector.initPromptLibrary();
+            }
         }
 
         // Resolve user container (model default group path ~/Chat) — matches Ux7 preparePicker
