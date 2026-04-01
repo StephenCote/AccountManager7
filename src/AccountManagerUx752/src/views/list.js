@@ -577,9 +577,17 @@ function newListControl() {
     }
 
     function toggleContainer() {
-        containerMode = !containerMode;
-        pagination.new();
-        m.redraw();
+        if (containerMode && pagination.pages().containerId) {
+            // Leaving container mode — update route to current container so list stays here
+            let currentId = navContainerId || pagination.pages().containerId;
+            containerMode = false;
+            pagination.new();
+            m.route.set('/list/' + baseListType + '/' + currentId, { key: Date.now() });
+        } else {
+            containerMode = !containerMode;
+            pagination.new();
+            m.redraw();
+        }
     }
 
     function toggleInfo() {
