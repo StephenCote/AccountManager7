@@ -338,15 +338,8 @@ function newListControl() {
             if (!path) return;
             let parentPath = path.substring(0, path.lastIndexOf('/'));
             if (!parentPath) return;
-            // Resolve parent path via search query (avoids PathProvider field errors)
-            let pq = am7client.newQuery('auth.group');
-            pq.entity.request = ['id', 'objectId', 'name', 'path'];
-            let pf = pq.field('path', parentPath);
-            pf.comparator = 'equals';
-            pq.field('organizationId', page.user.organizationId);
-            page.search(pq).then(function (qr) {
-                if (!qr || !qr.results || !qr.results.length) return;
-                let id = qr.results[0].objectId;
+            page.navigateToPath(type, modType, parentPath).then(function (id) {
+                if (!id) return;
                 if (embeddedMode || pickerMode) {
                     navContainerId = id;
                     m.redraw();
@@ -385,30 +378,6 @@ function newListControl() {
                     }
                 }
             });
-        } else if (am7model.isGroup(modType || am7model.getModel(type))) {
-            // Group-based model (data.note, data.data, etc.) — navigate to parent group
-            let pg2 = pagination.pages();
-            if (pg2.container && pg2.container.path) {
-                let path = pg2.container.path;
-                let parentPath = path.substring(0, path.lastIndexOf('/'));
-                if (parentPath) {
-                    let pq = am7client.newQuery('auth.group');
-                    pq.entity.request = ['id', 'objectId', 'name', 'path'];
-                    let pf = pq.field('path', parentPath);
-                    pf.comparator = 'equals';
-                    pq.field('organizationId', page.user.organizationId);
-                    page.search(pq).then(function (qr) {
-                        if (!qr || !qr.results || !qr.results.length) return;
-                        let id = qr.results[0].objectId;
-                        if (embeddedMode || pickerMode) {
-                            navContainerId = id;
-                            m.redraw();
-                        } else {
-                            page.listByType(containerMode ? baseListType : type, id);
-                        }
-                    });
-                }
-            }
         } else {
             console.error('navigateUp: unhandled type ' + type);
         }
@@ -875,10 +844,7 @@ function newListControl() {
         if (am7model.isGroup(modType)) {
             let cnt = pagination.pages().container;
             let plc = '';
-            if (cnt) {
-                if (cnt.name) plc = cnt.name;
-                else if (cnt.path) plc = cnt.path.split('/').filter(function(s) { return s.length; }).pop() || '';
-            }
+            if (cnt && cnt.path) plc = cnt.path;
             buttons.push(textField('text-field', 'listFilter', plc, function (e) { if (e.which === 13) doFilter(); }));
             buttons.push(pagination.button('button', 'search', null, doFilter));
         }

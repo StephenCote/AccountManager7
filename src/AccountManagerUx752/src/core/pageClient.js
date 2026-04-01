@@ -562,6 +562,15 @@ function listByType(type) {
 
 // --- Favorites ---
 
+function navigateToPath(type, modType, path) {
+    if (am7model.isGroup(modType)) {
+        return findObject('auth.group', 'UNKNOWN', path).then(function (v) {
+            return v ? v.objectId : null;
+        });
+    }
+    return Promise.resolve(null);
+}
+
 async function systemLibrary(model) {
     let libPath = am7model.system && am7model.system.library && am7model.system.library[model];
     if (!libPath) return null;
@@ -668,6 +677,7 @@ const page = {
     patchObject: patchObject,
     makePath: makePath,
     listByType: listByType,
+    navigateToPath: navigateToPath,
     systemLibrary: systemLibrary,
     favorites: favorites,
     isFavorite: isFavorite,
