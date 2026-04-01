@@ -13,6 +13,10 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
@@ -330,74 +334,91 @@ public class TestPictureBookFull extends BaseTest {
 		}
 	}
 
-	// ── CharPerson Creation ──────────────────────────────────────────────
+	// ── CharPerson Creation via Olio Pipeline ────────────────────────────
 
 	@Test
 	public void TestCharPersonCreation() {
-		logger.info("Test: Create charPerson with narrative.sdPrompt");
+		logger.info("Test: Create charPerson via Olio pipeline, set narrative.sdPrompt");
 		setupTestContext();
 
-		String charPath = "~/Data/PictureBooks/UnitTest-Chars-" + System.currentTimeMillis() + "/Characters";
-		BaseRecord charsGroup = ensureGroup(charPath);
-		assertNotNull("Characters group", charsGroup);
-
+		// Use OlioContext to get properly initialized population with all sub-models
+		// OlioContext uses testUser1 internally — must query as that user for PBAC
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		Factory mf = IOSystem.getActiveContext().getFactory();
+		BaseRecord olioUser = mf.getCreateUser(testOrgCtx.getAdminUser(), "testUser1", testOrgCtx.getOrganizationId());
+		OlioContext octx = null;
 		try {
-			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, charPath);
-			plist.parameter(FieldNames.FIELD_NAME, "Elena");
-			BaseRecord charPerson = IOSystem.getActiveContext().getFactory().newInstance(
-				OlioModelNames.MODEL_CHAR_PERSON, testUser, null, plist);
-			charPerson.set(FieldNames.FIELD_NAME, "Elena");
-			charPerson.set("firstName", "Elena");
-			charPerson.set("gender", "FEMALE");
+			octx = OlioTestUtil.getContext(testOrgCtx, dataPath);
+		} catch (Exception e) {
+			logger.warn("OlioContext init: " + e.getMessage());
+		}
+		assumeTrue("OlioContext required", octx != null && octx.isInitialized());
 
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(testUser, charPerson);
-			assertNotNull("charPerson should be created", created);
-			String cpOid = created.get(FieldNames.FIELD_OBJECT_ID);
+		List<BaseRecord> realms = octx.getRealms();
+		assumeTrue("Need at least one realm", realms.size() > 0);
+		List<BaseRecord> pop = octx.getRealmPopulation(realms.get(0));
+		assumeTrue("Need population", pop != null && pop.size() > 0);
 
-			// Re-fetch with full data
-			Query refetch = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, cpOid);
-			refetch.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
-			refetch.planMost(true);
-			charPerson = IOSystem.getActiveContext().getAccessPoint().find(testUser, refetch);
-			assertNotNull("Re-fetched charPerson should not be null", charPerson);
+		// Outfit population — creates apparel, wardrobe, and stages characters
+		ApparelUtil.outfitAndStage(octx, null, pop);
+		Queue.processQueue();
 
-			// narrative is a foreign model — may need explicit populate
-			IOSystem.getActiveContext().getReader().populate(charPerson, new String[] {"narrative"});
-			BaseRecord narrative = charPerson.get("narrative");
+		// Use a random person from the population — fully built with all sub-models
+		BaseRecord person = pop.get(0);
+		String personOid = person.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Person objectId", personOid);
+		logger.info("Using Olio person: " + person.get(FieldNames.FIELD_NAME) + " (" + personOid + ")");
 
-			// If narrative doesn't exist yet, create one and set on charPerson
-			if (narrative == null) {
+		// Re-fetch with full foreign model data — use olioUser (owns the data)
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, personOid);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, olioUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(true);
+		BaseRecord fullPerson = IOSystem.getActiveContext().getAccessPoint().find(olioUser, q);
+		assertNotNull("Full person", fullPerson);
+
+		// Verify charPerson has identity fields from Olio pipeline
+		assertNotNull("Should have name", fullPerson.get(FieldNames.FIELD_NAME));
+		assertNotNull("Should have gender", fullPerson.get("gender"));
+
+		// Narrative is lazily created — null on freshly generated population.
+		// PictureBookService.createCharPerson creates it in-memory if null — mirror that.
+		BaseRecord narrative = fullPerson.get("narrative");
+		if (narrative == null) {
+			try {
 				narrative = RecordFactory.newInstance(OlioModelNames.MODEL_NARRATIVE);
-				charPerson.set("narrative", narrative);
+				fullPerson.set("narrative", narrative);
+			} catch (Exception e) {
+				fail("Failed to create narrative: " + e.getMessage());
 			}
-			String sdPrompt = "portrait of Elena, female, pale skin, silver rapier, determined expression";
+		}
+		String sdPrompt = "portrait of " + fullPerson.get(FieldNames.FIELD_NAME)
+			+ ", " + fullPerson.get("gender")
+			+ ", detailed face, cinematic lighting, high quality";
+		try {
 			narrative.set("sdPrompt", sdPrompt);
 			narrative.set("physicalDescription", sdPrompt);
-			IOSystem.getActiveContext().getAccessPoint().update(testUser, charPerson);
-
-			// Verify round-trip: re-fetch and check sdPrompt
-			Query verify = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, cpOid);
-			verify.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
-			verify.planMost(true);
-			BaseRecord verified = IOSystem.getActiveContext().getAccessPoint().find(testUser, verify);
-			assertNotNull("Verified charPerson", verified);
-			IOSystem.getActiveContext().getReader().populate(verified, new String[] {"narrative"});
-			BaseRecord verifiedNarr = verified.get("narrative");
-			// narrative foreign model should exist after update
-			if (verifiedNarr != null) {
-				String verifiedPrompt = verifiedNarr.get("sdPrompt");
-				assertEquals("sdPrompt should persist", sdPrompt, verifiedPrompt);
-				logger.info("charPerson with narrative.sdPrompt verified: " + cpOid);
-			} else {
-				logger.warn("narrative FK is null after populate — foreign model may not auto-create. Verifying update succeeded.");
-				// The update succeeded (no exception) — the narrative is set but may require different query plan
-				logger.info("charPerson created successfully, narrative set in-memory: " + cpOid);
-			}
-
-			logger.info("charPerson with narrative.sdPrompt verified: " + cpOid);
 		} catch (Exception e) {
-			fail("charPerson creation failed: " + e.getMessage());
+			fail("Failed to set narrative fields: " + e.getMessage());
 		}
+		IOSystem.getActiveContext().getAccessPoint().update(olioUser, fullPerson);
+
+		// Verify update succeeded — re-fetch and check narrative
+		Query verify = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, personOid);
+		verify.field(FieldNames.FIELD_ORGANIZATION_ID, olioUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		verify.planMost(true);
+		BaseRecord verified = IOSystem.getActiveContext().getAccessPoint().find(olioUser, verify);
+		assertNotNull("Verified person after update", verified);
+		assertEquals("Name should match", (String) fullPerson.get(FieldNames.FIELD_NAME), (String) verified.get(FieldNames.FIELD_NAME));
+
+		// Populate narrative FK and verify sdPrompt round-trip
+		IOSystem.getActiveContext().getReader().populate(verified, new String[] {"narrative"});
+		BaseRecord verifiedNarr = verified.get("narrative");
+		assertNotNull("Narrative should persist after update", verifiedNarr);
+		String verifiedPrompt = verifiedNarr.get("sdPrompt");
+		assertEquals("sdPrompt should round-trip", sdPrompt, verifiedPrompt);
+
+		logger.info("charPerson with narrative.sdPrompt verified via Olio pipeline: "
+			+ fullPerson.get(FieldNames.FIELD_NAME));
 	}
 
 	// ── LLM Scene Extraction ─────────────────────────────────────────────
@@ -444,7 +465,6 @@ public class TestPictureBookFull extends BaseTest {
 		assertTrue("Response should contain a JSON array", start >= 0 && end > start);
 		trimmed = trimmed.substring(start, end + 1);
 
-		@SuppressWarnings("unchecked")
 		List<Map<String, Object>> scenes = JSONUtil.getList(trimmed, Map.class, null);
 		assertNotNull("Parsed scene list should not be null", scenes);
 		assertTrue("Should extract at least 1 scene", scenes.size() >= 1);
@@ -497,7 +517,6 @@ public class TestPictureBookFull extends BaseTest {
 		assertTrue("Response should contain JSON object", s >= 0 && e > s);
 		trimmed = trimmed.substring(s, e + 1);
 
-		@SuppressWarnings("unchecked")
 		Map<String, Object> charData = JSONUtil.getMap(trimmed.getBytes(), String.class, Object.class);
 		assertNotNull("Parsed character data should not be null", charData);
 		assertNotNull("Character should have name", charData.get("name"));

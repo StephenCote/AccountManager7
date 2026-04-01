@@ -142,6 +142,11 @@ Added `WebSocketService.chirpUser()` calls for extraction (per-chunk progress) a
 Added `promptTemplate`, `sceneList`, `characters` fields.
 **Files:** `pictureBookRequestModel.json`
 
+### Issue #54 — SD Config: Add LORA support
+Add LORA list (string array) to `olio.sd.config` model. Update SD config forms to fetch available LORAs from server (requires REST endpoint + SWARM client update). Form allows selecting one or more LORAs with weight (`<loraName:weight>` format). All prompt generations append comma-separated LORA list to end of prompt.
+**Scope:** Model schema, SWARM client, REST endpoint, SD config form, all prompt generation paths
+**Files:** `sdConfigModel.json`, `SWUtil.java`, `SDUtil.java`, `PictureBookService.java`, `formDef.js` (SD config section), new REST endpoint for LORA list
+
 ---
 
 ## Verification Checklist (after rebuild)
