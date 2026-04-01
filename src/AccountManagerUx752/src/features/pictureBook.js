@@ -49,6 +49,7 @@ async function loadExistingBooks() {
         // Search for .pictureBookMeta notes — each one represents an extracted picture book
         // With decoupled identity, meta lives under ~/PictureBooks/{bookName}/
         let q = am7client.newQuery('data.note');
+        q.cache(false);
         q.field('name', '.pictureBookMeta');
         q.range(0, 20);
         if (q.entity.request.indexOf('text') < 0) q.entity.request.push('text');
@@ -475,8 +476,7 @@ function renderHeader() {
                     viewerScenes = [];
                     imageUrls = {};
                     currentPage = 0;
-                    am7client.clearCache('data.note', true);
-                    am7client.clearCache('auth.group', true);
+                    am7client.clearCache(0, true);
                     m.route.set('/picture-book');
                 }).catch(function () {
                     page.toast('error', 'Failed to delete');
