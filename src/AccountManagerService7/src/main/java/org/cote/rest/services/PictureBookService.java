@@ -26,6 +26,7 @@ import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.FieldType;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
@@ -402,6 +403,15 @@ public class PictureBookService {
             Chat chat = new Chat(user, chatConfig, null);
             OpenAIRequest req = chat.newRequest(chat.getModel());
             req.setStream(false);
+            // Disable thinking for structured extraction tasks (Qwen3, etc.)
+            try {
+                BaseRecord reqOpts = req.get("options");
+                if (reqOpts == null) {
+                    reqOpts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
+                    req.set("options", reqOpts);
+                }
+                reqOpts.set("think", false);
+            } catch (Exception ex) { /* ignore if field doesn't exist */ }
             chat.newMessage(req, system, Chat.systemRole);
             chat.newMessage(req, userTpl);
             OpenAIResponse resp = chat.chat(req);
@@ -754,12 +764,14 @@ public class PictureBookService {
         }
 
         // Short text — single-shot extraction
+        WebSocketService.chirpUser(user, new String[] { "bgActivity", "auto_awesome", "Extracting scenes..." });
         Map<String, String> vars = new LinkedHashMap<>();
         vars.put("count", String.valueOf(count));
         vars.put("text", text);
 
         String llmResponse = callLlm(user, chatConfig, "pictureBook.extract-scenes", vars, promptTemplateOverride);
         List<Map<String, Object>> scenes = parseLlmJsonArray(llmResponse);
+        WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
 
         return Response.status(200).entity(JSONUtil.exportObject(scenes,
                 RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();
@@ -874,6 +886,7 @@ public class PictureBookService {
         }
 
         // Extract scenes
+        WebSocketService.chirpUser(user, new String[] { "bgActivity", "auto_awesome", "Extracting scenes..." });
         Map<String, String> sceneVars = new LinkedHashMap<>();
         sceneVars.put("count", String.valueOf(count));
         sceneVars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
@@ -898,8 +911,11 @@ public class PictureBookService {
 
         // Extract character details and create charPerson records
         Map<String, String> charObjectIds = new LinkedHashMap<>();
+        int charIdx = 0;
         for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) {
             String cname = entry.getKey();
+            charIdx++;
+            WebSocketService.chirpUser(user, new String[] { "bgActivity", "person", "Extracting character " + charIdx + "/" + uniqueChars.size() + ": " + cname });
             Map<String, String> charVars = new LinkedHashMap<>();
             charVars.put("name", cname);
             charVars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
@@ -927,8 +943,10 @@ public class PictureBookService {
         }
 
         // Build and save .pictureBookMeta
+        WebSocketService.chirpUser(user, new String[] { "bgActivity", "save", "Saving book..." });
         BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
         saveMeta(user, bookGroupPath, meta);
+        WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
 
         return Response.status(200).entity(toJson(meta)).build();
     }
@@ -964,9 +982,31 @@ public class PictureBookService {
                 genre = params.get("genre");
                 bookName = params.get("bookName");
                 Object sl = params.get("sceneList");
-                if (sl instanceof List) sceneList = (List<Map<String, Object>>) sl;
+                if (sl instanceof List) {
+                    for (Object item : (List<?>) sl) {
+                        if (item instanceof BaseRecord) {
+                            BaseRecord r = (BaseRecord) item;
+                            Map<String, Object> m = new LinkedHashMap<>();
+                            for (FieldType f : r.getFields()) m.put(f.getName(), r.get(f.getName()));
+                            sceneList.add(m);
+                        } else if (item instanceof Map) {
+                            sceneList.add((Map<String, Object>) item);
+                        }
+                    }
+                }
                 Object cl = params.get("characters");
-                if (cl instanceof List) charDataList = (List<Map<String, Object>>) cl;
+                if (cl instanceof List) {
+                    for (Object item : (List<?>) cl) {
+                        if (item instanceof BaseRecord) {
+                            BaseRecord r = (BaseRecord) item;
+                            Map<String, Object> m = new LinkedHashMap<>();
+                            for (FieldType f : r.getFields()) m.put(f.getName(), r.get(f.getName()));
+                            charDataList.add(m);
+                        } else if (item instanceof Map) {
+                            charDataList.add((Map<String, Object>) item);
+                        }
+                    }
+                }
             } catch (Exception e) {
                 logger.warn("Failed to parse create-from-scenes request: " + e.getMessage());
             }
@@ -1029,9 +1069,12 @@ public class PictureBookService {
 
         // Create charPerson records — use LLM for detail extraction if needed
         Map<String, String> charObjectIds = new LinkedHashMap<>();
+        int cfsCharIdx = 0;
         for (Map<String, Object> charData : charDataList) {
             String cname = (String) charData.get("name");
             if (cname == null || cname.isEmpty()) continue;
+            cfsCharIdx++;
+            WebSocketService.chirpUser(user, new String[] { "bgActivity", "person", "Creating character " + cfsCharIdx + "/" + charDataList.size() + ": " + cname });
 
             // If appearance is missing and we have text, use LLM to extract details
             if ((charData.get("appearance") == null || ((String) charData.getOrDefault("appearance", "")).isEmpty())
@@ -1070,8 +1113,10 @@ public class PictureBookService {
             idx++;
         }
 
+        WebSocketService.chirpUser(user, new String[] { "bgActivity", "save", "Saving book..." });
         BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
         saveMeta(user, bookGroupPath, meta);
+        WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
 
         return Response.status(200).entity(toJson(meta)).build();
     }

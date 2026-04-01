@@ -1922,6 +1922,8 @@ public class ChatUtil {
 				if(min_p > 0.0) reqOpts.set("min_p", min_p);
 				int repeat_last_n = opts.get("repeat_last_n");
 				if(repeat_last_n > 0) reqOpts.set("repeat_last_n", repeat_last_n);
+				boolean think = opts.get("think");
+				if(!think) reqOpts.set("think", false);
 			}
 
 		}

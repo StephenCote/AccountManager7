@@ -305,6 +305,7 @@ function newListControl() {
         if (pr) {
             if (wentBack) {
                 pg.currentItem = pr.length - 1;
+                wentBack = false;
             }
             if (pg.currentItem < 0 && pr.length) pg.currentItem = 0;
         }

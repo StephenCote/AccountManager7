@@ -40,12 +40,14 @@
 		{
 			"name": "sceneList",
 			"type": "list",
-			"baseType": "model"
+			"baseType": "model",
+			"baseModel": "olio.pictureBookScene"
 		},
 		{
 			"name": "characters",
 			"type": "list",
-			"baseType": "model"
+			"baseType": "model",
+			"baseModel": "olio.pictureBookScene"
 		}
 	]
 }

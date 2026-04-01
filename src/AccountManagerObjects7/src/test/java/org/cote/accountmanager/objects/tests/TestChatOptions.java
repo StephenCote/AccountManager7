@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -340,5 +341,96 @@ public class TestChatOptions extends BaseTest {
 		assertEquals("Default presence_penalty should be 0.0 (was 1.3)", 0.0, pp, 0.001);
 
 		logger.info("Request model defaults verified: frequency_penalty=0.0, presence_penalty=0.0");
+	}
+
+	/// Test: think field exists on chatOptions with default true
+	@Test
+	public void TestThinkFieldExists() {
+		logger.info("Test: think field on chatOptions - default true, settable to false");
+		BaseRecord testUser = getTestUser();
+		LLMServiceEnumType llmType = LLMServiceEnumType.valueOf(testProperties.getProperty("test.llm.type").toUpperCase());
+		String cfgName = llmType.toString() + " Think Test.chat";
+		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, llmType, cfgName, testProperties);
+		assertNotNull("Chat config is null", cfg);
+
+		BaseRecord opts = ensureChatOptions(cfg);
+		assertNotNull("chatOptions is null", opts);
+
+		// Default should be true
+		boolean thinkDefault = opts.get("think");
+		assertTrue("think default should be true", thinkDefault);
+
+		// Set to false
+		opts.setValue("think", false);
+		boolean thinkFalse = opts.get("think");
+		assertEquals("think should accept false", false, thinkFalse);
+
+		logger.info("Test passed: think field verified");
+	}
+
+	/// Test: think=false is propagated to Ollama request options
+	@Test
+	public void TestThinkFalseAppliedToOllamaRequest() {
+		logger.info("Test: think=false applied to Ollama request options");
+		BaseRecord testUser = getTestUser();
+		String cfgName = "OLLAMA Think False Test.chat";
+		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, LLMServiceEnumType.OLLAMA, cfgName, testProperties);
+		assertNotNull("Chat config is null", cfg);
+
+		BaseRecord opts = ensureChatOptions(cfg);
+		assertNotNull("chatOptions is null", opts);
+
+		// Set think=false
+		opts.setValue("think", false);
+		opts.setValue("temperature", 0.5);
+		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
+
+		OpenAIRequest req = new OpenAIRequest();
+		ChatUtil.applyChatOptions(req, cfg);
+
+		// Verify think=false is in the request options
+		BaseRecord reqOpts = req.get("options");
+		assertNotNull("Request options should not be null for Ollama", reqOpts);
+		boolean thinkVal = reqOpts.get("think");
+		assertEquals("think should be false in request options", false, thinkVal);
+
+		logger.info("Test passed: think=false propagated to Ollama request");
+	}
+
+	/// Test: think=false with live LLM - response should not contain <think> tags
+	@Test
+	public void TestThinkFalseLiveCall() {
+		logger.info("Test: think=false with live LLM call - no <think> tags in response");
+		BaseRecord testUser = getTestUser();
+		LLMServiceEnumType llmType = LLMServiceEnumType.valueOf(testProperties.getProperty("test.llm.type").toUpperCase());
+		String cfgName = llmType.toString() + " Think False Live.chat";
+		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, llmType, cfgName, testProperties);
+		assertNotNull("Chat config is null", cfg);
+
+		BaseRecord opts = ensureChatOptions(cfg);
+		opts.setValue("think", false);
+		opts.setValue("temperature", 0.3);
+		cfg.setValue("stream", false);
+		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
+
+		Chat chat = new Chat(testUser, cfg, null);
+		OpenAIRequest req = chat.newRequest(chat.getModel());
+		req.setStream(false);
+		chat.newMessage(req, "You are a brief assistant.", Chat.systemRole);
+		chat.newMessage(req, "Say exactly: THINK_TEST_OK");
+		OpenAIResponse resp = chat.chat(req);
+
+		assertNotNull("Response should not be null", resp);
+		assertNotNull("Response message should not be null", resp.getMessage());
+		String content = resp.getMessage().getContent();
+		assertNotNull("Response content should not be null", content);
+		assertTrue("Response should not be empty", content.length() > 0);
+
+		// With think=false, output should NOT contain thinking tags
+		assertFalse("Output should not contain <think> tags when think=false",
+			content.contains("<think>"));
+
+		logger.info("Think=false live response: " + content);
+		logger.info("Test passed: think=false suppresses thinking in live LLM call");
 	}
 }

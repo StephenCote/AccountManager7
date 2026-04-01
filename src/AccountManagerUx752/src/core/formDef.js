@@ -5076,6 +5076,11 @@ import { am7model } from './model.js';
                 label: "Repeat Last N (Ollama)",
                 layout: 'third',
                 format: "range"
+            },
+            think: {
+                label: "Thinking Mode",
+                layout: 'third',
+                format: "checkbox"
             }
 
         }
