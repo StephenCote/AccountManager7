@@ -1,7 +1,7 @@
 # Picture Book — Post-Implementation Issue List
 
-**Date:** 2026-03-31
-**Context:** After implementing #17, #18, #19, #20, #21, #21a, #22, #23, #24 — awaiting backend rebuild + live testing.
+**Date:** 2026-03-31 (updated through session end)
+**Context:** After implementing #17-#24, model cleanup, WebSocket progress, group nav fix, prompt template library.
 
 ---
 
@@ -100,6 +100,47 @@ Ux7 had `systemLibrary()` on the page object; Ux752 did not. Caused `TypeError: 
 ### Issue #44 — ChatService `/library/init` used ObjectMapper instead of AM7 pattern ✅ FIXED
 Used Jackson `ObjectMapper`/`JsonNode` for parsing instead of `JSONUtil.importObject` with `LooseRecord`.
 **Fix:** Replaced with `JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule())`.
+
+### Issue #45 — Group navigation (up/down) changed route instead of container ✅ FIXED
+`navigateUp`/`navigateDown` used `m.route.set()` / `page.listByType()` to change the URL. Should change container in-place without route change.
+**Fix:** Both functions now set `navContainerId`, call `pagination.new()`, and `m.redraw()`. Also fixed `initParams` to not clear `navContainerId` during container mode (`!containerMode` guard on line 961).
+**Root cause of stale container:** `navContainerId` was cleared after first read in `initParams`, causing subsequent redraws to fall back to the route param (old container).
+**Files:** `list.js` (navigateUp, navigateDown, initParams), `pagination.js` (container load via `am7client.get`)
+
+### Issue #46 — Pagination container query caused SQL error on `path` column ✅ FIXED
+`am7view.viewQuery` for `auth.group` included `path` in the SQL query fields, but `path` is a virtual field (not a DB column). Caused `PSQLException: column ahgp1.path does not exist`.
+**Fix:** Container load in pagination uses `am7client.get()` (REST model endpoint with PathProvider) instead of search query. `getQuery` container resolution uses minimal field list `[id, objectId, name, type]`.
+**Files:** `pagination.js`
+
+### Issue #47 — `page.findObject` returned raw object on cache hit, not Promise ✅ FIXED
+`am7client.find()` returns cached object directly on cache hit, Promise on miss. Code calling `.then()` crashed with "then is not a function". 
+**Fix:** `findObject()` wraps result in `Promise.resolve()` if not already a Promise.
+**Files:** `pageClient.js`
+
+### Issue #48 — `page.systemLibrary()` missing from Ux752 ✅ FIXED
+Ux7 had this method, Ux752 didn't. List view's system library button crashed.
+**Files:** `pageClient.js`
+
+### Issue #49 — `page.navigateToPath()` missing from Ux752 ✅ FIXED
+Ux7 had this method for resolving group paths to objectIds. Used by `navigateUp`.
+**Files:** `pageClient.js`
+
+### Issue #50 — PictureBookService used hand-rolled JSON maps ✅ FIXED
+Replaced `Map<String, Object>` / `LinkedHashMap` with typed models: `olio.pictureBookMeta`, `olio.pictureBookScene`, `olio.pictureBookResult`. Added helper methods `buildMeta()`, `buildSceneEntry()`, `buildResult()`.
+**Files:** `PictureBookService.java`, `OlioModelNames.java`, 3 new model JSON files
+
+### Issue #51 — PictureBookService had no WebSocket progress ✅ FIXED
+Added `WebSocketService.chirpUser()` calls for extraction (per-chunk progress) and image generation (4-stage: portraits, landscape, stitch, composite). Frontend handler in `pageClient.js`, progress display in wizard.
+**Files:** `PictureBookService.java`, `pageClient.js`, `pictureBook.js`
+
+### Issue #52 — PictureBookService crashed with null chatConfig ✅ FIXED
+`callLlmInternal` created `new Chat(user, null, null)` when no chat config selected, causing `URI with undefined scheme`. 
+**Fix:** Falls back to `generalChat` config from library.
+**Files:** `PictureBookService.java`
+
+### Issue #53 — `olio.pictureBookRequest` model missing fields ✅ FIXED
+Added `promptTemplate`, `sceneList`, `characters` fields.
+**Files:** `pictureBookRequestModel.json`
 
 ---
 

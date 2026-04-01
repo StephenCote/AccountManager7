@@ -340,8 +340,8 @@ function newListControl() {
             if (!parentPath) return;
             page.navigateToPath(type, modType, parentPath).then(function (id) {
                 if (!id) return;
-                listContainerId = id;
-                pages.container = null;
+                navContainerId = id;
+                pagination.pages().container = null;
                 pagination.new();
                 m.redraw();
             });
@@ -357,17 +357,17 @@ function newListControl() {
                     if (v.parentId == 0 && am7model.isGroup(modType)) {
                         page.navigateToPath(useType, modType, v.groupPath).then(function (id) {
                             if (!id) return;
-                            listContainerId = id;
+                            navContainerId = id;
                             navigateByParent = false;
-                            pages.container = null;
+                            pagination.pages().container = null;
                             pagination.new();
                             m.redraw();
                         });
                     } else {
                         am7client.get(useType, v.parentId, function (v2) {
                             if (v2 != null) {
-                                listContainerId = v2.objectId;
-                                pages.container = null;
+                                navContainerId = v2.objectId;
+                                pagination.pages().container = null;
                                 pagination.new();
                                 m.redraw();
                             }
@@ -380,7 +380,6 @@ function newListControl() {
         }
     }
 
-    // Fix A: navigateDown opens carousel for non-group items
     function navigateDown(sel) {
         let idx = getSelectedIndices();
         let type = listType;
@@ -393,22 +392,18 @@ function newListControl() {
         let pg = pagination.pages();
         let obj = sel || pg.pageResults[pg.currentPage][idx[0]];
 
-        if (embeddedMode || pickerMode) {
+        let objType = obj[am7model.jsonModelKey] || baseListType;
+        let objModel = am7model.getModel(objType);
+        let isGroup = objModel && (am7model.isGroup(objModel) || objType === 'auth.group');
+
+        if (isGroup || containerMode) {
             navContainerId = obj.objectId;
             if (byParent) navigateByParent = true;
+            pagination.pages().container = null;
+            pagination.new();
             m.redraw();
         } else {
-            let objType = obj[am7model.jsonModelKey] || baseListType;
-            let objModel = am7model.getModel(objType);
-            let isGroup = objModel && (am7model.isGroup(objModel) || objType === 'auth.group');
-
-            if (isGroup || containerMode) {
-                let ltype = obj[am7model.jsonModelKey] || baseListType;
-                m.route.set('/' + (byParent ? 'p' : '') + 'list/' + (containerMode ? baseListType : ltype) + '/' + obj.objectId, { key: Date.now() });
-            } else {
-                // Non-group items open carousel (Fix A)
-                openItem(obj);
-            }
+            openItem(obj);
         }
     }
 
@@ -961,7 +956,7 @@ function newListControl() {
             listType = 'auth.group';
         }
         listContainerId = navContainerId || vnode.attrs.objectId || m.route.param('objectId');
-        if (!embeddedMode && !pickerMode) navContainerId = null;
+        if (!embeddedMode && !pickerMode && !containerMode) navContainerId = null;
     }
 
     function update(vnode) {
