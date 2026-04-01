@@ -15,6 +15,8 @@ function getPage() { return am7model._page; }
 let _templateCache = null;
 let _modelListCache = null;
 let _modelListPromise = null;
+let _loraListCache = null;
+let _loraListPromise = null;
 
 // ── Style-specific field names ────────────────────────────────────
 const STYLE_FIELDS = [
@@ -309,11 +311,41 @@ function getModelList() {
     return _modelListCache || [];
 }
 
+// ── fetchLoras ─────────────────────────────────────────────────────
+async function fetchLoras(forceRefresh) {
+    let am7client = getClient();
+    if (_loraListCache && !forceRefresh) return _loraListCache;
+    if (_loraListPromise && !forceRefresh) return _loraListPromise;
+    _loraListPromise = (async () => {
+        try {
+            let loras = await m.request({
+                method: "GET",
+                url: am7client.base() + "/olio/sdLoras",
+                withCredentials: true
+            });
+            if (Array.isArray(loras) && loras.length > 0) {
+                _loraListCache = loras;
+            }
+        } catch (e) {
+            console.warn("[am7sd] Could not fetch SD LORAs:", e);
+        }
+        _loraListPromise = null;
+        return _loraListCache || [];
+    })();
+    return _loraListPromise;
+}
+
+function getLoraList() {
+    return _loraListCache || [];
+}
+
 // ── Public API ────────────────────────────────────────────────────
 const am7sd = {
     fetchTemplate,
     fetchModels,
     getModelList,
+    fetchLoras,
+    getLoraList,
     loadConfig,
     saveConfig,
     applyConfig,

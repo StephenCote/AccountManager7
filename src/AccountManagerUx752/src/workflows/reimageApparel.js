@@ -40,22 +40,22 @@ async function reimageApparel(entity, inst) {
         return m('div', { class: 'p-4 space-y-3' }, [
             m('div', { class: 'grid grid-cols-2 gap-3' }, [
                 m('div', [
-                    m('label', { class: 'field-label' }, 'Steps'),
-                    m('input', { class: 'text-field-compact', type: 'number', value: cinst.api.steps(), oninput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
+                    m('label', { class: 'field-label' }, 'Steps: ' + cinst.api.steps()),
+                    m('input', { class: 'w-full', type: 'range', min: 1, max: 100, value: cinst.api.steps(), oninput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
-                    m('label', { class: 'field-label' }, 'Refiner Steps'),
-                    m('input', { class: 'text-field-compact', type: 'number', value: cinst.api.refinerSteps(), oninput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
+                    m('label', { class: 'field-label' }, 'Refiner Steps: ' + cinst.api.refinerSteps()),
+                    m('input', { class: 'w-full', type: 'range', min: 0, max: 100, value: cinst.api.refinerSteps(), oninput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
-                    m('label', { class: 'field-label' }, 'CFG Scale'),
-                    m('input', { class: 'text-field-compact', type: 'number', min: 1, max: 30, step: 0.5,
+                    m('label', { class: 'field-label' }, 'CFG: ' + (cinst.api.cfg ? cinst.api.cfg() : 5)),
+                    m('input', { class: 'w-full', type: 'range', min: 1, max: 30, step: 0.5,
                         value: cinst.api.cfg ? cinst.api.cfg() : 5,
                         oninput: function (e) { if (cinst.api.cfg) cinst.api.cfg(parseFloat(e.target.value) || 5); } })
                 ]),
                 m('div', [
-                    m('label', { class: 'field-label' }, 'Denoising Strength'),
-                    m('input', { class: 'text-field-compact', type: 'number', min: 0, max: 1, step: 0.05,
+                    m('label', { class: 'field-label' }, 'Denoising: ' + (cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 0.75)),
+                    m('input', { class: 'w-full', type: 'range', min: 0, max: 1, step: 0.05,
                         value: cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 0.75,
                         oninput: function (e) { if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(parseFloat(e.target.value) || 0.75); } })
                 ]),
@@ -72,6 +72,20 @@ async function reimageApparel(entity, inst) {
                         ? m('select', { class: 'text-field-compact', value: cinst.api.refinerModel ? cinst.api.refinerModel() : '', onchange: function (e) { if (cinst.api.refinerModel) cinst.api.refinerModel(e.target.value); } },
                             [m('option', { value: '' }, '-- Select --')].concat(sdModelList.map(function (ml) { return m('option', { value: ml }, ml); })))
                         : m('input', { class: 'text-field-compact', value: cinst.api.refinerModel ? cinst.api.refinerModel() : '', oninput: function (e) { if (cinst.api.refinerModel) cinst.api.refinerModel(e.target.value); } })
+                ]),
+                m('div', [
+                    m('label', { class: 'field-label' }, 'Sampler'),
+                    m('select', { class: 'text-field-compact', value: cinst.entity.sampler || 'dpmpp_2m', onchange: function (e) { cinst.entity.sampler = e.target.value; } },
+                        ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'].map(function (s) {
+                            return m('option', { value: s }, s);
+                        }))
+                ]),
+                m('div', [
+                    m('label', { class: 'field-label' }, 'Scheduler'),
+                    m('select', { class: 'text-field-compact', value: cinst.entity.scheduler || 'karras', onchange: function (e) { cinst.entity.scheduler = e.target.value; } },
+                        ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
+                            return m('option', { value: s }, s);
+                        }))
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Style'),

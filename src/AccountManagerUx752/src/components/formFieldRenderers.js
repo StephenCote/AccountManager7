@@ -244,7 +244,124 @@ renderers.textarea = function(ctx) {
     )];
 };
 
-renderers.textlist = renderers.textarea;
+renderers.textlist = function(ctx) {
+    // textlist: renders a list<string> as a textarea with one line per element
+    // ctx.defVal may be an array or string — normalize to string for textarea
+    let defVal = ctx.defVal;
+    if (Array.isArray(defVal)) {
+        defVal = defVal.join('\n');
+    }
+    let textareaAttrs = {
+        class: (ctx.fieldClass || "") + " textarea-field-full w-full pr-8",
+        name: ctx.useName,
+        onchange: function(e) {
+            // Convert newline-separated string back to array
+            let lines = e.target.value.split('\n');
+            if (ctx.fHandler) {
+                // Patch the event value to be the array before calling the standard handler
+                e.target.value = lines;
+                ctx.fHandler(e);
+            }
+        }
+    };
+    return [m("div", { class: "relative w-full" },
+        m("textarea", textareaAttrs, defVal)
+    )];
+};
+
+// ── LORA Multi-Select Renderer ──────────────────────────────────────
+
+let _loraListCache = null;
+let _loraFetching = false;
+
+renderers.loraSelect = function(ctx) {
+    let useEntity = ctx.useEntity || ctx.entity;
+    let fieldName = ctx.fieldName;
+    let currentLoras = useEntity[fieldName] || [];
+    if (typeof currentLoras === 'string') {
+        try { currentLoras = JSON.parse(currentLoras); } catch(e) { currentLoras = []; }
+    }
+    if (!Array.isArray(currentLoras)) currentLoras = [];
+
+    // Parse current loras into map: name → weight
+    let loraMap = {};
+    currentLoras.forEach(function(entry) {
+        let parts = String(entry).split(':');
+        loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
+    });
+
+    // Fetch available loras
+    if (!_loraListCache && !_loraFetching) {
+        _loraFetching = true;
+        let sd = (typeof am7model !== 'undefined' && am7model._sd) ? am7model._sd : null;
+        if (sd && sd.fetchLoras) {
+            sd.fetchLoras().then(function(list) {
+                _loraListCache = list || [];
+                _loraFetching = false;
+                m.redraw();
+            }).catch(function() { _loraFetching = false; });
+        } else {
+            _loraFetching = false;
+        }
+    }
+
+    let available = _loraListCache || [];
+
+    function updateEntity() {
+        let entries = [];
+        Object.keys(loraMap).forEach(function(name) {
+            entries.push(name + ':' + loraMap[name]);
+        });
+        useEntity[fieldName] = entries;
+        if (ctx.inst && ctx.inst.change) ctx.inst.change(fieldName);
+        m.redraw();
+    }
+
+    return m('div', { class: 'space-y-1' }, [
+        available.length === 0 && _loraFetching ? m('div', { class: 'text-xs text-gray-400' }, 'Loading LORAs...') : null,
+        available.length === 0 && !_loraFetching ? m('div', { class: 'text-xs text-gray-400' }, 'No LORAs available') : null,
+        available.map(function(loraName) {
+            let selected = loraMap.hasOwnProperty(loraName);
+            let weight = loraMap[loraName] || 0.8;
+            return m('div', { key: loraName, class: 'flex items-center gap-2 text-xs' }, [
+                m('input', {
+                    type: 'checkbox',
+                    checked: selected,
+                    onchange: function() {
+                        if (selected) { delete loraMap[loraName]; }
+                        else { loraMap[loraName] = 0.8; }
+                        updateEntity();
+                    }
+                }),
+                m('span', { class: 'truncate flex-1', style: 'max-width:200px', title: loraName }, loraName),
+                selected ? m('input', {
+                    type: 'number', class: 'text-field-compact text-xs w-16',
+                    min: 0, max: 2, step: 0.05, value: weight,
+                    oninput: function(e) {
+                        loraMap[loraName] = parseFloat(e.target.value) || 0.8;
+                        updateEntity();
+                    }
+                }) : null
+            ]);
+        }),
+        // Manual entry for LORAs not in the server list
+        m('div', { class: 'flex items-center gap-1 mt-1' }, [
+            m('input', {
+                type: 'text', class: 'text-field-compact text-xs flex-1',
+                placeholder: 'loraName:weight',
+                onkeydown: function(e) {
+                    if (e.key === 'Enter' && e.target.value.trim()) {
+                        let parts = e.target.value.trim().split(':');
+                        loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
+                        e.target.value = '';
+                        updateEntity();
+                    }
+                }
+            }),
+            m('span', { class: 'text-xs text-gray-400' }, 'Enter to add')
+        ])
+    ]);
+};
 
 // ── Media Renderers ─────────────────────────────────────────────────
 

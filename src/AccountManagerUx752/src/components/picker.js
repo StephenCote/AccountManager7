@@ -199,6 +199,12 @@ const ObjectPicker = {
             return;
         }
         let dirType = dirTypeMap[opts.libraryType] || opts.libraryType;
+
+        // Ensure prompt templates are populated (idempotent — skips existing)
+        if (dirType === 'prompt' || dirType === 'promptTemplate') {
+            try { await dirMod.LLMConnector.initPromptLibrary(); } catch (e) { /* non-fatal */ }
+        }
+
         let dir = await dirMod.LLMConnector.getLibraryGroup(dirType);
         if (!dir || !dir.objectId) {
             page.toast("warn", "Library directory not found for " + opts.libraryType);

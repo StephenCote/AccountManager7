@@ -123,6 +123,19 @@ public class OlioService {
 		return Response.status(200).entity(JSONUtil.exportObject(models)).build();
 	}
 
+	@RolesAllowed({"admin", "user"})
+	@GET
+	@Path("/sdLoras")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response listSDLoras(@Context HttpServletRequest request, @Context HttpServletResponse response){
+		SDUtil sdu = new SDUtil(
+			SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")),
+			context.getInitParameter("sd.server")
+		);
+		java.util.List<String> loras = sdu.listLoras();
+		return Response.status(200).entity(JSONUtil.exportObject(loras)).build();
+	}
+
 	@RolesAllowed({"user"})
 	@POST
 	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/reimage")

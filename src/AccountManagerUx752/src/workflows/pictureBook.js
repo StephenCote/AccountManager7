@@ -72,7 +72,11 @@ let sdModelList = [];
 let sdModel = '';
 let sdRefinerModel = '';
 let sdDenoisingStrength = 0.65;
+let sdSampler = 'dpmpp_2m';
+let sdScheduler = 'karras';
 let sdLoras = [];  // ['loraName:weight', ...]
+let sdLoraList = [];  // available LORAs from server
+let sdLorasFetched = false;
 let lastUsedSeed = -1;   // persist seed from first generation
 let lastPrompt = '';      // last LLM-generated image prompt
 let sdModelsLoaded = false;
@@ -113,7 +117,10 @@ function resetState() {
     sdModel = '';
     sdRefinerModel = '';
     sdDenoisingStrength = 0.65;
+    sdSampler = 'dpmpp_2m';
+    sdScheduler = 'karras';
     sdLoras = [];
+    sdLorasFetched = false;
     sdModelList = [];
     sdModelsLoaded = false;
     lastUsedSeed = -1;
@@ -263,7 +270,7 @@ function moveScene(idx, dir) {
 }
 
 function buildSdConfig() {
-    let cfg = { steps: sdSteps, refinerSteps: sdRefinerSteps, cfg: sdCfg, hires: sdHires, style: sdStyle };
+    let cfg = { steps: sdSteps, refinerSteps: sdRefinerSteps, cfg: sdCfg, hires: sdHires, style: sdStyle, sampler: sdSampler, scheduler: sdScheduler };
     if (sdModel) cfg.model = sdModel;
     if (sdRefinerModel) cfg.refinerModel = sdRefinerModel;
     if (sdDenoisingStrength >= 0) cfg.denoisingStrength = sdDenoisingStrength;
@@ -669,13 +676,13 @@ function renderSdConfig() {
         m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-1' }, 'SD Configuration'),
         m('div', { class: 'grid grid-cols-3 gap-2' }, [
             m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Steps'),
-                m('input', { class: 'text-field-compact text-xs', type: 'number', min: 1, max: 50,
+                m('label', { class: 'field-label text-xs' }, 'Steps: ' + sdSteps),
+                m('input', { class: 'w-full', type: 'range', min: 1, max: 50,
                     value: sdSteps, oninput: function (e) { sdSteps = parseInt(e.target.value) || 20; } })
             ]),
             m('div', [
-                m('label', { class: 'field-label text-xs' }, 'CFG'),
-                m('input', { class: 'text-field-compact text-xs', type: 'number', min: 1, max: 30, step: 0.5,
+                m('label', { class: 'field-label text-xs' }, 'CFG: ' + sdCfg),
+                m('input', { class: 'w-full', type: 'range', min: 1, max: 30, step: 0.5,
                     value: sdCfg, oninput: function (e) { sdCfg = parseFloat(e.target.value) || 5; } })
             ]),
             m('div', [
@@ -695,8 +702,8 @@ function renderSdConfig() {
                     oninput: function (e) { sdStyle = e.target.value; } })
             ]),
             m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Refiner Steps'),
-                m('input', { class: 'text-field-compact text-xs', type: 'number', min: 0, max: 50,
+                m('label', { class: 'field-label text-xs' }, 'Refiner Steps: ' + sdRefinerSteps),
+                m('input', { class: 'w-full', type: 'range', min: 0, max: 50,
                     value: sdRefinerSteps, oninput: function (e) { sdRefinerSteps = parseInt(e.target.value) || 0; } })
             ]),
             m('div', { class: 'flex items-end pb-1' }, [
@@ -707,8 +714,8 @@ function renderSdConfig() {
                 ])
             ]),
             m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Denoising'),
-                m('input', { class: 'text-field-compact text-xs', type: 'number', min: 0, max: 1, step: 0.05,
+                m('label', { class: 'field-label text-xs' }, 'Denoising: ' + sdDenoisingStrength.toFixed(2)),
+                m('input', { class: 'w-full', type: 'range', min: 0, max: 1, step: 0.05,
                     value: sdDenoisingStrength,
                     oninput: function (e) { sdDenoisingStrength = parseFloat(e.target.value) || 0.65; } })
             ])
@@ -736,6 +743,25 @@ function renderSdConfig() {
                         oninput: function (e) { sdRefinerModel = e.target.value; } })
             ])
         ]),
+        // Sampler / Scheduler
+        m('div', { class: 'grid grid-cols-2 gap-2 mt-2' }, [
+            m('div', [
+                m('label', { class: 'field-label text-xs' }, 'Sampler'),
+                m('select', { class: 'text-field-compact text-xs', value: sdSampler,
+                    onchange: function (e) { sdSampler = e.target.value; } },
+                    ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'].map(function (s) {
+                        return m('option', { value: s }, s);
+                    }))
+            ]),
+            m('div', [
+                m('label', { class: 'field-label text-xs' }, 'Scheduler'),
+                m('select', { class: 'text-field-compact text-xs', value: sdScheduler,
+                    onchange: function (e) { sdScheduler = e.target.value; } },
+                    ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
+                        return m('option', { value: s }, s);
+                    }))
+            ])
+        ]),
         lastUsedSeed > 0 ? m('div', { class: 'text-xs text-gray-500 mt-1' },
             'Seed locked: ' + lastUsedSeed + ' (from first generation)') : null,
         lastPrompt ? m('div', { class: 'mt-2' }, [
@@ -743,16 +769,66 @@ function renderSdConfig() {
             m('div', { class: 'text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded p-2 mt-1 max-h-20 overflow-y-auto' },
                 lastPrompt)
         ]) : null,
-        // LORAs
-        m('div', { class: 'mt-2' }, [
-            m('label', { class: 'field-label text-xs' }, 'LORAs (one per line, name:weight)'),
-            m('textarea', {
-                class: 'w-full text-field-full text-xs', rows: 2,
-                value: sdLoras.join('\n'),
-                placeholder: 'e.g. myLora:0.8',
-                oninput: function (e) { sdLoras = e.target.value.split('\n').map(function (s) { return s.trim(); }).filter(function (s) { return s.length; }); }
-            })
-        ])
+        // LORAs — checkbox list from server + manual entry
+        renderLoraSelect()
+    ]);
+}
+
+function renderLoraSelect() {
+    // Fetch LORAs from server on first render
+    if (!sdLorasFetched && am7model._sd && am7model._sd.fetchLoras) {
+        sdLorasFetched = true;
+        am7model._sd.fetchLoras().then(function (list) {
+            sdLoraList = Array.isArray(list) ? list : [];
+            m.redraw();
+        }).catch(function () { sdLoraList = []; });
+    }
+
+    // Parse current selections into map: name → weight
+    let loraMap = {};
+    sdLoras.forEach(function (entry) {
+        let parts = String(entry).split(':');
+        loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
+    });
+
+    function sync() {
+        sdLoras = Object.keys(loraMap).map(function (k) { return k + ':' + loraMap[k]; });
+    }
+
+    return m('div', { class: 'mt-2' }, [
+        m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-1' }, 'LORAs'),
+        sdLoraList.length > 0
+            ? m('div', { class: 'space-y-1 max-h-24 overflow-y-auto' }, sdLoraList.map(function (name) {
+                let selected = loraMap.hasOwnProperty(name);
+                return m('div', { key: name, class: 'flex items-center gap-2 text-xs' }, [
+                    m('input', {
+                        type: 'checkbox', checked: selected,
+                        onchange: function () {
+                            if (selected) delete loraMap[name]; else loraMap[name] = 0.8;
+                            sync(); m.redraw();
+                        }
+                    }),
+                    m('span', { class: 'truncate', style: 'max-width:160px', title: name }, name),
+                    selected ? m('input', {
+                        type: 'number', class: 'text-field-compact text-xs w-14',
+                        min: 0, max: 2, step: 0.05, value: loraMap[name],
+                        oninput: function (e) { loraMap[name] = parseFloat(e.target.value) || 0.8; sync(); }
+                    }) : null
+                ]);
+            }))
+            : m('div', { class: 'text-xs text-gray-400' }, sdLorasFetched ? 'No LORAs on server' : 'Loading...'),
+        m('input', {
+            type: 'text', class: 'text-field-compact text-xs mt-1 w-full',
+            placeholder: 'Manual: loraName:weight + Enter',
+            onkeydown: function (e) {
+                if (e.key === 'Enter' && e.target.value.trim()) {
+                    let parts = e.target.value.trim().split(':');
+                    loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
+                    e.target.value = '';
+                    sync(); m.redraw();
+                }
+            }
+        })
     ]);
 }
 

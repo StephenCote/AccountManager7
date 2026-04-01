@@ -349,20 +349,34 @@ async function reimage(entity, inst) {
                     modelSelect('refinerModel')
                 ]),
                 m('div', [
-                    m('label', { class: 'field-label' }, 'Steps'),
-                    m('input', { class: 'text-field-compact', type: 'number', value: cinst.api.steps(), oninput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
+                    m('label', { class: 'field-label' }, 'Steps: ' + cinst.api.steps()),
+                    m('input', { class: 'w-full', type: 'range', min: 1, max: 100, value: cinst.api.steps(), oninput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
-                    m('label', { class: 'field-label' }, 'Refiner Steps'),
-                    m('input', { class: 'text-field-compact', type: 'number', value: cinst.api.refinerSteps(), oninput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
+                    m('label', { class: 'field-label' }, 'Refiner Steps: ' + cinst.api.refinerSteps()),
+                    m('input', { class: 'w-full', type: 'range', min: 0, max: 100, value: cinst.api.refinerSteps(), oninput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
-                    m('label', { class: 'field-label' }, 'CFG'),
-                    m('input', { class: 'text-field-compact', type: 'number', step: 0.5, value: cinst.api.cfg(), oninput: function (e) { cinst.api.cfg(parseFloat(e.target.value) || 5); } })
+                    m('label', { class: 'field-label' }, 'CFG: ' + cinst.api.cfg()),
+                    m('input', { class: 'w-full', type: 'range', min: 1, max: 30, step: 0.5, value: cinst.api.cfg(), oninput: function (e) { cinst.api.cfg(parseFloat(e.target.value) || 5); } })
                 ]),
                 m('div', [
-                    m('label', { class: 'field-label' }, 'Refiner CFG'),
-                    m('input', { class: 'text-field-compact', type: 'number', step: 0.5, value: cinst.api.refinerCfg(), oninput: function (e) { cinst.api.refinerCfg(parseFloat(e.target.value) || 5); } })
+                    m('label', { class: 'field-label' }, 'Refiner CFG: ' + cinst.api.refinerCfg()),
+                    m('input', { class: 'w-full', type: 'range', min: 1, max: 30, step: 0.5, value: cinst.api.refinerCfg(), oninput: function (e) { cinst.api.refinerCfg(parseFloat(e.target.value) || 5); } })
+                ]),
+                m('div', [
+                    m('label', { class: 'field-label' }, 'Sampler'),
+                    m('select', { class: 'text-field-compact', value: cinst.entity.sampler || 'dpmpp_2m', onchange: function (e) { cinst.entity.sampler = e.target.value; } },
+                        ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'].map(function (s) {
+                            return m('option', { value: s }, s);
+                        }))
+                ]),
+                m('div', [
+                    m('label', { class: 'field-label' }, 'Scheduler'),
+                    m('select', { class: 'text-field-compact', value: cinst.entity.scheduler || 'karras', onchange: function (e) { cinst.entity.scheduler = e.target.value; } },
+                        ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
+                            return m('option', { value: s }, s);
+                        }))
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Seed'),
@@ -396,6 +410,45 @@ async function reimage(entity, inst) {
                         onchange: function (e) { cinst.entity.shared = e.target.checked; }
                     })
                 ])
+            ]),
+
+            // LORAs
+            m('div', { class: 'mt-2' }, [
+                m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-1' }, 'LORAs'),
+                (function () {
+                    let currentLoras = cinst.entity.loras || [];
+                    if (!Array.isArray(currentLoras)) currentLoras = [];
+                    let loraMap = {};
+                    currentLoras.forEach(function (entry) {
+                        let parts = String(entry).split(':');
+                        loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
+                    });
+                    function sync() {
+                        cinst.entity.loras = Object.keys(loraMap).map(function (k) { return k + ':' + loraMap[k]; });
+                    }
+                    let available = am7sd.getLoraList();
+                    if (!available.length) { am7sd.fetchLoras().then(function () { m.redraw(); }); }
+                    return m('div', { class: 'space-y-1' }, [
+                        available.map(function (name) {
+                            let selected = loraMap.hasOwnProperty(name);
+                            return m('div', { key: name, class: 'flex items-center gap-2 text-xs' }, [
+                                m('input', { type: 'checkbox', checked: selected, onchange: function () {
+                                    if (selected) delete loraMap[name]; else loraMap[name] = 0.8;
+                                    sync(); m.redraw();
+                                } }),
+                                m('span', { class: 'truncate', style: 'max-width:180px', title: name }, name),
+                                selected ? m('input', { type: 'number', class: 'text-field-compact text-xs w-16', min: 0, max: 2, step: 0.05, value: loraMap[name], oninput: function (e) { loraMap[name] = parseFloat(e.target.value) || 0.8; sync(); } }) : null
+                            ]);
+                        }),
+                        m('input', { type: 'text', class: 'text-field-compact text-xs mt-1 w-full', placeholder: 'loraName:weight + Enter', onkeydown: function (e) {
+                            if (e.key === 'Enter' && e.target.value.trim()) {
+                                let parts = e.target.value.trim().split(':');
+                                loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
+                                e.target.value = ''; sync(); m.redraw();
+                            }
+                        } })
+                    ]);
+                })()
             ])
         ]);
     }

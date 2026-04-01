@@ -1099,13 +1099,26 @@ import { am7model } from './model.js';
                     command: undefined
                 }
             },
+            sampler: {
+                label: 'Sampler',
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm']
+                }
+            },
+            scheduler: {
+                label: 'Scheduler',
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal']
+                }
+            },
             loras: {
                 label: 'LORAs',
                 layout: 'full',
-                format: 'textlist',
-                field: {
-                    description: 'One LORA per line in format loraName:weight (e.g., myLora:0.8)'
-                }
+                format: 'loraSelect'
             }
 
         }
@@ -1185,7 +1198,7 @@ import { am7model } from './model.js';
                 layout: 'half',
                 field: {
                     type: 'list',
-                    limit: ['dpmpp_2m', 'euler_a', 'euler', 'dpmpp_sde', 'ddim']
+                    limit: ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm']
                 }
             },
             scheduler: {
@@ -1193,7 +1206,7 @@ import { am7model } from './model.js';
                 layout: 'half',
                 field: {
                     type: 'list',
-                    limit: ['Karras', 'Normal', 'Exponential']
+                    limit: ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal']
                 }
             },
             denoisingStrength: {

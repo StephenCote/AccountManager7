@@ -188,6 +188,34 @@ public class SDUtil {
 		return models;
 	}
 
+	public List<String> listLoras() {
+		List<String> loras = new ArrayList<>();
+		try {
+			String sess = SWUtil.getAnonymousSession(autoserver);
+			if (sess == null || sess.isEmpty()) {
+				logger.warn("Could not obtain anonymous session for listing LORAs");
+				return loras;
+			}
+			SWModelListResponse resp = ClientUtil.post(
+				SWModelListResponse.class,
+				ClientUtil.getResource(autoserver + "/API/ListModels"),
+				"{\"session_id\":\"" + sess + "\",\"path\":\"\",\"depth\":2,\"subtype\":\"LoRA\"}",
+				MediaType.APPLICATION_JSON_TYPE
+			);
+			if (resp != null && resp.getFiles() != null) {
+				for (Map<String, Object> file : resp.getFiles()) {
+					Object name = file.get("name");
+					if (name != null) {
+						loras.add(name.toString());
+					}
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("Could not list LORAs from SD server: " + e.getMessage());
+		}
+		return loras;
+	}
+
 	public int getSteps() {
 		return steps;
 	}

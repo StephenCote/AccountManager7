@@ -149,6 +149,11 @@ function renderPagination(filteredItems, fs) {
 
 function openEditor(fs, entry, index, ctx) {
     let tableForm = ctx.fieldView.form;
+    // Ensure schema is set on the entry (list serialization may strip it after first item)
+    if (!entry[am7model.jsonModelKey]) {
+        let tableType = resolveTableType(ctx);
+        if (tableType) entry[am7model.jsonModelKey] = tableType;
+    }
     fs.editEntry = entry;
     fs.editIndex = index;
     fs.activeId = getEntryId(entry);
@@ -435,7 +440,18 @@ function renderEditorPanel(fs, tableForm, tableType, ctx) {
         let inputName = fk + "-tle-" + (fs.activeId || 'new');
 
         let fieldContent;
-        if (ctx.modelField) {
+        if (tableFieldView.format === 'textlist') {
+            // Direct textarea rendering for textlist fields (list<string> displayed as multiline text)
+            let val = entry[fk];
+            if (Array.isArray(val)) val = val.join('\n');
+            else if (val === undefined || val === null) val = '';
+            fieldContent = m("textarea", {
+                class: "w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
+                name: inputName, rows: 6,
+                value: val,
+                oninput: function(e) { entry[fk] = e.target.value.split('\n'); }
+            });
+        } else if (ctx.modelField) {
             let cv = fs.editInstance;
             let defVal = (cv && cv.api && cv.api[fk]) ? cv.api[fk]() : entry[fk];
             fieldContent = ctx.modelField(fk, tableFieldView, tableField, inputName, defVal, true, entry, tableForm);
@@ -557,6 +573,14 @@ function render(ctx) {
         )];
     }
     if (!items) items = [];
+    // Restore schema on list items (list serialization may strip after first)
+    if (items.length > 0 && tableType) {
+        for (let i = 0; i < items.length; i++) {
+            if (items[i] && !items[i][am7model.jsonModelKey]) {
+                items[i][am7model.jsonModelKey] = tableType;
+            }
+        }
+    }
 
     let filtered = getFilteredItems(items, fs);
     let paged = getPagedItems(filtered, fs);
