@@ -231,9 +231,11 @@ function newListControl() {
         if (page.components.pdf) page.components.pdf.clear();
         let idx = getSelectedIndices();
         if (idx.length) {
-            carousel = true;
-            pagination.pages().currentItem = idx[0];
-            m.redraw();
+            let pg = pagination.pages();
+            let pr = pg.pageResults[pg.currentPage];
+            if (pr && pr[idx[0]]) {
+                openItem(pr[idx[0]]);
+            }
         }
     }
 
@@ -283,14 +285,13 @@ function newListControl() {
         let idx = (pg.currentItem || 0) + delta;
         if (pr && idx >= pr.length) {
             if (pg.currentPage < pg.pageCount) {
-                // Reset currentItem on page change (Fix: Ux7 pattern)
                 pg.currentItem = 0;
-                pagination.next(embeddedMode || pickerMode);
+                pagination.next(true);
             }
         } else if (idx < 0) {
             if (pg.currentPage > 1) {
                 wentBack = true;
-                pagination.prev(embeddedMode || pickerMode);
+                pagination.prev(true);
             }
         } else {
             pg.currentItem = idx;
