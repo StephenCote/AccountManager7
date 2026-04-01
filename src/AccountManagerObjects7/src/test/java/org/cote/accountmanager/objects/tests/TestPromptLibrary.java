@@ -36,7 +36,7 @@ import org.junit.Test;
  * - PromptConfig template loading (promptConfig.*.json)
  * - PromptTemplate template loading (promptTemplate.*.json)
  * - ChatLibraryUtil population of all three library types
- * - LLM integration with alt model (qwen3:8b) for summarization prompts
+ * - LLM integration with alt model (qwen3-vl:8b-instruct) for summarization prompts
  */
 public class TestPromptLibrary extends BaseTest {
 

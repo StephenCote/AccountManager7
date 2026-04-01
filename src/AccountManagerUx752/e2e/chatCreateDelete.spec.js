@@ -42,7 +42,7 @@ test.describe('Chat session create/delete UX', () => {
             await LLMConnector.ensureLibrary().catch(() => {});
             await page.makePath('auth.group', 'data', '~/Chat');
 
-            let chatCfg = await am7chat.makeChat('UxTest-' + ts, 'qwen3:8b', 'http://192.168.1.42:11434', 'OLLAMA');
+            let chatCfg = await am7chat.makeChat('UxTest-' + ts, 'qwen3-vl:8b-instruct', 'http://192.168.1.42:11434', 'OLLAMA');
             if (!chatCfg) return { error: 'ChatConfig failed', log };
             let promptCfg = await am7chat.makePrompt('default');
 

@@ -8886,12 +8886,12 @@
         {
           "name": "model",
           "type": "string",
-          "default": "qwen3:8b"
+          "default": "qwen3-vl:8b-instruct"
         },
         {
           "name": "analyzeModel",
           "type": "string",
-          "default": "qwen3:8b"
+          "default": "qwen3-vl:8b-instruct"
         },
         {
           "name": "userPrompt",

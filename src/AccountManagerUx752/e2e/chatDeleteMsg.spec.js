@@ -37,7 +37,7 @@ test.describe('Chat message delete', () => {
             await pg.makePath('auth.group', 'data', '~/Chat');
 
             // Create config and session
-            let chatCfg = await am7chat.makeChat('DelTest-' + ts, 'qwen3:8b', 'http://192.168.1.42:11434', 'OLLAMA');
+            let chatCfg = await am7chat.makeChat('DelTest-' + ts, 'qwen3-vl:8b-instruct', 'http://192.168.1.42:11434', 'OLLAMA');
             if (!chatCfg) return { error: 'ChatConfig failed' };
             let promptCfg = await am7chat.makePrompt('default');
             let req = await am7chat.getChatRequest('DelTest-' + ts, chatCfg, promptCfg);

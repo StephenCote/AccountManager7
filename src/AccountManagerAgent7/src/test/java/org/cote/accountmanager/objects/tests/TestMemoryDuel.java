@@ -448,8 +448,8 @@ public class TestMemoryDuel extends BaseTest {
 				cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken").trim());
 			} else if (serviceType == LLMServiceEnumType.OLLAMA) {
 				cfg.setValue("serverUrl", testProperties.getProperty("test.llm.ollama.server").trim());
-				// qwen3:8b is faster than creat (smaller quantization Q4_K_M vs Q8_0)
-				cfg.setValue("model", "qwen3:8b");
+				// qwen3-vl:8b-instruct — instruct model, no thinking overhead
+				cfg.setValue("model", "qwen3-vl:8b-instruct");
 			}
 
 			BaseRecord opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);

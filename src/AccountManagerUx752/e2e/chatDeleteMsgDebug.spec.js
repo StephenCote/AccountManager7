@@ -24,7 +24,7 @@ test.describe('Chat delete message debug', () => {
             let ts = Date.now().toString(36);
             await LLMConnector.ensureLibrary().catch(() => {});
             await pg.makePath('auth.group', 'data', '~/Chat');
-            let chatCfg = await am7chat.makeChat('DbgDel-' + ts, 'qwen3:8b', 'http://192.168.1.42:11434', 'OLLAMA');
+            let chatCfg = await am7chat.makeChat('DbgDel-' + ts, 'qwen3-vl:8b-instruct', 'http://192.168.1.42:11434', 'OLLAMA');
             let promptCfg = await am7chat.makePrompt('default');
             let req = await am7chat.getChatRequest('DbgDel-' + ts, chatCfg, promptCfg);
             if (!req) return { error: 'ChatRequest failed' };

@@ -2,7 +2,7 @@
  * Aggressive Story / PictureBook / Summarization / Imaging test suite.
  *
  * Tests against live backend (localhost:8443). Uses ensureSharedTestUser.
- * Ollama at http://192.168.1.42:11434, model qwen3:8b.
+ * Ollama at http://192.168.1.42:11434, model qwen3-vl:8b-instruct.
  *
  * Coverage:
  *   1. Document upload + vectorization + summarization pipeline
@@ -20,7 +20,7 @@ import { ensureSharedTestUser } from './helpers/api.js';
 
 const test = base;
 const OLLAMA_URL = 'http://192.168.1.42:11434';
-const MODEL = 'qwen3:8b';
+const MODEL = 'qwen3-vl:8b-instruct';
 
 /**
  * Navigate to chat view to ensure all LLM modules are loaded, dismiss wizard if shown.
@@ -116,11 +116,11 @@ test.describe('Story, Imaging, Summarization — Aggressive Suite', () => {
 
             // Create chat + attach doc
             await page.makePath('auth.group', 'data', '~/Chat');
-            let chatCfg = await am7chat.makeChat('SumChat-' + ts, 'qwen3:8b', 'http://192.168.1.42:11434', 'OLLAMA');
+            let chatCfg = await am7chat.makeChat('SumChat-' + ts, 'qwen3-vl:8b-instruct', 'http://192.168.1.42:11434', 'OLLAMA');
             if (!chatCfg) return { error: 'ChatConfig failed', log };
             await page.patchObject({
                 schema: 'olio.llm.chatConfig', id: chatCfg.id,
-                analyzeModel: 'qwen3:8b', stream: false
+                analyzeModel: 'qwen3-vl:8b-instruct', stream: false
             });
 
             let promptCfg = await am7chat.makePrompt('default');
@@ -205,11 +205,11 @@ test.describe('Story, Imaging, Summarization — Aggressive Suite', () => {
 
             // Create a clean session with NO attachments
             await page.makePath('auth.group', 'data', '~/Chat');
-            let chatCfg = await am7chat.makeChat('IsoTest-' + ts, 'qwen3:8b', 'http://192.168.1.42:11434', 'OLLAMA');
+            let chatCfg = await am7chat.makeChat('IsoTest-' + ts, 'qwen3-vl:8b-instruct', 'http://192.168.1.42:11434', 'OLLAMA');
             if (!chatCfg) return { error: 'ChatConfig failed', log };
             await page.patchObject({
                 schema: 'olio.llm.chatConfig', id: chatCfg.id,
-                analyzeModel: 'qwen3:8b', stream: false
+                analyzeModel: 'qwen3-vl:8b-instruct', stream: false
             });
 
             let promptCfg = await am7chat.makePrompt('default');
@@ -285,7 +285,7 @@ test.describe('Story, Imaging, Summarization — Aggressive Suite', () => {
 
             // Create session
             await page.makePath('auth.group', 'data', '~/Chat');
-            let chatCfg = await am7chat.makeChat('CtxRT-' + ts, 'qwen3:8b', 'http://192.168.1.42:11434', 'OLLAMA');
+            let chatCfg = await am7chat.makeChat('CtxRT-' + ts, 'qwen3-vl:8b-instruct', 'http://192.168.1.42:11434', 'OLLAMA');
             let promptCfg = await am7chat.makePrompt('default');
             let chatReq = await am7chat.getChatRequest('CtxRT-' + ts, chatCfg, promptCfg);
             if (!chatReq) return { error: 'ChatRequest failed', log };
@@ -478,7 +478,7 @@ test.describe('Story, Imaging, Summarization — Aggressive Suite', () => {
             let sceneResp = await fetch(applicationPath + '/rest/olio/picture-book/' + doc.objectId + '/extract-scenes-only', {
                 method: 'POST', credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: 'qwen3:8b', serverUrl: 'http://192.168.1.42:11434' })
+                body: JSON.stringify({ model: 'qwen3-vl:8b-instruct', serverUrl: 'http://192.168.1.42:11434' })
             });
             log.push('Scene extract status: ' + sceneResp.status);
 
@@ -572,8 +572,8 @@ test.describe('Story, Imaging, Summarization — Aggressive Suite', () => {
 
             // Create chat + attach
             await page.makePath('auth.group', 'data', '~/Chat');
-            let chatCfg = await am7chat.makeChat('RAG-' + ts, 'qwen3:8b', 'http://192.168.1.42:11434', 'OLLAMA');
-            await page.patchObject({ schema: 'olio.llm.chatConfig', id: chatCfg.id, analyzeModel: 'qwen3:8b', stream: false });
+            let chatCfg = await am7chat.makeChat('RAG-' + ts, 'qwen3-vl:8b-instruct', 'http://192.168.1.42:11434', 'OLLAMA');
+            await page.patchObject({ schema: 'olio.llm.chatConfig', id: chatCfg.id, analyzeModel: 'qwen3-vl:8b-instruct', stream: false });
             let promptCfg = await am7chat.makePrompt('default');
             let chatReq = await am7chat.getChatRequest('RAG-' + ts, chatCfg, promptCfg);
             if (!chatReq) return { error: 'ChatReq failed', log };

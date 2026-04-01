@@ -73,7 +73,7 @@ public class TestPictureBookFull extends BaseTest {
 		testUser = mf.getCreateUser(testOrgCtx.getAdminUser(), "pbTestUser", testOrgCtx.getOrganizationId());
 		assertNotNull("Test user should be created", testUser);
 
-		// Use qwen3:8b explicitly for PictureBook tests — small, fast, with think:false
+		// Use qwen3-vl:8b-instruct explicitly for PictureBook tests — small, fast, with think:false
 		String ollamaServer = testProperties.getProperty("test.llm.ollama.server");
 		assertNotNull("test.llm.ollama.server must be set", ollamaServer);
 		chatConfig = getOrCreatePbChatConfig(testUser, ollamaServer);
@@ -435,7 +435,7 @@ public class TestPictureBookFull extends BaseTest {
 
 		String userMsg = userTpl.replace("{count}", "3").replace("{text}", TEST_STORY);
 
-		// chatConfig has think:false and model=qwen3:8b — applied via newRequest→applyChatOptions
+		// chatConfig has think:false and model=qwen3-vl:8b-instruct — applied via newRequest→applyChatOptions
 		Chat chat = new Chat(testUser, chatConfig, null);
 		OpenAIRequest req = chat.newRequest(chat.getModel());
 		req.setStream(false);

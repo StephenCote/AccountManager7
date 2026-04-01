@@ -87,8 +87,8 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
                     name: cfgName,
                     groupId: chatDir.id,
                     groupPath: chatDir.path,
-                    model: 'qwen3:8b',
-                    analyzeModel: 'qwen3:8b',
+                    model: 'qwen3-vl:8b-instruct',
+                    analyzeModel: 'qwen3-vl:8b-instruct',
                     serverUrl: 'http://192.168.1.42:11434',
                     serviceType: 'ollama',
                     stream: false

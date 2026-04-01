@@ -160,7 +160,7 @@ test.describe('Audio, Memory, Gossip, MCP', () => {
 
             // Create chatConfig with extractMemories=true
             await page.makePath('auth.group', 'data', '~/Chat');
-            let chatCfg = await am7chat.makeChat('MemTest-' + ts, 'qwen3:8b', 'http://192.168.1.42:11434', 'OLLAMA');
+            let chatCfg = await am7chat.makeChat('MemTest-' + ts, 'qwen3-vl:8b-instruct', 'http://192.168.1.42:11434', 'OLLAMA');
             if (!chatCfg) return { error: 'ChatConfig failed', log };
             log.push('char1 id=' + char1.id + ' oid=' + char1.objectId);
             log.push('char2 id=' + char2.id + ' oid=' + char2.objectId);
@@ -169,7 +169,7 @@ test.describe('Audio, Memory, Gossip, MCP', () => {
                 systemCharacter: { schema: 'olio.charPerson', id: char1.id, objectId: char1.objectId },
                 userCharacter: { schema: 'olio.charPerson', id: char2.id, objectId: char2.objectId },
                 startMode: 'system', stream: false, rating: 'AO',
-                analyzeModel: 'qwen3:8b',
+                analyzeModel: 'qwen3-vl:8b-instruct',
                 extractMemories: true, memoryExtractionEvery: 1
             });
             log.push('ChatConfig: ' + chatCfg.objectId);
@@ -379,11 +379,11 @@ test.describe('Audio, Memory, Gossip, MCP', () => {
             // Step 2: Create chatConfig + chatRequest
             log.push('=== CREATE CHAT ===');
             await page.makePath('auth.group', 'data', '~/Chat');
-            let chatCfg = await am7chat.makeChat('McpDocTest-' + ts, 'qwen3:8b', 'http://192.168.1.42:11434', 'OLLAMA');
+            let chatCfg = await am7chat.makeChat('McpDocTest-' + ts, 'qwen3-vl:8b-instruct', 'http://192.168.1.42:11434', 'OLLAMA');
             if (!chatCfg) return { error: 'ChatConfig failed', log };
             await page.patchObject({
                 schema: 'olio.llm.chatConfig', id: chatCfg.id,
-                analyzeModel: 'qwen3:8b', stream: false, rating: 'AO'
+                analyzeModel: 'qwen3-vl:8b-instruct', stream: false, rating: 'AO'
             });
 
             let promptCfg = await am7chat.makePrompt('default');
