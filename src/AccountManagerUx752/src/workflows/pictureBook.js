@@ -758,22 +758,10 @@ function renderSdConfig() {
 
 function renderStep4() {
     let targets = scenes.length ? scenes : extractedScenes;
-    let pendingCount = targets.filter(function (s) {
-        let st = s.objectId ? (genProgress[s.objectId] || 'pending') : 'no-id';
-        return st !== 'accepted' && st !== 'skipped' && s.objectId;
-    }).length;
     return m('div', { class: 'p-4 space-y-3' }, [
         m('div', { class: 'flex justify-between items-center mb-2' }, [
             m('h3', { class: 'font-medium' }, 'Image Generation'),
-            m('div', { class: 'flex gap-2' }, [
-                generating
-                    ? m('button', { class: 'btn text-sm', onclick: function () { genCancelled = true; } }, 'Cancel')
-                    : m('button', {
-                        class: 'btn btn-primary text-sm',
-                        disabled: pendingCount === 0,
-                        onclick: doGenerateAll
-                    }, 'Generate All (' + pendingCount + ')')
-            ])
+            generating ? m('span', { class: 'text-xs text-blue-500' }, 'Generating...') : null
         ]),
 
         renderSdConfig(),
@@ -1087,21 +1075,78 @@ function buildActions() {
             let st = genProgress[s.objectId];
             return st === 'accepted' || st === 'skipped';
         });
-        actions.push({
-            label: 'View Picture Book', icon: 'auto_stories',
-            primary: allResolved, disabled: !allResolved,
-            onclick: async function () {
-                try {
-                    metaScenes = await loadPictureBook(bookObjectId || workObjectId);
-                } catch (e) {
-                    metaScenes = scenes;
+        let pendingCount = targets.filter(function (s) {
+            let st = s.objectId ? (genProgress[s.objectId] || 'pending') : 'no-id';
+            return st !== 'accepted' && st !== 'skipped' && s.objectId;
+        }).length;
+
+        if (allResolved) {
+            // All done — view the book
+            actions.push({
+                label: 'View Picture Book', icon: 'auto_stories', primary: true,
+                onclick: async function () {
+                    try {
+                        metaScenes = await loadPictureBook(bookObjectId || workObjectId);
+                    } catch (e) {
+                        metaScenes = scenes;
+                    }
+                    let targets = metaScenes.length ? metaScenes : scenes;
+                    step5ImageUrls = await resolveAllImageUrls(targets);
+                    step = 5;
+                    m.redraw();
                 }
-                let targets = metaScenes.length ? metaScenes : scenes;
-                step5ImageUrls = await resolveAllImageUrls(targets);
-                step = 5;
-                m.redraw();
+            });
+        } else {
+            // Generate All — primary action until all resolved
+            actions.push({
+                label: generating ? 'Generating...' : 'Generate All (' + pendingCount + ')',
+                icon: 'auto_awesome', primary: true,
+                disabled: generating || pendingCount === 0,
+                onclick: async function () {
+                    await doGenerateAll();
+                    // Auto-advance: accept all done scenes and go to view
+                    let tgts = scenes.length ? scenes : extractedScenes;
+                    let allDone = true;
+                    for (let s of tgts) {
+                        if (!s.objectId) continue;
+                        let st = genProgress[s.objectId];
+                        if (st === 'done') { genProgress[s.objectId] = 'accepted'; }
+                        else if (st !== 'accepted' && st !== 'skipped') { allDone = false; }
+                    }
+                    if (allDone) {
+                        try {
+                            metaScenes = await loadPictureBook(bookObjectId || workObjectId);
+                        } catch (e) {
+                            metaScenes = scenes;
+                        }
+                        let viewTargets = metaScenes.length ? metaScenes : scenes;
+                        step5ImageUrls = await resolveAllImageUrls(viewTargets);
+                        step = 5;
+                    }
+                    m.redraw();
+                }
+            });
+            if (generating) {
+                actions.push({
+                    label: 'Cancel', icon: 'stop',
+                    onclick: function () { genCancelled = true; }
+                });
             }
-        });
+        }
+
+        // Save button when editing an existing book
+        if (bookObjectId) {
+            actions.push({
+                label: 'Save', icon: 'save',
+                onclick: async function () {
+                    try {
+                        metaScenes = await loadPictureBook(bookObjectId);
+                    } catch (e) {}
+                    page.toast('success', 'Book saved');
+                    m.redraw();
+                }
+            });
+        }
     } else if (step === 5) {
         actions.push({
             label: 'Open in Viewer', icon: 'open_in_new',

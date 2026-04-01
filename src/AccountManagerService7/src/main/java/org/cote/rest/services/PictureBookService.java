@@ -559,7 +559,8 @@ public class PictureBookService {
             scene.set(FieldNames.FIELD_OBJECT_ID, note.get(FieldNames.FIELD_OBJECT_ID));
             scene.set("index", idx);
             scene.set("title", sceneData.getOrDefault("title", "Scene " + idx));
-            scene.set(FieldNames.FIELD_DESCRIPTION, sceneData.getOrDefault("summary", ""));
+            String desc = (String) sceneData.getOrDefault("blurb", sceneData.getOrDefault("summary", sceneData.getOrDefault("description", "")));
+            scene.set(FieldNames.FIELD_DESCRIPTION, desc);
             List<String> charIds = new ArrayList<>();
             Object charsObj = sceneData.get("characters");
             if (charsObj instanceof List && charObjectIds != null) {
