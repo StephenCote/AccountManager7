@@ -557,7 +557,7 @@ function renderGridList(ctl) {
         });
     }
 
-    return m("div", { class: 'h-full overflow-hidden' }, m("div", { class: (gridMode == 1 ? 'image-grid-tile' : 'image-grid-5') }, results));
+    return m("div", { class: 'h-full overflow-y-auto' }, m("div", { class: (gridMode == 1 ? 'image-grid-tile' : 'image-grid-5') }, results));
 }
 
 let _gridState = null;

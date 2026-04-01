@@ -652,18 +652,20 @@ function newListControl() {
         wentBack = false;
         switch (e.keyCode) {
             case 37: // Left
-                if (!carousel || e.shiftKey) {
+                if (carousel || gridMode > 0) {
+                    if (e.shiftKey) { wentBack = true; pagination.prev(embeddedMode || pickerMode); }
+                    else moveCarousel(-1);
+                } else {
                     wentBack = true;
                     pagination.prev(embeddedMode || pickerMode);
-                } else {
-                    moveCarousel(-1);
                 }
                 break;
             case 39: // Right
-                if (!carousel || e.shiftKey) {
-                    pagination.next(embeddedMode || pickerMode);
+                if (carousel || gridMode > 0) {
+                    if (e.shiftKey) pagination.next(embeddedMode || pickerMode);
+                    else moveCarousel(1);
                 } else {
-                    moveCarousel(1);
+                    pagination.next(embeddedMode || pickerMode);
                 }
                 break;
             case 27: // Escape
