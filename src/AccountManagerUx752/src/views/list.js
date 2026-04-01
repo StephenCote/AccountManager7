@@ -340,15 +340,12 @@ function newListControl() {
             if (!parentPath) return;
             page.navigateToPath(type, modType, parentPath).then(function (id) {
                 if (!id) return;
-                if (embeddedMode || pickerMode) {
-                    navContainerId = id;
-                    m.redraw();
-                } else {
-                    page.listByType(containerMode ? baseListType : type, id);
-                }
+                listContainerId = id;
+                pages.container = null;
+                pagination.new();
+                m.redraw();
             });
         } else if (am7model.isParent(modType) && navigateByParent) {
-            // Parent-based navigation (Ux7 lines 215-243) — Ux75 deleted this
             let objectId = m.route.param('objectId');
             let useType = modType.type || listType;
             let q = am7view.viewQuery(am7model.newInstance(useType));
@@ -358,21 +355,21 @@ function newListControl() {
                 if (qr && qr.results && qr.results.length) v = qr.results[0];
                 if (v != null) {
                     if (v.parentId == 0 && am7model.isGroup(modType)) {
-                        console.warn('Navigate up from zero parent — resetting out of parent mode');
-                        let gq = am7client.newQuery('auth.group');
-                        gq.entity.request = ['id', 'objectId', 'path'];
-                        let gf = gq.field('path', v.groupPath);
-                        gf.comparator = 'equals';
-                        gq.field('organizationId', page.user.organizationId);
-                        page.search(gq).then(function (gr) {
-                            if (gr && gr.results && gr.results.length) {
-                                page.listByType(containerMode ? baseListType : useType, gr.results[0].objectId, false);
-                            }
+                        page.navigateToPath(useType, modType, v.groupPath).then(function (id) {
+                            if (!id) return;
+                            listContainerId = id;
+                            navigateByParent = false;
+                            pages.container = null;
+                            pagination.new();
+                            m.redraw();
                         });
                     } else {
                         am7client.get(useType, v.parentId, function (v2) {
                             if (v2 != null) {
-                                page.listByType(containerMode ? baseListType : useType, v2.objectId, true);
+                                listContainerId = v2.objectId;
+                                pages.container = null;
+                                pagination.new();
+                                m.redraw();
                             }
                         });
                     }

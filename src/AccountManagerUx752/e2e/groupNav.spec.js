@@ -1,7 +1,6 @@
 /**
- * Group navigation in list view.
+ * Group navigation in list view — navigate up changes container, stays in same view.
  * Uses shared test user (NEVER admin).
- * Login via actual app UI to ensure mithril client is fully initialized.
  */
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -14,7 +13,7 @@ async function safeJson(resp) { if (!resp.ok()) return null; try { return JSON.p
 
 test.describe('Group Navigation', () => {
     let shared;
-    let dataDirOid;
+    let dataDirOid, subDirOid;
 
     test.beforeAll(async () => {
         shared = await ensureSharedTestUser(null);
@@ -24,31 +23,30 @@ test.describe('Group Navigation', () => {
             data: { schema: 'auth.credential', organizationPath: '/Development',
                 name: shared.testUserName, credential: b64(shared.testPassword), type: 'hashed_password' }
         });
+
         let dataDir = await safeJson(await ctx.get(REST + '/path/make/auth.group/data/' +
             'B64-' + b64('~/Data').replace(/=/g, '%3D')));
-        if (dataDir) {
-            dataDirOid = dataDir.objectId;
-            // Add an object so the group is not empty
-            await ctx.post(REST + '/model', {
-                data: { schema: 'data.data', groupId: dataDir.id, name: 'groupnav_test_' + Date.now(), contentType: 'text/plain' }
-            });
-        }
-        // Also create a subdir with content
+        if (dataDir) dataDirOid = dataDir.objectId;
+
         let subDir = await safeJson(await ctx.get(REST + '/path/make/auth.group/data/' +
             'B64-' + b64('~/Data/TestSub').replace(/=/g, '%3D')));
         if (subDir) {
+            subDirOid = subDir.objectId;
             await ctx.post(REST + '/model', {
-                data: { schema: 'data.data', groupId: subDir.id, name: 'sub_test_' + Date.now(), contentType: 'text/plain' }
+                data: { schema: 'data.data', groupId: subDir.id, name: 'nav_test_' + Date.now(), contentType: 'text/plain' }
             });
         }
+
+        console.log('~/Data oid:', dataDirOid, '~/Data/TestSub oid:', subDirOid);
         await ctx.get(REST + '/logout');
         await ctx.dispose();
     });
 
-    test('Navigate up from ~/Data via container mode', async ({ page }) => {
+    test('Navigate up from ~/Data/TestSub stays in list view, changes container to ~/Data', async ({ page }) => {
+        expect(subDirOid).toBeTruthy();
         expect(dataDirOid).toBeTruthy();
 
-        // Login via API and transfer session cookie
+        // Login via API cookies
         let ctx = await newCtx();
         await ctx.post(REST + '/login', {
             data: { schema: 'auth.credential', organizationPath: '/Development',
@@ -58,62 +56,50 @@ test.describe('Group Navigation', () => {
         await page.context().addCookies(cookies);
         await ctx.dispose();
 
-        // Load the app
         await page.goto('/');
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(1500);
 
-        // Capture console for debugging
         let navLogs = [];
         page.on('console', msg => {
             let t = msg.text();
-            if (t.includes('navigateUp') || t.includes('Error loading container') || t.includes('navigateToPath')) {
+            if (t.includes('navigateUp') || t.includes('Navigate') || t.includes('listByType') || t.includes('Error loading'))
                 navLogs.push(t);
-            }
         });
 
-        // Navigate to ~/Data as data.data
-        await page.goto('#!/list/data.data/' + dataDirOid);
+        // Start at ~/Data/TestSub as data.data list
+        await page.goto('#!/list/data.data/' + subDirOid);
         await page.waitForTimeout(3000);
-        await page.screenshot({ path: 'e2e/screenshots/groupnav-01-data.png' });
 
-        // Check placeholder
+        // Check placeholder shows the full path
         let filterInput = page.locator('#listFilter');
         if (await filterInput.isVisible({ timeout: 2000 }).catch(() => false)) {
             let plc = await filterInput.getAttribute('placeholder') || '';
-            console.log('Placeholder before container toggle:', JSON.stringify(plc));
+            console.log('Placeholder at TestSub:', JSON.stringify(plc));
+            expect(plc).toContain('TestSub');
         }
 
         // Toggle container mode
         let containerBtn = page.locator('button:has(span:text("group_work"))');
-        if (await containerBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-            await containerBtn.click();
-            await page.waitForTimeout(3000);
-            await page.screenshot({ path: 'e2e/screenshots/groupnav-02-container.png' });
+        await expect(containerBtn).toBeVisible({ timeout: 3000 });
+        await containerBtn.click();
+        await page.waitForTimeout(2000);
 
-            // Now try navigate up
-            let upBtn = page.locator('button:has(span:text("north_west"))');
-            if (await upBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-                let urlBefore = page.url();
-                await upBtn.click();
-                await page.waitForTimeout(3000);
-                let urlAfter = page.url();
-                await page.screenshot({ path: 'e2e/screenshots/groupnav-03-afterup.png' });
+        // Navigate up
+        let upBtn = page.locator('button:has(span:text("north_west"))');
+        await expect(upBtn).toBeVisible({ timeout: 3000 });
+        await upBtn.click();
+        await page.waitForTimeout(3000);
 
-                console.log('URL before up:', urlBefore);
-                console.log('URL after up:', urlAfter);
-                console.log('Nav logs:', navLogs.join(' | '));
+        let urlAfter = page.url();
+        console.log('URL after navigate up:', urlAfter);
+        if (navLogs.length) console.log('Nav logs:', navLogs.slice(0, 3).join(' | '));
 
-                // URL should have changed
-                expect(urlAfter).not.toBe(urlBefore);
-                console.log('PASS: URL changed after navigate up');
-            } else {
-                console.log('FAIL: north_west button not visible after container toggle');
-                console.log('Nav logs:', navLogs.join(' | '));
-                expect(false, 'north_west button should be visible').toBe(true);
-            }
-        } else {
-            console.log('FAIL: group_work button not visible');
-            expect(false, 'group_work button should be visible').toBe(true);
-        }
+        await page.screenshot({ path: 'e2e/screenshots/groupnav-afterup.png' });
+
+        // Should still be in a list view (not /main)
+        expect(urlAfter).toContain('/list/');
+        // Should contain ~/Data's objectId (the parent)
+        expect(urlAfter).toContain(dataDirOid);
+        console.log('PASS: navigated up to ~/Data container');
     });
 });

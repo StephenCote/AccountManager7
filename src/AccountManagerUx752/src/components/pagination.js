@@ -73,14 +73,12 @@ function newPaginationControl() {
     if (pages.containerId) {
       let id = containerCache[pages.containerId];
       if (!id) {
-        let gq = am7client.newQuery(pages.containerType);
-        gq.entity.request = ["id", "objectId", "name", "path"];
+        let gq = am7view.viewQuery(am7model.newInstance(pages.containerType));
         gq.field("objectId", pages.containerId);
         let g = await page.search(gq);
         if (g && g.results && g.results.length) {
           id = g.results[0].id;
           containerCache[pages.containerId] = id;
-          pages.container = g.results[0];
         }
       }
       if (id) {
@@ -267,11 +265,7 @@ function newPaginationControl() {
     /// Need to get the container to understand the subType, such as GROUP/DATA vs GROUP/BUCKET
     if (containerId && pages.container == null) {
       requesting = true;
-      let cq = am7client.newQuery(pages.containerType);
-      cq.entity.request = ["id", "objectId", "name", "type", "path"];
-      cq.field("objectId", pages.containerId);
-      page.search(cq).then(qr => {
-        let v = (qr && qr.results && qr.results.length) ? qr.results[0] : null;
+      page.openObject(pages.containerType, pages.containerId).then(v => {
         pages.container = v;
         requesting = false;
         if (v != null) {
