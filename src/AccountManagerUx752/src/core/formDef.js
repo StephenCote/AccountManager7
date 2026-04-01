@@ -1098,9 +1098,15 @@ import { am7model } from './model.js';
                     label: "Sequence",
                     command: undefined
                 }
+            },
+            loras: {
+                label: 'LORAs',
+                layout: 'full',
+                format: 'textlist',
+                field: {
+                    description: 'One LORA per line in format loraName:weight (e.g., myLora:0.8)'
+                }
             }
-
-
 
         }
     };
@@ -1210,6 +1216,14 @@ import { am7model } from './model.js';
             description: {
                 label: 'Prompt',
                 layout: 'full'
+            },
+            loras: {
+                label: 'LORAs',
+                layout: 'full',
+                format: 'textlist',
+                field: {
+                    description: 'One LORA per line: loraName:weight'
+                }
             }
         }
     };

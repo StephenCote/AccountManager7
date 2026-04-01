@@ -20,7 +20,7 @@
 			"priority": 10,
 			"lines": [
 				"Given this story, identify the {count} most visually notable scenes distributed across the narrative arc. Return a JSON array only, no prose:",
-				"[{\"index\":0,\"title\":\"...\",\"summary\":\"2-3 sentence blurb of who is doing what where\",\"setting\":\"environment/landscape description for illustration\",\"action\":\"what characters are doing\",\"mood\":\"atmosphere, lighting, time of day\",\"characters\":[{\"name\":\"...\",\"role\":\"brief role in scene\"}]}]",
+				"[{\"index\":0,\"title\":\"...\",\"blurb\":\"2-3 sentence description of who is doing what where\",\"setting\":\"environment/landscape description for illustration\",\"action\":\"what characters are doing\",\"mood\":\"atmosphere, lighting, time of day\",\"characters\":[{\"name\":\"...\",\"role\":\"brief role in scene\"}],\"diffusionPrompt\":\"detailed stable diffusion prompt for illustration\"}]",
 				"",
 				"STORY:",
 				"{text}"

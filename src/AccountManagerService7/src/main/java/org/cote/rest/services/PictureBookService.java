@@ -497,7 +497,12 @@ public class PictureBookService {
             logger.info("Chunk " + (ci + 1) + "/" + chunks.size() + " processed: " + sceneList.size() + " scenes total");
         }
         for (int i = 0; i < sceneList.size(); i++) {
-            sceneList.get(i).put("index", i);
+            Map<String, Object> scene = sceneList.get(i);
+            scene.put("index", i);
+            // Normalize: LLM may return "summary" instead of "blurb"
+            if (scene.get("blurb") == null && scene.get("summary") != null) {
+                scene.put("blurb", scene.get("summary"));
+            }
         }
         WebSocketService.chirpUser(user, new String[] {
             "bgActivity", "", ""
@@ -771,6 +776,12 @@ public class PictureBookService {
 
         String llmResponse = callLlm(user, chatConfig, "pictureBook.extract-scenes", vars, promptTemplateOverride);
         List<Map<String, Object>> scenes = parseLlmJsonArray(llmResponse);
+        // Normalize: LLM may return "summary" instead of "blurb"
+        for (Map<String, Object> scene : scenes) {
+            if (scene.get("blurb") == null && scene.get("summary") != null) {
+                scene.put("blurb", scene.get("summary"));
+            }
+        }
         WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
 
         return Response.status(200).entity(JSONUtil.exportObject(scenes,

@@ -72,6 +72,7 @@ let sdModelList = [];
 let sdModel = '';
 let sdRefinerModel = '';
 let sdDenoisingStrength = 0.65;
+let sdLoras = [];  // ['loraName:weight', ...]
 let lastUsedSeed = -1;   // persist seed from first generation
 let lastPrompt = '';      // last LLM-generated image prompt
 let sdModelsLoaded = false;
@@ -112,6 +113,7 @@ function resetState() {
     sdModel = '';
     sdRefinerModel = '';
     sdDenoisingStrength = 0.65;
+    sdLoras = [];
     sdModelList = [];
     sdModelsLoaded = false;
     lastUsedSeed = -1;
@@ -265,6 +267,7 @@ function buildSdConfig() {
     if (sdModel) cfg.model = sdModel;
     if (sdRefinerModel) cfg.refinerModel = sdRefinerModel;
     if (sdDenoisingStrength >= 0) cfg.denoisingStrength = sdDenoisingStrength;
+    if (sdLoras.length) cfg.loras = sdLoras;
     // After first image, reuse the same seed for consistency
     if (lastUsedSeed > 0) cfg.seed = lastUsedSeed;
     else if (sdSeed > 0) cfg.seed = sdSeed;
@@ -739,7 +742,17 @@ function renderSdConfig() {
             m('div', { class: 'text-xs font-medium text-gray-500' }, 'Last prompt used:'),
             m('div', { class: 'text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded p-2 mt-1 max-h-20 overflow-y-auto' },
                 lastPrompt)
-        ]) : null
+        ]) : null,
+        // LORAs
+        m('div', { class: 'mt-2' }, [
+            m('label', { class: 'field-label text-xs' }, 'LORAs (one per line, name:weight)'),
+            m('textarea', {
+                class: 'w-full text-field-full text-xs', rows: 2,
+                value: sdLoras.join('\n'),
+                placeholder: 'e.g. myLora:0.8',
+                oninput: function (e) { sdLoras = e.target.value.split('\n').map(function (s) { return s.trim(); }).filter(function (s) { return s.length; }); }
+            })
+        ])
     ]);
 }
 

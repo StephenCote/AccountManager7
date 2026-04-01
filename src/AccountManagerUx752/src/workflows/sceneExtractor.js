@@ -202,13 +202,11 @@ async function resolveImageUrl(objectId) {
     if (!objectId || typeof objectId !== 'string') return null;
     if (imageRecordCache[objectId]) return buildImageUrl(imageRecordCache[objectId]);
     try {
-        // Must use search with explicit groupPath request — virtual field not returned by GET
-        let q = am7client.newQuery('data.data');
-        q.field('objectId', objectId);
-        q.range(0, 1);
-        if (q.entity.request.indexOf('groupPath') < 0) q.entity.request.push('groupPath');
-        let qr = await am7client.search(q);
-        let rec = (qr && qr.results && qr.results.length > 0) ? qr.results[0] : null;
+        // Use GET (not search) — groupPath is a virtual field computed by PathProvider,
+        // not a DB column. Search query with groupPath in request causes 500.
+        let rec = await new Promise(function (resolve) {
+            am7client.get('data.data', objectId, function (v) { resolve(v || null); });
+        });
         if (rec && typeof rec.groupPath === 'string' && typeof rec.name === 'string') {
             imageRecordCache[objectId] = rec;
             return buildImageUrl(rec);

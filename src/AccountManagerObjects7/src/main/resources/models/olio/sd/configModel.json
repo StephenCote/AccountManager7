@@ -346,6 +346,12 @@
 			"name": "landscapeSetting",
 			"type": "string",
 			"description": "Transient landscape setting description passed from client for landscape reference generation."
+		},
+		{
+			"name": "loras",
+			"type": "list",
+			"baseType": "string",
+			"description": "List of LORA entries in format loraName:weight (e.g., myLora:0.8). Appended to prompts as comma-separated list."
 		}
 	]
 }
