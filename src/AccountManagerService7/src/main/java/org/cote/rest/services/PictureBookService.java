@@ -1170,6 +1170,9 @@ public class PictureBookService {
         double denoisingStrength = -1;
         String sdSampler = null;
         String sdScheduler = null;
+        String sdRefinerSampler = null;
+        String sdRefinerScheduler = null;
+        List<String> sdLoras = null;
 
         if (json != null && !json.trim().isEmpty()) {
             try {
@@ -1190,6 +1193,9 @@ public class PictureBookService {
                     Object dv = sdConf.get("denoisingStrength"); if (dv instanceof Number) denoisingStrength = ((Number) dv).doubleValue();
                     Object smpv = sdConf.get("sampler"); if (smpv instanceof String) sdSampler = (String) smpv;
                     Object schv = sdConf.get("scheduler"); if (schv instanceof String) sdScheduler = (String) schv;
+                    Object rsmpv = sdConf.get("refinerSampler"); if (rsmpv instanceof String) sdRefinerSampler = (String) rsmpv;
+                    Object rschv = sdConf.get("refinerScheduler"); if (rschv instanceof String) sdRefinerScheduler = (String) rschv;
+                    Object lorasV = sdConf.get("loras"); if (lorasV instanceof List) sdLoras = (List<String>) lorasV;
                 }
             } catch (Exception e) { logger.warn("Failed to parse generate request: " + e.getMessage()); }
         }
@@ -1222,6 +1228,9 @@ public class PictureBookService {
             if (denoisingStrength >= 0) sdConfigRec.set("denoisingStrength", denoisingStrength);
             if (sdSampler != null && !sdSampler.isEmpty()) sdConfigRec.set("sampler", sdSampler);
             if (sdScheduler != null && !sdScheduler.isEmpty()) sdConfigRec.set("scheduler", sdScheduler);
+            if (sdRefinerSampler != null && !sdRefinerSampler.isEmpty()) sdConfigRec.set("refinerSampler", sdRefinerSampler);
+            if (sdRefinerScheduler != null && !sdRefinerScheduler.isEmpty()) sdConfigRec.set("refinerScheduler", sdRefinerScheduler);
+            if (sdLoras != null && !sdLoras.isEmpty()) sdConfigRec.set("loras", sdLoras);
         } catch (Exception e) {
             logger.error("Failed to create sdConfig: " + e.getMessage());
             return Response.status(500).entity("{\"error\":\"SD config error\"}").build();

@@ -89,6 +89,33 @@ function getValues(ctx) {
         return null;
     }
 
+    // Referenced fields (e.g., attributes): getFull doesn't populate them.
+    // Re-query with explicit field request, cache in foreignData.
+    if (field.referenced && entity && entity.objectId) {
+        let cacheKey = '_ref_' + name;
+        if (ctx.foreignData && ctx.foreignData[cacheKey] !== undefined) {
+            return ctx.foreignData[cacheKey];
+        }
+        if (ctx.foreignData) {
+            ctx.foreignData[cacheKey] = null;
+            let entityType = entity[am7model.jsonModelKey];
+            let q = getClient().newQuery(entityType);
+            q.field('objectId', entity.objectId);
+            q.entity.request = ['id', 'objectId', name];
+            getPage().search(q).then(function(qr) {
+                if (qr && qr.results && qr.results.length && Array.isArray(qr.results[0][name])) {
+                    ctx.foreignData[cacheKey] = qr.results[0][name];
+                    // Also set on entity so prepareInstance sees it
+                    entity[name] = ctx.foreignData[cacheKey];
+                } else {
+                    ctx.foreignData[cacheKey] = [];
+                }
+                m.redraw();
+            }).catch(function() { ctx.foreignData[cacheKey] = []; m.redraw(); });
+        }
+        return null;
+    }
+
     if (ctx.inst && ctx.inst.api[name]) return ctx.inst.api[name]();
     if (field.parentProperty && entity[field.parentProperty]) {
         return entity[field.parentProperty][name];

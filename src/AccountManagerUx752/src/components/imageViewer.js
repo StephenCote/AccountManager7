@@ -236,7 +236,9 @@ function GridPreview() {
             }, [
                 // Preview pane — content-type-aware
                 sel ? m('div', { class: 'flex gap-3 p-2 border-b border-gray-200 dark:border-gray-700 shrink-0 overflow-hidden min-w-0' }, [
-                    m('div', { class: 'flex-shrink-0', style: 'max-width:50%' },
+                    m('div', { class: 'flex-shrink-0 cursor-pointer', style: 'max-width:50%',
+                        onclick: function() { if (opts.onFullView) opts.onFullView(); }
+                    },
                         renderContent(sel, { maxClass: 'max-w-full max-h-72' })
                     ),
                     m('div', { class: 'flex-1 min-w-0 overflow-hidden' }, [

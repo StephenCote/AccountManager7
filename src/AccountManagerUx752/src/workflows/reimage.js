@@ -379,6 +379,20 @@ async function reimage(entity, inst) {
                         }))
                 ]),
                 m('div', [
+                    m('label', { class: 'field-label' }, 'Refiner Sampler'),
+                    m('select', { class: 'text-field-compact', value: cinst.entity.refinerSampler || 'dpmpp_2m', onchange: function (e) { cinst.entity.refinerSampler = e.target.value; } },
+                        ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'].map(function (s) {
+                            return m('option', { value: s }, s);
+                        }))
+                ]),
+                m('div', [
+                    m('label', { class: 'field-label' }, 'Refiner Scheduler'),
+                    m('select', { class: 'text-field-compact', value: cinst.entity.refinerScheduler || 'karras', onchange: function (e) { cinst.entity.refinerScheduler = e.target.value; } },
+                        ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
+                            return m('option', { value: s }, s);
+                        }))
+                ]),
+                m('div', [
                     m('label', { class: 'field-label' }, 'Seed'),
                     m('div', { style: 'display:flex;gap:4px;' }, [
                         m('input', {

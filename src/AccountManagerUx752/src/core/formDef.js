@@ -1115,6 +1115,22 @@ import { am7model } from './model.js';
                     limit: ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal']
                 }
             },
+            refinerSampler: {
+                label: 'Refiner Sampler',
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm']
+                }
+            },
+            refinerScheduler: {
+                label: 'Refiner Scheduler',
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal']
+                }
+            },
             loras: {
                 label: 'LORAs',
                 layout: 'full',
@@ -1203,6 +1219,22 @@ import { am7model } from './model.js';
             },
             scheduler: {
                 label: 'Scheduler',
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal']
+                }
+            },
+            refinerSampler: {
+                label: 'Refiner Sampler',
+                layout: 'half',
+                field: {
+                    type: 'list',
+                    limit: ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm']
+                }
+            },
+            refinerScheduler: {
+                label: 'Refiner Scheduler',
                 layout: 'half',
                 field: {
                     type: 'list',

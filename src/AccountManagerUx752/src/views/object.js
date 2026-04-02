@@ -522,7 +522,24 @@ function newObjectPage() {
             updateChange,
             doFieldPicker, doFieldOpen, doFieldClear,
             modelField: function(fk, tfv, tf, inputName, defVal, isTable, entry, tableForm) {
-                return modelField(fk, tfv, tf);
+                if (!isTable) return modelField(fk, tfv, tf);
+                // Table inline edit: render using the entry's value, not the parent entity
+                let format = tfv.format || tf.format || am7view.getFormatForType(tf.type);
+                let fieldClass = 'w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100';
+                // Normalize enum values: server sends lowercase, form expects uppercase for selects
+                if (tf.type === 'enum' && typeof defVal === 'string') defVal = defVal.toUpperCase();
+                if (tfv.field && tfv.field.type === 'list' && tfv.field.limit) {
+                    // Dropdown select
+                    return m('select', { class: fieldClass, name: inputName, value: defVal || '',
+                        onchange: function(e) { entry[fk] = e.target.value; } },
+                        tfv.field.limit.map(function(v) { return m('option', { value: v, selected: v === defVal }, v); }));
+                }
+                if (format === 'textarea') {
+                    return m('textarea', { class: fieldClass, name: inputName, rows: 3, value: defVal || '',
+                        oninput: function(e) { entry[fk] = e.target.value; } });
+                }
+                return m('input', { class: fieldClass, type: 'text', name: inputName, value: defVal || '',
+                    oninput: function(e) { entry[fk] = e.target.value; } });
             }
         };
     }
@@ -565,9 +582,9 @@ function newObjectPage() {
         if (!items && mlEntity && mlEntity[name]) {
             items = mlEntity[name];
         }
-        // Participation-based fields (e.g., tags): getFull doesn't populate them,
+        // Participation-based and referenced fields (e.g., tags, attributes): getFull doesn't populate them,
         // so re-query with the field explicitly requested
-        if ((!items || !items.length) && field.participation && mlEntity && mlEntity.objectId) {
+        if ((!items || !items.length) && (field.participation || field.referenced) && mlEntity && mlEntity.objectId) {
             let cacheKey = '_part_' + name;
             if (foreignData[cacheKey] !== undefined) {
                 items = foreignData[cacheKey];

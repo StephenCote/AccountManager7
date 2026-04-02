@@ -74,6 +74,8 @@ let sdRefinerModel = '';
 let sdDenoisingStrength = 0.65;
 let sdSampler = 'dpmpp_2m';
 let sdScheduler = 'karras';
+let sdRefinerSampler = 'dpmpp_2m';
+let sdRefinerScheduler = 'karras';
 let sdLoras = [];  // ['loraName:weight', ...]
 let sdLoraList = [];  // available LORAs from server
 let sdLorasFetched = false;
@@ -119,6 +121,8 @@ function resetState() {
     sdDenoisingStrength = 0.65;
     sdSampler = 'dpmpp_2m';
     sdScheduler = 'karras';
+    sdRefinerSampler = 'dpmpp_2m';
+    sdRefinerScheduler = 'karras';
     sdLoras = [];
     sdLorasFetched = false;
     sdModelList = [];
@@ -270,7 +274,7 @@ function moveScene(idx, dir) {
 }
 
 function buildSdConfig() {
-    let cfg = { steps: sdSteps, refinerSteps: sdRefinerSteps, cfg: sdCfg, hires: sdHires, style: sdStyle, sampler: sdSampler, scheduler: sdScheduler };
+    let cfg = { steps: sdSteps, refinerSteps: sdRefinerSteps, cfg: sdCfg, hires: sdHires, style: sdStyle, sampler: sdSampler, scheduler: sdScheduler, refinerSampler: sdRefinerSampler, refinerScheduler: sdRefinerScheduler };
     if (sdModel) cfg.model = sdModel;
     if (sdRefinerModel) cfg.refinerModel = sdRefinerModel;
     if (sdDenoisingStrength >= 0) cfg.denoisingStrength = sdDenoisingStrength;
@@ -757,6 +761,22 @@ function renderSdConfig() {
                 m('label', { class: 'field-label text-xs' }, 'Scheduler'),
                 m('select', { class: 'text-field-compact text-xs', value: sdScheduler,
                     onchange: function (e) { sdScheduler = e.target.value; } },
+                    ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
+                        return m('option', { value: s }, s);
+                    }))
+            ]),
+            m('div', [
+                m('label', { class: 'field-label text-xs' }, 'Refiner Sampler'),
+                m('select', { class: 'text-field-compact text-xs', value: sdRefinerSampler,
+                    onchange: function (e) { sdRefinerSampler = e.target.value; } },
+                    ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'].map(function (s) {
+                        return m('option', { value: s }, s);
+                    }))
+            ]),
+            m('div', [
+                m('label', { class: 'field-label text-xs' }, 'Refiner Scheduler'),
+                m('select', { class: 'text-field-compact text-xs', value: sdRefinerScheduler,
+                    onchange: function (e) { sdRefinerScheduler = e.target.value; } },
                     ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
                         return m('option', { value: s }, s);
                     }))
