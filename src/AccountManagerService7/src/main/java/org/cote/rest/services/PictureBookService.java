@@ -1168,6 +1168,8 @@ public class PictureBookService {
         String sdModelName = null;
         String sdRefinerModelName = null;
         double denoisingStrength = -1;
+        String sdSampler = null;
+        String sdScheduler = null;
 
         if (json != null && !json.trim().isEmpty()) {
             try {
@@ -1186,6 +1188,8 @@ public class PictureBookService {
                     Object mv = sdConf.get("model"); if (mv instanceof String) sdModelName = (String) mv;
                     Object rmv = sdConf.get("refinerModel"); if (rmv instanceof String) sdRefinerModelName = (String) rmv;
                     Object dv = sdConf.get("denoisingStrength"); if (dv instanceof Number) denoisingStrength = ((Number) dv).doubleValue();
+                    Object smpv = sdConf.get("sampler"); if (smpv instanceof String) sdSampler = (String) smpv;
+                    Object schv = sdConf.get("scheduler"); if (schv instanceof String) sdScheduler = (String) schv;
                 }
             } catch (Exception e) { logger.warn("Failed to parse generate request: " + e.getMessage()); }
         }
@@ -1216,6 +1220,8 @@ public class PictureBookService {
             if (sdModelName != null && !sdModelName.isEmpty()) sdConfigRec.set("model", sdModelName);
             if (sdRefinerModelName != null && !sdRefinerModelName.isEmpty()) sdConfigRec.set("refinerModel", sdRefinerModelName);
             if (denoisingStrength >= 0) sdConfigRec.set("denoisingStrength", denoisingStrength);
+            if (sdSampler != null && !sdSampler.isEmpty()) sdConfigRec.set("sampler", sdSampler);
+            if (sdScheduler != null && !sdScheduler.isEmpty()) sdConfigRec.set("scheduler", sdScheduler);
         } catch (Exception e) {
             logger.error("Failed to create sdConfig: " + e.getMessage());
             return Response.status(500).entity("{\"error\":\"SD config error\"}").build();
@@ -1313,6 +1319,7 @@ public class PictureBookService {
                         continue;
                     }
                     try {
+                        // Portrait inherits user's SD config (model, sampler, scheduler) but forces hires=false
                         BaseRecord portCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
                         portCfg.set("steps", steps);
                         portCfg.set("cfg", cfg);
@@ -1320,6 +1327,9 @@ public class PictureBookService {
                         portCfg.set("seed", seed);
                         portCfg.set("description", portraitPrompt2);
                         portCfg.set("negativePrompt", NEG_PROMPT);
+                        if (sdModelName != null && !sdModelName.isEmpty()) portCfg.set("model", sdModelName);
+                        if (sdSampler != null && !sdSampler.isEmpty()) portCfg.set("sampler", sdSampler);
+                        if (sdScheduler != null && !sdScheduler.isEmpty()) portCfg.set("scheduler", sdScheduler);
                         String portName = "portrait_" + cname.replace(" ", "_") + "_" + System.currentTimeMillis();
                         List<BaseRecord> portImages = sdu.createImage(user, sceneGroupPath, portCfg, portName, 1, false, -1);
                         if (portImages == null || portImages.isEmpty()) { logger.warn("Portrait generation failed: " + cname); continue; }

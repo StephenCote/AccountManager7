@@ -216,6 +216,29 @@ public class SDUtil {
 		return loras;
 	}
 
+	/**
+	 * Append LORA entries from sdConfig to a prompt string.
+	 * Entries are formatted as &lt;lora:name:weight&gt; and comma-separated at the end.
+	 */
+	public static String appendLoras(String prompt, BaseRecord sdConfig) {
+		if (sdConfig == null || prompt == null) return prompt;
+		try {
+			List<String> loras = sdConfig.get("loras");
+			if (loras != null && !loras.isEmpty()) {
+				StringBuilder buff = new StringBuilder(prompt);
+				for (String lora : loras) {
+					if (lora == null || lora.isEmpty()) continue;
+					// Entry format is "name:weight" — convert to "<lora:name:weight>"
+					buff.append(", <lora:").append(lora).append(">");
+				}
+				return buff.toString();
+			}
+		} catch (Exception e) {
+			// loras field may not exist on the config
+		}
+		return prompt;
+	}
+
 	public int getSteps() {
 		return steps;
 	}
@@ -680,7 +703,7 @@ public class SDUtil {
 		}
 
 		SWTxt2Img s2i = new SWTxt2Img();
-		s2i.setPrompt(prompt);
+		s2i.setPrompt(appendLoras(prompt, sdConfig));
 		String negPrompt = sdConfig.get("negativePrompt");
 		if(negPrompt != null && negPrompt.length() > 0) {
 			s2i.setNegativePrompt(negPrompt);
@@ -877,7 +900,7 @@ public class SDUtil {
 		if(cfgCfg == null) cfgCfg = 7;
 
 		SWTxt2Img s2i = new SWTxt2Img();
-		s2i.setPrompt(prompt);
+		s2i.setPrompt(appendLoras(prompt, sdConfig));
 		s2i.setNegativePrompt(negPrompt);
 		s2i.setWidth(1024);  // Landscape aspect ratio
 		s2i.setHeight(576);
@@ -982,7 +1005,7 @@ public class SDUtil {
 
 		BaseRecord config = sdConfig != null ? sdConfig : randomSDConfig();
 		SWTxt2Img s2i = new SWTxt2Img();
-		s2i.setPrompt(prompt);
+		s2i.setPrompt(appendLoras(prompt, config));
 		s2i.setNegativePrompt(negPrompt);
 		s2i.setWidth(1024);
 		s2i.setHeight(576);
@@ -1210,7 +1233,7 @@ public class SDUtil {
 		if(cfgCfg == null) cfgCfg = 7;
 
 		SWTxt2Img s2i = new SWTxt2Img();
-		s2i.setPrompt(prompt);
+		s2i.setPrompt(appendLoras(prompt, sdConfig));
 		s2i.setNegativePrompt(negPrompt);
 		s2i.setWidth(768);
 		s2i.setHeight(768);
@@ -1378,7 +1401,7 @@ public class SDUtil {
 			String negPrompt = NarrativeUtil.getMannequinNegativePrompt();
 
 			SWTxt2Img s2i = new SWTxt2Img();
-			s2i.setPrompt(prompt);
+			s2i.setPrompt(appendLoras(prompt, sdConfig));
 			s2i.setNegativePrompt(negPrompt);
 			s2i.setWidth(512);
 			s2i.setHeight(768);

@@ -579,6 +579,42 @@ public class TestPictureBookFull extends BaseTest {
 		}
 	}
 
+	// ── LORA Injection ──────────────────────────────────────────────────
+
+	@Test
+	public void TestLoraAppendToPrompt() {
+		logger.info("Test: SDUtil.appendLoras appends LORA entries to prompt");
+		try {
+			BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			List<String> loras = new ArrayList<>();
+			loras.add("myLora:0.8");
+			loras.add("otherLora:0.5");
+			sdConfig.set("loras", loras);
+
+			String prompt = "a woman standing in a forest, detailed, masterpiece";
+			String result = SDUtil.appendLoras(prompt, sdConfig);
+
+			assertNotNull("Result should not be null", result);
+			assertTrue("Result should contain original prompt", result.startsWith(prompt));
+			assertTrue("Result should contain first LORA", result.contains("<lora:myLora:0.8>"));
+			assertTrue("Result should contain second LORA", result.contains("<lora:otherLora:0.5>"));
+			logger.info("LORA prompt: " + result);
+
+			// Empty loras should return original prompt unchanged
+			sdConfig.set("loras", new ArrayList<>());
+			String noLora = SDUtil.appendLoras(prompt, sdConfig);
+			assertEquals("Empty loras should return original", prompt, noLora);
+
+			// Null config should return original
+			String nullCfg = SDUtil.appendLoras(prompt, null);
+			assertEquals("Null config should return original", prompt, nullCfg);
+
+			logger.info("LORA injection test passed");
+		} catch (Exception e) {
+			fail("LORA test failed: " + e.getMessage());
+		}
+	}
+
 	// ── Prompt Template Loading ──────────────────────────────────────────
 
 	@Test

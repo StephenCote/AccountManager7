@@ -495,7 +495,13 @@ function getGridListItem(ctl, p) {
     });
     let attr = "[draggable]";
 
-    return m("div" + attr, props, [title, m("div", { class: gridCellCls }, icon), footer]);
+    return m("div" + attr, props, [title, m("div", {
+        class: gridCellCls + " cursor-pointer",
+        onclick: function (e) {
+            e.stopPropagation();
+            if (!ctl.pickerMode && !ctl.containerMode) ctl.open(p);
+        }
+    }, icon), footer]);
 }
 
 // ── 16. displayIndicators (Ux7 lines 449-473) ───────────────────────
