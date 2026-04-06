@@ -29,6 +29,7 @@ function newListControl() {
     let fullMode = false;
     let maxMode = false;
     let info = true;
+    let showBreadcrumb = true;
     let modType;
     let navigateByParent = false;
     let systemList = false;
@@ -285,13 +286,12 @@ function newListControl() {
         let idx = (pg.currentItem || 0) + delta;
         if (pr && idx >= pr.length) {
             if (pg.currentPage < pg.pageCount) {
-                pg.currentItem = 0;
-                pagination.next(true);
+                pagination.next(embeddedMode || pickerMode);
             }
         } else if (idx < 0) {
             if (pg.currentPage > 1) {
                 wentBack = true;
-                pagination.prev(true);
+                pagination.prev(embeddedMode || pickerMode);
             }
         } else {
             pg.currentItem = idx;
@@ -345,6 +345,7 @@ function newListControl() {
                 navContainerId = id;
                 pagination.pages().container = null;
                 pagination.new();
+
                 m.redraw();
             });
         } else if (am7model.isParent(modType) && navigateByParent) {
@@ -363,6 +364,7 @@ function newListControl() {
                             navigateByParent = false;
                             pagination.pages().container = null;
                             pagination.new();
+            
                             m.redraw();
                         });
                     } else {
@@ -371,6 +373,7 @@ function newListControl() {
                                 navContainerId = v2.objectId;
                                 pagination.pages().container = null;
                                 pagination.new();
+                
                                 m.redraw();
                             }
                         });
@@ -403,6 +406,7 @@ function newListControl() {
             if (byParent) navigateByParent = true;
             pagination.pages().container = null;
             pagination.new();
+            // pagination.new() already clears container cache
             m.redraw();
         } else {
             openItem(obj);
@@ -558,6 +562,12 @@ function newListControl() {
                     onclick: function () {
                         if (pickerMode) {
                             pickerNavigateTo(seg.objectId);
+                        } else if (containerMode) {
+                            navContainerId = seg.objectId;
+                            pagination.pages().container = null;
+                            pagination.new();
+            
+                            m.redraw();
                         } else {
                             groupPath = null;
                             m.route.set('/list/' + type + '/' + seg.objectId, { key: Date.now() });
@@ -580,11 +590,11 @@ function newListControl() {
 
     function toggleContainer() {
         if (containerMode && pagination.pages().containerId) {
-            // Leaving container mode — update route to current container so list stays here
             let currentId = navContainerId || pagination.pages().containerId;
             containerMode = false;
             pagination.new();
-            m.route.set('/list/' + baseListType + '/' + currentId, { key: Date.now() });
+            // pagination.new() already clears container cache
+            m.route.set('/list/' + baseListType + '/' + currentId + '?startRecord=0&recordCount=' + defaultRecordCount, { key: Date.now() });
         } else {
             containerMode = !containerMode;
             pagination.new();
@@ -603,6 +613,9 @@ function newListControl() {
         else gridMode = gridMode > 0 ? 0 : 1;
         gridFullView = false;
         gridSelectedIdx = 0;
+        let rc = (gridMode === 1) ? defaultIconRecordCount : defaultRecordCount;
+        pagination.new();
+        pagination.update(listType, listContainerId, navigateByParent, navFilter, 0, rc, systemList);
         m.redraw();
     }
 
@@ -654,20 +667,18 @@ function newListControl() {
         wentBack = false;
         switch (e.keyCode) {
             case 37: // Left
-                if (carousel || gridMode > 0) {
-                    if (e.shiftKey) { wentBack = true; pagination.prev(embeddedMode || pickerMode); }
-                    else moveCarousel(-1);
-                } else {
+                if (!carousel || e.shiftKey) {
                     wentBack = true;
                     pagination.prev(embeddedMode || pickerMode);
+                } else {
+                    moveCarousel(-1);
                 }
                 break;
             case 39: // Right
-                if (carousel || gridMode > 0) {
-                    if (e.shiftKey) pagination.next(embeddedMode || pickerMode);
-                    else moveCarousel(1);
-                } else {
+                if (!carousel || e.shiftKey) {
                     pagination.next(embeddedMode || pickerMode);
+                } else {
+                    moveCarousel(1);
                 }
                 break;
             case 27: // Escape
@@ -839,6 +850,7 @@ function newListControl() {
         if (!embeddedMode && (!containerMode || !type.match(/^auth\.group$/gi)) && modType && modType.group) {
             buttons.push(pagination.button('button' + (navigateByParent ? ' inactive' : (containerMode ? ' active' : '')), 'group_work', '', toggleContainer));
         }
+        buttons.push(pagination.button('button' + (showBreadcrumb ? ' active' : ''), 'arrow_drop_down_circle', '', function () { showBreadcrumb = !showBreadcrumb; m.redraw(); }));
         buttons.push(pagination.button('button' + (info ? ' active' : ''), 'info', '', toggleInfo));
         return buttons;
     }
@@ -925,15 +937,15 @@ function newListControl() {
         }
 
         return m('div', { ondragover: fdoh, ondrop: fdrh, class: 'list-results-container' }, [
-            m('div', { class: 'list-results' }, [
-                m('div', { class: 'result-nav-outer' }, [
+            m('div', { class: 'list-results flex flex-col h-full' }, [
+                m('div', { class: 'result-nav-outer shrink-0' }, [
                     m('div', { class: 'result-nav-inner' }, [
                         m('div', { class: 'result-nav tab-container' }, buttons),
                         gridMode === 0 ? m('nav', { class: 'result-nav' }, [pagination.pageButtons()]) : null
                     ])
                 ]),
-                renderGroupBreadcrumb(),
-                content
+                showBreadcrumb ? renderGroupBreadcrumb() : null,
+                m('div', { class: 'flex-1 min-h-0' }, content)
             ])
         ]);
     }
@@ -980,8 +992,15 @@ function newListControl() {
         if ((embeddedMode || pickerMode) && pg.counted && pg.currentPage > 0) return;
 
         let currentDefaultRecordCount = (gridMode === 1) ? defaultIconRecordCount : defaultRecordCount;
-        let startRecord = vnode.attrs.startRecord || m.route.param('startRecord');
-        let recordCount = vnode.attrs.recordCount || m.route.param('recordCount') || currentDefaultRecordCount;
+        let startRecord, recordCount;
+        // When container changed in-place (navContainerId was consumed), reset to page 1
+        if (!pg.counted || pg.containerId !== listContainerId) {
+            startRecord = 0;
+            recordCount = currentDefaultRecordCount;
+        } else {
+            startRecord = vnode.attrs.startRecord || m.route.param('startRecord');
+            recordCount = vnode.attrs.recordCount || m.route.param('recordCount') || currentDefaultRecordCount;
+        }
         pagination.update(listType, listContainerId, navigateByParent, listFilter, startRecord, recordCount, systemList);
     }
 
