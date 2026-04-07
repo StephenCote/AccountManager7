@@ -18,10 +18,12 @@ import { initTheme } from './components/topMenu.js';
 import { startPolling, stopPolling } from './components/notifications.js';
 import { contextMenuComponent } from './components/contextMenu.js';
 import { ObjectPicker } from './components/picker.js';
+import './components/breadcrumb.js'; // registers page.components.breadCrumb
 
 // --- Performance: guard components skip re-render when state unchanged ---
 
 let _navRoute = null;
+
 let _navHide = undefined;
 
 const NavGuard = {

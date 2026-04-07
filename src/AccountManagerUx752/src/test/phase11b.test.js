@@ -36,7 +36,7 @@ describe('List Control (Phase 11b)', () => {
         expect(typeof helpers.doFilter).toBe('function');
         expect(typeof helpers.navigateUp).toBe('function');
         expect(typeof helpers.navigateDown).toBe('function');
-        expect(typeof helpers.renderGroupBreadcrumb).toBe('function');
+        // renderGroupBreadcrumb removed — breadcrumb is now in navigation.js
         // Carousel helpers
         expect(typeof helpers.openItem).toBe('function');
         expect(typeof helpers.closeSelected).toBe('function');
@@ -109,14 +109,7 @@ describe('Filter and nav helpers', () => {
 });
 
 // --- Group breadcrumb ---
-describe('Group breadcrumb', () => {
-    it('renderGroupBreadcrumb returns null when no path loaded', () => {
-        let ctrl = newListControl();
-        let helpers = ctrl._testHelpers();
-        let result = helpers.renderGroupBreadcrumb();
-        expect(result).toBeNull();
-    });
-});
+// Breadcrumb is now a component in navigation.js (Ux7 pattern), not in list.js
 
 // --- Carousel functions ---
 describe('Carousel functions', () => {

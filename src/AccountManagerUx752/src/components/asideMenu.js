@@ -17,7 +17,16 @@ function navigateToCategory(cat) {
     let type = order[0];
     let mod = am7model.getModel(type);
     if (mod && (am7model.isGroup(mod) || mod.group)) {
-        let path = page.user ? page.user.homeDirectory.path + "/" + (cat.group || cat.name) : null;
+        // Support absolute paths (starting with /) or relative to home directory
+        let catPath = cat.group || cat.name;
+        let path;
+        if (catPath.match(/^\//)) {
+            // Absolute path — use as-is (e.g. /Olio/Universes)
+            path = catPath;
+        } else {
+            // Relative path — prepend user's home directory
+            path = page.user ? page.user.homeDirectory.path + "/" + catPath : null;
+        }
         if (path) {
             am7client.make("auth.group", "data", path, function (v) {
                 if (v) m.route.set("/list/" + type + "/" + v.objectId);
@@ -136,6 +145,24 @@ const asideMenu = {
                 )
             ] : null,
             favoritesSection(),
+            // Display toggles
+            m("div", { class: "p-4 border-t border-gray-200 dark:border-gray-700" }, [
+                m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, "Display")
+            ]),
+            m("ul", { class: "p-2" }, [
+                m("li", { class: "py-1" },
+                    m("button", {
+                        class: "w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 flex items-center gap-2"
+                            + (page.components.breadCrumb && page.components.breadCrumb.isVisible() ? ' bg-blue-50 dark:bg-blue-900' : ''),
+                        onclick: function () {
+                            if (page.components.breadCrumb) page.components.breadCrumb.toggleBreadcrumb();
+                        }
+                    }, [
+                        m("span", { class: "material-symbols-outlined material-icons-cm" }, "footprint"),
+                        m("span", {}, "Breadcrumb Bar")
+                    ])
+                )
+            ]),
             // System actions
             m("div", { class: "p-4 border-t border-gray-200 dark:border-gray-700" }, [
                 m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, "System")

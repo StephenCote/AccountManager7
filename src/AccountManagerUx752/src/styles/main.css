@@ -290,7 +290,7 @@
         @apply invisible pointer-events-none
     }
 
-    /* Breadcrumb */
+    /* Breadcrumb (ported from Ux7 basiTail.css) */
     nav.breadcrumb-bar {
         @apply w-full flex flex-wrap items-center justify-between py-3 bg-gray-100 text-gray-500 shadow-sm
         dark:bg-gray-900 dark:text-gray-400
@@ -302,13 +302,61 @@
         @apply rounded-md w-full
     }
     ol.breadcrumb-list {
-        @apply flex
+        @apply flex items-center
     }
     ol.breadcrumb-list li {
-        @apply mr-2 text-sm
+        @apply mr-2 text-sm flex items-center
     }
-    ol.breadcrumb-list li button {
-        @apply hover:text-blue-600 dark:hover:text-blue-300
+
+    /* Multi-button segments (Ux7 pattern) */
+    .multi-button {
+        @apply px-1 py-1 items-center font-medium text-gray-500 bg-white border-b-white border-b
+        dark:bg-black dark:text-gray-200 dark:border-b-black
+    }
+    .multi-button-disabled {
+        @apply px-1 py-1 items-center font-medium text-gray-500 bg-gray-100 border-b-gray-100 border-b
+        dark:bg-gray-900 dark:text-gray-400 dark:border-b-gray-900
+    }
+    .multi-button.rounded-r {
+        @apply rounded-r-md
+    }
+    .multi-button.rounded-l {
+        @apply rounded-l-md
+    }
+    .multi-button:hover {
+        @apply border-solid border-blue-500 shadow
+    }
+    .multi-button:focus {
+        @apply focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none
+        dark:focus:text-gray-200 dark:focus:bg-black dark:focus:border-blue-300
+    }
+
+    /* Context menu containers (Ux7 pattern) */
+    .context-menu-container-slim {
+        @apply relative p-0 m-0
+    }
+    .context-menu-container-disabled {
+        @apply bg-gray-300 dark:bg-gray-600
+    }
+    .context-menu-48 {
+        @apply origin-top-right absolute right-0 mt-2 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none
+        overflow-y-auto max-h-96 w-48
+        dark:bg-black dark:ring-white
+    }
+    .context-menu-48 button.context-menu-item {
+        @apply text-right block w-full pr-2 py-2 text-sm
+        text-gray-500 hover:text-gray-800 hover:bg-blue-100
+        dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700
+    }
+    .context-menu-48.transition {
+        @apply bg-white ease-in-out transition-all duration-300 z-30
+        dark:bg-black
+    }
+    .context-menu-48.transition-full {
+        @apply opacity-100
+    }
+    .context-menu-48.transition-0 {
+        @apply opacity-0 hidden
     }
 
     /* Content layout - see plain CSS below @layer for these */

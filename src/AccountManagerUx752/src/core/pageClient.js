@@ -537,14 +537,18 @@ async function searchFirst(model, groupId, name, objectId) {
     return undefined;
 }
 
-function listByType(type) {
+function listByType(type, objectId, bParent) {
     let modType = am7model.getModel(type);
     if (!modType) {
         console.warn('listByType: unknown type ' + type);
         m.route.set('/main');
         return;
     }
-    if (modType.group) {
+    if (objectId) {
+        // Direct navigation to a specific container (Ux7 pattern)
+        let viewPath = '/' + (bParent ? 'p' : '') + 'list/' + type + '/' + objectId;
+        m.route.set(viewPath);
+    } else if (modType.group) {
         // Group-based types need a container; use the org root
         let orgPath = am7client.currentOrganization;
         if (orgPath) {

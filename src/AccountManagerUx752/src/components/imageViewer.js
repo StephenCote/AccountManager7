@@ -114,6 +114,10 @@ function FullCanvasViewer() {
             if (next >= 0 && next < images.length) {
                 if (opts.onIndexChange) opts.onIndexChange(next);
                 m.redraw();
+            } else if (next >= images.length && opts.onNextPage) {
+                opts.onNextPage();
+            } else if (next < 0 && opts.onPrevPage) {
+                opts.onPrevPage();
             }
         }
 
@@ -123,10 +127,10 @@ function FullCanvasViewer() {
             tabindex: 0,
             oncreate: function(vn) { vn.dom.focus(); },
             onkeydown: function(e) {
-                if (e.key === 'Escape') { if (opts.onClose) opts.onClose(); m.redraw(); e.preventDefault(); }
-                else if (e.key === 'ArrowLeft') { nav(-1); e.preventDefault(); }
-                else if (e.key === 'ArrowRight') { nav(1); e.preventDefault(); }
-                else if (e.key === 'Delete' && opts.onDelete) { opts.onDelete(img, idx); e.preventDefault(); }
+                if (e.key === 'Escape') { if (opts.onClose) opts.onClose(); m.redraw(); e.preventDefault(); e.stopPropagation(); }
+                else if (e.key === 'ArrowLeft') { nav(-1); e.preventDefault(); e.stopPropagation(); }
+                else if (e.key === 'ArrowRight') { nav(1); e.preventDefault(); e.stopPropagation(); }
+                else if (e.key === 'Delete' && opts.onDelete) { opts.onDelete(img, idx); e.preventDefault(); e.stopPropagation(); }
             }
         }, [
             renderContent(img, { fullSize: true, grow: grow, maxClass: 'max-w-full max-h-full' }),
@@ -141,11 +145,11 @@ function FullCanvasViewer() {
             }, img.name || ''),
             m('div', { style: 'position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:0.75rem;padding:2px 8px;border-radius:4px;pointer-events:none',
                 class: 'text-gray-400 dark:text-gray-500 bg-white/80 dark:bg-black/80'
-            }, (idx + 1) + ' / ' + images.length),
-            idx > 0 ? m('button', { class: 'iv-ctl', style: 'position:absolute;top:50%;left:12px;transform:translateY(-50%)',
+            }, (idx + 1) + ' / ' + images.length + (opts.pageInfo ? '  (page ' + opts.pageInfo.current + '/' + opts.pageInfo.total + ')' : '')),
+            (idx > 0 || opts.onPrevPage) ? m('button', { class: 'iv-ctl', style: 'position:absolute;top:50%;left:12px;transform:translateY(-50%)',
                 onclick: function() { nav(-1); }
             }, m('span', { class: 'material-symbols-outlined text-3xl' }, 'arrow_back')) : null,
-            idx < images.length - 1 ? m('button', { class: 'iv-ctl', style: 'position:absolute;top:50%;right:12px;transform:translateY(-50%)',
+            (idx < images.length - 1 || opts.onNextPage) ? m('button', { class: 'iv-ctl', style: 'position:absolute;top:50%;right:12px;transform:translateY(-50%)',
                 onclick: function() { nav(1); }
             }, m('span', { class: 'material-symbols-outlined text-3xl' }, 'arrow_forward')) : null
         ]));
@@ -220,17 +224,24 @@ function GridPreview() {
 
             function nav(delta) {
                 let next = idx + delta;
-                if (next >= 0 && next < images.length && opts.onIndexChange) opts.onIndexChange(next);
+                if (next >= 0 && next < images.length) {
+                    if (opts.onIndexChange) opts.onIndexChange(next);
+                } else if (next >= images.length && opts.onNextPage) {
+                    opts.onNextPage();
+                } else if (next < 0 && opts.onPrevPage) {
+                    opts.onPrevPage();
+                }
             }
 
             return m('div', {
-                class: 'flex flex-col h-full overflow-hidden outline-none',
+                class: 'grid-preview-container flex flex-col h-full overflow-hidden outline-none',
                 tabindex: 0,
                 oncreate: function(vn) { gpRef = vn.dom; vn.dom.focus(); },
                 onremove: function() { gpRef = null; },
                 onkeydown: function(e) {
-                    if (e.key === 'ArrowLeft') { nav(-1); e.preventDefault(); }
-                    else if (e.key === 'ArrowRight') { nav(1); e.preventDefault(); }
+                    if (e.key === 'ArrowLeft') { nav(-1); e.preventDefault(); e.stopPropagation(); }
+                    else if (e.key === 'ArrowRight') { nav(1); e.preventDefault(); e.stopPropagation(); }
+                    else if (e.key === 'Escape') { e.stopPropagation(); }
                     else if (e.key === 'Delete' && sel && opts.onDelete) { opts.onDelete(sel, idx); e.preventDefault(); }
                 }
             }, [
@@ -279,7 +290,10 @@ function GridPreview() {
                         attrs.length > 0 ? m('div', { class: 'flex flex-wrap gap-1 mb-1' }, attrs.map(function(a) {
                             return m('span', { class: 'px-2 py-0.5 rounded-full text-xs bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300' }, String(a.name || '') + ': ' + String(a.value || ''));
                         })) : null,
-                        m('div', { class: 'text-xs text-gray-400 mt-1' }, '← → to navigate, click image for full view')
+                        m('div', { class: 'text-xs text-gray-400 mt-1' }, [
+                            '← → to navigate, click image for full view',
+                            opts.pageInfo ? m('span', { class: 'ml-2' }, '(page ' + opts.pageInfo.current + '/' + opts.pageInfo.total + ')') : null
+                        ])
                     ])
                 ]) : m('div', { class: 'p-4 text-gray-400 text-sm italic' }, 'No images'),
                 // Thumbnail grid — scrollable, lazy-loaded

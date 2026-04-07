@@ -7,6 +7,7 @@ import { am7decorator } from '../components/decorator.js';
 import { newPaginationControl } from '../components/pagination.js';
 import { panel } from '../components/panel.js';
 import { FullCanvasViewer, GridPreview, renderContent, injectCSS as ivCSS } from '../components/imageViewer.js';
+// breadcrumb is now a component in navigation.js (Ux7 pattern), not inline
 
 // ---------------------------------------------------------------------------
 //  newListControl  --  factory that returns a list-page controller + view
@@ -29,7 +30,7 @@ function newListControl() {
     let fullMode = false;
     let maxMode = false;
     let info = true;
-    let showBreadcrumb = true;
+    // showBreadcrumb removed — breadcrumb is now in navigation.js (Ux7 pattern)
     let modType;
     let navigateByParent = false;
     let systemList = false;
@@ -52,8 +53,7 @@ function newListControl() {
     let pickerFavoritesContainerId = null;
     let pickerActiveSource = 'home';
 
-    // Breadcrumb state
-    let groupPath = null;
+    // Breadcrumb is in navigation.js (Ux7 pattern)
 
     // Tagging batch state
     let taggingInProgress = false;
@@ -216,6 +216,15 @@ function newListControl() {
     // ------------------------------------------------------------------
 
     function openItem(o) {
+        if (!o) return;
+        // Groups: navigate into them (not gallery view)
+        let objType = o[am7model.jsonModelKey] || baseListType;
+        let objModel = am7model.getModel(objType);
+        if (objModel && (am7model.isGroup(objModel) || objType === 'auth.group')) {
+            navigateDown(o);
+            return;
+        }
+        // Data items: open in gallery/full view
         let pg = pagination.pages();
         let pr = pg.pageResults[pg.currentPage];
         if (!pr) return;
@@ -329,6 +338,23 @@ function newListControl() {
         }
     }
 
+    // In-place nav helper for picker/embedded/container modes
+    function navInPlace(objectId, resetParent) {
+        navContainerId = objectId;
+        if (resetParent) navigateByParent = false;
+        pagination.pages().container = null;
+        pagination.new();
+        // breadcrumb updates via navigation component
+        m.redraw();
+    }
+
+    // Route-based nav for normal mode (Ux7 pattern)
+    function navByRoute(objectId, bParent) {
+        let ltype = containerMode ? baseListType : (modType ? modType.type || listType : listType);
+        // breadcrumb clears via navigation component
+        m.route.set('/' + (bParent ? 'plist' : 'list') + '/' + ltype + '/' + objectId, { key: Date.now() });
+    }
+
     function navigateUp() {
         let pg = pagination.pages();
         if (!pg.container) return;
@@ -342,11 +368,8 @@ function newListControl() {
             if (!parentPath) return;
             page.navigateToPath(type, modType, parentPath).then(function (id) {
                 if (!id) return;
-                navContainerId = id;
-                pagination.pages().container = null;
-                pagination.new();
-
-                m.redraw();
+                if (embeddedMode || pickerMode) navInPlace(id);
+                else navByRoute(id);
             });
         } else if (am7model.isParent(modType) && navigateByParent) {
             let objectId = m.route.param('objectId');
@@ -360,21 +383,14 @@ function newListControl() {
                     if (v.parentId == 0 && am7model.isGroup(modType)) {
                         page.navigateToPath(useType, modType, v.groupPath).then(function (id) {
                             if (!id) return;
-                            navContainerId = id;
-                            navigateByParent = false;
-                            pagination.pages().container = null;
-                            pagination.new();
-            
-                            m.redraw();
+                            if (embeddedMode || pickerMode) navInPlace(id, true);
+                            else navByRoute(id);
                         });
                     } else {
                         am7client.get(useType, v.parentId, function (v2) {
                             if (v2 != null) {
-                                navContainerId = v2.objectId;
-                                pagination.pages().container = null;
-                                pagination.new();
-                
-                                m.redraw();
+                                if (embeddedMode || pickerMode) navInPlace(v2.objectId);
+                                else navByRoute(v2.objectId, true);
                             }
                         });
                     }
@@ -402,12 +418,15 @@ function newListControl() {
         let isGroup = objModel && (am7model.isGroup(objModel) || objType === 'auth.group');
 
         if (isGroup || containerMode) {
-            navContainerId = obj.objectId;
-            if (byParent) navigateByParent = true;
-            pagination.pages().container = null;
-            pagination.new();
-            // pagination.new() already clears container cache
-            m.redraw();
+            if (embeddedMode || pickerMode || containerMode) {
+                navContainerId = obj.objectId;
+                if (byParent) navigateByParent = true;
+                pagination.pages().container = null;
+                pagination.new();
+                m.redraw();
+            } else {
+                navByRoute(obj.objectId, byParent);
+            }
         } else {
             openItem(obj);
         }
@@ -495,88 +514,8 @@ function newListControl() {
         page.components.dialog.memberCloud(baseListType, containerId);
     }
 
-    // ------------------------------------------------------------------
-    //  Breadcrumb (kept from Ux75, batched redraws)
-    // ------------------------------------------------------------------
-
-    function loadGroupPath(containerId) {
-        if (!containerId) { groupPath = null; return; }
-        groupPath = null;
-
-        let cq = am7client.newQuery('auth.group');
-        cq.entity.request = ['id', 'objectId', 'name', 'path'];
-        cq.field('objectId', containerId);
-        page.search(cq).then(function (qr) {
-            if (!qr || !qr.results || !qr.results.length) return;
-            let container = qr.results[0];
-            buildBreadcrumbFromPath(container, containerId);
-        });
-    }
-
-    function buildBreadcrumbFromPath(container, containerId) {
-        let fullPath = container.path;
-        if (!fullPath) return;
-
-        let segments = fullPath.split('/').filter(function (s) { return s.length > 0; });
-        groupPath = segments.map(function (seg, i) {
-            let segPath = '/' + segments.slice(0, i + 1).join('/');
-            return { name: seg, path: segPath, objectId: null };
-        });
-        groupPath[groupPath.length - 1].objectId = containerId;
-        groupPath[groupPath.length - 1].name = container.name || segments[segments.length - 1];
-
-        // Batch segment resolution — single m.redraw() after all resolve
-        // Uses search queries instead of am7client.find to avoid PathProvider errors
-        let pending = groupPath.length - 1;
-        if (pending <= 0) { m.redraw(); return; }
-        for (let i = 0; i < groupPath.length - 1; i++) {
-            (function (idx, spath) {
-                let sq = am7client.newQuery('auth.group');
-                sq.entity.request = ['id', 'objectId', 'name', 'path'];
-                let pf = sq.field('path', spath);
-                pf.comparator = 'equals';
-                sq.field('organizationId', page.user.organizationId);
-                page.search(sq).then(function (qr) {
-                    if (qr && qr.results && qr.results.length && groupPath && groupPath[idx]) {
-                        groupPath[idx].objectId = qr.results[0].objectId;
-                    }
-                    pending--;
-                    if (pending <= 0) m.redraw();
-                });
-            })(i, groupPath[i].path);
-        }
-    }
-
-    function renderGroupBreadcrumb() {
-        if (!groupPath || !groupPath.length) return null;
-        let type = baseListType || listType;
-        return m('div', { class: 'breadcrumb-bar flex items-center gap-1 px-2 py-1 text-sm text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800' },
-            groupPath.map(function (seg, i) {
-                let isLast = (i === groupPath.length - 1);
-                let sep = i > 0 ? m('span', { class: 'mx-0.5' }, '/') : null;
-                if (isLast || !seg.objectId) {
-                    return [sep, m('span', { class: isLast ? 'font-medium text-gray-700 dark:text-gray-300' : '' }, seg.name)];
-                }
-                return [sep, m('button', {
-                    class: 'hover:text-blue-600 dark:hover:text-blue-400 hover:underline',
-                    onclick: function () {
-                        if (pickerMode) {
-                            pickerNavigateTo(seg.objectId);
-                        } else if (containerMode) {
-                            navContainerId = seg.objectId;
-                            pagination.pages().container = null;
-                            pagination.new();
-            
-                            m.redraw();
-                        } else {
-                            groupPath = null;
-                            m.route.set('/list/' + type + '/' + seg.objectId, { key: Date.now() });
-                        }
-                    }
-                }, seg.name)];
-            })
-        );
-    }
+    // Breadcrumb is now a component in navigation.js (Ux7 pattern)
+    // No inline breadcrumb code needed in list.js
 
     // ------------------------------------------------------------------
     //  Toggles
@@ -663,6 +602,9 @@ function newListControl() {
 
     function navListKey(e) {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
+        // Don't handle keys when FullCanvasViewer or GridPreview has focus
+        // (they handle their own arrow/escape keys via onNextPage/onPrevPage)
+        if (gridFullView || (gridMode > 0 && document.activeElement && document.activeElement.closest && document.activeElement.closest('.grid-preview-container'))) return;
 
         wentBack = false;
         switch (e.keyCode) {
@@ -850,7 +792,6 @@ function newListControl() {
         if (!embeddedMode && (!containerMode || !type.match(/^auth\.group$/gi)) && modType && modType.group) {
             buttons.push(pagination.button('button' + (navigateByParent ? ' inactive' : (containerMode ? ' active' : '')), 'group_work', '', toggleContainer));
         }
-        buttons.push(pagination.button('button' + (showBreadcrumb ? ' active' : ''), 'arrow_drop_down_circle', '', function () { showBreadcrumb = !showBreadcrumb; m.redraw(); }));
         buttons.push(pagination.button('button' + (info ? ' active' : ''), 'info', '', toggleInfo));
         return buttons;
     }
@@ -898,25 +839,57 @@ function newListControl() {
             let results = getCurrentResults() || [];
             if (gridSelectedIdx >= results.length) gridSelectedIdx = Math.max(0, results.length - 1);
 
+            let pg = pagination.pages();
+            let hasNextPage = pg.currentPage < pg.pageCount;
+            let hasPrevPage = pg.currentPage > 1;
+            let pageInfo = pg.pageCount > 1 ? { current: pg.currentPage, total: pg.pageCount } : null;
+
+            // After a page change, reset gridSelectedIdx appropriately
+            if (wentBack && results.length) {
+                gridSelectedIdx = results.length - 1;
+                wentBack = false;
+            } else if (gridSelectedIdx < 0 || gridSelectedIdx >= results.length) {
+                gridSelectedIdx = 0;
+            }
+
+            function gridNextPage() {
+                if (hasNextPage) {
+                    gridSelectedIdx = 0;
+                    pagination.next(embeddedMode || pickerMode);
+                }
+            }
+            function gridPrevPage() {
+                if (hasPrevPage) {
+                    wentBack = true;
+                    pagination.prev(embeddedMode || pickerMode);
+                }
+            }
+
             if (gridFullView) {
                 return m(FullCanvasViewer, {
                     images: results,
                     index: gridSelectedIdx,
+                    pageInfo: pageInfo,
                     onClose: function() { gridFullView = false; },
-                    onIndexChange: function(i) { gridSelectedIdx = i; }
+                    onIndexChange: function(i) { gridSelectedIdx = i; },
+                    onNextPage: hasNextPage ? gridNextPage : null,
+                    onPrevPage: hasPrevPage ? gridPrevPage : null
                 });
             }
 
             content = m(GridPreview, {
                 images: results,
                 index: gridSelectedIdx,
+                pageInfo: pageInfo,
                 onIndexChange: function(i) { gridSelectedIdx = i; },
                 onFullView: function() { gridFullView = true; },
+                onNextPage: hasNextPage ? gridNextPage : null,
+                onPrevPage: hasPrevPage ? gridPrevPage : null,
                 onDelete: function(img) {
                     page.components.dialog.confirm('Delete ' + img.name + '?', async function() {
                         await page.deleteObject(listType, img.objectId);
-                        let pg = pagination.pages();
-                        let r = pg.pageResults[pg.currentPage];
+                        let pgd = pagination.pages();
+                        let r = pgd.pageResults[pgd.currentPage];
                         if (r) {
                             let ix = r.findIndex(function(x) { return x.objectId === img.objectId; });
                             if (ix > -1) r.splice(ix, 1);
@@ -941,10 +914,10 @@ function newListControl() {
                 m('div', { class: 'result-nav-outer shrink-0' }, [
                     m('div', { class: 'result-nav-inner' }, [
                         m('div', { class: 'result-nav tab-container' }, buttons),
-                        gridMode === 0 ? m('nav', { class: 'result-nav' }, [pagination.pageButtons()]) : null
+                        m('nav', { class: 'result-nav' }, [pagination.pageButtons()])
                     ])
                 ]),
-                showBreadcrumb ? renderGroupBreadcrumb() : null,
+                // breadcrumb rendered by navigation.js (Ux7 pattern)
                 m('div', { class: 'flex-1 min-h-0' }, content)
             ])
         ]);
@@ -1023,7 +996,7 @@ function newListControl() {
             pickerCancel = vnode.attrs.pickerCancel || null;
             pagination.setEmbeddedMode(embeddedMode || pickerMode);
             update(vnode);
-            if (listContainerId) loadGroupPath(listContainerId);
+            // breadcrumb loads via navigation component
             let mod = am7model.getModel(listType);
             if (mod && panel && panel.trackRecent) {
                 panel.trackRecent(mod.label || listType, m.route.get(), mod.icon || 'list');
@@ -1031,6 +1004,8 @@ function newListControl() {
         },
         onupdate: function (vnode) {
             update(vnode);
+            // Reload breadcrumb when container changes (fixes stale path)
+            // breadcrumb reloads via navigation component on route change
         },
         onremove: function () {
             if (page.components.pdf) page.components.pdf.clear();
@@ -1038,7 +1013,7 @@ function newListControl() {
             carousel = false;
             gridFullView = false;
             gridMode = 0;
-            groupPath = null;
+            // breadcrumb clears via navigation component
             document.documentElement.removeEventListener('keydown', navListKey);
             pagination.stop();
         },
@@ -1075,12 +1050,12 @@ function newListControl() {
     function pickerNavigateTo(containerId) {
         pickerContainerId = containerId;
         listContainerId = containerId;
-        groupPath = null;
+        // breadcrumb clears via navigation component
         pagination.new();
         let fakeVnode = { attrs: { type: pickerType, objectId: containerId } };
         initParams(fakeVnode);
         update(fakeVnode);
-        loadGroupPath(listContainerId);
+        // breadcrumb loads via navigation component
     }
 
     listPage.openForPicker = function (opts) {
@@ -1099,7 +1074,7 @@ function newListControl() {
         fullMode = false;
         carousel = false;
         navFilter = null;
-        groupPath = null;
+        // breadcrumb clears via navigation component
 
         pagination.new();
         pagination.setEmbeddedMode(true);
@@ -1121,7 +1096,7 @@ function newListControl() {
         pickerFavoritesContainerId = null;
         pickerActiveSource = 'home';
         carousel = false;
-        groupPath = null;
+        // breadcrumb clears via navigation component
         navFilter = null;
         pagination.setEmbeddedMode(false);
         pagination.stop();
@@ -1137,7 +1112,7 @@ function newListControl() {
             doFilter, navigateUp, navigateDown, openItem, closeSelected,
             toggleCarousel, moveCarousel, moveCarouselTo, toggleContainer,
             toggleInfo, listSystemType, toggleGrid, getListController,
-            renderGroupBreadcrumb, getCurrentResults
+            getCurrentResults
         };
     };
 

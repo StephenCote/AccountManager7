@@ -230,7 +230,12 @@ async function clickPanelItem(item, type) {
     let path = am7view.pathForType(type);
     if (item.prototype) {
         type = item.type;
-        path = page.user.homeDirectory.path + "/" + item.group;
+        // Support absolute paths (starting with /) or relative to home directory
+        if (item.group && item.group.match(/^\//)) {
+            path = item.group;
+        } else {
+            path = page.user.homeDirectory.path + "/" + item.group;
+        }
     }
     let base = item;
     let baseType = type;
