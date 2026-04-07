@@ -269,9 +269,9 @@ function newPaginationControl() {
       new Promise(function(resolve) {
         am7client.get(pages.containerType, pages.containerId, function(v) { resolve(v); });
       }).then(v => {
-        pages.container = v;
         requesting = false;
         if (v != null) {
+          pages.container = v;
           containerCache[pages.containerId] = v.id;
           if (pages.containerType.match(/^auth\.group$/gi)) {
             pages.containerSubType = pages.container.type;
@@ -280,7 +280,13 @@ function newPaginationControl() {
           doCount(type, bSystem, startRecord, recordCount);
         }
         else {
+          // Mark as failed so we don't retry infinitely
+          pages.container = false;
+          pages.counted = true;
+          pages.totalCount = 0;
+          pages.pageCount = 0;
           console.error("Error loading container: " + pages.containerType + " / " + pages.containerId);
+          m.redraw();
         }
       });
     }

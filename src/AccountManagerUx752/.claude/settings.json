@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Projects/GitHub/AccountManager7/src/AccountManagerUx7/client/**)"
+    ]
+  }
+}
