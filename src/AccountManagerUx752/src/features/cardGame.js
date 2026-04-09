@@ -18,6 +18,7 @@ async function loadCardGame() {
     if (loading) return null;
     loading = true;
     try {
+        await import('../styles/cardGame-v2.css');
         let mod = await import('../cardGame/CardGameApp.js');
         cardGameApp = mod.cardGameApp || mod.default;
         loading = false;

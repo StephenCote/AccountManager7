@@ -41,6 +41,7 @@ import { exportPipeline } from './designer/exportPipeline.js';
 import { iconPicker } from './designer/iconPicker.js';
 import { layoutConfig } from './designer/layoutConfig.js';
 import { layoutRenderer } from './designer/layoutRenderer.js';
+import { testMode, TestModeUI, runTestSuite, TEST_CARDS, testState, init as initTestMode } from './test/testMode.js';
 
 function getPage() { return am7model._page; }
 
@@ -61,7 +62,8 @@ const NS = {
     Engine: flatEngine,
     AI: { LlmBase: llmBase, Director: director, Narrator: narrator, ChatManager: chatManager, Voice: voice },
     UI: { DeckList: deckListUI, Builder: builder, DeckView: deckView, GameView: gameView, PhaseUI: phaseUI, ThreatUI: threatUI, ChatUI: chatUI, GameOverUI: gameOverUI },
-    Designer: { DesignerCanvas: designerCanvas, ExportDialog: exportDialog, ExportPipeline: exportPipeline, IconPicker: iconPicker, LayoutConfig: layoutConfig, LayoutRenderer: layoutRenderer }
+    Designer: { DesignerCanvas: designerCanvas, ExportDialog: exportDialog, ExportPipeline: exportPipeline, IconPicker: iconPicker, LayoutConfig: layoutConfig, LayoutRenderer: layoutRenderer },
+    TestMode: testMode
 };
 
 let ctx = {
@@ -172,6 +174,7 @@ if (phaseUI.init) phaseUI.init(NS);
 if (threatUI.init) threatUI.init(NS);
 if (chatUI.init) chatUI.init(NS);
 if (gameOverUI.init) gameOverUI.init(NS);
+initTestMode(NS);
 
 // Wire late-bound references for encounters module
 if (encounters.wireEncounterRefs) {
@@ -186,6 +189,16 @@ if (overlays._setCharactersRef) overlays._setCharactersRef(characters);
 if (overlays._setDeckStorageFn) overlays._setDeckStorageFn(() => storage);
 if (cardFace._setDesignerRef) cardFace._setDesignerRef(designerCanvas);
 if (cardFace._setCtxFn) cardFace._setCtxFn(() => ctx);
+
+// Expose ctx and helpers for E2E testing
+if (typeof window !== 'undefined') {
+    window.__cardGameCtx = ctx;
+    window.__cardGameNS = NS;
+    window.__cardGameSetScreen = function(screen) {
+        ctx.screen = screen;
+        m.redraw();
+    };
+}
 
 // ── Main Mithril Component ──────────────────────────────────────
 const cardGameComponent = {
@@ -242,7 +255,7 @@ const cardGameComponent = {
                     ] : null,
                     ctx.screen === "deckView" && deckView.DeckView ? m(deckView.DeckView, { ctx, NS }) : null,
                     ctx.screen === "game" && gameView.GameView ? m(gameView.GameView, { ctx, NS }) : null,
-                    ctx.screen === "test" ? m("div", { class: "p-4 text-gray-500 dark:text-gray-400" }, "Test mode") : null,
+                    ctx.screen === "test" ? m(TestModeUI) : null,
                     ctx.screen === "themeEditor" && themes.ThemeEditorUI ? m(themes.ThemeEditorUI, { ctx, NS }) : null,
                     ctx.screen === "designer" && designerCanvas.DesignerView ? m(designerCanvas.DesignerView, { ctx, NS }) : null
                 ])
@@ -272,8 +285,41 @@ const cardGameApp = {
     get createGameState() { return gameState.createGameState; },
     gameState: () => ctx.gameState,
     get rollD20() { return combat.rollD20; },
+    get rollInitiative() { return combat.rollInitiative; },
+    get rollAttack() { return combat.rollAttack; },
+    get rollDefense() { return combat.rollDefense; },
+    get getCombatOutcome() { return combat.getCombatOutcome; },
+    get calculateDamage() { return combat.calculateDamage; },
+    get applyDamage() { return combat.applyDamage; },
     get resolveCombat() { return combat.resolveCombat; },
-    get parseEffect() { return effects.parseEffect; }
+    get checkGameOver() { return combat.checkGameOver; },
+    get currentCombatResult() { return gameState.state?.currentCombatResult; },
+    get parseEffect() { return effects.parseEffect; },
+    get applyParsedEffects() { return effects.applyParsedEffects; },
+    get isEffectParseable() { return effects.isEffectParseable; },
+    get advancePhase() { return gameState.advancePhase; },
+    get placeCard() { return actions.placeCard; },
+    get advanceResolution() { return gameState.advanceResolution; },
+    // Rendering
+    get CardBack() { return cardFace.CardBack; },
+    get CardFlipContainer() { return cardFace.CardFlipContainer; },
+    get NeedBar() { return cardComponents.NeedBar; },
+    get StatBlock() { return cardComponents.StatBlock; },
+    // Storage
+    get campaignStorage() { return storage.campaignStorage; },
+    get themeStorage() { return storage.themeStorage; },
+    // Characters
+    get mapStats() { return characters.mapStats; },
+    get getPortraitUrl() { return characters.getPortraitUrl; },
+    // Art pipeline
+    get queueDeckArt() { return artPipeline.queueDeckArt; },
+    get generateCardArt() { return artPipeline.generateCardArt; },
+    get buildCardPrompt() { return artPipeline.buildCardPrompt; },
+    get artQueue() { return artPipeline.state?.artQueue; },
+    // Test
+    TEST_CARDS,
+    testState,
+    runTestSuite
 };
 
 export { cardGameApp, cardGameComponent, ctx, NS };

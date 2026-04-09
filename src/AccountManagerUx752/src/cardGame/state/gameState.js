@@ -671,6 +671,7 @@ function enterEquipPhase() {
 function advancePhase() {
     if (!_gameState) return;
     const GAME_PHASES = C().GAME_PHASES;
+    console.log("[CardGame v2] advancePhase from:", _gameState.phase, "round:", _gameState.round);
 
     if (_gameState.phase === GAME_PHASES.INITIATIVE) {
         if (_gameState.beginningThreats && _gameState.beginningThreats.length > 0) enterThreatResponsePhase("beginning");
@@ -993,7 +994,12 @@ function startNextRound() {
     const anteCard = E().anteCard;
 
     let winner = checkGameOver(_gameState);
-    if (winner) { _gameState.winner = winner; _gameState.phase = "GAME_OVER"; m.redraw(); return; }
+    if (winner) {
+        console.log("[CardGame v2] GAME OVER — Winner:", winner, "Round:", _gameState.round);
+        _gameState.winner = winner; _gameState.phase = "GAME_OVER"; m.redraw(); return;
+    }
+    console.log("[CardGame v2] Starting round", _gameState.round + 1,
+        "| Player HP:", _gameState.player?.hp, "| Opponent HP:", _gameState.opponent?.hp);
 
     tickStatusEffects(_gameState.player);
     tickStatusEffects(_gameState.opponent);
@@ -1145,6 +1151,8 @@ function advanceResolution() {
             }
 
             currentCombatResult = resolveCombat(attacker, defender, pos.stack);
+            console.log("[CardGame v2] Combat:", attacker.name || attacker.character?.name, "vs", defender.name || defender.character?.name,
+                "| Outcome:", currentCombatResult?.outcome?.label, "| Damage:", currentCombatResult?.damageResult?.finalDamage || 0);
             resolutionDiceFaces.attack = currentCombatResult.attackRoll.raw;
             resolutionDiceFaces.defense = currentCombatResult.defenseRoll.raw;
             resolutionPhase = "result";
@@ -1401,7 +1409,10 @@ function advanceResolution() {
                     } else if (tradeRoll >= tradeDC && eligibleCards.length > 0) {
                         let stolen = eligibleCards[Math.floor(Math.random() * eligibleCards.length)]; target.hand = target.hand.filter(c => c !== stolen); owner.hand.push(stolen);
                         pos.tradeResult = { accepted: true, roll: rawRoll, total: tradeRoll, dc: tradeDC, received: [stolen] };
-                    } else { pos.tradeResult = { accepted: false, roll: rawRoll, total: tradeRoll, dc: tradeDC }; }
+                    } else {
+                        let reason = eligibleCards.length === 0 ? "No tradeable cards" : "Trade failed";
+                        pos.tradeResult = { accepted: false, roll: rawRoll, total: tradeRoll, dc: tradeDC, reason };
+                    }
                 }
 
                 if (card.name === "Steal") {
@@ -1464,7 +1475,10 @@ function advanceResolution() {
                         { type: "apparel", subtype: "armor", name: "Aegis Plate", def: 4, hpBonus: 5, slot: "Body", rarity: "EPIC", special: "Fortified: -1 incoming damage" }
                     ];
                     if (rawRoll === 20) {
-                        let item = uniqueItems[Math.floor(Math.random() * uniqueItems.length)]; owner.hand.push(item);
+                        let item = uniqueItems[Math.floor(Math.random() * uniqueItems.length)];
+                        item.flavor = (item.flavor || "") + " [Crafted by " + owner.name + "]";
+                        owner.hand.push(item);
+                        console.log("[CardGame v2] Craft critical! Created unique:", item.name, "Roll:", craftRoll);
                         pos.craftResult = { success: true, critical: true, roll: rawRoll, total: craftRoll, dc: craftDC, created: item };
                     } else if (craftRoll >= craftDC + 5) {
                         let item = rareItems[Math.floor(Math.random() * rareItems.length)]; owner.hand.push(item);
