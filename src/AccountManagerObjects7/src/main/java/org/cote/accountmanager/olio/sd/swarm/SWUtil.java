@@ -29,7 +29,7 @@ public class SWUtil {
 		// Use provided config or create a random one if null
 		BaseRecord cfg = sdConfig != null ? sdConfig : org.cote.accountmanager.olio.sd.SDUtil.randomSDConfig();
 
-		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, cfg, setting, pictureType, bodyType, verb));
+		s2i.setPrompt(org.cote.accountmanager.olio.sd.SDUtil.appendLoras(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, cfg, setting, pictureType, bodyType, verb), cfg));
 		s2i.setNegativePrompt(NarrativeUtil.getSDNegativePrompt(person));
 		s2i.setSeed(Math.abs(rand.nextInt()));
 
@@ -77,7 +77,7 @@ public class SWUtil {
 		SWTxt2Img s2i = new SWTxt2Img();
 		BaseRecord cfg = sdConfig != null ? sdConfig : org.cote.accountmanager.olio.sd.SDUtil.randomSDConfig();
 
-		s2i.setPrompt(prompt);
+		s2i.setPrompt(org.cote.accountmanager.olio.sd.SDUtil.appendLoras(prompt, cfg));
 		s2i.setNegativePrompt(negativePrompt);
 		s2i.setSeed(Math.abs(rand.nextInt()));
 

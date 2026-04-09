@@ -681,7 +681,7 @@ function renderSdConfig() {
         m('div', { class: 'grid grid-cols-3 gap-2' }, [
             m('div', [
                 m('label', { class: 'field-label text-xs' }, 'Steps: ' + sdSteps),
-                m('input', { class: 'w-full', type: 'range', min: 1, max: 50,
+                m('input', { class: 'w-full', type: 'range', min: 1, max: 150,
                     value: sdSteps, oninput: function (e) { sdSteps = parseInt(e.target.value) || 20; } })
             ]),
             m('div', [
@@ -707,7 +707,7 @@ function renderSdConfig() {
             ]),
             m('div', [
                 m('label', { class: 'field-label text-xs' }, 'Refiner Steps: ' + sdRefinerSteps),
-                m('input', { class: 'w-full', type: 'range', min: 0, max: 50,
+                m('input', { class: 'w-full', type: 'range', min: 0, max: 150,
                     value: sdRefinerSteps, oninput: function (e) { sdRefinerSteps = parseInt(e.target.value) || 0; } })
             ]),
             m('div', { class: 'flex items-end pb-1' }, [
@@ -981,7 +981,7 @@ function renderStep4() {
                             m('div', [
                                 m('label', { class: 'field-label text-xs' }, 'Steps'),
                                 m('input', {
-                                    class: 'text-field-compact text-xs', type: 'number', min: 1, max: 50,
+                                    class: 'text-field-compact text-xs', type: 'number', min: 1, max: 150,
                                     value: ovr.steps || '',
                                     placeholder: String(sdSteps),
                                     oninput: function (e) {

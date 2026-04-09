@@ -41,11 +41,11 @@ async function reimageApparel(entity, inst) {
             m('div', { class: 'grid grid-cols-2 gap-3' }, [
                 m('div', [
                     m('label', { class: 'field-label' }, 'Steps: ' + cinst.api.steps()),
-                    m('input', { class: 'w-full', type: 'range', min: 1, max: 100, value: cinst.api.steps(), oninput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
+                    m('input', { class: 'w-full', type: 'range', min: 1, max: 150, value: cinst.api.steps(), oninput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Refiner Steps: ' + cinst.api.refinerSteps()),
-                    m('input', { class: 'w-full', type: 'range', min: 0, max: 100, value: cinst.api.refinerSteps(), oninput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
+                    m('input', { class: 'w-full', type: 'range', min: 0, max: 150, value: cinst.api.refinerSteps(), oninput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'CFG: ' + (cinst.api.cfg ? cinst.api.cfg() : 5)),

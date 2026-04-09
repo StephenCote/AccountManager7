@@ -4,7 +4,7 @@
  *
  * Usage:
  *   import { SdConfigPanel } from '../components/SdConfigPanel.js';
- *   m(SdConfigPanel, { config: sdConfig, models: sdModels, onChange: saveConfig })
+ *   m(SdConfigPanel, { config: sdConfig, models: sdModels, loras: loraList, onChange: saveConfig })
  */
 import m from 'mithril';
 
@@ -148,6 +148,49 @@ const SdConfigPanel = {
                 type: "text", class: inputClass(), value: config.imageSetting || "",
                 oninput: function(e) { config.imageSetting = e.target.value; if (onChange) onChange(); }
             })));
+        }
+
+        // LoRA section — available when loras list is provided
+        let loraList = vnode.attrs.loras || [];
+        if (loraList.length || (config.loras && config.loras.length)) {
+            let currentLoras = config.loras || [];
+            if (!Array.isArray(currentLoras)) currentLoras = [];
+            let loraMap = {};
+            currentLoras.forEach(function(entry) {
+                let parts = String(entry).split(":");
+                loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
+            });
+            function syncLoras() {
+                config.loras = Object.keys(loraMap).map(function(k) { return k + ":" + loraMap[k]; });
+                if (onChange) onChange();
+            }
+            fields.push(m("div", { class: "mt-2" }, [
+                m("div", { class: "text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1" }, "LORAs"),
+                m("div", { class: "space-y-1" }, [
+                    loraList.map(function(name) {
+                        let selected = loraMap.hasOwnProperty(name);
+                        return m("div", { key: name, class: "flex items-center gap-2 text-xs" }, [
+                            m("input", { type: "checkbox", checked: selected, onchange: function() {
+                                if (selected) delete loraMap[name]; else loraMap[name] = 0.8;
+                                syncLoras(); m.redraw();
+                            } }),
+                            m("span", { class: "truncate", style: "max-width:180px", title: name }, name),
+                            selected ? m("input", { type: "number", class: inputClass() + " w-16", min: 0, max: 2, step: 0.05,
+                                value: loraMap[name], oninput: function(e) { loraMap[name] = parseFloat(e.target.value) || 0.8; syncLoras(); }
+                            }) : null
+                        ]);
+                    }),
+                    m("input", { type: "text", class: inputClass() + " mt-1 w-full", placeholder: "loraName:weight + Enter",
+                        onkeydown: function(e) {
+                            if (e.key === "Enter" && e.target.value.trim()) {
+                                let parts = e.target.value.trim().split(":");
+                                loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
+                                e.target.value = ""; syncLoras(); m.redraw();
+                            }
+                        }
+                    })
+                ])
+            ]));
         }
 
         return m("div", { class: "space-y-0" }, fields);
