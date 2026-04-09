@@ -114,6 +114,9 @@ function FullCanvasViewer() {
             if (next >= 0 && next < images.length) {
                 if (opts.onIndexChange) opts.onIndexChange(next);
                 m.redraw();
+            } else if (next >= images.length && opts.onLoadMore) {
+                // Infinite scroll: request more items
+                opts.onLoadMore();
             } else if (next >= images.length && opts.onNextPage) {
                 opts.onNextPage();
             } else if (next < 0 && opts.onPrevPage) {
@@ -149,7 +152,7 @@ function FullCanvasViewer() {
             (idx > 0 || opts.onPrevPage) ? m('button', { class: 'iv-ctl', style: 'position:absolute;top:50%;left:12px;transform:translateY(-50%)',
                 onclick: function() { nav(-1); }
             }, m('span', { class: 'material-symbols-outlined text-3xl' }, 'arrow_back')) : null,
-            (idx < images.length - 1 || opts.onNextPage) ? m('button', { class: 'iv-ctl', style: 'position:absolute;top:50%;right:12px;transform:translateY(-50%)',
+            (idx < images.length - 1 || opts.onNextPage || opts.onLoadMore) ? m('button', { class: 'iv-ctl', style: 'position:absolute;top:50%;right:12px;transform:translateY(-50%)',
                 onclick: function() { nav(1); }
             }, m('span', { class: 'material-symbols-outlined text-3xl' }, 'arrow_forward')) : null
         ]));
@@ -198,6 +201,9 @@ function FullCanvasViewer() {
 function GridPreview() {
     let gpRef = null;
     let _lastDetailOid = null;
+    let _scrollRef = null;
+    let _currentOpts = null;  // Always points to latest opts for scroll handler
+    let _liveIdx = 0;         // Mutable index for synchronous key navigation
 
     function triggerDetailLoad(vnode) {
         let opts = vnode.attrs;
@@ -210,24 +216,52 @@ function GridPreview() {
         }
     }
 
+    function checkScrollNearEnd() {
+        if (!_scrollRef || !_currentOpts || !_currentOpts.onLoadMore) return;
+        let el = _scrollRef;
+        let nearEnd = (el.scrollHeight <= el.clientHeight) ||
+            (el.scrollTop + el.clientHeight) > (el.scrollHeight - 80);
+        if (nearEnd) _currentOpts.onLoadMore();
+    }
+
+    // Scroll the thumbnail at index into view within the grid container
+    function scrollIndexIntoView(idx) {
+        if (!_scrollRef) return;
+        let thumbs = _scrollRef.querySelectorAll('[data-grid-thumb]');
+        if (thumbs[idx]) thumbs[idx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
     return {
         oncreate: triggerDetailLoad,
-        onupdate: triggerDetailLoad,
+        onupdate: function(vnode) {
+            triggerDetailLoad(vnode);
+            // Auto-scroll selected thumbnail into view when index changes
+            let idx = vnode.attrs.index || 0;
+            scrollIndexIntoView(idx);
+        },
         view: function(vnode) {
             let opts = vnode.attrs;
+            _currentOpts = opts;  // Keep ref current for scroll handler
             let images = opts.images || [];
             let idx = opts.index || 0;
+            _liveIdx = idx;  // Sync mutable ref with render-time value
             let sel = images[idx];
 
             let tags = sel && opts.tagsFor ? opts.tagsFor(sel) : [];
             let attrs = sel && opts.attrsFor ? opts.attrsFor(sel) : [];
 
             function nav(delta) {
-                let next = idx + delta;
+                // Use _liveIdx instead of closure idx for rapid key navigation
+                let next = _liveIdx + delta;
                 if (next >= 0 && next < images.length) {
+                    _liveIdx = next;
                     if (opts.onIndexChange) opts.onIndexChange(next);
-                } else if (next >= images.length && opts.onNextPage) {
-                    opts.onNextPage();
+                } else if (next >= images.length) {
+                    if (opts.onLoadMore) {
+                        opts.onLoadMore();
+                    } else if (opts.onNextPage) {
+                        opts.onNextPage();
+                    }
                 } else if (next < 0 && opts.onPrevPage) {
                     opts.onPrevPage();
                 }
@@ -237,7 +271,7 @@ function GridPreview() {
                 class: 'grid-preview-container flex flex-col h-full overflow-hidden outline-none',
                 tabindex: 0,
                 oncreate: function(vn) { gpRef = vn.dom; vn.dom.focus(); },
-                onremove: function() { gpRef = null; },
+                onremove: function() { gpRef = null; _scrollRef = null; _currentOpts = null; },
                 onkeydown: function(e) {
                     if (e.key === 'ArrowLeft') { nav(-1); e.preventDefault(); e.stopPropagation(); }
                     else if (e.key === 'ArrowRight') { nav(1); e.preventDefault(); e.stopPropagation(); }
@@ -296,8 +330,22 @@ function GridPreview() {
                         ])
                     ])
                 ]) : m('div', { class: 'p-4 text-gray-400 text-sm italic' }, 'No images'),
-                // Thumbnail grid — scrollable, lazy-loaded
-                m('div', { class: 'flex-1 overflow-y-auto p-1' },
+                // Thumbnail grid — scrollable, infinite scroll via onLoadMore
+                m('div', {
+                    class: 'flex-1 overflow-y-auto p-1',
+                    oncreate: function(vn) {
+                        _scrollRef = vn.dom;
+                        vn.dom.addEventListener('scroll', checkScrollNearEnd);
+                        setTimeout(checkScrollNearEnd, 200);
+                    },
+                    onupdate: function() {
+                        // Auto-load more if all items fit (no scrollbar needed)
+                        if (_scrollRef && _currentOpts && _currentOpts.onLoadMore &&
+                            _scrollRef.scrollHeight <= _scrollRef.clientHeight) {
+                            setTimeout(checkScrollNearEnd, 200);
+                        }
+                    }
+                }, [
                     m('div', { class: 'grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1' },
                         images.map(function(img, i) {
                             let ct = img.contentType || '';
@@ -316,12 +364,15 @@ function GridPreview() {
                             }
                             return m('div', {
                                 key: 'iv-' + (img.objectId || i),
+                                'data-grid-thumb': true,
                                 class: 'cursor-pointer rounded overflow-hidden border-2 ' + (i === idx ? 'border-blue-500' : 'border-transparent hover:border-gray-300'),
                                 onclick: function() { if (opts.onIndexChange) opts.onIndexChange(i); }
                             }, tile);
                         })
-                    )
-                )
+                    ),
+                    opts.loading ? m('div', { class: 'text-center py-2 text-gray-400 text-sm' }, 'Loading more...') : null,
+                    opts.hasMore === false && images.length > 0 ? m('div', { class: 'text-center py-1 text-gray-300 text-xs' }, images.length + ' items') : null
+                ])
             ]);
         }
     };

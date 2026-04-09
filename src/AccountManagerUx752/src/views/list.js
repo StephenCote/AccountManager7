@@ -554,6 +554,7 @@ function newListControl() {
         gridSelectedIdx = 0;
         let rc = (gridMode === 1) ? defaultIconRecordCount : defaultRecordCount;
         pagination.new();
+        pagination.setInfiniteScroll(gridMode > 0);
         pagination.update(listType, listContainerId, navigateByParent, navFilter, 0, rc, systemList);
         m.redraw();
     }
@@ -588,6 +589,7 @@ function newListControl() {
                 listContainerId = pickerContainerId;
             }
             pagination.new();
+            pagination.setInfiniteScroll(gridMode > 0);
             let rc = (gridMode === 1) ? defaultIconRecordCount : defaultRecordCount;
             pagination.update(listType, listContainerId, navigateByParent, navFilter, 0, rc, systemList);
             m.redraw();
@@ -602,9 +604,9 @@ function newListControl() {
 
     function navListKey(e) {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
-        // Don't handle keys when FullCanvasViewer or GridPreview has focus
-        // (they handle their own arrow/escape keys via onNextPage/onPrevPage)
-        if (gridFullView || (gridMode > 0 && document.activeElement && document.activeElement.closest && document.activeElement.closest('.grid-preview-container'))) return;
+        // In grid mode, GridPreview/FullCanvasViewer handle their own arrow keys
+        // via infinite scroll — don't let page-level handler interfere
+        if (gridMode > 0 || gridFullView) return;
 
         wentBack = false;
         switch (e.keyCode) {
@@ -834,67 +836,50 @@ function newListControl() {
         let ctl = getListController();
         let content;
         if (gridMode > 0) {
-            // Gallery-style grid + preview using GridPreview
+            // Gallery-style grid + preview — infinite scroll mode
             ivCSS();
-            let results = getCurrentResults() || [];
-            if (gridSelectedIdx >= results.length) gridSelectedIdx = Math.max(0, results.length - 1);
-
+            let results = pagination.allResults();
             let pg = pagination.pages();
-            let hasNextPage = pg.currentPage < pg.pageCount;
-            let hasPrevPage = pg.currentPage > 1;
-            let pageInfo = pg.pageCount > 1 ? { current: pg.currentPage, total: pg.pageCount } : null;
+            let hasMore = pagination.hasMorePages();
 
-            // After a page change, reset gridSelectedIdx appropriately
-            if (wentBack && results.length) {
-                gridSelectedIdx = results.length - 1;
-                wentBack = false;
-            } else if (gridSelectedIdx < 0 || gridSelectedIdx >= results.length) {
-                gridSelectedIdx = 0;
-            }
+            if (gridSelectedIdx >= results.length) gridSelectedIdx = Math.max(0, results.length - 1);
+            if (gridSelectedIdx < 0) gridSelectedIdx = 0;
 
-            function gridNextPage() {
-                if (hasNextPage) {
-                    gridSelectedIdx = 0;
-                    pagination.next(embeddedMode || pickerMode);
-                }
-            }
-            function gridPrevPage() {
-                if (hasPrevPage) {
-                    wentBack = true;
-                    pagination.prev(embeddedMode || pickerMode);
-                }
+            function gridLoadMore() {
+                pagination.loadNextPage();
             }
 
             if (gridFullView) {
                 return m(FullCanvasViewer, {
                     images: results,
                     index: gridSelectedIdx,
-                    pageInfo: pageInfo,
                     onClose: function() { gridFullView = false; },
                     onIndexChange: function(i) { gridSelectedIdx = i; },
-                    onNextPage: hasNextPage ? gridNextPage : null,
-                    onPrevPage: hasPrevPage ? gridPrevPage : null
+                    onLoadMore: hasMore ? gridLoadMore : null
                 });
             }
 
             content = m(GridPreview, {
                 images: results,
                 index: gridSelectedIdx,
-                pageInfo: pageInfo,
                 onIndexChange: function(i) { gridSelectedIdx = i; },
                 onFullView: function() { gridFullView = true; },
-                onNextPage: hasNextPage ? gridNextPage : null,
-                onPrevPage: hasPrevPage ? gridPrevPage : null,
+                onLoadMore: hasMore ? gridLoadMore : null,
+                loading: pg.currentPage > 0 && !pg.pageResults[pg.currentPage],
+                hasMore: hasMore,
                 onDelete: function(img) {
                     page.components.dialog.confirm('Delete ' + img.name + '?', async function() {
                         await page.deleteObject(listType, img.objectId);
-                        let pgd = pagination.pages();
-                        let r = pgd.pageResults[pgd.currentPage];
-                        if (r) {
-                            let ix = r.findIndex(function(x) { return x.objectId === img.objectId; });
-                            if (ix > -1) r.splice(ix, 1);
+                        // Remove from the page results cache
+                        for (let p = 1; p <= pg.currentPage; p++) {
+                            let r = pg.pageResults[p];
+                            if (r) {
+                                let ix = r.findIndex(function(x) { return x.objectId === img.objectId; });
+                                if (ix > -1) { r.splice(ix, 1); break; }
+                            }
                         }
-                        if (gridSelectedIdx >= (r ? r.length : 0)) gridSelectedIdx = Math.max(0, (r ? r.length : 0) - 1);
+                        let allLen = pagination.allResults().length;
+                        if (gridSelectedIdx >= allLen) gridSelectedIdx = Math.max(0, allLen - 1);
                         m.redraw();
                     });
                 }
@@ -914,7 +899,7 @@ function newListControl() {
                 m('div', { class: 'result-nav-outer shrink-0' }, [
                     m('div', { class: 'result-nav-inner' }, [
                         m('div', { class: 'result-nav tab-container' }, buttons),
-                        m('nav', { class: 'result-nav' }, [pagination.pageButtons()])
+                        gridMode > 0 ? null : m('nav', { class: 'result-nav' }, [pagination.pageButtons()])
                     ])
                 ]),
                 // breadcrumb rendered by navigation.js (Ux7 pattern)
@@ -964,12 +949,17 @@ function newListControl() {
         let pg = pagination.pages();
         if ((embeddedMode || pickerMode) && pg.counted && pg.currentPage > 0) return;
 
+        // In infinite scroll mode, don't re-trigger pagination.update once initial load is done
+        // (otherwise doSearchPage recalculates page from URL startRecord and resets currentPage)
+        if (pagination.isInfiniteScroll() && pg.counted && pg.currentPage > 0 && pg.containerId === listContainerId) return;
+
         let currentDefaultRecordCount = (gridMode === 1) ? defaultIconRecordCount : defaultRecordCount;
         let startRecord, recordCount;
         // When container changed in-place (navContainerId was consumed), reset to page 1
         if (!pg.counted || pg.containerId !== listContainerId) {
             startRecord = 0;
             recordCount = currentDefaultRecordCount;
+            pagination.setInfiniteScroll(gridMode > 0);
         } else {
             startRecord = vnode.attrs.startRecord || m.route.param('startRecord');
             recordCount = vnode.attrs.recordCount || m.route.param('recordCount') || currentDefaultRecordCount;
@@ -1082,7 +1072,7 @@ function newListControl() {
         let fakeVnode = { attrs: { type: opts.type, objectId: opts.containerId } };
         initParams(fakeVnode);
         update(fakeVnode);
-        if (listContainerId) loadGroupPath(listContainerId);
+        // breadcrumb loads via navigation component
     };
 
     listPage.closePickerMode = function () {

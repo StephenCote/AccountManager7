@@ -7,6 +7,7 @@ import { page } from '../core/pageClient.js';
 function newPaginationControl() {
   let requesting = false;
   let embeddedMode = false;
+  let infiniteScroll = false;
   let containerCache = {};   // objectId → numeric id cache
 
   let entity = {
@@ -142,6 +143,27 @@ function newPaginationControl() {
       }
       else listRouter(getPageUrl(pages.currentPage - 1), pages.currentPage - 1);
     }
+  }
+
+  // Infinite scroll: load next page without discarding previous pages
+  function loadNextPage() {
+    if (requesting) return false;
+    if (pages.currentPage >= pages.pageCount) return false;
+    updatePage(pages.currentPage + 1);
+    return true;
+  }
+
+  // Infinite scroll: concatenate all loaded pages from 1..currentPage
+  function allResults() {
+    let out = [];
+    for (let i = 1; i <= pages.currentPage; i++) {
+      if (pages.pageResults[i]) out = out.concat(pages.pageResults[i]);
+    }
+    return out;
+  }
+
+  function hasMorePages() {
+    return pages.currentPage < pages.pageCount;
   }
 
   function updatePage(iPage) {
@@ -464,6 +486,11 @@ function newPaginationControl() {
     button: paginationButton,
     stop: stopPaginating,
     setEmbeddedMode: function (bEmbed) { embeddedMode = bEmbed; },
+    setInfiniteScroll: function (b) { infiniteScroll = b; },
+    isInfiniteScroll: function () { return infiniteScroll; },
+    allResults: allResults,
+    loadNextPage: loadNextPage,
+    hasMorePages: hasMorePages,
     setColumnProvider: function (fn) { _columnProvider = fn; }
   };
 

@@ -714,7 +714,15 @@ const page = {
     productionMode: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get("productionMode") === "true"),
     formDef: am7model,
     imageGallery: async function(images, charInst) {
-        let galleryImages = images || [];
+        let prefetchImages = images || [];
+        let galleryImages = [];
+        let galleryGroupId = null;
+        let totalCount = 0;
+        let pageSize = 40;
+        let currentPage = 0;
+        let loading = false;
+        let allLoaded = false;
+
         if (charInst && charInst.entity) {
             let entity = charInst.entity;
             let profile = entity.profile;
@@ -730,35 +738,66 @@ const page = {
                     if (entity.profile) entity.profile.portrait = portrait;
                 }
             }
-            // Resolve gallery group: portrait's group, or fall back to ~/Gallery
-            let galleryGroupId = portrait ? portrait.groupId : null;
+            galleryGroupId = portrait ? portrait.groupId : null;
             if (!galleryGroupId) {
                 try {
                     let galleryDir = await makePath("auth.group", "DATA", "~/Gallery");
                     if (galleryDir) galleryGroupId = galleryDir.id;
                 } catch(e) { /* ignore */ }
             }
-            if (galleryGroupId) {
-                let q = am7client.newQuery('data.data');
-                q.field('groupId', galleryGroupId);
-                q.range(0, 200);
-                q.sort('modifiedDate');
-                q.order('descending');
-                q.cache(false);
-                let qr = await am7client.search(q);
-                if (qr && qr.results) {
-                    let existingIds = new Set(qr.results.map(function(r) { return r.id; }));
-                    let newImgs = galleryImages.filter(function(img) { return !existingIds.has(img.id); });
-                    galleryImages = newImgs.concat(qr.results.filter(function(r) { return r.contentType && r.contentType.match(/^image\//i); }));
-                }
-            }
         }
+
+        // Count total items first
+        if (galleryGroupId) {
+            let cq = am7client.newQuery('data.data');
+            cq.field('groupId', galleryGroupId);
+            cq.range(0, 0);
+            cq.cache(false);
+            let cnt = await pageCount(cq);
+            totalCount = cnt || 0;
+        }
+
+        // Load a page of gallery images
+        async function loadPage() {
+            if (loading || allLoaded || !galleryGroupId) return;
+            loading = true;
+            let start = currentPage * pageSize;
+            let q = am7client.newQuery('data.data');
+            q.field('groupId', galleryGroupId);
+            q.range(start, pageSize);
+            q.sort('modifiedDate');
+            q.order('descending');
+            q.cache(false);
+            let qr = await pageSearch(q);
+            loading = false;
+            if (qr && qr.results && qr.results.length) {
+                let filtered = qr.results.filter(function(r) { return r.contentType && r.contentType.match(/^image\//i); });
+                galleryImages = galleryImages.concat(filtered);
+                currentPage++;
+                if (qr.results.length < pageSize) allLoaded = true;
+            } else {
+                allLoaded = true;
+            }
+            m.redraw();
+        }
+
+        // Prepend any pre-fetched images not already in the gallery
+        function mergePrefetch() {
+            if (!prefetchImages.length) return;
+            let existingIds = new Set(galleryImages.map(function(r) { return r.id; }));
+            let newImgs = prefetchImages.filter(function(img) { return !existingIds.has(img.id); });
+            if (newImgs.length) galleryImages = newImgs.concat(galleryImages);
+        }
+
+        // Load first page
+        await loadPage();
+        mergePrefetch();
+
         let idx = 0;
         let fullView = false;
         let tagsCache = {};
         let detailCache = {};
 
-        // Lazy-load details (attributes, description, tags) for selected image
         function loadDetails(img) {
             if (!img || !img.objectId || detailCache[img.objectId]) return;
             detailCache[img.objectId] = { loading: true };
@@ -793,12 +832,14 @@ const page = {
         ivCSS();
 
         function renderGallery() {
+            let hasMore = !allLoaded;
             if (fullView) {
                 return m(FullCanvasViewer, {
                     images: galleryImages,
                     index: idx,
                     onClose: function() { fullView = false; },
                     onIndexChange: function(i) { idx = i; },
+                    onLoadMore: hasMore ? loadPage : null,
                     onDelete: function(img) {
                         Dialog.confirm('Delete ' + img.name + '?', async function() {
                             await deleteObject('data.data', img.objectId);
@@ -814,6 +855,9 @@ const page = {
                 index: idx,
                 onIndexChange: function(i) { idx = i; },
                 onFullView: function() { fullView = true; },
+                onLoadMore: hasMore ? loadPage : null,
+                loading: loading,
+                hasMore: hasMore,
                 charInst: charInst,
                 detailLoader: loadDetails,
                 tagsFor: function(img) { return tagsCache[img.objectId] || []; },
@@ -846,7 +890,7 @@ const page = {
         }
 
         Dialog.open({
-            title: 'Gallery (' + galleryImages.length + ' images)',
+            title: 'Gallery (' + totalCount + ' images)',
             size: 'xl',
             content: { view: renderGallery },
             closable: true,
