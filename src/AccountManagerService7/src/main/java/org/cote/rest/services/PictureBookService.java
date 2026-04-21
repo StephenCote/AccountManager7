@@ -394,7 +394,7 @@ public class PictureBookService {
         try {
             // Fall back to default chat config if none provided
             if (chatConfig == null) {
-                chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, "generalChat");
+                chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, "generalChat", null);
             }
             if (chatConfig == null) {
                 logger.error("No chat config available — cannot call LLM for " + promptName);
@@ -753,7 +753,7 @@ public class PictureBookService {
 
         BaseRecord chatConfig = null;
         if (chatConfigName != null) {
-            chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
 
         // Auto-chunk if text exceeds 8000 chars
@@ -823,7 +823,7 @@ public class PictureBookService {
 
         BaseRecord chatConfig = null;
         if (chatConfigName != null) {
-            chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
 
         List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text);
@@ -878,7 +878,7 @@ public class PictureBookService {
 
         BaseRecord chatConfig = null;
         if (chatConfigName != null) {
-            chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
 
         // Create book group under ~/PictureBooks/{bookName}/
@@ -1043,7 +1043,7 @@ public class PictureBookService {
 
         BaseRecord chatConfig = null;
         if (chatConfigName != null) {
-            chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
 
         // Extract text for LLM character extraction (if no pre-built character data)
@@ -1213,7 +1213,7 @@ public class PictureBookService {
 
         BaseRecord chatConfig = null;
         if (chatConfigName != null)
-            chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
 
         BaseRecord sdConfigRec;
         try {
@@ -1469,7 +1469,7 @@ public class PictureBookService {
 
         BaseRecord chatConfig = null;
         if (chatConfigName != null) {
-            chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, chatConfigName);
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
 
         Map<String, String> vars = new LinkedHashMap<>();
