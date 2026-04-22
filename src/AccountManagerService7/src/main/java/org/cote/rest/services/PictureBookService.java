@@ -311,6 +311,8 @@ public class PictureBookService {
     private Map<String, Object> parseLlmJsonObject(String response) {
         if (response == null || response.isEmpty()) return new LinkedHashMap<>();
         String trimmed = response.trim();
+        // Strip <think>...</think> blocks (Qwen3 etc. may ignore think:false)
+        trimmed = trimmed.replaceAll("(?s)<think>.*?</think>", "").trim();
         if (trimmed.startsWith("```")) {
             int nl = trimmed.indexOf('\n');
             if (nl >= 0) trimmed = trimmed.substring(nl + 1);
@@ -459,6 +461,10 @@ public class PictureBookService {
             String llmResp = callLlm(user, chatConfig, "pictureBook.extract-chunk", vars);
             if (llmResp == null || llmResp.isEmpty()) continue;
             Map<String, Object> chunkResult = parseLlmJsonObject(llmResp);
+            if (chunkResult == null || chunkResult.isEmpty()) {
+                logger.warn("Chunk " + (ci + 1) + "/" + chunks.size() + " returned unparseable LLM response — skipping");
+                continue;
+            }
 
             Object addObj = chunkResult.get("additions");
             if (addObj instanceof List) {
