@@ -32,17 +32,31 @@ let workName = '';
 // Step 1
 let method = 'auto';
 let bookName = '';
-let chatConfigName = null;
+// Object refs (record with .name and .objectId), not just names — resolved from library on open
+let chatConfigRef = null;
 let genre = '';
 let promptMode = 'single';  // 'single' | 'per-prompt'
-let promptTemplate = null;   // single mode — applies to all
-let promptTemplates = {      // per-prompt mode
+let promptTemplate = null;   // single mode — applies to all (object ref)
+let promptTemplates = {      // per-prompt mode (object refs)
     extractScenes: null,
     extractChunk: null,
     extractCharacter: null,
     sceneBlurb: null,
     landscapePrompt: null
 };
+let defaultsLoading = false;
+
+// Default prompt template names for each slot — resolved on demand from system library
+const DEFAULT_PROMPT_NAMES = {
+    extractScenes: 'pictureBook.extract-scenes',
+    extractChunk: 'pictureBook.extract-chunk',
+    extractCharacter: 'pictureBook.extract-character',
+    sceneBlurb: 'pictureBook.scene-blurb',
+    landscapePrompt: 'pictureBook.landscape-prompt'
+};
+const DEFAULT_CHAT_CONFIG_NAME = 'contentAnalysis';
+// "single" mode primary template — applied to all prompts if no per-slot override given
+const DEFAULT_SINGLE_TEMPLATE = 'pictureBook.extract-scenes';
 
 // Step 2
 let extractedScenes = [];
@@ -92,11 +106,12 @@ function resetState() {
     bookObjectId = null;
     method = 'auto';
     bookName = '';
-    chatConfigName = null;
+    chatConfigRef = null;
     genre = '';
     promptMode = 'single';
     promptTemplate = null;
     promptTemplates = { extractScenes: null, extractChunk: null, extractCharacter: null, sceneBlurb: null, landscapePrompt: null };
+    defaultsLoading = false;
     extractedScenes = [];
     extracting = false;
     extractError = null;
@@ -135,11 +150,53 @@ function resetState() {
 
 // ── Step helpers ──────────────────────────────────────────────────────
 
-// chatConfig is now selected via ObjectPicker — no preload needed
+// Extract a lightweight object ref { name, objectId } from a full record.
+// Null-safe — returns null if the record is missing name/objectId.
+function toRef(rec) {
+    if (!rec || typeof rec !== 'object' || !rec.name || !rec.objectId) return null;
+    return { name: rec.name, objectId: rec.objectId };
+}
+
+// Look up system defaults from the shared library. Library is populated lazily
+// on-demand by the backend, so we re-resolve each time the wizard opens.
+// Only fills slots that are still null (user selections are preserved).
+async function loadDefaults() {
+    defaultsLoading = true;
+    m.redraw();
+    try {
+        // Ensure both libraries exist (idempotent — skips if already populated)
+        try { await LLMConnector.ensureLibrary(); } catch (e) { /* non-fatal */ }
+        try { await LLMConnector.initPromptLibrary(); } catch (e) { /* non-fatal */ }
+
+        let lookups = [];
+        if (!chatConfigRef) {
+            lookups.push(LLMConnector.resolveConfig(DEFAULT_CHAT_CONFIG_NAME)
+                .then(r => { chatConfigRef = toRef(r); }));
+        }
+        if (!promptTemplate) {
+            lookups.push(LLMConnector.resolveTemplate(DEFAULT_SINGLE_TEMPLATE)
+                .then(r => { promptTemplate = toRef(r); }));
+        }
+        Object.keys(DEFAULT_PROMPT_NAMES).forEach(function (key) {
+            if (promptTemplates[key]) return;
+            lookups.push(LLMConnector.resolveTemplate(DEFAULT_PROMPT_NAMES[key])
+                .then(r => { promptTemplates[key] = toRef(r); }));
+        });
+        await Promise.all(lookups);
+    } catch (e) {
+        console.warn('[PictureBook] loadDefaults failed:', e);
+    }
+    defaultsLoading = false;
+    m.redraw();
+}
 
 function getPromptTemplate(key) {
-    if (promptMode === 'single') return promptTemplate;
-    return promptTemplates[key] || null;
+    let ref = (promptMode === 'single') ? promptTemplate : promptTemplates[key];
+    return ref ? ref.name : null;
+}
+
+function chatConfigName() {
+    return chatConfigRef ? chatConfigRef.name : null;
 }
 
 function collectCharacters() {
@@ -191,7 +248,7 @@ async function doExtract() {
     extractError = null;
     m.redraw();
     try {
-        let result = await extractScenes(workObjectId, chatConfigName, null, getPromptTemplate('extractScenes'));
+        let result = await extractScenes(workObjectId, chatConfigName(), null, getPromptTemplate('extractScenes'));
         // Backend returns { sceneList, chunked: true } for long text, or plain array for short
         let sceneArray;
         if (result && result.sceneList) {
@@ -220,7 +277,7 @@ async function doFullExtract() {
     extractError = null;
     m.redraw();
     try {
-        let meta = await fullExtract(workObjectId, chatConfigName, null, genre || null, bookName || workName);
+        let meta = await fullExtract(workObjectId, chatConfigName(), null, genre || null, bookName || workName);
         bookObjectId = meta.bookObjectId || null;
         metaScenes = meta.scenes || [];
         scenes = metaScenes;
@@ -316,7 +373,7 @@ async function doGenerateOne(s) {
             if (overrides.seed) sdCfg.seed = overrides.seed;
             if (overrides.promptOverride) promptOvr = overrides.promptOverride;
         }
-        let result = await generateSceneImage(oid, sdCfg, chatConfigName, promptOvr, getPromptTemplate('landscapePrompt'));
+        let result = await generateSceneImage(oid, sdCfg, chatConfigName(), promptOvr, getPromptTemplate('landscapePrompt'));
         s.imageObjectId = result.imageObjectId;
         if (result.seed && lastUsedSeed < 0) lastUsedSeed = result.seed;
         if (result.prompt) lastPrompt = result.prompt;
@@ -400,14 +457,15 @@ function renderStep1() {
                             title: 'Select Chat Config',
                             onSelect: function (item) {
                                 if (item && item.name) {
-                                    chatConfigName = item.name;
+                                    chatConfigRef = { name: item.name, objectId: item.objectId };
                                     m.redraw();
                                 }
                             }
                         });
                     }
                 }, [
-                    m('span', { class: chatConfigName ? '' : 'text-gray-400' }, chatConfigName || '(click to select)'),
+                    m('span', { class: chatConfigRef ? '' : 'text-gray-400' },
+                        chatConfigRef ? chatConfigRef.name : (defaultsLoading ? 'Loading default...' : '(click to select)')),
                     m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
                 ])
             ]),
@@ -454,12 +512,16 @@ function renderStep1() {
                                 libraryType: 'promptTemplate',
                                 title: 'Select Prompt Template',
                                 onSelect: function (item) {
-                                    if (item && item.name) { promptTemplate = item.name; m.redraw(); }
+                                    if (item && item.name) {
+                                        promptTemplate = { name: item.name, objectId: item.objectId };
+                                        m.redraw();
+                                    }
                                 }
                             });
                         }
                     }, [
-                        m('span', { class: promptTemplate ? '' : 'text-gray-400' }, promptTemplate || '(default)'),
+                        m('span', { class: promptTemplate ? '' : 'text-gray-400' },
+                            promptTemplate ? promptTemplate.name : (defaultsLoading ? 'Loading default...' : '(default)')),
                         m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
                     ])
                     : m('div', { class: 'space-y-1' },
@@ -470,6 +532,7 @@ function renderStep1() {
                             { key: 'sceneBlurb', label: 'Scene Blurb' },
                             { key: 'landscapePrompt', label: 'Landscape Prompt' }
                         ].map(function (p) {
+                            let ref = promptTemplates[p.key];
                             return m('div', { key: p.key, class: 'flex items-center gap-2' }, [
                                 m('span', { class: 'text-xs text-gray-500 w-28 shrink-0' }, p.label),
                                 m('div', {
@@ -479,13 +542,16 @@ function renderStep1() {
                                             libraryType: 'promptTemplate',
                                             title: 'Select ' + p.label + ' Template',
                                             onSelect: function (item) {
-                                                if (item && item.name) { promptTemplates[p.key] = item.name; m.redraw(); }
+                                                if (item && item.name) {
+                                                    promptTemplates[p.key] = { name: item.name, objectId: item.objectId };
+                                                    m.redraw();
+                                                }
                                             }
                                         });
                                     }
                                 }, [
-                                    m('span', { class: promptTemplates[p.key] ? '' : 'text-gray-400' },
-                                        promptTemplates[p.key] || '(default)'),
+                                    m('span', { class: ref ? '' : 'text-gray-400' },
+                                        ref ? ref.name : (defaultsLoading ? 'Loading...' : '(default)')),
                                     m('span', { class: 'material-symbols-outlined text-gray-400 text-xs' }, 'search')
                                 ])
                             ]);
@@ -1150,7 +1216,7 @@ function buildActions() {
                 m.redraw();
                 try {
                     let meta = await createFromScenes(
-                        workObjectId, chatConfigName, genre || null,
+                        workObjectId, chatConfigName(), genre || null,
                         bookName || workName, extractedScenes, characters
                     );
                     bookObjectId = meta.bookObjectId || null;
@@ -1277,6 +1343,9 @@ async function pictureBook(entity, inst) {
         page.toast('error', 'Cannot open Picture Book: no objectId');
         return;
     }
+
+    // Look up system defaults from the shared library (async — UI renders "Loading default..." meanwhile)
+    loadDefaults();
 
     Dialog.open({
         title: 'Picture Book — ' + workName,

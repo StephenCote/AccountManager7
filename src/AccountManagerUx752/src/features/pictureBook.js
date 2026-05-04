@@ -79,6 +79,19 @@ async function loadExistingBooks() {
     m.redraw();
 }
 
+async function deleteBookFromList(book) {
+    if (!book || !book.bookObjectId) return;
+    if (!confirm('Delete "' + book.workName + '"? Scenes, characters, and images will be removed.')) return;
+    try {
+        await resetPictureBook(book.bookObjectId);
+        page.toast('success', 'Picture book deleted');
+        am7client.clearCache(0, true);
+        await loadExistingBooks();
+    } catch (e) {
+        page.toast('error', 'Failed to delete');
+    }
+}
+
 var workSelectorView = {
     oninit: function () { loadExistingBooks(); },
     view: function () {
@@ -93,19 +106,33 @@ var workSelectorView = {
                 m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Existing Picture Books'),
                 m('div', { class: 'grid grid-cols-1 gap-2' },
                     existingBooks.map(function (b) {
+                        let incomplete = !b.sceneCount;
                         return m('div', {
                             key: b.bookObjectId,
                             class: 'flex items-center justify-between border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20',
                             onclick: function () { m.route.set('/picture-book/' + b.bookObjectId); }
                         }, [
                             m('div', { class: 'flex items-center gap-3' }, [
-                                m('span', { class: 'material-symbols-outlined text-amber-500' }, 'auto_stories'),
+                                m('span', { class: 'material-symbols-outlined ' + (incomplete ? 'text-gray-400' : 'text-amber-500') }, 'auto_stories'),
                                 m('div', [
                                     m('div', { class: 'font-medium text-sm' }, b.workName),
-                                    m('div', { class: 'text-xs text-gray-500' }, b.sceneCount + ' scene' + (b.sceneCount !== 1 ? 's' : ''))
+                                    m('div', { class: 'text-xs text-gray-500' },
+                                        incomplete
+                                            ? 'Incomplete — no scenes'
+                                            : b.sceneCount + ' scene' + (b.sceneCount !== 1 ? 's' : ''))
                                 ])
                             ]),
-                            m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
+                            m('div', { class: 'flex items-center gap-1' }, [
+                                m('button', {
+                                    class: 'text-red-400 hover:text-red-600 p-1',
+                                    title: 'Delete picture book',
+                                    onclick: function (e) {
+                                        e.stopPropagation();
+                                        deleteBookFromList(b);
+                                    }
+                                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')),
+                                m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
+                            ])
                         ]);
                     })
                 )
@@ -543,20 +570,57 @@ var pictureBookView = {
             renderHeader(),
 
             viewerLoading ? m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading picture book...') :
-            viewerError ? m('div', { class: 'text-red-500 text-sm text-center py-12' }, viewerError) :
+            viewerError ? m('div', { class: 'text-center py-12' }, [
+                m('div', { class: 'text-red-500 text-sm mb-6' }, viewerError),
+                m('button', {
+                    class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
+                    onclick: function () {
+                        if (!confirm('Delete this picture book?')) return;
+                        resetPictureBook(viewerBookId).then(function () {
+                            page.toast('success', 'Picture book deleted');
+                            am7client.clearCache(0, true);
+                            m.route.set('/picture-book');
+                        }).catch(function () {
+                            page.toast('error', 'Failed to delete');
+                        });
+                    }
+                }, [
+                    m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'delete'),
+                    'Delete Book'
+                ])
+            ]) :
             viewerScenes.length === 0
                 ? m('div', { class: 'text-center py-12' }, [
                     m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 mb-4' }, 'auto_stories'),
                     m('div', { class: 'text-sm text-gray-500 mb-6' },
                         'No picture book has been generated for this document yet.'),
-                    m('button', {
-                        class: 'btn btn-primary px-6 py-2',
-                        onclick: function () {
-                            pictureBookFromId(viewerBookId, viewerWorkName);
-                        }
-                    }, [
-                        m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'auto_awesome'),
-                        'Generate Picture Book'
+                    m('div', { class: 'flex gap-2 justify-center' }, [
+                        m('button', {
+                            class: 'btn btn-primary px-6 py-2',
+                            onclick: function () {
+                                pictureBookFromId(viewerBookId, viewerWorkName);
+                            }
+                        }, [
+                            m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'auto_awesome'),
+                            'Generate Picture Book'
+                        ]),
+                        m('button', {
+                            class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
+                            title: 'Delete this incomplete book',
+                            onclick: function () {
+                                if (!confirm('Delete this incomplete picture book?')) return;
+                                resetPictureBook(viewerBookId).then(function () {
+                                    page.toast('success', 'Picture book deleted');
+                                    am7client.clearCache(0, true);
+                                    m.route.set('/picture-book');
+                                }).catch(function () {
+                                    page.toast('error', 'Failed to delete');
+                                });
+                            }
+                        }, [
+                            m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'delete'),
+                            'Delete'
+                        ])
                     ]),
                     m('div', { class: 'mt-4' }, [
                         m('a', {
