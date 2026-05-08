@@ -167,8 +167,19 @@ test.describe('Card Game — Builder clean-install flow', () => {
                 return ctx && (ctx.screen === 'deckList' || ctx.screen === 'deckView' || ctx.builtDeck?.objectId);
             }, { timeout: 60000 });
         } catch (e) {
+            const finalState = await page.evaluate(() => {
+                const ctx = window.__cardGameCtx;
+                return {
+                    screen: ctx?.screen,
+                    builderStep: ctx?.builderStep,
+                    builtDeckIsNull: ctx?.builtDeck === null,
+                    viewingDeckName: ctx?.viewingDeck?.deckName,
+                    viewingDeckCardCount: ctx?.viewingDeck?.cards?.length
+                };
+            });
+            console.log('[saveDeck timeout - finalState]', JSON.stringify(finalState));
             console.log('[saveDeck timeout - failed reqs]', JSON.stringify(failedRequests, null, 2));
-            console.log('[saveDeck timeout - last 30 logs]', allLogs.slice(-30).join('\n'));
+            console.log('[saveDeck timeout - all logs]\n' + allLogs.join('\n'));
             throw e;
         }
 
