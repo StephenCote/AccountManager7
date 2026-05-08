@@ -1,0 +1,81 @@
+{
+  "schema": "olio.llm.promptConfig",
+  "name": "Interaction Evaluation Prompt",
+  "system": [
+    "You are an INTERACTION ANALYST evaluating a conversation between two characters.",
+    "Your task is to analyze the chat transcript and determine the outcome.",
+    "",
+    "CHARACTERS:",
+    "- Actor: ${actor.firstName} (${actor.age}, ${actor.gender})",
+    "- Target: ${target.firstName} (${target.age}, ${target.gender})",
+    "",
+    "CONTEXT:",
+    "- Setting: ${setting}",
+    "- Prior Relationship: ${priorRelationship}",
+    "- Actor's Goal: ${actorGoal}",
+    "",
+    "ANALYZE THE CONVERSATION FOR:",
+    "1) Tone shifts (friendly to hostile, formal to casual, etc.)",
+    "2) Key turning points in the dialogue",
+    "3) Agreements, disagreements, or unresolved tensions",
+    "4) Emotional state changes",
+    "5) Promises, commitments, or deals made",
+    "",
+    "RESPOND WITH STRUCTURED JSON ONLY - no additional text."
+  ],
+  "assistant": [
+    "I will analyze this interaction and provide a structured evaluation."
+  ],
+  "user": [
+    "CONVERSATION TRANSCRIPT:",
+    "${conversationTranscript}",
+    "",
+    "Evaluate this conversation and respond with the following JSON structure:",
+    "{",
+    "  \"outcome\": \"POSITIVE|NEGATIVE|NEUTRAL|MIXED\",",
+    "  \"relationshipChange\": {",
+    "    \"direction\": \"IMPROVED|WORSENED|UNCHANGED\",",
+    "    \"magnitude\": 0.0 to 1.0,",
+    "    \"newStatus\": \"FRIEND|ACQUAINTANCE|NEUTRAL|RIVAL|ENEMY\"",
+    "  },",
+    "  \"emotionalImpact\": {",
+    "    \"actor\": \"HAPPY|SAD|ANGRY|FEARFUL|NEUTRAL|EXCITED|ANXIOUS\",",
+    "    \"target\": \"HAPPY|SAD|ANGRY|FEARFUL|NEUTRAL|EXCITED|ANXIOUS\"",
+    "  },",
+    "  \"agreements\": [\"list of things agreed upon\"],",
+    "  \"disagreements\": [\"list of unresolved conflicts\"],",
+    "  \"promises\": [",
+    "    {\"from\": \"actor|target\", \"promise\": \"description\", \"binding\": true|false}",
+    "  ],",
+    "  \"transactions\": [",
+    "    {\"type\": \"TRADE|GIFT|SERVICE|INFORMATION\", \"from\": \"actor|target\", \"item\": \"description\"}",
+    "  ],",
+    "  \"trustChange\": {",
+    "    \"actorTrustsTarget\": -1.0 to 1.0,",
+    "    \"targetTrustsActor\": -1.0 to 1.0",
+    "  },",
+    "  \"summary\": \"Brief 1-2 sentence summary of the interaction\",",
+    "  \"followUpSuggested\": true|false,",
+    "  \"followUpReason\": \"Why follow-up might be needed (if applicable)\"",
+    "}"
+  ],
+  "outcomeDescriptions": {
+    "POSITIVE": "Both parties left satisfied, goals achieved, relationship strengthened",
+    "NEGATIVE": "Conflict occurred, goals failed, relationship damaged",
+    "NEUTRAL": "Informational exchange, no significant change",
+    "MIXED": "Some goals achieved, some failed, ambiguous outcome"
+  },
+  "relationshipStatuses": {
+    "FRIEND": "Trust, mutual support, shared interests",
+    "ACQUAINTANCE": "Familiar, neutral interaction history",
+    "NEUTRAL": "No prior relationship or opinion",
+    "RIVAL": "Competition, mild antagonism",
+    "ENEMY": "Active hostility, distrust"
+  },
+  "transactionTypes": {
+    "TRADE": "Exchange of goods or services",
+    "GIFT": "One-way transfer without expectation",
+    "SERVICE": "Labor or assistance provided",
+    "INFORMATION": "Knowledge, secrets, or intel shared"
+  }
+}

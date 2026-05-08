@@ -1,0 +1,59 @@
+[
+    {
+        "type": "character", "name": "Aldric the Bold",
+        "race": "HUMAN", "alignment": "LAWFUL_GOOD", "level": 3,
+        "stats": { "STR": 14, "AGI": 10, "END": 12, "INT": 8, "MAG": 6, "CHA": 11 },
+        "needs": { "hp": 16, "energy": 6, "morale": 20 },
+        "equipped": { "head": null, "body": { "name": "Chain Mail" }, "handL": null, "handR": { "name": "Iron Sword" }, "feet": { "name": "Boots" }, "ring": null, "back": null },
+        "activeSkills": [{ "name": "Swordsmanship" }, null, null, null]
+    },
+    {
+        "type": "apparel", "name": "Chain Mail",
+        "slot": "Body", "rarity": "UNCOMMON", "def": 3, "hpBonus": 0,
+        "special": null, "durability": 5,
+        "flavor": "Forged in the deep fires of the mountain hold."
+    },
+    {
+        "type": "item", "subtype": "weapon", "name": "Iron Sword",
+        "slot": "Hand (1H)", "rarity": "COMMON", "atk": 4, "range": "Melee",
+        "damageType": "Slashing", "requires": { "STR": 8 },
+        "special": "Cleave (on kill, deal 2 dmg to adjacent foe)", "durability": 8
+    },
+    {
+        "type": "item", "subtype": "consumable", "name": "Health Potion",
+        "rarity": "COMMON", "effect": "Restore 8 HP"
+    },
+    {
+        "type": "action", "name": "Attack",
+        "actionType": "Offensive",
+        "stackWith": "Character + Weapon (required) + Skill (optional)",
+        "roll": "1d20 + STR + ATK bonus vs target DEF",
+        "onHit": "Deal weapon ATK + STR modifier as damage",
+        "energyCost": 0
+    },
+    {
+        "type": "talk", "name": "Talk",
+        "energyCost": 5
+    },
+    {
+        "type": "encounter", "name": "Wolf Pack",
+        "subtype": "Threat", "rarity": "UNCOMMON",
+        "difficulty": 8, "atk": 3, "def": 2, "hp": 25,
+        "behavior": "Attacks lowest HP character first.",
+        "loot": ["Wolf Pelt", "Raw Meat"]
+    },
+    {
+        "type": "skill", "name": "Swordsmanship",
+        "category": "Combat",
+        "modifier": "+2 to Attack rolls when using a Slashing weapon",
+        "requires": { "STR": 10 }, "tier": "MEDIEVAL"
+    },
+    {
+        "type": "magic", "name": "Fireball",
+        "effectType": "Offensive", "skillType": "Imperial",
+        "requires": { "MAG": 12 },
+        "effect": "Deal 15 fire damage to target. Ignores 2 DEF.",
+        "stackWith": "Character + Action (Attack) + Imperial skill card",
+        "energyCost": 8, "reusable": true
+    }
+]

@@ -1,0 +1,46 @@
+{
+    "actionPrompts": {
+        "Attack": "a warrior mid-strike with weapon raised",
+        "Strike": "a warrior mid-strike with weapon raised",
+        "Flee": "a person running away from danger, motion blur",
+        "Investigate": "a person with lantern searching for clues in shadows",
+        "Trade": "two merchants exchanging goods at a market stall",
+        "Rest": "a weary traveler resting by a warm campfire",
+        "Use Item": "hands holding a glowing magical item",
+        "Craft": "hands crafting an item at a workbench with tools",
+        "Guard": "a warrior in defensive stance with shield raised",
+        "Feint": "a cunning fighter making a deceptive move"
+    },
+    "talkPrompts": {
+        "Talk": "two people in animated conversation",
+        "Taunt": "a confident figure taunting an opponent with a smirk",
+        "Persuade": "a charming speaker convincing a skeptical listener"
+    },
+    "styleLabels": {
+        "photograph": "photograph",
+        "movie": "movie still",
+        "selfie": "selfie",
+        "anime": "anime illustration",
+        "portrait": "studio portrait",
+        "comic": "comic book illustration",
+        "digitalArt": "digital artwork",
+        "fashion": "fashion photograph",
+        "vintage": "vintage photograph",
+        "art": "painting",
+        "default": "illustration"
+    },
+    "promptTemplates": {
+        "character": "Portrait of {name}, {race} {alignment}{age}, RPG character card art, facing viewer",
+        "action": "Close-up {style} of (({scene})), {suffix}",
+        "talk": "Close-up {style} of (({scene})), {suffix}",
+        "skill": "Close-up {style} of ((mystical glowing glyph representing {name} ability)), ornate magical symbol, {suffix}",
+        "itemWeapon": "Close-up {style} of (({name})), detailed weapon, {suffix}",
+        "itemArmor": "Close-up {style} of (({name})), detailed armor piece, {suffix}",
+        "itemConsumable": "Close-up {style} of (({name})), magical potion or item on a table, {suffix}",
+        "itemMaterial": "Close-up {style} of ((raw {name})), crafting material, {suffix}",
+        "itemDefault": "Close-up {style} of (({name})), detailed item, {suffix}",
+        "cardFront": "ornate card face design, decorative parchment border, golden filigree frame, card game template, {suffix}",
+        "cardBack": "ornate card back design, intricate repeating pattern, card game template, {suffix}",
+        "default": "Close-up {style} of (({name})), {suffix}"
+    }
+}

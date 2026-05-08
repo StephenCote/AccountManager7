@@ -1,0 +1,187 @@
+{
+    "version": 2,
+    "threatCreatures": [
+        {
+            "id": "weak_beast",
+            "name": "Feral Beast",
+            "type": "animal",
+            "atk": 2,
+            "def": 1,
+            "hp": 8,
+            "imageIcon": "pets",
+            "behavior": "Attacks lowest HP target",
+            "loot": ["Beast Hide"],
+            "artPrompt": "a feral beast lunging forward to attack"
+        },
+        {
+            "id": "scout",
+            "name": "Scout",
+            "type": "npc",
+            "atk": 3,
+            "def": 1,
+            "hp": 10,
+            "imageIcon": "face",
+            "behavior": "Flanks weakest defender",
+            "loot": ["Scout's Blade"],
+            "artPrompt": "a stealthy scout sneaking through shadows"
+        },
+        {
+            "id": "venomous",
+            "name": "Venomous Creature",
+            "type": "animal",
+            "atk": 2,
+            "def": 2,
+            "hp": 12,
+            "imageIcon": "bug_report",
+            "behavior": "Poison on hit (2 turns)",
+            "loot": ["Venom Sac", "Chitin"],
+            "artPrompt": "a venomous creature dripping with poison"
+        },
+        {
+            "id": "thief",
+            "name": "Thief",
+            "type": "npc",
+            "atk": 4,
+            "def": 2,
+            "hp": 15,
+            "imageIcon": "person_alert",
+            "behavior": "Steals item on crit",
+            "loot": ["Stolen Goods"],
+            "artPrompt": "a masked thief lurking in wait for an ambush"
+        },
+        {
+            "id": "alpha",
+            "name": "Alpha Predator",
+            "type": "animal",
+            "atk": 5,
+            "def": 2,
+            "hp": 18,
+            "imageIcon": "pets",
+            "behavior": "Attacks twice on crit",
+            "loot": ["Alpha Fang", "Thick Hide"],
+            "artPrompt": "a powerful predator towering over its prey"
+        },
+        {
+            "id": "heavy",
+            "name": "Heavy Fighter",
+            "type": "npc",
+            "atk": 6,
+            "def": 3,
+            "hp": 20,
+            "imageIcon": "shield_person",
+            "behavior": "Enrages below half HP (+2 ATK)",
+            "loot": ["Heavy Blade", "Iron Shield"],
+            "artPrompt": "a heavily armored fighter with a menacing weapon"
+        },
+        {
+            "id": "specialist",
+            "name": "Specialist",
+            "type": "monster",
+            "atk": 4,
+            "def": 1,
+            "hp": 12,
+            "imageIcon": "skull",
+            "behavior": "Ranged attack, ignores front-line",
+            "loot": ["Rare Component"],
+            "artPrompt": "a specialist combatant with unusual abilities"
+        },
+        {
+            "id": "boss",
+            "name": "Elite Brute",
+            "type": "monster",
+            "atk": 7,
+            "def": 4,
+            "hp": 25,
+            "imageIcon": "dangerous",
+            "behavior": "Regenerates 2 HP per round",
+            "loot": ["Elite Trophy", "Rare Material"],
+            "artPrompt": "a fearsome elite brute blocking the path"
+        }
+    ],
+    "scenarioCards": [
+        {
+            "id": "peaceful_respite",
+            "name": "Peaceful Respite",
+            "effect": "no_threat",
+            "description": "The area is calm. No threats emerge.",
+            "icon": "park",
+            "cardColor": "#43A047",
+            "bonus": "heal",
+            "bonusAmount": 3,
+            "weight": 40,
+            "artPrompt": "a peaceful campfire scene under a starlit sky"
+        },
+        {
+            "id": "distant_warning",
+            "name": "Distant Warning",
+            "effect": "no_threat",
+            "description": "You sense something in the distance, but nothing approaches.",
+            "icon": "hearing",
+            "cardColor": "#7986CB",
+            "bonus": "energy",
+            "bonusAmount": 2,
+            "weight": 25,
+            "artPrompt": "a distant shadow on the horizon with ominous clouds"
+        },
+        {
+            "id": "hidden_cache",
+            "name": "Hidden Cache",
+            "effect": "no_threat",
+            "description": "You discover a hidden stash!",
+            "icon": "inventory_2",
+            "cardColor": "#FFB300",
+            "bonus": "loot",
+            "weight": 5,
+            "artPrompt": "an opened treasure chest hidden behind rocks",
+            "lootPool": [
+                { "name": "Found Supplies", "rarity": "COMMON", "effect": "Restore 5 HP", "artPrompt": "a bundle of salvaged supplies wrapped in cloth" },
+                { "name": "Salvaged Parts", "rarity": "UNCOMMON", "effect": "+2 ATK this round", "artPrompt": "useful mechanical components and sharp metal pieces" },
+                { "name": "Hidden Stash", "rarity": "RARE", "effect": "Restore 8 HP and 4 Energy", "artPrompt": "a secret stash of glowing potions and precious gems" }
+            ]
+        },
+        {
+            "id": "ambush",
+            "name": "Ambush!",
+            "effect": "threat",
+            "description": "Enemies emerge from hiding!",
+            "icon": "visibility_off",
+            "cardColor": "#C62828",
+            "threatBonus": 0,
+            "weight": 15,
+            "artPrompt": "shadowy figures leaping from concealment with weapons drawn"
+        },
+        {
+            "id": "elite_patrol",
+            "name": "Elite Patrol",
+            "effect": "threat",
+            "description": "A stronger foe appears!",
+            "icon": "military_tech",
+            "cardColor": "#AD1457",
+            "threatBonus": 2,
+            "weight": 10,
+            "artPrompt": "an elite warrior marching forward in gleaming armor"
+        },
+        {
+            "id": "wandering_threat",
+            "name": "Wandering Threat",
+            "effect": "threat",
+            "description": "A creature stumbles upon you.",
+            "icon": "explore",
+            "cardColor": "#E65100",
+            "threatBonus": -1,
+            "weight": 8,
+            "artPrompt": "a lone creature emerging from fog on a winding path"
+        },
+        {
+            "id": "boss_encounter",
+            "name": "Boss Encounter",
+            "effect": "threat",
+            "description": "A fearsome opponent blocks your path!",
+            "icon": "dangerous",
+            "cardColor": "#6A1B9A",
+            "threatBonus": 4,
+            "weight": 2,
+            "artPrompt": "a towering boss creature silhouetted against a burning sky"
+        }
+    ]
+}

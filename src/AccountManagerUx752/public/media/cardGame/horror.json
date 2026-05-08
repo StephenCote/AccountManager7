@@ -1,0 +1,1442 @@
+{
+  "themeId": "horror",
+  "name": "Horror",
+  "version": "1.0",
+  "description": "Gothic horror with supernatural creatures, eldritch abominations, haunted locations, and occult rituals",
+  "artStyle": {
+    "promptSuffix": "gothic horror, dark atmosphere, moonlit, supernatural, eerie fog, detailed dark illustration",
+    "cardBorderStyle": "bone-trim",
+    "cardBackVariant": "occult",
+    "fontFamily": "Segoe UI, system-ui, sans-serif",
+    "colorPalette": {
+      "character": "#9E9E9E",
+      "apparel": "#5D4037",
+      "item": "#558B2F",
+      "action": "#B71C1C",
+      "talk": "#37474F",
+      "encounter": "#4A148C",
+      "skill": "#BF360C",
+      "magic": "#6A1B9A",
+      "scenario": "#1B5E20",
+      "loot": "#F57F17"
+    },
+    "backgroundPrompt": "Gothic horror landscape, decrepit Victorian manor on a fog-shrouded hilltop, gnarled dead trees, full moon behind dark clouds, graveyard with tilted headstones, eerie green mist, crows circling, dark and foreboding atmosphere",
+    "backgroundConfig": {
+      "width": 1024,
+      "height": 1024,
+      "steps": 40,
+      "cfg": 7,
+      "hires": true
+    },
+    "sdConfig": {
+      "default": {
+        "style": "art",
+        "steps": 30,
+        "cfg": 7,
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.7
+      },
+      "character": {
+        "width": 768,
+        "height": 1024
+      },
+      "apparel": {
+        "width": 512,
+        "height": 768
+      },
+      "item": {
+        "width": 512,
+        "height": 512
+      },
+      "action": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "talk": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "encounter": {
+        "width": 768,
+        "height": 768
+      },
+      "skill": {
+        "width": 512,
+        "height": 512
+      },
+      "magic": {
+        "width": 512,
+        "height": 512,
+        "denoisingStrength": 0.75
+      },
+      "scenario": {
+        "width": 768,
+        "height": 512,
+        "denoisingStrength": 0.8
+      },
+      "loot": {
+        "width": 512,
+        "height": 512
+      }
+    }
+  },
+  "characterBuild": {
+    "statRange": [
+      3,
+      18
+    ],
+    "statPointBuy": 72,
+    "skillSlots": 4,
+    "equipSlots": [
+      "head",
+      "body",
+      "handL",
+      "handR",
+      "feet",
+      "ring",
+      "back"
+    ],
+    "availableRaces": [
+      "HUMAN",
+      "ELF",
+      "DWARF",
+      "ORC",
+      "HALFLING"
+    ],
+    "availableAlignments": "all"
+  },
+  "starterDeck": {
+    "apparel": {
+      "min": 2,
+      "max": 3,
+      "rarity": "COMMON"
+    },
+    "weapons": {
+      "min": 1,
+      "max": 2,
+      "rarity": "COMMON"
+    },
+    "consumables": [
+      {
+        "name": "Hardtack",
+        "count": 2,
+        "effect": "Restore 3 Energy"
+      },
+      {
+        "name": "Healing Salve",
+        "count": 1,
+        "effect": "Restore 8 HP"
+      },
+      {
+        "name": "Bandage Wrap",
+        "count": 1,
+        "effect": "Restore 4 HP"
+      },
+      {
+        "name": "Lantern Oil",
+        "count": 1,
+        "effect": "+2 to Investigate rolls this round"
+      }
+    ],
+    "skills": {
+      "min": 1,
+      "max": 2
+    },
+    "magicEffects": {
+      "min": 0,
+      "max": 1,
+      "condition": "MAG >= 10 OR INT >= 12"
+    }
+  },
+  "encounterDeck": {
+    "threats": {
+      "count": 12,
+      "difficultyRange": [
+        4,
+        10
+      ],
+      "maxRarity": "RARE"
+    },
+    "events": {
+      "count": 10,
+      "maxRarity": "UNCOMMON"
+    },
+    "discoveries": {
+      "count": 10,
+      "maxRarity": "RARE"
+    },
+    "npcs": {
+      "count": 8,
+      "maxRarity": "RARE",
+      "source": "olio.charPerson.population",
+      "roleAssignment": "random"
+    },
+    "lootItems": {
+      "count": 10,
+      "rarityWeights": {
+        "COMMON": 50,
+        "UNCOMMON": 35,
+        "RARE": 15
+      }
+    },
+    "skillCards": {
+      "count": 5,
+      "minRarity": "UNCOMMON",
+      "maxRarity": "RARE"
+    },
+    "magicEffects": {
+      "count": 2,
+      "rarity": "RARE"
+    }
+  },
+  "treasureVault": {
+    "bossThreats": {
+      "count": 4,
+      "difficultyRange": [
+        12,
+        16
+      ],
+      "minRarity": "EPIC"
+    },
+    "legendaryWeapons": {
+      "count": 2,
+      "rarity": "LEGENDARY"
+    },
+    "epicWeapons": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicApparel": {
+      "count": 3,
+      "rarity": "EPIC"
+    },
+    "epicConsumables": {
+      "count": 2,
+      "rarity": "EPIC"
+    },
+    "epicSkills": {
+      "count": 3,
+      "minRarity": "RARE",
+      "maxRarity": "EPIC"
+    },
+    "legendaryMagic": {
+      "count": 2,
+      "rarity": "LEGENDARY"
+    },
+    "drawTriggers": [
+      "discovery_rare",
+      "investigate_crit",
+      "npc_quest_reward",
+      "pot_jackpot_5plus"
+    ],
+    "bossDefeatGrantsExtraDraw": true,
+    "refillsOnCampaignSession": true
+  },
+  "balance": {
+    "hpMax": 20,
+    "moraleMax": 20,
+    "energyFormula": "MAG or INT (by skill type)",
+    "apFormula": "floor(END / 5) + 1",
+    "apRange": [
+      1,
+      5
+    ],
+    "initiativeFormula": "1d20 + AGI",
+    "potAnteRequired": true,
+    "roundTimerSeconds": 60,
+    "positionTimerSeconds": 15,
+    "lazyBonesEnabled": true,
+    "lethargyEnabled": true,
+    "exhaustedEnabled": true,
+    "hoardingReturnTarget": "encounterDeck"
+  },
+  "narration": {
+    "announcerProfile": "horror-narrator",
+    "gameStart": "The ancient ritual circle flares to life in the abandoned cathedral. Shadows writhe along the crumbling walls as two souls are drawn into the pact. The darkness watches. Survive.",
+    "roundStart": [
+      "The candles flicker and the shadows grow longer. Another round begins.",
+      "Something scrapes behind the walls. Steel yourself for what comes next.",
+      "The fog thickens and the temperature drops. The horror continues.",
+      "A distant bell tolls from a tower that should be empty. The next round dawns.",
+      "The stench of decay fills the air. Neither combatant dares look away."
+    ],
+    "roundEndTie": [
+      "Neither can gain the upper hand. The darkness feeds on their stalemate.",
+      "Blow for blow, curse for curse. The dead watch with hollow eyes."
+    ],
+    "criticalHit": [
+      "A sickening crunch! Something that should not bend, bends!",
+      "The strike lands true and the screaming echoes through empty halls!",
+      "A brutal wound opens wide. The stones drink deep of the spilled blood."
+    ],
+    "criticalMiss": [
+      "A wild swing at phantoms! The attacker stumbles into the dark!",
+      "Panic takes hold and the blow goes wide, striking only stone!",
+      "The weapon slips from trembling fingers. Fear is the true enemy."
+    ],
+    "lowHpTension": [
+      "Blood trails mark the flagstones. Something in the dark watches hungrily.",
+      "Ragged breathing echoes in the silence. The end creeps closer with every heartbeat.",
+      "Both combatants are broken and bleeding. Only will keeps them standing."
+    ]
+  },
+  "magicConfig": {
+    "enabledSkillTypes": [
+      "Undead",
+      "Psionic"
+    ],
+    "magicEffectPool": [
+      "Eldritch Blast",
+      "Ward of Protection",
+      "Mind Shatter",
+      "Shadow Step",
+      "Blood Ritual",
+      "Soul Drain",
+      "Unholy Mending",
+      "Spectral Chains"
+    ]
+  },
+  "cardNames": {
+    "meleeWeapon": {
+      "name": "Silver Cleaver",
+      "damageType": "Slashing"
+    },
+    "rangedWeapon": {
+      "name": "Flintlock Pistol",
+      "damageType": "Piercing"
+    },
+    "bodyArmor": "Leather Duster",
+    "boots": "Heavy Boots",
+    "strSkill": {
+      "name": "Monster Hunter",
+      "category": "Combat",
+      "modifier": "+2 to Attack rolls with Slashing weapons"
+    },
+    "agiSkill": {
+      "name": "Survival Instinct",
+      "category": "Defense",
+      "modifier": "+2 to Flee and initiative rolls"
+    },
+    "defaultSkill": {
+      "name": "Occult Knowledge",
+      "category": "Survival",
+      "modifier": "+1 to Investigate and Rest rolls"
+    },
+    "healMagic": {
+      "name": "Unholy Mending",
+      "effectType": "Restorative",
+      "skillType": "Undead",
+      "effect": "Restore 6 HP to self or ally"
+    },
+    "intMagic": {
+      "name": "Mind Shatter",
+      "effectType": "Discovery",
+      "skillType": "Psionic",
+      "effect": "View opponent's next planned action stack"
+    }
+  },
+  "outfits": {
+    "male": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Gravedigger's Rags",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "drawers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "mud-stained tunic",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "torn breeches",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "frayed rope belt",
+            "location": [
+              "waist"
+            ],
+            "fabric": "cotton",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "worn work boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Monster Hunter's Garb",
+        "type": "casual",
+        "gender": "male",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "drawers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "reinforced leather vest",
+            "location": [
+              "torso"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "sturdy trousers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "belt with vial pouches",
+            "location": [
+              "waist"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "heavy traveling cloak",
+            "location": [
+              "back"
+            ],
+            "fabric": "wool",
+            "color": "Black",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "tall boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Occultist's Vestments",
+        "type": "formal",
+        "gender": "male",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "undershirt",
+            "location": [
+              "torso"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "drawers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "socks",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "Gray",
+            "level": "BASE",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "embroidered waistcoat",
+            "location": [
+              "torso"
+            ],
+            "fabric": "velvet",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "pressed trousers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "ritual cloak with sigils",
+            "location": [
+              "back"
+            ],
+            "fabric": "velvet",
+            "color": "Crimson",
+            "level": "OVER",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "occult pendant",
+            "location": [
+              "neck"
+            ],
+            "fabric": "silver",
+            "color": "Silver",
+            "level": "SUIT",
+            "gender": "male"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "polished boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "male"
+          }
+        ]
+      }
+    },
+    "female": {
+      "scrappy": {
+        "schema": "olio.apparel",
+        "name": "Asylum Rags",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bloomers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stained hospital gown",
+            "location": [
+              "torso"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "torn skirt",
+            "location": [
+              "leg"
+            ],
+            "fabric": "cotton",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "knotted sash",
+            "location": [
+              "waist"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bare-sole wraps",
+            "location": [
+              "foot"
+            ],
+            "fabric": "linen",
+            "color": "Gray",
+            "level": "SUIT",
+            "gender": "female"
+          }
+        ]
+      },
+      "functional": {
+        "schema": "olio.apparel",
+        "name": "Witch Hunter's Attire",
+        "type": "casual",
+        "gender": "female",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bloomers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "fitted leather corset",
+            "location": [
+              "torso"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "riding skirt with leggings",
+            "location": [
+              "leg"
+            ],
+            "fabric": "wool",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "wide belt with silver buckle",
+            "location": [
+              "waist"
+            ],
+            "fabric": "leather",
+            "color": "Brown",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "hooded hunter's cloak",
+            "location": [
+              "back"
+            ],
+            "fabric": "wool",
+            "color": "Black",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "laced knee-high boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          }
+        ]
+      },
+      "fancy": {
+        "schema": "olio.apparel",
+        "name": "Medium's Evening Dress",
+        "type": "formal",
+        "gender": "female",
+        "wearables": [
+          {
+            "schema": "olio.wearable",
+            "name": "chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "bloomers",
+            "location": [
+              "leg"
+            ],
+            "fabric": "linen",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "stockings",
+            "location": [
+              "foot"
+            ],
+            "fabric": "wool",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "flowing evening gown",
+            "location": [
+              "torso",
+              "leg"
+            ],
+            "fabric": "velvet",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "lace-trimmed chemise",
+            "location": [
+              "chest"
+            ],
+            "fabric": "cotton",
+            "color": "White",
+            "level": "BASE",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "sheer mourning veil",
+            "location": [
+              "back"
+            ],
+            "fabric": "linen",
+            "color": "Black",
+            "level": "OVER",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "cameo choker",
+            "location": [
+              "neck"
+            ],
+            "fabric": "velvet",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          },
+          {
+            "schema": "olio.wearable",
+            "name": "heeled ankle boots",
+            "location": [
+              "foot"
+            ],
+            "fabric": "leather",
+            "color": "Black",
+            "level": "SUIT",
+            "gender": "female"
+          }
+        ]
+      }
+    }
+  },
+  "cardPool": [
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Silver Cleaver",
+      "rarity": "COMMON",
+      "atk": 3,
+      "slot": "Hand (1H)",
+      "damageType": "Slashing",
+      "durability": 8,
+      "artPrompt": "a heavy silver-edged cleaver stained with dark ichor, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Flintlock Pistol",
+      "rarity": "UNCOMMON",
+      "atk": 4,
+      "slot": "Hand (1H)",
+      "damageType": "Piercing",
+      "range": "Ranged",
+      "durability": 10,
+      "artPrompt": "an ornate flintlock pistol with silver filigree and a smoking barrel, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Blessed Greatsword",
+      "rarity": "RARE",
+      "atk": 6,
+      "slot": "Hand (2H)",
+      "damageType": "Slashing",
+      "durability": 14,
+      "artPrompt": "a massive two-handed greatsword inscribed with holy sigils, glowing faintly against the dark, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Stake & Mallet",
+      "rarity": "COMMON",
+      "atk": 2,
+      "slot": "Hand (1H)",
+      "damageType": "Piercing",
+      "durability": 6,
+      "special": "+3 ATK vs undead",
+      "artPrompt": "a sharpened wooden stake and iron mallet, tools of a vampire hunter, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Eldritch Staff",
+      "rarity": "RARE",
+      "atk": 4,
+      "slot": "Hand (2H)",
+      "damageType": "Arcane",
+      "durability": 12,
+      "special": "+2 to Channel rolls",
+      "artPrompt": "a twisted black staff topped with a pulsing eldritch eye, tendrils of dark energy swirling around it, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "weapon",
+      "name": "Repeating Crossbow",
+      "rarity": "UNCOMMON",
+      "atk": 5,
+      "slot": "Hand (2H)",
+      "damageType": "Piercing",
+      "range": "Ranged",
+      "durability": 12,
+      "artPrompt": "a mechanical repeating crossbow with silver-tipped bolts, worn leather stock, gothic horror"
+    },
+    {
+      "type": "apparel",
+      "name": "Leather Duster",
+      "rarity": "COMMON",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "leather",
+      "artPrompt": "a long weathered leather duster coat, scarred and stained from countless hunts, gothic horror"
+    },
+    {
+      "type": "apparel",
+      "name": "Reinforced Greatcoat",
+      "rarity": "UNCOMMON",
+      "slot": "Body",
+      "def": 3,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "wool",
+      "artPrompt": "a heavy wool greatcoat reinforced with iron studs and leather patches, dark and imposing, gothic horror"
+    },
+    {
+      "type": "apparel",
+      "name": "Blessed Plate",
+      "rarity": "RARE",
+      "slot": "Body",
+      "def": 5,
+      "hpBonus": 2,
+      "durability": 20,
+      "fabric": "consecrated steel",
+      "artPrompt": "a suit of blackened plate armor etched with holy wards and prayer inscriptions, faintly glowing, gothic horror"
+    },
+    {
+      "type": "apparel",
+      "name": "Hunter's Monocle",
+      "rarity": "UNCOMMON",
+      "slot": "Head",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "brass and glass",
+      "special": "+2 to Investigate rolls",
+      "artPrompt": "a brass monocle with a tinted lens that reveals hidden things, attached by a thin chain, gothic horror"
+    },
+    {
+      "type": "apparel",
+      "name": "Heavy Boots",
+      "rarity": "COMMON",
+      "slot": "Feet",
+      "def": 1,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "leather",
+      "special": "+1 to Flee rolls",
+      "artPrompt": "heavy iron-soled leather boots, caked with graveyard mud, gothic horror"
+    },
+    {
+      "type": "apparel",
+      "name": "Warded Robes",
+      "rarity": "RARE",
+      "slot": "Body",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 10,
+      "fabric": "linen",
+      "special": "+3 to Channel rolls",
+      "artPrompt": "flowing dark robes covered in stitched protective sigils and occult symbols, faintly shimmering, gothic horror"
+    },
+    {
+      "type": "apparel",
+      "name": "Dark Cloak",
+      "rarity": "UNCOMMON",
+      "slot": "Back",
+      "def": 2,
+      "hpBonus": 0,
+      "durability": 8,
+      "fabric": "wool",
+      "special": "+1 to Feint rolls",
+      "artPrompt": "a sweeping dark cloak with a deep hood, shadows clinging to its folds unnaturally, gothic horror"
+    },
+    {
+      "type": "skill",
+      "name": "Iron Will",
+      "category": "Defense",
+      "modifier": "+3 DEF when Guard is active",
+      "tier": "UNCOMMON",
+      "artPrompt": "a grim-faced hunter standing defiant against a wall of approaching specters, unbroken resolve, gothic horror"
+    },
+    {
+      "type": "skill",
+      "name": "Killing Blow",
+      "category": "Combat",
+      "modifier": "+3 ATK on next Attack",
+      "tier": "UNCOMMON",
+      "artPrompt": "a hunter driving a blade through the heart of a writhing abomination, decisive strike, gothic horror"
+    },
+    {
+      "type": "skill",
+      "name": "Shadow Strike",
+      "category": "Combat",
+      "modifier": "+4 ATK after successful Feint",
+      "tier": "RARE",
+      "artPrompt": "a figure emerging from pitch darkness behind an unsuspecting creature, blade poised to strike, gothic horror"
+    },
+    {
+      "type": "skill",
+      "name": "Dead Shot",
+      "category": "Ranged",
+      "modifier": "+2 ATK with ranged weapons",
+      "tier": "COMMON",
+      "artPrompt": "a hunter taking careful aim with a flintlock pistol at a distant shape in the fog, gothic horror"
+    },
+    {
+      "type": "skill",
+      "name": "Dark Ritual",
+      "category": "Magic",
+      "modifier": "+2 to Channel rolls, -1 energy cost",
+      "tier": "UNCOMMON",
+      "artPrompt": "a cloaked figure kneeling in a ritual circle of blood and candles, dark energy rising, gothic horror"
+    },
+    {
+      "type": "skill",
+      "name": "Veteran's Grit",
+      "category": "Combat",
+      "modifier": "+1 ATK and +1 DEF this round",
+      "tier": "COMMON",
+      "artPrompt": "a scarred veteran hunter covered in old wounds, still standing firm with weapon raised, gothic horror"
+    },
+    {
+      "type": "skill",
+      "name": "Herbalism",
+      "category": "Survival",
+      "modifier": "Rest restores +3 extra HP",
+      "tier": "COMMON",
+      "artPrompt": "weathered hands grinding strange herbs by candlelight, mortar and pestle surrounded by dried plants, gothic horror"
+    },
+    {
+      "type": "skill",
+      "name": "Sever Tendons",
+      "category": "Combat",
+      "modifier": "On hit, target loses weapon bonus next round",
+      "tier": "RARE",
+      "artPrompt": "a precise slash severing the tendons of a monstrous limb, the creature reeling in agony, gothic horror"
+    },
+    {
+      "type": "magic",
+      "name": "Eldritch Blast",
+      "effectType": "Offensive",
+      "skillType": "Undead",
+      "effect": "Deal 5 damage, stun target (skip next action)",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a bolt of crackling eldritch energy erupting from outstretched hands, tearing through reality with unnatural light, gothic horror"
+    },
+    {
+      "type": "magic",
+      "name": "Ward of Protection",
+      "effectType": "Defensive",
+      "skillType": "Psionic",
+      "effect": "+4 DEF this round",
+      "energyCost": 3,
+      "reusable": true,
+      "artPrompt": "a shimmering barrier of spectral light forming a protective circle around the caster, ancient runes glowing, gothic horror"
+    },
+    {
+      "type": "magic",
+      "name": "Blood Ritual",
+      "effectType": "Offensive",
+      "skillType": "Undead",
+      "effect": "Deal 6 damage, ignores DEF",
+      "energyCost": 5,
+      "reusable": true,
+      "artPrompt": "a figure slashing their palm over a ritual circle, blood arcing through the air to strike the target with unholy force, gothic horror"
+    },
+    {
+      "type": "magic",
+      "name": "Shadow Step",
+      "effectType": "Utility",
+      "skillType": "Psionic",
+      "effect": "Auto-succeed next Flee or Steal",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "a figure dissolving into black smoke and reforming in the shadows behind their target, gothic horror"
+    },
+    {
+      "type": "magic",
+      "name": "Soul Drain",
+      "effectType": "Offensive",
+      "skillType": "Undead",
+      "effect": "Deal 4 damage, steal 2 HP",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "ghostly tendrils pulling a glowing essence from the victim into the caster, the victim withering, gothic horror"
+    },
+    {
+      "type": "magic",
+      "name": "Spectral Chains",
+      "effectType": "Offensive",
+      "skillType": "Psionic",
+      "effect": "Target cannot Flee for 2 rounds, -2 AGI",
+      "energyCost": 4,
+      "reusable": true,
+      "artPrompt": "ghostly chains erupting from the ground to bind and restrain a struggling target, rattling and glowing with pale light, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Elixir of Vigor",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 12 HP",
+      "artPrompt": "a bubbling vial of deep red elixir sealed with wax, faintly warm to the touch, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Berserker Draught",
+      "rarity": "UNCOMMON",
+      "effect": "+3 ATK this round",
+      "artPrompt": "a dark glass bottle of frothing amber liquid that reeks of iron and rage, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Blessed Talisman",
+      "rarity": "RARE",
+      "effect": "+5 DEF this round",
+      "artPrompt": "a silver talisman inscribed with holy prayers, radiating warm protective light against the darkness, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Holy Water Flask",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 8 Energy",
+      "artPrompt": "a crystal flask of sanctified water glowing with faint inner light, gothic horror"
+    },
+    {
+      "type": "item",
+      "subtype": "consumable",
+      "name": "Smoke Pellet",
+      "rarity": "COMMON",
+      "effect": "Auto-succeed Flee this round",
+      "artPrompt": "a small black pellet that erupts into choking grey smoke, obscuring all vision, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Rotting Flesh",
+      "rarity": "COMMON",
+      "effect": "Restore 2 HP",
+      "artPrompt": "a chunk of putrid rotting flesh torn from a shambling corpse, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Broken Fang",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a cracked and yellowed fang from some unnatural creature, still sharp, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Ectoplasm",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 4 Energy",
+      "artPrompt": "a jar of shimmering translucent ectoplasm harvested from a destroyed specter, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Venom Gland",
+      "rarity": "UNCOMMON",
+      "effect": "Apply poison (2 dmg for 2 turns)",
+      "artPrompt": "a glistening venom gland extracted from a giant centipede, oozing dark fluid, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Thick Hide",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a patch of unnaturally tough hide stripped from a monstrous creature, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Stolen Trinket",
+      "rarity": "COMMON",
+      "effect": "Draw 1 extra card",
+      "artPrompt": "a small stolen trinket, a tarnished locket with a faded portrait inside, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Rusty Blade",
+      "rarity": "COMMON",
+      "effect": "+1 ATK this round",
+      "artPrompt": "a rusted and pitted blade scavenged from a corpse, still capable of drawing blood, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Werewolf Claw",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a massive curved claw torn from a slain werewolf, still dripping with dark blood, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Bone Shield",
+      "rarity": "UNCOMMON",
+      "effect": "+2 DEF this round",
+      "artPrompt": "a crude shield fashioned from interlocking bones and sinew, grotesque but effective, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Cultist's Dagger",
+      "rarity": "UNCOMMON",
+      "effect": "+2 ATK this round",
+      "artPrompt": "a curved ritual dagger with occult symbols etched into the black blade, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Blinding Dust",
+      "rarity": "UNCOMMON",
+      "effect": "Stun target (skip 1 action)",
+      "artPrompt": "a pouch of ground bone and grave ash that burns the eyes on contact, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Cursed Idol",
+      "rarity": "RARE",
+      "effect": "Draw 2 extra cards",
+      "artPrompt": "a small twisted idol of an unknowable deity, writhing with dark energy when held, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Ghoul Carapace",
+      "rarity": "RARE",
+      "effect": "+3 DEF this round",
+      "artPrompt": "a section of hardened carapace stripped from a massive ghoul, thick and nearly impenetrable, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Blood Vial",
+      "rarity": "UNCOMMON",
+      "effect": "Restore 5 HP",
+      "artPrompt": "a small glass vial of dark crimson blood sealed with a wax stopper, warm and vital, gothic horror"
+    },
+    {
+      "type": "loot",
+      "name": "Soul Stone",
+      "rarity": "RARE",
+      "effect": "Restore 8 Energy",
+      "artPrompt": "a black gemstone containing a trapped soul, swirling with pale luminescence, gothic horror"
+    }
+  ],
+  "encounters": {
+    "threatOverrides": [
+      {
+        "id": "weak_beast",
+        "name": "Plague Rat Swarm",
+        "imageIcon": "pest_control",
+        "loot": [
+          "Rotting Flesh"
+        ],
+        "artPrompt": "a writhing swarm of diseased rats pouring from a cracked sewer grate, red eyes gleaming in the darkness, gothic horror"
+      },
+      {
+        "id": "scout",
+        "name": "Crawling Horror",
+        "loot": [
+          "Broken Fang",
+          "Ectoplasm"
+        ],
+        "artPrompt": "a pale eyeless creature crawling along the ceiling on too many limbs, its mouth full of needle teeth, gothic horror"
+      },
+      {
+        "id": "venomous",
+        "name": "Giant Centipede",
+        "loot": [
+          "Venom Gland",
+          "Thick Hide"
+        ],
+        "artPrompt": "an enormous black centipede coiling through the ruins, venom dripping from oversized mandibles, gothic horror"
+      },
+      {
+        "id": "thief",
+        "name": "Graverobber",
+        "loot": [
+          "Stolen Trinket",
+          "Rusty Blade"
+        ],
+        "artPrompt": "a hunched graverobber clutching a sack of plundered relics, lantern swinging, sneering from beneath a wide-brimmed hat, gothic horror"
+      },
+      {
+        "id": "alpha",
+        "name": "Werewolf",
+        "loot": [
+          "Werewolf Claw",
+          "Bone Shield"
+        ],
+        "artPrompt": "a massive werewolf mid-transformation, muscles rippling beneath torn clothing, fangs bared under the full moon, gothic horror"
+      },
+      {
+        "id": "heavy",
+        "name": "Flesh Golem",
+        "imageIcon": "precision_manufacturing",
+        "loot": [
+          "Cultist's Dagger",
+          "Blinding Dust"
+        ],
+        "artPrompt": "a hulking flesh golem stitched together from mismatched body parts, bolts protruding from its neck, lumbering forward with terrible purpose, gothic horror"
+      },
+      {
+        "id": "specialist",
+        "name": "Witch",
+        "type": "npc",
+        "imageIcon": "auto_awesome",
+        "loot": [
+          "Cursed Idol",
+          "Blood Vial"
+        ],
+        "artPrompt": "a gaunt witch hovering above a bubbling cauldron, hair wild, fingers crackling with dark magic, surrounded by hanging dried herbs and bones, gothic horror"
+      },
+      {
+        "id": "boss",
+        "name": "Elder Vampire",
+        "imageIcon": "psychology",
+        "loot": [
+          "Ghoul Carapace",
+          "Soul Stone"
+        ],
+        "behavior": "Drains 3 HP on hit",
+        "artPrompt": "an ancient vampire lord in regal decayed finery, pale skin and crimson eyes, fangs bared, clawed hands outstretched, bats swirling in the background, gothic horror"
+      }
+    ],
+    "scenarioOverrides": [
+      {
+        "id": "distant_warning",
+        "name": "Distant Howl",
+        "description": "A chilling howl echoes through the fog, but nothing emerges."
+      },
+      {
+        "id": "hidden_cache",
+        "name": "Occult Altar",
+        "description": "You discover a hidden altar with ritual offerings!",
+        "lootPool": [
+          {
+            "name": "Blood Vial",
+            "rarity": "UNCOMMON",
+            "effect": "Restore 5 HP",
+            "artPrompt": "a small glass vial of dark crimson blood sealed with a wax stopper, gothic horror"
+          },
+          {
+            "name": "Cursed Idol",
+            "rarity": "RARE",
+            "effect": "Draw 2 extra cards",
+            "artPrompt": "a small twisted idol of an unknowable deity, writhing with dark energy, gothic horror"
+          },
+          {
+            "name": "Ectoplasm",
+            "rarity": "UNCOMMON",
+            "effect": "Restore 4 Energy",
+            "artPrompt": "a jar of shimmering translucent ectoplasm, gothic horror"
+          }
+        ]
+      },
+      {
+        "id": "wandering_threat",
+        "name": "Shambling Corpse",
+        "description": "A reanimated corpse lurches from the shadows."
+      }
+    ]
+  }
+}

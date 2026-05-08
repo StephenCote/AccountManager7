@@ -1,0 +1,227 @@
+{
+    "version": 2,
+    "balanceRules": {
+        "targetTotalStats": 60,
+        "minStat": 6,
+        "maxStat": 18
+    },
+    "commonActions": ["Attack", "Flee", "Rest", "Use Item", "Talk"],
+    "templates": [
+        {
+            "id": "warrior-balanced",
+            "class": "Warrior",
+            "actions": ["Attack", "Guard", "Flee", "Rest", "Use Item", "Talk", "Investigate"],
+            "statistics": { "STR": 14, "AGI": 10, "END": 13, "INT": 8, "MAG": 6, "CHA": 9 },
+            "personality": ["brave", "honorable", "direct"],
+            "alignment": "LAWFUL_GOOD",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Knight" },
+                "dark-medieval": { "trade": "Man-at-Arms" },
+                "sci-fi": { "trade": "Marine" },
+                "post-apocalypse": { "trade": "Enforcer" },
+                "steampunk": { "trade": "Ironclad" },
+                "cyberpunk": { "trade": "Street Samurai" },
+                "space-opera": { "trade": "Vanguard" },
+                "horror": { "trade": "Monster Hunter" }
+            }
+        },
+        {
+            "id": "mage-glass-cannon",
+            "class": "Mage",
+            "actions": ["Attack", "Channel", "Flee", "Rest", "Use Item", "Talk", "Investigate"],
+            "statistics": { "STR": 6, "AGI": 8, "END": 7, "INT": 14, "MAG": 18, "CHA": 7 },
+            "personality": ["scholarly", "curious", "reserved"],
+            "alignment": "NEUTRAL",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Wizard" },
+                "dark-medieval": { "trade": "Alchemist" },
+                "sci-fi": { "trade": "Psionic" },
+                "post-apocalypse": { "trade": "Mutant" },
+                "steampunk": { "trade": "Aethermancer" },
+                "cyberpunk": { "trade": "Netrunner" },
+                "space-opera": { "trade": "Psion" },
+                "horror": { "trade": "Occultist" }
+            }
+        },
+        {
+            "id": "rogue-agile",
+            "class": "Rogue",
+            "actions": ["Attack", "Steal", "Feint", "Flee", "Rest", "Use Item", "Talk", "Investigate", "Trade"],
+            "statistics": { "STR": 8, "AGI": 16, "END": 9, "INT": 11, "MAG": 6, "CHA": 10 },
+            "personality": ["cunning", "opportunistic", "charming"],
+            "alignment": "CHAOTIC_NEUTRAL",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Thief" },
+                "dark-medieval": { "trade": "Cutpurse" },
+                "sci-fi": { "trade": "Hacker" },
+                "post-apocalypse": { "trade": "Scavenger" },
+                "steampunk": { "trade": "Gadgeteer" },
+                "cyberpunk": { "trade": "Shadow Runner" },
+                "space-opera": { "trade": "Smuggler" },
+                "horror": { "trade": "Grave Robber" }
+            }
+        },
+        {
+            "id": "cleric-support",
+            "class": "Cleric",
+            "actions": ["Attack", "Guard", "Channel", "Talk", "Flee", "Rest", "Use Item"],
+            "statistics": { "STR": 9, "AGI": 8, "END": 11, "INT": 10, "MAG": 14, "CHA": 8 },
+            "personality": ["compassionate", "devout", "calm"],
+            "alignment": "LAWFUL_GOOD",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Priest" },
+                "dark-medieval": { "trade": "Monk" },
+                "sci-fi": { "trade": "Medic" },
+                "post-apocalypse": { "trade": "Healer" },
+                "steampunk": { "trade": "Gearpriest" },
+                "cyberpunk": { "trade": "Ripperdoc" },
+                "space-opera": { "trade": "Ship Medic" },
+                "horror": { "trade": "Exorcist" }
+            }
+        },
+        {
+            "id": "ranger-scout",
+            "class": "Ranger",
+            "actions": ["Attack", "Investigate", "Craft", "Flee", "Rest", "Use Item", "Talk"],
+            "statistics": { "STR": 11, "AGI": 14, "END": 10, "INT": 9, "MAG": 8, "CHA": 8 },
+            "personality": ["observant", "patient", "independent"],
+            "alignment": "NEUTRAL_GOOD",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Ranger" },
+                "dark-medieval": { "trade": "Forester" },
+                "sci-fi": { "trade": "Scout" },
+                "post-apocalypse": { "trade": "Tracker" },
+                "steampunk": { "trade": "Aeronaut" },
+                "cyberpunk": { "trade": "Drone Jockey" },
+                "space-opera": { "trade": "Pathfinder" },
+                "horror": { "trade": "Stalker" }
+            }
+        },
+        {
+            "id": "bard-charismatic",
+            "class": "Bard",
+            "actions": ["Attack", "Talk", "Trade", "Steal", "Flee", "Rest", "Use Item"],
+            "statistics": { "STR": 7, "AGI": 10, "END": 8, "INT": 11, "MAG": 10, "CHA": 14 },
+            "personality": ["eloquent", "performative", "empathetic"],
+            "alignment": "CHAOTIC_GOOD",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Bard" },
+                "dark-medieval": { "trade": "Minstrel" },
+                "sci-fi": { "trade": "Diplomat" },
+                "post-apocalypse": { "trade": "Storyteller" },
+                "steampunk": { "trade": "Broadcasteer" },
+                "cyberpunk": { "trade": "Media Star" },
+                "space-opera": { "trade": "Ambassador" },
+                "horror": { "trade": "Mesmerist" }
+            }
+        },
+        {
+            "id": "tank-defender",
+            "class": "Tank",
+            "actions": ["Attack", "Guard", "Flee", "Rest", "Use Item", "Talk"],
+            "statistics": { "STR": 12, "AGI": 7, "END": 17, "INT": 8, "MAG": 6, "CHA": 10 },
+            "personality": ["protective", "stubborn", "loyal"],
+            "alignment": "LAWFUL_NEUTRAL",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Paladin" },
+                "dark-medieval": { "trade": "Shield-Bearer" },
+                "sci-fi": { "trade": "Heavy" },
+                "post-apocalypse": { "trade": "Guardian" },
+                "steampunk": { "trade": "Steamguard" },
+                "cyberpunk": { "trade": "Corporate Agent" },
+                "space-opera": { "trade": "Sentinel" },
+                "horror": { "trade": "Inquisitor" }
+            }
+        },
+        {
+            "id": "berserker-aggressive",
+            "class": "Berserker",
+            "actions": ["Attack", "Feint", "Flee", "Rest", "Use Item", "Talk", "Investigate"],
+            "statistics": { "STR": 16, "AGI": 11, "END": 12, "INT": 6, "MAG": 6, "CHA": 9 },
+            "personality": ["fierce", "impulsive", "fearless"],
+            "alignment": "CHAOTIC_NEUTRAL",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Barbarian" },
+                "dark-medieval": { "trade": "Mercenary" },
+                "sci-fi": { "trade": "Shock Trooper" },
+                "post-apocalypse": { "trade": "Raider" },
+                "steampunk": { "trade": "Brawler" },
+                "cyberpunk": { "trade": "Cyber Berserker" },
+                "space-opera": { "trade": "War Chief" },
+                "horror": { "trade": "Feral Hunter" }
+            }
+        },
+        {
+            "id": "assassin-stealth",
+            "class": "Assassin",
+            "actions": ["Attack", "Steal", "Feint", "Investigate", "Flee", "Rest", "Use Item", "Talk"],
+            "statistics": { "STR": 10, "AGI": 16, "END": 8, "INT": 12, "MAG": 6, "CHA": 8 },
+            "personality": ["calculating", "patient", "detached"],
+            "alignment": "NEUTRAL_EVIL",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Assassin" },
+                "dark-medieval": { "trade": "Poison Maker" },
+                "sci-fi": { "trade": "Operative" },
+                "post-apocalypse": { "trade": "Hunter" },
+                "steampunk": { "trade": "Saboteur" },
+                "cyberpunk": { "trade": "Wetwork Specialist" },
+                "space-opera": { "trade": "Bounty Hunter" },
+                "horror": { "trade": "Nightblade" }
+            }
+        },
+        {
+            "id": "battlemage-hybrid",
+            "class": "Battlemage",
+            "actions": ["Attack", "Channel", "Guard", "Craft", "Flee", "Rest", "Use Item", "Talk"],
+            "statistics": { "STR": 11, "AGI": 9, "END": 10, "INT": 10, "MAG": 12, "CHA": 8 },
+            "personality": ["disciplined", "strategic", "ambitious"],
+            "alignment": "LAWFUL_NEUTRAL",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Spellblade" },
+                "dark-medieval": { "trade": "Templar" },
+                "sci-fi": { "trade": "Tech-Mage" },
+                "post-apocalypse": { "trade": "Psyker" },
+                "steampunk": { "trade": "Arcane Engineer" },
+                "cyberpunk": { "trade": "Combat Hacker" },
+                "space-opera": { "trade": "Force Adept" },
+                "horror": { "trade": "Warlock" }
+            }
+        },
+        {
+            "id": "scholar-intellect",
+            "class": "Scholar",
+            "actions": ["Attack", "Investigate", "Craft", "Channel", "Flee", "Rest", "Use Item", "Talk"],
+            "statistics": { "STR": 6, "AGI": 8, "END": 8, "INT": 17, "MAG": 11, "CHA": 10 },
+            "personality": ["analytical", "curious", "methodical"],
+            "alignment": "NEUTRAL",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Sage" },
+                "dark-medieval": { "trade": "Herbalist" },
+                "sci-fi": { "trade": "Engineer" },
+                "post-apocalypse": { "trade": "Mechanic" },
+                "steampunk": { "trade": "Inventor" },
+                "cyberpunk": { "trade": "Tech Specialist" },
+                "space-opera": { "trade": "Xenobiologist" },
+                "horror": { "trade": "Paranormal Investigator" }
+            }
+        },
+        {
+            "id": "noble-leader",
+            "class": "Noble",
+            "actions": ["Attack", "Talk", "Trade", "Flee", "Rest", "Use Item", "Investigate"],
+            "statistics": { "STR": 8, "AGI": 9, "END": 9, "INT": 12, "MAG": 8, "CHA": 14 },
+            "personality": ["confident", "diplomatic", "commanding"],
+            "alignment": "LAWFUL_GOOD",
+            "themeVariants": {
+                "high-fantasy": { "trade": "Lord" },
+                "dark-medieval": { "trade": "Squire" },
+                "sci-fi": { "trade": "Commander" },
+                "post-apocalypse": { "trade": "Chief" },
+                "steampunk": { "trade": "Aristocrat" },
+                "cyberpunk": { "trade": "Fixer" },
+                "space-opera": { "trade": "Admiral" },
+                "horror": { "trade": "Patriarch" }
+            }
+        }
+    ]
+}
