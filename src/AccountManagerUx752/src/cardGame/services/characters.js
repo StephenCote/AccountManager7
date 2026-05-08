@@ -600,7 +600,9 @@ async function generateCharactersFromTemplates(themeId, count) {
             }
 
             // Apply template modifications
-            rolled.alignment = template.alignment;
+            // AlignmentEnumType has no underscores (LAWFULGOOD, CHAOTICNEUTRAL, ...).
+            // Enums are sent lowercase and read uppercase by the server.
+            rolled.alignment = (template.alignment || "NEUTRAL").replace(/_/g, "").toLowerCase();
             rolled.personality = template.personality || [];
             rolled.age = Math.floor(Math.random() * 38) + 18;  // Age 18-55
 
@@ -684,6 +686,12 @@ async function persistGeneratedCharacters(charList, deckName) {
 
             // Prepare entity with proper schema
             let charN = am7model.prepareEntity(char, "olio.charPerson", true);
+
+            // Strip client-only scratch fields the server schema rejects
+            delete charN._templateId;
+            delete charN._templateClass;
+            delete charN._templateActions;
+            delete charN._tempId;
 
             // Prepare nested wearables and qualities
             if (charN.store && charN.store.apparel && charN.store.apparel[0] && charN.store.apparel[0].wearables) {

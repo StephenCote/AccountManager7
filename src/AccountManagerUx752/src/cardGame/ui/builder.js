@@ -560,7 +560,7 @@ function BuilderReviewStep() {
                         disabled: buildingDeck || !deckNameInput.trim(),
                         onclick() {
                             ctx().builtDeck.deckName = deckNameInput.trim().replace(/[^a-zA-Z0-9_\-]/g, "_");
-                            NS.UI.saveDeck(ctx().builtDeck);
+                            NS.UI.DeckList.saveDeck(ctx().builtDeck);
                         }
                     }, buildingDeck ? "Saving..." : "Build & Save Deck")
                 ])

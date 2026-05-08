@@ -1,0 +1,2 @@
+docker run -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=password --name postgres -p 15432:5432 -d pgvector/pgvector
+docker run --name pgadmin -p 16543:80 -e "PGADMIN_DEFAULT_EMAIL=pgadmin@localhost.com" -e "PGADMIN_DEFAULT_PASSWORD=password" -d dpage/pgadmin4:snapshot
