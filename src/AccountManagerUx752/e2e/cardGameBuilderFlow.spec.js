@@ -23,12 +23,14 @@ test.describe('Card Game — Builder clean-install flow', () => {
 
     const allLogs = [];
     const failedRequests = [];
+    const charPersonRequests = [];
 
     test.beforeEach(async ({ page }) => {
         consoleErrors.length = 0;
         pageErrors.length = 0;
         allLogs.length = 0;
         failedRequests.length = 0;
+        charPersonRequests.length = 0;
         page.on('console', msg => {
             const t = msg.type();
             const text = msg.text();
@@ -40,6 +42,13 @@ test.describe('Card Game — Builder clean-install flow', () => {
             const url = resp.url();
             if (!url.includes('/AccountManagerService7/')) return;
             const status = resp.status();
+            // Capture every charPerson-related request
+            if (/charPerson|olio\.charPerson/i.test(url) ||
+                (resp.request().method() === 'POST' && /\/rest\/(model\/|create|olio)/i.test(url))) {
+                let body = '';
+                try { body = (await resp.text()).slice(0, 800); } catch {}
+                charPersonRequests.push(status + ' ' + resp.request().method() + ' ' + url + '\n  ' + body);
+            }
             if (status >= 400) {
                 let body = '';
                 try { body = (await resp.text()).slice(0, 500); } catch {}
@@ -58,7 +67,7 @@ test.describe('Card Game — Builder clean-install flow', () => {
     });
 
     test('theme -> characters -> review without UI crash', async ({ page }) => {
-        test.setTimeout(240000);
+        test.setTimeout(600000);
         await page.goto('/#!/cardGame');
         await page.waitForFunction(() => window.location.hash.includes('/cardGame'), { timeout: 15000 });
         await page.waitForFunction(() => window.__cardGameCtx, { timeout: 25000 });
@@ -138,6 +147,51 @@ test.describe('Card Game — Builder clean-install flow', () => {
         });
         console.log('[step2->3 diag]', JSON.stringify(persistDiag, null, 2));
         console.log('[step2->3 failed reqs]', JSON.stringify(failedRequests, null, 2));
+        // Dump the full log so we can see Persisted/Error lines from persistGeneratedCharacters
+        const persistRelated = allLogs.filter(l =>
+            /Persisted|already exists|Error persisting|Failed to create|Characters folder|Generated character/i.test(l));
+        console.log('[step2->3 persist-related logs]\n' + persistRelated.join('\n'));
+        console.log('[step2->3 charPerson reqs]\n' + charPersonRequests.slice(0, 12).join('\n----\n'));
+
+        // Probe: try persistGeneratedCharacters directly with a known temp char on a fresh path,
+        // and walk through each step to see exactly which call returns null.
+        const probe = await page.evaluate(async () => {
+            const out = { steps: [] };
+            try {
+                const cmod = await import('/src/cardGame/services/characters.js');
+                const sel = cmod.characters.state.selectedChars || [];
+                const firstTemp = sel.find(c => c._tempId);
+                out.steps.push({ step: 'sample', name: firstTemp?.name, hasTempId: !!firstTemp?._tempId, hasObjectId: !!firstTemp?.objectId });
+                if (!firstTemp) return out;
+                const am7model = (await import('/src/core/model.js')).am7model;
+                const pageMod = am7model._page;
+                const probeName = '__probe_' + Date.now();
+                // Step A: makePath
+                const charDir = await pageMod.makePath('auth.group', 'data', '~/CardGameProbe/' + probeName);
+                out.steps.push({ step: 'makePath', dirId: charDir?.id, dirPath: charDir?.path });
+                // Step B: searchFirst on empty dir (should return undefined)
+                const existing = await pageMod.searchFirst('olio.charPerson', charDir.id, firstTemp.name);
+                out.steps.push({ step: 'searchFirst-empty', existing: existing ? { id: existing.id, name: existing.name } : null });
+                // Step C: prepareEntity
+                const charN = am7model.prepareEntity(firstTemp, 'olio.charPerson', true);
+                delete charN._templateId; delete charN._templateClass; delete charN._templateActions; delete charN._tempId;
+                charN.groupId = charDir.id;
+                charN.groupPath = charDir.path;
+                out.steps.push({ step: 'prepareEntity', name: charN.name, alignment: charN.alignment, schema: charN.schema, groupId: charN.groupId });
+                // Step D: createObject
+                const created = await pageMod.createObject(charN);
+                out.steps.push({ step: 'createObject', returned: created === null ? 'null' : (typeof created), keys: created && typeof created === 'object' ? Object.keys(created).slice(0, 10) : null });
+                // Step E: searchFirst again
+                if (created) {
+                    const saved = await pageMod.searchFirst('olio.charPerson', charDir.id, firstTemp.name);
+                    out.steps.push({ step: 'searchFirst-after', saved: saved ? { id: saved.id, name: saved.name, objectId: saved.objectId } : null });
+                }
+            } catch (e) {
+                out.error = e.message + '\n' + (e.stack || '').slice(0, 500);
+            }
+            return out;
+        });
+        console.log('[PROBE]', JSON.stringify(probe, null, 2));
 
         // Step 3 must render the card grid; the failing m(CardFace,...) is at
         // builder.js:540 inside .cg2-card-art-wrapper.
@@ -165,7 +219,7 @@ test.describe('Card Game — Builder clean-install flow', () => {
             await page.waitForFunction(() => {
                 const ctx = window.__cardGameCtx;
                 return ctx && (ctx.screen === 'deckList' || ctx.screen === 'deckView' || ctx.builtDeck?.objectId);
-            }, { timeout: 60000 });
+            }, { timeout: 240000 });
         } catch (e) {
             const finalState = await page.evaluate(() => {
                 const ctx = window.__cardGameCtx;

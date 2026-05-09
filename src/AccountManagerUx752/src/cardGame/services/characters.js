@@ -667,6 +667,10 @@ async function persistGeneratedCharacters(charList, deckName) {
         return [];
     }
 
+    // Clear cached olio.charPerson queries so duplicate-check reads fresh data
+    // (cache layers — in-memory, SQLite, localStorage — otherwise return stale empty results)
+    getClient().clearCache("olio.charPerson");
+
     const persisted = [];
     for (const char of charList) {
         // Skip if already persisted (has objectId)
@@ -711,12 +715,30 @@ async function persistGeneratedCharacters(charList, deckName) {
             // Create the character
             let created = await getPage().createObject(charN);
             if (created) {
+                // The pre-create searchFirst poisoned the cache with an empty result;
+                // wipe it so the post-create search actually hits the server.
+                getClient().clearCache("olio.charPerson");
                 // Reload to get full object with objectId
                 let saved = await getPage().searchFirst("olio.charPerson", charDir.id, char.name);
                 if (saved) {
                     persisted.push(saved);
                     console.log('[CardGame] Persisted character:', saved.name);
+                } else {
+                    // Fall back: stitch identity fields from createObject onto the input.
+                    // This keeps the deck flow alive even if the post-create search hiccups.
+                    let fallback = Object.assign({}, char, {
+                        id: created.id,
+                        objectId: created.objectId,
+                        urn: created.urn,
+                        groupId: charN.groupId,
+                        groupPath: charN.groupPath
+                    });
+                    delete fallback._tempId;
+                    persisted.push(fallback);
+                    console.warn('[CardGame] Persisted character (search miss, using created stub):', char.name);
                 }
+            } else {
+                console.warn('[CardGame] createObject returned falsy for', char.name);
             }
         } catch (e) {
             console.error('[CardGame] Error persisting character:', char.name, e);

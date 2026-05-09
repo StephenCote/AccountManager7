@@ -256,9 +256,13 @@ async function applyThemeOutfits(deck, theme, skipSave) {
                 if (created) createdWearables.push(created);
             }
 
-            // 5. Link wearables to apparel via membership
+            // 5. Link wearables to apparel via membership.
+            // am7client.member signature: (participationModel, participationId, fieldName, participantModel, participantId, bAdd, callback)
+            // The Ux7 page.member shorthand isn't available in Ux752 — call client.member directly with the field name "wearables".
             for (let cw of createdWearables) {
-                await getPage().member("olio.apparel", createdApparel.objectId, "olio.wearable", cw.objectId, true);
+                await new Promise(res => {
+                    getClient().member("olio.apparel", createdApparel.objectId, "wearables", "olio.wearable", cw.objectId, true, res);
+                });
             }
 
             // 6. Link apparel to store via membership (field name: "apparel")

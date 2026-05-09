@@ -163,7 +163,7 @@
 			"name": "serverUrl",
 			"type": "string",
 			"maxLength": 512,
-			"default": "http://localhost:11434"
+			"default": "http://192.168.1.42:11434"
 		},
 		{
 			"name": "apiKey",
