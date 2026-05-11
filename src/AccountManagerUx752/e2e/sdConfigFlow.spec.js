@@ -123,8 +123,101 @@ test.describe('SD config + chat library', () => {
         // when forms reference a field the model schema doesn't have. The user
         // hit this for `loras` — the cardgame SD config form has it but the
         // client modelDef.js was drifted from the server schema.
-        const invalidFieldText = await page.locator('text=/Invalid field:/').first().textContent().catch(() => null);
-        expect(invalidFieldText, 'form rendered an Invalid field span (schema/form mismatch)').toBeNull();
+        const invalidFieldCount = await page.locator('text=/Invalid field:/').count();
+        if (invalidFieldCount > 0) {
+            const which = await page.locator('text=/Invalid field:/').allTextContents();
+            console.log('[Invalid field spans rendered]\n' + which.join('\n'));
+        }
+        expect(invalidFieldCount, 'form rendered "Invalid field: …" span (schema/form mismatch)').toBe(0);
+    });
+
+    test('viewDeck refreshAllCharacters: charPerson search succeeds', async ({ page }) => {
+        test.setTimeout(120000);
+        const failedReqs = [];
+        const charPersonReqs = [];
+        page.on('response', async (resp) => {
+            const url = resp.url();
+            if (!url.includes('/rest/')) return;
+            const status = resp.status();
+            const reqBody = resp.request().postData();
+            const isCharPersonSearch = reqBody && reqBody.includes('charPerson');
+            if (isCharPersonSearch) {
+                let respBody = '';
+                try { respBody = (await resp.text()).slice(0, 500); } catch {}
+                charPersonReqs.push({
+                    status, url,
+                    reqBody: (reqBody || '').slice(0, 600),
+                    respBody
+                });
+            }
+            if (status >= 400) {
+                let body = '';
+                try { body = (await resp.text()).slice(0, 400); } catch {}
+                failedReqs.push({ status, url, body });
+            }
+        });
+        const consoleErrors = [];
+        page.on('console', msg => {
+            if (msg.type() === 'error') consoleErrors.push(msg.text());
+        });
+        await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
+
+        await page.goto('/#!/cardGame');
+        await page.waitForFunction(() => window.__cardGameCtx, { timeout: 25000 });
+
+        // Load saved decks directly via the deckStorage list API (loadSavedDecks
+        // only fires when the deckList component mounts).
+        const deckInfo = await page.evaluate(async () => {
+            const storageMod = await import('/src/cardGame/state/storage.js');
+            const decks = await storageMod.deckStorage.list();
+            return { count: decks.length, decks: decks.slice(0, 3) };
+        });
+        console.log('[savedDecks]', JSON.stringify(deckInfo));
+        if (!deckInfo.count) {
+            test.skip(true, 'No saved decks for this user — run cardGameBuilderFlow first to seed one.');
+        }
+
+        // Find a deck that has char cards with sourceIds (mirrors what hits
+        // refreshAllCharacters → fetchCharPerson in the live UI).
+        const pickInfo = await page.evaluate(async (deckNames) => {
+            const storage = (await import('/src/cardGame/state/storage.js')).deckStorage;
+            for (const dn of deckNames) {
+                const d = await storage.load(dn);
+                if (!d || !d.cards) continue;
+                const charCards = d.cards.filter(c => c.type === 'character' && (c.sourceId || c._sourceChar));
+                const withSourceId = charCards.filter(c => c.sourceId);
+                if (withSourceId.length > 0) {
+                    return { name: dn, charCount: charCards.length, withSourceId: withSourceId.length, firstSourceId: withSourceId[0].sourceId };
+                }
+            }
+            return { name: null };
+        }, deckInfo.decks.map(d => d.name || d.deckName || d.storageName));
+        console.log('[pick deck]', JSON.stringify(pickInfo));
+        if (!pickInfo.name) {
+            test.skip(true, 'No saved deck with sourceId-bearing character cards.');
+        }
+
+        await page.evaluate(async (name) => {
+            const NS = window.__cardGameNS;
+            await NS.UI.DeckList.viewDeck(name);
+        }, pickInfo.name);
+
+        // Give refreshAllCharacters a chance to fire and complete
+        await page.waitForTimeout(8000);
+
+        const failedCp = charPersonReqs.filter(r => r.status >= 400);
+        if (failedCp.length || charPersonReqs.length === 0) {
+            console.log('[charPerson reqs] count=' + charPersonReqs.length + ' failed=' + failedCp.length);
+            charPersonReqs.slice(0, 3).forEach((r, i) => {
+                console.log('[req #' + i + ' status=' + r.status + ']');
+                console.log('  body: ' + r.reqBody);
+                console.log('  resp: ' + r.respBody);
+            });
+        }
+        console.log('[failed reqs all]\n' + failedReqs.slice(0, 5).map(r => r.status + ' ' + r.url + '\n  ' + r.body).join('\n'));
+
+        const postErr = consoleErrors.find(e => e.includes('Failed to post') && e.includes('/rest/model/search'));
+        expect(postErr, 'viewDeck triggered a failed /rest/model/search POST').toBeUndefined();
     });
 
     test('chatConfig list: clicking system button auto-loads templates', async ({ page }) => {
