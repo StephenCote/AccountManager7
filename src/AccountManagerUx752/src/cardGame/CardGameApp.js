@@ -54,7 +54,11 @@ const NS = {
     Constants: gameConstants,
     Storage: storage,
     GameState: gameState,
-    Rendering: { CardFace: cardFace.CardFace, CardBack: cardFace.CardBack, CardFlipContainer: cardFace.CardFlipContainer, NeedBar: cardComponents.NeedBar, StatBlock: cardComponents.StatBlock, ...cardComponents },
+    // Ux7 keeps overlay components (ImagePreviewOverlay, GalleryPickerOverlay,
+    // CardPreviewOverlay, showImagePreview, openGalleryPicker, ...) on Rendering.
+    // deckView.js / gameView.js read them as R.ImagePreviewOverlay etc., so they
+    // must live here even though they also stay reachable via NS.Overlays.
+    Rendering: { CardFace: cardFace.CardFace, CardBack: cardFace.CardBack, CardFlipContainer: cardFace.CardFlipContainer, NeedBar: cardComponents.NeedBar, StatBlock: cardComponents.StatBlock, ...cardComponents, ...overlays },
     Overlays: overlays,
     Characters: characters,
     Themes: themes,

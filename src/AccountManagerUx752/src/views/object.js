@@ -93,14 +93,37 @@ function newObjectPage() {
         setInst();
     }
 
+    // freeForm mode: caller (e.g. cardgame deckView SD Config panel) supplies the
+    // entity + instance directly via attrs, bypassing route-based load. See Ux7
+    // object.js for the original protocol — Ux752's port had stripped it, so the
+    // cardgame SD Config panel was crashing with `Invalid type` at model.js:62
+    // because objectType was undefined.
+    let freeFormMode = false;
+    let freeFormEntity = null;
+    let freeFormInstance = null;
+
     /** Resolve entity from route: /new => primitive, /view => search load. */
     function loadEntity() {
         let ctx = page.context();
         let type = objectType;
-        let modType = am7model.getModel(type);
         entity = null;
         tabIndex = 0;
         pinst = {};
+
+        if (freeFormMode) {
+            entity = freeFormEntity;
+            if (entity && !entity[am7model.jsonModelKey] && type) {
+                entity[am7model.jsonModelKey] = type;
+            }
+            if (freeFormInstance) {
+                inst = freeFormInstance;
+            } else {
+                setInst();
+            }
+            return;
+        }
+
+        let modType = am7model.getModel(type);
 
         if (objectNew) {
             if (objectId && !ctx.contextObjects[objectId]) {
@@ -1205,13 +1228,28 @@ function newObjectPage() {
 
     objectPage.view = {
         oninit: function (vnode) {
-            objectType = vnode.attrs.type || m.route.param('type');
+            freeFormMode = !!vnode.attrs.freeForm;
+            freeFormEntity = vnode.attrs.freeFormEntity || null;
+            freeFormInstance = vnode.attrs.freeFormInstance || null;
+            objectType = vnode.attrs.freeFormType || vnode.attrs.type || m.route.param('type');
             objectId = vnode.attrs.objectId || m.route.param('objectId');
             objectNew = vnode.attrs.new || (m.route.get() && m.route.get().match(/^\/new/gi));
             loadEntity();
-            if (!objectNew && objectType) page.checkFavorites(objectType);
+            if (!freeFormMode && !objectNew && objectType) page.checkFavorites(objectType);
         },
         onbeforeupdate: function (vnode) {
+            if (vnode.attrs.freeForm) {
+                // freeForm callers re-pass entity/instance every render — refresh in place.
+                let nextEntity = vnode.attrs.freeFormEntity || null;
+                let nextInst = vnode.attrs.freeFormInstance || null;
+                if (nextEntity !== freeFormEntity || nextInst !== freeFormInstance) {
+                    freeFormEntity = nextEntity;
+                    freeFormInstance = nextInst;
+                    objectType = vnode.attrs.freeFormType || objectType;
+                    loadEntity();
+                }
+                return;
+            }
             // Detect route parameter changes (e.g. picker View button navigating to another object)
             let newId = vnode.attrs.objectId || m.route.param('objectId');
             let newType = vnode.attrs.type || m.route.param('type');
@@ -1244,6 +1282,9 @@ function newObjectPage() {
     // Inner content renderer — called by router's pageLayout wrapper
     objectPage.renderContent = function () {
         if (!page.authenticated() || !inst) return m('div', { style: 'padding:20px' }, 'Loading...');
+        // freeForm callers (cardgame SD config panel etc.) want only the form body,
+        // not the page chrome (toolbar, tabs, picker overlay).
+        if (freeFormMode) return getForm();
         let inner = getObjectViewInner();
         if (!inner) return m('div', { style: 'padding:20px' }, 'No form definition for: ' + objectType);
         return inner;

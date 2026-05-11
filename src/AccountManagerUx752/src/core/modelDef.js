@@ -10015,6 +10015,12 @@
 			"minValue": 0.0,
 			"maxValue": 1.0,
 			"default": 0.75
+		},
+		{
+			"name": "loras",
+			"type": "list",
+			"baseType": "string",
+			"description": "List of LORA entries in format loraName:weight (e.g., myLora:0.8). Appended to prompts as comma-separated list."
 		}
       ]
     },

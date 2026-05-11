@@ -7,6 +7,12 @@ import { am7decorator } from '../components/decorator.js';
 import { newPaginationControl } from '../components/pagination.js';
 import { panel } from '../components/panel.js';
 import { FullCanvasViewer, GridPreview, renderContent, injectCSS as ivCSS } from '../components/imageViewer.js';
+// openSystemLibrary depends on these — the original Ux7 port relied on the
+// IIFE global pattern (`typeof LLMConnector !== 'undefined'`) which always
+// evaluates false in ESM scope, so the system button silently fell through
+// to "System library not initialized" instead of auto-loading the library.
+import { LLMConnector } from '../chat/LLMConnector.js';
+import { ChatSetupWizard } from '../chat/ChatSetupWizard.js';
 // breadcrumb is now a component in navigation.js (Ux7 pattern), not inline
 
 // ---------------------------------------------------------------------------
@@ -717,11 +723,17 @@ function newListControl() {
         let buttons = [];
         let cnt = pagination.pages().container;
         let favSel = '';
-        if (rs.accountAdmin || (rs.roleReader && type && type.match(/^auth\.role$/gi)) || (rs.permissionReader && type && type.match(/^auth\.permission$/gi))) {
-            buttons.push(pagination.button('button mr-4' + (systemList ? ' active' : ''), 'admin_panel_settings', '', listSystemType));
-        } else if (am7model.system && am7model.system.library && am7model.system.library[type]) {
+        // Library types (chatConfig, promptConfig, policies, …) always use the
+        // openSystemLibrary handler so clicking the system button either lands
+        // the user in /Library/<type> or seeds it via the wizard / init endpoint.
+        // The admin-only listSystemType toggle (filter-to-system-records) only
+        // applies for non-library types like auth.role / auth.permission.
+        let isLibraryType = am7model.system && am7model.system.library && am7model.system.library[type];
+        if (isLibraryType) {
             if (cnt && cnt.path && cnt.path.match(/^\/Library/gi)) favSel = ' bg-orange-200 active';
             buttons.push(pagination.button('button mr-4' + (systemList ? ' active' + favSel : ''), 'admin_panel_settings', '', openSystemLibrary));
+        } else if (rs.accountAdmin || (rs.roleReader && type && type.match(/^auth\.role$/gi)) || (rs.permissionReader && type && type.match(/^auth\.permission$/gi))) {
+            buttons.push(pagination.button('button mr-4' + (systemList ? ' active' : ''), 'admin_panel_settings', '', listSystemType));
         }
         if (type && type.match(/^policy\.policy/)) {
             buttons.push(pagination.button('button', 'shield', '', function () {
@@ -1015,14 +1027,22 @@ function newListControl() {
                 v = getListView();
             }
             if (vnode.attrs.pickerMode || vnode.attrs.embeddedMode) return v;
-            return [v, page.components.dialog.loadDialogs(), page.loadToast(), (typeof ChatSetupWizard !== 'undefined' ? ChatSetupWizard.view() : null)];
+            // ChatSetupWizard exports a `WizardView` Mithril component, not a `.view()` function;
+            // the previous `ChatSetupWizard.view()` call would have thrown TypeError as soon as
+            // the wizard was actually wired in. Mount it as a component so it can show itself
+            // when `ChatSetupWizard.show(...)` toggles `_visible`.
+            return [v, page.components.dialog.loadDialogs(), page.loadToast(), m(ChatSetupWizard.WizardView)];
         }
     };
 
-    // renderContent — called by router.js
+    // renderContent — called by router.js. Must include the ChatSetupWizard mount
+    // (and dialog/toast overlays) the same way listPage.view.view() does, otherwise
+    // the wizard's _visible flag is set but the component is never in the tree.
     listPage.renderContent = function (vnode) {
         let type = (vnode && vnode.attrs && vnode.attrs.type) || m.route.param('type') || listType;
-        return getListViewInner(type);
+        let inner = getListViewInner(type);
+        if ((vnode && vnode.attrs && (vnode.attrs.pickerMode || vnode.attrs.embeddedMode))) return inner;
+        return [inner, page.components.dialog.loadDialogs(), page.loadToast(), m(ChatSetupWizard.WizardView)];
     };
 
     listPage.closeView = function () {

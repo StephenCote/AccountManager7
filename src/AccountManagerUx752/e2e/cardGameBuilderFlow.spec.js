@@ -241,6 +241,21 @@ test.describe('Card Game — Builder clean-install flow', () => {
             s.includes('NS.UI.saveDeck is not a function') ||
             s.includes('saveDeck is not a function'));
         expect(saveErr, 'NS.UI.saveDeck wiring').toBeUndefined();
+
+        // After successful save the app calls viewDeck() which loads the
+        // freshly-saved deck and switches screen=deckView. The deckView
+        // renders R.ImagePreviewOverlay / R.GalleryPickerOverlay — must
+        // not throw "selector must be either a string or a component".
+        await page.waitForFunction(() => window.__cardGameCtx?.screen === 'deckView', { timeout: 30000 });
+
+        const overlayErr = [...consoleErrors, ...pageErrors].find(s =>
+            s.includes('selector must be either a string or a component'));
+        expect(overlayErr, 'deckView overlay component wiring (R.ImagePreviewOverlay)').toBeUndefined();
+
+        // Failed-to-load toast bug: save success followed by null load.
+        const failedLoad = [...consoleErrors, ...pageErrors, ...allLogs].find(s =>
+            s.includes('Failed to load deck'));
+        expect(failedLoad, 'post-save deckStorage.load returned null (cache poison)').toBeUndefined();
     });
 
     test('alignment values from template JSON are normalized to lowercase no-underscore', async ({ page }) => {

@@ -26,25 +26,38 @@ async function upsertDataRecord(groupPath, fileName, data) {
     if (!grp) { console.error("[CardGame] Could not create group:", groupPath); return null; }
     let encoded = encodeJson(data);
 
+    // The presence-check search below caches its result; if the record doesn't
+    // yet exist, an empty-results entry lands in the SQLite cache and the very
+    // next load of the same record returns null. Wipe the type cache first so
+    // both the search and the immediately-following load hit the server fresh.
+    getClient().clearCache("data.data");
+
     let q = am7view.viewQuery("data.data");
     q.field("groupId", grp.id);
     q.field("name", fileName);
     let qr = await page.search(q);
 
+    let result;
     if (qr?.results?.length) {
         let existing = qr.results[0];
         existing.dataBytesStore = encoded;
         existing.compressionType = "NONE";
-        return await page.patchObject(existing);
+        result = await page.patchObject(existing);
+    } else {
+        let obj = am7model.newPrimitive("data.data");
+        obj.name = fileName;
+        obj.contentType = "application/json";
+        obj.compressionType = "NONE";
+        obj.groupId = grp.id;
+        obj.groupPath = grp.path;
+        obj.dataBytesStore = encoded;
+        result = await page.createObject(obj);
     }
-    let obj = am7model.newPrimitive("data.data");
-    obj.name = fileName;
-    obj.contentType = "application/json";
-    obj.compressionType = "NONE";
-    obj.groupId = grp.id;
-    obj.groupPath = grp.path;
-    obj.dataBytesStore = encoded;
-    return await page.createObject(obj);
+
+    // Invalidate the now-stale empty-results cache entry from the presence check
+    // so the post-save load sees the record we just created/updated.
+    getClient().clearCache("data.data");
+    return result;
 }
 
 async function loadDataRecord(groupPath, fileName, createGroup) {
