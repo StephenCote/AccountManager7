@@ -177,30 +177,50 @@ test.describe('SD config + chat library', () => {
             test.skip(true, 'No saved decks for this user — run cardGameBuilderFlow first to seed one.');
         }
 
-        // Find a deck that has char cards with sourceIds (mirrors what hits
-        // refreshAllCharacters → fetchCharPerson in the live UI).
-        const pickInfo = await page.evaluate(async (deckNames) => {
-            const storage = (await import('/src/cardGame/state/storage.js')).deckStorage;
-            for (const dn of deckNames) {
-                const d = await storage.load(dn);
-                if (!d || !d.cards) continue;
-                const charCards = d.cards.filter(c => c.type === 'character' && (c.sourceId || c._sourceChar));
-                const withSourceId = charCards.filter(c => c.sourceId);
-                if (withSourceId.length > 0) {
-                    return { name: dn, charCount: charCards.length, withSourceId: withSourceId.length, firstSourceId: withSourceId[0].sourceId };
-                }
-            }
-            return { name: null };
-        }, deckInfo.decks.map(d => d.name || d.deckName || d.storageName));
-        console.log('[pick deck]', JSON.stringify(pickInfo));
-        if (!pickInfo.name) {
-            test.skip(true, 'No saved deck with sourceId-bearing character cards.');
-        }
+        // Direct probe: find a charPerson the user owns and call fetchCharPerson
+        // on it the same way refreshAllCharacters would. Mirrors the failing
+        // /rest/model/search POST without needing a sourceId-bearing deck.
+        const probe = await page.evaluate(async () => {
+            const am7m = (await import('/src/core/model.js')).am7model;
+            const am7v = (await import('/src/core/view.js')).am7view;
+            const pg = am7m._page;
 
-        await page.evaluate(async (name) => {
-            const NS = window.__cardGameNS;
-            await NS.UI.DeckList.viewDeck(name);
-        }, pickInfo.name);
+            // Find any charPerson record we can read
+            const findQ = am7v.viewQuery('olio.charPerson');
+            findQ.range(0, 1);
+            const findRes = await pg.search(findQ);
+            const sample = findRes && findRes.results && findRes.results[0];
+            if (!sample) return { error: 'no charPerson visible to user' };
+
+            // Now mirror fetchCharPerson exactly
+            const out = { sampleObjectId: sample.objectId, sampleName: sample.name };
+            try {
+                const q = am7v.viewQuery('olio.charPerson');
+                q.field('objectId', sample.objectId);
+                q.range(0, 1);
+                q.entity.request.push('profile', 'store', 'statistics');
+                out.requestBody = JSON.stringify(q.entity);
+                const qr = await pg.search(q);
+                out.qrIsNull = qr === null;
+                out.qrHasResults = !!(qr && qr.results && qr.results.length);
+                if (qr && qr.results && qr.results[0]) {
+                    out.firstKeys = Object.keys(qr.results[0]).slice(0, 15);
+                }
+            } catch (e) {
+                out.threw = e.message;
+            }
+            return out;
+        });
+        console.log('[fetchCharPerson probe]', JSON.stringify(probe, null, 2));
+
+        // Regression guards on the fetchCharPerson query shape itself —
+        // the user reported a 4xx on this exact POST. If the shape ever drifts
+        // (bad field name, duplicate fields server rejects, missing schema, …)
+        // this assertion will catch it before it reaches the UI.
+        expect(probe.error, 'test user has at least one readable charPerson').toBeUndefined();
+        expect(probe.threw, 'fetchCharPerson did not throw').toBeUndefined();
+        expect(probe.qrIsNull, 'pageSearch returned non-null for known charPerson').toBe(false);
+        expect(probe.qrHasResults, 'fetchCharPerson found the record').toBe(true);
 
         // Give refreshAllCharacters a chance to fire and complete
         await page.waitForTimeout(8000);
