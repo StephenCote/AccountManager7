@@ -1,4 +1,5 @@
 import m from 'mithril';
+import { page } from '../core/pageClient.js';
 
 // --- Dialog Stack ---
 
@@ -252,15 +253,69 @@ const Dialog = {
         });
     },
 
-    /** Backward-compat: old Ux7 setDialog(cfg) → Dialog.open(cfg) */
+    /** Backward-compat: old Ux7 setDialog(cfg) → Dialog.open(cfg)
+     *
+     * Two protocols are supported:
+     *  - New: { title, size, content, actions, ... } — content is a vnode.
+     *  - Old (Ux7): { label, entityType, size, data:{entity,inst,view}, confirm, cancel }
+     *    The entityType + data.entity drives a freeForm render of the object view,
+     *    matching the original createDialog() in Ux7 components/dialog.js. The
+     *    characterWizard / SD config / member-cloud flows all rely on this.
+     */
     setDialog: function (cfg) {
+        let isLegacyForm = !cfg.content && (cfg.entityType || (cfg.data && cfg.data.entity));
+        let content = cfg.content || null;
+        let actions = cfg.actions;
+
+        if (isLegacyForm) {
+            let data = cfg.data || {};
+            if (!data.view && page.views && typeof page.views.object === 'function') {
+                data.view = page.views.object().view;
+            }
+            let viewComponent = data.view;
+            content = viewComponent ? {
+                view: function () {
+                    return m(viewComponent, {
+                        freeForm: true,
+                        freeFormType: cfg.entityType,
+                        freeFormEntity: data.entity,
+                        freeFormInstance: data.inst
+                    });
+                }
+            } : null;
+
+            if (!actions) {
+                actions = [];
+                if (cfg.cancel) {
+                    actions.push({
+                        label: 'Cancel', icon: 'cancel',
+                        onclick: async function () {
+                            // pop dialog first so confirm/cancel callbacks that
+                            // open another dialog stack correctly
+                            Dialog.close();
+                            await cfg.cancel(data);
+                        }
+                    });
+                }
+                if (cfg.confirm) {
+                    actions.push({
+                        label: 'Ok', icon: 'check', primary: true,
+                        onclick: async function () {
+                            if (data.view && data.view.sync) data.view.sync();
+                            await cfg.confirm(data);
+                        }
+                    });
+                }
+            }
+        }
+
         Dialog.open({
             title: cfg.label || cfg.title || 'Dialog',
             size: cfg.size > 80 ? 'xl' : cfg.size > 50 ? 'lg' : cfg.size > 30 ? 'md' : 'sm',
-            content: cfg.content || null,
+            content: content,
             closable: true,
-            onClose: cfg.cancel,
-            actions: cfg.actions || (cfg.ok ? [
+            onClose: isLegacyForm ? null : cfg.cancel,
+            actions: actions || (cfg.ok ? [
                 { label: 'Cancel', onclick: function () { Dialog.close(); if (cfg.cancel) cfg.cancel(); } },
                 { label: 'OK', primary: true, onclick: function () { Dialog.close(); if (cfg.ok) cfg.ok(cfg.data); } }
             ] : [

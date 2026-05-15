@@ -129,6 +129,8 @@ async function reimage(entity, inst) {
         cinst.api.refinerSteps(40);
         cinst.api.cfg(5);
         cinst.api.refinerCfg(5);
+        cinst.entity.scheduler = 'karras';
+        cinst.entity.refinerScheduler = 'karras';
         if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(75);
     }
 

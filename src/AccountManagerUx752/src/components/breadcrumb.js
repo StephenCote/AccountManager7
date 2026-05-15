@@ -60,6 +60,11 @@ function modelBreadCrumb() {
 
     let crumbs = [];
     crumbButtons = [];
+    // While context is loading for a group-type route, do NOT render home crumbs
+    // — they let the user click "home" and accidentally navigate away from the
+    // sub-group they just chose, which was the /Olio/Universes regression
+    // (selecting a sub-group flashed ~/ and a follow-up click bounced there).
+    if (!contextLoaded) return crumbs;
     if (!sPath || !sPath.length) {
         console.warn("Unexpected path: " + sPath);
         return crumbs;

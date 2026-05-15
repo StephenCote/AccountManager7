@@ -1172,7 +1172,7 @@ function newObjectPage() {
                     m.redraw();
                 }
             }, m('span', {
-                class: 'material-symbols-outlined' + (page.isFavorite(entity) ? ' filled' : ''),
+                class: 'material-symbols-outlined material-icons-24' + (page.isFavorite(entity) ? ' filled' : ''),
                 style: page.isFavorite(entity) ? 'color:#eab308' : ''
             }, 'star')) : '')
         ];
