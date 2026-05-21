@@ -610,29 +610,38 @@ function isFavorite(obj) {
 async function toggleFavorite(obj) {
     let set = !isFavorite(obj);
     let fav = await favorites();
-    if (!fav) return false;
+    if (!fav) {
+        addToast('warn', 'Favorites group not available');
+        return false;
+    }
     let type = obj[am7model.jsonModelKey];
-    return new Promise(function (resolve) {
-        am7client.member(fav[am7model.jsonModelKey], fav.objectId, 'null', type, obj.objectId, set, function (r) {
-            contextModel.favorites[type] = undefined;
-            am7client.clearCache(fav[am7model.jsonModelKey], true);
-            checkFavorites(type);
-            resolve(!!r);
+    let b = await new Promise(function (resolve) {
+        am7client.member(fav[am7model.jsonModelKey], fav.objectId, null, type, obj.objectId, set, function (r) {
+            resolve(r);
         });
     });
+    if (!b) {
+        addToast('warn', 'Failed to ' + (set ? 'add' : 'remove') + ' favorite');
+    }
+    contextModel.favorites[type] = undefined;
+    await am7client.clearCache();
+    await checkFavorites(type);
+    return !!b;
 }
 
 async function checkFavorites(itype) {
     let type = itype || m.route.param('type');
-    if (type && contextModel.favorites[type] === undefined) {
-        contextModel.favorites[type] = [];
-        let fav = await favorites();
-        if (!fav) return;
+    if (!type || contextModel.favorites[type] !== undefined) return;
+    contextModel.favorites[type] = [];
+    let fav = await favorites();
+    if (!fav) return;
+    await new Promise(function (resolve) {
         am7client.members(fav[am7model.jsonModelKey], fav.objectId, type, 0, 100, function (v) {
             contextModel.favorites[type] = v || [];
             m.redraw();
+            resolve();
         });
-    }
+    });
 }
 
 // --- Page Object ---

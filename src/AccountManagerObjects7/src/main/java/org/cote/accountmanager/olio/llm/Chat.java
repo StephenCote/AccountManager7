@@ -70,6 +70,24 @@ public class Chat {
 	public static final String assistantRole = "assistant";
 	public static final String systemRole = "system";
 	private static final String CHAT_OPS_RESOURCE = "chatOperations";
+
+	/// Whitelist of Material Symbols icon names the chat title generator may return.
+	/// Kept in sync with the allowed list in chatOperations.json titleSystem.
+	/// LLMs hallucinate non-existent icon names; anything not in this set falls back to "chat".
+	private static final java.util.Set<String> ALLOWED_CHAT_ICONS = java.util.Set.of(
+		"chat", "forum", "mail", "sms", "call", "group", "person", "support_agent",
+		"psychology", "school", "science", "book", "library_books", "menu_book", "article", "edit_note", "lightbulb", "quiz",
+		"code", "terminal", "smart_toy", "computer", "web", "settings", "memory", "bug_report",
+		"palette", "brush", "image", "photo_camera", "music_note", "theater_comedy", "draw", "movie",
+		"hiking", "sports_esports", "sports_baseball", "fitness_center", "restaurant", "travel_explore", "flight", "directions_car", "pets",
+		"work", "business_center", "task", "event", "schedule", "list_alt", "fact_check",
+		"home", "bed", "kitchen", "shopping_cart", "family_restroom", "child_care",
+		"payments", "savings", "account_balance", "attach_money",
+		"medical_services", "healing", "favorite", "monitor_heart",
+		"park", "eco", "water_drop", "wb_sunny",
+		"build", "construction", "handyman",
+		"star", "help", "info", "lock", "public", "question_mark", "warning"
+	);
 	
 	protected IOContext ioContext = null;
 	public static final Logger logger = LogManager.getLogger(Chat.class);
@@ -947,6 +965,10 @@ public class Chat {
 						if (nonEmpty.size() >= 2) {
 							icon = nonEmpty.get(1).replaceAll("^Icon:\\s*", "").trim().toLowerCase().replaceAll("[^a-z0-9_]", "");
 							if (icon.isEmpty()) icon = null;
+						}
+						if (icon != null && !ALLOWED_CHAT_ICONS.contains(icon)) {
+							logger.info("generateTitleAndIcon: LLM returned non-whitelisted icon '" + icon + "', falling back to 'chat'");
+							icon = "chat";
 						}
 						logger.info("generateTitleAndIcon: parsed title='" + title + "' icon='" + icon + "'");
 					}

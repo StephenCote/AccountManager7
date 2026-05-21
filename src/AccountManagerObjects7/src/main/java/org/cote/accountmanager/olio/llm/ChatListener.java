@@ -127,9 +127,16 @@ public class ChatListener implements IChatListener {
 			req.setValue("stream", true);
 		}
 		
-		if(vChatReq.getMessage() != null && vChatReq.getMessage().equals("[stop]") && asyncRequests.containsKey(oid)) {
-			logger.info("Stopping chat request: " + oid);
-			asyncRequestStop.put(oid, true);
+		if(vChatReq.getMessage() != null && vChatReq.getMessage().equals("[stop]")) {
+			/// [stop] is a control signal, not a chat message — never let it flow
+			/// through to continueChat or it will be appended to history as a real
+			/// user message and trigger an unwanted LLM turn.
+			if (asyncRequests.containsKey(oid)) {
+				logger.info("Stopping chat request: " + oid);
+				asyncRequestStop.put(oid, true);
+			} else {
+				logger.info("Stop signal received but no active request for " + oid + " — ignoring");
+			}
 			return req;
 		}
 		
