@@ -285,6 +285,7 @@ function newChatStream() {
             scheduleStreamRedraw();
         },
         onchatcomplete: function(id) {
+            if (cfg.streamId !== id) return;
             chatCfg.streaming = false;
             chatCfg.pending = false;
             if (chatCfg.streamText) {
@@ -305,6 +306,7 @@ function newChatStream() {
             page.chatStream = null;
         },
         onchaterror: function(id, err) {
+            if (cfg.streamId !== id) return;
             chatCfg.streaming = false;
             _streamCache.text = "";
             _streamCache.formatted = "";

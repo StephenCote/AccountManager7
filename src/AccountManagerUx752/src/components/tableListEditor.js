@@ -35,7 +35,8 @@ function getFieldState(fieldName) {
             editEntry: null,
             editIndex: null,
             editInstance: null,
-            highlightId: null
+            highlightId: null,
+            expandedIds: new Set()
         };
     }
     return fieldStates[fieldName];
@@ -66,6 +67,35 @@ function formatSummaryValue(val) {
     val = '' + val;
     if (val.length > 50) return val.substring(0, 47) + '...';
     return val;
+}
+
+function formatExpandedValue(val) {
+    if (val === undefined || val === null) return '';
+    if (Array.isArray(val)) {
+        return val.map(function(v) {
+            if (v === null || v === undefined) return '';
+            if (typeof v === 'object') {
+                try { return JSON.stringify(v, null, 2); } catch(e) { return String(v); }
+            }
+            return String(v);
+        }).join('\n');
+    }
+    if (typeof val === 'object') {
+        try { return JSON.stringify(val, null, 2); } catch(e) { return String(val); }
+    }
+    return '' + val;
+}
+
+function hasLongValue(entry, summaryFields) {
+    for (let i = 0; i < summaryFields.length; i++) {
+        let v = entry[summaryFields[i]];
+        if (v === undefined || v === null) continue;
+        if (Array.isArray(v) && v.length > 0) return true;
+        if (typeof v === 'object') return true;
+        let s = '' + v;
+        if (s.length > 50 || s.indexOf('\n') !== -1) return true;
+    }
+    return false;
 }
 
 // ── Data Access ─────────────────────────────────────────────────────
@@ -386,18 +416,27 @@ function deleteEntryDirect(fs, entry, index, ctx) {
 function renderListRow(entry, index, fs, tableForm, ctx) {
     let entryId = getEntryId(entry);
     let isHighlighted = (fs.highlightId === entryId);
+    let isExpanded = fs.expandedIds && fs.expandedIds.has(entryId);
     let summaryFields = getSummaryFields(tableForm);
     let cmds = tableForm.commands || {};
     let hasEdit = !!cmds.edit;
     let hasDelete = !!cmds.delete;
-
-    let summaryParts = summaryFields.map(function(fk) {
-        return formatSummaryValue(entry[fk]);
-    }).filter(function(v) { return v.length > 0; });
-
-    let summaryText = summaryParts.join(' \u00b7 ');
+    let canExpand = hasLongValue(entry, summaryFields);
 
     let actions = [];
+    if (canExpand) {
+        actions.push(m("button", {
+            class: "p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300",
+            title: isExpanded ? "Collapse" : "Expand",
+            onclick: function(e) {
+                e.stopPropagation();
+                if (!fs.expandedIds) fs.expandedIds = new Set();
+                if (isExpanded) fs.expandedIds.delete(entryId);
+                else fs.expandedIds.add(entryId);
+                m.redraw();
+            }
+        }, m("span", { class: "material-symbols-outlined", style: "font-size:16px" }, isExpanded ? "expand_less" : "expand_more")));
+    }
     if (hasEdit) {
         actions.push(m("button", {
             class: "p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300",
@@ -421,8 +460,28 @@ function renderListRow(entry, index, fs, tableForm, ctx) {
         }, m("span", { class: "material-symbols-outlined", style: "font-size:16px" }, "delete")));
     }
 
+    let contentNode;
+    if (isExpanded) {
+        let blocks = summaryFields.map(function(fk) {
+            let val = formatExpandedValue(entry[fk]);
+            if (!val) return null;
+            let label = (tableForm.fields[fk] && tableForm.fields[fk].label) || fk;
+            return m("div", { class: "mb-1.5 last:mb-0" }, [
+                m("div", { class: "text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5" }, label),
+                m("div", { class: "text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words leading-snug" }, val)
+            ]);
+        }).filter(function(b) { return b !== null; });
+        contentNode = m("div", { class: "flex-1 min-w-0" }, blocks.length ? blocks : m("span", { class: "text-sm italic text-gray-400" }, "(empty)"));
+    } else {
+        let summaryParts = summaryFields.map(function(fk) {
+            return formatSummaryValue(entry[fk]);
+        }).filter(function(v) { return v.length > 0; });
+        let summaryText = summaryParts.join(' \u00b7 ');
+        contentNode = m("span", { class: "text-sm text-gray-700 dark:text-gray-300 truncate flex-1" }, summaryText || "(empty)");
+    }
+
     return m("div", {
-        class: "flex items-center justify-between px-2 py-1.5 border-b border-gray-100 dark:border-gray-700/50 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+        class: "flex items-start justify-between px-2 py-1.5 border-b border-gray-100 dark:border-gray-700/50 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
             + (isHighlighted ? " bg-blue-50 dark:bg-blue-900/20" : ""),
         ondblclick: function(e) {
             e.preventDefault();
@@ -435,8 +494,8 @@ function renderListRow(entry, index, fs, tableForm, ctx) {
             m.redraw();
         }
     }, [
-        m("span", { class: "text-sm text-gray-700 dark:text-gray-300 truncate flex-1" }, summaryText || "(empty)"),
-        actions.length ? m("span", { class: "flex gap-0.5 shrink-0 ml-2" }, actions) : null
+        contentNode,
+        actions.length ? m("span", { class: "flex gap-0.5 shrink-0 ml-2 mt-0.5" }, actions) : null
     ]);
 }
 
@@ -636,7 +695,7 @@ function render(ctx) {
     let parts = [];
     parts.push(renderToolbar(fs, items, ctx, hidden));
     if (!hidden) {
-        parts.push(m("div", { class: "max-h-64 overflow-y-auto" }, listRows));
+        parts.push(m("div", { class: "max-h-[60vh] overflow-y-auto" }, listRows));
         parts.push(renderPagination(filtered, fs));
         // New entry editor goes after list if not already inline
         if (fs.mode === 'creating' && !paged.some(function(e) { return getEntryId(e) === fs.activeId; })) {

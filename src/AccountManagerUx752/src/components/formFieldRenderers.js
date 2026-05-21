@@ -127,34 +127,54 @@ renderers.select = function(ctx) {
 // ── Range Slider ────────────────────────────────────────────────────
 
 renderers.range = function(ctx) {
-    let min = 0, max = 100;
+    let isDouble = ctx.field && ctx.field.type === "double";
+    let min = 0, max = isDouble ? 1 : 100;
     if (ctx.field && typeof ctx.field.minValue === "number" && typeof ctx.field.maxValue === "number") {
-        if (ctx.field.type === "double" && ctx.field.maxValue >= 1) {
-            max = ctx.field.maxValue * 100;
-            if (min !== 0) min = ctx.field.minValue * 100;
-        } else {
-            min = ctx.field.minValue;
-            max = ctx.field.maxValue;
-        }
+        min = ctx.field.minValue;
+        max = ctx.field.maxValue;
     }
 
-    let inputAttrs = {
+    let step;
+    if (isDouble) {
+        step = 0.01;
+    } else {
+        let span = max - min;
+        if (span <= 100) step = 1;
+        else if (span <= 1000) step = 10;
+        else if (span <= 10000) step = 100;
+        else step = Math.max(1, Math.round(span / 1000));
+    }
+
+    let displayVal = ctx.defVal != null ? ctx.defVal : "";
+
+    let rangeAttrs = {
         type: "range",
-        class: (ctx.fieldClass || "") + " range-field-full",
+        class: (ctx.fieldClass || "") + " range-field-full flex-1",
         name: ctx.useName,
-        value: ctx.defVal,
+        value: displayVal,
         min: min,
         max: max,
+        step: step,
         oninput: ctx.fHandler
     };
-    if (ctx.disabled) inputAttrs.disabled = true;
+    if (ctx.disabled) rangeAttrs.disabled = true;
 
-    return [m("div", { class: "relative mb-5" }, [
+    let numberAttrs = {
+        type: "number",
+        class: "text-field-compact w-20 text-right text-sm",
+        name: ctx.useName + "_num",
+        value: displayVal,
+        min: min,
+        max: max,
+        step: step,
+        oninput: ctx.fHandler
+    };
+    if (ctx.disabled) numberAttrs.disabled = true;
+
+    return [m("div", { class: "flex items-center gap-2 mb-1" }, [
         m("label", { class: "sr-only" }, "Range"),
-        m("input", inputAttrs),
-        m("span", { class: "text-sm text-gray-500 absolute start-0 -bottom-6" }, min),
-        m("span", { class: "text-sm text-gray-500 absolute start-1/2 -translate-x-1/2 -bottom-6" }, ctx.defVal),
-        m("span", { class: "text-sm text-gray-500 absolute end-0 -bottom-6" }, max)
+        m("input", rangeAttrs),
+        m("input", numberAttrs)
     ])];
 };
 

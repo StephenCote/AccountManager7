@@ -10239,6 +10239,11 @@
           "name": "seed",
           "type": "int",
           "default": 0
+        },
+        {
+          "name": "think",
+          "type": "boolean",
+          "default": true
         }
       ]
     },

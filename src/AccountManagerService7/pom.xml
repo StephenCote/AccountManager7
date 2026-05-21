@@ -31,7 +31,7 @@
 	<properties>
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<jersey.version>3.1.5</jersey.version>
+		<jersey.version>3.1.11</jersey.version>
 		<jaxrs.version>3.1.0</jaxrs.version>
 		<jakartaee.version>11.0.0-M2</jakartaee.version>
 		<!--
