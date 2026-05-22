@@ -1,6 +1,7 @@
 /**
- * SdConfigPanel — Shared SD config form used by all features (ESM)
- * One authoritative sdConfig form: chat scene gen, pictureBook, reimage dialog.
+ * SdConfigPanel — Shared SD config form (ESM)
+ * Layout mirrors the reimage dialog so the same fields/options are exposed
+ * everywhere: scene generation, picture book, reimage, etc.
  *
  * Usage:
  *   import { SdConfigPanel } from '../components/SdConfigPanel.js';
@@ -9,66 +10,127 @@
 import m from 'mithril';
 
 const STYLE_OPTIONS = ['art', 'movie', 'photograph', 'selfie', 'anime', 'portrait', 'comic', 'digitalArt', 'fashion', 'vintage', 'custom'];
-const SAMPLER_OPTIONS = ['dpmpp_2m', 'euler_a', 'euler', 'dpmpp_sde', 'ddim'];
-const SCHEDULER_OPTIONS = ['Karras', 'Normal', 'Exponential'];
+
+/// Full sampler list matched to the reimage dialog (workflows/reimage.js).
+const SAMPLER_OPTIONS = [
+    'dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde',
+    'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm',
+    'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast',
+    'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'
+];
+
+/// Full scheduler list matched to the reimage dialog.
+const SCHEDULER_OPTIONS = [
+    'normal', 'karras', 'exponential', 'sgm_uniform', 'simple',
+    'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'
+];
+
 const DIMENSION_OPTIONS = ['512', '640', '768', '832', '896', '1024', '1152', '1280', '1536', '2048'];
 
 function inputClass() {
     return "w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white text-xs";
 }
 
-function fieldRow(label, content) {
-    return m("div", { class: "flex items-center justify-between gap-2 mb-2" }, [
-        m("label", { class: "text-xs text-gray-500 dark:text-gray-400 shrink-0 w-28" }, label),
-        m("div", { class: "flex-1" }, content)
+function labelClass() {
+    return "block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5";
+}
+
+/// Stacked field: label sits above the input. Used inside a grid cell.
+function field(label, inputNode) {
+    return m("div", [
+        m("label", { class: labelClass() }, label),
+        inputNode
     ]);
 }
 
-function halfRow(left, right) {
-    return m("div", { class: "flex gap-2 mb-2" }, [
-        m("div", { class: "flex-1" }, left),
-        m("div", { class: "flex-1" }, right)
-    ]);
+function modelSelectInput(config, key, modelNames, onChange) {
+    let val = config[key] || "";
+    if (modelNames.length > 0) {
+        return m("select", {
+            class: inputClass(),
+            value: val,
+            onchange: function(e) { config[key] = e.target.value; if (onChange) onChange(); }
+        }, [m("option", { value: "" }, "-- Select --")].concat(
+            modelNames.map(function(ml) {
+                return m("option", { value: ml, selected: ml === val }, ml);
+            })
+        ));
+    }
+    return m("input", {
+        type: "text",
+        class: inputClass(),
+        value: val,
+        oninput: function(e) { config[key] = e.target.value; if (onChange) onChange(); }
+    });
 }
 
-function selectField(config, key, options, onChange) {
+function selectInput(config, key, options, onChange) {
+    let val = config[key] != null ? config[key] : "";
     return m("select", {
         class: inputClass(),
-        value: config[key] || "",
+        value: val,
         onchange: function(e) { config[key] = e.target.value; if (onChange) onChange(); }
-    }, [
-        m("option", { value: "" }, "Default"),
-        ...options.map(function(opt) {
-            let val = typeof opt === "string" ? opt : (opt.name || opt.title || "");
-            return m("option", { value: val, selected: config[key] === val }, val);
-        })
-    ]);
+    }, options.map(function(opt) {
+        return m("option", { value: opt, selected: String(val) === String(opt) }, opt);
+    }));
 }
 
-function numberField(config, key, min, max, step, onChange) {
+function numberInput(config, key, min, max, step, onChange) {
     return m("input", {
         type: "number",
         min: min,
         max: max,
         step: step || 1,
         class: inputClass(),
-        value: config[key],
+        value: config[key] != null ? config[key] : "",
         onchange: function(e) {
-            config[key] = step && step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value);
+            let raw = e.target.value;
+            if (raw === "") { config[key] = null; }
+            else { config[key] = (step && step < 1) ? parseFloat(raw) : parseInt(raw); }
             if (onChange) onChange();
         }
     });
 }
 
-function checkboxField(config, key, label, onChange) {
-    return m("label", { class: "flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer" }, [
-        m("input", {
-            type: "checkbox",
-            checked: !!config[key],
-            onchange: function(e) { config[key] = e.target.checked; if (onChange) onChange(); }
-        }),
-        label
-    ]);
+function rangeInput(config, key, min, max, step, onChange) {
+    return m("input", {
+        type: "range",
+        min: min,
+        max: max,
+        step: step || 1,
+        class: "w-full",
+        value: config[key] != null ? config[key] : min,
+        oninput: function(e) {
+            config[key] = (step && step < 1) ? parseFloat(e.target.value) : parseInt(e.target.value);
+            if (onChange) onChange();
+        }
+    });
+}
+
+function checkboxInput(config, key, onChange) {
+    return m("input", {
+        type: "checkbox",
+        checked: !!config[key],
+        onchange: function(e) { config[key] = e.target.checked; if (onChange) onChange(); }
+    });
+}
+
+function textInput(config, key, onChange, placeholder) {
+    return m("input", {
+        type: "text",
+        class: inputClass(),
+        value: config[key] || "",
+        placeholder: placeholder || "",
+        oninput: function(e) { config[key] = e.target.value; if (onChange) onChange(); }
+    });
+}
+
+/// Style-specific field appears only when current style matches one of
+/// the pipe-delimited styles (mirrors styleField in workflows/reimage.js).
+function styleField(config, label, key, styles, onChange) {
+    let current = config.style || "";
+    if (styles.split('|').indexOf(current) < 0) return null;
+    return field(label, textInput(config, key, onChange));
 }
 
 /**
@@ -76,15 +138,16 @@ function checkboxField(config, key, label, onChange) {
  * attrs:
  *   config  — sdConfig object (mutated in-place)
  *   models  — array of SD model names/objects (from /rest/olio/sdModels)
+ *   loras   — optional array of LoRA names
  *   onChange — callback after any field changes
- *   compact — if true, render in compact mode (fewer fields)
+ *   compact — kept for back-compat; layout is identical (single source of truth)
  */
 const SdConfigPanel = {
     view: function(vnode) {
         let config = vnode.attrs.config;
         let models = vnode.attrs.models || [];
+        let loraList = vnode.attrs.loras || [];
         let onChange = vnode.attrs.onChange;
-        let compact = vnode.attrs.compact;
 
         if (!config) return null;
 
@@ -92,66 +155,122 @@ const SdConfigPanel = {
             return typeof mdl === "string" ? mdl : (mdl.name || mdl.title || "");
         }).filter(Boolean);
 
-        let fields = [];
+        let sections = [];
 
-        // Model + Refiner Model
-        fields.push(fieldRow("Model", selectField(config, "model", modelNames, onChange)));
-        fields.push(fieldRow("Refiner", selectField(config, "refinerModel", modelNames, onChange)));
+        /// Composition / Action / Setting — prompt-shaping text (3-up).
+        sections.push(m("div", { class: "grid grid-cols-3 gap-3" }, [
+            field("Composition", textInput(config, "bodyStyle", onChange)),
+            field("Action", textInput(config, "imageAction", onChange)),
+            field("Setting", textInput(config, "imageSetting", onChange))
+        ]));
 
-        // Style
-        fields.push(fieldRow("Style", selectField(config, "style", STYLE_OPTIONS, onChange)));
+        /// Style + Denoising (range with live value in label).
+        sections.push(m("div", { class: "grid grid-cols-2 gap-3" }, [
+            field("Style", selectInput(config, "style", [""].concat(STYLE_OPTIONS), onChange)),
+            field("Denoising: " + (config.denoisingStrength != null ? config.denoisingStrength : 0.65),
+                rangeInput(config, "denoisingStrength", 0, 1, 0.05, onChange))
+        ]));
 
-        // Steps + Refiner Steps
-        fields.push(halfRow(
-            fieldRow("Steps", numberField(config, "steps", 1, 150, 1, onChange)),
-            fieldRow("Ref Steps", numberField(config, "refinerSteps", 0, 150, 1, onChange))
-        ));
+        /// Style-specific fields — only those matching the current style appear.
+        let styleFields = [
+            styleField(config, 'Art Style', 'artStyle', 'art', onChange),
+            styleField(config, 'Director', 'director', 'movie', onChange),
+            styleField(config, 'Photographer', 'photographer', 'photograph|portrait|fashion', onChange),
+            styleField(config, 'Phone', 'selfiePhone', 'selfie', onChange),
+            styleField(config, 'Angle', 'selfieAngle', 'selfie', onChange),
+            styleField(config, 'Lighting', 'selfieLighting', 'selfie', onChange),
+            styleField(config, 'Studio', 'animeStudio', 'anime', onChange),
+            styleField(config, 'Era', 'animeEra', 'anime', onChange),
+            styleField(config, 'Lighting', 'portraitLighting', 'portrait', onChange),
+            styleField(config, 'Backdrop', 'portraitBackdrop', 'portrait', onChange),
+            styleField(config, 'Publisher', 'comicPublisher', 'comic', onChange),
+            styleField(config, 'Era', 'comicEra', 'comic', onChange),
+            styleField(config, 'Coloring', 'comicColoring', 'comic', onChange),
+            styleField(config, 'Medium', 'digitalMedium', 'digitalArt', onChange),
+            styleField(config, 'Software', 'digitalSoftware', 'digitalArt', onChange),
+            styleField(config, 'Artist', 'digitalArtist', 'digitalArt', onChange),
+            styleField(config, 'Magazine', 'fashionMagazine', 'fashion', onChange),
+            styleField(config, 'Decade', 'fashionDecade', 'fashion', onChange),
+            styleField(config, 'Decade', 'vintageDecade', 'vintage', onChange),
+            styleField(config, 'Processing', 'vintageProcessing', 'vintage', onChange),
+            styleField(config, 'Camera', 'vintageCamera', 'vintage', onChange),
+            styleField(config, 'Still Camera', 'stillCamera', 'photograph', onChange),
+            styleField(config, 'Lens', 'lens', 'photograph', onChange),
+            styleField(config, 'Film', 'film', 'photograph', onChange),
+            styleField(config, 'Process', 'colorProcess', 'movie|photograph', onChange),
+            styleField(config, 'Movie Camera', 'movieCamera', 'movie', onChange),
+            styleField(config, 'Movie Film', 'movieFilm', 'movie', onChange)
+        ].filter(Boolean);
+        if (styleFields.length) {
+            sections.push(m("div", { class: "grid grid-cols-2 gap-3" }, styleFields));
+        }
 
-        // CFG + Refiner CFG
-        fields.push(halfRow(
-            fieldRow("CFG", numberField(config, "cfg", 1, 30, 0.5, onChange)),
-            fieldRow("Ref CFG", numberField(config, "refinerCfg", 1, 30, 0.5, onChange))
-        ));
-
-        // Denoising
-        fields.push(fieldRow("Denoising", numberField(config, "denoisingStrength", 0, 1, 0.05, onChange)));
-
-        // Sampler + Scheduler
-        fields.push(halfRow(
-            fieldRow("Sampler", selectField(config, "sampler", SAMPLER_OPTIONS, onChange)),
-            fieldRow("Scheduler", selectField(config, "scheduler", SCHEDULER_OPTIONS, onChange))
-        ));
-
-        // Dimensions
-        fields.push(halfRow(
-            fieldRow("Width", selectField(config, "width", DIMENSION_OPTIONS, onChange)),
-            fieldRow("Height", selectField(config, "height", DIMENSION_OPTIONS, onChange))
-        ));
-
-        // Seed + Hi-Res
-        fields.push(halfRow(
-            fieldRow("Seed", numberField(config, "seed", -1, 999999999, 1, onChange)),
-            m("div", { class: "flex items-center pt-3 pl-2" }, checkboxField(config, "hires", "Hi-Res", onChange))
-        ));
-
-        if (!compact) {
-            // Composition fields
-            fields.push(fieldRow("Composition", m("input", {
-                type: "text", class: inputClass(), value: config.bodyStyle || "",
-                oninput: function(e) { config.bodyStyle = e.target.value; if (onChange) onChange(); }
-            })));
-            fields.push(fieldRow("Action", m("input", {
-                type: "text", class: inputClass(), value: config.imageAction || "",
-                oninput: function(e) { config.imageAction = e.target.value; if (onChange) onChange(); }
-            })));
-            fields.push(fieldRow("Setting", m("input", {
-                type: "text", class: inputClass(), value: config.imageSetting || "",
-                oninput: function(e) { config.imageSetting = e.target.value; if (onChange) onChange(); }
+        /// Custom prompt — only when style=custom.
+        if (config.style === 'custom') {
+            sections.push(field("Custom Style Prompt", m("textarea", {
+                class: inputClass(),
+                rows: 3,
+                value: config.customPrompt || "",
+                oninput: function(e) { config.customPrompt = e.target.value; if (onChange) onChange(); }
             })));
         }
 
-        // LoRA section — available when loras list is provided
-        let loraList = vnode.attrs.loras || [];
+        /// Model / Refiner / Steps / Refiner Steps / CFG / Refiner CFG /
+        /// Sampler / Scheduler / Refiner Sampler / Refiner Scheduler /
+        /// Width / Height / Seed / Image Count / Hi-Res / Hi-Res checkbox.
+        let coreFields = [
+            field("Model", modelSelectInput(config, "model", modelNames, onChange)),
+            field("Refiner Model", modelSelectInput(config, "refinerModel", modelNames, onChange)),
+
+            field("Steps: " + (config.steps != null ? config.steps : 30),
+                rangeInput(config, "steps", 1, 100, 1, onChange)),
+            field("Refiner Steps: " + (config.refinerSteps != null ? config.refinerSteps : 20),
+                rangeInput(config, "refinerSteps", 0, 100, 1, onChange)),
+
+            field("CFG: " + (config.cfg != null ? config.cfg : 7),
+                rangeInput(config, "cfg", 1, 30, 0.5, onChange)),
+            field("Refiner CFG: " + (config.refinerCfg != null ? config.refinerCfg : 7),
+                rangeInput(config, "refinerCfg", 1, 30, 0.5, onChange)),
+
+            field("Sampler", selectInput(config, "sampler", SAMPLER_OPTIONS, onChange)),
+            field("Scheduler", selectInput(config, "scheduler", SCHEDULER_OPTIONS, onChange)),
+
+            field("Refiner Sampler", selectInput(config, "refinerSampler", SAMPLER_OPTIONS, onChange)),
+            field("Refiner Scheduler", selectInput(config, "refinerScheduler", SCHEDULER_OPTIONS, onChange)),
+
+            field("Width", selectInput(config, "width", DIMENSION_OPTIONS, onChange)),
+            field("Height", selectInput(config, "height", DIMENSION_OPTIONS, onChange)),
+
+            field("Seed", m("div", { class: "flex gap-1" }, [
+                m("input", {
+                    type: "number",
+                    class: inputClass(),
+                    style: "flex:1",
+                    value: config.seed != null ? config.seed : -1,
+                    oninput: function(e) {
+                        config.seed = parseInt(e.target.value);
+                        if (isNaN(config.seed)) config.seed = -1;
+                        if (onChange) onChange();
+                    }
+                }),
+                m("button", {
+                    class: "px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700",
+                    title: "Random seed",
+                    onclick: function() { config.seed = -1; if (onChange) onChange(); }
+                }, m("span", { class: "material-symbols-outlined", style: "font-size:14px" }, "casino"))
+            ])),
+            field("Image Count", numberInput(config, "imageCount", 1, 16, 1, onChange)),
+
+            m("div", { class: "flex items-end h-full pb-1" }, [
+                m("label", { class: "flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer" }, [
+                    checkboxInput(config, "hires", onChange),
+                    m("span", "Hi-Res")
+                ])
+            ])
+        ];
+        sections.push(m("div", { class: "grid grid-cols-2 gap-3" }, coreFields));
+
+        /// LoRA section — checkbox per LoRA + per-LoRA weight + free-form add.
         if (loraList.length || (config.loras && config.loras.length)) {
             let currentLoras = config.loras || [];
             if (!Array.isArray(currentLoras)) currentLoras = [];
@@ -164,7 +283,7 @@ const SdConfigPanel = {
                 config.loras = Object.keys(loraMap).map(function(k) { return k + ":" + loraMap[k]; });
                 if (onChange) onChange();
             }
-            fields.push(m("div", { class: "mt-2" }, [
+            sections.push(m("div", { class: "mt-2" }, [
                 m("div", { class: "text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1" }, "LORAs"),
                 m("div", { class: "space-y-1" }, [
                     loraList.map(function(name) {
@@ -174,7 +293,7 @@ const SdConfigPanel = {
                                 if (selected) delete loraMap[name]; else loraMap[name] = 0.8;
                                 syncLoras(); m.redraw();
                             } }),
-                            m("span", { class: "truncate", style: "max-width:180px", title: name }, name),
+                            m("span", { class: "truncate", style: "max-width:240px", title: name }, name),
                             selected ? m("input", { type: "number", class: inputClass() + " w-16", min: 0, max: 2, step: 0.05,
                                 value: loraMap[name], oninput: function(e) { loraMap[name] = parseFloat(e.target.value) || 0.8; syncLoras(); }
                             }) : null
@@ -193,7 +312,7 @@ const SdConfigPanel = {
             ]));
         }
 
-        return m("div", { class: "space-y-0" }, fields);
+        return m("div", { class: "space-y-3" }, sections);
     }
 };
 

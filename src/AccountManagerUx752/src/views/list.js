@@ -223,24 +223,32 @@ function newListControl() {
 
     function openItem(o) {
         if (!o) return;
-        // Groups: navigate into them (not gallery view)
+        /// Only auth.group is a real navigable folder. Many leaf types
+        /// (data.note, etc.) inherit data.directory just for the groupId
+        /// field — am7model.isGroup() returns true for them, but routing
+        /// /list/<type>/<leafObjectId> produces a 404 because the breadcrumb
+        /// and pagination treat the container as auth.group.
         let objType = o[am7model.jsonModelKey] || baseListType;
-        let objModel = am7model.getModel(objType);
-        if (objModel && (am7model.isGroup(objModel) || objType === 'auth.group')) {
+        if (objType === 'auth.group') {
             navigateDown(o);
             return;
         }
-        // Data items: open in gallery/full view
-        let pg = pagination.pages();
-        let pr = pg.pageResults[pg.currentPage];
-        if (!pr) return;
-        let idx = pr.findIndex(function (v) { return v.objectId === o.objectId; });
-        if (idx > -1) {
-            gridSelectedIdx = idx;
-            gridMode = 1;
-            gridFullView = true;
-            m.redraw();
+        // Data items: open in gallery/full view against the full result set
+        // so the viewer's index aligns across pages.
+        let results = pagination.allResults();
+        let idx = results.findIndex(function (v) { return v.objectId === o.objectId; });
+        if (idx < 0) {
+            let pg = pagination.pages();
+            let pr = pg.pageResults[pg.currentPage];
+            if (!pr) return;
+            let pIdx = pr.findIndex(function (v) { return v.objectId === o.objectId; });
+            if (pIdx < 0) return;
+            idx = pIdx;
         }
+        gridSelectedIdx = idx;
+        gridMode = 1;
+        gridFullView = true;
+        m.redraw();
     }
 
     function openSelected() {

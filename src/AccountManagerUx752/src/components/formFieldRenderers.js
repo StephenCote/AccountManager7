@@ -134,8 +134,18 @@ renderers.range = function(ctx) {
         max = ctx.field.maxValue;
     }
 
+    /// Mirror rangeDecorator (core/model.js): for double fields with
+    /// maxValue >= 1, values are scaled ×100 going out and ÷100 coming in.
+    /// Slider/number-input bounds must match the scaled domain or the
+    /// browser clamps the value and the thumb gets stuck.
+    let scaleByHundred = isDouble && ctx.field && typeof ctx.field.maxValue === "number" && ctx.field.maxValue >= 1;
+    if (scaleByHundred) {
+        min = min * 100;
+        max = max * 100;
+    }
+
     let step;
-    if (isDouble) {
+    if (isDouble && !scaleByHundred) {
         step = 0.01;
     } else {
         let span = max - min;

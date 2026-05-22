@@ -3608,6 +3608,10 @@ import { am7model } from './model.js';
         }
 
         let char = await createCharacter(obj, profUrl);
+        if(!char){
+            am7model._page.toast("error", "Character creation failed");
+            return null;
+        }
         if(op && char.objectId){
             m.route.set("/view/" + char[am7model.jsonModelKey] + "/" + char.objectId);
         }

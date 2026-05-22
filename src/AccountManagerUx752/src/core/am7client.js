@@ -242,12 +242,22 @@ import { cacheDb } from './cacheDb.js';
 
 	function patchObject(sType, oObj, fH){
 	   delete cache[sType];
+	   delete cache["COUNT"];
+	   if (_cacheDbReady) {
+	       cacheDb.removeByType(sType);
+	       cacheDb.removeByType("COUNT");
+	   }
 	   // console.log(oObj);
 	   return patch(sModelSvc, oObj, fH);
 	}
 
 	function create(sType,oObj, fH){
 		delete cache[sType];
+		delete cache["COUNT"];
+		if (_cacheDbReady) {
+			cacheDb.removeByType(sType);
+			cacheDb.removeByType("COUNT");
+		}
 	   return post(sModelSvc, oObj, fH);
 	}
 
