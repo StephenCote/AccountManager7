@@ -3,6 +3,7 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.UUID;
@@ -368,10 +369,18 @@ public class TestChatOptions extends BaseTest {
 		logger.info("Test passed: think field verified");
 	}
 
-	/// Test: think=false is propagated to Ollama request options
+	/// Test: think=false is propagated to the Ollama request at the TOP LEVEL.
+	///
+	/// Ollama runs via its OpenAI-compatible endpoint, so the body shape is
+	/// OpenAI's — there is no `options` sub-object. The previous version of
+	/// applyChatOptions created `options` via newInstance(MODEL_CHAT_OPTIONS),
+	/// which auto-populated with the model's default values and then only
+	/// copied a handful of fields. The result: user customizations of
+	/// temperature, top_p, num_ctx, max_tokens, etc. were silently overridden
+	/// by the defaults appearing in `options`.
 	@Test
 	public void TestThinkFalseAppliedToOllamaRequest() {
-		logger.info("Test: think=false applied to Ollama request options");
+		logger.info("Test: think=false applied to Ollama request top-level");
 		BaseRecord testUser = getTestUser();
 		String cfgName = "OLLAMA Think False Test.chat";
 		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, LLMServiceEnumType.OLLAMA, cfgName, testProperties);
@@ -388,13 +397,77 @@ public class TestChatOptions extends BaseTest {
 		OpenAIRequest req = new OpenAIRequest();
 		ChatUtil.applyChatOptions(req, cfg);
 
-		// Verify think=false is in the request options
-		BaseRecord reqOpts = req.get("options");
-		assertNotNull("Request options should not be null for Ollama", reqOpts);
-		boolean thinkVal = reqOpts.get("think");
-		assertEquals("think should be false in request options", false, thinkVal);
+		// Verify think=false is at the request top level (Ollama OpenAI body shape).
+		boolean thinkVal = req.get("think");
+		assertEquals("think should be false at request top level", false, thinkVal);
 
-		logger.info("Test passed: think=false propagated to Ollama request");
+		// And the noisy `options` sub-object should NOT be present.
+		BaseRecord reqOpts = req.get("options");
+		assertNull("Request must not carry an `options` sub-object for Ollama OpenAI", reqOpts);
+
+		logger.info("Test passed: think=false at top level, no `options` sub-object");
+	}
+
+	/// Regression test for "chatConfig options don't seem to be getting applied"
+	/// (user-reported, May 2026): user's custom temperature/top_p/num_ctx/
+	/// max_tokens were correctly placed at the request top level for OpenAI,
+	/// but a parallel `options` sub-object was being populated with the
+	/// chatOptions model's DEFAULT values, overriding the user's values when
+	/// Ollama-compatible endpoints saw the request.
+	///
+	/// Assert that, given user customizations:
+	///   1. user values appear at the request top level (where OpenAI/Ollama OAI read them)
+	///   2. NO `options` sub-object is created at all
+	///   3. Ollama-specific extensions (top_k, min_p, etc.) ride at the top level
+	@Test
+	public void TestUserChatOptionsAppliedNotDefaults() {
+		logger.info("Test: user chatOptions values reach the request (regression for default-override bug)");
+		BaseRecord testUser = getTestUser();
+		String cfgName = "OLLAMA User Custom Options Test.chat";
+		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, LLMServiceEnumType.OLLAMA, cfgName, testProperties);
+		assertNotNull("Chat config is null", cfg);
+
+		BaseRecord opts = ensureChatOptions(cfg);
+		assertNotNull("chatOptions is null", opts);
+
+		// User customizations — distinct from the chatOptions model defaults.
+		opts.setValue("temperature", 0.8);
+		opts.setValue("top_p", 0.95);
+		opts.setValue("num_ctx", 131072);
+		opts.setValue("max_tokens", 16384);
+		opts.setValue("top_k", 60);
+		opts.setValue("min_p", 0.05);
+		opts.setValue("repeat_penalty", 1.1);
+		opts.setValue("typical_p", 0.95);
+		opts.setValue("repeat_last_n", 100);
+		opts.setValue("presence_penalty", 0.3);
+		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
+
+		OpenAIRequest req = new OpenAIRequest();
+		ChatUtil.applyChatOptions(req, cfg);
+
+		// (1) User values at the request top level.
+		assertEquals("temperature reflects user value", 0.8, (double) req.get("temperature"), 0.001);
+		assertEquals("top_p reflects user value", 0.95, (double) req.get("top_p"), 0.001);
+		assertEquals("presence_penalty reflects user value", 0.3, (double) req.get("presence_penalty"), 0.001);
+
+		// num_ctx is the token field for Ollama
+		String tokField = ChatUtil.getMaxTokenField(cfg);
+		assertEquals("Ollama token field should be num_ctx", "num_ctx", tokField);
+		assertEquals("num_ctx reflects user value", 131072, (int) req.get("num_ctx"));
+
+		// (2) No `options` sub-object.
+		BaseRecord reqOpts = req.get("options");
+		assertNull("Request must not carry an `options` sub-object", reqOpts);
+
+		// (3) Ollama extensions at top level.
+		assertEquals("top_k reflects user value", 60, (int) req.get("top_k"));
+		assertEquals("min_p reflects user value", 0.05, (double) req.get("min_p"), 0.001);
+		assertEquals("repeat_penalty reflects user value", 1.1, (double) req.get("repeat_penalty"), 0.001);
+		assertEquals("typical_p reflects user value", 0.95, (double) req.get("typical_p"), 0.001);
+		assertEquals("repeat_last_n reflects user value", 100, (int) req.get("repeat_last_n"));
+
+		logger.info("Test passed: user chatOptions reach the request, no defaults-in-options override");
 	}
 
 	/// Test: think=false with live LLM - response should not contain <think> tags

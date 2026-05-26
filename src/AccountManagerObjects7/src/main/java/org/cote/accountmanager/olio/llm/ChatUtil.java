@@ -1905,25 +1905,39 @@ public class ChatUtil {
 				req.set(tokField, tokValue);
 			}
 
-			/// Phase 12: OI-29 — Send Ollama-specific options via the request's options sub-object (chatOptions model)
+			/// Ollama is consumed via its OpenAI-compatible endpoint — the request
+			/// body shape is OpenAI's, just to a different URL. There is no
+			/// `options` sub-object; Ollama-specific extensions (top_k, min_p,
+			/// repeat_penalty, typical_p, repeat_last_n, num_gpu, think) ride at
+			/// the top level alongside temperature/top_p/num_ctx.
+			///
+			/// Previous version constructed an `options` sub-object via
+			/// RecordFactory.newInstance(MODEL_CHAT_OPTIONS), which auto-populated
+			/// with the model's default values, then copied only a few fields
+			/// from the user's config — so user customizations of temperature,
+			/// top_p, num_ctx, max_tokens, etc. were silently overridden by the
+			/// defaults appearing in `options`. The sub-object itself was also
+			/// noise the Ollama OpenAI endpoint ignores.
+			///
+			/// Strip any stray `options` sub-object that may have been set
+			/// earlier, then promote the Ollama-specific extensions to the top
+			/// level of the request.
 			if(serviceType == LLMServiceEnumType.OLLAMA && opts != null) {
-				BaseRecord reqOpts = req.get("options");
-				if(reqOpts == null) {
-					reqOpts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
-					req.set("options", reqOpts);
-				}
+				try { req.set("options", null); } catch (Exception ignore) { /* field may not exist */ }
 				int top_k = opts.get("top_k");
-				if(top_k > 0) reqOpts.set("top_k", top_k);
+				if(top_k > 0) req.set("top_k", top_k);
 				double repeat_penalty = opts.get("repeat_penalty");
-				if(repeat_penalty > 0.0) reqOpts.set("repeat_penalty", repeat_penalty);
+				if(repeat_penalty > 0.0) req.set("repeat_penalty", repeat_penalty);
 				double typical_p = opts.get("typical_p");
-				if(typical_p > 0.0) reqOpts.set("typical_p", typical_p);
+				if(typical_p > 0.0) req.set("typical_p", typical_p);
 				double min_p = opts.get("min_p");
-				if(min_p > 0.0) reqOpts.set("min_p", min_p);
+				if(min_p > 0.0) req.set("min_p", min_p);
 				int repeat_last_n = opts.get("repeat_last_n");
-				if(repeat_last_n > 0) reqOpts.set("repeat_last_n", repeat_last_n);
+				if(repeat_last_n > 0) req.set("repeat_last_n", repeat_last_n);
+				int num_gpu = opts.get("num_gpu");
+				if(num_gpu > 0) req.set("num_gpu", num_gpu);
 				boolean think = opts.get("think");
-				if(!think) reqOpts.set("think", false);
+				req.set("think", think);
 			}
 
 		}
