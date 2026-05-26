@@ -3574,7 +3574,15 @@ import { am7model } from './model.js';
             return;
         }
         am7model._page.toast("info", "Updating narrative ...");
-        let x = await m.request({ method: 'GET', url: am7model._client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/narrate", withCredentials: true });
+        let x = null;
+        try {
+            x = await m.request({ method: 'GET', url: am7model._client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/narrate", withCredentials: true });
+        } catch (e) {
+            /// Server may respond with non-2xx + body "null" when narration
+            /// can't be generated; m.request rejects with Error("null"). Don't
+            /// let that bubble up and kill the wizard flow.
+            console.warn("narrate request failed:", e && e.message);
+        }
         if (x && x != null) {
             inst.api.narrative(x);
             am7model._page.toast("success", "Updated narrative");
@@ -3721,8 +3729,14 @@ import { am7model } from './model.js';
                     let name = o.firstName;
                     if(o.middleName && o.middleName.length) name += " " + o.middleName;
                     if(o.lastName && o.lastName.length) name += " " + o.lastName;
-                    await character(name, (o.gender == 'random' ? undefined : o.gender), o.age, "E", undefined, true);
-                    am7model._page.components.dialog.endDialog();
+                    try {
+                        await character(name, (o.gender == 'random' ? undefined : o.gender), o.age, "E", undefined, true);
+                    } catch (e) {
+                        console.error("Character wizard failed:", e);
+                        am7model._page.toast("error", "Character generation failed: " + (e && e.message || e));
+                    } finally {
+                        am7model._page.components.dialog.endDialog();
+                    }
                 },
                 cancel: async function (data) {
                     am7model._page.components.dialog.endDialog();
@@ -4502,6 +4516,7 @@ import { am7model } from './model.js';
             },
             height: {
                 layout: 'one',
+                format: 'heightFeetInches',
                 field: {
                     label: 'Height'
                 }

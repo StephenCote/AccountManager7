@@ -124,6 +124,78 @@ renderers.select = function(ctx) {
     return [m("select", selectAttrs, options)];
 };
 
+// ── Height (feet.inches encoding) ───────────────────────────────────
+//
+// Server encodes height as feet + inches/100 (so 5'10" is stored as 5.10).
+// The plain number-input renderer steps by 1.0 — one click bumps the value
+// from 5.10 to 6.10, which the server reads as 6'10" (an 82" person where
+// the user wanted 5'11"). Weight is BMI*inches²/703, so one stray foot adds
+// 50–100 lbs.
+//
+// This renderer shows two inputs (feet, inches) and writes back the proper
+// feet+inches/100 encoding, normalizing carry (12 inches → +1 foot).
+renderers.heightFeetInches = function(ctx) {
+    function decode(v) {
+        if (v == null || v === '' || isNaN(v)) return { feet: 0, inches: 0 };
+        let n = Number(v);
+        let f = Math.floor(n);
+        let i = Math.round((n - f) * 100);
+        if (i >= 12) { f += Math.floor(i / 12); i = i % 12; }
+        return { feet: f, inches: i };
+    }
+    function encode(feet, inches) {
+        let total = (feet * 12) + inches;
+        let f = Math.floor(total / 12);
+        let i = total - (f * 12);
+        // Round to 2 decimal places to avoid 5.1000001 noise.
+        return Math.round((f + i / 100) * 100) / 100;
+    }
+
+    let cur = decode(ctx.defVal);
+    let onChange = ctx.fHandler;
+    let disabled = !!ctx.disabled;
+
+    function fire(feet, inches) {
+        if (!onChange) return;
+        let encoded = encode(feet, inches);
+        onChange({ target: { value: encoded, name: ctx.useName } });
+    }
+
+    let feetInput = m("input", {
+        type: "number",
+        class: "text-field-compact w-16 text-center",
+        name: ctx.useName + "_feet",
+        value: cur.feet,
+        min: 0, max: 8, step: 1,
+        disabled: disabled,
+        onchange: function(e) {
+            let f = parseInt(e.target.value);
+            if (isNaN(f)) f = 0;
+            fire(f, cur.inches);
+        }
+    });
+    let inchesInput = m("input", {
+        type: "number",
+        class: "text-field-compact w-16 text-center",
+        name: ctx.useName + "_inches",
+        value: cur.inches,
+        min: 0, max: 11, step: 1,
+        disabled: disabled,
+        onchange: function(e) {
+            let i = parseInt(e.target.value);
+            if (isNaN(i)) i = 0;
+            fire(cur.feet, i);
+        }
+    });
+
+    return [m("div", { class: "flex items-center gap-1" }, [
+        feetInput,
+        m("span", { class: "text-xs text-gray-500" }, "ft"),
+        inchesInput,
+        m("span", { class: "text-xs text-gray-500" }, "in")
+    ])];
+};
+
 // ── Range Slider ────────────────────────────────────────────────────
 
 renderers.range = function(ctx) {
