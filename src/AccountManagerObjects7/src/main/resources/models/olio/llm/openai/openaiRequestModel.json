@@ -71,6 +71,58 @@
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "olio.llm.openai.openaiMessage"
+		},
+		{
+			"name": "top_k",
+			"type": "int",
+			"default": 0,
+			"minValue": 0,
+			"maxValue": 500,
+			"description": "Ollama OpenAI extension"
+		},
+		{
+			"name": "min_p",
+			"type": "double",
+			"default": 0.0,
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"description": "Ollama OpenAI extension"
+		},
+		{
+			"name": "typical_p",
+			"type": "double",
+			"default": 0.0,
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"description": "Ollama OpenAI extension"
+		},
+		{
+			"name": "repeat_penalty",
+			"type": "double",
+			"default": 0.0,
+			"minValue": 0.0,
+			"maxValue": 2.0,
+			"description": "Ollama OpenAI extension"
+		},
+		{
+			"name": "repeat_last_n",
+			"type": "int",
+			"default": 0,
+			"minValue": 0,
+			"maxValue": 200,
+			"description": "Ollama OpenAI extension"
+		},
+		{
+			"name": "num_gpu",
+			"type": "int",
+			"default": 0,
+			"description": "Ollama OpenAI extension"
+		},
+		{
+			"name": "think",
+			"type": "boolean",
+			"default": true,
+			"description": "Ollama OpenAI extension"
 		}
 	]
 }

@@ -1176,9 +1176,9 @@ public class StatementUtil {
 			}
 			else if (
 				comp == ComparatorEnumType.EQUALS
-				|| comp == ComparatorEnumType.NOT_EQUALS	
+				|| comp == ComparatorEnumType.NOT_EQUALS
 				|| comp == ComparatorEnumType.GREATER_THAN
-				|| comp == ComparatorEnumType.GREATER_THAN_OR_EQUALS	
+				|| comp == ComparatorEnumType.GREATER_THAN_OR_EQUALS
 				|| comp == ComparatorEnumType.LESS_THAN
 				|| comp == ComparatorEnumType.LESS_THAN_OR_EQUALS
 				|| comp == ComparatorEnumType.LIKE
@@ -1226,7 +1226,7 @@ public class StatementUtil {
 		}
 		return paramMarker;
 	}
-	
+
 	private static <T> void setStatementParameter(PreparedStatement statement, String model, String fieldName, ComparatorEnumType comp, FieldEnumType dataType, T value, int index) throws DatabaseException{
 		ModelSchema ms = RecordFactory.getSchema(model);
 		FieldSchema fs = ms.getFieldSchema(fieldName);

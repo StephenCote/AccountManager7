@@ -451,10 +451,12 @@ public class TestChatOptions extends BaseTest {
 		assertEquals("top_p reflects user value", 0.95, (double) req.get("top_p"), 0.001);
 		assertEquals("presence_penalty reflects user value", 0.3, (double) req.get("presence_penalty"), 0.001);
 
-		// num_ctx is the token field for Ollama
+		// num_ctx (context window) is the token field for Ollama, and
+		// max_tokens (response length cap) must additionally appear at top level.
 		String tokField = ChatUtil.getMaxTokenField(cfg);
 		assertEquals("Ollama token field should be num_ctx", "num_ctx", tokField);
 		assertEquals("num_ctx reflects user value", 131072, (int) req.get("num_ctx"));
+		assertEquals("max_tokens (response cap) reflects user value for Ollama", 16384, (int) req.get("max_tokens"));
 
 		// (2) No `options` sub-object.
 		BaseRecord reqOpts = req.get("options");
