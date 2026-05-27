@@ -615,6 +615,24 @@ async function toggleFavorite(obj) {
         return false;
     }
     let type = obj[am7model.jsonModelKey];
+
+    /// Optimistic UI update: mutate contextModel.favorites[type] immediately
+    /// so the heart icon flips on the next redraw, without waiting for the
+    /// server round-trip + members re-fetch. The reconcile step below either
+    /// confirms the update or rolls it back if the server-side member call
+    /// fails.
+    if (!Array.isArray(contextModel.favorites[type])) {
+        contextModel.favorites[type] = [];
+    }
+    let optimisticEntry = { objectId: obj.objectId };
+    if (set) {
+        contextModel.favorites[type].push(optimisticEntry);
+    } else {
+        contextModel.favorites[type] = contextModel.favorites[type]
+            .filter(function (o) { return o.objectId !== obj.objectId; });
+    }
+    m.redraw();
+
     let b = await new Promise(function (resolve) {
         am7client.member(fav[am7model.jsonModelKey], fav.objectId, null, type, obj.objectId, set, function (r) {
             resolve(r);
@@ -622,11 +640,26 @@ async function toggleFavorite(obj) {
     });
     if (!b) {
         addToast('warn', 'Failed to ' + (set ? 'add' : 'remove') + ' favorite');
+        /// Server rejected the change — undo the optimistic update so the
+        /// UI matches reality.
+        if (set) {
+            contextModel.favorites[type] = contextModel.favorites[type]
+                .filter(function (o) { return o.objectId !== obj.objectId; });
+        } else {
+            contextModel.favorites[type].push({ objectId: obj.objectId });
+        }
+        m.redraw();
+        return false;
     }
+
+    /// Reconcile in the background — refetch the authoritative list so the
+    /// optimistic entry is replaced with the real server record (which may
+    /// carry additional fields). Failure here doesn't undo the visible
+    /// state because the participation succeeded.
     contextModel.favorites[type] = undefined;
     await am7client.clearCache();
     await checkFavorites(type);
-    return !!b;
+    return true;
 }
 
 async function checkFavorites(itype) {

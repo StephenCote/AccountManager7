@@ -119,7 +119,7 @@ public abstract class BaseRecord {
 					f.setValue(((List<BaseRecord>)f.getValue()).stream().map(f1 -> f1.copyDeidentifiedRecord()).collect(Collectors.toList()));
 				}
 			} catch (ValueException e) {
-				logger.error(e);
+				logger.error("copyDeidentifiedRecord: " + e.getMessage(), e);
 			}
 		}
 		return copy;
@@ -132,8 +132,7 @@ public abstract class BaseRecord {
 		try {
 			copy = RecordFactory.newInstance(getSchema(), outFieldNames);
 		} catch (FieldException | ModelNotFoundException e) {
-			logger.error(e);
-			e.printStackTrace();
+			logger.error("copyRecord: " + e.getMessage(), e);
 		}
 		copyIntoRecord(copy, outFieldNames);
 		return copy;
@@ -286,11 +285,10 @@ public abstract class BaseRecord {
 		try {
 			checkField(name);
 		} catch (ModelNotFoundException | FieldException e) {
-			logger.error(e);
-			e.printStackTrace();
+			logger.error("get(" + name + "): " + e.getMessage(), e);
 			return null;
 		}
-		
+
 		if(fieldMap.get(name).getValueType().equals(FieldEnumType.FLEX)) {
 			logger.debug(String.format(FieldException.ABSTRACT_FIELD, model, name));
 			return null;
@@ -303,8 +301,7 @@ public abstract class BaseRecord {
 		try {
 			checkField(name);
 		} catch (ModelNotFoundException | FieldException e) {
-			logger.error(e);
-			e.printStackTrace();
+			logger.error("getEnum(" + name + "): " + e.getMessage(), e);
 			return null;
 		}
 		if(!fieldMap.get(name).getValueType().equals(FieldEnumType.ENUM) || fieldMap.get(name).getFieldValueType() == null) {
@@ -399,8 +396,7 @@ public abstract class BaseRecord {
 				Queue.queueUpdate(this, new String[] {fieldName});
 			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-			e.printStackTrace();
+			logger.error("setValue(" + fieldName + "): " + e.getMessage(), e);
 		}
 	}
 	

@@ -36,7 +36,18 @@ public class ChatListener implements IChatListener {
 	private static Map<String, CompletableFuture<?>> asyncStreamFutures = new ConcurrentHashMap<>();
 	/// Phase 12: OI-27 — Track response body streams for server-side abort on cancel
 	private static Map<String, java.net.http.HttpResponse<?>> asyncHttpResponses = new ConcurrentHashMap<>();
+	/// Dedupe per-oid "not found in async requests" warnings — stream callbacks
+	/// (onupdate especially) can fire many times for a single stale oid, which
+	/// otherwise floods the log with N copies of the same WARN. The set is
+	/// cleared along with the rest of the per-oid state in clearCache.
+	private static java.util.Set<String> warnedMissingOids = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	private static final int FAILOVER_SECONDS = 5;
+
+	private static void warnMissingOidOnce(String location, String oid) {
+		if (warnedMissingOids.add(oid)) {
+			logger.warn("OpenAIRequest object id not found in async requests (" + location + "): " + oid);
+		}
+	}
 	private boolean deferRemote = false;
 	private int maximumResponseTokens = -1;
 	private List<IChatHandler> handlers = new CopyOnWriteArrayList<>();
@@ -69,6 +80,7 @@ public class ChatListener implements IChatListener {
 		asyncStreamFutures.remove(oid);
 		asyncHttpResponses.remove(oid);
 		asyncChatRequestRecords.remove(oid);
+		warnedMissingOids.remove(oid);
 	}
 
 	/// Phase 9: Register a stream future for failover cancellation
@@ -218,12 +230,12 @@ public class ChatListener implements IChatListener {
 		}
 
 		if(!asyncRequests.containsKey(oid)) {
-            logger.warn("OpenAIRequest object id not found in async requests: " + oid);
+            warnMissingOidOnce("isStopStream", oid);
             return false;
         }
 		return asyncRequestStop.get(oid);
 	}
-	
+
 	@Override
 	public void stopStream(OpenAIRequest request) {
 		String oid = getRequestId(request);
@@ -232,7 +244,7 @@ public class ChatListener implements IChatListener {
 		}
 
 		if(!asyncRequests.containsKey(oid)) {
-            logger.warn("OpenAIRequest object id not found in async requests: " + oid);
+            warnMissingOidOnce("stopStream", oid);
             return;
         }
 		/// Phase 1: Set graceful stop flag (existing behavior)
@@ -291,7 +303,7 @@ public class ChatListener implements IChatListener {
 		}
 		int tokenCount = 0;
 		if (!asyncRequests.containsKey(oid)) {
-			logger.warn("OpenAIRequest object id not found in async requests: " + oid);
+			warnMissingOidOnce("onupdate", oid);
 		}
 		else {
 			tokenCount = asyncRequestCount.get(oid) + 1;
@@ -314,7 +326,7 @@ public class ChatListener implements IChatListener {
 		}
 
 		if (!asyncRequests.containsKey(oid)) {
-			logger.warn("OpenAIRequest object id not found in async requests: " + oid);
+			warnMissingOidOnce("oncomplete", oid);
 			return;
 		}
 		Chat chat = asyncChats.get(oid);
@@ -473,21 +485,48 @@ public class ChatListener implements IChatListener {
 
 	@Override
 	public void onerror(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String msg) {
-		// TODO Auto-generated method stub
 		logger.error("Error received: " + msg);
 		if (request == null) {
 			logger.warn("OpenAIRequest is null");
 			return;
 		}
-		
+
 		String oid = request.get(FieldNames.FIELD_OBJECT_ID);
 		if(oid == null) {
 			logger.warn("OpenAIRequest does not have an object id");
 			return;
 		}
+
+		/// Persist the session BEFORE clearing tracking state. The user
+		/// message was appended to `request` by Chat.newMessage() right
+		/// before the LLM call — if we don't save here, that message is
+		/// only in memory and is lost on the next session load (user
+		/// reports messages "forgotten" after a timeout in long chats).
+		/// If a partial assistant response streamed in before the error,
+		/// include it via handleResponse so the conversation has the
+		/// content that did arrive.
+		try {
+			Chat chat = asyncChats.get(oid);
+			if (chat != null) {
+				if (response != null) {
+					BaseRecord respMsg = response.get("message");
+					String partial = (respMsg != null) ? respMsg.get("content") : null;
+					if (partial != null && !partial.isEmpty()) {
+						try { chat.handleResponse(request, response, false); }
+						catch (Exception he) { logger.warn("onerror: handleResponse failed: " + he.getMessage()); }
+					}
+				}
+				chat.saveSession(request);
+				logger.info("onerror: session saved after error for " + oid);
+			} else {
+				logger.warn("onerror: no Chat tracked for " + oid + " — cannot save session");
+			}
+		} catch (Exception saveEx) {
+			logger.warn("onerror: failed to save session for " + oid + ": " + saveEx.getMessage(), saveEx);
+		}
+
 		handlers.forEach(h -> h.onChatError(user, request, response, msg));
 		clearCache(oid);
-
 	}
 
 	/// Phase 13g: Forward title events to handlers (buffer-mode path)
