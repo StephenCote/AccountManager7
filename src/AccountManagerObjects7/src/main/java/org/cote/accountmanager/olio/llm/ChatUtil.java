@@ -1924,6 +1924,12 @@ public class ChatUtil {
 			/// level of the request.
 			if(serviceType == LLMServiceEnumType.OLLAMA && opts != null) {
 				try { req.set("options", null); } catch (Exception ignore) { /* field may not exist */ }
+				/// max_tokens caps the response length — distinct from num_ctx
+				/// (context window). The shared tokField path sends num_ctx for
+				/// Ollama; we must additionally send max_tokens so generation
+				/// terminates at the user-configured cap instead of running
+				/// unbounded.
+				if(max_tokens > 0) req.set("max_tokens", max_tokens);
 				int top_k = opts.get("top_k");
 				if(top_k > 0) req.set("top_k", top_k);
 				double repeat_penalty = opts.get("repeat_penalty");
