@@ -521,13 +521,30 @@ function clearFormattedCache() {
 }
 
 function getFormattedContent(content, msg, idx) {
-    let cacheKey = msg.role + ":" + idx + ":" + content;
+    /// hideThoughts MUST be part of the cache key — without it, toggling the
+    /// show/hide-thoughts button has no visible effect on already-rendered
+    /// messages because the cached HTML is returned unchanged.
+    let cacheKey = msg.role + ":" + idx + ":" + (hideThoughts ? "h" : "s") + ":" + content;
     let cached = _formattedCache.get(cacheKey);
     if (cached !== undefined) return cached;
 
     let processed = ChatTokenRenderer.pruneForDisplay(content, hideThoughts);
     if (hideThoughts) {
         processed = processed.replace(/<think>[\s\S]*?<\/think>/g, "");
+    } else {
+        /// When showing thoughts, wrap each <think>...</think> in a visible
+        /// styled <details> block so users can actually SEE them. Without
+        /// this they pass through as a raw unknown HTML element with no
+        /// styling — the text shows but blends invisibly into the message.
+        processed = processed.replace(/<think>([\s\S]*?)<\/think>/g, function(_m, inner) {
+            let escaped = String(inner)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return '<details class="chat-thoughts my-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/20 text-xs" open>'
+                 + '<summary class="cursor-pointer px-2 py-1 text-amber-700 dark:text-amber-300 font-medium">thinking</summary>'
+                 + '<div class="px-2 py-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">'
+                 + escaped
+                 + '</div></details>';
+        });
     }
     // 1. Strip MCP blocks before markdown (they contain XML that marked would escape)
     processed = ChatTokenRenderer.processMcpTokens(processed, false);
@@ -677,13 +694,25 @@ let _streamCache = { text: "", formatted: "" };
 function renderStreamingMessage() {
     if (!chatCfg.streaming || !chatCfg.streamText) return null;
     let raw = chatCfg.streamText;
-    // Only reprocess if text actually changed
-    if (raw !== _streamCache.text) {
+    /// Re-process when the streaming text changes OR when the
+    /// hideThoughts toggle was flipped while a stream is active.
+    let cacheTag = raw + "|" + (hideThoughts ? "h" : "s");
+    if (cacheTag !== _streamCache.text) {
         let content = ChatTokenRenderer.pruneForDisplay(raw, hideThoughts);
         if (hideThoughts) {
             content = content.replace(/<think>[\s\S]*?<\/think>/g, "");
+        } else {
+            content = content.replace(/<think>([\s\S]*?)<\/think>/g, function(_m, inner) {
+                let escaped = String(inner)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return '<details class="chat-thoughts my-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/20 text-xs" open>'
+                     + '<summary class="cursor-pointer px-2 py-1 text-amber-700 dark:text-amber-300 font-medium">thinking</summary>'
+                     + '<div class="px-2 py-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">'
+                     + escaped
+                     + '</div></details>';
+            });
         }
-        _streamCache.text = raw;
+        _streamCache.text = cacheTag;
         _streamCache.formatted = formatContent(content);
     }
     return m("div", { class: "flex mb-3 justify-start" }, [

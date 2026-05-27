@@ -3151,6 +3151,7 @@ public class Chat {
 			int qual = countBackToMcp(req, "/reminder/");
 
 			if (useAssist && promptConfig != null && qual >= remind && remind > 0) {
+				boolean assistantReminderInjected = false;
 				if (req.getMessages().size() > 0) {
 					OpenAIMessage amsg = req.getMessages().get(req.getMessages().size() - 1);
 					if (amsg.getRole().equals(assistantRole)) {
@@ -3164,10 +3165,11 @@ public class Chat {
 							anmsg.setRole(assistantRole);
 							anmsg.setContent(rem);
 							req.addMessage(anmsg);
+							assistantReminderInjected = true;
 						}
 					}
 				}
-				
+
 				/// Inject the user reminder as MCP block
 				List<String> urem = promptConfig.get("userReminder");
 				String rem = urem.stream().collect(Collectors.joining(System.lineSeparator()));
@@ -3175,12 +3177,23 @@ public class Chat {
 					rem = PromptUtil.getChatPromptTemplate(promptConfig, chatConfig, rem, false);
 				}
 
-				if (rem.length() > 0) {
+				/// IMPORTANT: Always emit the MCP marker when the reminder trip
+				/// fires — even if the userReminder text rendered to empty (the
+				/// default template references ${episodeReminder}/${nlpReminder}
+				/// which are empty when no episode/NLP is active). Without the
+				/// marker on the user message, countBackToMcp can never detect
+				/// the trip, qual keeps growing past `remind` every turn, and
+				/// the assistantReminder injection repeats every message.
+				boolean userReminderHasText = rem.length() > 0;
+				if (userReminderHasText || assistantReminderInjected) {
 					String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
 					McpContextBuilder remBuilder = new McpContextBuilder();
+					List<Map<String, String>> items = userReminderHasText
+						? List.of(Map.of("key", "user-reminder", "value", rem))
+						: List.<Map<String, String>>of();
 					remBuilder.addReminder(
 						"am7://reminder/" + (cfgObjId != null ? cfgObjId : "default"),
-						List.of(Map.of("key", "user-reminder", "value", rem))
+						items
 					);
 					msgBuff.append(System.lineSeparator() + remBuilder.build());
 				}
@@ -3247,7 +3260,7 @@ public class Chat {
 		CountDownLatch latch = forwardToClient ? null : new CountDownLatch(1);
 		final OpenAIResponse[] bufferResult = new OpenAIResponse[] { null };
 		final String[] bufferError = new String[] { null };
-
+		logger.info(ser);
 		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = ClientUtil.postToRecordAndStream(serviceUrl, authorizationToken, ser);
 
 		/// Apply effective timeout: thread-local override (background analyze/extract) or requestTimeout (normal calls)

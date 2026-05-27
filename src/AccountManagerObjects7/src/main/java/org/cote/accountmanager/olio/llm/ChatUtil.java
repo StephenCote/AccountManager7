@@ -1886,8 +1886,15 @@ public class ChatUtil {
 				top_p = opts.get("top_p");
 				frequency_penalty = opts.get("frequency_penalty");
 				presence_penalty = opts.get("presence_penalty");
-				max_tokens = opts.get("max_tokens");
-				num_ctx = opts.get("num_ctx");
+				/// Don't let a missing/zero option overwrite the sensible
+				/// default — older chatOptions records pre-dating these
+				/// fields return 0 from opts.get for unset primitives,
+				/// which then bypasses the `> 0` guard further down and
+				/// the value never reaches the request.
+				int optMax = opts.get("max_tokens");
+				if(optMax > 0) max_tokens = optMax;
+				int optNumCtx = opts.get("num_ctx");
+				if(optNumCtx > 0) num_ctx = optNumCtx;
 				seed = opts.get("seed");
 			}
 			req.set("temperature", temperature);
