@@ -191,6 +191,13 @@ public class MemoryUtil {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_MEMORY, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 			q.field("conversationId", conversationId);
 			q.planMost(true);
+			/// Disable cache. CacheDBSearch keys by query hash and
+			/// MemoryUtil.createMemory does NOT invalidate matching cache
+			/// entries — so a UI/code path that calls this AFTER an early
+			/// extract+cache then again after later extracts will keep
+			/// receiving the stale early count. Memory views need fresh
+			/// reads.
+			q.setCache(false);
 			BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findRecords(q);
 			if (recs != null) {
 				results.addAll(Arrays.asList(recs));

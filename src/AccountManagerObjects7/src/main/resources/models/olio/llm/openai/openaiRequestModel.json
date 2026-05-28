@@ -121,7 +121,7 @@
 		{
 			"name": "think",
 			"type": "boolean",
-			"default": true,
+			"default": false,
 			"description": "Ollama OpenAI extension"
 		}
 	]

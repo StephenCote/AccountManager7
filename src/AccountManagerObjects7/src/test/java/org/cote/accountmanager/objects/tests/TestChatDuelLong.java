@@ -24,8 +24,8 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
-import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
@@ -76,8 +76,9 @@ public class TestChatDuelLong extends BaseTest {
 
 	/// Turns per character per conversation. 20 means 40 LLM round trips
 	/// per conversation (20 system-side, 20 user-side), 80 total across
-	/// the two conversations. Adjust DOWN locally for quick smoke runs.
-	private static final int TURNS_PER_CHARACTER = 20;
+	/// the two conversations. Overridable via -Dduel.turns=N.
+	private static final int TURNS_PER_CHARACTER =
+			Integer.parseInt(System.getProperty("duel.turns", "20"));
 
 	/// One pair = two chat configs with swapped system/user characters.
 	private static final int NUM_PAIRS = 1;
@@ -87,11 +88,70 @@ public class TestChatDuelLong extends BaseTest {
 	/// hide it with a tight cap.
 	private static final int STREAM_TIMEOUT_SECONDS = 600;
 
-	private static final String CHAT_MODEL = "way-local:latest";
-	private static final String ANALYZE_MODEL = "qwen3:8b";
+	/// Chat model. Default qwen3:8b for fast iteration. Override with
+	/// -Dduel.chatModel=way-local:latest to drive the larger/slower model.
+	/// way-local is the production model; qwen3:8b is 3x+ faster end-to-end.
+	private static final String CHAT_MODEL =
+			System.getProperty("duel.chatModel", "qwen3:8b");
+
+	/// Analyze model for memory extraction / keyframe / etc.
+	private static final String ANALYZE_MODEL =
+			System.getProperty("duel.analyzeModel", "qwen3:8b");
+
 	/// Hardcoded to localhost — test.llm.ollama.server in resource.properties
 	/// points at a reverse-proxy port that doesn't have these models loaded.
 	private static final String OLLAMA_URL = "http://localhost:11434";
+
+	/// ── Chat-options tuning knobs (overridable via -D) ────────────────
+	/// Keep the prune→memory→retrieve loop ACTIVE — these are NOT skip
+	/// switches. They just keep per-turn cost manageable so the system
+	/// can exercise the full loop in test wall time.
+	///
+	/// max_tokens: cap on response length. Smaller = faster turn. Default
+	///   512 keeps responses snappy without truncating mid-thought.
+	private static final int OPT_MAX_TOKENS =
+			Integer.parseInt(System.getProperty("duel.maxTokens", "512"));
+
+	/// num_ctx: Ollama context window. Production uses 131072 for
+	/// way-local. For test with messageTrim=20 and short responses, 16384
+	/// is plenty and dramatically cuts prompt-eval time on each turn.
+	private static final int OPT_NUM_CTX =
+			Integer.parseInt(System.getProperty("duel.numCtx", "16384"));
+
+	/// messageTrim: how many recent messages are kept in the wire request.
+	/// prune=true marks older as pruned, they're dropped from the wire
+	/// payload but kept in memory for extraction. 20 (default) means about
+	/// 10 turns of recent context survive, the rest go through the
+	/// memory/keyframe pipeline. Lower = stresses the prune-and-retrieve
+	/// loop harder. Higher = fewer prunes.
+	private static final int OPT_MESSAGE_TRIM =
+			Integer.parseInt(System.getProperty("duel.messageTrim", "20"));
+
+	/// keyframeEvery: trigger a keyframe (which feeds memory extraction)
+	/// every Nth message. Should be ≤ messageTrim so keyframes fire before
+	/// content is pruned and lost from the wire context.
+	private static final int OPT_KEYFRAME_EVERY =
+			Integer.parseInt(System.getProperty("duel.keyframeEvery", "5"));
+
+	/// memoryExtractionEvery: extract memories every Nth keyframe.
+	/// 1 = extract on every keyframe (maximum exercise of the pipeline).
+	private static final int OPT_MEMORY_EXTRACTION_EVERY =
+			Integer.parseInt(System.getProperty("duel.memoryExtractionEvery", "1"));
+
+	/// memoryBudget: tokens of retrieved memories injected per turn. 0
+	/// disables retrieval entirely. 2000 gives the LLM real context from
+	/// pruned/historical content so the system can recall facts that
+	/// would otherwise be lost when messageTrim drops them off the wire.
+	private static final int OPT_MEMORY_BUDGET =
+			Integer.parseInt(System.getProperty("duel.memoryBudget", "2000"));
+
+	/// Upper bound on the drain wait. The drain polls until memory counts
+	/// stabilize, so it usually returns earlier. With qwen3:8b each
+	/// extraction takes 5-10s and the test produces ~12 per conv, so
+	/// 300s is comfortable headroom without being painful when extraction
+	/// is fast.
+	private static final int ASYNC_DRAIN_SECONDS =
+			Integer.parseInt(System.getProperty("duel.asyncDrainSeconds", "300"));
 
 	@Before
 	public void setupDuel() {
@@ -102,8 +162,12 @@ public class TestChatDuelLong extends BaseTest {
 		assertNotNull("Test user should not be null", testUser);
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
-		octx = OlioContextUtil.getGridContext(testUser, dataPath,
-				"Chat Duel Long Universe", "Chat Duel Long World", false);
+		/// OlioTestUtil.getContext is the well-trodden path that working tests
+		/// (TestGameUtil, TestKontext) use to get a context with a populated
+		/// realm. OlioContextUtil.getGridContext alone creates the map
+		/// structure but on a fresh DB the realm population is empty —
+		/// getRealmPopulation comes back with 0 entries.
+		octx = OlioTestUtil.getContext(testOrgContext, dataPath);
 		assertNotNull("Olio context should not be null", octx);
 	}
 
@@ -148,14 +212,6 @@ public class TestChatDuelLong extends BaseTest {
 			userConvs.put(usrOid, new ArrayList<>());
 
 			for (int pairIdx = 0; pairIdx < NUM_PAIRS; pairIdx++) {
-				String convIdA = "duelLong-" + pairIdx + "-A-" + UUID.randomUUID().toString().substring(0, 8);
-				String convIdB = "duelLong-" + pairIdx + "-B-" + UUID.randomUUID().toString().substring(0, 8);
-
-				systemConvs.get(sysOid).add(convIdA);
-				userConvs.get(usrOid).add(convIdA);
-				systemConvs.get(usrOid).add(convIdB);
-				userConvs.get(sysOid).add(convIdB);
-
 				BaseRecord cfgA = createDuelChatConfig(
 						"DuelLong " + pairIdx + " A " + UUID.randomUUID().toString().substring(0, 6),
 						sysChar, usrChar, setting, "system");
@@ -165,6 +221,18 @@ public class TestChatDuelLong extends BaseTest {
 						"DuelLong " + pairIdx + " B " + UUID.randomUUID().toString().substring(0, 6),
 						usrChar, sysChar, setting, "user");
 				assertNotNull("ChatConfig B should not be null", cfgB);
+
+				/// Server-side memory extraction tags each memory with the
+				/// chatConfig.objectId as `conversationId`
+				/// (Chat.java:2652). So `getConversationMemories` must be
+				/// queried by THESE ids, not test-side fabricated strings.
+				String convIdA = cfgA.get(FieldNames.FIELD_OBJECT_ID);
+				String convIdB = cfgB.get(FieldNames.FIELD_OBJECT_ID);
+
+				systemConvs.get(sysOid).add(convIdA);
+				userConvs.get(usrOid).add(convIdA);
+				systemConvs.get(usrOid).add(convIdB);
+				userConvs.get(sysOid).add(convIdB);
 
 				Chat chatA = new Chat(testUser, cfgA, promptConfig);
 				Chat chatB = new Chat(testUser, cfgB, promptConfig);
@@ -246,10 +314,35 @@ public class TestChatDuelLong extends BaseTest {
 				logger.info("[DUEL]   Final msgCounts: A=" + reqA.getMessages().size()
 						+ " B=" + reqB.getMessages().size());
 
-				/// Extract memories from each conversation
-				int memA = createMemoriesFromConversation(reqA, convIdA, sysName, usrName);
-				int memB = createMemoriesFromConversation(reqB, convIdB, usrName, sysName);
-				logger.info("[DUEL]   Memories created: A=" + memA + " B=" + memB);
+				/// Dump the full conversation objects for content inspection.
+				/// reqA.toFullString() is the entire OpenAIRequest including
+				/// every message (system, user, assistant) and every chat
+				/// option that was set on the wire — what you'd actually
+				/// send to Ollama. Useful for verifying template substitution,
+				/// MCP block injection (reminders/keyframes/memories), prune
+				/// markers, and response content.
+				logger.info("[DUEL] === Full conversation reqA (" + convIdA + ") ===");
+				logger.info(reqA.toFullString());
+				logger.info("[DUEL] === Full conversation reqB (" + convIdB + ") ===");
+				logger.info(reqB.toFullString());
+
+				/// Also dump each message's role + content individually so
+				/// `grep "[MSG]"` gives a clean per-message readout without
+				/// the wire fluff.
+				logger.info("[DUEL] === Per-message readout reqA (" + convIdA + ") ===");
+				dumpMessages(reqA, sysName, usrName);
+				logger.info("[DUEL] === Per-message readout reqB (" + convIdB + ") ===");
+				dumpMessages(reqB, usrName, sysName);
+
+				/// Async keyframe/interaction/memory-extraction pipelines were
+				/// spawned via flushPendingKeyframe in runOneTurn. Drain by
+				/// polling memory counts every 5s until they stabilize for
+				/// 3 consecutive checks (15s of no growth), or until
+				/// ASYNC_DRAIN_SECONDS elapses. This catches slow extraction
+				/// (qwen3:8b takes ~5-10s per extraction × ~12 per conv =
+				/// often >60s of tail work). No test-side memory creation —
+				/// if numbers are low, the chatConfig is the problem.
+				drainAsyncMemories(convIdA, convIdB);
 				logger.info("[DUEL] ========================================");
 			}
 
@@ -267,6 +360,13 @@ public class TestChatDuelLong extends BaseTest {
 			long usrPersonId = usrChar.get(FieldNames.FIELD_ID);
 			runGossipProbe(sysPersonId, usrPersonId, sysName, usrName);
 			runGossipProbe(usrPersonId, sysPersonId, usrName, sysName);
+
+			/// Raw memory dump — every memory in the test user's memory
+			/// group, regardless of conversationId. Useful when verifyMemories
+			/// returns lower than expected counts: confirms whether the
+			/// memories were saved at all and what their conversationIds /
+			/// memoryTypes actually are.
+			dumpAllMemories();
 
 			logger.info("[DUEL] === TestChatDuelLong PASSED ===");
 		} catch (Exception e) {
@@ -322,6 +422,22 @@ public class TestChatDuelLong extends BaseTest {
 					} catch (Exception he) {
 						logger.warn("[DUEL] handleResponse failed: " + he.getMessage());
 					}
+
+					/// IMPORTANT: production ChatListener.oncomplete is what
+					/// triggers flushPendingKeyframe and flushPendingInteraction
+					/// after each turn. Our DuelStreamListener is a minimal
+					/// CountDownLatch wrapper and doesn't flush. Without these
+					/// calls, the keyframe pipeline (and the memory-extraction
+					/// pipeline that consumes keyframes) never runs, so the
+					/// prune+memory-recall loop only exercises prune. The
+					/// flushes spawn CompletableFutures that run extraction
+					/// async — sleep briefly to give them a chance to land
+					/// before the next turn fires retrieveRelevantMemories.
+					try { chat.flushPendingKeyframe(req); }
+					catch (Exception fe) { logger.warn("[DUEL] flushPendingKeyframe failed: " + fe.getMessage()); }
+					try { chat.flushPendingInteraction(req); }
+					catch (Exception fe) { logger.warn("[DUEL] flushPendingInteraction failed: " + fe.getMessage()); }
+
 					List<OpenAIMessage> msgs = req.getMessages();
 					String last = msgs.isEmpty() ? null
 							: msgs.get(msgs.size() - 1).getContent();
@@ -373,13 +489,114 @@ public class TestChatDuelLong extends BaseTest {
 	private void verifyMemories(List<String> convIds, String label) {
 		int total = 0;
 		for (String cid : convIds) {
-			List<BaseRecord> mems = MemoryUtil.getConversationMemories(testUser, cid);
-			int n = mems == null ? 0 : mems.size();
+			/// MemoryUtil.getConversationMemories now bypasses CacheDBSearch
+			/// (cache disabled in the query itself), so this returns the
+			/// authoritative live count.
+			int n = MemoryUtil.getConversationMemories(testUser, cid).size();
 			total += n;
 			logger.info("[DUEL]   " + label + " conv " + cid + ": " + n + " memories");
 		}
 		logger.info("[DUEL]   " + label + " TOTAL: " + total + " memories across "
 				+ convIds.size() + " conv(s)");
+	}
+
+	/// Direct query bypassing MemoryUtil.getConversationMemories, with an
+	/// explicit setRequestRange. Used as a control to see whether the
+	/// filtered query is being truncated when no range is set.
+	private int countMemoriesByConvDirect(String conversationId) {
+		try {
+			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(
+					testUser, ModelNames.MODEL_GROUP, "~/Memories",
+					org.cote.accountmanager.schema.type.GroupEnumType.DATA.toString(),
+					testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if (dir == null) return -1;
+			Query q = QueryUtil.createQuery(org.cote.accountmanager.schema.ModelNames.MODEL_MEMORY,
+					FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			q.field("conversationId", conversationId);
+			q.planMost(true);
+			q.setRequestRange(0L, 500);  // explicit pagination range
+			BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findRecords(q);
+			return recs == null ? 0 : recs.length;
+		} catch (Exception e) {
+			logger.warn("[DUEL] countMemoriesByConvDirect failed: " + e.getMessage());
+			return -2;
+		}
+	}
+
+	/// Poll memory counts for the given conversation IDs every 5s, stopping
+	/// when no growth is observed for 3 consecutive checks (15s stable) or
+	/// when ASYNC_DRAIN_SECONDS elapses. Returns the final per-conv counts.
+	private void drainAsyncMemories(String convIdA, String convIdB) {
+		final long pollIntervalMs = 5000L;
+		final int stableChecksRequired = 3;
+		long deadline = System.currentTimeMillis() + (ASYNC_DRAIN_SECONDS * 1000L);
+		int lastA = -1, lastB = -1;
+		int stableA = 0, stableB = 0;
+		int checkNum = 0;
+		while (System.currentTimeMillis() < deadline) {
+			/// MemoryUtil.getConversationMemories now sets cache=false so
+			/// these reads are always fresh. Direct query kept alongside as
+			/// a control to detect future cache regressions.
+			int a = MemoryUtil.getConversationMemories(testUser, convIdA).size();
+			int b = MemoryUtil.getConversationMemories(testUser, convIdB).size();
+			int aDirect = countMemoriesByConvDirect(convIdA);
+			int bDirect = countMemoriesByConvDirect(convIdB);
+			checkNum++;
+			logger.info(String.format("[DUEL]   drain check #%d: A=%d(direct=%d) B=%d(direct=%d) (stable A=%d/%d, B=%d/%d)",
+					checkNum, a, aDirect, b, bDirect, stableA, stableChecksRequired, stableB, stableChecksRequired));
+			if (a == lastA) stableA++; else { stableA = 0; lastA = a; }
+			if (b == lastB) stableB++; else { stableB = 0; lastB = b; }
+			if (stableA >= stableChecksRequired && stableB >= stableChecksRequired && (a > 0 || b > 0)) {
+				logger.info("[DUEL]   drain stable — A=" + a + " B=" + b);
+				return;
+			}
+			try { Thread.sleep(pollIntervalMs); }
+			catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+		}
+		logger.warn("[DUEL]   drain timed out after " + ASYNC_DRAIN_SECONDS + "s — A=" + lastA + " B=" + lastB);
+	}
+
+	/// List every memory in the test user's memory group. Useful when
+	/// getConversationMemories(cfgObjId) returns a smaller count than the
+	/// audit log suggests — confirms whether memories were saved with the
+	/// expected conversationId tag or with something else.
+	private void dumpAllMemories() {
+		try {
+			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(
+					testUser, ModelNames.MODEL_GROUP, "~/Memories",
+					org.cote.accountmanager.schema.type.GroupEnumType.DATA.toString(),
+					testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if (dir == null) {
+				logger.warn("[DUEL] dumpAllMemories: no memory group");
+				return;
+			}
+			Query q = QueryUtil.createQuery(org.cote.accountmanager.schema.ModelNames.MODEL_MEMORY,
+					FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			q.planMost(true);
+			q.setRequestRange(0L, 500);
+			BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findRecords(q);
+			int n = recs == null ? 0 : recs.length;
+			logger.info("[DUEL] === Raw memory dump: " + n + " memories in group "
+					+ dir.get(FieldNames.FIELD_ID) + " (path=~/Memories) ===");
+			if (recs != null) {
+				for (int i = 0; i < recs.length; i++) {
+					BaseRecord m = recs[i];
+					String convId = null;
+					String type = null;
+					String summary = null;
+					try { convId = m.get("conversationId"); } catch (Exception ignore) {}
+					try {
+						Object t = m.get("memoryType");
+						type = t == null ? null : t.toString();
+					} catch (Exception ignore) {}
+					try { summary = m.get("summary"); } catch (Exception ignore) {}
+					logger.info(String.format("[MEM] %3d type=%-12s conv=%s summary=%s",
+							i, type, convId, truncate(summary, 80)));
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("[DUEL] dumpAllMemories failed: " + e.getMessage(), e);
+		}
 	}
 
 	private void runGossipProbe(long personId, long excludePartnerId,
@@ -400,19 +617,29 @@ public class TestChatDuelLong extends BaseTest {
 
 	/// Minimal prompt config — kept short so the test focuses on
 	/// reproducing the runaway, not on prompt-template branches.
+	/// The config name embeds a version suffix so when the template body
+	/// changes here we don't accidentally reuse a stale cached config
+	/// from a prior run (DocumentUtil.getRecord finds by name).
+	private static final String PROMPT_CONFIG_NAME = "Chat Duel Long Prompt v3";
+
 	private BaseRecord loadPromptConfig(BaseRecord user) {
 		BaseRecord opcfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_PROMPT_CONFIG,
-				"Chat Duel Long Prompt", "~/Chat");
+				PROMPT_CONFIG_NAME, "~/Chat");
 		if (opcfg != null) return opcfg;
 
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
-		plist.parameter(FieldNames.FIELD_NAME, "Chat Duel Long Prompt");
+		plist.parameter(FieldNames.FIELD_NAME, PROMPT_CONFIG_NAME);
 		try {
 			BaseRecord pcfg = IOSystem.getActiveContext().getFactory()
 					.newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, null, plist);
 			List<String> sys = new ArrayList<>();
-			sys.add("You are {{systemCharacter.firstName}}, a {{systemCharacter.age}}-year-old {{systemCharacter.gender}}.");
-			sys.add("Respond in character to {{userCharacter.firstName}} in 1-3 short sentences. Stay grounded in the current setting.");
+			/// Template syntax is ${system.firstName} / ${user.firstName} —
+			/// the prompt-template engine resolves these via PromptUtil and
+			/// chatConfig.systemCharacter / userCharacter. `{{...}}` is NOT
+			/// substituted and the literal text leaks into the LLM, causing
+			/// it to echo "{{userCharacter.firstName}}" in its responses.
+			sys.add("You are ${system.firstName}, a ${system.age}-year-old ${system.gender}.");
+			sys.add("Respond in character to ${user.firstName} in 1-3 short sentences. Stay grounded in the current setting.");
 			pcfg.set("system", sys);
 			opcfg = IOSystem.getActiveContext().getAccessPoint().create(user, pcfg);
 		} catch (Exception e) {
@@ -434,11 +661,17 @@ public class TestChatDuelLong extends BaseTest {
 			cfg.set("useNLP", false);
 			cfg.set("includeScene", false);
 			cfg.set("prune", true);
-			cfg.set("messageTrim", 50);
+			cfg.set("messageTrim", OPT_MESSAGE_TRIM);
 			cfg.set("rating", ESRBEnumType.E);
 			cfg.set("extractMemories", true);
-			cfg.set("keyframeEvery", 10);
-			cfg.set("memoryExtractionEvery", 1);
+			cfg.set("keyframeEvery", OPT_KEYFRAME_EVERY);
+			cfg.set("memoryExtractionEvery", OPT_MEMORY_EXTRACTION_EVERY);
+			/// memoryBudget controls how many tokens of retrieved memories
+			/// can be injected on each turn. 0 disables retrieval entirely
+			/// — which means pruned content is simply lost from context.
+			/// We WANT retrieval to fire so the prune/extract/recall loop
+			/// is exercised, not just the prune half.
+			cfg.set("memoryBudget", OPT_MEMORY_BUDGET);
 			cfg.set("requestTimeout", STREAM_TIMEOUT_SECONDS);
 
 			String terrain = NarrativeUtil.getTerrain(octx, usrChar);
@@ -457,8 +690,12 @@ public class TestChatDuelLong extends BaseTest {
 			opts.set("temperature", 0.8);
 			opts.set("top_p", 0.95);
 			opts.set("repeat_penalty", 1.1);
-			opts.set("num_ctx", 131072);
-			opts.set("max_tokens", 4096);
+			opts.set("num_ctx", OPT_NUM_CTX);
+			opts.set("max_tokens", OPT_MAX_TOKENS);
+			/// Explicit: way-local rejects `think` even when false. Schema
+			/// default was changed to false but we set it here too so the
+			/// test is hermetic against schema regressions.
+			opts.set("think", false);
 			cfg.set("chatOptions", opts);
 
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
@@ -480,47 +717,32 @@ public class TestChatDuelLong extends BaseTest {
 		return cfg;
 	}
 
-	private int createMemoriesFromConversation(OpenAIRequest req, String conversationId,
-			String systemName, String userName) {
-		List<OpenAIMessage> msgs = req.getMessages();
-		int memoryCount = 0;
-
-		StringBuilder convoText = new StringBuilder();
-		for (int i = 1; i < msgs.size(); i++) {
-			OpenAIMessage msg = msgs.get(i);
-			String content = msg.getContent();
-			if (content == null || content.trim().isEmpty()) continue;
-			String speaker = "assistant".equals(msg.getRole()) ? systemName : userName;
-			convoText.append(speaker).append(": ").append(truncate(content, 300)).append("\n");
-		}
-
-		if (convoText.length() == 0) return 0;
-
-		BaseRecord summaryMem = MemoryUtil.createMemory(
-				testUser, convoText.toString(),
-				systemName + " and " + userName + " duel summary",
-				org.cote.accountmanager.schema.type.MemoryTypeEnumType.NOTE, 6,
-				"am7://duel-long/" + conversationId, conversationId);
-		if (summaryMem != null) memoryCount++;
-
-		for (int i = 1; i < msgs.size(); i++) {
-			OpenAIMessage msg = msgs.get(i);
-			if (!"assistant".equals(msg.getRole())) continue;
-			String content = msg.getContent();
-			if (content == null || content.trim().isEmpty()) continue;
-			BaseRecord mem = MemoryUtil.createMemory(
-					testUser, systemName + " said: " + content,
-					systemName + " response in duel",
-					org.cote.accountmanager.schema.type.MemoryTypeEnumType.BEHAVIOR, 5,
-					"am7://duel-long/" + conversationId, conversationId);
-			if (mem != null) memoryCount++;
-		}
-		return memoryCount;
-	}
-
 	private static String truncate(String s, int maxLen) {
 		if (s == null) return "null";
 		return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
+	}
+
+	/// Emit each message in the request on its own [MSG] line so the
+	/// reader can scan content without parsing the whole toFullString
+	/// blob. Speaker labels come from the chatConfig role mapping passed
+	/// in by the caller (assistant=system-char, user=user-char).
+	private void dumpMessages(OpenAIRequest req, String assistantName, String userName) {
+		List<OpenAIMessage> msgs = req.getMessages();
+		for (int i = 0; i < msgs.size(); i++) {
+			OpenAIMessage m = msgs.get(i);
+			String role = m.getRole();
+			String content = m.getContent();
+			boolean pruned = false;
+			try { pruned = m.isPruned(); } catch (Exception ignore) { /* legacy */ }
+			String speaker;
+			if ("system".equals(role)) speaker = "SYSTEM";
+			else if ("assistant".equals(role)) speaker = assistantName;
+			else if ("user".equals(role)) speaker = userName;
+			else speaker = role;
+			logger.info(String.format("[MSG] %3d %-10s %s%s",
+					i, speaker, (pruned ? "[PRUNED] " : ""),
+					content == null ? "<null>" : content.replace('\n', ' ')));
+		}
 	}
 
 	/// CountDownLatch-based listener mirroring TestMemoryDuel.

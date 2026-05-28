@@ -1949,8 +1949,15 @@ public class ChatUtil {
 				if(repeat_last_n > 0) req.set("repeat_last_n", repeat_last_n);
 				int num_gpu = opts.get("num_gpu");
 				if(num_gpu > 0) req.set("num_gpu", num_gpu);
+				/// Only emit `think` when explicitly enabled. Models that
+				/// don't support thinking (e.g. way-local) reject the
+				/// request outright when `think` is present in ANY form —
+				/// even `false` — with: "<model> does not support thinking".
+				/// Default false from chatOptions therefore poisons every
+				/// request to non-thinking models. Match the convention of
+				/// the other Ollama-extension fields above: gate on truthy.
 				boolean think = opts.get("think");
-				req.set("think", think);
+				if(think) req.set("think", true);
 			}
 
 		}
