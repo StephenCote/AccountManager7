@@ -987,6 +987,27 @@ import Base64 from './base64.js';
 				else if (f.type == "string" && typeof v == "string" && v.length == 0) {
 					v = null;
 				}
+				/// Numeric guard: clearing a number input briefly produces v="".
+				/// Letting that flow through ends up writing NaN to the entity
+				/// (parseInt("") = NaN), which serializes to null in JSON, which
+				/// the server persists as "unset" — so on next read the field
+				/// returns null and the client falls back to the schema default
+				/// (e.g. remindEvery=0 typed by the user comes back as 6). Skip
+				/// the update entirely while the input is empty / mid-typing /
+				/// not yet a valid number. The entity keeps its prior value and
+				/// only updates when the user finishes typing a valid one.
+				else if (
+					(f.type === "int" || f.type === "double" || f.type === "long" || f.type === "float")
+					&& typeof v === "string"
+				) {
+					let trimmed = v.trim();
+					if (trimmed === "" || trimmed === "-" || trimmed === "." || trimmed === "-.") return;
+					let parsed = (f.type === "int" || f.type === "long")
+						? parseInt(trimmed, 10)
+						: parseFloat(trimmed);
+					if (Number.isNaN(parsed)) return;
+					v = parsed;
+				}
 				inst.api[n](v);
 				if (fh) fh(e);
 				inst.action(n);
@@ -1020,7 +1041,15 @@ import Base64 from './base64.js';
 			}).forEach(f => {
 				if (!f.identity || !b1id) {
 					if (f.identity) b1id++;
-					pent[f.name] = entity[f.name];
+					let val = entity[f.name];
+					/// Defensive: NaN serializes to null and clobbers the
+					/// server field. handleChange already guards against
+					/// writing NaN; this is the belt-and-suspenders backup.
+					if (typeof val === "number" && Number.isNaN(val)) {
+						console.warn("[patch] skipping NaN value for", f.name);
+						return;
+					}
+					pent[f.name] = val;
 				}
 			});
 			pent[am7model.jsonModelKey] = inst.model.name;

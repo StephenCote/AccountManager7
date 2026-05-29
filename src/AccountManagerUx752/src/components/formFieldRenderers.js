@@ -219,7 +219,19 @@ renderers.range = function(ctx) {
     let step;
     if (isDouble && !scaleByHundred) {
         step = 0.01;
+    } else if (!isDouble) {
+        /// Integer fields: always step=1. Larger steps look reasonable for
+        /// 0–120000 ranges, but the browser snaps the slider value to the
+        /// nearest step on every render. Default values (e.g. max_tokens=4096
+        /// with step=120) snap to 4080, then Mithril re-sets to 4096, then
+        /// the browser snaps again — visually the thumb appears stuck until
+        /// a full redraw forces a single coherent value, which is what the
+        /// user was seeing for max_tokens / num_ctx. step=1 makes the browser
+        /// honor the requested value exactly. Slider thumb resolution is
+        /// pixel-based so there's no UX penalty.
+        step = 1;
     } else {
+        /// Scaled doubles (×100): use coarser steps for usable drag granularity.
         let span = max - min;
         if (span <= 100) step = 1;
         else if (span <= 1000) step = 10;

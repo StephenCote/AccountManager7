@@ -208,6 +208,11 @@ public class Chat {
 	private int lastMidStreamCheckLength = 0;
 	private PolicyEvaluationResult midStreamViolation = null;
 
+	/// Tracks whether we have an open `<think>` tag in the accumulated
+	/// content that still needs a closing `</think>` when content arrives.
+	/// Per-Chat-instance (per-request) state — reset by chatInternal.
+	private boolean thinkBlockOpen = false;
+
 	private String llmSystemPrompt = """
 			You play the role of an assistant named Siren.
 			Begin conversationally.
@@ -3611,6 +3616,7 @@ public class Chat {
 		/// Reset mid-stream policy tracking for this request
 		lastMidStreamCheckLength = 0;
 		midStreamViolation = null;
+		thinkBlockOpen = false;
 
 		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);
 		String tokField = ChatUtil.getMaxTokenField(chatConfig);
@@ -3859,21 +3865,34 @@ public class Chat {
 			}
 			String contentChunk = deltaMessage.get("content");
 			boolean done = asyncResp.get("done");
-			/// Diagnostic: detect thinking-model stream where content is empty but thinking has text
-			if (!forwardToClient && (contentChunk == null || contentChunk.isEmpty())) {
-				String thinkChunk = deltaMessage.hasField("thinking") ? deltaMessage.get("thinking") : null;
-				if (thinkChunk != null && !thinkChunk.isEmpty()) {
-					if (logger.isDebugEnabled()) {
-						logger.debug("processStreamChunk: thinking token (content empty), thinkLen=" + thinkChunk.length());
-					}
+			/// Capture reasoning-model `thinking` field so it lands in the
+			/// saved request (wrapped in <think>…</think>). The UI strips
+			/// the wrapping when hideThoughts=true, so visually nothing
+			/// changes for users who don't care — but the show/hide toggle
+			/// finally has content to reveal, and the saved transcript no
+			/// longer silently loses tokens the server actually paid for.
+			String thinkChunk = deltaMessage.hasField("thinking") ? (String) deltaMessage.get("thinking") : null;
+			if (thinkChunk != null && !thinkChunk.isEmpty()) {
+				if (!thinkBlockOpen) {
+					accumulateChunk(aresp, deltaMessage, "<think>", forwardToClient, req);
+					thinkBlockOpen = true;
 				}
+				accumulateChunk(aresp, deltaMessage, thinkChunk, forwardToClient, req);
 			}
 			/// Accumulate content BEFORE checking done flag — Ollama may include
 			/// content on the final done=true chunk (e.g. single-token responses).
 			if (contentChunk != null && contentChunk.length() > 0) {
+				if (thinkBlockOpen) {
+					accumulateChunk(aresp, deltaMessage, "</think>", forwardToClient, req);
+					thinkBlockOpen = false;
+				}
 				accumulateChunk(aresp, deltaMessage, contentChunk, forwardToClient, req);
 			}
 			if (done) {
+				if (thinkBlockOpen) {
+					accumulateChunk(aresp, deltaMessage, "</think>", forwardToClient, req);
+					thinkBlockOpen = false;
+				}
 				return true;
 			}
 		} else {

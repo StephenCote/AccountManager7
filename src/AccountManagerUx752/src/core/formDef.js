@@ -5413,6 +5413,84 @@ import { am7model } from './model.js';
                 hint: "Maximum gossip memories to suggest (1-20)"
             },
 
+            // ConversationQualityPlan Phase 1 — echo suppression
+            echoSuppressionThreshold: {
+                layout: "one",
+                label: "Echo Suppression Threshold",
+                hint: "Last-3-responses Jaccard above which a steering message injects. 0=off."
+            },
+            echoSuppressionTempBoost: {
+                layout: "one",
+                label: "Echo Steering Temp Boost",
+                hint: "Added to temperature for one turn when echo-steering fires (0–1)."
+            },
+
+            // ConversationQualityPlan Phase 3 — keyframe skip-on-echo
+            keyframeSkipEchoThreshold: {
+                layout: "one",
+                label: "Keyframe Skip-on-Echo",
+                hint: "Skip a keyframe extraction when segment echo exceeds this. 1.0=never skip."
+            },
+
+            // ConversationQualityPlan Phase 2 — retrieval scoring
+            memoryRecencyHalfLifeMinutes: {
+                layout: "one",
+                label: "Memory Recency Half-Life (min)",
+                hint: "Down-weight memories created this recently. 0=disabled."
+            },
+            memoryMmrLambda: {
+                layout: "one",
+                label: "Memory MMR Lambda",
+                hint: "0=pure diversity, 1=pure relevance. 0.5=balanced."
+            },
+            memoryEssentialImportance: {
+                layout: "one",
+                label: "Essential Importance",
+                hint: "Memories ≥ this importance bypass recency penalty (1–10)."
+            },
+            memoryDedupSimilarity: {
+                layout: "one",
+                label: "Memory Dedup Similarity",
+                hint: "Drop memories more similar than this to an already-kept one. 1.0=off."
+            },
+
+            // ConversationQualityPlan Phase 4 — injection style
+            memoryInjectionStyle: {
+                layout: "one",
+                label: "Memory Injection Style",
+                hint: "'mcp' = MCP block; 'systemSection' = markdown headers in system prompt.",
+                field: {
+                    type: "list",
+                    limit: ["mcp", "systemSection"]
+                }
+            },
+
+            // ConversationQualityPlan Phase 5 — async pipeline
+            deferralPressureThreshold: {
+                layout: "one",
+                label: "Deferral Pressure Threshold",
+                hint: "Skip async LLM tasks when active LLM calls ≥ this. 0=never defer."
+            },
+            asyncLLMSerializeAllPerChat: {
+                layout: "one",
+                label: "Serialize Async LLM Per Chat",
+                hint: "When on, all async LLM types share one slot per chat (prevents stacking on single-slot Ollama)."
+            },
+
+            // ConversationQualityPlan Phase 6 — quality evaluator
+            qualityEvaluatorEvery: {
+                layout: "one",
+                label: "Quality Evaluator Every",
+                hint: "Run echo/distinct/memUtil scoring every Nth response. 0=disabled. Pure local."
+            },
+
+            // ConversationQualityPlan Phase 5.3 — stream idle watchdog
+            streamIdleTimeoutSeconds: {
+                layout: "one",
+                label: "Stream Idle Timeout (sec)",
+                hint: "Force-close stream if no chunk arrives for this many sec. 0=disabled. Preserves accumulated content."
+            }
+
         },
         forms: ["episodectl", "chatOptionsRef", "groupinfo", "attributes"]
 
