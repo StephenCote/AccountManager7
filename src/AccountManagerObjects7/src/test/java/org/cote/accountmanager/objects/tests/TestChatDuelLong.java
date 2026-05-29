@@ -28,6 +28,7 @@ import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatRequest;
+import org.cote.accountmanager.olio.llm.ConversationQualityMetrics;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.IChatHandler;
@@ -145,6 +146,50 @@ public class TestChatDuelLong extends BaseTest {
 	private static final int OPT_MEMORY_BUDGET =
 			Integer.parseInt(System.getProperty("duel.memoryBudget", "2000"));
 
+	/// Phase 1 (ConversationQualityPlan): echo-suppression threshold
+	/// override for the test. Negative = use schema default; 0 = disable;
+	/// other = explicit. Allows before/after runs with same characters.
+	private static final double OPT_ECHO_SUPPRESSION_THRESHOLD =
+			Double.parseDouble(System.getProperty("duel.echoSuppressionThreshold", "-1"));
+
+	/// Phase 3 (ConversationQualityPlan): memoryExtractionPrompt
+	/// override. Defaults to memoryExtractionMultiAspect so the test
+	/// exercises the new typed-aspect path. Set to "memoryExtractionV2"
+	/// to compare against the prior single-memory path.
+	private static final String OPT_MEMORY_EXTRACTION_PROMPT =
+			System.getProperty("duel.memoryExtractionPrompt", "memoryExtractionMultiAspect");
+
+	/// Phase 3 (ConversationQualityPlan): keyframe skip-on-echo
+	/// threshold override. Negative = use schema default; 1.0 = never
+	/// skip. Allows isolated before/after comparison.
+	private static final double OPT_KEYFRAME_SKIP_ECHO_THRESHOLD =
+			Double.parseDouble(System.getProperty("duel.keyframeSkipEchoThreshold", "-1"));
+
+	/// Phase 2 (ConversationQualityPlan): retrieval-scoring overrides.
+	/// Negative = use schema defaults. 0 disables the recency penalty;
+	/// mmrLambda=1.0 disables MMR diversity; dedupSim=1.0 disables dedup.
+	private static final double OPT_MEMORY_RECENCY_HALF_LIFE_MIN =
+			Double.parseDouble(System.getProperty("duel.memoryRecencyHalfLifeMinutes", "-1"));
+	private static final double OPT_MEMORY_MMR_LAMBDA =
+			Double.parseDouble(System.getProperty("duel.memoryMmrLambda", "-1"));
+	private static final int OPT_MEMORY_ESSENTIAL_IMPORTANCE =
+			Integer.parseInt(System.getProperty("duel.memoryEssentialImportance", "-1"));
+	private static final double OPT_MEMORY_DEDUP_SIMILARITY =
+			Double.parseDouble(System.getProperty("duel.memoryDedupSimilarity", "-1"));
+
+	/// Phase 4 (ConversationQualityPlan): memoryInjectionStyle override.
+	/// "mcp" = current MCP context block; "systemSection" = markdown
+	/// block grouped by memory type, designed to land in the system
+	/// prompt where the LLM acts on it directly.
+	private static final String OPT_MEMORY_INJECTION_STYLE =
+			System.getProperty("duel.memoryInjectionStyle", "systemSection");
+
+	/// Phase 6 (ConversationQualityPlan): qualityEvaluatorEvery override.
+	/// 0 = disabled. Default 5 for the duel so we get a few [QUALITY]
+	/// emissions during a 20-turn pair.
+	private static final int OPT_QUALITY_EVALUATOR_EVERY =
+			Integer.parseInt(System.getProperty("duel.qualityEvaluatorEvery", "5"));
+
 	/// Upper bound on the drain wait. The drain polls until memory counts
 	/// stabilize, so it usually returns earlier. With qwen3:8b each
 	/// extraction takes 5-10s and the test produces ~12 per conv, so
@@ -183,8 +228,12 @@ public class TestChatDuelLong extends BaseTest {
 			List<BaseRecord> pop = octx.getRealmPopulation(realm);
 			assertTrue("Population should have at least 2 people", pop.size() >= 2);
 
+			/// Deterministic character selection so before/after metric
+			/// comparisons aren't muddied by character variance.
+			/// Override with -Dduel.seed=<long> for a different pair.
+			long seed = Long.parseLong(System.getProperty("duel.seed", "42"));
 			List<BaseRecord> shuffled = new ArrayList<>(pop);
-			Collections.shuffle(shuffled);
+			Collections.shuffle(shuffled, new java.util.Random(seed));
 			List<BaseRecord> picked = shuffled.subList(0, 2);
 
 			BaseRecord sysChar = picked.get(0);
@@ -271,8 +320,29 @@ public class TestChatDuelLong extends BaseTest {
 				int zeroResponsesA = 0;
 				int zeroResponsesB = 0;
 
+				/// Phase 0 (ConversationQualityPlan): per-conversation
+				/// rolling state for quality metrics — last 3 assistant
+				/// responses for echo, all responses for latency-slope,
+				/// last 10 messages for distinct-token ratio.
+				java.util.LinkedList<String> recentRespA = new java.util.LinkedList<>();
+				java.util.LinkedList<String> recentRespB = new java.util.LinkedList<>();
+				java.util.LinkedList<String> rollingMsgsA = new java.util.LinkedList<>();
+				java.util.LinkedList<String> rollingMsgsB = new java.util.LinkedList<>();
+				List<Double> echoSeriesA = new ArrayList<>();
+				List<Double> echoSeriesB = new ArrayList<>();
+				List<Double> distinctSeriesA = new ArrayList<>();
+				List<Double> distinctSeriesB = new ArrayList<>();
+				List<Double> memUtilSeriesA = new ArrayList<>();
+				List<Double> memUtilSeriesB = new ArrayList<>();
+				List<double[]> latencyXYA = new ArrayList<>();  // [msgCount, elapsedMs]
+				List<double[]> latencyXYB = new ArrayList<>();
+
 				for (int turn = 0; turn < TURNS_PER_CHARACTER; turn++) {
 					/// ── A's turn (sysName speaking) ────────────────────
+					/// Snapshot injected memories BEFORE the turn (retrieval
+					/// runs as part of the wire-build inside continueChat).
+					/// We compute memUtil AFTER we have the response.
+					List<String> preInjA = new ArrayList<>(chatA.getLastInjectedMemorySummaries());
 					TurnResult ra = runOneTurn(chatA, reqA, listenerA, messageForA,
 							turn + 1, "A", sysName);
 					if (ra.completed) {
@@ -289,8 +359,13 @@ public class TestChatDuelLong extends BaseTest {
 					if (ra.responseText == null || ra.responseText.isEmpty()) {
 						zeroResponsesA++;
 					}
+					recordQualSample("A", sysName, turn + 1, ra,
+							chatA.getLastInjectedMemorySummaries(),
+							recentRespA, rollingMsgsA,
+							echoSeriesA, distinctSeriesA, memUtilSeriesA, latencyXYA);
 
 					/// ── B's turn (usrName speaking) ────────────────────
+					List<String> preInjB = new ArrayList<>(chatB.getLastInjectedMemorySummaries());
 					TurnResult rb = runOneTurn(chatB, reqB, listenerB, messageForB,
 							turn + 1, "B", usrName);
 					if (rb.completed) {
@@ -303,7 +378,18 @@ public class TestChatDuelLong extends BaseTest {
 					if (rb.responseText == null || rb.responseText.isEmpty()) {
 						zeroResponsesB++;
 					}
+					recordQualSample("B", usrName, turn + 1, rb,
+							chatB.getLastInjectedMemorySummaries(),
+							recentRespB, rollingMsgsB,
+							echoSeriesB, distinctSeriesB, memUtilSeriesB, latencyXYB);
+
+					/// preInjA/preInjB silence unused-warning + diagnostic
+					/// breadcrumb if needed later:
+					if (false) { System.out.println(preInjA.size() + preInjB.size()); }
 				}
+
+				emitQualSummary("A", sysName, echoSeriesA, distinctSeriesA, memUtilSeriesA, latencyXYA);
+				emitQualSummary("B", usrName, echoSeriesB, distinctSeriesB, memUtilSeriesB, latencyXYB);
 
 				logger.info("[DUEL] ========================================");
 				logger.info("[DUEL] Pair " + (pairIdx + 1) + " complete");
@@ -640,6 +726,11 @@ public class TestChatDuelLong extends BaseTest {
 			/// it to echo "{{userCharacter.firstName}}" in its responses.
 			sys.add("You are ${system.firstName}, a ${system.age}-year-old ${system.gender}.");
 			sys.add("Respond in character to ${user.firstName} in 1-3 short sentences. Stay grounded in the current setting.");
+			/// Phase 4 (ConversationQualityPlan): without this token, neither
+			/// the MCP context block nor the systemSection markdown produced
+			/// by Chat.retrieveRelevantMemories ever lands in the wire. The
+			/// PromptUtil substitution drops the resolved memory content here.
+			sys.add("${memory.context}");
 			pcfg.set("system", sys);
 			opcfg = IOSystem.getActiveContext().getAccessPoint().create(user, pcfg);
 		} catch (Exception e) {
@@ -672,6 +763,31 @@ public class TestChatDuelLong extends BaseTest {
 			/// We WANT retrieval to fire so the prune/extract/recall loop
 			/// is exercised, not just the prune half.
 			cfg.set("memoryBudget", OPT_MEMORY_BUDGET);
+			if (OPT_ECHO_SUPPRESSION_THRESHOLD >= 0.0) {
+				cfg.set("echoSuppressionThreshold", OPT_ECHO_SUPPRESSION_THRESHOLD);
+			}
+			cfg.set("memoryExtractionPrompt", OPT_MEMORY_EXTRACTION_PROMPT);
+			if (OPT_KEYFRAME_SKIP_ECHO_THRESHOLD >= 0.0) {
+				cfg.set("keyframeSkipEchoThreshold", OPT_KEYFRAME_SKIP_ECHO_THRESHOLD);
+			}
+			if (OPT_MEMORY_RECENCY_HALF_LIFE_MIN >= 0.0) {
+				cfg.set("memoryRecencyHalfLifeMinutes", OPT_MEMORY_RECENCY_HALF_LIFE_MIN);
+			}
+			if (OPT_MEMORY_MMR_LAMBDA >= 0.0) {
+				cfg.set("memoryMmrLambda", OPT_MEMORY_MMR_LAMBDA);
+			}
+			if (OPT_MEMORY_ESSENTIAL_IMPORTANCE >= 1) {
+				cfg.set("memoryEssentialImportance", OPT_MEMORY_ESSENTIAL_IMPORTANCE);
+			}
+			if (OPT_MEMORY_DEDUP_SIMILARITY >= 0.0) {
+				cfg.set("memoryDedupSimilarity", OPT_MEMORY_DEDUP_SIMILARITY);
+			}
+			if (OPT_MEMORY_INJECTION_STYLE != null && !OPT_MEMORY_INJECTION_STYLE.isEmpty()) {
+				cfg.set("memoryInjectionStyle", OPT_MEMORY_INJECTION_STYLE);
+			}
+			if (OPT_QUALITY_EVALUATOR_EVERY >= 0) {
+				cfg.set("qualityEvaluatorEvery", OPT_QUALITY_EVALUATOR_EVERY);
+			}
 			cfg.set("requestTimeout", STREAM_TIMEOUT_SECONDS);
 
 			String terrain = NarrativeUtil.getTerrain(octx, usrChar);
@@ -715,6 +831,82 @@ public class TestChatDuelLong extends BaseTest {
 			return null;
 		}
 		return cfg;
+	}
+
+	/// Phase 0 (ConversationQualityPlan): compute and emit per-turn
+	/// [QUAL] metrics for one conversation side and append to series.
+	private void recordQualSample(String conv, String speaker, int turn,
+			TurnResult tr, List<String> injectedThisTurn,
+			java.util.LinkedList<String> recentResp,
+			java.util.LinkedList<String> rollingMsgs,
+			List<Double> echoSeries, List<Double> distinctSeries,
+			List<Double> memUtilSeries, List<double[]> latencyXY) {
+
+		String response = tr.responseText == null ? "" : tr.responseText;
+
+		/// Update rolling state
+		recentResp.addFirst(response);
+		while (recentResp.size() > 3) recentResp.removeLast();
+		rollingMsgs.addFirst(response);
+		while (rollingMsgs.size() > 10) rollingMsgs.removeLast();
+
+		/// Compute metrics for THIS turn
+		double echo = ConversationQualityMetrics
+				.avgPairwiseShingleJaccard(recentResp, 3);
+		double distinct = ConversationQualityMetrics
+				.distinctTokenRatio(rollingMsgs);
+		double memUtil = ConversationQualityMetrics
+				.memoryUtilization(injectedThisTurn, response);
+
+		echoSeries.add(echo);
+		distinctSeries.add(distinct);
+		memUtilSeries.add(memUtil);
+		latencyXY.add(new double[]{(double) tr.msgCount, (double) tr.elapsedMs});
+
+		logger.info(String.format(
+			"[QUAL] turn=%d conv=%s speaker=%-12s echo=%.3f distinct=%.3f memUtil=%.3f injected=%d elapsedMs=%d",
+			turn, conv, speaker, echo, distinct, memUtil,
+			injectedThisTurn == null ? 0 : injectedThisTurn.size(),
+			tr.elapsedMs));
+	}
+
+	/// Phase 0 (ConversationQualityPlan): emit end-of-pair rollup.
+	/// echoMean/Max, distinctMean, memUtilMean, latency slope (ms/msgCount).
+	private void emitQualSummary(String conv, String speaker,
+			List<Double> echoSeries, List<Double> distinctSeries,
+			List<Double> memUtilSeries, List<double[]> latencyXY) {
+
+		double echoMean = mean(echoSeries);
+		double echoMax = max(echoSeries);
+		double distinctMean = mean(distinctSeries);
+		double memUtilMean = mean(memUtilSeries);
+
+		double[] xs = new double[latencyXY.size()];
+		double[] ys = new double[latencyXY.size()];
+		for (int i = 0; i < latencyXY.size(); i++) {
+			xs[i] = latencyXY.get(i)[0];
+			ys[i] = latencyXY.get(i)[1];
+		}
+		double latencySlope = ConversationQualityMetrics.linearSlope(xs, ys);
+
+		logger.info(String.format(
+			"[QUAL-SUMMARY] conv=%s speaker=%-12s echoMean=%.3f echoMax=%.3f distinctMean=%.3f memUtilMean=%.3f latencySlope=%.2f ms/msgCount n=%d",
+			conv, speaker, echoMean, echoMax, distinctMean, memUtilMean,
+			latencySlope, echoSeries.size()));
+	}
+
+	private static double mean(List<Double> xs) {
+		if (xs == null || xs.isEmpty()) return 0.0;
+		double s = 0.0;
+		for (double x : xs) s += x;
+		return s / xs.size();
+	}
+
+	private static double max(List<Double> xs) {
+		if (xs == null || xs.isEmpty()) return 0.0;
+		double m = Double.NEGATIVE_INFINITY;
+		for (double x : xs) if (x > m) m = x;
+		return m == Double.NEGATIVE_INFINITY ? 0.0 : m;
 	}
 
 	private static String truncate(String s, int maxLen) {

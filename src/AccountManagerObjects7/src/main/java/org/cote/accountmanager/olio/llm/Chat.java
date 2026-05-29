@@ -124,6 +124,22 @@ public class Chat {
 	/// Phase 3 (chatRefactor2): Stash the incoming user message so Layer 3 semantic recall
 	/// can use it during refreshSystemPrompt() before the message is added to the request.
 	private String pendingUserMessage = null;
+	/// Phase 0 (ConversationQualityPlan): snapshot of memory `summary`
+	/// strings that were injected on the most recent turn. Read by tests
+	/// and (in later phases) by quality evaluators to compute memUtil —
+	/// how much of the injected memory content the LLM actually echoed
+	/// back in its response. Reset on each call to retrieveRelevantMemories.
+	private volatile List<String> lastInjectedMemorySummaries = new ArrayList<>();
+	/// Phase 1 (ConversationQualityPlan): rolling window of recent
+	/// assistant response contents. Used to detect echo before the next
+	/// LLM call so a one-shot steering message can be injected.
+	/// Most-recent-first. Capped at RECENT_ASSISTANT_WINDOW entries.
+	private final java.util.LinkedList<String> recentAssistantContent = new java.util.LinkedList<>();
+	private static final int RECENT_ASSISTANT_WINDOW = 3;
+	/// Tracks whether the LAST detection cycle decided we're echoing.
+	/// Exposed for test / observability via wasEchoingLastTurn().
+	private volatile boolean lastEchoDetected = false;
+	private volatile double lastEchoScore = 0.0;
 	private boolean enableKeyFrame = true;
 	private IChatListener listener = null;
 	/// The chatRequest objectId — different from the session/OpenAIRequest objectId.
@@ -161,6 +177,20 @@ public class Chat {
 	private static final ConcurrentHashMap<String, Long> activeInteractions = new ConcurrentHashMap<>();
 	/// Maximum time (ms) an interaction lock can be held before forced removal.
 	private static final long INTERACTION_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+	/// Phase 5.2 (ConversationQualityPlan): unified per-chatConfig async-LLM slot.
+	/// All five async LLM call types (keyframe, interaction, compliance, autotune,
+	/// titleIcon) acquire this slot before starting. Only one async LLM call per
+	/// chatConfig may be in flight at a time when chatConfig.asyncLLMSerializeAllPerChat
+	/// is true (default). Prevents stacked LLM calls on single-slot Ollama.
+	private static final long ASYNC_LLM_SLOT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+	private static final AsyncLLMSlotRegistry asyncLLMSlots = new AsyncLLMSlotRegistry(ASYNC_LLM_SLOT_TIMEOUT_MS);
+
+	/// Phase 6 (ConversationQualityPlan): periodic quality evaluator.
+	/// Per-instance — history rolls over the lifetime of this Chat instance,
+	/// which corresponds to a single request lifecycle.
+	private final org.cote.accountmanager.olio.llm.policy.ConversationQualityEvaluator qualityEvaluator =
+		new org.cote.accountmanager.olio.llm.policy.ConversationQualityEvaluator();
 	/// Configured interaction extraction cadence (from chatConfig).
 	private int interactionEvery = 0;
 
@@ -687,6 +717,15 @@ public class Chat {
 		boolean complianceEnabled = (boolean) chatConfig.get("complianceCheck");
 		int complianceEvery = chatConfig.get("complianceCheckEvery");
 		if (complianceEnabled && complianceEvery > 0 && responseCount % complianceEvery == 0 && responseContent != null) {
+			/// Phase 5.3 (ConversationQualityPlan): skip compliance check when
+			/// Ollama is under pressure. Safety signal loss vs chat responsiveness —
+			/// chat wins. Compliance runs again on the next eligible turn.
+			/// Phase 5.2: also skip when another async LLM task holds the unified slot.
+			if (shouldDeferForPressure("compliance") || !tryAcquireAsyncLLMSlot("compliance")) {
+				if (listener != null) {
+					listener.onEvalProgress(user, req, "complianceDone", "deferred");
+				}
+			} else {
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "compliance", "Running compliance check: character identity, gendered voice, profile adherence, age adherence, equal treatment, personality consistency");
 			}
@@ -720,8 +759,12 @@ public class Chat {
 					if (listener != null) {
 						listener.onEvalProgress(user, req, "complianceDone", "error");
 					}
+				} finally {
+					/// Phase 5.2: release unified slot acquired before launch.
+					releaseAsyncLLMSlot();
 				}
 			});
+			} // close Phase 5.3 pressure-deferral else
 		}
 
 		return result;
@@ -776,7 +819,7 @@ public class Chat {
 		boolean tunePrompts = (boolean) chatConfig.get("autoTunePrompts");
 		boolean tuneOptions = (boolean) chatConfig.get("autoTuneChatOptions");
 
-		if (tunePrompts && promptConfig != null) {
+		if (tunePrompts && promptConfig != null && !shouldDeferForPressure("autotune") && tryAcquireAsyncLLMSlot("autotune")) {
 			CompletableFuture.runAsync(() -> {
 				try {
 					ChatAutotuner autotuner = new ChatAutotuner();
@@ -789,6 +832,8 @@ public class Chat {
 					}
 				} catch (Exception e) {
 					logger.warn("Autotune prompt analysis failed: " + e.getMessage());
+				} finally {
+					releaseAsyncLLMSlot();
 				}
 			});
 		}
@@ -2583,6 +2628,15 @@ public class Chat {
 
 		String sourceUri = "am7://keyframe/" + (conversationId != null ? conversationId : "default");
 
+		/// Phase 3 (ConversationQualityPlan): the multi-aspect prompt
+		/// returns a JSON OBJECT with up to 4 typed slots rather than
+		/// the V2 JSON ARRAY of one memory. Parse + create independently.
+		if ("memoryExtractionMultiAspect".equals(promptName)) {
+			return parseMultiAspectAndCreateMemories(
+				resp.getMessage().getContent(),
+				sourceUri, conversationId, systemChar, userChar);
+		}
+
 		/// Phase 2 (MemoryRefactor2): Use 7-arg overload with maxPerSegment limit,
 		/// then filter to only allowed memory types.
 		List<BaseRecord> extracted = MemoryUtil.extractMemoriesFromResponse(
@@ -2590,6 +2644,55 @@ public class Chat {
 			systemChar, userChar, maxPerSegment
 		);
 		return MemoryUtil.filterByTypes(extracted, extractionTypes);
+	}
+
+	/// Phase 3 (ConversationQualityPlan): parse a multi-aspect extraction
+	/// JSON object via MultiAspectMemoryParser and create up to 4 typed
+	/// memories from the returned drafts. Each draft → one
+	/// MemoryUtil.createMemory call with the matching
+	/// MemoryTypeEnumType. Parser-level failures (bad JSON etc.)
+	/// short-circuit to an empty list rather than failing the turn.
+	private List<BaseRecord> parseMultiAspectAndCreateMemories(
+			String responseBody, String sourceUri, String conversationId,
+			BaseRecord systemChar, BaseRecord userChar) {
+
+		List<MultiAspectMemoryParser.AspectDraft> drafts =
+			MultiAspectMemoryParser.parse(responseBody);
+		List<BaseRecord> out = new ArrayList<>();
+
+		if (drafts.isEmpty()) {
+			logger.info("multi-aspect extraction: 0 drafts (empty / malformed / all-null)");
+			return out;
+		}
+
+		for (MultiAspectMemoryParser.AspectDraft d : drafts) {
+			org.cote.accountmanager.schema.type.MemoryTypeEnumType memType;
+			try {
+				memType = org.cote.accountmanager.schema.type.MemoryTypeEnumType
+					.valueOf(d.memoryTypeName);
+			} catch (IllegalArgumentException iae) {
+				logger.warn("multi-aspect: unknown memory type " + d.memoryTypeName);
+				continue;
+			}
+
+			String summary = truncateToSentence(d.content, 100);
+			BaseRecord mem = org.cote.accountmanager.util.MemoryUtil.createMemory(
+				user, d.content, summary, memType, d.importance,
+				sourceUri, conversationId, systemChar, userChar);
+			if (mem != null) {
+				out.add(mem);
+				logger.info("multi-aspect: created " + d.memoryTypeName
+					+ " (" + d.aspectKey + ") importance=" + d.importance
+					+ " content=" + safeTruncate(d.content, 80));
+			}
+		}
+		logger.info("multi-aspect extraction: " + out.size() + " memories created");
+		return out;
+	}
+
+	private static String safeTruncate(String s, int maxLen) {
+		if (s == null) return "null";
+		return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
 	}
 
 	/// Phase 3: Persist the keyframe analysis text as a durable OUTCOME memory
@@ -2713,8 +2816,183 @@ public class Chat {
 			if (emitResponse && cont != null) {
 				System.out.println(cont);
 			}
+			/// Phase 1 (ConversationQualityPlan): feed echo-detection
+			/// window with each new assistant response.
+			recordAssistantResponse(cont);
+			/// Phase 6 (ConversationQualityPlan): periodic quality eval.
+			maybeEmitQualityScore(req, cont);
 		}
 
+	}
+
+	/// Phase 6 (ConversationQualityPlan): run the local-metric quality
+	/// evaluator every Nth response when chatConfig.qualityEvaluatorEvery>0.
+	/// Emits a [QUALITY] log line and a listener event so the UI / tests
+	/// can react. Pure local — no extra LLM calls.
+	private void maybeEmitQualityScore(OpenAIRequest req, String latestResponse) {
+		if (chatConfig == null) return;
+		int every = 0;
+		try {
+			Object v = chatConfig.get("qualityEvaluatorEvery");
+			if (v instanceof Number) every = ((Number) v).intValue();
+		} catch (Exception ignore) { /* default 0 */ }
+		if (every <= 0) return;
+		/// responseCount is 1-based by the time handleResponse is called.
+		if (responseCount % every != 0) return;
+		try {
+			List<String> recent = new ArrayList<>(recentAssistantContent);
+			List<String> injected = this.lastInjectedMemorySummaries != null
+				? this.lastInjectedMemorySummaries
+				: new ArrayList<>();
+			org.cote.accountmanager.olio.llm.policy.ConversationQualityEvaluator.QualityResult q =
+				qualityEvaluator.evaluate(responseCount, recent, injected, latestResponse);
+			logger.info("[QUALITY] " + q.toString());
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "qualityScore", q.toString());
+			}
+		} catch (Exception e) {
+			logger.warn("Quality evaluator failed: " + e.getMessage());
+		}
+	}
+
+	/// Phase 1 (ConversationQualityPlan): append to rolling window of
+	/// recent assistant responses. Most-recent-first. Capped at
+	/// RECENT_ASSISTANT_WINDOW. Ignores null/empty content.
+	private void recordAssistantResponse(String content) {
+		if (content == null || content.isEmpty()) return;
+		recentAssistantContent.addFirst(content);
+		while (recentAssistantContent.size() > RECENT_ASSISTANT_WINDOW) {
+			recentAssistantContent.removeLast();
+		}
+	}
+
+	/// Phase 1 (ConversationQualityPlan): true if the most recent
+	/// detection cycle decided we're echoing. Useful for tests and
+	/// observability — does not by itself trigger any behavior.
+	public boolean wasEchoingLastTurn() { return lastEchoDetected; }
+
+	/// Phase 1: last echo score (avg pairwise shingle Jaccard, [0,1]).
+	public double getLastEchoScore() { return lastEchoScore; }
+
+	/// Phase 1 (ConversationQualityPlan): the steering message text we
+	/// prepend when echo is detected. Public-ish so tests can assert on
+	/// presence without depending on the exact wording.
+	public static final String ECHO_STEERING_MARKER = "ECHO_STEER";
+	private static final String ECHO_STEERING_CONTENT =
+		"[" + ECHO_STEERING_MARKER + "] Recent responses have been very similar. "
+		+ "Vary your direction: introduce a new observation, ask an unanswered "
+		+ "question, change the scene, or build on something said earlier. "
+		+ "Do not repeat your previous responses.";
+
+	/// Phase 1 (ConversationQualityPlan): inspect the rolling window of
+	/// recent assistant responses; if avg pairwise shingle Jaccard exceeds
+	/// chatConfig.echoSuppressionThreshold (default 0.6), inject a
+	/// transient system steering message into wireReq AND bump
+	/// temperature by chatConfig.echoSuppressionTempBoost (default 0.2)
+	/// for this turn only. Detection is local string math — no LLM cost.
+	///
+	/// Gating:
+	///   - chatMode == false → skip (utility/analyze/extract paths)
+	///   - wireReq has fewer than 4 messages → skip (likely a
+	///     fresh-request utility call, not a main conversation)
+	///   - threshold <= 0 → disabled
+	///   - <2 recent assistant responses recorded → not enough signal
+	///
+	/// Placement: steering message is appended LAST (after the most
+	/// recent user message) so it's the FRESHEST instruction the LLM
+	/// sees. Earlier placement (after system prompt at index 1) was
+	/// buried by 20+ messages of context and qwen3:8b ignored it.
+	///
+	/// The wire request is a freshly pruned copy (see chatInternal); the
+	/// session req is untouched, so the steering does NOT persist into
+	/// chat history.
+	private void maybeInjectEchoSteering(OpenAIRequest wireReq) {
+		if (chatConfig == null) {
+			lastEchoDetected = false;
+			lastEchoScore = 0.0;
+			return;
+		}
+		if (!chatMode) {
+			/// Utility / analyze / extract paths: do not steer.
+			return;
+		}
+		List<OpenAIMessage> msgs = wireReq.getMessages();
+		if (msgs == null || msgs.size() < 4) {
+			/// Fresh utility request (system + one user, etc.) — not a
+			/// main conversation. Don't waste a steering message here.
+			return;
+		}
+		double threshold = 0.35;
+		try {
+			Object v = chatConfig.get("echoSuppressionThreshold");
+			if (v instanceof Number) threshold = ((Number) v).doubleValue();
+		} catch (Exception ignore) { /* not set, use default */ }
+		if (threshold <= 0.0) {
+			lastEchoDetected = false;
+			lastEchoScore = 0.0;
+			return; /// disabled
+		}
+		if (recentAssistantContent.size() < 2) {
+			lastEchoDetected = false;
+			lastEchoScore = 0.0;
+			return; /// not enough signal yet
+		}
+
+		double avgSim = ConversationQualityMetrics
+			.avgPairwiseShingleJaccard(new ArrayList<>(recentAssistantContent), 3);
+		lastEchoScore = avgSim;
+		lastEchoDetected = avgSim > threshold;
+
+		if (!lastEchoDetected) return;
+
+		double tempBoost = 0.2;
+		try {
+			Object v = chatConfig.get("echoSuppressionTempBoost");
+			if (v instanceof Number) tempBoost = ((Number) v).doubleValue();
+		} catch (Exception ignore) { /* use default */ }
+
+		/// Insert steering as a system message RIGHT BEFORE the last
+		/// user message. Placement matters:
+		///   - Position 1 (right after main system) → buried by 20+
+		///     messages of context; qwen3:8b ignores it
+		///   - APPEND at end → conversation ends with `system`, not
+		///     `user`; this breaks the standard chat-completion shape
+		///     and we observed qwen3:8b respond by ECHOING harder
+		///     (0.55 echoMean vs 0.02 with no suppression at all)
+		///   - Just before last user → fresh in context AND the
+		///     conversation still ends naturally on `user` so the
+		///     model generates its assistant turn as expected
+		int lastUserIdx = -1;
+		for (int i = msgs.size() - 1; i >= 0; i--) {
+			if (userRole.equals(msgs.get(i).getRole())) {
+				lastUserIdx = i;
+				break;
+			}
+		}
+		if (lastUserIdx < 0) {
+			/// No user message yet — nothing meaningful to steer for
+			return;
+		}
+		OpenAIMessage steer = new OpenAIMessage();
+		steer.setRole(systemRole);
+		steer.setContent(ECHO_STEERING_CONTENT);
+		msgs.add(lastUserIdx, steer);
+		wireReq.setMessages(msgs);
+
+		/// Bump temperature for this wire request only.
+		try {
+			Object curr = wireReq.get("temperature");
+			double t = (curr instanceof Number) ? ((Number) curr).doubleValue() : 0.8;
+			double newT = Math.min(1.5, t + tempBoost);
+			wireReq.set("temperature", newT);
+		} catch (Exception e) {
+			logger.warn("[ECHO] temp bump failed: " + e.getMessage());
+		}
+
+		logger.info("[ECHO] steering injected (insertAt=" + lastUserIdx
+			+ " msgsBefore=" + (msgs.size() - 1)
+			+ "): avgSim=" + String.format("%.3f", avgSim)
+			+ " threshold=" + threshold + " tempBoost=" + tempBoost);
 	}
 
 	public OpenAIRequest newRequest(String model) {
@@ -2824,6 +3102,46 @@ public class Chat {
 			} catch (Exception e) {
 				logger.warn("Failed to eagerly update lastKeyframeAt: " + e.getMessage());
 			}
+			/// Phase 3 (ConversationQualityPlan): skip if the segment
+			/// we'd analyze is itself an echo. A faithful summary of
+			/// an echo loop just produces a memory describing the loop —
+			/// pollutes the pool with low-signal entries AND burns an
+			/// LLM call. Gate on chatConfig.keyframeSkipEchoThreshold
+			/// (default 0.7; set to 1.0 to disable the skip).
+			double skipThreshold = 0.7;
+			try {
+				Object v = chatConfig.get("keyframeSkipEchoThreshold");
+				if (v instanceof Number) skipThreshold = ((Number) v).doubleValue();
+			} catch (Exception ignore) { /* default */ }
+			if (skipThreshold < 1.0) {
+				List<OpenAIMessage> allMsgs = req.getMessages();
+				int segStart = Math.max(0, lastKfAt);
+				int segEnd = Math.min(allMsgs.size(), msgSize);
+				if (segEnd > segStart) {
+					List<String> assistantInSegment = new ArrayList<>();
+					for (int i = segStart; i < segEnd; i++) {
+						OpenAIMessage m = allMsgs.get(i);
+						if (assistantRole.equals(m.getRole())) {
+							String c = m.getContent();
+							if (c != null && !c.isEmpty()) assistantInSegment.add(c);
+						}
+					}
+					if (assistantInSegment.size() >= 2) {
+						double segEcho = ConversationQualityMetrics
+							.avgPairwiseShingleJaccard(assistantInSegment, 3);
+						if (segEcho > skipThreshold) {
+							logger.info("Skipping keyframe — segment echo="
+								+ String.format("%.3f", segEcho)
+								+ " > threshold=" + skipThreshold
+								+ " (no new content worth extracting)");
+							/// Still advance lastKeyframeAt so we don't
+							/// reconsider this same segment every turn.
+							return;
+						}
+					}
+				}
+			}
+
 			/// Defer keyframe launch: save snapshot now, launch AFTER main response completes.
 			/// This prevents the keyframe LLM call from competing with the main response
 			/// for LLM resources (critical for single-slot LLMs like Ollama).
@@ -2916,6 +3234,10 @@ public class Chat {
 			logger.info("Skipping deferred keyframe — async keyframe already in progress (instance)");
 			return;
 		}
+		/// Phase 5.3 (ConversationQualityPlan): skip keyframe extraction when
+		/// Ollama is under pressure. Better to lose a memory than make the
+		/// next chat response wait.
+		if (shouldDeferForPressure("keyframe")) return;
 		/// Global per-chat CAS gate: only one keyframe in flight per chat config.
 		/// putIfAbsent returns null on success (slot was empty), non-null if already taken.
 		String cfgOid = chatConfig != null ? chatConfig.get(FieldNames.FIELD_OBJECT_ID) : null;
@@ -2936,6 +3258,15 @@ public class Chat {
 				return;
 			}
 		}
+		/// Phase 5.2 (ConversationQualityPlan): acquire the unified async-LLM
+		/// slot last (after all type-specific gates have passed) so we don't
+		/// leak the slot on inner-gate failures.
+		if (!tryAcquireAsyncLLMSlot("keyframe")) {
+			asyncKeyframeInProgress = false;
+			if (cfgOid != null) activeKeyframes.remove(cfgOid);
+			return;
+		}
+
 		logger.info("(Launching deferred keyframe — main response complete) chat=" + cfgOid);
 		asyncKeyframeInProgress = true;
 
@@ -2953,6 +3284,7 @@ public class Chat {
 			} finally {
 				asyncKeyframeInProgress = false;
 				if (lockKey != null) activeKeyframes.remove(lockKey);
+				releaseAsyncLLMSlot();
 			}
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "keyframeDone", "Keyframe complete");
@@ -2961,6 +3293,7 @@ public class Chat {
 			logger.error("Async keyframe CompletableFuture failed: " + ex.getMessage(), ex);
 			asyncKeyframeInProgress = false;
 			if (lockKey != null) activeKeyframes.remove(lockKey);
+			releaseAsyncLLMSlot();
 			return null;
 		});
 	}
@@ -2978,6 +3311,9 @@ public class Chat {
 			logger.info("Skipping deferred interaction — async interaction already in progress (instance)");
 			return;
 		}
+		/// Phase 5.3 (ConversationQualityPlan): defer interaction extraction
+		/// when Ollama is under pressure.
+		if (shouldDeferForPressure("interaction")) return;
 		String cfgOid = chatConfig != null ? chatConfig.get(FieldNames.FIELD_OBJECT_ID) : null;
 		if (cfgOid != null) {
 			Long existingLock = activeInteractions.get(cfgOid);
@@ -2996,6 +3332,13 @@ public class Chat {
 				return;
 			}
 		}
+		/// Phase 5.2 (ConversationQualityPlan): acquire unified async-LLM slot.
+		if (!tryAcquireAsyncLLMSlot("interaction")) {
+			asyncInteractionInProgress = false;
+			if (cfgOid != null) activeInteractions.remove(cfgOid);
+			return;
+		}
+
 		logger.info("(Launching deferred interaction extraction — main response complete) chat=" + cfgOid);
 		asyncInteractionInProgress = true;
 
@@ -3012,11 +3355,13 @@ public class Chat {
 			} finally {
 				asyncInteractionInProgress = false;
 				if (lockKey != null) activeInteractions.remove(lockKey);
+				releaseAsyncLLMSlot();
 			}
 		}).exceptionally(ex -> {
 			logger.error("Async interaction CompletableFuture failed: " + ex.getMessage(), ex);
 			asyncInteractionInProgress = false;
 			if (lockKey != null) activeInteractions.remove(lockKey);
+			releaseAsyncLLMSlot();
 			return null;
 		});
 	}
@@ -3247,6 +3592,13 @@ public class Chat {
 		/// Always set stream=true on the wire request so the LLM always streams
 		OpenAIRequest wireReq = ChatUtil.getPrunedRequest(req, ignoreFields);
 		wireReq.setStream(true);
+		/// Phase 1 (ConversationQualityPlan): if the last few assistant
+		/// responses are too similar to each other, inject a one-shot
+		/// system-level steering message into THIS turn's wire request
+		/// (not persisted to the session). Also optionally bump
+		/// temperature for this turn only. Detection uses pure local
+		/// string math via ConversationQualityMetrics — no LLM cost.
+		maybeInjectEchoSteering(wireReq);
 		String ser = JSONUtil.exportObject(wireReq, RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 
 		String serviceUrl = getServiceUrl(req);
@@ -3623,6 +3975,14 @@ public class Chat {
 			/// Sort by effective importance descending
 			scored.sort((a, b) -> Double.compare(b.effectiveImportance, a.effectiveImportance));
 
+			/// Phase 2 (ConversationQualityPlan): recency penalty + MMR rerank + dedup.
+			/// - Recency penalty down-weights memories created within the last
+			///   memoryRecencyHalfLifeMinutes (still likely on the wire, no need to re-inject).
+			///   Memories with importance >= memoryEssentialImportance are exempt.
+			/// - MMR rerank prefers diverse candidates over near-duplicates of already-picked ones.
+			/// - Dedup drops any final near-duplicate that survived MMR.
+			scored = applyPhase2Rescoring(scored);
+
 			/// Budget-allocated type-prioritized injection
 			java.util.Map<String, Double> typeBudgetRatios = new java.util.LinkedHashMap<>();
 			typeBudgetRatios.put("RELATIONSHIP", 0.40);
@@ -3636,6 +3996,15 @@ public class Chat {
 			List<String> factSummaries = new ArrayList<>();
 			List<String> decisionSummaries = new ArrayList<>();
 			List<String> emotionSummaries = new ArrayList<>();
+			/// Phase 0 (ConversationQualityPlan): every memory that ends up
+			/// in the wire context gets its `summary` (or `content` fallback)
+			/// captured here. getLastInjectedMemorySummaries() exposes this
+			/// so tests/evaluators can compute memUtil after the LLM turn.
+			List<String> injectedThisTurn = new ArrayList<>();
+			/// Phase 4 (ConversationQualityPlan): parallel list of included
+			/// memories in pick order — fed to MemoryFormatter.asSystemSection
+			/// when chatConfig.memoryInjectionStyle == "systemSection".
+			List<MemoryFormatter.MemoryDraft> injectedDrafts = new ArrayList<>();
 			String lastSessionText = "";
 			int totalIncluded = 0;
 			int tokensUsed = 0;
@@ -3673,6 +4042,8 @@ public class Chat {
 					addMemoryToContext(ctxBuilder, ms.memory, id1, id2);
 					categorizeMemory(ms.memory, memType, relationshipSummaries, factSummaries,
 						decisionSummaries, emotionSummaries);
+					recordInjectedSummary(injectedThisTurn, ms.memory);
+					injectedDrafts.add(toMemoryDraft(ms.memory, memType));
 				}
 			}
 
@@ -3692,6 +4063,8 @@ public class Chat {
 				addMemoryToContext(ctxBuilder, ms.memory, id1, id2);
 				categorizeMemory(ms.memory, memType, relationshipSummaries, factSummaries,
 					decisionSummaries, emotionSummaries);
+				recordInjectedSummary(injectedThisTurn, ms.memory);
+				injectedDrafts.add(toMemoryDraft(ms.memory, memType));
 
 				if ("OUTCOME".equals(memType) || "EVENT".equals(memType)) {
 					String summary = ms.memory.get("summary");
@@ -3714,11 +4087,205 @@ public class Chat {
 				listener.onMemoryEvent(user, null, "recalled", String.valueOf(totalIncluded));
 			}
 
+			/// Phase 0 (ConversationQualityPlan): publish this turn's
+			/// injected summaries. Snapshot to an immutable list so any
+			/// concurrent reader sees a consistent view.
+			this.lastInjectedMemorySummaries = java.util.Collections.unmodifiableList(
+				new ArrayList<>(injectedThisTurn));
+
+			/// Phase 4 (ConversationQualityPlan): select wire format based on
+			/// chatConfig.memoryInjectionStyle. "systemSection" lands the
+			/// retrieved memories as a structured markdown block in the
+			/// system prompt; the default "mcp" path emits the MCP context
+			/// block (current behaviour).
+			String style = "mcp";
+			try {
+				Object v = chatConfig.get("memoryInjectionStyle");
+				if (v != null) style = v.toString();
+			} catch (Exception ignore) { /* default */ }
+			if ("systemSection".equalsIgnoreCase(style)) {
+				String section = MemoryFormatter.asSystemSection(injectedDrafts);
+				logger.info("[RETRIEVAL] systemSection: drafts=" + injectedDrafts.size()
+					+ " bytes=" + section.length());
+				return section;
+			}
 			return ctxBuilder.build();
 		} catch (Exception e) {
 			logger.warn("Error retrieving memories: " + e.getMessage());
 			return "";
 		}
+	}
+
+	/// Phase 5.3 (ConversationQualityPlan): pure pressure-deferral decision.
+	/// Exposed for unit testing. threshold <= 0 disables the gate.
+	public static boolean isUnderPressure(int activeStreamCount, int threshold) {
+		return threshold > 0 && activeStreamCount >= threshold;
+	}
+
+	/// Phase 5.2 (ConversationQualityPlan): attempt to acquire the unified
+	/// async-LLM slot for this chatConfig. Returns true if acquired (caller
+	/// MUST release in a finally block), false if another type is already
+	/// running or the gate is disabled by config.
+	///
+	/// When chatConfig.asyncLLMSerializeAllPerChat is false, the slot is
+	/// not used and this returns true unconditionally (each call type's
+	/// own lock still protects against intra-type duplication).
+	public boolean tryAcquireAsyncLLMSlot(String kind) {
+		boolean serialize = true;
+		if (chatConfig != null) {
+			try {
+				Object v = chatConfig.get("asyncLLMSerializeAllPerChat");
+				if (v instanceof Boolean) serialize = (Boolean) v;
+			} catch (Exception ignore) { /* default true */ }
+		}
+		if (!serialize) return true;
+		String cfgOid = chatConfig != null ? chatConfig.get(FieldNames.FIELD_OBJECT_ID) : null;
+		if (cfgOid == null) return true;
+		boolean acquired = asyncLLMSlots.tryAcquire(cfgOid, kind, System.currentTimeMillis());
+		if (!acquired) {
+			String holder = asyncLLMSlots.currentHolder(cfgOid);
+			logger.info("[ASYNC-SLOT] " + kind + " blocked — held by " + holder + " (chat " + cfgOid + ")");
+		}
+		return acquired;
+	}
+
+	/// Phase 5.2: release the unified async-LLM slot for this chatConfig.
+	/// Safe to call even if the slot wasn't held.
+	public void releaseAsyncLLMSlot() {
+		String cfgOid = chatConfig != null ? chatConfig.get(FieldNames.FIELD_OBJECT_ID) : null;
+		asyncLLMSlots.release(cfgOid);
+	}
+
+	/// Phase 5.3 (ConversationQualityPlan): defer async extraction work when
+	/// Ollama is busy. Returns true if the caller should bail out.
+	/// `kind` is just for log identification — "keyframe" / "interaction" /
+	/// "compliance" / "autotune" / "titleIcon".
+	public boolean shouldDeferForPressure(String kind) {
+		int threshold = 4;
+		if (chatConfig != null) {
+			try {
+				Object v = chatConfig.get("deferralPressureThreshold");
+				if (v instanceof Number) threshold = ((Number) v).intValue();
+			} catch (Exception ignore) { /* default */ }
+		}
+		int active = LLMConnectionManager.getActiveStreamCount();
+		if (isUnderPressure(active, threshold)) {
+			logger.info("[DEFER] " + kind + " skipped — LLM under pressure (active="
+				+ active + " >= threshold=" + threshold + ")");
+			return true;
+		}
+		return false;
+	}
+
+	/// Phase 4 (ConversationQualityPlan): adapt a memory BaseRecord to the
+	/// pure MemoryFormatter.MemoryDraft shape. Safe against missing fields.
+	private static MemoryFormatter.MemoryDraft toMemoryDraft(BaseRecord memory, String memType) {
+		String summary = null;
+		String content = null;
+		int importance = 5;
+		try { summary = memory.get("summary"); } catch (Exception ignore) {}
+		try { content = memory.get("content"); } catch (Exception ignore) {}
+		try {
+			Object imp = memory.get("importance");
+			if (imp instanceof Number) importance = ((Number) imp).intValue();
+		} catch (Exception ignore) {}
+		return new MemoryFormatter.MemoryDraft(memType, summary, content, importance);
+	}
+
+	/// Phase 0 (ConversationQualityPlan): record the summary (preferred)
+	/// or content (fallback) of an injected memory.
+	private static void recordInjectedSummary(List<String> out, BaseRecord memory) {
+		if (memory == null) return;
+		String s = null;
+		try { s = memory.get("summary"); } catch (Exception ignore) {}
+		if (s == null || s.isEmpty()) {
+			try { s = memory.get("content"); } catch (Exception ignore) {}
+		}
+		if (s != null && !s.isEmpty()) out.add(s);
+	}
+
+	/// Phase 0 (ConversationQualityPlan): snapshot of summaries that were
+	/// injected on the most recent retrieveRelevantMemories call.
+	/// Returns empty list if no retrieval has run or no memories matched.
+	public List<String> getLastInjectedMemorySummaries() {
+		return lastInjectedMemorySummaries;
+	}
+
+	/// Phase 2 (ConversationQualityPlan): apply recency penalty, MMR
+	/// reranking, and similarity-based dedup to a freshness-adjusted
+	/// candidate list. Returns a new list ordered for type-budget pickup.
+	/// All three steps are individually disable-able via chatConfig fields.
+	private List<MemoryWithScore> applyPhase2Rescoring(List<MemoryWithScore> scored) {
+		if (scored == null || scored.isEmpty()) return scored;
+
+		double halfLifeMin = 30.0;
+		double mmrLambda = 0.5;
+		int essentialImp = 8;
+		double dedupSim = 0.8;
+		try {
+			Object v = chatConfig.get("memoryRecencyHalfLifeMinutes");
+			if (v instanceof Number) halfLifeMin = ((Number) v).doubleValue();
+		} catch (Exception ignore) { /* default */ }
+		try {
+			Object v = chatConfig.get("memoryMmrLambda");
+			if (v instanceof Number) mmrLambda = ((Number) v).doubleValue();
+		} catch (Exception ignore) { /* default */ }
+		try {
+			Object v = chatConfig.get("memoryEssentialImportance");
+			if (v instanceof Number) essentialImp = ((Number) v).intValue();
+		} catch (Exception ignore) { /* default */ }
+		try {
+			Object v = chatConfig.get("memoryDedupSimilarity");
+			if (v instanceof Number) dedupSim = ((Number) v).doubleValue();
+		} catch (Exception ignore) { /* default */ }
+
+		/// Fully disabled — return as-is.
+		if (halfLifeMin <= 0.0 && mmrLambda >= 1.0 && dedupSim >= 1.0) return scored;
+
+		long nowMs = System.currentTimeMillis();
+		List<MemoryRetrievalScorer.ScoredMemory> sm = new ArrayList<>();
+		for (MemoryWithScore ms : scored) {
+			String content = null;
+			try { content = ms.memory.get("content"); } catch (Exception ignore) {}
+			if (content == null) content = "";
+			int impv = 5;
+			try {
+				Object imp = ms.memory.get("importance");
+				if (imp instanceof Number) impv = ((Number) imp).intValue();
+			} catch (Exception ignore) {}
+			long created = 0L;
+			try {
+				java.util.Date d = ms.memory.get(FieldNames.FIELD_CREATED_DATE);
+				if (d != null) created = d.getTime();
+			} catch (Exception ignore) {}
+			sm.add(new MemoryRetrievalScorer.ScoredMemory(
+				content, impv, created, ms.effectiveImportance, ms));
+		}
+
+		MemoryRetrievalScorer.applyRecencyPenalty(sm, nowMs, halfLifeMin, essentialImp);
+
+		java.util.function.BiFunction<String, String, Double> simFn =
+			(a, b) -> ConversationQualityMetrics.shingleJaccard(a, b, 3);
+		String qText = pendingUserMessage != null ? pendingUserMessage : "";
+
+		List<MemoryRetrievalScorer.ScoredMemory> reranked = MemoryRetrievalScorer.mmrRerank(
+			sm, qText, sm.size(), mmrLambda, simFn);
+
+		List<MemoryRetrievalScorer.ScoredMemory> deduped = MemoryRetrievalScorer.dedupBySimilarity(
+			reranked, dedupSim, simFn);
+
+		List<MemoryWithScore> out = new ArrayList<>();
+		for (MemoryRetrievalScorer.ScoredMemory s : deduped) {
+			MemoryWithScore orig = (MemoryWithScore) s.payload;
+			out.add(new MemoryWithScore(orig.memory, s.score, orig.layer));
+		}
+		logger.info("[RETRIEVAL] phase2: before=" + scored.size()
+			+ " afterDedup=" + out.size()
+			+ " halfLife=" + halfLifeMin
+			+ " lambda=" + mmrLambda
+			+ " essentialImp=" + essentialImp
+			+ " dedupSim=" + dedupSim);
+		return out;
 	}
 
 	/// Helper: get memoryType string from a memory record, defaulting to "NOTE".

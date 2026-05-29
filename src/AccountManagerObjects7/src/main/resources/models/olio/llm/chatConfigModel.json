@@ -243,6 +243,88 @@
 			"description": "Message count at which the last keyframe was generated. Used by pruneCount to determine when the next keyframe is due. Updated by the async keyframe pipeline."
 		},
 		{
+			"name": "echoSuppressionThreshold",
+			"type": "double",
+			"default": 0.35,
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"description": "Avg pairwise shingle-Jaccard similarity over the last 3 assistant responses above which a one-shot system steering message is injected for the next turn. 0 = disabled. Default 0.35 catches early echo build-up; small models (qwen3:8b) lock in once echo reaches 1.0 and steering then has minimal effect."
+		},
+		{
+			"name": "echoSuppressionTempBoost",
+			"type": "double",
+			"default": 0.2,
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"description": "Amount added to temperature for one turn when echo-steering triggers. Applied to the wire request only; the persisted chatConfig.chatOptions.temperature is unchanged."
+		},
+		{
+			"name": "keyframeSkipEchoThreshold",
+			"type": "double",
+			"default": 0.7,
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"description": "Skip a keyframe (and its memory-extraction LLM call) when the segment's assistant-message avg pairwise shingle Jaccard exceeds this threshold. Faithful summaries of echo loops just pollute the memory pool. 1.0 = never skip. Default 0.7 catches strong echo while letting partial repetition through."
+		},
+		{
+			"name": "memoryRecencyHalfLifeMinutes",
+			"type": "double",
+			"default": 30.0,
+			"minValue": 0.0,
+			"description": "Memories created within this window are down-weighted in retrieval (LLM likely still has them on the wire). Exponential ramp: at age==halfLife the multiplier is ~0.63, at 3x halfLife it's ~0.95. 0 = disabled (no recency penalty)."
+		},
+		{
+			"name": "memoryMmrLambda",
+			"type": "double",
+			"default": 0.5,
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"description": "MMR rerank weighting between relevance (1.0) and diversity (0.0). 0.5 = balanced. 1.0 = pure score ranking (no diversity reranking). Applied after recency penalty, before dedup."
+		},
+		{
+			"name": "memoryEssentialImportance",
+			"type": "int",
+			"default": 8,
+			"minValue": 1,
+			"maxValue": 10,
+			"description": "Memories with importance >= this value bypass the recency penalty (always eligible at full score). Protects load-bearing facts from being suppressed just because they were recently created."
+		},
+		{
+			"name": "memoryDedupSimilarity",
+			"type": "double",
+			"default": 0.8,
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"description": "After MMR rerank, drop any memory whose content shingle-Jaccard to an already-kept memory exceeds this threshold. 1.0 = disabled (only exact-content matches drop)."
+		},
+		{
+			"name": "memoryInjectionStyle",
+			"type": "string",
+			"default": "mcp",
+			"maxLength": 32,
+			"description": "How to format retrieved memories for the wire. 'mcp' (default) emits the MCP context block; 'systemSection' emits a markdown block grouped by memory type designed to land in the system prompt where the LLM acts on it directly."
+		},
+		{
+			"name": "deferralPressureThreshold",
+			"type": "int",
+			"default": 4,
+			"minValue": 0,
+			"description": "Skip async keyframe / interaction extraction launches when LLMConnectionManager reports this many or more active streams (Ollama under pressure). 0 = never defer. Better to skip a keyframe than make the user wait for the chat response."
+		},
+		{
+			"name": "asyncLLMSerializeAllPerChat",
+			"type": "boolean",
+			"default": true,
+			"description": "Phase 5.2 (ConversationQualityPlan) when true, all five async LLM task types (keyframe / interaction / compliance / autotune / titleIcon) share a single per-chatConfig slot so they never stack up on single-slot Ollama. Set to false to fall back to per-type locks (allows multiple types to run concurrently — only safe on multi-slot LLM backends)."
+		},
+		{
+			"name": "qualityEvaluatorEvery",
+			"type": "int",
+			"default": 0,
+			"minValue": 0,
+			"description": "Phase 6 (ConversationQualityPlan) run ConversationQualityEvaluator every Nth assistant response, emitting a [QUALITY] log line and listener event with echo / distinct / memUtil scores plus rolling trend. 0 = disabled. Pure local metrics — no extra LLM calls."
+		},
+		{
 			"name": "extractInteractions",
 			"type": "boolean",
 			"description": "When true, automatically extract olio.interaction records from chat sessions on an independent cadence."

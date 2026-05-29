@@ -1,0 +1,65 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "memoryExtractionMultiAspect",
+	"description": "Phase 3 multi-aspect extraction. Extracts up to 4 typed memories per conversation segment (new_fact, decision, tension, relationship_change) in a single LLM call. Each aspect is independent — null is valid for any that don't apply. Net memory output is comparable to V2 (which extracts 1) when the segment is sparse, and richer (up to 4) when there's actual progression. The 'tension' / unresolved-question slot is the key addition — gives the LLM something concrete to build forward from on the next turn.",
+	"templateVersion": 1,
+	"role": "system",
+	"sectionOrder": ["intro", "aspects", "format", "example", "context"],
+	"sections": [
+		{
+			"sectionName": "intro",
+			"priority": 10,
+			"lines": [
+				"You analyze conversation segments and extract structured memory entries.",
+				"Return up to 4 typed extractions OR null where not applicable.",
+				"Be conservative — return null rather than fabricate.",
+				"Empty or repetitive segments produce all nulls."
+			]
+		},
+		{
+			"sectionName": "aspects",
+			"priority": 20,
+			"lines": [
+				"",
+				"Extract:",
+				"- new_fact: a concrete new fact revealed (name, place, ability, preference, possession, history) OR null. Maps to FACT memory.",
+				"- decision: a choice made or commitment given by either character OR null. Maps to DECISION memory.",
+				"- tension: an unresolved question, unspoken disagreement, or something one character is uncertain about OR null. Maps to INSIGHT memory.",
+				"- relationship_change: how the dynamic between them shifted (warmer, cooler, more candid, more guarded) OR null. Maps to RELATIONSHIP memory."
+			]
+		},
+		{
+			"sectionName": "format",
+			"priority": 30,
+			"lines": [
+				"",
+				"For each non-null aspect provide an object: {\"content\": \"1-2 sentence factual summary, third-person\", \"importance\": <1-10>}",
+				"importance: 10 = life-changing, 7 = significant, 4 = notable, 1 = trivial.",
+				"",
+				"Respond with ONLY a JSON object. No markdown, no code fences, no explanation.",
+				"Schema: {\"new_fact\":{...}|null, \"decision\":{...}|null, \"tension\":{...}|null, \"relationship_change\":{...}|null}"
+			]
+		},
+		{
+			"sectionName": "example",
+			"priority": 40,
+			"lines": [
+				"",
+				"Example output:",
+				"{\"new_fact\":{\"content\":\"Elena grew up in the mountain village of Alder.\",\"importance\":5}, \"decision\":null, \"tension\":{\"content\":\"Marcus has not told Elena why he left the city.\",\"importance\":6}, \"relationship_change\":null}",
+				"",
+				"Another example (sparse segment):",
+				"{\"new_fact\":null, \"decision\":null, \"tension\":null, \"relationship_change\":null}"
+			]
+		},
+		{
+			"sectionName": "context",
+			"priority": 50,
+			"lines": [
+				"",
+				"Characters: ${systemCharName} and ${userCharName}",
+				"Setting: ${setting}"
+			]
+		}
+	]
+}

@@ -435,6 +435,11 @@ public class ChatListener implements IChatListener {
 
 					/// Step 2: Launch async LLM call to generate a better title.
 					/// If it succeeds, it overrides the fallback. If it fails, the fallback remains.
+					/// Phase 5.3 (ConversationQualityPlan): skip when Ollama is under pressure.
+					/// Phase 5.2: also skip when another async LLM task holds the unified slot.
+					/// The fallback title/icon were already set, so skipping just means the
+					/// chat keeps the simpler heuristic naming this round.
+					if (!chat.shouldDeferForPressure("titleIcon") && chat.tryAcquireAsyncLLMSlot("titleIcon")) {
 					CompletableFuture.runAsync(() -> {
 						try {
 							logger.info("Generating LLM title/icon for: " + oid + " chatReqOid=" + chatReqOid);
@@ -453,8 +458,11 @@ public class ChatListener implements IChatListener {
 							}
 						} catch (Exception e) {
 							logger.warn("Async LLM title/icon generation failed (fallback already set): " + e.getMessage());
+						} finally {
+							chat.releaseAsyncLLMSlot();
 						}
 					});
+					}
 				}
 			}
 		} catch (Exception e) {
