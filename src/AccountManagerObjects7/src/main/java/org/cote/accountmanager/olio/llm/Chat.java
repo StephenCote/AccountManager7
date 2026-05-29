@@ -186,11 +186,13 @@ public class Chat {
 	private static final long ASYNC_LLM_SLOT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 	private static final AsyncLLMSlotRegistry asyncLLMSlots = new AsyncLLMSlotRegistry(ASYNC_LLM_SLOT_TIMEOUT_MS);
 
-	/// Phase 6 (ConversationQualityPlan): periodic quality evaluator.
-	/// Per-instance — history rolls over the lifetime of this Chat instance,
-	/// which corresponds to a single request lifecycle.
-	private final org.cote.accountmanager.olio.llm.policy.ConversationQualityEvaluator qualityEvaluator =
-		new org.cote.accountmanager.olio.llm.policy.ConversationQualityEvaluator();
+	/// Phase 6 (ConversationQualityPlan): periodic quality evaluator state,
+	/// keyed by chatConfig objectId so the rolling history + cadence counter
+	/// survive across Chat instances (each duel turn creates a new Chat).
+	private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>
+		qualityEvalCounters = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final java.util.concurrent.ConcurrentHashMap<String, org.cote.accountmanager.olio.llm.policy.ConversationQualityEvaluator>
+		qualityEvaluators = new java.util.concurrent.ConcurrentHashMap<>();
 	/// Configured interaction extraction cadence (from chatConfig).
 	private int interactionEvery = 0;
 
@@ -2837,15 +2839,29 @@ public class Chat {
 			if (v instanceof Number) every = ((Number) v).intValue();
 		} catch (Exception ignore) { /* default 0 */ }
 		if (every <= 0) return;
-		/// responseCount is 1-based by the time handleResponse is called.
-		if (responseCount % every != 0) return;
+
+		String cfgOid = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+		if (cfgOid == null) return;
+		/// Cross-instance turn count for this chatConfig. Increments first so
+		/// the modulo represents "this is response #N" — works whether Chat
+		/// is recreated per-turn (duel) or persists (production session).
+		int turnIdx = qualityEvalCounters
+			.computeIfAbsent(cfgOid, k -> new java.util.concurrent.atomic.AtomicInteger(0))
+			.incrementAndGet();
+		if (turnIdx % every != 0) return;
+
 		try {
 			List<String> recent = new ArrayList<>(recentAssistantContent);
 			List<String> injected = this.lastInjectedMemorySummaries != null
 				? this.lastInjectedMemorySummaries
 				: new ArrayList<>();
+			/// Per-chatConfig evaluator so trend history persists across
+			/// Chat instances (each duel turn creates a new Chat).
+			org.cote.accountmanager.olio.llm.policy.ConversationQualityEvaluator ev =
+				qualityEvaluators.computeIfAbsent(cfgOid,
+					k -> new org.cote.accountmanager.olio.llm.policy.ConversationQualityEvaluator());
 			org.cote.accountmanager.olio.llm.policy.ConversationQualityEvaluator.QualityResult q =
-				qualityEvaluator.evaluate(responseCount, recent, injected, latestResponse);
+				ev.evaluate(turnIdx, recent, injected, latestResponse);
 			logger.info("[QUALITY] " + q.toString());
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "qualityScore", q.toString());

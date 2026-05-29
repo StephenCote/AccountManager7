@@ -1,11 +1,13 @@
 # Conversation Quality — Baseline (Phase 0)
 
-**Current status (as of 2026-05-29):** Phases 0-5 shipped (5.1 batching
-deferred with rationale); Phase 6 (quality evaluator) shipped with both
-metric-based and trend-tracking modes. 134+ unit tests passing.
-**Phase 5.2 hardened with a unified per-chatConfig async-LLM lock** —
-keyframe / interaction / compliance / autotune / titleIcon now share
-one slot, preventing stacked LLM calls on single-slot Ollama.
+**Current status (as of 2026-05-29):** Phases 0-6 shipped (5.1 batching
+deferred with rationale). **164 unit tests passing.** Phase 5.2 hardened
+with a unified per-chatConfig async-LLM lock — keyframe / interaction /
+compliance / autotune / titleIcon now share one slot, preventing stacked
+LLM calls on single-slot Ollama. Phase 6 quality evaluator emits per-turn
+echo / distinct / memUtil scores + IMPROVING/STABLE/DEGRADING trend.
+A duel re-verification with the fixed cross-instance counter is pending
+the LLM backend being back online.
 
 Captured: 2026-05-28
 Test: `TestChatDuelLong` with default tuning (qwen3:8b chat + analyze,
@@ -484,5 +486,105 @@ All shipped phases:
 | 5 — Async pipeline efficiency  | ✓ 5.3/5.2 shipped; 5.1 deferred | Pressure-gated deferral on 5 sites; no current bottleneck for batching |
 | 6 — Quality evaluator          | not started (optional) | — |
 
-Total unit tests across phases: **128 passing**
-(40 metrics + 10 echo + 26 scorer + 24 multi-aspect + 22 formatter + 6 deferral).
+Total unit tests across phases: **164 passing**
+(40 metrics + 10 echo + 26 scorer + 24 multi-aspect + 22 formatter +
+6 deferral + 20 async-LLM slot + 16 quality evaluator).
+
+## Phase 5.2 (hardened) — unified per-chatConfig async-LLM slot
+
+Replaced the audit-only Phase 5.2 with a real change. All five async LLM
+call types now share one slot per chatConfig:
+
+- `flushPendingKeyframe`
+- `flushPendingInteraction`
+- Compliance evaluator
+- Autotune prompt analysis
+- ChatListener title/icon generation
+
+New helper: `AsyncLLMSlotRegistry` (pure util, registry pattern). Chat
+delegates to it via `tryAcquireAsyncLLMSlot(kind)` / `releaseAsyncLLMSlot()`.
+Per-type lock + per-instance flag remain in place for fast in-instance
+duplicate-guard; the unified slot is the cross-instance cross-type gate.
+
+Schema field `asyncLLMSerializeAllPerChat` (default `true`). Set to
+false to fall back to per-type locks (only safe on multi-slot LLM
+backends).
+
+20 unit tests in `TestAsyncLLMSlotRegistry` cover: CAS acquire/release,
+expired-slot reclaim with parse-failure-vs-legitimate-zero handling,
+multi-key independence, null-safety, and marker round-trip.
+
+When the slot is contended, the blocked async call now skips silently
+(emits `[ASYNC-SLOT] <kind> blocked — held by <holder>` log line)
+rather than queueing. Better to lose a one-shot memory than to stack
+LLM calls on single-slot Ollama.
+
+## Phase 6 — Quality evaluator (SHIPPED)
+
+`ConversationQualityEvaluator` in
+[policy/ConversationQualityEvaluator.java](../AccountManagerObjects7/src/main/java/org/cote/accountmanager/olio/llm/policy/ConversationQualityEvaluator.java)
+is a pure local-metric evaluator:
+
+- `evaluateOnce(turnIndex, recentResponses, injectedMemories, latestResponse, k)`
+  → static one-shot scoring (echo / distinct / memUtil)
+- Stateful `evaluate(...)` keeps a rolling history (default 5 entries)
+  and computes a Trend (IMPROVING / STABLE / DEGRADING) by comparing
+  the average echo of the older half to the newer half (delta 0.05)
+- 16 unit tests cover edge cases + trend direction
+
+Wired into `Chat.handleResponse` via `maybeEmitQualityScore`. Per-call
+state lives in static maps keyed by chatConfig.objectId:
+- `qualityEvalCounters` — atomic counter, ensures "every Nth response"
+  cadence works whether Chat persists or is per-request (each duel
+  turn creates a new Chat, so an instance-level counter wouldn't work)
+- `qualityEvaluators` — one evaluator per chatConfig, so trend history
+  accumulates across the conversation, not within a single turn
+
+Each emission produces:
+```
+[QUALITY] turn=N echo=X.XXX distinct=Y.YYY memUtil=Z.ZZZ trend=STABLE
+```
+and a listener event `qualityScore` carrying the same payload.
+
+Schema field `qualityEvaluatorEvery` (default 0 = disabled). Test
+harness sets it to 5 by default.
+
+### Phase 6 verification run (with the broken per-instance counter)
+
+A seeded duel run captured before the counter fix produced:
+
+| metric        | Phase 6 (broken counter, eval-every-turn) |
+|---------------|--------------------------------------------|
+| echoMean      | 0.424 / 0.440                             |
+| echoMax       | 1.000 / 1.000                             |
+| distinctMean  | 0.486 / 0.460                             |
+| memUtilMean   | 0.017 / 0.016                             |
+| latencySlope  | -16.3 / +18.8                             |
+
+The trend tracker did work — it went IMPROVING → STABLE → DEGRADING
+correctly as echo built up from 0.0 to 1.0. But the run shows
+echoMax=1.0 again, which Phase 4b had eliminated (echoMax 0.086 /
+0.022). Two candidate explanations:
+1. Run-to-run stochasticity (the plan's standing caveat — qwen3:8b
+   swings 0.0-0.5 between identical-seed runs).
+2. The Phase 5.2 unified slot may have caused a keyframe extraction
+   to be skipped at a critical moment, losing the memory that would
+   have prevented lock-in.
+
+Honest answer: can't tell from one run. The counter fix is in place;
+when the LLM backend is back online, re-run with the fixed counter
+to verify Phase 6 emits exactly every 5th response and Phase 5.2's
+slot contention isn't degrading quality.
+
+### Phase 6 deliverables
+
+- [x] `ConversationQualityEvaluator` pure util (evaluateOnce + stateful evaluate + computeTrend)
+- [x] 16 unit tests covering edge cases + trend direction
+- [x] Schema field `qualityEvaluatorEvery` (default 0 = disabled)
+- [x] Wired into `Chat.maybeEmitQualityScore` called from `handleResponse`
+- [x] Static per-chatConfig counter and evaluator so cadence + trend
+      history work across Chat instance recreation
+- [x] `[QUALITY] turn=N echo=... distinct=... memUtil=... trend=...` log line
+- [x] Listener event `qualityScore`
+- [x] Test harness override `-Dduel.qualityEvaluatorEvery` (default 5)
+- [-] Live duel re-verification with fixed counter pending (LLM offline)
