@@ -441,6 +441,7 @@ public class ChatListener implements IChatListener {
 					/// chat keeps the simpler heuristic naming this round.
 					if (!chat.shouldDeferForPressure("titleIcon") && chat.tryAcquireAsyncLLMSlot("titleIcon")) {
 					CompletableFuture.runAsync(() -> {
+						org.cote.accountmanager.util.LLMConnectionManager.setCurrentCallLabel("titleIcon");
 						try {
 							logger.info("Generating LLM title/icon for: " + oid + " chatReqOid=" + chatReqOid);
 							String[] titleAndIcon = chat.generateChatTitleAndIcon(request);
@@ -460,6 +461,7 @@ public class ChatListener implements IChatListener {
 							logger.warn("Async LLM title/icon generation failed (fallback already set): " + e.getMessage());
 						} finally {
 							chat.releaseAsyncLLMSlot();
+							org.cote.accountmanager.util.LLMConnectionManager.clearCurrentCallLabel();
 						}
 					});
 					}

@@ -22,6 +22,20 @@ public class LLMConnectionManager {
 	/// Active streaming futures — keyed by auto-incrementing stream ID.
 	private static final ConcurrentHashMap<String, CompletableFuture<HttpResponse<Stream<String>>>> activeStreams = new ConcurrentHashMap<>();
 
+	/// Per-stream label markers ("kind|startTimeMs") for diagnostics.
+	/// Keyed by the same streamId as activeStreams.
+	private static final ConcurrentHashMap<String, String> streamLabels = new ConcurrentHashMap<>();
+
+	/// Thread-local label set by callers BEFORE invoking Chat.chat() so the
+	/// internal registerStream call knows what kind of LLM call this is
+	/// (chat / memory:keyframe / memory:extract / interaction / compliance / autotune / titleIcon).
+	/// Cleared in finally by the caller. Defaults to "chat" if not set.
+	private static final ThreadLocal<String> currentCallLabel = new ThreadLocal<>();
+
+	public static void setCurrentCallLabel(String label) { currentCallLabel.set(label); }
+	public static String getCurrentCallLabel() { return currentCallLabel.get(); }
+	public static void clearCurrentCallLabel() { currentCallLabel.remove(); }
+
 	/// Active HTTP responses — registered once the connection is established.
 	private static final ConcurrentHashMap<String, HttpResponse<Stream<String>>> activeHttpResponses = new ConcurrentHashMap<>();
 
@@ -31,13 +45,35 @@ public class LLMConnectionManager {
 	/// Stream ID counter — monotonically increasing across all subsystems.
 	private static final AtomicLong streamIdCounter = new AtomicLong(0);
 
+	/// Active synchronous LLM HTTP calls (embedding, keyword extraction, etc.).
+	/// These don't stream so they can't be tracked through registerStream, but
+	/// they DO occupy Ollama's single inference slot and they DO hold GPU. Value
+	/// is `label|startTimeMs` (same shape as AsyncLLMSlotRegistry markers).
+	private static final ConcurrentHashMap<String, String> activeSyncCalls = new ConcurrentHashMap<>();
+	private static final AtomicLong syncCallIdCounter = new AtomicLong(0);
+
 	/// Graceful stop flags — keyed by request OID for interactive chat.
 	private static final ConcurrentHashMap<String, Boolean> stopFlags = new ConcurrentHashMap<>();
 
 	/// Register a new streaming future. Returns the stream ID for later cleanup.
+	/// The label is taken from the thread-local set by the caller (or defaults
+	/// to "chat") so each active stream is identifiable in the debug view.
 	public static String registerStream(CompletableFuture<HttpResponse<Stream<String>>> future) {
 		String streamId = "stream-" + streamIdCounter.incrementAndGet();
 		activeStreams.put(streamId, future);
+		String label = currentCallLabel.get();
+		if (label == null || label.isEmpty()) label = "chat";
+		streamLabels.put(streamId, label + "|" + System.currentTimeMillis());
+		return streamId;
+	}
+
+	/// Overload that lets callers supply the label explicitly instead of via
+	/// the thread-local.
+	public static String registerStream(String label, CompletableFuture<HttpResponse<Stream<String>>> future) {
+		String streamId = "stream-" + streamIdCounter.incrementAndGet();
+		activeStreams.put(streamId, future);
+		String safeLabel = (label == null || label.isEmpty()) ? "chat" : label;
+		streamLabels.put(streamId, safeLabel + "|" + System.currentTimeMillis());
 		return streamId;
 	}
 
@@ -53,6 +89,7 @@ public class LLMConnectionManager {
 		if (streamId != null) {
 			activeStreams.remove(streamId);
 			activeHttpResponses.remove(streamId);
+			streamLabels.remove(streamId);
 		}
 	}
 
@@ -95,6 +132,55 @@ public class LLMConnectionManager {
 		return activeStreams.size();
 	}
 
+	/// Register a synchronous LLM HTTP call (embedding, keyword/topic/sentiment/etc.
+	/// extraction). Returns an opaque id the caller MUST pass back to
+	/// unregisterSyncCall in a finally block. `label` is recorded for diagnostics.
+	public static String registerSyncCall(String label) {
+		String id = "sync-" + syncCallIdCounter.incrementAndGet();
+		String marker = (label == null ? "?" : label) + "|" + System.currentTimeMillis();
+		activeSyncCalls.put(id, marker);
+		return id;
+	}
+
+	/// Release a sync-call slot. Safe to call with a null id.
+	public static void unregisterSyncCall(String id) {
+		if (id == null) return;
+		activeSyncCalls.remove(id);
+	}
+
+	/// Active count of synchronous LLM HTTP calls (embeddings, keyword extraction, etc.).
+	public static int getActiveSyncCallCount() {
+		return activeSyncCalls.size();
+	}
+
+	/// Total active LLM HTTP activity = streams + sync calls. This is the
+	/// correct number for pressure-based deferral decisions: stream-only
+	/// counting misses embedding work that also occupies the GPU.
+	public static int getActiveLLMCallCount() {
+		return activeStreams.size() + activeSyncCalls.size();
+	}
+
+	/// Diagnostic — labels of currently-in-flight sync calls.
+	public static Set<String> getActiveSyncCallLabels() {
+		return Set.copyOf(activeSyncCalls.values());
+	}
+
+	/// Diagnostic — labels of currently-in-flight streams.
+	public static Set<String> getActiveStreamLabels() {
+		return Set.copyOf(streamLabels.values());
+	}
+
+	/// Combined snapshot of every in-flight LLM call (streams + sync) as
+	/// `kind|startTimeMs` markers. Useful for a debug UI that lists active
+	/// activity with what each call is doing. Returns immutable copies of
+	/// the markers from each registry; ordering is arbitrary.
+	public static Map<String, String> snapshotActiveLLMCalls() {
+		Map<String, String> out = new java.util.LinkedHashMap<>();
+		out.putAll(streamLabels);
+		out.putAll(activeSyncCalls);
+		return out;
+	}
+
 	/// Get count of registered clients.
 	public static int getRegisteredClientCount() {
 		return registeredClients.size();
@@ -129,7 +215,11 @@ public class LLMConnectionManager {
 		}
 		activeStreams.clear();
 		activeHttpResponses.clear();
+		streamLabels.clear();
 		stopFlags.clear();
+		/// Sync calls aren't cancellable from here (no future to cancel) but we
+		/// clear the registry so the view of "active" matches reality after a stop.
+		activeSyncCalls.clear();
 	}
 
 	/// Close all registered clients gracefully.

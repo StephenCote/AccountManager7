@@ -325,6 +325,13 @@
 			"description": "Phase 6 (ConversationQualityPlan) run ConversationQualityEvaluator every Nth assistant response, emitting a [QUALITY] log line and listener event with echo / distinct / memUtil scores plus rolling trend. 0 = disabled. Pure local metrics — no extra LLM calls."
 		},
 		{
+			"name": "streamIdleTimeoutSeconds",
+			"type": "int",
+			"default": 30,
+			"minValue": 0,
+			"description": "Mid-stream idle watchdog: if no chunk arrives from the LLM for this many seconds, force-close the HTTP response and keep whatever content was already streamed. Catches stuck Ollama states (model swap, vRAM thrash, silent transport death) that the per-request overall timeout would only catch much later. 0 = disabled."
+		},
+		{
 			"name": "extractInteractions",
 			"type": "boolean",
 			"description": "When true, automatically extract olio.interaction records from chat sessions on an independent cadence."

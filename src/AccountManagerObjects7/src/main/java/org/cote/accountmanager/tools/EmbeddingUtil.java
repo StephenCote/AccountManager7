@@ -13,6 +13,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.ClientUtil;
+import org.cote.accountmanager.util.LLMConnectionManager;
 
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.core.MediaType;
@@ -34,116 +35,77 @@ public class EmbeddingUtil {
 		return serviceType;
 	}
 
+	/// Phase 5.3 (ConversationQualityPlan): track this sync HTTP call with
+	/// LLMConnectionManager so it shows up in getActiveLLMCallCount() and
+	/// pressure-based deferral can see it. Caller passes a `label` like
+	/// "embed:keywords" for diagnostics. Returns the ToolResponse, or null
+	/// on transport error.
+	private ToolResponse trackedToolPost(String label, String path, ToolRequest body) {
+		String id = LLMConnectionManager.registerSyncCall(label);
+		try {
+			return ClientUtil.post(ToolResponse.class,
+				ClientUtil.getResource(serverUrl + path), null, body,
+				MediaType.APPLICATION_JSON_TYPE);
+		} catch (ProcessingException e) {
+			logger.error(e);
+			return null;
+		} finally {
+			LLMConnectionManager.unregisterSyncCall(id);
+		}
+	}
+
 	public String[] getKeywords(String content){
-		String[] words = new String[0];
 		if(serviceType != LLMServiceEnumType.LOCAL) {
 			logger.error("Keywords not supported");
-			return words;
+			return new String[0];
 		}
-		
-		try {
-			ToolResponse resp = ClientUtil.post(ToolResponse.class, ClientUtil.getResource(serverUrl + "/extract_keywords"), null, new ToolRequest(content), MediaType.APPLICATION_JSON_TYPE);
-			if(resp != null) {
-				words = resp.getKeywords();
-			}
-		}
-		catch(ProcessingException e) {
-			logger.error(e);
-		}
-		return words;
+		ToolResponse resp = trackedToolPost("embed:keywords", "/extract_keywords", new ToolRequest(content));
+		return resp != null ? resp.getKeywords() : new String[0];
 	}
 
 	public String[] getTopics(String content){
-		String[] tops = new String[0];
 		if(serviceType != LLMServiceEnumType.LOCAL) {
 			logger.error("Topics not supported");
-			return tops;
+			return new String[0];
 		}
-
-		try {
-			ToolResponse resp = ClientUtil.post(ToolResponse.class, ClientUtil.getResource(serverUrl + "/topic_modeling"), null, new ToolRequest(content), MediaType.APPLICATION_JSON_TYPE);
-			if(resp != null) {
-				tops = resp.getTopics();
-			}
-		}
-		catch(ProcessingException e) {
-			logger.error(e);
-		}
-		return tops;
+		ToolResponse resp = trackedToolPost("embed:topics", "/topic_modeling", new ToolRequest(content));
+		return resp != null ? resp.getTopics() : new String[0];
 	}
-	
+
 	public String[] getNames(String content){
-		String[] names = new String[0];
 		if(serviceType != LLMServiceEnumType.LOCAL) {
 			logger.error("Names not supported");
-			return names;
+			return new String[0];
 		}
-
-		try {
-			ToolResponse resp = ClientUtil.post(ToolResponse.class, ClientUtil.getResource(serverUrl + "/named_entity_recognition"), null, new ToolRequest(content), MediaType.APPLICATION_JSON_TYPE);
-			if(resp != null) {
-				names = resp.getEntities();
-			}
-		}
-		catch(ProcessingException e) {
-			logger.error(e);
-		}
-		return names;
+		ToolResponse resp = trackedToolPost("embed:names", "/named_entity_recognition", new ToolRequest(content));
+		return resp != null ? resp.getEntities() : new String[0];
 	}
-	
+
 	public String[] getTags(String content){
-		String[] tags = new String[0];
 		if(serviceType != LLMServiceEnumType.LOCAL) {
 			logger.error("Tags not supported");
-			return tags;
+			return new String[0];
 		}
-		try {
-			ToolResponse resp = ClientUtil.post(ToolResponse.class, ClientUtil.getResource(serverUrl + "/generate_tags"), null, new ToolRequest(content), MediaType.APPLICATION_JSON_TYPE);
-			if(resp != null) {
-				tags = resp.getTags();
-			}
-		}
-		catch(ProcessingException e) {
-			logger.error(e);
-		}
-		return tags;
+		ToolResponse resp = trackedToolPost("embed:tags", "/generate_tags", new ToolRequest(content));
+		return resp != null ? resp.getTags() : new String[0];
 	}
-	
+
 	public String getSentiment(String content){
-		String sent = null;
 		if(serviceType != LLMServiceEnumType.LOCAL) {
 			logger.error("Sentiment not supported");
-			return sent;
+			return null;
 		}
-		try {
-			ToolResponse resp = ClientUtil.post(ToolResponse.class, ClientUtil.getResource(serverUrl + "/analyze_sentiment"), null, new ToolRequest(content), MediaType.APPLICATION_JSON_TYPE);
-			if(resp != null) {
-				sent = resp.getSentiment();
-			}
-		}
-		catch(ProcessingException e) {
-			logger.error(e);
-		}
-		return sent;
+		ToolResponse resp = trackedToolPost("embed:sentiment", "/analyze_sentiment", new ToolRequest(content));
+		return resp != null ? resp.getSentiment() : null;
 	}
-	
+
 	public String getSummary(String content){
-		String summary = null;
 		if(serviceType != LLMServiceEnumType.LOCAL) {
 			logger.error("Summary not supported");
-			return summary;
+			return null;
 		}
-		try {
-			ToolResponse resp = ClientUtil.post(ToolResponse.class, ClientUtil.getResource(serverUrl + "/generate_summary"), null, new ToolRequest(content), MediaType.APPLICATION_JSON_TYPE);
-			if(resp != null) {
-				summary = resp.getSummary();
-			}
-		}
-		catch(ProcessingException e) {
-			logger.error(e);
-		}
-		
-		return summary;
+		ToolResponse resp = trackedToolPost("embed:summary", "/generate_summary", new ToolRequest(content));
+		return resp != null ? resp.getSummary() : null;
 	}
 	
 	public float[] getEmbedding(String content){

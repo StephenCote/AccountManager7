@@ -88,15 +88,18 @@ public class ClientUtil {
 		}
 		
 		
+		/// Phase 5.3 (ConversationQualityPlan): finite timeouts to prevent
+		/// infinite hangs when Ollama or another backend wedges. Without
+		/// these, a stuck embedding call holds an HTTP connection from the
+		/// shared pool and any subsequent chat request waits behind it.
+		/// 30s connect is generous for local services; 360s read matches
+		/// the worst-case batch image generation upper bound.
+		cb.connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS);
+		cb.readTimeout(360, java.util.concurrent.TimeUnit.SECONDS);
+
 		client = cb
 			.build()
 			.register(JacksonFeature.class)
-			/*
-			.connectTimeout(360, TimeUnit.SECONDS)
-			.readTimeout(360, TimeUnit.SECONDS)
-			.property(ClientProperties.CONNECT_TIMEOUT, 360000)
-			.property(ClientProperties.READ_TIMEOUT, 360000)
-			*/
 		;
 
 		LLMConnectionManager.registerClient("clientUtil.jakarta", client);

@@ -186,6 +186,13 @@ public class Chat {
 	private static final long ASYNC_LLM_SLOT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 	private static final AsyncLLMSlotRegistry asyncLLMSlots = new AsyncLLMSlotRegistry(ASYNC_LLM_SLOT_TIMEOUT_MS);
 
+	/// Per-stream mid-stream idle watchdog. Caller touches it on each chunk;
+	/// if `streamIdleTimeoutSeconds` of silence elapses, the watchdog forces
+	/// the HTTP response body closed which unblocks the iterator. Whatever
+	/// content was already buffered into `aresp` is preserved as a normal
+	/// (partial) response.
+	private static final StreamIdleWatchdog streamIdleWatchdog = new StreamIdleWatchdog();
+
 	/// Phase 6 (ConversationQualityPlan): periodic quality evaluator state,
 	/// keyed by chatConfig objectId so the rolling history + cadence counter
 	/// survive across Chat instances (each duel turn creates a new Chat).
@@ -734,6 +741,7 @@ public class Chat {
 			final String content = responseContent;
 			final PolicyEvaluationResult heuristicResult = result;
 			CompletableFuture.runAsync(() -> {
+				LLMConnectionManager.setCurrentCallLabel("compliance");
 				try {
 					ResponseComplianceEvaluator rce = new ResponseComplianceEvaluator();
 					List<PolicyViolation> complianceViolations = rce.evaluate(user, content, chatConfig);
@@ -764,6 +772,7 @@ public class Chat {
 				} finally {
 					/// Phase 5.2: release unified slot acquired before launch.
 					releaseAsyncLLMSlot();
+					LLMConnectionManager.clearCurrentCallLabel();
 				}
 			});
 			} // close Phase 5.3 pressure-deferral else
@@ -823,6 +832,7 @@ public class Chat {
 
 		if (tunePrompts && promptConfig != null && !shouldDeferForPressure("autotune") && tryAcquireAsyncLLMSlot("autotune")) {
 			CompletableFuture.runAsync(() -> {
+				LLMConnectionManager.setCurrentCallLabel("autotune");
 				try {
 					ChatAutotuner autotuner = new ChatAutotuner();
 					AutotuneResult atResult = autotuner.autotune(user, chatConfig, promptConfig, violations);
@@ -836,6 +846,7 @@ public class Chat {
 					logger.warn("Autotune prompt analysis failed: " + e.getMessage());
 				} finally {
 					releaseAsyncLLMSlot();
+					LLMConnectionManager.clearCurrentCallLabel();
 				}
 			});
 		}
@@ -2369,6 +2380,7 @@ public class Chat {
 		} else {
 			logger.info("addKeyFrameAsync: calling LLM for keyframe analysis (timeout=" + analyzeTimeout + "s, model=" + kfReq.getModel() + ")");
 			analyzeTimeoutOverride.set(analyzeTimeout);
+			LLMConnectionManager.setCurrentCallLabel("memory:keyframe");
 			try {
 				OpenAIResponse kfResp = chat(kfReq);
 				if (kfResp == null) {
@@ -2383,6 +2395,7 @@ public class Chat {
 				logger.warn("Keyframe analysis failed: " + e.getMessage(), e);
 			} finally {
 				analyzeTimeoutOverride.remove();
+				LLMConnectionManager.clearCurrentCallLabel();
 			}
 		}
 
@@ -2616,11 +2629,13 @@ public class Chat {
 
 		/// Use analyzeTimeout for the extraction call via thread-local override (thread-safe)
 		analyzeTimeoutOverride.set(analyzeTimeout);
+		LLMConnectionManager.setCurrentCallLabel("memory:extract");
 		OpenAIResponse resp;
 		try {
 			resp = chat(extractReq);
 		} finally {
 			analyzeTimeoutOverride.remove();
+			LLMConnectionManager.clearCurrentCallLabel();
 		}
 
 		if (resp == null || resp.getMessage() == null) {
@@ -3400,6 +3415,7 @@ public class Chat {
 		snapshotReq.setModel(req.getModel());
 		snapshotReq.setMessages(new ArrayList<>(snapshot));
 
+		LLMConnectionManager.setCurrentCallLabel("interaction");
 		try {
 			BaseRecord interaction = InteractionExtractor.extractInteraction(
 				user, chatConfig, systemChar, userChar, snapshotReq.getMessages(), cfgObjId);
@@ -3426,6 +3442,8 @@ public class Chat {
 			if (listener != null) {
 				listener.onEvalProgress(user, req, "interactionDone", "error");
 			}
+		} finally {
+			LLMConnectionManager.clearCurrentCallLabel();
 		}
 	}
 
@@ -3673,12 +3691,42 @@ public class Chat {
 				boolean hasListener = listener != null;
 				java.util.Iterator<String> streamIt = response.body().iterator();
 				int lineCount = 0;
-				while (streamIt.hasNext()) {
-					if (hasListener && listener.isStopStream(req)) break;
-					String line = streamIt.next();
-					lineCount++;
-					boolean done = processStreamChunk(line, req, aresp, forwardToClient);
-					if (done) break;
+				/// Mid-stream idle watchdog: if no chunk arrives for
+				/// chatConfig.streamIdleTimeoutSeconds, force-close the
+				/// response body so the iterator unwinds. Whatever already
+				/// streamed into `aresp` is preserved.
+				int idleSec = 30;
+				if (chatConfig != null) {
+					try {
+						Object v = chatConfig.get("streamIdleTimeoutSeconds");
+						if (v instanceof Number) idleSec = ((Number) v).intValue();
+					} catch (Exception ignore) { /* default */ }
+				}
+				if (idleSec > 0) {
+					final HttpResponse<Stream<String>> respRef = response;
+					final String streamIdRef = streamId;
+					String idleLabel = LLMConnectionManager.getCurrentCallLabel();
+					if (idleLabel == null) idleLabel = "chat";
+					streamIdleWatchdog.start(streamId, idleLabel, idleSec * 1000L, sid -> {
+						try {
+							logger.warn("[STREAM-IDLE] forcing close of stream " + sid + " after idle timeout");
+							respRef.body().close();
+						} catch (Exception ce) {
+							logger.debug("[STREAM-IDLE] close threw " + ce.getClass().getSimpleName() + ": " + ce.getMessage());
+						}
+					});
+				}
+				try {
+					while (streamIt.hasNext()) {
+						if (hasListener && listener.isStopStream(req)) break;
+						String line = streamIt.next();
+						lineCount++;
+						streamIdleWatchdog.touch(streamId);
+						boolean done = processStreamChunk(line, req, aresp, forwardToClient);
+						if (done) break;
+					}
+				} finally {
+					streamIdleWatchdog.stop(streamId);
 				}
 				if (!forwardToClient) {
 					BaseRecord bufMsg = aresp.get("message");
@@ -4176,6 +4224,11 @@ public class Chat {
 	/// Ollama is busy. Returns true if the caller should bail out.
 	/// `kind` is just for log identification — "keyframe" / "interaction" /
 	/// "compliance" / "autotune" / "titleIcon".
+	///
+	/// Uses `getActiveLLMCallCount()` so the threshold sees BOTH streaming
+	/// chat/extraction calls AND synchronous embedding / keyword / topic
+	/// calls. Previously only streams were counted, so embedding pressure
+	/// was invisible to the deferral gate.
 	public boolean shouldDeferForPressure(String kind) {
 		int threshold = 4;
 		if (chatConfig != null) {
@@ -4184,10 +4237,11 @@ public class Chat {
 				if (v instanceof Number) threshold = ((Number) v).intValue();
 			} catch (Exception ignore) { /* default */ }
 		}
-		int active = LLMConnectionManager.getActiveStreamCount();
+		int active = LLMConnectionManager.getActiveLLMCallCount();
 		if (isUnderPressure(active, threshold)) {
 			logger.info("[DEFER] " + kind + " skipped — LLM under pressure (active="
-				+ active + " >= threshold=" + threshold + ")");
+				+ active + " >= threshold=" + threshold + ", labels="
+				+ LLMConnectionManager.snapshotActiveLLMCalls().values() + ")");
 			return true;
 		}
 		return false;

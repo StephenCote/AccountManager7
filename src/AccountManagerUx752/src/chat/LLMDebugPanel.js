@@ -85,6 +85,40 @@ function llmRequestRow(req) {
     ]);
 }
 
+function fmtAge(ageMs) {
+    if (ageMs == null || ageMs < 0) return "—";
+    if (ageMs < 1000) return ageMs + "ms";
+    if (ageMs < 60000) return (ageMs / 1000).toFixed(1) + "s";
+    let mins = Math.floor(ageMs / 60000);
+    let secs = Math.floor((ageMs % 60000) / 1000);
+    return mins + "m" + (secs < 10 ? "0" : "") + secs + "s";
+}
+
+function kindColor(kind) {
+    if (!kind) return "text-gray-400";
+    if (kind === "chat") return "text-blue-300";
+    if (kind.startsWith("memory:")) return "text-purple-300";
+    if (kind.startsWith("embed:")) return "text-cyan-300";
+    if (kind === "compliance") return "text-yellow-300";
+    if (kind === "autotune") return "text-pink-300";
+    if (kind === "interaction") return "text-green-300";
+    if (kind === "titleIcon") return "text-orange-300";
+    return "text-gray-300";
+}
+
+function activeCallRow(c) {
+    let ageMs = c.ageMs;
+    /// Highlight stalled calls (>30s) so the user can spot the offender at a glance.
+    let stalled = ageMs != null && ageMs > 30000;
+    return m("tr", { class: "border-b border-gray-700" }, [
+        m("td", { class: "px-2 py-1 font-mono", title: c.id }, truncateId(c.id)),
+        m("td", { class: "px-2 py-1 font-semibold " + kindColor(c.kind), title: c.kind }, c.kind || "—"),
+        m("td", {
+            class: "px-2 py-1 text-right " + (stalled ? "text-red-400 font-semibold" : "")
+        }, fmtAge(ageMs))
+    ]);
+}
+
 function summRow(s) {
     let phaseLabel = s.phase || "pending";
     if (s.total > 0) phaseLabel += " " + s.current + "/" + s.total;
@@ -112,7 +146,13 @@ function panelView() {
     let llmRequests = (_data && _data.llmRequests) ? _data.llmRequests : [];
     let summarizations = (_data && _data.summarizations) ? _data.summarizations : [];
     let bufferStreams = (_data && _data.bufferModeStreams) ? _data.bufferModeStreams : 0;
-    let isEmpty = llmRequests.length === 0 && summarizations.length === 0 && bufferStreams === 0;
+    /// Phase 5.3 (ConversationQualityPlan): per-call kind visibility.
+    /// Each entry: { id, kind, startMs, ageMs }. Covers streams AND sync
+    /// embedding calls (which previously didn't show up anywhere). Sorted
+    /// newest-first by startMs so the oldest stalled call sits at the bottom.
+    let activeCalls = (_data && _data.activeLLMCalls) ? _data.activeLLMCalls.slice() : [];
+    activeCalls.sort(function(a, b) { return (b.startMs || 0) - (a.startMs || 0); });
+    let isEmpty = llmRequests.length === 0 && summarizations.length === 0 && bufferStreams === 0 && activeCalls.length === 0;
 
     return m("div", { class: "fixed bottom-0 right-0 w-96 max-h-80 bg-gray-900 border border-gray-600 rounded-tl-lg shadow-lg z-50 flex flex-col text-xs text-gray-300 overflow-hidden" }, [
         m("div", { class: "flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-600" }, [
@@ -150,6 +190,18 @@ function panelView() {
                                 m("th", { class: "px-2 py-0.5 text-left" }, "Status")
                             ])),
                             m("tbody", llmRequests.map(llmRequestRow))
+                        ])
+                    ] : null,
+                    activeCalls.length > 0 ? [
+                        m("div", { class: "font-semibold mb-1 text-gray-400" },
+                            "Active Calls (" + activeCalls.length + ") — kind / age"),
+                        m("table", { class: "w-full mb-3" }, [
+                            m("thead", m("tr", { class: "text-gray-500 border-b border-gray-600" }, [
+                                m("th", { class: "px-2 py-0.5 text-left" }, "ID"),
+                                m("th", { class: "px-2 py-0.5 text-left" }, "Kind"),
+                                m("th", { class: "px-2 py-0.5 text-right" }, "Age")
+                            ])),
+                            m("tbody", activeCalls.map(activeCallRow))
                         ])
                     ] : null,
                     bufferStreams > 0 ? m("div", { class: "mb-2 text-yellow-400" }, "Buffer-mode streams: " + bufferStreams) : null,

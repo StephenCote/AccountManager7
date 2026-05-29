@@ -891,6 +891,35 @@ public class ChatService {
 			result.put("llmRequests", active);
 			result.put("summarizations", summInfo);
 			result.put("bufferModeStreams", Chat.getActiveStreamCount());
+			/// Phase 5.3 (ConversationQualityPlan): per-call type visibility.
+			/// activeLLMCalls = streams + synchronous calls, each labeled
+			/// with its kind (chat / memory:keyframe / memory:extract /
+			/// interaction / compliance / autotune / titleIcon /
+			/// embed:keywords / embed:topics / embed:names / embed:tags /
+			/// embed:sentiment / embed:summary). Format per entry:
+			///   { "id": "stream-42", "kind": "memory:keyframe", "startMs": 1234567890, "ageMs": 1234 }
+			List<Map<String, Object>> activeLLMCalls = new ArrayList<>();
+			long now = System.currentTimeMillis();
+			for (Map.Entry<String, String> e :
+					org.cote.accountmanager.util.LLMConnectionManager.snapshotActiveLLMCalls().entrySet()) {
+				String marker = e.getValue();
+				int bar = marker.lastIndexOf('|');
+				String kind = bar > 0 ? marker.substring(0, bar) : marker;
+				long startMs = 0L;
+				if (bar > 0 && bar < marker.length() - 1) {
+					try { startMs = Long.parseLong(marker.substring(bar + 1)); }
+					catch (NumberFormatException nfe) { /* leave at 0 */ }
+				}
+				Map<String, Object> row = new HashMap<>();
+				row.put("id", e.getKey());
+				row.put("kind", kind);
+				row.put("startMs", startMs);
+				row.put("ageMs", startMs > 0 ? (now - startMs) : -1L);
+				activeLLMCalls.add(row);
+			}
+			result.put("activeLLMCalls", activeLLMCalls);
+			result.put("activeLLMCallCount",
+				org.cote.accountmanager.util.LLMConnectionManager.getActiveLLMCallCount());
 			return Response.status(200).entity(new ObjectMapper().writeValueAsString(result)).build();
 		} catch (Exception e) {
 			logger.error("Error listing active LLM requests", e);
