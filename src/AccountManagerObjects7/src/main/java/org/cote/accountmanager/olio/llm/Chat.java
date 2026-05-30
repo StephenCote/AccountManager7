@@ -178,6 +178,16 @@ public class Chat {
 	/// Maximum time (ms) an interaction lock can be held before forced removal.
 	private static final long INTERACTION_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+	/// MemoryKeyframeDecouplingPlan: independent memory extraction cadence.
+	/// Mirrors the keyframe deferral pattern but runs on its own per-message
+	/// cadence (memoryExtractionEvery, default 5) — NOT tied to keyframeEvery.
+	private int memoryExtractionEvery = 0;
+	private volatile List<OpenAIMessage> pendingMemorySnapshot = null;
+	private volatile int pendingMemoryStartIdx = 0;
+	private volatile boolean asyncMemoryInProgress = false;
+	private static final ConcurrentHashMap<String, Long> activeMemoryExtractions = new ConcurrentHashMap<>();
+	private static final long MEMORY_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 	/// Phase 5.2 (ConversationQualityPlan): unified per-chatConfig async-LLM slot.
 	/// All five async LLM call types (keyframe, interaction, compliance, autotune,
 	/// titleIcon) acquire this slot before starting. Only one async LLM call per
@@ -229,6 +239,7 @@ public class Chat {
 		LLMConnectionManager.stopAllStreams();
 		activeKeyframes.clear();
 		activeInteractions.clear();
+		activeMemoryExtractions.clear();
 	}
 
 	/// Get count of all active LLM streams — delegates to LLMConnectionManager.
@@ -384,17 +395,17 @@ public class Chat {
 				// field may not be set on legacy configs
 			}
 
-			/// OI-5/OI-83: Enforce minimum keyframeEvery when extractMemories is enabled.
-			/// If keyframeEvery=0 but extractMemories=true, memories can never be created
-			/// because the keyframe→memory pipeline requires keyframes to fire.
-			boolean extractMemories = (boolean) chatConfig.get("extractMemories");
-			if (extractMemories && keyFrameEvery <= 0) {
-				logger.warn("extractMemories=true but keyframeEvery=0 — setting keyframeEvery to " + MIN_KEYFRAME_EVERY_WITH_EXTRACT + " to enable memory creation");
-				keyFrameEvery = MIN_KEYFRAME_EVERY_WITH_EXTRACT;
-			}
-			else if (extractMemories && keyFrameEvery < MIN_KEYFRAME_EVERY_WITH_EXTRACT) {
-				logger.warn("keyframeEvery=" + keyFrameEvery + " too low with extractMemories=true, raising to " + MIN_KEYFRAME_EVERY_WITH_EXTRACT);
-				keyFrameEvery = MIN_KEYFRAME_EVERY_WITH_EXTRACT;
+			/// MemoryKeyframeDecouplingPlan: memory extraction runs on its own
+			/// cadence independent of keyframes. Read memoryExtractionEvery
+			/// directly from chatConfig; no auto-coupling to keyframeEvery.
+			/// The old OI-5/OI-83 force-upgrade ("extractMemories=true with
+			/// keyframeEvery=0 → bump keyframeEvery to 5") is intentionally
+			/// removed — memory creation no longer requires keyframes to fire.
+			try {
+				memoryExtractionEvery = chatConfig.get("memoryExtractionEvery");
+			} catch (Exception e) {
+				// field may not be set on legacy configs — default to 0 (disabled)
+				memoryExtractionEvery = 0;
 			}
 		}
 	}
@@ -598,6 +609,8 @@ public class Chat {
 			/// Flush deferred keyframe AFTER main response completes (buffer mode).
 			/// This prevents the keyframe LLM call from competing with the main response.
 			flushPendingKeyframe(req);
+			/// MemoryKeyframeDecouplingPlan: flush independent memory extraction.
+			flushPendingMemory(req);
 			/// Flush deferred interaction extraction (independent of keyframes).
 			flushPendingInteraction(req);
 
@@ -2434,14 +2447,14 @@ public class Chat {
 			listener.onMemoryEvent(user, req, "keyframe", lab);
 		}
 
-		/// Step 4: Extract discrete memories via dedicated prompt (Phase 14b)
-		/// Skip if keyframe analysis failed — avoid double timeout
-		if (analysisOk) {
-			extractMemoriesIfEnabled(req, snapshotReq, cfgObjId, systemChar, userChar, previousKeyframeAt);
-		}
-
-		/// Step 5 removed: Interaction extraction is now a standalone pipeline
-		/// (checkInteractionTrigger / flushPendingInteraction) independent of keyframes.
+		/// MemoryKeyframeDecouplingPlan: typed-memory extraction is now a
+		/// standalone pipeline (checkMemoryExtractionTrigger / flushPendingMemory /
+		/// extractMemoriesAsync), driven by extractMemories + memoryExtractionEvery,
+		/// independent of keyframe firings. Keyframe pipeline now only persists
+		/// the OUTCOME summary memory.
+		///
+		/// Step 5 removed: Interaction extraction is also independent
+		/// (checkInteractionTrigger / flushPendingInteraction).
 	}
 
 	/// Phase 14b: Extract discrete memories from the conversation segment
@@ -2739,29 +2752,11 @@ public class Chat {
 			return;
 		}
 
-		/// Check memoryExtractionEvery — controls how often keyframes produce memories
-		/// 0 = every keyframe, N = every Nth keyframe
-		int extractionEvery = 0;
-		try {
-			extractionEvery = chatConfig.get("memoryExtractionEvery");
-		} catch (Exception e) {
-			// field may not be set, default to 0 (every keyframe)
-		}
-
-		if (extractionEvery > 0 && cfgObjId != null) {
-			/// Count existing keyframe memories for this conversation to determine if we should extract
-			List<BaseRecord> existingMemories = MemoryUtil.getConversationMemories(user, cfgObjId);
-			int keyframeMemCount = (int) existingMemories.stream()
-				.filter(m -> {
-					Object mt = m.get("memoryType");
-					return mt != null && MemoryTypeEnumType.OUTCOME.toString().equals(mt.toString());
-				})
-				.count();
-			if (keyframeMemCount % extractionEvery != 0) {
-				logger.info("Skipping keyframe memory extraction (extraction every " + extractionEvery + ", keyframe memory count=" + keyframeMemCount + ")");
-				return;
-			}
-		}
+		/// MemoryKeyframeDecouplingPlan: the old "every Nth keyframe" gate
+		/// (counted existing OUTCOME memories) is removed. Keyframe cadence
+		/// is now solely controlled by keyframeEvery — every keyframe that
+		/// fires persists an OUTCOME summary. memoryExtractionEvery now
+		/// governs the independent typed-memory pipeline, not this one.
 
 		try {
 			long sysId = systemChar.get(FieldNames.FIELD_ID);
@@ -3059,9 +3054,10 @@ public class Chat {
 			}
 		}
 
-		/// Keyframe trigger — separated from prune gating so memory extraction
-		/// works regardless of prune/assist settings.
+		/// Keyframe trigger — legacy OUTCOME summary path. Runs independently of memory extraction.
 		checkKeyframeTrigger(req);
+		/// MemoryKeyframeDecouplingPlan: independent memory extraction trigger.
+		checkMemoryExtractionTrigger(req);
 		/// Interaction trigger — independent cadence from keyframes.
 		checkInteractionTrigger(req);
 	}
@@ -3070,7 +3066,8 @@ public class Chat {
 	/// history, so there are no keyframe messages to preserve during pruning.
 	/// Instead, use the lastKeyframeAt counter on chatConfig to determine when
 	/// the next keyframe is due.
-	private void checkKeyframeTrigger(OpenAIRequest req) {
+	/// Package-private for direct test access.
+	void checkKeyframeTrigger(OpenAIRequest req) {
 		if (!chatMode || keyFrameEvery <= 0) {
 			return;
 		}
@@ -3187,6 +3184,91 @@ public class Chat {
 			/// since the last keyframe, not the entire conversation from the top.
 			pendingKeyframeStartIdx = lastKfAt;
 		}
+	}
+
+	/// MemoryKeyframeDecouplingPlan: independent memory extraction trigger.
+	/// Fires every `memoryExtractionEvery` messages when `extractMemories=true`,
+	/// independent of keyframeEvery. Captures a snapshot for deferred async
+	/// launch (flushPendingMemory) after the main response completes — same
+	/// deferral pattern as keyframes to avoid contending for LLM resources.
+	/// Package-private for direct test access.
+	void checkMemoryExtractionTrigger(OpenAIRequest req) {
+		if (!chatMode) return;
+		boolean extractMemories = false;
+		try { extractMemories = chatConfig.get("extractMemories"); }
+		catch (Exception e) { /* field may not be set */ }
+
+		boolean useAssist = false;
+		try { useAssist = chatConfig.get("assist"); } catch (Exception e) { /* default false */ }
+		int introOverhead = (useAssist ? pruneSkip : 0) + 1;
+
+		int lastMemAt = 0;
+		try { lastMemAt = chatConfig.get("lastMemoryExtractionAt"); }
+		catch (Exception e) { /* default 0 */ }
+
+		int msgSize = req.getMessages().size();
+		/// Stale-state guard: if lastMemoryExtractionAt exceeds current message
+		/// count (messages pruned / chat reset), reset the counter.
+		if (lastMemAt > msgSize) {
+			logger.warn("lastMemoryExtractionAt (" + lastMemAt + ") > msgSize (" + msgSize + ") — resetting stale marker");
+			try {
+				chatConfig.setValue("lastMemoryExtractionAt", 0);
+				IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig.copyRecord(new String[] {
+					FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, "lastMemoryExtractionAt" }));
+			} catch (Exception e) {
+				logger.warn("Failed to reset lastMemoryExtractionAt: " + e.getMessage());
+			}
+			lastMemAt = 0;
+		}
+
+		logger.info("Memory check: extractMemories=" + extractMemories
+			+ " memoryExtractionEvery=" + memoryExtractionEvery
+			+ " msgSize=" + msgSize + " lastMemoryExtractionAt=" + lastMemAt
+			+ " introOverhead=" + introOverhead);
+
+		if (!shouldExtractMemory(extractMemories, memoryExtractionEvery, msgSize, lastMemAt, introOverhead)) {
+			return;
+		}
+
+		/// Guard: skip if a previous async memory extraction is still running (instance).
+		if (asyncMemoryInProgress) {
+			logger.info("Skipping memory extraction — async memory already in progress (instance)");
+			return;
+		}
+		/// Guard: skip if another request already has a memory extraction in flight for this chat.
+		String cfgOid = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+		if (cfgOid != null) {
+			Long lockTime = activeMemoryExtractions.get(cfgOid);
+			if (lockTime != null) {
+				long held = System.currentTimeMillis() - lockTime;
+				if (held > MEMORY_LOCK_TIMEOUT_MS) {
+					logger.warn("Forcing expired memory lock for chat " + cfgOid + " (held " + held + "ms)");
+					activeMemoryExtractions.remove(cfgOid);
+				} else {
+					logger.info("Skipping memory extraction — global memory already active for chat " + cfgOid + " (" + held + "ms)");
+					return;
+				}
+			}
+		}
+
+		/// Eagerly update lastMemoryExtractionAt BEFORE launching the async pipeline.
+		/// Each HTTP request creates a new Chat instance, so the per-instance
+		/// asyncMemoryInProgress guard doesn't protect across requests.
+		try {
+			chatConfig.setValue("lastMemoryExtractionAt", msgSize);
+			IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig.copyRecord(new String[] {
+				FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, "lastMemoryExtractionAt" }));
+		} catch (Exception e) {
+			logger.warn("Failed to eagerly update lastMemoryExtractionAt: " + e.getMessage());
+		}
+
+		/// Defer memory launch: save snapshot now, launch AFTER main response completes.
+		/// Same rationale as the keyframe deferral — avoid LLM contention.
+		logger.info("(Deferring memory extraction — will launch after main response)");
+		pendingMemorySnapshot = new ArrayList<>(req.getMessages());
+		/// Save the previous lastMemoryExtractionAt so the extraction only analyzes new
+		/// messages since the last extraction, not the entire conversation from the top.
+		pendingMemoryStartIdx = lastMemAt;
 	}
 
 	/// Check if interaction extraction should trigger based on message count.
@@ -3332,6 +3414,160 @@ public class Chat {
 			releaseAsyncLLMSlot();
 			return null;
 		});
+	}
+
+	/// MemoryKeyframeDecouplingPlan: flush a deferred memory extraction.
+	/// Launches the standalone memory pipeline now that the main response is
+	/// complete. Independent of keyframe pipeline.
+	/// Called from continueChat (buffer mode) and ChatListener.oncomplete (streaming).
+	public void flushPendingMemory(OpenAIRequest req) {
+		List<OpenAIMessage> snapshot = pendingMemorySnapshot;
+		int startIdx = pendingMemoryStartIdx;
+		pendingMemorySnapshot = null;
+		pendingMemoryStartIdx = 0;
+		if (snapshot == null) {
+			return;
+		}
+		if (asyncMemoryInProgress) {
+			logger.info("Skipping deferred memory extraction — async memory already in progress (instance)");
+			return;
+		}
+		/// Phase 5.3 (ConversationQualityPlan): defer when Ollama under pressure.
+		if (shouldDeferForPressure("memory")) return;
+
+		String cfgOid = chatConfig != null ? chatConfig.get(FieldNames.FIELD_OBJECT_ID) : null;
+		if (cfgOid != null) {
+			Long existingLock = activeMemoryExtractions.get(cfgOid);
+			if (existingLock != null) {
+				long held = System.currentTimeMillis() - existingLock;
+				if (held > MEMORY_LOCK_TIMEOUT_MS) {
+					logger.warn("Forcing expired memory lock in flush for chat " + cfgOid + " (held " + held + "ms)");
+					activeMemoryExtractions.remove(cfgOid);
+				} else {
+					logger.info("Skipping deferred memory extraction — global memory already active for chat " + cfgOid + " (" + held + "ms)");
+					return;
+				}
+			}
+			if (activeMemoryExtractions.putIfAbsent(cfgOid, System.currentTimeMillis()) != null) {
+				logger.info("Skipping deferred memory extraction — lost CAS race for chat " + cfgOid);
+				return;
+			}
+		}
+
+		/// Phase 5.2: acquire the unified async-LLM slot last so we don't leak it
+		/// on the type-specific gate failures above.
+		if (!tryAcquireAsyncLLMSlot("memory")) {
+			asyncMemoryInProgress = false;
+			if (cfgOid != null) activeMemoryExtractions.remove(cfgOid);
+			return;
+		}
+
+		logger.info("(Launching deferred memory extraction — main response complete) chat=" + cfgOid);
+		asyncMemoryInProgress = true;
+
+		if (listener != null) {
+			listener.onEvalProgress(user, req, "memoryExtract", "Extracting memories...");
+		}
+
+		final String lockKey = cfgOid;
+		final int memStartIdx = startIdx;
+		CompletableFuture.runAsync(() -> {
+			try {
+				extractMemoriesAsync(req, snapshot, memStartIdx);
+			} catch (Exception e) {
+				logger.warn("Async memory extraction failed: " + e.getMessage(), e);
+			} finally {
+				asyncMemoryInProgress = false;
+				if (lockKey != null) activeMemoryExtractions.remove(lockKey);
+				releaseAsyncLLMSlot();
+			}
+		}).exceptionally(ex -> {
+			logger.error("Async memory CompletableFuture failed: " + ex.getMessage(), ex);
+			asyncMemoryInProgress = false;
+			if (lockKey != null) activeMemoryExtractions.remove(lockKey);
+			releaseAsyncLLMSlot();
+			return null;
+		});
+	}
+
+	/// MemoryKeyframeDecouplingPlan: standalone memory extraction (no
+	/// keyframe analysis call). Builds a snapshot request from the deferred
+	/// snapshot and runs the multi-aspect (or V2) extraction LLM call on
+	/// messages since `previousMemAt`. Persists typed memories.
+	private void extractMemoriesAsync(OpenAIRequest req, List<OpenAIMessage> snapshot, int previousMemAt) {
+		logger.info("extractMemoriesAsync: START — snapshot size=" + snapshot.size() + " previousMemAt=" + previousMemAt);
+		BaseRecord systemChar = chatConfig.get("systemCharacter");
+		BaseRecord userChar = chatConfig.get("userCharacter");
+		if (systemChar == null || userChar == null) {
+			logger.warn("extractMemoriesAsync: systemCharacter or userCharacter is null — aborting");
+			return;
+		}
+
+		String cfgObjId = chatConfig.get(FieldNames.FIELD_OBJECT_ID);
+
+		/// Build a snapshot request for analysis (avoids concurrent modification).
+		OpenAIRequest snapshotReq = new OpenAIRequest();
+		snapshotReq.setModel(req.getModel());
+		snapshotReq.setMessages(new ArrayList<>(snapshot));
+		applyChatOptions(snapshotReq);
+
+		/// Phase 5.3 echo gate: skip the extraction if the segment is itself
+		/// an echo. Uses the INDEPENDENT memorySkipEchoThreshold so memory
+		/// can be tuned separately from keyframe.
+		double memSkipThreshold = 0.7;
+		try {
+			Object v = chatConfig.get("memorySkipEchoThreshold");
+			if (v instanceof Number) memSkipThreshold = ((Number) v).doubleValue();
+		} catch (Exception ignore) { /* default */ }
+		if (memSkipThreshold < 1.0) {
+			try {
+				List<String> assistantContent = new ArrayList<>();
+				int start = previousMemAt > 0 ? previousMemAt : 0;
+				List<OpenAIMessage> msgs = snapshotReq.getMessages();
+				for (int i = start; i < msgs.size(); i++) {
+					OpenAIMessage m = msgs.get(i);
+					if (assistantRole.equals(m.getRole())) {
+						String c = m.getContent();
+						if (c != null && !c.isEmpty()) assistantContent.add(c);
+					}
+				}
+				if (assistantContent.size() >= 2) {
+					double segEcho = ConversationQualityMetrics
+						.avgPairwiseShingleJaccard(assistantContent, 3);
+					if (segEcho > memSkipThreshold) {
+						logger.info("Skipping memory extraction — segment echo=" + segEcho
+							+ " > threshold=" + memSkipThreshold);
+						return;
+					}
+				}
+			} catch (Exception e) {
+				logger.warn("Memory echo gate check failed (continuing): " + e.getMessage());
+			}
+		}
+
+		if (listener != null) {
+			listener.onEvalProgress(user, req, "memoryExtract", "Extracting memories...");
+		}
+
+		analyzeTimeoutOverride.set(analyzeTimeout);
+		try {
+			List<BaseRecord> memories = extractMemoriesFromRange(snapshotReq, cfgObjId,
+				systemChar, userChar, previousMemAt > 0 ? previousMemAt : 1,
+				snapshotReq.getMessages().size());
+			if (listener != null) {
+				String countMsg = memories.size() + " memories extracted";
+				listener.onMemoryEvent(user, req, "extracted", countMsg);
+				listener.onEvalProgress(user, req, "memoryExtractDone", countMsg);
+			}
+			logger.info("extractMemoriesAsync: extracted " + memories.size() + " memories");
+		} catch (Exception e) {
+			logger.warn("Memory extraction failed: " + e.getMessage(), e);
+			if (listener != null) {
+				listener.onEvalProgress(user, req, "memoryExtractDone", "error");
+			}
+		} finally {
+			analyzeTimeoutOverride.remove();
+		}
 	}
 
 	/// Flush a deferred interaction extraction: launch the async pipeline now that
@@ -4203,6 +4439,44 @@ public class Chat {
 	/// Exposed for unit testing. threshold <= 0 disables the gate.
 	public static boolean isUnderPressure(int activeStreamCount, int threshold) {
 		return threshold > 0 && activeStreamCount >= threshold;
+	}
+
+	/// Package-private accessors for tests — let TestChatMemoryPipeline assert
+	/// that the trigger captured (or didn't capture) a deferred snapshot
+	/// without needing reflection.
+	boolean hasPendingMemorySnapshot() { return pendingMemorySnapshot != null; }
+	boolean hasPendingKeyframeSnapshot() { return pendingKeyframeSnapshot != null; }
+	int getMemoryExtractionEvery() { return memoryExtractionEvery; }
+	int getKeyFrameEvery() { return keyFrameEvery; }
+
+	/// MemoryKeyframeDecouplingPlan: pure trigger decision for the independent
+	/// memory extraction pipeline. Exposed as a static helper so it can be
+	/// unit tested without standing up a full Chat instance.
+	///
+	///   enabled        — chatConfig.extractMemories (false disables outright)
+	///   every          — chatConfig.memoryExtractionEvery (0 disables; n>0 fires
+	///                    when msgsSinceLast >= n)
+	///   msgSize        — current request.getMessages().size()
+	///   lastAt         — chatConfig.lastMemoryExtractionAt (0 if never run)
+	///   introOverhead  — system prompt + assist intro messages to discount
+	///                    from the first-trigger calculation (e.g. (assist ? pruneSkip : 0) + 1)
+	///
+	/// Semantics:
+	///   - Disabled (enabled=false OR every<=0) → never trigger.
+	///   - Stale state (lastAt > msgSize, e.g. messages pruned) → treat lastAt as 0
+	///     so the trigger can fire again rather than getting stuck.
+	///   - First trigger uses introOverhead as the effective start so the system
+	///     prompt and assist-intro don't get counted as user turns.
+	///   - Decision is pure on the comparator (msgSize - effectiveStart) >= every.
+	public static boolean shouldExtractMemory(boolean enabled, int every, int msgSize, int lastAt, int introOverhead) {
+		if (!enabled) return false;
+		if (every <= 0) return false;
+		if (msgSize <= 0) return false;
+		int saneLastAt = (lastAt < 0 || lastAt > msgSize) ? 0 : lastAt;
+		int safeIntro = introOverhead < 0 ? 0 : introOverhead;
+		int effectiveStart = saneLastAt > 0 ? saneLastAt : safeIntro;
+		int sinceLast = msgSize - effectiveStart;
+		return sinceLast >= every;
 	}
 
 	/// Phase 5.2 (ConversationQualityPlan): attempt to acquire the unified

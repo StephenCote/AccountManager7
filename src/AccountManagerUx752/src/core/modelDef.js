@@ -8962,7 +8962,7 @@
           "name": "keyframeEvery",
           "type": "int",
           "default": 0,
-          "description": "When assist is true and prune is true, the number of messages after any previous keyframe or after the beginning of the message history before conducting a conversation analysis.  This is intended to be an objective summary of the conversation to preserve context and important details"
+          "description": "Legacy keyframe summary pipeline. 0 = disabled (default). When enabled and assist+prune are true, runs an analysis LLM call every N messages and stores the result as an OUTCOME memory. The newer per-message memory extraction (extractMemories + memoryExtractionEvery) is the recommended path for typed memory creation."
         },
         {
           "name": "messageTrim",
@@ -9011,7 +9011,7 @@
         {
           "name": "extractMemories",
           "type": "boolean",
-          "description": "Extract and store memories from conversations"
+          "description": "When true, the memory pipeline runs independently on memoryExtractionEvery cadence — extracting typed memories (FACT/RELATIONSHIP/DECISION/INSIGHT/DISCOVERY) from chat sessions. Does NOT require keyframes."
         },
         {
           "name": "memoryBudget",
@@ -9023,7 +9023,21 @@
           "name": "memoryExtractionEvery",
           "type": "int",
           "default": 5,
-          "description": "Extract memories every N messages"
+          "description": "Number of messages between automatic memory extractions when extractMemories is true. 0 = disabled. Independent of keyframeEvery — memory extraction runs on its own cadence. Typical values: 3 (frequent), 5 (balanced), 10 (sparse)."
+        },
+        {
+          "name": "lastMemoryExtractionAt",
+          "type": "int",
+          "default": 0,
+          "description": "Message count at which the last memory extraction ran. Bookkeeping for checkMemoryExtractionTrigger — parallel to lastKeyframeAt but independent."
+        },
+        {
+          "name": "memorySkipEchoThreshold",
+          "type": "double",
+          "default": 0.7,
+          "minValue": 0.0,
+          "maxValue": 1.0,
+          "description": "Skip memory extraction (no LLM call) when the segment's pairwise echo Jaccard exceeds this. Independent of keyframeSkipEchoThreshold so memory and keyframe can tune separately. 1.0 = never skip."
         },
         {
           "name": "analyzeTimeout",

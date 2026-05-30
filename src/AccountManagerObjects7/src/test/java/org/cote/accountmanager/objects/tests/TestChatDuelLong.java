@@ -128,16 +128,26 @@ public class TestChatDuelLong extends BaseTest {
 	private static final int OPT_MESSAGE_TRIM =
 			Integer.parseInt(System.getProperty("duel.messageTrim", "20"));
 
-	/// keyframeEvery: trigger a keyframe (which feeds memory extraction)
-	/// every Nth message. Should be ≤ messageTrim so keyframes fire before
-	/// content is pruned and lost from the wire context.
+	/// keyframeEvery: legacy OUTCOME-summary cadence. Post
+	/// MemoryKeyframeDecouplingPlan this is now independent of memory
+	/// extraction. Default 0 in the duel (disabled) so the duel exercises
+	/// ONLY the new memory pipeline. Set to a positive number to also
+	/// exercise the legacy keyframe summary path.
 	private static final int OPT_KEYFRAME_EVERY =
-			Integer.parseInt(System.getProperty("duel.keyframeEvery", "5"));
+			Integer.parseInt(System.getProperty("duel.keyframeEvery", "0"));
 
-	/// memoryExtractionEvery: extract memories every Nth keyframe.
-	/// 1 = extract on every keyframe (maximum exercise of the pipeline).
+	/// memoryExtractionEvery: number of messages between automatic memory
+	/// extractions when extractMemories is true. Default 5 mirrors the
+	/// schema default. The duel runs the new standalone pipeline at this
+	/// cadence — typed FACT/RELATIONSHIP/DECISION/INSIGHT memories.
 	private static final int OPT_MEMORY_EXTRACTION_EVERY =
-			Integer.parseInt(System.getProperty("duel.memoryExtractionEvery", "1"));
+			Integer.parseInt(System.getProperty("duel.memoryExtractionEvery", "5"));
+
+	/// memorySkipEchoThreshold: skip memory extraction when the segment
+	/// is itself an echo. Independent of keyframeSkipEchoThreshold so
+	/// memory and keyframe gates can be tuned separately.
+	private static final double OPT_MEMORY_SKIP_ECHO_THRESHOLD =
+			Double.parseDouble(System.getProperty("duel.memorySkipEchoThreshold", "-1"));
 
 	/// memoryBudget: tokens of retrieved memories injected per turn. 0
 	/// disables retrieval entirely. 2000 gives the LLM real context from
@@ -757,6 +767,9 @@ public class TestChatDuelLong extends BaseTest {
 			cfg.set("extractMemories", true);
 			cfg.set("keyframeEvery", OPT_KEYFRAME_EVERY);
 			cfg.set("memoryExtractionEvery", OPT_MEMORY_EXTRACTION_EVERY);
+			if (OPT_MEMORY_SKIP_ECHO_THRESHOLD >= 0.0) {
+				cfg.set("memorySkipEchoThreshold", OPT_MEMORY_SKIP_ECHO_THRESHOLD);
+			}
 			/// memoryBudget controls how many tokens of retrieved memories
 			/// can be injected on each turn. 0 disables retrieval entirely
 			/// — which means pruned content is simply lost from context.

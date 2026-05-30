@@ -5294,7 +5294,8 @@ import { am7model } from './model.js';
             },
             keyframeEvery: {
                 layout: "one",
-                label: "Keyframe Every"
+                label: "Keyframe Every",
+                hint: "Legacy keyframe summary cadence. 0 = disabled (recommended). Memory creation is now independent — use Extract Memories + Memory Extraction Every instead."
             },
             messageTrim: {
                 layout: "one",
@@ -5327,7 +5328,8 @@ import { am7model } from './model.js';
             // Phase 13f item 22: Memory config fields (OI-68)
             extractMemories: {
                 layout: "one",
-                label: "Extract Memories"
+                label: "Extract Memories",
+                hint: "Enables the independent memory extraction pipeline (typed FACT/RELATIONSHIP/DECISION/INSIGHT memories). Does NOT require keyframes."
             },
             memoryBudget: {
                 layout: "one",
@@ -5336,8 +5338,13 @@ import { am7model } from './model.js';
             },
             memoryExtractionEvery: {
                 layout: "one",
-                label: "Extract Every N Keyframes",
-                hint: "0=every keyframe, N=every Nth"
+                label: "Memory Extraction Every (messages)",
+                hint: "Number of messages between automatic memory extractions when Extract Memories is on. 0 = disabled. Independent of Keyframe Every."
+            },
+            memorySkipEchoThreshold: {
+                layout: "one",
+                label: "Memory Skip-on-Echo",
+                hint: "Skip memory extraction when segment echo exceeds this. 1.0 = never skip. Independent of Keyframe Skip-on-Echo."
             },
             // Phase 13: Auto-title generation
             autoTitle: {
