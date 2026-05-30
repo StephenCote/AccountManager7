@@ -992,20 +992,33 @@ import Base64 from './base64.js';
 				/// (parseInt("") = NaN), which serializes to null in JSON, which
 				/// the server persists as "unset" — so on next read the field
 				/// returns null and the client falls back to the schema default
-				/// (e.g. remindEvery=0 typed by the user comes back as 6). Skip
-				/// the update entirely while the input is empty / mid-typing /
-				/// not yet a valid number. The entity keeps its prior value and
-				/// only updates when the user finishes typing a valid one.
+				/// (e.g. keyframeEvery=0 typed by the user comes back as 6).
+				///
+				/// Skip the update AND suppress Mithril's auto-redraw while
+				/// the input is empty / mid-typing / not yet a valid number.
+				/// Without e.redraw=false, the redraw fires after our return,
+				/// the renderer reads the unchanged entity value, and Mithril
+				/// snaps the input back to that prior value — overwriting the
+				/// user's cleared state so they can never type a fresh value
+				/// (e.g. user clears "6", input snaps back to "6", they type
+				/// "0", input shows "60" or "06" depending on cursor, entity
+				/// gets 60 or 6, never 0).
 				else if (
 					(f.type === "int" || f.type === "double" || f.type === "long" || f.type === "float")
 					&& typeof v === "string"
 				) {
 					let trimmed = v.trim();
-					if (trimmed === "" || trimmed === "-" || trimmed === "." || trimmed === "-.") return;
+					if (trimmed === "" || trimmed === "-" || trimmed === "." || trimmed === "-.") {
+						e.redraw = false;
+						return;
+					}
 					let parsed = (f.type === "int" || f.type === "long")
 						? parseInt(trimmed, 10)
 						: parseFloat(trimmed);
-					if (Number.isNaN(parsed)) return;
+					if (Number.isNaN(parsed)) {
+						e.redraw = false;
+						return;
+					}
 					v = parsed;
 				}
 				inst.api[n](v);
