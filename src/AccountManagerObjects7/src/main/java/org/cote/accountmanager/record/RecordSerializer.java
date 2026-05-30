@@ -20,6 +20,7 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.FieldTypes;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 import com.fasterxml.jackson.core.JsonGenerator;
@@ -189,10 +190,15 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        			logger.error(f.getName() + " value is null");
 	        			continue;
 	        		}
-	        		
-	        		long lval = f.getValue();
-	        		if(lval != 0L) {
-	        			jgen.writeNumberField(getName(lft), lval);
+	        		/// Skip-when-equals-default omits the field from JSON to keep
+	        		/// payloads compact. Compare against the SCHEMA default via
+	        		/// FieldUtil.isDefault (not the Java type default 0), so a
+	        		/// persisted 0 with a non-zero schema default still gets
+	        		/// serialized — otherwise the client sees a missing field and
+	        		/// falls back to the schema default, silently overwriting the
+	        		/// user's saved 0.
+	        		if (!FieldUtil.isDefault(value.getSchema(), f)) {
+	        			jgen.writeNumberField(getName(lft), (long) f.getValue());
 	        		}
 	        		break;
 	        	case BOOLEAN:
@@ -230,19 +236,13 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        		}
 	        		break;
 	        	case INT:
-	        		if(f.getValue() != null) {
-		        		int ival = f.getValue();
-		        		if(ival != 0) {
-		        			jgen.writeNumberField(getName(lft), ival);
-		        		}
+	        		if(f.getValue() != null && !FieldUtil.isDefault(value.getSchema(), f)) {
+	        			jgen.writeNumberField(getName(lft), (int) f.getValue());
 	        		}
 	        		break;
 	        	case DOUBLE:
-	        		if(f.getValue() != null) {
-		        		double dval = f.getValue();
-		        		if(dval != 0.0) {
-		        			jgen.writeNumberField(getName(lft), dval);
-		        		}
+	        		if(f.getValue() != null && !FieldUtil.isDefault(value.getSchema(), f)) {
+	        			jgen.writeNumberField(getName(lft), (double) f.getValue());
 	        		}
 	        		break;
 	        	case LIST:
