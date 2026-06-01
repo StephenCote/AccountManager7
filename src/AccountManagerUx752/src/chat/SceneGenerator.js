@@ -91,6 +91,14 @@ async function loadLoras() {
 async function doGenerate() {
     if (!_sessionObjectId || _generating) return;
     _generating = true;
+
+    /// Close the dialog immediately on click so the user gets clear feedback
+    /// that generation started — generation takes 20-90s and silently leaving
+    /// the dialog open looks broken. Status updates flow via toasts instead,
+    /// mirroring the reimage workflow.
+    Dialog.close();
+    page.clearToast();
+    page.toast("info", "Generating scene...", -1);
     m.redraw();
 
     try {
@@ -101,13 +109,28 @@ async function doGenerate() {
             body: sdConfig
         });
 
+        page.clearToast();
         if (_onGenerated && result) {
             _onGenerated(result);
         }
-        page.toast("success", "Scene generated");
-        Dialog.close();
+        if (result) {
+            page.toast("success", "Scene generated");
+
+            /// Open the gallery popup to the new image — mirrors the reimage
+            /// UX. imageGallery uses charInst.entity.profile.portrait.groupId
+            /// to pick the directory; synthesize a minimal shape so the gallery
+            /// loads the scenes directory (where the backend stores them under
+            /// ~/Gallery/Scenes/<label>) and the new image is prefetched at the top.
+            if (page.imageGallery) {
+                let sceneInst = { entity: { profile: { portrait: result } } };
+                page.imageGallery([result], sceneInst);
+            }
+        } else {
+            page.toast("error", "Scene generation failed: no result");
+        }
     } catch(e) {
         console.error("[SceneGenerator] generateScene failed:", e);
+        page.clearToast();
         page.toast("error", "Scene generation failed: " + (e.message || e));
     }
 
