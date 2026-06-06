@@ -755,17 +755,18 @@ const page = {
     testMode: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get("testMode") === "true"),
     productionMode: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get("productionMode") === "true"),
     formDef: am7model,
-    imageGallery: async function(images, charInst) {
+    imageGallery: async function(images, charInst, options) {
         let prefetchImages = images || [];
+        let opts = options || {};
         let galleryImages = [];
-        let galleryGroupId = null;
+        let galleryGroupId = opts.directGroupId || null;
         let totalCount = 0;
         let pageSize = 40;
         let currentPage = 0;
         let loading = false;
         let allLoaded = false;
 
-        if (charInst && charInst.entity) {
+        if (!galleryGroupId && charInst && charInst.entity) {
             let entity = charInst.entity;
             let profile = entity.profile;
             let portrait = profile ? profile.portrait : null;
@@ -931,13 +932,29 @@ const page = {
             });
         }
 
+        /// Custom actions (e.g. SceneGenerator's "Generate" button) prepend
+        /// the Close button so they're more prominent. Each entry follows the
+        /// standard Dialog action shape: { label, icon, onclick, primary }.
+        let dialogActions = [];
+        if (opts.extraActions && opts.extraActions.length) {
+            dialogActions = dialogActions.concat(opts.extraActions);
+        }
+        dialogActions.push({ label: 'Close', icon: 'close', onclick: function() { Dialog.close(); } });
+
+        let title = opts.title || ('Gallery (' + totalCount + ' images)');
+
         Dialog.open({
-            title: 'Gallery (' + totalCount + ' images)',
+            title: title,
             size: 'xl',
             content: { view: renderGallery },
             closable: true,
-            actions: [{ label: 'Close', icon: 'close', onclick: function() { Dialog.close(); } }]
+            actions: dialogActions
         });
+
+        /// Return diagnostics so callers can react to empty state, e.g.
+        /// SceneGenerator auto-opening the generate dialog when no scenes
+        /// have ever been generated for this chat.
+        return { totalCount: totalCount, groupId: galleryGroupId };
     },
     imageView: function(imageObj) {
         if (!imageObj) return;

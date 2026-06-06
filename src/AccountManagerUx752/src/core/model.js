@@ -617,11 +617,11 @@ import Base64 from './base64.js';
 
 	let rangeDecorator = {
 		decorateOut: function (i, f, v) {
+			if (v == undefined) {
+				v = (typeof f.default == "number") ? f.default : 0;
+			}
 			if (typeof v == "number" && f.type == "double" && f.maxValue >= 1) {
 				v = parseInt(v * 100);
-			}
-			else if (v == undefined) {
-				v = 0;
 			}
 			return v;
 		},

@@ -954,13 +954,13 @@ function renderToolbar() {
                 }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "psychology_alt")),
                 m(GossipPanel.PanelView)
             ]) : null,
-            // Scene generation
+            // Scene gallery (with Generate button inside; auto-opens generator when empty)
             inst ? m("div", { class: "relative" }, [
                 m("button", {
-                    class: "p-1.5 rounded " + (SceneGenerator.isVisible() ? "text-green-600 bg-green-50 dark:bg-green-900/30" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"),
-                    title: "Generate Scene",
+                    class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
+                    title: "Scene Gallery",
                     onclick: function() {
-                        SceneGenerator.toggle(inst.api.objectId(), function(result) {
+                        SceneGenerator.openSceneGallery(inst.api.objectId(), chatCfg, function(result) {
                             // Append scene result to chat
                             if (result && result.content) {
                                 chatCfg.history.messages.push({ role: "assistant", content: result.content });

@@ -19,6 +19,72 @@ function thumbUrl(img, size) {
     return am7client.mediaDataPath(img, true, size || '96x96');
 }
 
+/// Resolve the data.data image record for an arbitrary item. Returns the
+/// item itself if it's already an image; otherwise walks known
+/// "primary visual" foreign-ref paths (`profile.portrait`, then `portrait`).
+/// Returns null if nothing is available — caller should kick off a lazy
+/// fetch via ensurePreviewableImage and render a placeholder until it
+/// resolves.
+function previewableImage(item) {
+    if (!item) return null;
+    if (item.contentType && item.contentType.match(/^image/)) return item;
+    let p = item.profile;
+    if (p && p.portrait && p.portrait.contentType && p.portrait.contentType.match(/^image/)) {
+        return p.portrait;
+    }
+    if (item.portrait && item.portrait.contentType && item.portrait.contentType.match(/^image/)) {
+        return item.portrait;
+    }
+    return null;
+}
+
+/// Per-tile lazy fetch. List queries return shallow records (e.g.
+/// olio.charPerson without profile.portrait populated). The DBSearch
+/// server doesn't honor dot-notation field projections like
+/// "profile.portrait" — that throws FieldException — so the fix has to
+/// happen client-side: when a tile lacks a previewable image, GET the
+/// full record once via /full and cache the result. Subsequent renders
+/// pick up the resolved portrait from the cache and the tile re-renders
+/// as an <img>.
+///
+/// Cache key is objectId; once resolved it stays until the page reloads.
+/// Failed fetches are also cached (as null) to avoid retry storms.
+const _previewableCache = {};
+const _previewableInflight = {};
+
+function ensurePreviewableImage(item) {
+    if (!item) return null;
+    let direct = previewableImage(item);
+    if (direct) return direct;
+    let oid = item.objectId;
+    let type = item[am7model.jsonModelKey];
+    if (!oid || !type) return null;
+    if (Object.prototype.hasOwnProperty.call(_previewableCache, oid)) {
+        return _previewableCache[oid];
+    }
+    if (_previewableInflight[oid]) return null;
+    _previewableInflight[oid] = true;
+    /// /full uses planMost(true) — gives us profile.portrait populated.
+    am7client.getFull(type, oid).then(function(full) {
+        delete _previewableInflight[oid];
+        let img = full ? previewableImage(full) : null;
+        _previewableCache[oid] = img;
+        /// Splice the resolved record into the item too so subsequent
+        /// previewableImage(item) calls hit the fast path. This keeps the
+        /// caller's `item` reference live for any other rendering paths.
+        if (img && full) {
+            if (full.profile) item.profile = full.profile;
+            if (full.portrait) item.portrait = full.portrait;
+        }
+        m.redraw();
+    }).catch(function() {
+        delete _previewableInflight[oid];
+        _previewableCache[oid] = null;
+        m.redraw();
+    });
+    return null;
+}
+
 // ── Content-type-aware renderer ─────────────────────────────────────
 // Returns a vnode for the given item based on its contentType.
 // opts.maxClass — CSS classes for max sizing (e.g., 'max-w-full max-h-72')
@@ -104,8 +170,13 @@ function FullCanvasViewer() {
     function renderPortal(opts) {
         let images = opts.images || [];
         let idx = opts.index || 0;
-        let img = images[idx];
-        if (!img || !portalEl) return;
+        let row = images[idx];
+        if (!row || !portalEl) return;
+        /// Walk to the underlying image record (handles olio.charPerson →
+        /// profile.portrait, etc.); fall back to the row itself for plain
+        /// data.data items. Lazy fetch the /full record if not already
+        /// populated.
+        let img = ensurePreviewableImage(row) || row;
 
         let imgUrl = am7client.mediaDataPath(img, false);
 
@@ -145,7 +216,7 @@ function FullCanvasViewer() {
             }, m('span', { class: 'material-symbols-outlined' }, grow ? 'photo_size_select_small' : 'aspect_ratio')),
             m('div', { style: 'position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:0.875rem;padding:2px 12px;border-radius:4px;pointer-events:none;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
                 class: 'text-gray-500 dark:text-gray-400 bg-white/80 dark:bg-black/80'
-            }, img.name || ''),
+            }, row.name || img.name || ''),
             m('div', { style: 'position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:0.75rem;padding:2px 8px;border-radius:4px;pointer-events:none',
                 class: 'text-gray-400 dark:text-gray-500 bg-white/80 dark:bg-black/80'
             }, (idx + 1) + ' / ' + images.length + (opts.pageInfo ? '  (page ' + opts.pageInfo.current + '/' + opts.pageInfo.total + ')' : '')),
@@ -279,12 +350,14 @@ function GridPreview() {
                     else if (e.key === 'Delete' && sel && opts.onDelete) { opts.onDelete(sel, idx); e.preventDefault(); }
                 }
             }, [
-                // Preview pane — content-type-aware
+                // Preview pane — content-type-aware. For non-image rows like
+                // olio.charPerson, use the resolved profile.portrait as the
+                // preview image; sel still drives the action panel/metadata.
                 sel ? m('div', { class: 'flex gap-3 p-2 border-b border-gray-200 dark:border-gray-700 shrink-0 overflow-hidden min-w-0' }, [
                     m('div', { class: 'flex-shrink-0 cursor-pointer', style: 'max-width:50%',
                         onclick: function() { if (opts.onFullView) opts.onFullView(); }
                     },
-                        renderContent(sel, { maxClass: 'max-w-full max-h-72' })
+                        renderContent(ensurePreviewableImage(sel) || sel, { maxClass: 'max-w-full max-h-72' })
                     ),
                     m('div', { class: 'flex-1 min-w-0 overflow-hidden' }, [
                         m('div', { class: 'text-sm font-medium text-gray-800 dark:text-white mb-1 truncate' }, sel.name),
@@ -348,11 +421,16 @@ function GridPreview() {
                 }, [
                     m('div', { class: 'grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1' },
                         images.map(function(img, i) {
-                            let ct = img.contentType || '';
-                            let isImage = ct.match(/^image/);
+                            /// Resolve the underlying image record — handles list-view rows
+                            /// of olio.charPerson (or any model with profile.portrait)
+                            /// transparently. ensurePreviewableImage kicks off a /full
+                            /// fetch the first time we see an unresolved row and re-renders
+                            /// once the data is back.
+                            let imgRec = ensurePreviewableImage(img);
+                            let ct = (imgRec && imgRec.contentType) || (img.contentType || '');
                             let tile;
-                            if (isImage) {
-                                tile = m('img', { src: thumbUrl(img, '96x96'), loading: 'lazy', class: 'w-full aspect-square object-cover' });
+                            if (imgRec) {
+                                tile = m('img', { src: thumbUrl(imgRec, '96x96'), loading: 'lazy', class: 'w-full aspect-square object-cover' });
                             } else {
                                 let type = am7model.getModel(img[am7model.jsonModelKey]);
                                 let ico = (type && type.icon) ? type.icon : 'description';

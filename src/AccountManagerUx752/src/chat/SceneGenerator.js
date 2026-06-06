@@ -140,6 +140,31 @@ async function doGenerate() {
 
 // ── Public API ──────────────────────────────────────────────────────
 
+/// Resolve the scene gallery groupPath for a chat. The backend stores
+/// scenes under "~/Gallery/Scenes/<sysFirstName> and <usrFirstName>"
+/// (see ChatService.generateScene line 1393 — Chat.ScenePromptResult.label
+/// is set from systemChar.firstName + " and " + userChar.firstName).
+/// Returns null if either character is missing.
+function sceneGalleryPathFor(chatCfg) {
+    if (!chatCfg || !chatCfg.system || !chatCfg.user) return null;
+    let sysName = chatCfg.system.firstName || (chatCfg.system.name || "").split(" ")[0];
+    let usrName = chatCfg.user.firstName || (chatCfg.user.name || "").split(" ")[0];
+    if (!sysName || !usrName) return null;
+    return "~/Gallery/Scenes/" + sysName + " and " + usrName;
+}
+
+/// Look up the data.group for a path without creating it. Returns the
+/// group record or null. Used to detect "no scenes yet" so the gallery
+/// flow can auto-open the generator.
+async function findGroupByPath(path) {
+    try {
+        let g = await page.findObject("auth.group", "DATA", path);
+        return g || null;
+    } catch (e) {
+        return null;
+    }
+}
+
 const SceneGenerator = {
     show: function(sessionObjectId, onGenerated) {
         _sessionObjectId = sessionObjectId;
@@ -174,6 +199,49 @@ const SceneGenerator = {
                     primary: true,
                     disabled: _generating,
                     onclick: doGenerate
+                }
+            ]
+        });
+    },
+
+    /// Open the gallery of previously-generated scenes for this chat. The
+    /// gallery's action bar gets a "Generate" button that opens the scene
+    /// configuration dialog. If no scenes have ever been generated for this
+    /// chat (no data.group at the expected path), the generator is opened
+    /// immediately instead of an empty gallery — there's nothing to show.
+    openSceneGallery: async function(sessionObjectId, chatCfg, onGenerated) {
+        let path = sceneGalleryPathFor(chatCfg);
+        if (!path) {
+            /// Can't compute the path (missing characters) — fall back to
+            /// the original behaviour: open the generator directly.
+            SceneGenerator.show(sessionObjectId, onGenerated);
+            return;
+        }
+
+        let group = await findGroupByPath(path);
+        if (!group || !group.id) {
+            /// First-run: no scenes exist for this character pair. Go
+            /// straight to the generator.
+            page.toast("info", "No scenes yet — opening generator");
+            SceneGenerator.show(sessionObjectId, onGenerated);
+            return;
+        }
+
+        /// Existing scene gallery — open it with a Generate action in the
+        /// dialog's footer. Clicking Generate closes the gallery (Dialog
+        /// supports one modal) and opens the scene config dialog.
+        page.imageGallery([], null, {
+            directGroupId: group.id,
+            title: "Scenes — " + path.replace("~/Gallery/Scenes/", ""),
+            extraActions: [
+                {
+                    label: "Generate",
+                    icon: "auto_awesome",
+                    primary: true,
+                    onclick: function() {
+                        Dialog.close();
+                        SceneGenerator.show(sessionObjectId, onGenerated);
+                    }
                 }
             ]
         });

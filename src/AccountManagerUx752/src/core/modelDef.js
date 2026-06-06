@@ -9011,13 +9011,14 @@
         {
           "name": "extractMemories",
           "type": "boolean",
+          "default": true,
           "description": "When true, the memory pipeline runs independently on memoryExtractionEvery cadence — extracting typed memories (FACT/RELATIONSHIP/DECISION/INSIGHT/DISCOVERY) from chat sessions. Does NOT require keyframes."
         },
         {
           "name": "memoryBudget",
           "type": "int",
-          "default": 10,
-          "description": "Maximum number of memories to include in context"
+          "default": 800,
+          "description": "Token budget for memory context injection in prompts. 0 = disabled. Typical values: 500 (light), 800 (standard), 1000+ (rich)."
         },
         {
           "name": "memoryExtractionEvery",
@@ -9048,7 +9049,8 @@
         {
           "name": "memoryExtractionPrompt",
           "type": "string",
-          "description": "Custom memory extraction prompt resource name"
+          "default": "memoryExtractionMultiAspect",
+          "description": "Memory extraction prompt resource name. Default 'memoryExtractionMultiAspect' extracts multiple typed memories per segment; legacy 'memoryExtractionV2' is single-aspect."
         },
         {
           "name": "memoryExtractionMaxPerSegment",
@@ -9144,9 +9146,9 @@
         {
           "name": "memoryInjectionStyle",
           "type": "string",
-          "default": "mcp",
+          "default": "systemSection",
           "maxLength": 32,
-          "description": "How to format retrieved memories for the wire. 'mcp' (default) emits the MCP context block; 'systemSection' emits a markdown block grouped by memory type designed to land in the system prompt where the LLM acts on it directly."
+          "description": "How to format retrieved memories for the wire. 'systemSection' (default) emits a markdown block grouped by memory type that lands in the system prompt where the LLM acts on it directly; 'mcp' emits the MCP context block."
         },
         {
           "name": "deferralPressureThreshold",
