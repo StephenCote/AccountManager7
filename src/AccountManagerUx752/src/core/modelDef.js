@@ -8766,6 +8766,39 @@
       ]
     },
     {
+      "name": "system.connection",
+      "inherits": [
+        "data.directory",
+        "common.description",
+        "crypto.vaultExt"
+      ],
+      "group": "Connections",
+      "icon": "link",
+      "label": "Connection",
+      "description": "Connection information for reaching an external service endpoint (e.g. an LLM). Holds the server URL, API key, and request timeout. Referenced by other models such as olio.llm.chatConfig.",
+      "fields": [
+        {
+          "name": "serverUrl",
+          "type": "string",
+          "maxLength": 512,
+          "default": "http://192.168.1.42:11434"
+        },
+        {
+          "name": "apiKey",
+          "type": "string",
+          "maxLength": 256,
+          "provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
+          "encrypt": true
+        },
+        {
+          "name": "requestTimeout",
+          "type": "int",
+          "default": 120,
+          "description": "Hard timeout in seconds for connections. 0 = no timeout."
+        }
+      ]
+    },
+    {
       "name": "olio.llm.chatConfig",
       "inherits": [
         "data.directory",
@@ -8936,17 +8969,11 @@
           "maxLength": 64
         },
         {
-          "name": "serverUrl",
-          "type": "string",
-          "maxLength": 512,
-          "default": "http://localhost:11434"
-        },
-        {
-          "name": "apiKey",
-          "type": "string",
-          "maxLength": 256,
-          "provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
-          "encrypt": true
+          "name": "connection",
+          "type": "model",
+          "baseModel": "system.connection",
+          "foreign": true,
+          "followReference": false
         },
         {
           "name": "assist",
@@ -9001,12 +9028,6 @@
           "type": "int",
           "default": 3,
           "description": "Evaluate every Nth response. 1=every (expensive), 3=recommended, 0=disabled."
-        },
-        {
-          "name": "requestTimeout",
-          "type": "int",
-          "default": 120,
-          "description": "Timeout in seconds for chat requests"
         },
         {
           "name": "extractMemories",

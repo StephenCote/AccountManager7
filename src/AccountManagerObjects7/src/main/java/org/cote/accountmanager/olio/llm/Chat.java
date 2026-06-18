@@ -41,6 +41,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -366,25 +367,25 @@ public class Chat {
 		if (chatConfig != null) {
 			/// Connection info (serverUrl, apiKey, requestTimeout) moved into the system.connection sub-record.
 			/// Clean break: no inline fallback — log clearly if the connection is missing/unpopulated.
+			/// connection is foreign with followReference=false, so the chatConfig query only carries
+			/// the FK id (chatConfig is huge — recursing into connection would overflow the query).
+			/// Load the connection by reference for just the fields we need (id/groupId are required
+			/// for authZ; apiKey is requested so EncryptFieldProvider looks up vault metadata and decrypts).
 			BaseRecord conn = chatConfig.get("connection");
-			if (conn != null) {
-				setServerUrl(conn.get("serverUrl"));
-				int connTimeout = conn.get("requestTimeout");
-				requestTimeout = connTimeout;
-				/// apiKey is vaulted.  The recursive chatConfig query plan deliberately does not
-				/// project the connection's vault metadata (keyId/vaultId/vaulted) — that would force
-				/// recursion — so the encrypted apiKey can't be decrypted off the sub-record and comes
-				/// back empty.  When it does, reload the connection directly (top-level READ) so
-				/// EncryptFieldProvider decrypts it.  Keyless connections (e.g. local Ollama) legitimately
-				/// have no key and simply stay empty.
-				String apiKey = conn.get("apiKey");
-				if (apiKey == null || apiKey.isEmpty()) {
-					BaseRecord fullConn = OlioUtil.getFullRecord(conn);
-					if (fullConn != null) {
-						apiKey = fullConn.get("apiKey");
-					}
+			long connId = (conn != null ? conn.get(FieldNames.FIELD_ID) : 0L);
+			if (connId > 0L) {
+				Query cq = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_ID, connId);
+				cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "serverUrl", "requestTimeout", "apiKey" });
+				BaseRecord fullConn = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+				if (fullConn != null) {
+					setServerUrl(fullConn.get("serverUrl"));
+					int connTimeout = fullConn.get("requestTimeout");
+					requestTimeout = connTimeout;
+					setAuthorizationToken(fullConn.get("apiKey"));
 				}
-				setAuthorizationToken(apiKey);
+				else {
+					logger.warn("chatConfig '" + chatConfig.get(FieldNames.FIELD_NAME) + "' connection (id=" + connId + ") could not be loaded; serverUrl/apiKey/requestTimeout are unset.");
+				}
 			}
 			else {
 				logger.warn("chatConfig '" + chatConfig.get(FieldNames.FIELD_NAME) + "' has no connection reference; serverUrl/apiKey/requestTimeout are unset. Link a system.connection record.");

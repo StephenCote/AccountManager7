@@ -802,11 +802,17 @@ import { cacheDb } from './cacheDb.js';
 	function _handle401(e, url) {
 		if (e && e.code === 401) {
 			console.warn("[am7client] 401 Unauthorized on " + url + " — redirecting to login");
-			let currentRoute = m.route.get();
-			if (currentRoute && currentRoute !== "/sig") {
-				sessionStorage.setItem("am7.returnRoute", currentRoute);
+			// Prefer the shared forceLogin (registered by pageClient) so page.user/token are
+			// cleared too — otherwise page.authenticated() stays true and views stick on "Loading…".
+			if (typeof am7client.forceLogin === "function") {
+				am7client.forceLogin();
+			} else {
+				let currentRoute = m.route.get();
+				if (currentRoute && currentRoute !== "/sig") {
+					sessionStorage.setItem("am7.returnRoute", currentRoute);
+				}
+				m.route.set("/sig");
 			}
-			m.route.set("/sig");
 			return true;
 		}
 		return false;

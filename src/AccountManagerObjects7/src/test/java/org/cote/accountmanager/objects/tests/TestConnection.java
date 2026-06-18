@@ -8,12 +8,14 @@ import java.util.UUID;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
-import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -40,10 +42,21 @@ public class TestConnection extends BaseTest {
 		assertNotNull("Test user should not be null", testUser);
 	}
 
+	/// Targeted connection load mirroring Chat.configureChat: the chatConfig query carries only the
+	/// connection FK id (followReference=false), so load the connection by id requesting just the
+	/// needed fields and assert serverUrl + requestTimeout round-trip.
+	private BaseRecord loadConnectionFor(BaseRecord chatConfig) {
+		BaseRecord connRef = chatConfig.get("connection");
+		assertNotNull("Reloaded chatConfig.connection FK reference should be present", connRef);
+		long connId = connRef.get(FieldNames.FIELD_ID);
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_ID, connId);
+		cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "serverUrl", "requestTimeout", "apiKey" });
+		return IOSystem.getActiveContext().getAccessPoint().find(testUser, cq);
+	}
+
 	/// Create a (keyless — like a local Ollama endpoint) connection, link it to a chatConfig,
-	/// reload the chatConfig via the production query path (getCreateChatConfig), and assert
-	/// the connection sub-record is populated (serverUrl + requestTimeout) — the core guard
-	/// against the FK coming back as a bare id instead of a populated sub-record.
+	/// reload the chatConfig (which carries only the connection FK id), then load the connection
+	/// by id as Chat.configureChat does and assert serverUrl + requestTimeout.
 	@Test
 	public void testConnectionPopulated() {
 		String testServer = "http://192.168.1.42:11434";
@@ -63,23 +76,22 @@ public class TestConnection extends BaseTest {
 			throw new RuntimeException("Failed to link connection: " + e.getMessage(), e);
 		}
 
-		/// Reload via the production path that Chat uses.
+		/// Reload via the production path that Chat uses (connection comes back as an FK id only).
 		BaseRecord reloaded = ChatUtil.getCreateChatConfig(testUser, cfgName);
 		assertNotNull("Reloaded chatConfig should not be null", reloaded);
 
-		BaseRecord reloadedConn = reloaded.get("connection");
-		assertNotNull("Reloaded chatConfig.connection should be populated (not just an FK id)", reloadedConn);
-		assertEquals("connection.serverUrl should round-trip", testServer, reloadedConn.get("serverUrl"));
-		int reqTimeout = reloadedConn.get("requestTimeout");
+		BaseRecord loadedConn = loadConnectionFor(reloaded);
+		assertNotNull("Targeted connection load should return a record", loadedConn);
+		assertEquals("connection.serverUrl should round-trip", testServer, loadedConn.get("serverUrl"));
+		int reqTimeout = loadedConn.get("requestTimeout");
 		assertEquals("connection.requestTimeout should round-trip", 90, reqTimeout);
 	}
 
-	/// A keyed connection linked to a chatConfig: reloading the chatConfig leaves the
-	/// connection sub-record's apiKey encrypted (vault metadata intentionally not projected
-	/// to avoid recursion).  Chat.configureChat reloads the connection directly to decrypt —
-	/// this asserts that exact path yields the original key.
+	/// A keyed connection linked to a chatConfig: the chatConfig query carries only the FK id.
+	/// Chat.configureChat loads the connection by id (requesting apiKey) and EncryptFieldProvider
+	/// looks up the vault metadata to decrypt — this asserts that exact path yields the original key.
 	@Test
-	public void testKeyedConnectionDecryptsViaDirectReload() {
+	public void testKeyedConnectionDecryptsViaTargetedLoad() {
 		String testServer = "https://api.openai.com";
 		String testKey = "sk-test-" + UUID.randomUUID().toString().substring(0, 12);
 
@@ -97,13 +109,9 @@ public class TestConnection extends BaseTest {
 		}
 
 		BaseRecord reloaded = ChatUtil.getCreateChatConfig(testUser, cfgName);
-		BaseRecord subConn = reloaded.get("connection");
-		assertNotNull("connection sub-record should be populated", subConn);
-
-		/// Mirror Chat.configureChat: reload the connection directly to decrypt apiKey.
-		BaseRecord fullConn = OlioUtil.getFullRecord(subConn);
-		assertNotNull("Direct connection reload should not be null", fullConn);
-		assertEquals("connection.apiKey should decrypt to original via direct reload", testKey, fullConn.get("apiKey"));
+		BaseRecord loadedConn = loadConnectionFor(reloaded);
+		assertNotNull("Targeted connection load should return a record", loadedConn);
+		assertEquals("connection.apiKey should decrypt to original via targeted load", testKey, loadedConn.get("apiKey"));
 	}
 
 	/// apiKey survives copyRecord + re-set on the connection sub-record (the pattern

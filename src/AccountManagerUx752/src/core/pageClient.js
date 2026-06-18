@@ -278,6 +278,7 @@ async function reconnect(sOrg, sTok, iIter) {
     if (!org || !tok) {
         clearToast();
         addToast("error", "Unable to reconnect", 5000);
+        forceLogin();
         return;
     }
     try {
@@ -287,6 +288,7 @@ async function reconnect(sOrg, sTok, iIter) {
     }
     if (iter >= maxReconnect) {
         addToast("error", "Failed to reconnect", 5000);
+        forceLogin();
         return;
     }
     if (i > 0) {
@@ -297,6 +299,7 @@ async function reconnect(sOrg, sTok, iIter) {
                 page.router.refresh();
             } else {
                 addToast("error", "Failed to reconnect", 5000);
+                forceLogin();
             }
         });
     } else {
@@ -305,6 +308,24 @@ async function reconnect(sOrg, sTok, iIter) {
         }, 5000);
     }
 }
+
+// Hard session reset: stash the current route so /sig can return there after re-login,
+// clear the user/token (so page.authenticated() flips to false), and route to /sig.
+// Shared by the websocket-reconnect-failure path and am7client's 401 handler so a lost
+// session lands on the login page instead of an authenticated-but-stuck "Loading…".
+function forceLogin() {
+    try {
+        let cur = m.route.get();
+        if (cur && cur !== "/sig") {
+            sessionStorage.setItem("am7.returnRoute", cur);
+        }
+    } catch (e) { /* sessionStorage may be unavailable */ }
+    page.user = null;
+    page.token = null;
+    m.route.set("/sig");
+}
+// Let am7client's 401 handler clear the session (page lives here, not in am7client).
+am7client.forceLogin = forceLogin;
 
 async function wssSend(name, message, recipient, schema) {
     try {
@@ -740,6 +761,7 @@ const page = {
         send: wssSend
     },
     reconnect,
+    forceLogin: forceLogin,
     uid: function () { return uid(uidStub); },
     luid: function () { return uid(luidStub); },
     views: {},

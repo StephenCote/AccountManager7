@@ -48,6 +48,21 @@ am7model.forms.login = {
 let inst = am7model.newInstance("login", am7model.forms.login);
 inst.action("login", doLogin);
 
+// After a successful login, return to the route stashed before the session was lost
+// (set by forceLogin / _handle401), otherwise fall through to the default refresh.
+function returnAfterLogin() {
+    let rr = null;
+    try {
+        rr = sessionStorage.getItem("am7.returnRoute");
+        sessionStorage.removeItem("am7.returnRoute");
+    } catch (e) { /* sessionStorage may be unavailable */ }
+    if (rr && rr !== "/sig") {
+        m.route.set(rr);
+    } else {
+        page.router.refresh();
+    }
+}
+
 function doLogin() {
     if (!inst.validate()) {
         page.toast("warn", "Please fill in all fields");
@@ -58,7 +73,7 @@ function doLogin() {
             page.toast("error", "Login was unsuccessful");
         } else {
             page.toast("info", "Logged in as " + s.name);
-            page.router.refresh();
+            returnAfterLogin();
         }
     });
     inst.api.password("");
@@ -92,7 +107,7 @@ async function doPasskeyLogin() {
             let oU2 = await uwm.getUser();
             if (oU2) {
                 page.toast("info", "Logged in as " + oU2.name);
-                page.router.refresh();
+                returnAfterLogin();
             } else {
                 page.toast("error", "Passkey authentication succeeded but session failed");
             }

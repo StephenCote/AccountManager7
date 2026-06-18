@@ -148,6 +148,14 @@
 			<artifactId>AccountManagerObjects7</artifactId>
 			<version>7.0.0-SNAPSHOT</version>
 		</dependency>
+		<!-- Shared test utilities (OlioTestUtil, etc.) from Objects7's test-jar. -->
+		<dependency>
+			<groupId>org.cote.accountmanager</groupId>
+			<artifactId>AccountManagerObjects7</artifactId>
+			<version>7.0.0-SNAPSHOT</version>
+			<type>test-jar</type>
+			<scope>test</scope>
+		</dependency>
 
 		<dependency>
 			<groupId>junit</groupId>

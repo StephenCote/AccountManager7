@@ -12,6 +12,10 @@ import { page } from '../core/pageClient.js';
 
 let crumbButtons;
 let showBreadcrumb = true; // default on for testing — Ux7 defaulted to false
+// Last successfully-built crumbs. While a newly-selected group's context is still
+// fetching ('pending'), we return these instead of [] so the bar doesn't blank on
+// each hop deeper; replaced once the fetch resolves and triggers a redraw.
+let lastRenderedCrumbs = [];
 
 function modelBreadCrumb() {
     let sPath = page.user.homeDirectory.path;
@@ -64,7 +68,7 @@ function modelBreadCrumb() {
     // — they let the user click "home" and accidentally navigate away from the
     // sub-group they just chose, which was the /Olio/Universes regression
     // (selecting a sub-group flashed ~/ and a follow-up click bounced there).
-    if (!contextLoaded) return crumbs;
+    if (!contextLoaded) return lastRenderedCrumbs;
     if (!sPath || !sPath.length) {
         console.warn("Unexpected path: " + sPath);
         return crumbs;
@@ -109,6 +113,7 @@ function modelBreadCrumb() {
             ])
         ]));
     });
+    lastRenderedCrumbs = crumbs;
     return crumbs;
 }
 

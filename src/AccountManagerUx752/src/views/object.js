@@ -1281,7 +1281,14 @@ function newObjectPage() {
 
     // Inner content renderer — called by router's pageLayout wrapper
     objectPage.renderContent = function () {
-        if (!page.authenticated() || !inst) return m('div', { style: 'padding:20px' }, 'Loading...');
+        // Distinguish "not authenticated" (session lost — go to login) from "authenticated
+        // but data still loading". Otherwise a lost session sticks forever on "Loading…".
+        if (!page.authenticated()) {
+            if (typeof page.forceLogin === 'function') page.forceLogin();
+            else m.route.set('/sig');
+            return m('div', { style: 'padding:20px' }, 'Redirecting to sign-in…');
+        }
+        if (!inst) return m('div', { style: 'padding:20px' }, 'Loading...');
         // freeForm callers (cardgame SD config panel etc.) want only the form body,
         // not the page chrome (toolbar, tabs, picker overlay).
         if (freeFormMode) return getForm();

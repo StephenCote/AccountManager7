@@ -274,8 +274,9 @@ public class BaseTest {
 
 	/// Connection info (serverUrl/apiKey/requestTimeout) lives on the system.connection sub-record;
 	/// create (idempotent) a connection in ~/Chat and return it so a chatConfig can reference it
-	/// via the "connection" FK. Self-contained here because Agent7 cannot see Objects7 test classes.
-	protected BaseRecord getCreateConnection(BaseRecord user, String name, String serverUrl, String apiKey, int requestTimeout) {
+	/// via the "connection" FK. Self-contained here so Agent7 tests don't depend on Objects7 test
+	/// classes (OlioTestUtil is not published in the Objects7 jar).
+	public static BaseRecord getCreateConnection(BaseRecord user, String name, String serverUrl, String apiKey, int requestTimeout) {
 		BaseRecord conn = DocumentUtil.getRecord(user, ModelNames.MODEL_CONNECTION, name, "~/Chat");
 		if (conn != null) {
 			return conn;

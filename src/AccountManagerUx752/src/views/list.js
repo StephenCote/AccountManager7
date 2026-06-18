@@ -371,9 +371,25 @@ function newListControl() {
 
     function navigateUp() {
         let pg = pagination.pages();
-        if (!pg.container) return;
         let type = listType;
         if (modType) type = modType.type || type;
+
+        // The container is populated by pagination's async fetch; a back-click that
+        // races that fetch (or a not-yet-resolved route) leaves it null. Rather than
+        // no-op (which blanks the list/breadcrumb), resolve the container from the
+        // current route objectId, then re-run the navigation in the callback.
+        if (!pg.container) {
+            let objectId = m.route.param('objectId');
+            if (!objectId || objectId === 'null' || objectId === 'undefined') return;
+            let contType = (type === 'auth.group') ? 'auth.group' : type;
+            am7client.get(contType, objectId, function (c) {
+                if (c != null) {
+                    pagination.pages().container = c;
+                    navigateUp();
+                }
+            });
+            return;
+        }
 
         if (type === 'auth.group') {
             let path = pg.container.path;
@@ -382,7 +398,7 @@ function newListControl() {
             if (!parentPath) return;
             page.navigateToPath(type, modType, parentPath).then(function (id) {
                 if (!id) return;
-                if (embeddedMode || pickerMode) navInPlace(id);
+                if (embeddedMode || pickerMode || containerMode) navInPlace(id);
                 else navByRoute(id);
             });
         } else if (am7model.isParent(modType) && navigateByParent) {
@@ -397,13 +413,13 @@ function newListControl() {
                     if (v.parentId == 0 && am7model.isGroup(modType)) {
                         page.navigateToPath(useType, modType, v.groupPath).then(function (id) {
                             if (!id) return;
-                            if (embeddedMode || pickerMode) navInPlace(id, true);
+                            if (embeddedMode || pickerMode || containerMode) navInPlace(id, true);
                             else navByRoute(id);
                         });
                     } else {
                         am7client.get(useType, v.parentId, function (v2) {
                             if (v2 != null) {
-                                if (embeddedMode || pickerMode) navInPlace(v2.objectId);
+                                if (embeddedMode || pickerMode || containerMode) navInPlace(v2.objectId);
                                 else navByRoute(v2.objectId, true);
                             }
                         });
@@ -455,6 +471,7 @@ function newListControl() {
             'olio.llm.chatConfig': 'chat',
             'olio.llm.promptConfig': 'prompt',
             'olio.llm.promptTemplate': 'promptTemplate',
+            'system.connection': 'connection',
             'policy.policy': 'policy',
             'policy.rule': 'rule',
             'policy.pattern': 'pattern',

@@ -163,7 +163,8 @@
 			"name": "connection",
 			"type": "model",
 			"baseModel": "system.connection",
-			"foreign": true
+			"foreign": true,
+			"followReference": false
 		},
 		{
 			"name": "assist",

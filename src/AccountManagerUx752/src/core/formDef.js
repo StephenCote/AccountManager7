@@ -5230,8 +5230,18 @@ import { am7model } from './model.js';
                     label: "Policy"
                 }
             },
-            serverUrl:{
-                layout: "third"
+            connection: {
+                layout: 'third',
+                format: 'picker',
+                label: "Connection",
+                field: {
+                    format: "picker",
+                    pickerType: "system.connection",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "connection"
+                    }
+                }
             },
             apiVersion: {
                 layout: "one"
@@ -5243,10 +5253,6 @@ import { am7model } from './model.js';
                     type: "list",
                     limit: ["OPENAI", "OLLAMA"]
                 }
-            },
-            apiKey:{
-                layout: "third",
-                type: "password"
             },
             systemCharacter: {
                 layout: 'third',
@@ -5318,12 +5324,7 @@ import { am7model } from './model.js';
                 label: "Command"
             },
 
-            // Phase 13e item 16: Missing chatConfig form fields (OI-74)
-            requestTimeout: {
-                layout: "one",
-                label: "Request Timeout (sec)",
-                hint: "Hard timeout for LLM connections. 0=no timeout."
-            },
+            // requestTimeout moved to the system.connection sub-record (ConnectionRefactorPlan)
 
             // Phase 13f item 22: Memory config fields (OI-68)
             extractMemories: {
@@ -5500,6 +5501,36 @@ import { am7model } from './model.js';
 
         },
         forms: ["episodectl", "chatOptionsRef", "groupinfo", "attributes"]
+
+    };
+
+    forms.connection = {
+        label: "Connection",
+        fields: {
+            name: {
+                layout: "one",
+                dragAndDrop: true
+            },
+            description: {
+                layout: "two",
+                label: "Description"
+            },
+            serverUrl: {
+                layout: "two",
+                label: "Server URL"
+            },
+            apiKey: {
+                layout: "two",
+                label: "API Key",
+                type: "password"
+            },
+            requestTimeout: {
+                layout: "one",
+                label: "Request Timeout (sec)",
+                hint: "Hard timeout for connections. 0=no timeout."
+            }
+        },
+        forms: ["groupinfo", "attributes"]
 
     };
 
