@@ -28,14 +28,14 @@ public class TestSystemTasks extends BaseTest {
 		cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version"));
 		cfg.setValue("connection", OlioTestUtil.getCreateConnection(testUser1, cfg.get(FieldNames.FIELD_NAME) + " Connection", testProperties.getProperty("test.llm.openai.server"), testProperties.getProperty("test.llm.openai.authorizationToken"), 120));
 		cfg.setValue("model", "gpt-4o");
-		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey"}));
+		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "connection", "model"}));
 
 		BaseRecord pcfg = OlioTestUtil.getPromptConfig(testUser1, "Test Prompt");
 		Chat chat = new Chat(testUser1, cfg, pcfg);
 
 		OpenAIRequest req = chat.getChatPrompt();
 		
-		BaseRecord task = OlioTaskAgent.createTaskRequest(req, cfg.copyRecord(new String[]{"apiVersion", "serviceType", "serverUrl", "apiKey", "model"}));
+		BaseRecord task = OlioTaskAgent.createTaskRequest(req, cfg.copyRecord(new String[]{"apiVersion", "serviceType", "connection", "model"}));
 		/// 1) Make sure queue is set to local - this really needs to be task driven
 		ioContext.getTaskQueue().setRemotePoll(false);
 		ioContext.getTaskQueue().setLocalPoll(true);

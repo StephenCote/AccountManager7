@@ -486,7 +486,7 @@ public class TestChatPhase13 extends BaseTest {
 
 	/// P13-13: Verify apiKey survives copyRecord without decryption errors.
 	/// Regression test for: encrypted apiKey fails decryption on copied/cloned record.
-	/// apiKey moved from chatConfig to the olio.llm.connection sub-record (ConnectionRefactorPlan),
+	/// apiKey moved from chatConfig to the system.connection sub-record (ConnectionRefactorPlan),
 	/// so this now exercises the connection record.
 	@Test
 	public void testApiKeyCopyRecord() {

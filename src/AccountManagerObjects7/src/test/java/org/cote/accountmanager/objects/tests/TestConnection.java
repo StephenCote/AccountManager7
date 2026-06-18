@@ -21,7 +21,7 @@ import org.junit.Test;
  * Connection refactor tests (ConnectionRefactorPlan Part 1.6).
  *
  * Connection info (serverUrl / apiKey / requestTimeout) was lifted out of chatConfig
- * into its own olio.llm.connection model, referenced from chatConfig via the
+ * into its own system.connection model, referenced from chatConfig via the
  * "connection" FK.  These tests are the explicit guard against:
  *  - the connection sub-record not being populated when chatConfig is reloaded
  *  - the encrypted apiKey failing to decrypt off the connection sub-record

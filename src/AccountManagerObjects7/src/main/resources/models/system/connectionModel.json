@@ -1,10 +1,10 @@
 {
-	"name": "olio.llm.connection",
+	"name": "system.connection",
 	"inherits": ["data.directory", "common.description", "crypto.vaultExt"],
-	"group": "Chat",
+	"group": "Connections",
 	"icon": "link",
-	"label": "LLM Connection",
-	"description": "Connection information for reaching an LLM (Large Language Model) endpoint. Holds the server URL, API key, and request timeout, referenced from a chatConfig.",
+	"label": "Connection",
+	"description": "Connection information for reaching an external service endpoint (e.g. an LLM). Holds the server URL, API key, and request timeout. Referenced by other models such as olio.llm.chatConfig.",
 	"fields": [
 		{
 			"name": "serverUrl",
@@ -23,7 +23,7 @@
 			"name": "requestTimeout",
 			"type": "int",
 			"default": 120,
-			"description": "Hard timeout in seconds for LLM connections. Used with CompletableFuture.orTimeout() to abort hung requests. 0 = no timeout."
+			"description": "Hard timeout in seconds for connections. Used with CompletableFuture.orTimeout() to abort hung requests. 0 = no timeout."
 		}
 	]
 }

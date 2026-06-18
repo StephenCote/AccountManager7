@@ -406,7 +406,7 @@ public class ChatUtil {
 		}
 		try {
 			String[] boolFields = {"prune", "assist", "stream", "includeScene", "extractMemories"};
-			/// requestTimeout moved to the olio.llm.connection sub-record (ConnectionRefactorPlan) — no longer a chatConfig field.
+			/// requestTimeout moved to the system.connection sub-record (ConnectionRefactorPlan) — no longer a chatConfig field.
 			String[] intFields = {"messageTrim", "keyframeEvery", "remindEvery", "memoryBudget", "memoryExtractionEvery", "analyzeTimeout", "summaryWorkers"};
 			String[] stringFields = {"rating", "policyTemplate", "memoryExtractionPrompt"};
 

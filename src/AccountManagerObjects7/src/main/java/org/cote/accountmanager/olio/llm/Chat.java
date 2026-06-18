@@ -364,7 +364,7 @@ public class Chat {
 
 	private void configureChat() {
 		if (chatConfig != null) {
-			/// Connection info (serverUrl, apiKey, requestTimeout) moved into the olio.llm.connection sub-record.
+			/// Connection info (serverUrl, apiKey, requestTimeout) moved into the system.connection sub-record.
 			/// Clean break: no inline fallback — log clearly if the connection is missing/unpopulated.
 			BaseRecord conn = chatConfig.get("connection");
 			if (conn != null) {
@@ -387,7 +387,7 @@ public class Chat {
 				setAuthorizationToken(apiKey);
 			}
 			else {
-				logger.warn("chatConfig '" + chatConfig.get(FieldNames.FIELD_NAME) + "' has no connection reference; serverUrl/apiKey/requestTimeout are unset. Link an olio.llm.connection record.");
+				logger.warn("chatConfig '" + chatConfig.get(FieldNames.FIELD_NAME) + "' has no connection reference; serverUrl/apiKey/requestTimeout are unset. Link a system.connection record.");
 			}
 			setApiVersion(chatConfig.get("apiVersion"));
 			setModel(chatConfig.get("model"));

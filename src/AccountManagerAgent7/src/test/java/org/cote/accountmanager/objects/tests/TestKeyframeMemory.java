@@ -22,7 +22,6 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
@@ -497,10 +496,10 @@ public class TestKeyframeMemory extends BaseTest {
 			cfg.setValue("serviceType", serviceType);
 			if (serviceType == LLMServiceEnumType.OPENAI) {
 				cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version").trim());
-				cfg.set("connection", OlioTestUtil.getCreateConnection(testUser, cfg.get(FieldNames.FIELD_NAME) + " Connection", testProperties.getProperty("test.llm.openai.server").trim(), testProperties.getProperty("test.llm.openai.authorizationToken").trim(), 120));
+				cfg.set("connection", getCreateConnection(testUser, cfg.get(FieldNames.FIELD_NAME) + " Connection", testProperties.getProperty("test.llm.openai.server").trim(), testProperties.getProperty("test.llm.openai.authorizationToken").trim(), 120));
 				cfg.setValue("model", testProperties.getProperty("test.llm.openai.model").trim());
 			} else if (serviceType == LLMServiceEnumType.OLLAMA) {
-				cfg.set("connection", OlioTestUtil.getCreateConnection(testUser, cfg.get(FieldNames.FIELD_NAME) + " Connection", testProperties.getProperty("test.llm.ollama.server").trim(), null, 120));
+				cfg.set("connection", getCreateConnection(testUser, cfg.get(FieldNames.FIELD_NAME) + " Connection", testProperties.getProperty("test.llm.ollama.server").trim(), null, 120));
 				cfg.setValue("model", testProperties.getProperty("test.llm.ollama.model").trim());
 			}
 

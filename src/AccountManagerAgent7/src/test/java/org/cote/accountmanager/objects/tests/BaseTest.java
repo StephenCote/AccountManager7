@@ -22,6 +22,7 @@ import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
@@ -270,7 +271,33 @@ public class BaseTest {
 		assertTrue("Content was null", content != null && content.trim().length() > 0);
 		return getCreateData(user, f.getName(), "~/Data", content);
 	}
-	
+
+	/// Connection info (serverUrl/apiKey/requestTimeout) lives on the system.connection sub-record;
+	/// create (idempotent) a connection in ~/Chat and return it so a chatConfig can reference it
+	/// via the "connection" FK. Self-contained here because Agent7 cannot see Objects7 test classes.
+	protected BaseRecord getCreateConnection(BaseRecord user, String name, String serverUrl, String apiKey, int requestTimeout) {
+		BaseRecord conn = DocumentUtil.getRecord(user, ModelNames.MODEL_CONNECTION, name, "~/Chat");
+		if (conn != null) {
+			return conn;
+		}
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		try {
+			BaseRecord c = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CONNECTION, user, null, plist);
+			if (serverUrl != null) {
+				c.set("serverUrl", serverUrl);
+			}
+			if (apiKey != null) {
+				c.set("apiKey", apiKey);
+			}
+			c.set("requestTimeout", requestTimeout);
+			return IOSystem.getActiveContext().getAccessPoint().create(user, c);
+		} catch (Exception e) {
+			logger.error(e);
+		}
+		return null;
+	}
+
 }
 
 

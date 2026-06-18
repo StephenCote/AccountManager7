@@ -162,7 +162,7 @@
 		{
 			"name": "connection",
 			"type": "model",
-			"baseModel": "olio.llm.connection",
+			"baseModel": "system.connection",
 			"foreign": true
 		},
 		{

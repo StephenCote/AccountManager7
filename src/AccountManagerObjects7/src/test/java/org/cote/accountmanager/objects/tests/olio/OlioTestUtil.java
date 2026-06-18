@@ -466,18 +466,18 @@ public class OlioTestUtil {
         logger.error("Unsupported LLM service type: " + type);
         return null;
 	}
-	/// Connection info (serverUrl/apiKey/requestTimeout) lives on the olio.llm.connection
+	/// Connection info (serverUrl/apiKey/requestTimeout) lives on the system.connection
 	/// sub-record now.  Create (idempotent) a connection in ~/Chat and return it so a
 	/// chatConfig can reference it via the "connection" FK.
 	public static BaseRecord getCreateConnection(BaseRecord user, String name, String serverUrl, String apiKey, int requestTimeout) {
-		BaseRecord conn = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CONNECTION, name, "~/Chat");
+		BaseRecord conn = DocumentUtil.getRecord(user, ModelNames.MODEL_CONNECTION, name, "~/Chat");
 		if (conn != null) {
 			return conn;
 		}
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
-			BaseRecord c = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CONNECTION, user, null, plist);
+			BaseRecord c = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CONNECTION, user, null, plist);
 			if (serverUrl != null) {
 				c.set("serverUrl", serverUrl);
 			}

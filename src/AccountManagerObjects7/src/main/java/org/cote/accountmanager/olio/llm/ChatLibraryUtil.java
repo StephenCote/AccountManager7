@@ -235,7 +235,7 @@ public class ChatLibraryUtil {
 	/// serverUrl null falls back to the model default (http://192.168.1.42:11434).
 	public static BaseRecord createLibraryConnection(BaseRecord adminUser, BaseRecord libDir, String name, String serverUrl, int requestTimeout) {
 		/// Check if already exists (idempotent)
-		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CONNECTION, FieldNames.FIELD_NAME, name);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_GROUP_ID, libDir.get(FieldNames.FIELD_ID));
 		BaseRecord existing = IOSystem.getActiveContext().getSearch().findRecord(q);
 		if (existing != null) {
@@ -245,7 +245,7 @@ public class ChatLibraryUtil {
 		try {
 			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, libDir.get("path"));
 			plist.parameter(FieldNames.FIELD_NAME, name);
-			BaseRecord conn = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CONNECTION, adminUser, null, plist);
+			BaseRecord conn = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CONNECTION, adminUser, null, plist);
 
 			if (serverUrl != null) {
 				conn.set("serverUrl", serverUrl);
