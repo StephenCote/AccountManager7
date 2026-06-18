@@ -122,7 +122,7 @@ public class ConsoleMain {
 		IOFactory.DEFAULT_FILE_BASE = properties.getProperty("app.basePath");
 		IOFactory.addPermittedPath(IOFactory.DEFAULT_FILE_BASE + "/.streams");
 		boolean enableVector = Boolean.parseBoolean(properties.getProperty("test.vector.enable"));
-		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")));
+		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")), Boolean.parseBoolean(properties.getProperty("db.schema.dropColumns")));
 		if(ioContext != null) {
 			ioContext.setVectorUtil(new VectorUtil(LLMServiceEnumType.valueOf(properties.getProperty("test.embedding.type").toUpperCase()), properties.getProperty("test.embedding.server"), properties.getProperty("test.embedding.authorizationToken")));
 		}
@@ -130,13 +130,14 @@ public class ConsoleMain {
 		
 	}
 
-	private static void resetContext(String dataUrl, String dataUser, String dataPassword, boolean reset) {
+	private static void resetContext(String dataUrl, String dataUser, String dataPassword, boolean reset, boolean dropColumns) {
 		IOProperties props = new IOProperties();
 		props.setDataSourceUrl(dataUrl);
 		props.setDataSourceUserName(dataUser);
 		props.setDataSourcePassword(dataPassword);
 		props.setSchemaCheck(false);
 		props.setReset(reset);
+		props.setDropColumns(dropColumns);
 		resetIO(RecordIO.DATABASE, props);
 	}
 	private static void resetIO(RecordIO ioType, IOProperties properties) {

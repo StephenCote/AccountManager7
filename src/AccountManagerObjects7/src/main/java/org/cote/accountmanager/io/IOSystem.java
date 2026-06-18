@@ -137,6 +137,14 @@ public class IOSystem {
 							logger.info("Schema patch: " + patch);
 							dbUtil.execute(patch);
 						}
+						/// Optionally drop orphaned columns (off by default; never resets / drops tables)
+						if(properties.isDropColumns()) {
+							List<String> drops = dbUtil.generateDropColumnSchema(schema);
+							for(String drop : drops) {
+								logger.warn("Schema drop: " + drop);
+								dbUtil.execute(drop);
+							}
+						}
 					}
 				}
 				else {

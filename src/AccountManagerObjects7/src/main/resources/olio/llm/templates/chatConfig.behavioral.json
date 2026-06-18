@@ -8,7 +8,6 @@
 	"messageTrim": 30,
 	"keyframeEvery": 20,
 	"remindEvery": 10,
-	"requestTimeout": 180,
 	"extractMemories": true,
 	"memoryBudget": 1000,
 	"memoryExtractionEvery": 3,

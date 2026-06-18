@@ -30,6 +30,7 @@ import org.cote.accountmanager.olio.llm.PromptResourceUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -255,7 +256,7 @@ public class TestPictureBookService extends BaseTest {
         plist.parameter(FieldNames.FIELD_NAME, name);
         BaseRecord cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
         cfg.set("serviceType", org.cote.accountmanager.olio.llm.LLMServiceEnumType.OLLAMA);
-        cfg.set("serverUrl", props.getProperty("test.llm.ollama.server", "http://192.168.1.42:11434"));
+        cfg.set("connection", OlioTestUtil.getCreateConnection(user, name + " Connection", props.getProperty("test.llm.ollama.server", "http://192.168.1.42:11434"), null, 120));
         cfg.set("model", props.getProperty("test.llm.ollama.model", "qwen3-coder:30b"));
         return IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
     }

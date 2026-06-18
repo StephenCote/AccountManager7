@@ -270,8 +270,7 @@ public class TestChatOptions extends BaseTest {
 			int msgTrim = template.get("messageTrim");
 			assertTrue(name + ": messageTrim should be positive", msgTrim > 0);
 
-			int reqTimeout = template.get("requestTimeout");
-			assertTrue(name + ": requestTimeout should be positive", reqTimeout > 0);
+			/// requestTimeout moved to the olio.llm.connection sub-record (ConnectionRefactorPlan)
 
 			logger.info("Template '" + name + "' ranges validated");
 		}

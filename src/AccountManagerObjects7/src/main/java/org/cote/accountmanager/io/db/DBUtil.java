@@ -923,4 +923,62 @@ $$;""";
 		return statements;
 	}
 
+	/// Compute the set of column names the generator would emit for this model's table.
+	/// Mirrors generateSchema / getMissingColumns column emission exactly: skips
+	/// virtual / ephemeral / referenced fields and any field with no SQL data type
+	/// (unreferenced foreign lists, etc.), includes FK columns and inherited fields,
+	/// and applies the same name normalization used by getMissingColumns.
+	///
+	private List<String> getExpectedColumnNames(ModelSchema schema) {
+		List<String> expected = new ArrayList<>();
+		for(FieldSchema field : schema.getFields()) {
+			if(field.isVirtual() || field.isEphemeral() || field.isReferenced()) {
+				continue;
+			}
+			String dataType = getDataType(field, field.getFieldType());
+			if(dataType == null) {
+				continue;
+			}
+			expected.add(getColumnName(field.getName()).replace("\"", "").toLowerCase());
+		}
+		return expected;
+	}
+
+	/// Compare existing database columns against the model schema.
+	/// Returns live column names that no longer match any persisted model field
+	/// (the inverse of getMissingColumns). Returns empty list if the table doesn't exist.
+	///
+	public List<String> getOrphanedColumns(ModelSchema schema) {
+		if(!haveTable(schema.getName())) {
+			return new ArrayList<>();
+		}
+		String tableName = getTableName(schema.getName());
+		List<String> existingColumns = getTableColumns(tableName);
+		List<String> expected = getExpectedColumnNames(schema);
+		List<String> orphaned = new ArrayList<>();
+		for(String col : existingColumns) {
+			if(!expected.contains(col)) {
+				orphaned.add(col);
+			}
+		}
+		return orphaned;
+	}
+
+	/// Generate ALTER TABLE DROP COLUMN IF EXISTS statements for orphaned columns.
+	/// Returns empty list if the table doesn't exist or there are no orphaned columns.
+	/// Gated by IOProperties.isDropColumns() at the call site (IOSystem); never resets / drops tables.
+	///
+	public List<String> generateDropColumnSchema(ModelSchema schema) {
+		List<String> orphaned = getOrphanedColumns(schema);
+		List<String> statements = new ArrayList<>();
+		if(orphaned.isEmpty()) {
+			return statements;
+		}
+		String tableName = getTableName(schema.getName());
+		for(String col : orphaned) {
+			statements.add("ALTER TABLE " + tableName + " DROP COLUMN IF EXISTS " + getColumnName(col) + ";");
+		}
+		return statements;
+	}
+
 }

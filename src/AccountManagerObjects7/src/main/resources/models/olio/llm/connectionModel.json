@@ -1,0 +1,29 @@
+{
+	"name": "olio.llm.connection",
+	"inherits": ["data.directory", "common.description", "crypto.vaultExt"],
+	"group": "Chat",
+	"icon": "link",
+	"label": "LLM Connection",
+	"description": "Connection information for reaching an LLM (Large Language Model) endpoint. Holds the server URL, API key, and request timeout, referenced from a chatConfig.",
+	"fields": [
+		{
+			"name": "serverUrl",
+			"type": "string",
+			"maxLength": 512,
+			"default": "http://192.168.1.42:11434"
+		},
+		{
+			"name": "apiKey",
+			"type": "string",
+			"maxLength": 256,
+			"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
+			"encrypt": true
+		},
+		{
+			"name": "requestTimeout",
+			"type": "int",
+			"default": 120,
+			"description": "Hard timeout in seconds for LLM connections. Used with CompletableFuture.orTimeout() to abort hung requests. 0 = no timeout."
+		}
+	]
+}

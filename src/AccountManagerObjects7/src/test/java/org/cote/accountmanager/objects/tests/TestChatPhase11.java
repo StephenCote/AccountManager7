@@ -24,6 +24,7 @@ import org.cote.accountmanager.olio.llm.MigrationReport;
 import org.cote.accountmanager.olio.llm.PromptConfigMigrator;
 import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -159,7 +160,7 @@ public class TestChatPhase11 extends BaseTest {
 
 			// Configure minimal LLM settings for Chat constructor
 			chatConfig.set("serviceType", LLMServiceEnumType.OLLAMA);
-			chatConfig.set("serverUrl", "http://localhost:11434");
+			chatConfig.set("connection", OlioTestUtil.getCreateConnection(testUser, chatConfig.get(FieldNames.FIELD_NAME) + " Connection", "http://localhost:11434", null, 120));
 			chatConfig.set("model", "test");
 
 			chatConfig = IOSystem.getActiveContext().getAccessPoint().update(testUser, chatConfig);
@@ -175,7 +176,7 @@ public class TestChatPhase11 extends BaseTest {
 			chatConfig2.set("extractMemories", true);
 			chatConfig2.set("keyframeEvery", 10);
 			chatConfig2.set("serviceType", LLMServiceEnumType.OLLAMA);
-			chatConfig2.set("serverUrl", "http://localhost:11434");
+			chatConfig2.set("connection", OlioTestUtil.getCreateConnection(testUser, chatConfig2.get(FieldNames.FIELD_NAME) + " Connection", "http://localhost:11434", null, 120));
 			chatConfig2.set("model", "test");
 			chatConfig2 = IOSystem.getActiveContext().getAccessPoint().update(testUser, chatConfig2);
 
@@ -184,7 +185,7 @@ public class TestChatPhase11 extends BaseTest {
 			chatConfig3.set("extractMemories", false);
 			chatConfig3.set("keyframeEvery", 2);
 			chatConfig3.set("serviceType", LLMServiceEnumType.OLLAMA);
-			chatConfig3.set("serverUrl", "http://localhost:11434");
+			chatConfig3.set("connection", OlioTestUtil.getCreateConnection(testUser, chatConfig3.get(FieldNames.FIELD_NAME) + " Connection", "http://localhost:11434", null, 120));
 			chatConfig3.set("model", "test");
 			chatConfig3 = IOSystem.getActiveContext().getAccessPoint().update(testUser, chatConfig3);
 
@@ -223,7 +224,7 @@ public class TestChatPhase11 extends BaseTest {
 			// Verify getFormattedChatHistory skips MCP keyframes
 			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(testUser, "P11-4-MCP-" + UUID.randomUUID().toString().substring(0, 6));
 			chatConfig.set("serviceType", LLMServiceEnumType.OLLAMA);
-			chatConfig.set("serverUrl", "http://localhost:11434");
+			chatConfig.set("connection", OlioTestUtil.getCreateConnection(testUser, chatConfig.get(FieldNames.FIELD_NAME) + " Connection", "http://localhost:11434", null, 120));
 			chatConfig.set("model", "test");
 			chatConfig = IOSystem.getActiveContext().getAccessPoint().update(testUser, chatConfig);
 
@@ -275,7 +276,7 @@ public class TestChatPhase11 extends BaseTest {
 			chatConfig.set("rating", ESRBEnumType.E);
 			chatConfig.set("includeScene", false);
 			chatConfig.set("serviceType", LLMServiceEnumType.OLLAMA);
-			chatConfig.set("serverUrl", "http://localhost:11434");
+			chatConfig.set("connection", OlioTestUtil.getCreateConnection(testUser, chatConfig.get(FieldNames.FIELD_NAME) + " Connection", "http://localhost:11434", null, 120));
 			chatConfig.set("model", "test");
 			chatConfig = IOSystem.getActiveContext().getAccessPoint().update(testUser, chatConfig);
 			assertNotNull("ChatConfig should be updated", chatConfig);

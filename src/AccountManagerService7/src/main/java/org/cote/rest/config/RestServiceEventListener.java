@@ -191,8 +191,10 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		IOFactory.addPermittedPath(path + "/.streams");
 		String dsName = context.getInitParameter("database.dsname");
 		boolean chkSchema = Boolean.parseBoolean(context.getInitParameter("database.checkSchema"));
+		boolean dropCols = Boolean.parseBoolean(context.getInitParameter("database.dropColumns"));
 		IOProperties props = getDBProperties(null, null, null, dsName);
 		props.setSchemaCheck(chkSchema);
+		props.setDropColumns(dropCols);
 		try {
 			IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
 			String authToken = context.getInitParameter("embedding.authorizationToken");

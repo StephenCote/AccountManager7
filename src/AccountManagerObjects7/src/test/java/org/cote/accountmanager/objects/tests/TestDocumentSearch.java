@@ -7,6 +7,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -119,9 +120,8 @@ public class TestDocumentSearch extends BaseTest {
 		
 		cfg.setValue("serviceType", LLMServiceEnumType.OPENAI);
 		cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version"));
-		cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server"));
+		cfg.setValue("connection", OlioTestUtil.getCreateConnection(testUser1, cfg.get(FieldNames.FIELD_NAME) + " Connection", testProperties.getProperty("test.llm.openai.server"), testProperties.getProperty("test.llm.openai.authorizationToken"), 120));
 		cfg.setValue("model", "gpt-4o");
-		cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
 
 		BaseRecord summary = ChatUtil.createSummary(testUser1, null, null, doc, true);
 		assertNotNull("Summary is null", summary);

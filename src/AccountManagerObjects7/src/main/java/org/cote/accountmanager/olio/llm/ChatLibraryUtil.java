@@ -26,20 +26,31 @@ public class ChatLibraryUtil {
 	public static final String LIBRARY_CHAT_CONFIGS = "ChatConfigs";
 	public static final String LIBRARY_PROMPT_CONFIGS = "PromptConfigs";
 	public static final String LIBRARY_PROMPT_TEMPLATES = "PromptTemplates";
+	public static final String LIBRARY_CONNECTIONS = "Connections";
 	public static final String LIBRARY_PATH_CHAT = LibraryUtil.basePath + "/" + LIBRARY_CHAT_CONFIGS;
 	public static final String LIBRARY_PATH_PROMPT = LibraryUtil.basePath + "/" + LIBRARY_PROMPT_CONFIGS;
 	public static final String LIBRARY_PATH_PROMPT_TEMPLATE = LibraryUtil.basePath + "/" + LIBRARY_PROMPT_TEMPLATES;
+	public static final String LIBRARY_PATH_CONNECTION = LibraryUtil.basePath + "/" + LIBRARY_CONNECTIONS;
+
+	/// Default seeded connection name so new chatConfigs always have something to pick.
+	public static final String DEFAULT_CONNECTION_NAME = "Local Ollama";
 
 	/// Map library type keys to directory names
 	private static final java.util.Map<String, String> LIBRARY_TYPE_MAP = java.util.Map.of(
 		"chat", LIBRARY_CHAT_CONFIGS,
 		"prompt", LIBRARY_PROMPT_CONFIGS,
-		"promptTemplate", LIBRARY_PROMPT_TEMPLATES
+		"promptTemplate", LIBRARY_PROMPT_TEMPLATES,
+		"connection", LIBRARY_CONNECTIONS
 	);
 
 	public static BaseRecord getCreateChatConfigLibrary(BaseRecord user) {
 		LibraryUtil.configureLibraryRootReader(user);
 		return LibraryUtil.getCreateSharedLibrary(user, LIBRARY_CHAT_CONFIGS, true);
+	}
+
+	public static BaseRecord getCreateConnectionLibrary(BaseRecord user) {
+		LibraryUtil.configureLibraryRootReader(user);
+		return LibraryUtil.getCreateSharedLibrary(user, LIBRARY_CONNECTIONS, true);
 	}
 
 	public static BaseRecord getCreatePromptConfigLibrary(BaseRecord user) {
@@ -150,20 +161,24 @@ public class ChatLibraryUtil {
 		BaseRecord chatLibDir = getCreateChatConfigLibrary(user);
 		BaseRecord promptLibDir = getCreatePromptConfigLibrary(user);
 		BaseRecord promptTemplateLibDir = getCreatePromptTemplateLibrary(user);
+		BaseRecord connLibDir = getCreateConnectionLibrary(user);
 
-		if (chatLibDir == null || promptLibDir == null || promptTemplateLibDir == null) {
+		if (chatLibDir == null || promptLibDir == null || promptTemplateLibDir == null || connLibDir == null) {
 			logger.error("Failed to create library directories");
 			return;
 		}
 
+		/// Seed a default connection so new chatConfigs have something to reference/pick.
+		BaseRecord defaultConnection = createLibraryConnection(adminUser, connLibDir, DEFAULT_CONNECTION_NAME, serverUrl, 120);
+
 		/// Chat config library entries from templates
 		String[] templateNames = ChatUtil.getChatConfigTemplateNames();
 		for (String templateName : templateNames) {
-			createLibraryChatConfig(adminUser, chatLibDir, templateName, templateName, serverUrl, model, serviceType);
+			createLibraryChatConfig(adminUser, chatLibDir, templateName, templateName, defaultConnection, model, serviceType);
 		}
 
 		/// Create "Open Chat" as an alias for the generalChat template
-		createLibraryChatConfig(adminUser, chatLibDir, "Open Chat", "generalChat", serverUrl, model, serviceType);
+		createLibraryChatConfig(adminUser, chatLibDir, "Open Chat", "generalChat", defaultConnection, model, serviceType);
 
 		/// Prompt config library entries from templates
 		String[] promptConfigNames = ChatUtil.getPromptConfigTemplateNames();
@@ -184,7 +199,7 @@ public class ChatLibraryUtil {
 		}
 	}
 
-	private static void createLibraryChatConfig(BaseRecord adminUser, BaseRecord libDir, String name, String templateName, String serverUrl, String model, String serviceType) {
+	private static void createLibraryChatConfig(BaseRecord adminUser, BaseRecord libDir, String name, String templateName, BaseRecord connection, String model, String serviceType) {
 		/// Check if already exists (idempotent)
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_GROUP_ID, libDir.get(FieldNames.FIELD_ID));
@@ -199,8 +214,9 @@ public class ChatLibraryUtil {
 
 			ChatUtil.applyChatConfigTemplate(cfg, templateName);
 
-			if (serverUrl != null) {
-				cfg.set("serverUrl", serverUrl);
+			/// Connection info (serverUrl/apiKey/requestTimeout) lives on the connection sub-record now.
+			if (connection != null) {
+				cfg.set("connection", connection);
 			}
 			if (model != null) {
 				cfg.set("model", model);
@@ -213,6 +229,34 @@ public class ChatLibraryUtil {
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error("Failed to create library chat config '" + name + "': " + e.getMessage());
 		}
+	}
+
+	/// Create (idempotent) a connection record in the connection library and return it.
+	/// serverUrl null falls back to the model default (http://192.168.1.42:11434).
+	public static BaseRecord createLibraryConnection(BaseRecord adminUser, BaseRecord libDir, String name, String serverUrl, int requestTimeout) {
+		/// Check if already exists (idempotent)
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CONNECTION, FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_GROUP_ID, libDir.get(FieldNames.FIELD_ID));
+		BaseRecord existing = IOSystem.getActiveContext().getSearch().findRecord(q);
+		if (existing != null) {
+			return existing;
+		}
+
+		try {
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, libDir.get("path"));
+			plist.parameter(FieldNames.FIELD_NAME, name);
+			BaseRecord conn = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CONNECTION, adminUser, null, plist);
+
+			if (serverUrl != null) {
+				conn.set("serverUrl", serverUrl);
+			}
+			conn.set("requestTimeout", requestTimeout);
+
+			return IOSystem.getActiveContext().getAccessPoint().create(adminUser, conn);
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Failed to create library connection '" + name + "': " + e.getMessage());
+		}
+		return null;
 	}
 
 	private static void createLibraryPromptConfig(BaseRecord adminUser, BaseRecord libDir, String name, BaseRecord template) {

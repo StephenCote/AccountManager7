@@ -364,15 +364,37 @@ public class Chat {
 
 	private void configureChat() {
 		if (chatConfig != null) {
-			setServerUrl(chatConfig.get("serverUrl"));
+			/// Connection info (serverUrl, apiKey, requestTimeout) moved into the olio.llm.connection sub-record.
+			/// Clean break: no inline fallback — log clearly if the connection is missing/unpopulated.
+			BaseRecord conn = chatConfig.get("connection");
+			if (conn != null) {
+				setServerUrl(conn.get("serverUrl"));
+				int connTimeout = conn.get("requestTimeout");
+				requestTimeout = connTimeout;
+				/// apiKey is vaulted.  The recursive chatConfig query plan deliberately does not
+				/// project the connection's vault metadata (keyId/vaultId/vaulted) — that would force
+				/// recursion — so the encrypted apiKey can't be decrypted off the sub-record and comes
+				/// back empty.  When it does, reload the connection directly (top-level READ) so
+				/// EncryptFieldProvider decrypts it.  Keyless connections (e.g. local Ollama) legitimately
+				/// have no key and simply stay empty.
+				String apiKey = conn.get("apiKey");
+				if (apiKey == null || apiKey.isEmpty()) {
+					BaseRecord fullConn = OlioUtil.getFullRecord(conn);
+					if (fullConn != null) {
+						apiKey = fullConn.get("apiKey");
+					}
+				}
+				setAuthorizationToken(apiKey);
+			}
+			else {
+				logger.warn("chatConfig '" + chatConfig.get(FieldNames.FIELD_NAME) + "' has no connection reference; serverUrl/apiKey/requestTimeout are unset. Link an olio.llm.connection record.");
+			}
 			setApiVersion(chatConfig.get("apiVersion"));
-			setAuthorizationToken(chatConfig.get("apiKey"));
 			setModel(chatConfig.get("model"));
 			setServiceType(chatConfig.getEnum("serviceType"));
 			remind = chatConfig.get("remindEvery");
 			keyFrameEvery = chatConfig.get("keyframeEvery");
 			messageTrim = chatConfig.get("messageTrim");
-			requestTimeout = chatConfig.get("requestTimeout");
 			try { streamMode = chatConfig.get("stream"); } catch (Exception e) { /* field may not be set */ }
 			/// Phase 14: Configure analyzeTimeout — separate from requestTimeout for background LLM calls.
 			/// Legacy configs without the field will have cfgAnalyzeTimeout=0; keep field default (120s).
@@ -514,10 +536,19 @@ public class Chat {
 			if (message != null && message.length() > 0) {
 				newMessage(req, message);
 			}
-			/// Copy config for remote task, excluding apiKey (encrypted field loses vault metadata on copy).
-			/// Re-set apiKey from the already-decrypted in-memory source.
-			BaseRecord remoteCfg = chatConfig.copyRecord(new String[] { "apiVersion", "serviceType", "serverUrl", "model", "chatOptions" });
-			try { remoteCfg.set("apiKey", authorizationToken); } catch (Exception e) { logger.warn("Could not set apiKey on remote config"); }
+			/// Copy config for remote task. Connection info now lives on the connection sub-record.
+			/// The encrypted apiKey loses vault metadata on copy, so re-set it on the copied
+			/// connection from the already-decrypted in-memory authorizationToken.
+			BaseRecord remoteCfg = chatConfig.copyRecord(new String[] { "apiVersion", "serviceType", "connection", "model", "chatOptions" });
+			try {
+				BaseRecord remoteConn = remoteCfg.get("connection");
+				if (remoteConn != null) {
+					remoteConn.set("apiKey", authorizationToken);
+				}
+				else {
+					logger.warn("Remote config has no connection sub-record; apiKey not set");
+				}
+			} catch (Exception e) { logger.warn("Could not set apiKey on remote connection"); }
 			BaseRecord task = OlioTaskAgent.createTaskRequest(req, remoteCfg);
 			BaseRecord rtask = OlioTaskAgent.executeTask(task);
 			if (rtask != null) {

@@ -22,6 +22,7 @@ import org.cote.accountmanager.objects.generated.RuleType;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -484,24 +485,20 @@ public class TestChatPhase13 extends BaseTest {
 	}
 
 	/// P13-13: Verify apiKey survives copyRecord without decryption errors.
-	/// Regression test for: encrypted apiKey fails decryption on copied/cloned chatConfig.
-	@SuppressWarnings("deprecation")
+	/// Regression test for: encrypted apiKey fails decryption on copied/cloned record.
+	/// apiKey moved from chatConfig to the olio.llm.connection sub-record (ConnectionRefactorPlan),
+	/// so this now exercises the connection record.
 	@Test
 	public void testApiKeyCopyRecord() {
 		try {
-			String cfgName = "P13-13-apikey-" + UUID.randomUUID().toString().substring(0, 6);
-			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(testUser, cfgName);
-			assertNotNull("ChatConfig should not be null", chatConfig);
-
-			// Set a test apiKey value and persist
+			// Set a test apiKey value and persist on a connection
 			String testKey = "sk-test-" + UUID.randomUUID().toString().substring(0, 12);
-			chatConfig.set("apiKey", testKey);
-			chatConfig = IOSystem.getActiveContext().getAccessPoint().update(testUser, chatConfig);
-			assertNotNull("Updated config should not be null", chatConfig);
+			BaseRecord connection = OlioTestUtil.getCreateConnection(testUser, "P13-13-conn-" + UUID.randomUUID().toString().substring(0, 6), "http://192.168.1.42:11434", testKey, 120);
+			assertNotNull("Connection should not be null", connection);
 
-			// Read the config back fully (triggers EncryptFieldProvider decrypt via getFullRecord)
-			BaseRecord readBack = OlioUtil.getFullRecord(chatConfig);
-			assertNotNull("Read-back config should not be null", readBack);
+			// Read the connection back fully (triggers EncryptFieldProvider decrypt via getFullRecord)
+			BaseRecord readBack = OlioUtil.getFullRecord(connection);
+			assertNotNull("Read-back connection should not be null", readBack);
 			String decryptedKey = readBack.get("apiKey");
 			assertEquals("Decrypted apiKey should match original", testKey, decryptedKey);
 

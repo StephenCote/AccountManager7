@@ -801,7 +801,6 @@ public class TestChatDuelLong extends BaseTest {
 			if (OPT_QUALITY_EVALUATOR_EVERY >= 0) {
 				cfg.set("qualityEvaluatorEvery", OPT_QUALITY_EVALUATOR_EVERY);
 			}
-			cfg.set("requestTimeout", STREAM_TIMEOUT_SECONDS);
 
 			String terrain = NarrativeUtil.getTerrain(octx, usrChar);
 			if (terrain != null) {
@@ -810,7 +809,7 @@ public class TestChatDuelLong extends BaseTest {
 
 			/// Per user direction: chat=way-local, analyze=qwen3:8b
 			cfg.setValue("serviceType", LLMServiceEnumType.OLLAMA);
-			cfg.setValue("serverUrl", OLLAMA_URL);
+			cfg.set("connection", OlioTestUtil.getCreateConnection(testUser, name + " Connection", OLLAMA_URL, null, STREAM_TIMEOUT_SECONDS));
 			cfg.setValue("model", CHAT_MODEL);
 			cfg.setValue("analyzeModel", ANALYZE_MODEL);
 			cfg.setValue("stream", true);

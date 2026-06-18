@@ -406,7 +406,8 @@ public class ChatUtil {
 		}
 		try {
 			String[] boolFields = {"prune", "assist", "stream", "includeScene", "extractMemories"};
-			String[] intFields = {"messageTrim", "keyframeEvery", "remindEvery", "requestTimeout", "memoryBudget", "memoryExtractionEvery", "analyzeTimeout", "summaryWorkers"};
+			/// requestTimeout moved to the olio.llm.connection sub-record (ConnectionRefactorPlan) — no longer a chatConfig field.
+			String[] intFields = {"messageTrim", "keyframeEvery", "remindEvery", "memoryBudget", "memoryExtractionEvery", "analyzeTimeout", "summaryWorkers"};
 			String[] stringFields = {"rating", "policyTemplate", "memoryExtractionPrompt"};
 
 			for(String f : boolFields) {
@@ -972,12 +973,13 @@ public class ChatUtil {
 				if (libChatConfig != null) {
 					logger.info("resolveSummarizePrompts: found library chatConfig '" + SUMMARY_CHAT_CONFIG_NAME + "' name=" + libChatConfig.get(FieldNames.FIELD_NAME));
 					IOSystem.getActiveContext().getReader().populate(libChatConfig);
-					/// Copy connection settings from session chatConfig onto the library config
+					/// Copy connection settings from session chatConfig onto the library config.
+					/// Connection info (serverUrl/apiKey/requestTimeout) now lives on the connection
+					/// sub-record; point the library config at the same already-decrypted connection.
 					if (chatConfig != null) {
 						try {
-							if (chatConfig.get("serverUrl") != null) libChatConfig.set("serverUrl", chatConfig.get("serverUrl"));
+							if (chatConfig.get("connection") != null) libChatConfig.set("connection", chatConfig.get("connection"));
 							if (chatConfig.get("model") != null) libChatConfig.set("model", chatConfig.get("model"));
-							if (chatConfig.get("apiKey") != null) libChatConfig.set("apiKey", chatConfig.get("apiKey"));
 							if (chatConfig.get("apiVersion") != null) libChatConfig.set("apiVersion", chatConfig.get("apiVersion"));
 							libChatConfig.set("serviceType", chatConfig.get("serviceType"));
 						} catch (Exception e) {
@@ -1015,8 +1017,9 @@ public class ChatUtil {
 
 		logger.info("[DIAG] resolveSummarizePrompts FINAL: mapSystem(" + prompts.mapSystem.length() + ")=" + prompts.mapSystem.substring(0, Math.min(120, prompts.mapSystem.length())) + "...");
 		if (prompts.chatConfig != null) {
+			BaseRecord diagConn = prompts.chatConfig.get("connection");
 			logger.info("[DIAG] resolveSummarizePrompts FINAL chatConfig: name=" + prompts.chatConfig.get(FieldNames.FIELD_NAME)
-				+ " serverUrl=" + prompts.chatConfig.get("serverUrl")
+				+ " serverUrl=" + (diagConn != null ? diagConn.get("serverUrl") : "null")
 				+ " model=" + prompts.chatConfig.get("model")
 				+ " serviceType=" + prompts.chatConfig.get("serviceType"));
 		} else {
@@ -1767,17 +1770,19 @@ public class ChatUtil {
 			if (req.get("setting") != null) {
 				cchatConfig.setValue("setting", req.get("setting"));
 			}
-			/// Strip encrypted apiKey from the copy — the Chat instance reads
-			/// the authorizationToken via configureChat() which calls get("apiKey").
+			/// apiKey now lives on the connection sub-record.  The Chat instance reads
+			/// the authorizationToken via configureChat() which calls connection.get("apiKey").
 			/// On a copy the vault metadata (keyId, vaultId) is absent, so the
-			/// EncryptFieldProvider cannot decrypt.  Null it out and re-set from
-			/// the already-decrypted source record.
+			/// EncryptFieldProvider cannot decrypt.  Re-set apiKey on the copied
+			/// connection from the already-decrypted source connection.
 			try {
-				String plainKey = chatConfig.get("apiKey");
-				cchatConfig.set("apiKey", plainKey);
+				BaseRecord srcConn = chatConfig.get("connection");
+				BaseRecord cConn = cchatConfig.get("connection");
+				if (srcConn != null && cConn != null) {
+					cConn.set("apiKey", srcConn.get("apiKey"));
+				}
 			} catch (Exception e) {
-				logger.warn("Could not propagate apiKey to chat copy: " + e.getMessage());
-				try { cchatConfig.set("apiKey", null); } catch (Exception ex) { /* ignore */ }
+				logger.warn("Could not propagate apiKey to chat copy connection: " + e.getMessage());
 			}
 
 			chat = new Chat(user, cchatConfig, promptConfig, promptTemplate);

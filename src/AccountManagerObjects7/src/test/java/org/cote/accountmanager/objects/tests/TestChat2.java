@@ -137,9 +137,8 @@ public class TestChat2 extends BaseTest {
 		
 		cfg.setValue("serviceType", LLMServiceEnumType.OPENAI);
 		cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version"));
-		cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server"));
+		cfg.setValue("connection", OlioTestUtil.getCreateConnection(testUser1, cfg.get(FieldNames.FIELD_NAME) + " Connection", testProperties.getProperty("test.llm.openai.server"), testProperties.getProperty("test.llm.openai.authorizationToken"), 120));
 		cfg.setValue("model", "gpt-4");
-		cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
 		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey"}));
 		assertNotNull("Chat config is null", cfg);
 		
@@ -177,9 +176,8 @@ public class TestChat2 extends BaseTest {
 		
 		cfg.setValue("serviceType", LLMServiceEnumType.OPENAI);
 		cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version"));
-		cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server"));
+		cfg.setValue("connection", OlioTestUtil.getCreateConnection(testUser1, cfg.get(FieldNames.FIELD_NAME) + " Connection", testProperties.getProperty("test.llm.openai.server"), testProperties.getProperty("test.llm.openai.authorizationToken"), 120));
 		cfg.setValue("model", "gpt-4o");
-		cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
 		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey"}));
 		assertNotNull("Chat config is null", cfg);
 		

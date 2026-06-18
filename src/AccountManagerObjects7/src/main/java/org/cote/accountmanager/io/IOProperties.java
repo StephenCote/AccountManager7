@@ -9,9 +9,18 @@ public class IOProperties {
 	private boolean reset = false;
 	
 	private boolean schemaCheck = false;
-	
+	private boolean dropColumns = false;
+
 	public IOProperties() {
-		
+
+	}
+
+	public boolean isDropColumns() {
+		return dropColumns;
+	}
+
+	public void setDropColumns(boolean dropColumns) {
+		this.dropColumns = dropColumns;
 	}
 	
 	public String getJndiName() {

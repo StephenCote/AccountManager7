@@ -59,7 +59,7 @@ public class TestChatStream extends BaseTest {
 
 		/// Ensure stream=false on the config
 		cfg.setValue("stream", false);
-		cfg.setValue("requestTimeout", TEST_TIMEOUT);
+		OlioTestUtil.setConnectionRequestTimeout(testUser, cfg, TEST_TIMEOUT);
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 
 		String chatName = "Buffer Mode Test " + UUID.randomUUID().toString();
@@ -102,7 +102,7 @@ public class TestChatStream extends BaseTest {
 		/// Phase 12: OI-28 — try-finally ensures timeout is always restored even if test fails
 		try {
 			/// Set an impossibly short timeout to trigger the timeout
-			cfg.setValue("requestTimeout", 1);
+			OlioTestUtil.setConnectionRequestTimeout(testUser, cfg, 1);
 			IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 
 			String chatName = "Timeout Test " + UUID.randomUUID().toString();
@@ -125,7 +125,7 @@ public class TestChatStream extends BaseTest {
 			logger.info("Timeout test result: " + (resp == null ? "null (timeout triggered as expected)" : "response received (LLM was fast)"));
 		} finally {
 			/// Restore default timeout so subsequent tests are not affected
-			cfg.setValue("requestTimeout", TEST_TIMEOUT);
+			OlioTestUtil.setConnectionRequestTimeout(testUser, cfg, TEST_TIMEOUT);
 			IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 		}
 	}
@@ -146,7 +146,7 @@ public class TestChatStream extends BaseTest {
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, pcfg);
 
 		cfg.setValue("stream", true);
-		cfg.setValue("requestTimeout", TEST_TIMEOUT);
+		OlioTestUtil.setConnectionRequestTimeout(testUser, cfg, TEST_TIMEOUT);
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 
 		String chatName = "Cancel Test " + UUID.randomUUID().toString();
@@ -202,7 +202,7 @@ public class TestChatStream extends BaseTest {
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, pcfg);
 
 		cfg.setValue("stream", true);
-		cfg.setValue("requestTimeout", TEST_TIMEOUT);
+		OlioTestUtil.setConnectionRequestTimeout(testUser, cfg, TEST_TIMEOUT);
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
 
 		String chatName = "Streaming Test " + UUID.randomUUID().toString();

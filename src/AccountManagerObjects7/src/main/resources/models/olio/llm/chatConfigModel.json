@@ -160,17 +160,10 @@
 			"maxLength": 64
 		},
 		{
-			"name": "serverUrl",
-			"type": "string",
-			"maxLength": 512,
-			"default": "http://192.168.1.42:11434"
-		},
-		{
-			"name": "apiKey",
-			"type": "string",
-			"maxLength": 256,
-			"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
-			"encrypt": true
+			"name": "connection",
+			"type": "model",
+			"baseModel": "olio.llm.connection",
+			"foreign": true
 		},
 		{
 			"name": "assist",
@@ -179,12 +172,6 @@
 		{
 			"name": "stream",
 			"type": "boolean"
-		},
-		{
-			"name": "requestTimeout",
-			"type": "int",
-			"default": 120,
-			"description": "Hard timeout in seconds for LLM connections. Used with CompletableFuture.orTimeout() to abort hung requests. 0 = no timeout."
 		},
 
 		{

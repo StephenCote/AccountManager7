@@ -407,9 +407,8 @@ public class TestPromptLibrary extends BaseTest {
 			plist.parameter(FieldNames.FIELD_NAME, "SummLLMTest-" + UUID.randomUUID().toString());
 			BaseRecord chatConfig = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, testUser, null, plist);
 			chatConfig.set("serviceType", LLMServiceEnumType.OLLAMA);
-			chatConfig.set("serverUrl", server);
+			chatConfig.set("connection", OlioTestUtil.getCreateConnection(testUser, chatConfig.get(FieldNames.FIELD_NAME) + " Connection", server, null, 120));
 			chatConfig.set("model", altModel);
-			chatConfig.set("requestTimeout", 120);
 			chatConfig = IOSystem.getActiveContext().getAccessPoint().create(testUser, chatConfig);
 			assertNotNull("Chat config should be created", chatConfig);
 

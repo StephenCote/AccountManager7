@@ -340,9 +340,9 @@ public class TestPromptTemplate extends BaseTest {
 			String model = testProperties.getProperty("test.llm.ollama.model");
 			String server = testProperties.getProperty("test.llm.ollama.server");
 			chatConfig.set("model", model);
-			chatConfig.set("serverUrl", server);
+			chatConfig.set("connection", OlioTestUtil.getCreateConnection(testUser, chatConfig.get(FieldNames.FIELD_NAME) + " Connection", server, null, 120));
 			chatConfig.set("serviceType", LLMServiceEnumType.OLLAMA);
-			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "serverUrl", "serviceType"});
+			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "connection", "serviceType"});
 			IOSystem.getActiveContext().getAccessPoint().update(testUser, updateCfg);
 
 			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, "PT LLM Open Chat " + UUID.randomUUID().toString());
@@ -420,10 +420,10 @@ public class TestPromptTemplate extends BaseTest {
 			String model = testProperties.getProperty("test.llm.ollama.model");
 			String server = testProperties.getProperty("test.llm.ollama.server");
 			chatConfig.set("model", model);
-			chatConfig.set("serverUrl", server);
+			chatConfig.set("connection", OlioTestUtil.getCreateConnection(testUser, chatConfig.get(FieldNames.FIELD_NAME) + " Connection", server, null, 120));
 			chatConfig.set("serviceType", LLMServiceEnumType.OLLAMA);
 			chatConfig.set("rating", ESRBEnumType.M);
-			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "serverUrl", "serviceType", "rating"});
+			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "connection", "serviceType", "rating"});
 			IOSystem.getActiveContext().getAccessPoint().update(testUser, updateCfg);
 
 			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, "PT LLM RPG " + UUID.randomUUID().toString());

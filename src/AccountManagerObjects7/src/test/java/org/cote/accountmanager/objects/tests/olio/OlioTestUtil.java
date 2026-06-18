@@ -466,18 +466,60 @@ public class OlioTestUtil {
         logger.error("Unsupported LLM service type: " + type);
         return null;
 	}
+	/// Connection info (serverUrl/apiKey/requestTimeout) lives on the olio.llm.connection
+	/// sub-record now.  Create (idempotent) a connection in ~/Chat and return it so a
+	/// chatConfig can reference it via the "connection" FK.
+	public static BaseRecord getCreateConnection(BaseRecord user, String name, String serverUrl, String apiKey, int requestTimeout) {
+		BaseRecord conn = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CONNECTION, name, "~/Chat");
+		if (conn != null) {
+			return conn;
+		}
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		try {
+			BaseRecord c = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CONNECTION, user, null, plist);
+			if (serverUrl != null) {
+				c.set("serverUrl", serverUrl);
+			}
+			if (apiKey != null) {
+				c.set("apiKey", apiKey);
+			}
+			c.set("requestTimeout", requestTimeout);
+			return IOSystem.getActiveContext().getAccessPoint().create(user, c);
+		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+			logger.error(e);
+		}
+		return null;
+	}
+
+	/// Set requestTimeout on a chatConfig's connection sub-record (requestTimeout moved off chatConfig).
+	public static void setConnectionRequestTimeout(BaseRecord user, BaseRecord chatConfig, int requestTimeout) {
+		try {
+			BaseRecord conn = chatConfig.get("connection");
+			if (conn == null) {
+				logger.warn("chatConfig '" + chatConfig.get(FieldNames.FIELD_NAME) + "' has no connection; cannot set requestTimeout");
+				return;
+			}
+			conn.set("requestTimeout", requestTimeout);
+			IOSystem.getActiveContext().getAccessPoint().update(user, conn);
+		} catch (Exception e) {
+			logger.error(e);
+		}
+	}
+
 	public static BaseRecord getOllamaOpenAIConfig(BaseRecord user, String name, Properties testProperties) {
 		BaseRecord ocfg = null;
 		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");
 		if (cfg != null) {
-			return cfg;
+			/// Return a fully-populated record so the connection FK sub-record is resolved.
+			return OlioUtil.getFullRecord(cfg);
 		}
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
 			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
-			cfg.set("serverUrl", testProperties.getProperty("test.llm.ollama.server"));
+			cfg.set("connection", getCreateConnection(user, name + " Connection", testProperties.getProperty("test.llm.ollama.server"), null, 120));
 			cfg.set("model", testProperties.getProperty("test.llm.ollama.model"));
 			ocfg = IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
 		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
@@ -485,12 +527,13 @@ public class OlioTestUtil {
 		}
 		return ocfg;
 	}
-	
+
 	public static BaseRecord getOpenAIConfig(BaseRecord user, String name, Properties testProperties) {
 		BaseRecord ocfg = null;
 		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");
 		if (cfg != null) {
-			return cfg;
+			/// Return a fully-populated record so the connection FK sub-record is resolved.
+			return OlioUtil.getFullRecord(cfg);
 		}
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, name);
@@ -498,10 +541,9 @@ public class OlioTestUtil {
 			cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
 			cfg.set("serviceType", LLMServiceEnumType.OPENAI);
 			cfg.set("apiVersion", testProperties.getProperty("test.llm.openai.version"));
-			cfg.set("serverUrl", testProperties.getProperty("test.llm.openai.server"));
+			cfg.set("connection", getCreateConnection(user, name + " Connection", testProperties.getProperty("test.llm.openai.server"), testProperties.getProperty("test.llm.openai.authorizationToken"), 120));
 			cfg.set("model", testProperties.getProperty("test.llm.openai.model"));
-			cfg.set("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
-			
+
 			ocfg = IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
 		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
 			logger.error(e);

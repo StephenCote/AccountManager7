@@ -114,9 +114,8 @@ public class TestChat extends BaseTest {
 		try {
 			cfg.set("serviceType", LLMServiceEnumType.OPENAI);
 			cfg.set("apiVersion", testProperties.getProperty("test.llm.openai.version"));
-			cfg.set("serverUrl", testProperties.getProperty("test.llm.openai.server"));
+			cfg.set("connection", OlioTestUtil.getCreateConnection(testUser1, cfg.get(FieldNames.FIELD_NAME) + " Connection", testProperties.getProperty("test.llm.openai.server"), testProperties.getProperty("test.llm.openai.authorizationToken"), 120));
 			cfg.set("model", "gpt-4o");
-			cfg.set("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
 			cfg.set("useNLP", true);
 			cfg.set("nlpCommand", "Convince ${user.firstName} ${user.pro} is from outer space.");
 			cfg.set("rating",  ESRBEnumType.RC);

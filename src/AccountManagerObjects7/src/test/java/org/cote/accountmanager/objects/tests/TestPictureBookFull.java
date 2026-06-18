@@ -92,10 +92,9 @@ public class TestPictureBookFull extends BaseTest {
 			BaseRecord cfg = IOSystem.getActiveContext().getFactory().newInstance(
 				OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
 			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
-			cfg.set("serverUrl", serverUrl);
+			cfg.set("connection", OlioTestUtil.getCreateConnection(user, cfgName + " Connection", serverUrl, null, 300));
 			cfg.set("model", PB_LLM_MODEL);
 			cfg.set("stream", false);
-			cfg.set("requestTimeout", 300);
 
 			// Set think:false on chatOptions
 			BaseRecord opts = cfg.get("chatOptions");

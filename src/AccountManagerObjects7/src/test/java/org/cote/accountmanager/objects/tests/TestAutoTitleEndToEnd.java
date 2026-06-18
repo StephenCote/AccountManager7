@@ -297,11 +297,11 @@ public class TestAutoTitleEndToEnd extends BaseTest {
 			String model = testProperties.getProperty("test.llm.ollama.model");
 			String server = testProperties.getProperty("test.llm.ollama.server");
 			chatConfig.set("model", model);
-			chatConfig.set("serverUrl", server);
+			chatConfig.set("connection", OlioTestUtil.getCreateConnection(testUser, chatConfig.get(FieldNames.FIELD_NAME) + " Connection", server, null, 120));
 			chatConfig.set("serviceType", LLMServiceEnumType.OLLAMA);
 			chatConfig.set("autoTitle", true);
 			chatConfig.set("assist", false);
-			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "serverUrl", "serviceType", "autoTitle", "assist"});
+			BaseRecord updateCfg = chatConfig.copyRecord(new String[]{"id", "objectId", "model", "connection", "serviceType", "autoTitle", "assist"});
 			IOSystem.getActiveContext().getAccessPoint().update(testUser, updateCfg);
 
 			BaseRecord promptConfig = OlioTestUtil.getPromptConfig(testUser, "AT LLM Title " + UUID.randomUUID().toString());

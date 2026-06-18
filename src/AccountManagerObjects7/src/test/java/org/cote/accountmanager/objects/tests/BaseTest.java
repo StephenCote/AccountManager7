@@ -132,6 +132,7 @@ public class BaseTest {
 		props.setReset(resetDataSchema);
 		resetDataSchema = false;
 		props.setSchemaCheck(false);
+		props.setDropColumns(Boolean.parseBoolean(testProperties.getProperty("db.schema.dropColumns")));
 		resetIO(RecordIO.DATABASE, props);
 	}
 	protected void resetIO(RecordIO ioType, IOProperties properties) {

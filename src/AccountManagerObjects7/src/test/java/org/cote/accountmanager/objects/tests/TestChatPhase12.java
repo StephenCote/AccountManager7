@@ -167,7 +167,7 @@ public class TestChatPhase12 extends BaseTest {
 			assertNotNull("ChatConfig should not be null", cfg);
 
 			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
-			cfg.set("serverUrl", "http://localhost:11434");
+			cfg.set("connection", OlioTestUtil.getCreateConnection(testUser, cfgName + " Connection", "http://localhost:11434", null, 120));
 			cfg.set("model", "test-model");
 
 			// Set Ollama-specific chat options on the config
