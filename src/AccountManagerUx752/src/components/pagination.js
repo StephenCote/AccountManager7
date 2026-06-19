@@ -184,9 +184,11 @@ function newPaginationControl() {
       /// filter is used for count and list through the search API, which allows for scoping to the current group and recurse through child group structures
       ///
       requesting = true;
+      let reqPages = pages;
 
       if (pages.containerSubType != null && pages.containerSubType.match(/^(user|account|person|bucket)$/gi)) {
         am7client.members(pages.containerType, pages.containerId, pages.resultType, pages.startRecord, pages.recordCount, function (v) {
+          if (reqPages !== pages) return;
           handleList(v);
         });
       }
@@ -208,8 +210,12 @@ function newPaginationControl() {
       }
       else {
         getSearchQuery().then((q) => {
+          if (reqPages !== pages) return;
           if (!q) { requesting = false; handleList([]); return; }
-          am7client.search(q, handleList);
+          am7client.search(q, function (v) {
+            if (reqPages !== pages) return;
+            handleList(v);
+          });
         });
       }
     }
@@ -288,9 +294,17 @@ function newPaginationControl() {
     /// Need to get the container to understand the subType, such as GROUP/DATA vs GROUP/BUCKET
     if (containerId && pages.container == null) {
       requesting = true;
+      let reqPages = pages;
       new Promise(function(resolve) {
         am7client.get(pages.containerType, pages.containerId, function(v) { resolve(v); });
       }).then(v => {
+        /// If a newer navigation replaced the pagination state while this container
+        /// load was in flight (e.g. switching the picker source from Home to Favorites
+        /// before the first load settled), this response is stale. Discard it so it
+        /// does not stamp the wrong container/subType onto the current state — which
+        /// would, for a bucket like Favorites, fall through to the groupId-child count
+        /// (0 members) and render blank.
+        if (reqPages !== pages) return;
         requesting = false;
         if (v != null) {
           pages.container = v;
@@ -323,8 +337,10 @@ function newPaginationControl() {
   function doCount(type, bSystem, startRecord, recordCount) {
     if (requesting) return;
     requesting = true;
+    let reqPages = pages;
     if (pages.containerSubType != null && pages.containerSubType.match(/^(system\.user|identity\.account|identity\.person|bucket)$/gi)) {
       am7client.countMembers(pages.containerType, pages.containerId, type, function (v) {
+        if (reqPages !== pages) return;
         handleCount(v);
         doSearchPage(startRecord, recordCount);
       });
@@ -344,9 +360,11 @@ function newPaginationControl() {
     }
     else {
       getSearchQuery().then((req) => {
+        if (reqPages !== pages) return;
         if (!req) { requesting = false; handleCount(0); m.redraw(); return; }
         req.recordCount = 0;
         page.count(req).then((v) => {
+          if (reqPages !== pages) return;
           handleCount(v);
           doSearchPage(startRecord, recordCount);
         });

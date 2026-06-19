@@ -1317,117 +1317,53 @@ The `model/modelDef.js` file is auto-generated from the server schema endpoint (
 
 ---
 
-## 9. Production Build Design — Ux7 Dynamic Carve-Out
+## 9. Production Deployment — Ux752 Feature-Driven Carve-Out
+
+> **REVISED (2026-06-19):** This section previously specified a `build.js` profile carve-out against the legacy **Ux7** monolith with a hand-maintained file list. The live frontend is now **AccountManagerUx752** (Vite + Mithril), which already ships a **feature manifest + profile + server-side feature-config** system. ISO deployment now drives *that* system. See [`iso42001.md` §9](iso42001.md) for the master deployment plan; this section is the design-doc-level detail. The §9A view specs below remain valid as functional specs — the file paths now resolve under `AccountManagerUx752/src/`.
 
 ### 9.1 Problem
 
-Ux7 is a monolithic SPA containing card game, magic8, chat, object browser, and many other views. For an ISO 42001 production deployment, only the compliance-relevant views should be included.
+A full AM7 install exposes card game, mini games, magic 8, picture book, media, schema, and many other views. For an ISO 42001 deployment, only compliance-relevant UI should be present, and ideally unrelated code should not even ship in the production bundle.
 
-### 9.2 Solution: Build Profiles in `build.js`
+### 9.2 Solution: Feature manifest + `compliance` profile
 
-Add a build profile system to `build.js` that selectively includes only relevant files:
+Ux752's `src/features.js` already defines a feature manifest (each feature: `id`, `deps`, lazy `routes` via dynamic `import()`, and RBAC-aware `menuItems`), named `profiles`, dependency-aware enable/disable, and a server-backed admin panel (`src/features/featureConfig.js` ⇄ `GET/PUT /rest/config/features`). Because routes are dynamic `import()`s, Vite code-splits each feature and never fetches a disabled one.
 
-**`build.js` — profile definitions:**
+**Add a `compliance` profile** to `src/features.js`:
 
 ```javascript
 const profiles = {
-    // Full build — everything (current behavior)
-    full: {
-        js: jsFiles,  // all files
-        css: cssFiles,
-        output: 'app.bundle.min'
-    },
-
-    // ISO 42001 only — compliance testing dashboard
-    iso42001: {
-        js: [
-            // Core (always needed)
-            'client/am7client.js',
-            'common/base64.js',
-            'model/modelDef.js',
-            'model/model.js',
-            'client/pageClient.js',
-
-            // Base components
-            'client/components/dialog.js',
-            'client/formDef.js',
-            'client/view.js',
-            'client/decorator.js',
-
-            // Chat (needed for LLM test execution)
-            'client/chat.js',
-            'client/components/chat/LLMConnector.js',
-            'client/components/chat/ChatTokenRenderer.js',
-            'client/components/chat/ConversationManager.js',
-
-            // Test framework
-            'client/test/testFramework.js',
-            'client/test/testRegistry.js',
-            'client/test/iso42001/iso42001TestSuite.js',
-
-            // ISO 42001 views
-            'client/view/iso42001/dashboard.js',
-            'client/view/iso42001/testRunner.js',
-            'client/view/iso42001/reportViewer.js',
-            'client/view/iso42001/certificationView.js',
-
-            // UI components (subset)
-            'client/components/breadcrumb.js',
-            'client/components/topMenu.js',
-            'client/components/panel.js',
-            'client/components/form.js',
-            'client/components/navigation.js',
-            'client/components/pagination.js',
-            'client/components/pdf.js',
-
-            // Router
-            'client/view/iso42001/iso42001Router.js'
-        ],
-        css: [
-            'dist/basiTail.css',
-            'node_modules/material-icons/iconfont/material-icons.css',
-            'node_modules/material-symbols/index.css',
-            'styles/pageStyle.css',
-            'styles/iso42001.css'
-        ],
-        output: 'iso42001.bundle.min',
-        html: 'iso42001.html'
-    }
+    minimal:    ['core'],
+    standard:   ['core', 'media', 'chat'],
+    full:       Object.keys(features),
+    gaming:     ['core', 'media', 'chat', 'cardGame', 'games', 'biometrics'],
+    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig'],
+    // ISO 42001 appliance — minimal compliance-only surface
+    compliance: ['core', 'chat', 'iso42001', 'accessRequests', 'featureConfig']
 };
 ```
 
-**CLI usage:**
-```bash
-# Full build (default, current behavior)
-npm run build
+`chat` is required (the suite executes LLM tests through `LLMConnector`); `accessRequests` + `featureConfig` support RBAC onboarding and admin toggling. Everything else stays disabled and hidden.
 
-# ISO 42001 production build
-npm run build:iso42001
-# or: node build.js --profile iso42001
-```
+**Selection at deploy time:** the active set is resolved server-side via `/rest/config/features`; the container setup wizard (§10.4) writes the `compliance` profile (or a custom set) during first-run. Add a matching **"Compliance"** quick-profile button to the `featureConfig.js` admin panel.
 
-**package.json script:**
-```json
-{
-  "scripts": {
-    "build": "node build.js",
-    "build:iso42001": "node build.js --profile iso42001",
-    "build:watch": "node build.js --watch"
-  }
-}
-```
+**Build-time pruning (hardened image, defense in depth):** add an optional Vite `define`/env flag that excludes disabled-feature chunks from the manifest at build time, so unrelated code is not even shipped. The manifest stays the single source of truth — no hand-maintained Ux7 file list.
 
-### 9.3 ISO 42001 Ux Views (New Files)
+### 9.3 ISO 42001 Ux Views (within the `iso42001` feature)
+
+The current `iso42001` feature (`AccountManagerUx752/src/features/iso42001.js`) is a stub: library-status badges + a live policy-violation monitor on `/compliance`. Promote it to the full suite below — additional routes/menu items **within the same feature module** (lazy-loaded; tree-shaken when `iso42001` is disabled):
 
 ```
-AccountManagerUx7/client/view/iso42001/
-├── dashboard.js           — Pass/flag/fail summary, heat maps, trend charts
+AccountManagerUx752/src/features/iso42001/   (split from the single iso42001.js)
+├── dashboard.js           — Pass/flag/fail summary, heat maps, trend charts (route /compliance)
 ├── testRunner.js          — Configure and launch test runs, monitor progress
 ├── resultsBrowser.js      — Browse and drill into test results
 ├── reportViewer.js        — View/edit reports, export to PDF
 ├── certificationView.js   — Request/approve/verify certifications
-└── iso42001Router.js      — Mithril routes for ISO 42001 views only
+└── routes.js              — exported `routes` map for all ISO views; deps ['core','chat']
 ```
+
+Menu items in the manifest gate on the ISO roles (extend the existing `adminOnly`/`devOnly` pattern to honor `iso42001Tester/Reporter/Certifier/Reader/Admin`).
 
 ---
 
@@ -2483,31 +2419,32 @@ docker run -d \
 
 ---
 
-### Phase 7: Ux7 Views, RBAC, & Production Build
-**Scope:** Build all ISO 42001 UI views with RBAC-driven visibility, certification workflow, and production build profile. See Section 9A for full view specifications and wireframes.
+### Phase 7: Ux752 Feature Views, RBAC, & Feature-Driven Deployment
+**Scope:** Promote the `iso42001` feature stub to the full ISO 42001 UI with RBAC-driven visibility, certification workflow, and the `compliance` deploy profile. See Section 9 (deployment) and 9A (view specs/wireframes). Frontend is **AccountManagerUx752** (Vite + Mithril); all paths under `src/`.
 
 **Tasks:**
-1. Register ISO 42001 roles in `applicationRouter.js` → `setContextRoles()` (iso42001Tester, iso42001Reporter, iso42001Certifier, iso42001Reader, iso42001Admin)
-2. Add ISO 42001 form definitions to `formDef.js` (testConfig, report, certRequest, certification) with `requiredRoles` on forms, fields, and commands
-3. Create `client/view/iso42001/dashboard.js` — compliance dashboard: verdict summary cards, heat map (models x protected classes), recent runs, recent reports, pending cert queue (certifiers only)
-4. Create `client/view/iso42001/testRunner.js` — test config + run management: new run dialog, run list with filters, run detail with progress/cancel, [Generate Report] handoff (reporters only)
-5. Create `client/view/iso42001/resultsBrowser.js` — results drill-down: run results table with filter/sort by verdict/class/testId, single result detail with per-group stats, bar charts, and raw log download
-6. Create `client/view/iso42001/reportViewer.js` — report list + detail: section viewer with edit (DRAFT/REVIEW only, reporters), [Export PDF], [Request Certification] (reporters, hidden if certified), embedded certification block with [Verify]
-7. Create `client/view/iso42001/certificationView.js` — three-tab certification management: Pending queue (certifiers), My Requests (reporters), All Certifications (admin). Request detail with message thread, [Approve & Sign] confirmation dialog (title, validity period, irreversibility warning), [Deny with Reason]. Certification detail with crypto info and [Verify Now], [Revoke] (admin only)
-8. Create `client/view/iso42001/iso42001Router.js` — Mithril routes for all ISO views, merged into `applicationRouter.js`, nav menu gated on `iso42001Any`
-9. Create `iso42001.html` — standalone entry point for prod build
-10. Add build profile to `build.js` with `--profile iso42001` support
-11. Create `styles/iso42001.css` — ISO-specific styles (verdict colors, heat map, cert block)
-12. Create `client/test/iso42001/iso42001TestSuite.js` — test harness entries covering RBAC visibility, all CRUD flows, certification workflow
-13. Update `build.js` jsFiles array with all new files (views + test suite)
+1. Register ISO 42001 roles in the role context (`iso42001Tester, iso42001Reporter, iso42001Certifier, iso42001Reader, iso42001Admin`); extend the manifest `menuItems` RBAC flags beyond `adminOnly`/`devOnly` to honor these
+2. Add ISO 42001 form definitions to the Ux752 form layer (testConfig, report, certRequest, certification) with `requiredRoles` on forms, fields, and commands
+3. Create `src/features/iso42001/dashboard.js` — compliance dashboard: verdict summary cards, heat map (models x protected classes), recent runs, recent reports, pending cert queue (certifiers only)
+4. Create `src/features/iso42001/testRunner.js` — test config + run management: new run dialog, run list with filters, run detail with progress/cancel, [Generate Report] handoff (reporters only)
+5. Create `src/features/iso42001/resultsBrowser.js` — results drill-down: run results table with filter/sort by verdict/class/testId, single result detail with per-group stats, bar charts, raw log download
+6. Create `src/features/iso42001/reportViewer.js` — report list + detail: section viewer with edit (DRAFT/REVIEW only, reporters), [Export PDF], [Request Certification] (reporters, hidden if certified), embedded certification block with [Verify]
+7. Create `src/features/iso42001/certificationView.js` — three-tab certification management: Pending queue (certifiers), My Requests (reporters), All Certifications (admin). Request detail with message thread, [Approve & Sign] confirmation dialog (title, validity period, irreversibility warning), [Deny with Reason]. Certification detail with crypto info and [Verify Now], [Revoke] (admin only)
+8. Create `src/features/iso42001/routes.js` — export a `routes` map for all ISO views; keep the feature `deps: ['core','chat']` so Vite tree-shakes it when disabled
+9. Add the `compliance` profile to `src/features.js` `profiles` and a "Compliance" quick-profile button to `src/features/featureConfig.js`
+10. (Hardened image only) add the optional Vite build flag to prune disabled-feature chunks
+11. ISO-specific styles via Tailwind utility classes (verdict colors, heat map, cert block) — no separate stylesheet needed
+12. Wire the container setup wizard (§10.4) to write the `compliance` profile to `/rest/config/features` on first-run
 
-**Unit Tests:**
-- Ux7 test harness `iso42001-model-crud` — CRUD for all iso42001.* models via REST
-- Ux7 test harness `iso42001-test-run` — config creation, run launch, status polling
-- Ux7 test harness `iso42001-report-generation` — report from runs, section assembly
-- Ux7 test harness `iso42001-certification-workflow` — request → message → approve → verify
-- Ux7 test harness `iso42001-pdf-export` — export and download verification
-- Ux7 test harness `iso42001-rbac` — verify UI elements hidden/shown per role (test with different user logins)
+**Tests (Vitest + Playwright, using `ensureSharedTestUser()` — NEVER admin):**
+- Vitest `features` — `initFeatures('compliance')` yields exactly `{core,chat,iso42001,accessRequests,featureConfig}`; `disableFeature('chat')` is refused while `iso42001` enabled
+- Playwright `iso42001-model-crud` — CRUD for all iso42001.* models via REST
+- Playwright `iso42001-test-run` — config creation, run launch, status polling
+- Playwright `iso42001-report-generation` — report from runs, section assembly
+- Playwright `iso42001-certification-workflow` — request → message → approve → verify
+- Playwright `iso42001-pdf-export` — export and download verification
+- Playwright `iso42001-rbac` — UI elements hidden/shown per role (different user logins)
+- Playwright `iso42001-deployment` — with `compliance` profile active, menus show only core+compliance entries and a disabled-feature route (e.g. `/cardGame`) does not resolve
 
 ---
 
@@ -2567,5 +2504,5 @@ OpenPDF is LGPL-licensed and adequate for report generation. If advanced feature
 ### 12.4 Container DB Choice
 The design includes PostgreSQL in-container for simplicity. For production deployments, the setup wizard should also support connecting to an external PostgreSQL instance (which it does — the DB host/port fields are configurable).
 
-### 12.5 Ux7 Hodgepodge
-Ux7 remains a monolithic SPA. The production build profile carves out only ISO 42001 views, but the development build remains full. No refactoring of Ux7 architecture is planned in this design.
+### 12.5 Frontend: Ux752 feature system (supersedes Ux7)
+The legacy Ux7 monolith is superseded by **AccountManagerUx752**, whose feature manifest + profile + server-side `featureConfig` system provides the carve-out natively (§9). The ISO deployment is the new `compliance` profile rather than a `build.js` carve-out; disabled features are tree-shaken via dynamic `import()`. No Ux7 work is planned. The §9A wireframes remain valid functional specs with paths resolving under `AccountManagerUx752/src/features/iso42001/`.

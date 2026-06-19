@@ -12,6 +12,7 @@ import Base64 from './base64.js';
 	am7model.system = {
 		library: {
 			"data.color": "/Library/Colors",
+			"system.connection": "/Library/Connections",
 			"olio.llm.chatConfig": "/Library/ChatConfigs",
 			"olio.llm.promptConfig": "/Library/PromptConfigs",
 			"olio.llm.promptTemplate": "/Library/PromptTemplates",
