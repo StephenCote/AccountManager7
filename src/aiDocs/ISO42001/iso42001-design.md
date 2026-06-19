@@ -1009,11 +1009,23 @@ AccountManager7/src/
 
 ### 6.2 Maven Configuration
 
-**ISO42001/pom.xml:**
+**Pinned coordinates (locked 2026-06-19):**
+
+| Field | Value |
+|---|---|
+| `groupId` | `org.cote.accountmanager` |
+| `artifactId` | `AccountManagerISO42001` |
+| `version` | `7.0.0-SNAPSHOT` |
+| `packaging` | `jar` |
+| Project dir | `AccountManagerISO42001/` (sibling of `AccountManagerObjects7`) |
+
+(Matches the Objects7/Console7/Agent7 convention; Service7's `0.0.1-SNAPSHOT` is a known outlier — do not copy it.) The `-pl`-style DoD command is normalized by a build script per the project's naming convention; standalone build is `cd AccountManagerISO42001 && mvn test` after `AccountManagerObjects7` is installed (`mvn -f AccountManagerObjects7/pom.xml install`).
+
+**AccountManagerISO42001/pom.xml:**
 ```xml
 <project>
   <groupId>org.cote.accountmanager</groupId>
-  <artifactId>ISO42001</artifactId>
+  <artifactId>AccountManagerISO42001</artifactId>
   <version>7.0.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
@@ -1023,6 +1035,14 @@ AccountManager7/src/
       <groupId>org.cote.accountmanager</groupId>
       <artifactId>AccountManagerObjects7</artifactId>
       <version>7.0.0-SNAPSHOT</version>
+    </dependency>
+    <!-- AM7 core test harness (BaseTest) — reuse for integrated tests -->
+    <dependency>
+      <groupId>org.cote.accountmanager</groupId>
+      <artifactId>AccountManagerObjects7</artifactId>
+      <version>7.0.0-SNAPSHOT</version>
+      <type>test-jar</type>
+      <scope>test</scope>
     </dependency>
     <!-- AM7 agent tools -->
     <dependency>
@@ -1087,7 +1107,56 @@ AccountManager7/src/
 
 ### 6.3 Model Registration
 
-ISO 42001 model JSON files live in the ISO42001 project under `src/main/resources/models/iso42001/`. The AM7 schema system auto-discovers models from classpath. Since ISO42001 is a dependency of Service7, models are available at runtime.
+**Decision (locked, see §12.1):** All new ISO 42001 code and models live in their **own Java/Maven project** (`AccountManagerISO42001`, or `iso42001`). Service7 adds it as a **dependency**. Model names are registered **at runtime** following the `OlioModelNames` pattern — ISO42001 never modifies Objects7.
+
+ISO 42001 model JSON files live in the ISO42001 project under `src/main/resources/models/iso42001/`. The AM7 schema system auto-discovers model JSON from the classpath via the classloader, so a dependency JAR's `models/` resources are found automatically once the names are registered.
+
+**Registration class** — mirror `org.cote.accountmanager.olio.schema.OlioModelNames`:
+
+```java
+package org.cote.accountmanager.iso42001.schema;
+
+import java.util.Arrays;
+import java.util.List;
+import org.cote.accountmanager.schema.ModelNames;
+
+public class ISO42001ModelNames extends ModelNames {
+    public static final String MODEL_TEST_CONFIG    = "iso42001.testConfig";
+    public static final String MODEL_TEST_RUN       = "iso42001.testRun";
+    public static final String MODEL_TEST_RESULT    = "iso42001.testResult";
+    public static final String MODEL_REPORT         = "iso42001.report";
+    public static final String MODEL_REPORT_SECTION = "iso42001.reportSection";
+    public static final String MODEL_CERTIFICATION  = "iso42001.certification";
+    public static final String MODEL_CERT_REQUEST   = "iso42001.certRequest";
+
+    public static final List<String> MODELS = Arrays.asList(
+        MODEL_TEST_CONFIG, MODEL_TEST_RUN, MODEL_TEST_RESULT,
+        MODEL_REPORT, MODEL_REPORT_SECTION, MODEL_CERTIFICATION, MODEL_CERT_REQUEST
+    );
+
+    private static boolean prep = false;
+    public static void use() {
+        if (!prep) { ModelNames.MODELS.addAll(MODELS); prep = true; }
+    }
+}
+```
+
+**When `use()` is called:**
+- **Service7:** once at startup (e.g. in the context listener / `RestServiceConfig` init), so the namespace is registered before any request.
+- **Unit tests:** in test setup, exactly as `BaseTest` calls `OlioModelNames.use()`. The ISO42001 test base calls `ISO42001ModelNames.use()`.
+
+All ISO42001 Java packages live under `org.cote.accountmanager.iso42001.*` in the new project — no source is added to Objects7 or Service7 beyond the thin REST layer in §6.4.
+
+**Service7 dependency** (`AccountManagerService7/pom.xml`):
+```xml
+<dependency>
+  <groupId>org.cote.accountmanager</groupId>
+  <artifactId>AccountManagerISO42001</artifactId>
+  <version>7.0.0-SNAPSHOT</version>
+</dependency>
+```
+
+> **Test-jar — confirmed available.** `AccountManagerObjects7` already publishes a test-jar (`maven-jar-plugin` 3.4.1, `test-jar` goal) for exactly this purpose — `AccountManagerAgent7` already consumes it to reuse `BaseTest`/`OlioTestUtil`. The §6.2 `test-jar` dependency works as-is; no Objects7 change needed.
 
 ### 6.4 REST Service in Service7
 
@@ -2488,12 +2557,8 @@ docker run -d \
 
 ## 12. Open Items & Notes
 
-### 12.1 Model JSON Location Decision
-ISO 42001 model JSON files can live in either:
-- **Option A:** `ISO42001/src/main/resources/models/iso42001/` — keeps models with the project that defines them
-- **Option B:** `AccountManagerObjects7/src/main/resources/models/iso42001/` — keeps all models centralized
-
-**Recommendation:** Option A. Models ship with the ISO42001 JAR and are discovered via classpath when Service7 includes the dependency. This keeps the ISO42001 project self-contained.
+### 12.1 Model JSON Location Decision — RESOLVED (2026-06-19)
+**Decided: Option A — self-contained ISO42001 project.** All ISO 42001 code AND model JSON live in their own Java/Maven project (`models/iso42001/` inside it). Service7 adds the project as a dependency; model names are registered at runtime via `ISO42001ModelNames.use()` (the `OlioModelNames` pattern — see §6.3). Objects7 is **not** modified. (Option B — centralizing models in Objects7 — is rejected: it would couple the base object layer to the compliance subsystem.)
 
 ### 12.2 Statistical Library
 Apache Commons Math 3 provides Mann-Whitney U, Chi-square, and related tests. If more advanced statistics are needed (e.g., bootstrap confidence intervals), consider upgrading to Commons Math 4 or adding a dedicated library.

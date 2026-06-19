@@ -50,9 +50,24 @@ These are non-negotiable and are baked into the prompt template. A phase is not 
 ## Per-phase detail
 
 ### Phase 1 — Foundation
-**Scope:** `iso42001` Maven module (depends on Objects7 + its test-jar); 7 models (`testConfig`, `testRun`, `testResult`, `report`, `reportSection`, `certification`, `certRequest`) per design §2 with `access.roles`; namespace registration (§6.3, `OlioModelNames.use()` pattern); ISO roles (`iso42001testers/reporters/certifiers/readers/administrators`).
+**Architecture (locked):** All ISO 42001 code + models live in their **own** Java/Maven project under packages `org.cote.accountmanager.iso42001.*`. Service7 adds it as a **dependency**; Objects7 is NOT modified. Models register at runtime via `ISO42001ModelNames extends ModelNames` + `use()` (the `OlioModelNames` pattern — design §6.3, §12.1).
+
+**Pinned Maven coordinates (locked 2026-06-19):**
+
+| Field | Value |
+|---|---|
+| `groupId` | `org.cote.accountmanager` |
+| `artifactId` | `AccountManagerISO42001` |
+| `version` | `7.0.0-SNAPSHOT` |
+| `packaging` | `jar` |
+| Project dir | `AccountManagerISO42001/` (sibling of `AccountManagerObjects7`) |
+
+Service7 `<dependency>` uses the same `groupId`/`artifactId`/`version`. (`-pl` short name in build commands is normalized by a project script.)
+
+**Scope:** new project (depends on Objects7 + its `test-jar`); 7 models (`testConfig`, `testRun`, `testResult`, `report`, `reportSection`, `certification`, `certRequest`) per design §2 with `access.roles`, under `src/main/resources/models/iso42001/`; `ISO42001ModelNames` registration class; call `ISO42001ModelNames.use()` in test setup; ISO roles (`iso42001testers/reporters/certifiers/readers/administrators`).
 **Tests:** `TestISO42001Models` — for each model: create→read→patch→list→delete via `AccessPoint` as an authorized non-admin role user, plus a negative RBAC assertion (unauthorized user denied). Admin used only to create the role users.
-**DoD:** `mvn -pl iso42001 compile` and `mvn -pl iso42001 test` both BUILD SUCCESS with the above passing.
+**DoD:** after `mvn -f AccountManagerObjects7/pom.xml install`, both `cd AccountManagerISO42001 && mvn compile` and `mvn test` show BUILD SUCCESS with the above passing.
+**Test harness:** confirmed — Objects7 already publishes a `test-jar` (maven-jar-plugin 3.4.1); Agent7 consumes it. The ISO project's `test-jar` dependency reuses `BaseTest`/`OlioTestUtil` directly; no Objects7 change needed.
 
 *(Add per-phase detail blocks for 2–10 as each is started, copying the gate from the tracker and expanding scope/tests/DoD from the prompt template.)*
 

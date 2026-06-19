@@ -18,6 +18,7 @@ The **Standing rules** block is fixed — never weaken it. Only the `<<...>>` se
 > 3. `<<scope item>>`
 >
 > **Standing rules (non-negotiable — integrated system testing, not mocks):**
+> - **Architecture (locked, §6.3/§12.1):** all ISO 42001 code + models live in the standalone `AccountManagerISO42001` project (`org.cote.accountmanager.iso42001.*`); Service7 depends on it; **do NOT add ISO source/models to Objects7**. Models register at runtime via `ISO42001ModelNames.use()` — call it in test setup.
 > - All services are live. **Do not mock or skip tests.** A "test" exercises real CRUD/flows through `AccessPoint` / the live service layer against the real DB. Reuse the Objects7 `BaseTest` pattern (`AccountManagerObjects7/src/test/java/org/cote/accountmanager/objects/tests/BaseTest.java`).
 > - **Test organization: `/ISO42001`** (`OrganizationEnumType.DEVELOPMENT`); create it if not initialized (`getTestOrganization()` pattern).
 > - **Use the org Admin user ONLY to create test users and assign roles** (`getCreateUser(name, orgContext)` creates via `orgContext.getAdminUser()`). Create the role users this phase needs, e.g. `<<isoTester (iso42001testers), isoReader (iso42001readers), ...>>`.
@@ -30,7 +31,7 @@ The **Standing rules** block is fixed — never weaken it. Only the `<<...>>` se
 >
 > **Definition of done:**
 > - `<<build/compile command>>` succeeds.
-> - `<<test command, e.g. mvn -pl iso42001 test -Dtest=TestX>>` shows BUILD SUCCESS with the above passing, all as non-admin users against `/ISO42001`.
+> - `<<test command, e.g. cd AccountManagerISO42001 && mvn test -Dtest=TestX>>` shows BUILD SUCCESS with the above passing, all as non-admin users against `/ISO42001`.
 > - Report exactly what passed and what (if anything) could not be tested — honestly. No "tested"/"working" claim without a green run shown.
 >
 > Follow `CLAUDE.md` and the per-module `CLAUDE.md`. Flag any decision where you substituted judgment for the spec (⚠ MY JUDGMENT) and ask before proceeding on it. When done, update `aiDocs/ISO42001/iso42001-implementation-plan.md` (Status + Progress log row).
@@ -43,14 +44,16 @@ The **Standing rules** block is fixed — never weaken it. Only the `<<...>>` se
 >
 > Implement the foundation of the ISO 42001 subsystem in AccountManager7. Authoritative design: `aiDocs/ISO42001/iso42001-design.md`. Read **§2 (data models), §6.2 (Maven config), §6.3 (model registration), §7 (unit-test strategy), §9A.1 (RBAC roles)** before writing code. Also read `aiDocs/ISO42001/iso42001.md`. Do not invent model fields — use the §2 definitions; if any are incomplete, stop and say so first.
 >
+> **Architecture (locked — design §6.3, §12.1):** ALL ISO 42001 code + models live in their OWN Java/Maven project (`AccountManagerISO42001`, packages `org.cote.accountmanager.iso42001.*`). Service7 will add it as a dependency. **Do NOT add ISO source or models to Objects7.** Model names register at runtime via `ISO42001ModelNames extends ModelNames` + `use()` (the `OlioModelNames` pattern). Pinned coordinates: `groupId=org.cote.accountmanager`, `artifactId=AccountManagerISO42001`, `version=7.0.0-SNAPSHOT`, `packaging=jar`, dir `AccountManagerISO42001/` (sibling of Objects7).
+>
 > **Scope (this phase only):**
-> 1. Create the adjacent `iso42001` Maven module per §6.2, depending on `AccountManagerObjects7` (and its test-jar so the test harness is reusable).
-> 2. Add the 7 model JSON schemas under `models/iso42001/` per §2: `iso42001.testConfig`, `iso42001.testRun`, `iso42001.testResult`, `iso42001.report`, `iso42001.reportSection`, `iso42001.certification`, `iso42001.certRequest` — with `access.roles` blocks.
-> 3. Register the `iso42001` namespace to load at runtime (follow §6.3 / `OlioModelNames.use()` pattern).
+> 1. Create the new standalone `AccountManagerISO42001` Maven module per §6.2, depending on `AccountManagerObjects7` and its `test-jar` (`<type>test-jar</type><scope>test</scope>`) to reuse `BaseTest` — Objects7 already publishes this test-jar (Agent7 consumes it), so no Objects7 change is needed.
+> 2. Add the 7 model JSON schemas under the project's `src/main/resources/models/iso42001/` per §2: `iso42001.testConfig`, `iso42001.testRun`, `iso42001.testResult`, `iso42001.report`, `iso42001.reportSection`, `iso42001.certification`, `iso42001.certRequest` — with `access.roles` blocks.
+> 3. Create `org.cote.accountmanager.iso42001.schema.ISO42001ModelNames` (extends `ModelNames`, declares `MODEL_*` constants + `MODELS` list + idempotent `use()`); call `ISO42001ModelNames.use()` in test setup (as `BaseTest` calls `OlioModelNames.use()`).
 > 4. Define ISO roles: `iso42001testers`, `iso42001reporters`, `iso42001certifiers`, `iso42001readers`, `iso42001administrators` (§9A.1).
 >
 > **Standing rules:** *(as above — live services, `/ISO42001` org, admin only creates users, never test as admin, reset via property only, never drop container/truncate.)*
 >
 > **Tests to write:** `TestISO42001Models` — for each of the 7 models: create→read→patch→list→delete via `AccessPoint` as an authorized role user (e.g. `isoTester`/`isoAdmin`), plus a negative RBAC assertion (`isoReader` create is denied). Admin used only to create `isoTester`, `isoReader`, `isoAdmin` with their roles.
 >
-> **Definition of done:** `mvn -pl iso42001 compile` and `mvn -pl iso42001 test` both BUILD SUCCESS with `TestISO42001Models` passing, all as non-admin users against `/ISO42001`. Report what passed/failed honestly. Then update the implementation plan.
+> **Definition of done:** after `mvn -f AccountManagerObjects7/pom.xml install`, both `cd AccountManagerISO42001 && mvn compile` and `mvn test` show BUILD SUCCESS with `TestISO42001Models` passing, all as non-admin users against `/ISO42001`. Report what passed/failed honestly. Then update the implementation plan.
