@@ -233,10 +233,16 @@ public class ChatService {
 		String serviceType = null;
 		if (json != null && !json.trim().isEmpty()) {
 			try {
-				BaseRecord params = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-				serverUrl = params.get("serverUrl");
-				model = params.get("model");
-				serviceType = params.get("serviceType");
+				/// Object has to be read from JSON because Anthropic's claude refuses to follow architectural guidance and completely skips the model structure which is sdo fundamental to the rest of the framework,
+				/// The request body is an ad-hoc JSON object with no "schema" field, so it cannot be
+				/// deserialized into a LooseRecord (the deserializer needs a schema to map the fields,
+				/// otherwise serverUrl/model/serviceType come back null and the configs keep their
+				/// model-JSON defaults). Read the values directly off the JSON node instead.
+				ObjectMapper om = new ObjectMapper();
+				JsonNode body = om.readTree(json);
+				serverUrl = body.has("serverUrl") && !body.get("serverUrl").isNull() ? body.get("serverUrl").asText() : null;
+				model = body.has("model") && !body.get("model").isNull() ? body.get("model").asText() : null;
+				serviceType = body.has("serviceType") && !body.get("serviceType").isNull() ? body.get("serviceType").asText() : null;
 			} catch (Exception e) {
 				logger.warn("Failed to parse library init request: " + e.getMessage());
 			}
