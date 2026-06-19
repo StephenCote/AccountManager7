@@ -126,6 +126,15 @@ models/iso42001/
   "description": "Defines an ISO 42001 test configuration including endpoints, parameters, and test selection.",
   "dedicatedParticipation": true,
   "constraints": ["name, groupId, organizationId"],
+  "access": {
+    "roles": {
+      "create": ["ISO42001Testers"],
+      "read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Reporters", "ISO42001Certifiers"],
+      "update": ["ISO42001Testers"],
+      "delete": ["ISO42001Administrators"],
+      "admin": ["ISO42001Administrators"]
+    }
+  },
   "fields": [
     {
       "name": "moduleId",
@@ -208,6 +217,15 @@ models/iso42001/
   "description": "Represents a single execution of an ISO 42001 test suite run.",
   "dedicatedParticipation": true,
   "constraints": ["name, groupId, organizationId"],
+  "access": {
+    "roles": {
+      "create": ["ISO42001Testers"],
+      "read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Reporters", "ISO42001Certifiers"],
+      "update": ["ISO42001Testers"],
+      "delete": ["ISO42001Administrators"],
+      "admin": ["ISO42001Administrators"]
+    }
+  },
   "fields": [
     {
       "name": "testConfig",
@@ -1126,12 +1144,12 @@ public class ISO42001ModelNames extends ModelNames {
     public static final String MODEL_TEST_RESULT    = "iso42001.testResult";
     public static final String MODEL_REPORT         = "iso42001.report";
     public static final String MODEL_REPORT_SECTION = "iso42001.reportSection";
-    public static final String MODEL_CERTIFICATION  = "iso42001.certification";
-    public static final String MODEL_CERT_REQUEST   = "iso42001.certRequest";
+    public static final String MODEL_CERTIFICATION         = "iso42001.certification";
+    public static final String MODEL_CERTIFICATION_REQUEST = "iso42001.certificationRequest";
 
     public static final List<String> MODELS = Arrays.asList(
         MODEL_TEST_CONFIG, MODEL_TEST_RUN, MODEL_TEST_RESULT,
-        MODEL_REPORT, MODEL_REPORT_SECTION, MODEL_CERTIFICATION, MODEL_CERT_REQUEST
+        MODEL_REPORT, MODEL_REPORT_SECTION, MODEL_CERTIFICATION, MODEL_CERTIFICATION_REQUEST
     );
 
     private static boolean prep = false;
@@ -1442,13 +1460,16 @@ Menu items in the manifest gate on the ISO roles (extend the existing `adminOnly
 
 ISO 42001 introduces its own roles that map to `page.context().roles` via `setContextRoles()`. These are registered in AM7 as `auth.role` objects and assigned to users.
 
+> **Role naming (locked 2026-06-19):** the **AM7 role name** (the `auth.role` that model `access.roles` reference) is **CamelCase**, matching the existing system-role convention (`AccountAdministrators`, `RequestApprovers`). The **context role key** (client-side `page.context().roles`) stays camelCase. 6 roles (Auditors is a distinct read-only audit role separate from Readers).
+
 | Context Role Key | AM7 Role Name | Can Do |
 |---|---|---|
-| `iso42001Tester` | `iso42001testers` | Create test configs, launch test runs, view results |
-| `iso42001Reporter` | `iso42001reporters` | Generate reports, edit report sections, export PDF |
-| `iso42001Certifier` | `iso42001certifiers` | Approve/deny cert requests, digitally sign reports |
-| `iso42001Reader` | `iso42001readers` | Read-only access to reports, results, certifications |
-| `iso42001Admin` | `iso42001administrators` | Full access: delete, revoke certs, manage configs |
+| `iso42001Tester` | `ISO42001Testers` | Create test configs, launch test runs, view results |
+| `iso42001Reporter` | `ISO42001Reporters` | Generate reports, edit report sections, export PDF |
+| `iso42001Certifier` | `ISO42001Certifiers` | Approve/deny cert requests, digitally sign reports |
+| `iso42001Reader` | `ISO42001Readers` | Read-only access to reports, results, certifications |
+| `iso42001Auditor` | `ISO42001Auditors` | Read-only audit access to reports, results, certifications, logs |
+| `iso42001Admin` | `ISO42001Administrators` | Full access: delete, revoke certs, manage configs |
 
 **Role population in `applicationRouter.js`** — added to `setContextRoles()`:
 
@@ -1458,18 +1479,19 @@ function setContextRoles(app){
     let roles = (app && app.userRoles ? app.userRoles : []);
     // ... existing role checks ...
 
-    // ISO 42001 roles
-    ctxRoles.iso42001Tester = hasRole(roles, 'iso42001testers');
-    ctxRoles.iso42001Reporter = hasRole(roles, 'iso42001reporters');
-    ctxRoles.iso42001Certifier = hasRole(roles, 'iso42001certifiers');
-    ctxRoles.iso42001Reader = hasRole(roles, 'iso42001readers');
-    ctxRoles.iso42001Admin = hasRole(roles, 'iso42001administrators');
+    // ISO 42001 roles (auth.role names are CamelCase)
+    ctxRoles.iso42001Tester = hasRole(roles, 'ISO42001Testers');
+    ctxRoles.iso42001Reporter = hasRole(roles, 'ISO42001Reporters');
+    ctxRoles.iso42001Certifier = hasRole(roles, 'ISO42001Certifiers');
+    ctxRoles.iso42001Reader = hasRole(roles, 'ISO42001Readers');
+    ctxRoles.iso42001Auditor = hasRole(roles, 'ISO42001Auditors');
+    ctxRoles.iso42001Admin = hasRole(roles, 'ISO42001Administrators');
 
     // Convenience composite
     ctxRoles.iso42001Any = (
         ctxRoles.iso42001Tester || ctxRoles.iso42001Reporter ||
         ctxRoles.iso42001Certifier || ctxRoles.iso42001Reader ||
-        ctxRoles.iso42001Admin || ctxRoles.admin
+        ctxRoles.iso42001Auditor || ctxRoles.iso42001Admin || ctxRoles.admin
     );
 }
 ```
@@ -2492,7 +2514,7 @@ docker run -d \
 **Scope:** Promote the `iso42001` feature stub to the full ISO 42001 UI with RBAC-driven visibility, certification workflow, and the `compliance` deploy profile. See Section 9 (deployment) and 9A (view specs/wireframes). Frontend is **AccountManagerUx752** (Vite + Mithril); all paths under `src/`.
 
 **Tasks:**
-1. Register ISO 42001 roles in the role context (`iso42001Tester, iso42001Reporter, iso42001Certifier, iso42001Reader, iso42001Admin`); extend the manifest `menuItems` RBAC flags beyond `adminOnly`/`devOnly` to honor these
+1. Register ISO 42001 roles in the role context (`iso42001Tester, iso42001Reporter, iso42001Certifier, iso42001Reader, iso42001Auditor, iso42001Admin`); extend the manifest `menuItems` RBAC flags beyond `adminOnly`/`devOnly` to honor these
 2. Add ISO 42001 form definitions to the Ux752 form layer (testConfig, report, certRequest, certification) with `requiredRoles` on forms, fields, and commands
 3. Create `src/features/iso42001/dashboard.js` — compliance dashboard: verdict summary cards, heat map (models x protected classes), recent runs, recent reports, pending cert queue (certifiers only)
 4. Create `src/features/iso42001/testRunner.js` — test config + run management: new run dialog, run list with filters, run detail with progress/cancel, [Generate Report] handoff (reporters only)

@@ -64,8 +64,14 @@ These are non-negotiable and are baked into the prompt template. A phase is not 
 
 Service7 `<dependency>` uses the same `groupId`/`artifactId`/`version`. (`-pl` short name in build commands is normalized by a project script.)
 
-**Scope:** new project (depends on Objects7 + its `test-jar`); 7 models (`testConfig`, `testRun`, `testResult`, `report`, `reportSection`, `certification`, `certRequest`) per design §2 with `access.roles`, under `src/main/resources/models/iso42001/`; `ISO42001ModelNames` registration class; call `ISO42001ModelNames.use()` in test setup; ISO roles (`iso42001testers/reporters/certifiers/readers/administrators`).
-**Tests:** `TestISO42001Models` — for each model: create→read→patch→list→delete via `AccessPoint` as an authorized non-admin role user, plus a negative RBAC assertion (unauthorized user denied). Admin used only to create the role users.
+**Scope:** new project (depends on Objects7 + its `test-jar`); 7 models per design §2 under `src/main/resources/models/iso42001/`; `ISO42001ModelNames` registration class; call `ISO42001ModelNames.use()` in test setup; 6 ISO roles (CamelCase): `ISO42001Testers`, `ISO42001Reporters`, `ISO42001Certifiers`, `ISO42001Readers`, `ISO42001Auditors`, `ISO42001Administrators`.
+
+**Model naming & shape (reconciled 2026-06-19):**
+- First-class (group-backed, own `access.roles`): `testConfig`, `testRun`, `report`, `certification`, `certificationRequest` (note: full name `iso42001.certificationRequest`, file `certificationRequestModel.json`).
+- Embedded list-element models (inherit `common.nameId` only; no group/constraints/access.roles — gated via their parent): `testResult` (inside `testRun.results`), `reportSection` (inside `report.sections`).
+- §2 already carries `access.roles` on report/certification/certificationRequest; **add `access.roles` to testConfig + testRun** (Testers create/update; Readers/Auditors read; Administrators delete/admin).
+
+**Tests:** `TestISO42001Models` — for each of the 5 first-class models: create→read→patch→list→delete via `AccessPoint` as an authorized non-admin role user, plus a negative RBAC assertion (unauthorized user denied). For the 2 embedded models: validate via their parent (a `testRun` round-trips its `results`; a `report` round-trips its `sections`). Admin used only to create the role users.
 **DoD:** after `mvn -f AccountManagerObjects7/pom.xml install`, both `cd AccountManagerISO42001 && mvn compile` and `mvn test` show BUILD SUCCESS with the above passing.
 **Test harness:** confirmed — Objects7 already publishes a `test-jar` (maven-jar-plugin 3.4.1); Agent7 consumes it. The ISO project's `test-jar` dependency reuses `BaseTest`/`OlioTestUtil` directly; no Objects7 change needed.
 
@@ -78,5 +84,7 @@ Service7 `<dependency>` uses the same `groupId`/`artifactId`/`version`. (`-pl` s
 | Date | Phase | Change | Result |
 |---|---|---|---|
 | 2026-06-19 | — | Plan + prompt template captured; tracker created | n/a |
+| 2026-06-19 | 1 | Pinned Maven coords (`org.cote.accountmanager:AccountManagerISO42001:7.0.0-SNAPSHOT`); confirmed Objects7 test-jar available | Ready |
+| 2026-06-19 | 1 | Spot-checked design §2: all 7 model specs complete; base `inherits` all exist. Reconciled 4 inconsistencies — role names → CamelCase 6-role set (incl. Auditors), cert model → `iso42001.certificationRequest`, added `access.roles` to testConfig/testRun, documented embedded vs first-class model test approach | §2 build-ready |
 
 > Append one row per working session: what was attempted, the test command run, and the actual outcome (BUILD SUCCESS/failure, counts). Keep it honest — failures stay logged, not erased.

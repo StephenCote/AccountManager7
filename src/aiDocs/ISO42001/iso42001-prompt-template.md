@@ -21,7 +21,7 @@ The **Standing rules** block is fixed — never weaken it. Only the `<<...>>` se
 > - **Architecture (locked, §6.3/§12.1):** all ISO 42001 code + models live in the standalone `AccountManagerISO42001` project (`org.cote.accountmanager.iso42001.*`); Service7 depends on it; **do NOT add ISO source/models to Objects7**. Models register at runtime via `ISO42001ModelNames.use()` — call it in test setup.
 > - All services are live. **Do not mock or skip tests.** A "test" exercises real CRUD/flows through `AccessPoint` / the live service layer against the real DB. Reuse the Objects7 `BaseTest` pattern (`AccountManagerObjects7/src/test/java/org/cote/accountmanager/objects/tests/BaseTest.java`).
 > - **Test organization: `/ISO42001`** (`OrganizationEnumType.DEVELOPMENT`); create it if not initialized (`getTestOrganization()` pattern).
-> - **Use the org Admin user ONLY to create test users and assign roles** (`getCreateUser(name, orgContext)` creates via `orgContext.getAdminUser()`). Create the role users this phase needs, e.g. `<<isoTester (iso42001testers), isoReader (iso42001readers), ...>>`.
+> - **Use the org Admin user ONLY to create test users and assign roles** (`getCreateUser(name, orgContext)` creates via `orgContext.getAdminUser()`). Create the role users this phase needs from the 6 CamelCase ISO roles, e.g. `<<isoTester (ISO42001Testers), isoReader (ISO42001Readers), ...>>`.
 > - **NEVER run a test assertion as the Admin user.** Every operation under test runs as a non-admin role user.
 > - **Always include a negative RBAC assertion** where access control applies (an unauthorized role user is denied).
 > - **DB reset policy:** the test `resource.properties` may set `test.db.reset=true` to rebuild the test schema (one-shot; BaseTest auto-clears). That is the ONLY reset path. **NEVER** drop/recreate the docker postgres container; **NEVER** directly `TRUNCATE`/`DROP`/`DELETE` tables, schema, or data. Keep committed default `test.db.reset=false`.
@@ -48,9 +48,9 @@ The **Standing rules** block is fixed — never weaken it. Only the `<<...>>` se
 >
 > **Scope (this phase only):**
 > 1. Create the new standalone `AccountManagerISO42001` Maven module per §6.2, depending on `AccountManagerObjects7` and its `test-jar` (`<type>test-jar</type><scope>test</scope>`) to reuse `BaseTest` — Objects7 already publishes this test-jar (Agent7 consumes it), so no Objects7 change is needed.
-> 2. Add the 7 model JSON schemas under the project's `src/main/resources/models/iso42001/` per §2: `iso42001.testConfig`, `iso42001.testRun`, `iso42001.testResult`, `iso42001.report`, `iso42001.reportSection`, `iso42001.certification`, `iso42001.certRequest` — with `access.roles` blocks.
+> 2. Add the 7 model JSON schemas under the project's `src/main/resources/models/iso42001/` per §2: `iso42001.testConfig`, `iso42001.testRun`, `iso42001.testResult`, `iso42001.report`, `iso42001.reportSection`, `iso42001.certification`, `iso42001.certificationRequest`. First-class models (testConfig, testRun, report, certification, certificationRequest) carry `access.roles`; testResult + reportSection are embedded list elements (inherit `common.nameId` only, gated via parent). Add `access.roles` to testConfig + testRun (§2 only has them on report/certification/certificationRequest).
 > 3. Create `org.cote.accountmanager.iso42001.schema.ISO42001ModelNames` (extends `ModelNames`, declares `MODEL_*` constants + `MODELS` list + idempotent `use()`); call `ISO42001ModelNames.use()` in test setup (as `BaseTest` calls `OlioModelNames.use()`).
-> 4. Define ISO roles: `iso42001testers`, `iso42001reporters`, `iso42001certifiers`, `iso42001readers`, `iso42001administrators` (§9A.1).
+> 4. Define the 6 CamelCase ISO roles: `ISO42001Testers`, `ISO42001Reporters`, `ISO42001Certifiers`, `ISO42001Readers`, `ISO42001Auditors`, `ISO42001Administrators` (§9A.1).
 >
 > **Standing rules:** *(as above — live services, `/ISO42001` org, admin only creates users, never test as admin, reset via property only, never drop container/truncate.)*
 >
