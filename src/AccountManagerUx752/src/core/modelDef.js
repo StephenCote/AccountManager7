@@ -145,6 +145,7 @@
       "label": "AI",
       "order": [
           "tool.memory",
+          "system.connection",
           "olio.llm.chatConfig",
           "olio.llm.promptConfig",
           "olio.llm.promptTemplate",
