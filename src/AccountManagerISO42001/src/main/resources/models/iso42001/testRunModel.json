@@ -1,0 +1,89 @@
+{
+	"name": "iso42001.testRun",
+	"inherits": ["data.directory", "common.nameId", "common.description", "common.dateTime"],
+	"icon": "play_circle",
+	"label": "ISO 42001 Test Run",
+	"description": "Represents a single execution of an ISO 42001 test suite run.",
+	"dedicatedParticipation": true,
+	"constraints": ["name, groupId, organizationId"],
+	"access": {
+		"roles": {
+			"create": ["ISO42001Testers"],
+			"read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Reporters", "ISO42001Certifiers"],
+			"update": ["ISO42001Testers"],
+			"delete": ["ISO42001Administrators"],
+			"admin": ["ISO42001Administrators"]
+		}
+	},
+	"fields": [
+		{
+			"name": "testConfig",
+			"baseModel": "iso42001.testConfig",
+			"type": "model",
+			"foreign": true,
+			"description": "The test configuration used for this run"
+		},
+		{
+			"name": "status",
+			"type": "string",
+			"maxLength": 32,
+			"default": "PENDING",
+			"description": "Run status: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED"
+		},
+		{
+			"name": "startTime",
+			"type": "timestamp",
+			"description": "Execution start time"
+		},
+		{
+			"name": "endTime",
+			"type": "timestamp",
+			"description": "Execution end time"
+		},
+		{
+			"name": "modelEndpoint",
+			"type": "string",
+			"maxLength": 256,
+			"description": "Actual model identifier used (e.g., claude-sonnet-4-5-20250929)"
+		},
+		{
+			"name": "results",
+			"baseModel": "iso42001.testResult",
+			"baseType": "model",
+			"type": "list",
+			"description": "Individual test results from this run"
+		},
+		{
+			"name": "passCount",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "flagCount",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "failCount",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "totalTrials",
+			"type": "int",
+			"default": 0,
+			"description": "Total number of individual LLM calls made"
+		},
+		{
+			"name": "rawLogRef",
+			"type": "string",
+			"maxLength": 64,
+			"description": "ObjectId of data.data containing raw request/response logs"
+		},
+		{
+			"name": "randomSeedUsed",
+			"type": "long",
+			"description": "Actual random seed used (for reproducibility)"
+		}
+	]
+}

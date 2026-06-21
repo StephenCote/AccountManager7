@@ -1,0 +1,32 @@
+{
+	"name": "iso42001.reportSection",
+	"inherits": ["common.nameId"],
+	"icon": "article",
+	"label": "Report Section",
+	"description": "A section within an ISO 42001 compliance report.",
+	"fields": [
+		{
+			"name": "sectionType",
+			"type": "string",
+			"maxLength": 32,
+			"description": "EXECUTIVE_SUMMARY, METHODOLOGY, RESULTS, MITIGATION, APPENDIX, TREND"
+		},
+		{
+			"name": "sectionOrder",
+			"type": "int",
+			"default": 0,
+			"description": "Display/export order within the report"
+		},
+		{
+			"name": "content",
+			"type": "string",
+			"description": "Section content (markdown format)"
+		},
+		{
+			"name": "chartData",
+			"type": "string",
+			"maxLength": 8192,
+			"description": "JSON-encoded chart/visualization data (heat maps, bar charts)"
+		}
+	]
+}

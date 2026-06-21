@@ -12,6 +12,7 @@
 	<modules>
 		<module>AccountManagerObjects7</module>
 		<module>AccountManagerAgent7</module>
+		<module>AccountManagerISO42001</module>
 		<module>AccountManagerConsole7</module>
 		<module>AccountManagerService7</module>
 	</modules>

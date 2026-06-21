@@ -1,0 +1,86 @@
+{
+	"name": "iso42001.testConfig",
+	"inherits": ["data.directory", "common.nameId", "common.description"],
+	"icon": "science",
+	"label": "ISO 42001 Test Configuration",
+	"description": "Defines an ISO 42001 test configuration including endpoints, parameters, and test selection.",
+	"dedicatedParticipation": true,
+	"constraints": ["name, groupId, organizationId"],
+	"access": {
+		"roles": {
+			"create": ["ISO42001Testers"],
+			"read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Reporters", "ISO42001Certifiers"],
+			"update": ["ISO42001Testers"],
+			"delete": ["ISO42001Administrators"],
+			"admin": ["ISO42001Administrators"]
+		}
+	},
+	"fields": [
+		{
+			"name": "moduleId",
+			"type": "string",
+			"maxLength": 32,
+			"description": "Test module identifier (BIAS, DATA, TRANS, OVER, MON, THRD)"
+		},
+		{
+			"name": "testIds",
+			"type": "list",
+			"baseType": "string",
+			"description": "Specific test IDs to run (empty = all in module)"
+		},
+		{
+			"name": "endpointName",
+			"type": "string",
+			"maxLength": 128,
+			"description": "LLM endpoint name from chat config"
+		},
+		{
+			"name": "endpointType",
+			"type": "string",
+			"maxLength": 32,
+			"description": "Endpoint type: openai, anthropic, ollama, azure"
+		},
+		{
+			"name": "tier",
+			"type": "int",
+			"default": 0,
+			"description": "Test tier: 0=both, 1=system prompt, 2=conversation only"
+		},
+		{
+			"name": "samplesPerGroup",
+			"type": "int",
+			"default": 30,
+			"description": "Minimum samples per demographic group"
+		},
+		{
+			"name": "temperature",
+			"type": "double",
+			"default": 1.0,
+			"description": "LLM temperature for test execution"
+		},
+		{
+			"name": "alpha",
+			"type": "double",
+			"default": 0.05,
+			"description": "Statistical significance level"
+		},
+		{
+			"name": "randomSeed",
+			"type": "long",
+			"default": 0,
+			"description": "Random seed for reproducibility (0 = auto-generate)"
+		},
+		{
+			"name": "chatConfigName",
+			"type": "string",
+			"maxLength": 128,
+			"description": "Name of olio.llm.chatConfig to use for LLM calls"
+		},
+		{
+			"name": "promptConfigName",
+			"type": "string",
+			"maxLength": 128,
+			"description": "Name of olio.llm.promptConfig template for Tier 1 system prompts"
+		}
+	]
+}

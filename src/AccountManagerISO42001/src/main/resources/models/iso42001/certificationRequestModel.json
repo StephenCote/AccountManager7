@@ -1,0 +1,52 @@
+{
+	"name": "iso42001.certificationRequest",
+	"inherits": ["data.directory", "access.accessRequest"],
+	"icon": "approval",
+	"label": "ISO 42001 Certification Request",
+	"description": "Request for digital signature certification of an ISO 42001 report. Follows the AM7 access request workflow.",
+	"constraints": ["name, groupId, organizationId"],
+	"access": {
+		"roles": {
+			"create": ["ISO42001Reporters"],
+			"read": ["ISO42001Readers", "ISO42001Certifiers"],
+			"update": ["ISO42001Certifiers", "ISO42001Administrators"],
+			"delete": ["ISO42001Administrators"],
+			"admin": ["ISO42001Administrators"]
+		}
+	},
+	"fields": [
+		{
+			"name": "report",
+			"baseModel": "iso42001.report",
+			"type": "model",
+			"foreign": true,
+			"description": "The report to be certified"
+		},
+		{
+			"name": "requestedCertifier",
+			"baseModel": "system.user",
+			"type": "model",
+			"foreign": true,
+			"description": "Specific user requested to certify",
+			"access": {
+				"roles": {
+					"create": ["ISO42001Reporters", "ISO42001Administrators"],
+					"read": ["ISO42001Readers", "ISO42001Certifiers", "ISO42001Administrators"]
+				}
+			}
+		},
+		{
+			"name": "justification",
+			"type": "string",
+			"maxLength": 4096,
+			"description": "Justification for certification request"
+		},
+		{
+			"name": "resultingCertification",
+			"baseModel": "iso42001.certification",
+			"type": "model",
+			"foreign": true,
+			"description": "The certification created upon approval"
+		}
+	]
+}

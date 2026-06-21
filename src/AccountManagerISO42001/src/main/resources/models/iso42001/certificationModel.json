@@ -1,0 +1,88 @@
+{
+	"name": "iso42001.certification",
+	"inherits": ["data.directory", "common.nameId", "common.dateTime", "crypto.signature"],
+	"icon": "verified",
+	"label": "ISO 42001 Certification",
+	"description": "Digital certification of an ISO 42001 compliance report. Contains the signer's signature over the report hash.",
+	"dedicatedParticipation": true,
+	"constraints": ["name, groupId, organizationId"],
+	"access": {
+		"roles": {
+			"create": ["ISO42001Certifiers"],
+			"read": ["ISO42001Readers", "ISO42001Auditors"],
+			"update": ["ISO42001Administrators"],
+			"delete": ["ISO42001Administrators"],
+			"admin": ["ISO42001Administrators"]
+		}
+	},
+	"fields": [
+		{
+			"name": "report",
+			"baseModel": "iso42001.report",
+			"type": "model",
+			"foreign": true,
+			"description": "The report being certified"
+		},
+		{
+			"name": "certifier",
+			"baseModel": "system.user",
+			"type": "model",
+			"foreign": true,
+			"description": "User who issued the certification",
+			"access": {
+				"roles": {
+					"create": ["ISO42001Certifiers", "ISO42001Administrators"],
+					"read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Certifiers", "ISO42001Administrators"]
+				}
+			}
+		},
+		{
+			"name": "certifierTitle",
+			"type": "string",
+			"maxLength": 256,
+			"description": "Certifier's title/role at time of certification"
+		},
+		{
+			"name": "certificationDate",
+			"type": "timestamp",
+			"description": "Date/time the certification was issued"
+		},
+		{
+			"name": "reportHash",
+			"type": "blob",
+			"description": "SHA-256 hash of the report data at time of signing"
+		},
+		{
+			"name": "reportHashAlgorithm",
+			"type": "string",
+			"maxLength": 32,
+			"default": "SHA-256",
+			"description": "Hash algorithm used"
+		},
+		{
+			"name": "signatureAlgorithm",
+			"type": "string",
+			"maxLength": 32,
+			"default": "SHA256WithRSA",
+			"description": "Signature algorithm used"
+		},
+		{
+			"name": "signerCertificate",
+			"type": "blob",
+			"description": "X.509 certificate of the signer (DER encoded)"
+		},
+		{
+			"name": "status",
+			"type": "string",
+			"maxLength": 32,
+			"default": "VALID",
+			"description": "VALID, EXPIRED, REVOKED"
+		},
+		{
+			"name": "notes",
+			"type": "string",
+			"maxLength": 4096,
+			"description": "Certification notes, conditions, or scope limitations"
+		}
+	]
+}

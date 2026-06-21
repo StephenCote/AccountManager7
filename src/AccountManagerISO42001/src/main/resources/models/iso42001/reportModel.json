@@ -1,0 +1,113 @@
+{
+	"name": "iso42001.report",
+	"inherits": ["data.directory", "common.nameId", "common.description", "common.dateTime", "crypto.hashExt"],
+	"icon": "summarize",
+	"label": "ISO 42001 Compliance Report",
+	"description": "Generated compliance report aggregating test results with analysis and recommendations.",
+	"dedicatedParticipation": true,
+	"constraints": ["name, groupId, organizationId"],
+	"access": {
+		"roles": {
+			"create": ["ISO42001Reporters"],
+			"read": ["ISO42001Readers", "ISO42001Auditors"],
+			"update": ["ISO42001Reporters"],
+			"delete": ["ISO42001Administrators"],
+			"admin": ["ISO42001Administrators"]
+		}
+	},
+	"fields": [
+		{
+			"name": "reportType",
+			"type": "string",
+			"maxLength": 32,
+			"default": "COMPLIANCE",
+			"description": "Report type: COMPLIANCE, BIAS, MONITORING, AUDIT, SUMMARY"
+		},
+		{
+			"name": "reportVersion",
+			"type": "int",
+			"default": 1,
+			"description": "Report revision number"
+		},
+		{
+			"name": "status",
+			"type": "string",
+			"maxLength": 32,
+			"default": "DRAFT",
+			"description": "DRAFT, REVIEW, APPROVED, CERTIFIED, ARCHIVED"
+		},
+		{
+			"name": "testRuns",
+			"baseModel": "iso42001.testRun",
+			"baseType": "model",
+			"type": "list",
+			"foreign": true,
+			"description": "Test runs included in this report"
+		},
+		{
+			"name": "sections",
+			"baseModel": "iso42001.reportSection",
+			"baseType": "model",
+			"type": "list",
+			"description": "Report sections (executive summary, methodology, results, mitigations)"
+		},
+		{
+			"name": "overallVerdict",
+			"type": "string",
+			"maxLength": 16,
+			"description": "Aggregate verdict: PASS, FLAG, FAIL"
+		},
+		{
+			"name": "passCount",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "flagCount",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "failCount",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "modelsEvaluated",
+			"type": "list",
+			"baseType": "string",
+			"description": "List of model endpoint names evaluated"
+		},
+		{
+			"name": "controlAreas",
+			"type": "list",
+			"baseType": "string",
+			"description": "ISO 42001 control areas covered (A.5.4, A.5.5, etc.)"
+		},
+		{
+			"name": "mitigationActions",
+			"type": "string",
+			"maxLength": 8192,
+			"description": "JSON-encoded mitigation actions for FLAG/FAIL results"
+		},
+		{
+			"name": "exportedPdf",
+			"baseModel": "data.data",
+			"type": "model",
+			"foreign": true,
+			"description": "Reference to the exported PDF (data.data with contentType=application/pdf)",
+			"access": {
+				"roles": {
+					"read": ["ISO42001Readers", "ISO42001Auditors"]
+				}
+			}
+		},
+		{
+			"name": "certification",
+			"baseModel": "iso42001.certification",
+			"type": "model",
+			"foreign": true,
+			"description": "Certification record if report has been certified"
+		}
+	]
+}

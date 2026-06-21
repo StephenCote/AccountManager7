@@ -25,7 +25,7 @@ These are non-negotiable and are baked into the prompt template. A phase is not 
 
 | # | Phase | Status | Gate (definition of done) | Design ref |
 |---|---|---|---|---|
-| 1 | Foundation — module, 7 models, RBAC roles, `/ISO42001` test harness | ⬜ | `mvn -pl iso42001 test` green: `TestISO42001Models` CRUD + RBAC, all as non-admin users | §2, §6.2, §6.3, §7, §9A.1 |
+| 1 | Foundation — module, 7 models, RBAC roles, `/ISO42001` test harness | ✅ | `mvn -pl iso42001 test` green: `TestISO42001Models` CRUD + RBAC, all as non-admin users | §2, §6.2, §6.3, §7, §9A.1 |
 | 2 | Statistical engine & scoring | ⬜ | Tests vs hand-checked fixtures: Mann-Whitney U, Chi-square, Fisher, Kruskal-Wallis, Cohen's d, odds ratio, Cramér's V, verdict logic | §4 (`iso42001.md`), §12.2 |
 | 3 | Execution engine (Tier-1/Tier-2, seeded interleaving, verbatim logging) | ⬜ | A real run vs a live endpoint produces reproducible, logged, persisted results | §11 Phase 3 |
 | 4 | Bias module (start: ATTR/HIRE/REF critical set) | ⬜ | A run scores + verdicts a protected-class comparison end-to-end | [`iso42001-bias.md`](iso42001-bias.md) |
@@ -75,6 +75,15 @@ Service7 `<dependency>` uses the same `groupId`/`artifactId`/`version`. (`-pl` s
 **DoD:** after `mvn -f AccountManagerObjects7/pom.xml install`, both `cd AccountManagerISO42001 && mvn compile` and `mvn test` show BUILD SUCCESS with the above passing.
 **Test harness:** confirmed — Objects7 already publishes a `test-jar` (maven-jar-plugin 3.4.1); Agent7 consumes it. The ISO project's `test-jar` dependency reuses `BaseTest`/`OlioTestUtil` directly; no Objects7 change needed.
 
+**Phase 1 outcome (2026-06-21) — DONE.** `AccountManagerISO42001` (`org.cote.accountmanager:AccountManagerISO42001:7.0.0-SNAPSHOT`, jar) created as a sibling of Objects7, added to the parent aggregator pom. 7 models under `src/main/resources/models/iso42001/`; `ISO42001ModelNames.use()` registers them (called in test setup before IO open, so `IOSystem.open` auto-creates the new tables via `generateNewSchemaOnly` — additive, no reset/drop). `TestISO42001Models` is green: 5 first-class models each do create→read(owner)→read(reader role)→patch→list→delete via `AccessPoint` as non-admin role users, plus a negative RBAC assertion (isoReader create denied — verified for all 5); the 2 embedded models round-trip through their parents (`testRun.results`, `report.sections`, 2 rows each). Admin user used only to create role users + assign roles + the shared group.
+
+Decisions taken (all within the approved model-construction scope; flagged for review):
+- **All 5 first-class models are group-backed** (Stephen's call, for hierarchical snapshotting): `certification` and `certificationRequest` gained `data.directory` beyond the §2 verbatim inherits.
+- `certification` dropped its own `expiryDate` field — it is inherited from `common.dateTime` (the explicit redeclare collided on the DB column). The field is still present via inheritance.
+- `certificationRequest` does **not** set `dedicatedParticipation` — so its entitlement/participation-association rows live in the **common (shared) participation table** rather than a dedicated per-model table. (With a dedicated table, `access.accessRequest`'s many `system.user`-typed participations produced a truncated participation-table-name collision.) `dedicatedParticipation` only controls where those association rows are stored — useful when a model's participation volume is large enough to want its own table/tablespace; it is not a property that inherits and dropping it loses no capability. `certificationRequest` is low-volume (≈one per certification), so the common table is the right fit. Group-backing (the `groupId` from `data.directory`) is independent and unaffected. The higher-volume models (`testRun`, `report`, plus `testConfig`/`certification`) keep their dedicated participation tables.
+- **Field-level RBAC on `system.user` FKs** (`certification.certifier`, `certificationRequest.requestedCertifier`) — `create`+`read` ISO roles added so role members can reference users without the `AccountUsersReaders` system role (the `access.accessRequest`/`contactInformation` pattern). `report.exportedPdf` (→`data.data`) got field-level `read`.
+- **Test query patterns** (no model/auth change): single-record reads use `find` by `objectId` (model read-role authorizes per record); list uses a `name`-constrained query so the coarse model-level read applies (a `groupId`-constrained list would instead force a group-read check on the admin-owned shared group, which the model read-role does not grant).
+
 *(Add per-phase detail blocks for 2–10 as each is started, copying the gate from the tracker and expanding scope/tests/DoD from the prompt template.)*
 
 ---
@@ -86,5 +95,6 @@ Service7 `<dependency>` uses the same `groupId`/`artifactId`/`version`. (`-pl` s
 | 2026-06-19 | — | Plan + prompt template captured; tracker created | n/a |
 | 2026-06-19 | 1 | Pinned Maven coords (`org.cote.accountmanager:AccountManagerISO42001:7.0.0-SNAPSHOT`); confirmed Objects7 test-jar available | Ready |
 | 2026-06-19 | 1 | Spot-checked design §2: all 7 model specs complete; base `inherits` all exist. Reconciled 4 inconsistencies — role names → CamelCase 6-role set (incl. Auditors), cert model → `iso42001.certificationRequest`, added `access.roles` to testConfig/testRun, documented embedded vs first-class model test approach | §2 build-ready |
+| 2026-06-21 | 1 | Built `AccountManagerISO42001` (pom + parent module), 7 model JSONs, `ISO42001ModelNames`, 6 ISO roles, `TestISO42001Models`. All 5 first-class models group-backed (Stephen's call); fixed `expiryDate` dup (inherited), dropped `certificationRequest` `dedicatedParticipation` (participation-name collision), added field-level FK RBAC. `mvn install` Objects7 → `mvn test` ISO42001 | **BUILD SUCCESS — Tests run: 5, Failures: 0, Errors: 0; 5/5 negative-RBAC denials verified** |
 
 > Append one row per working session: what was attempted, the test command run, and the actual outcome (BUILD SUCCESS/failure, counts). Keep it honest — failures stay logged, not erased.

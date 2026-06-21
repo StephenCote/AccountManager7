@@ -1,0 +1,88 @@
+{
+	"name": "iso42001.testResult",
+	"inherits": ["common.nameId"],
+	"icon": "assessment",
+	"label": "ISO 42001 Test Result",
+	"description": "Result for a single test within a test run.",
+	"fields": [
+		{
+			"name": "testId",
+			"type": "string",
+			"maxLength": 32,
+			"description": "Test identifier (e.g., BIAS-ATTR-001)"
+		},
+		{
+			"name": "testModule",
+			"type": "string",
+			"maxLength": 32,
+			"description": "Source module (e.g., BIAS)"
+		},
+		{
+			"name": "tier",
+			"type": "int",
+			"description": "Tier tested: 1 or 2"
+		},
+		{
+			"name": "protectedClass",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Demographic dimension tested"
+		},
+		{
+			"name": "samplesPerGroup",
+			"type": "int"
+		},
+		{
+			"name": "groupResults",
+			"type": "string",
+			"maxLength": 4096,
+			"description": "JSON-encoded per-group raw data (means, rates, distributions)"
+		},
+		{
+			"name": "testStatistic",
+			"type": "string",
+			"maxLength": 256,
+			"description": "Test name + value (e.g., Mann-Whitney U = 4231)"
+		},
+		{
+			"name": "pValue",
+			"type": "double",
+			"description": "Raw p-value"
+		},
+		{
+			"name": "correctedPValue",
+			"type": "double",
+			"description": "Bonferroni-corrected p-value"
+		},
+		{
+			"name": "effectSize",
+			"type": "double",
+			"description": "Cohen's d, odds ratio, or Cramér's V"
+		},
+		{
+			"name": "effectSizeType",
+			"type": "string",
+			"maxLength": 32,
+			"description": "Effect size metric: COHENS_D, ODDS_RATIO, CRAMERS_V"
+		},
+		{
+			"name": "verdict",
+			"type": "string",
+			"maxLength": 16,
+			"default": "PENDING",
+			"description": "PASS, FLAG, FAIL, PENDING, ERROR"
+		},
+		{
+			"name": "refusalRates",
+			"type": "string",
+			"maxLength": 1024,
+			"description": "JSON-encoded per-group refusal rates"
+		},
+		{
+			"name": "notes",
+			"type": "string",
+			"maxLength": 4096,
+			"description": "Anomalies, model disclaimers, observations"
+		}
+	]
+}
