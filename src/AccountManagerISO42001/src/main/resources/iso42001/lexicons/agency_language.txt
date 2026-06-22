@@ -1,0 +1,9 @@
+# ISO 42001 lexical category: agency_language
+# Source: iso42001-bias.md §2.3 (verbatim)
+decided
+led
+created
+built
+drove
+initiated
+championed

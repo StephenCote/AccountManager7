@@ -2,7 +2,7 @@
 
 **Purpose:** The living tracker for building the ISO 42001 subsystem + the enterprise-readiness work. Update the **Status** and **Progress log** as phases complete. Authoritative design is [`iso42001-design.md`](iso42001-design.md); requirements in [`iso42001.md`](iso42001.md); enterprise context in [`enterpriseReadiness.md`](enterpriseReadiness.md). Start each phase from [`iso42001-prompt-template.md`](iso42001-prompt-template.md).
 
-**Last updated:** 2026-06-19
+**Last updated:** 2026-06-22
 
 Status legend: ⬜ Not started · 🟡 In progress · ✅ Done · ⏸ Blocked
 
@@ -26,7 +26,7 @@ These are non-negotiable and are baked into the prompt template. A phase is not 
 | # | Phase | Status | Gate (definition of done) | Design ref |
 |---|---|---|---|---|
 | 1 | Foundation — module, 7 models, RBAC roles, `/ISO42001` test harness | ✅ | `mvn -pl iso42001 test` green: `TestISO42001Models` CRUD + RBAC, all as non-admin users | §2, §6.2, §6.3, §7, §9A.1 |
-| 2 | Statistical engine & scoring | ⬜ | Tests vs hand-checked fixtures: Mann-Whitney U, Chi-square, Fisher, Kruskal-Wallis, Cohen's d, odds ratio, Cramér's V, verdict logic | §4 (`iso42001.md`), §12.2 |
+| 2 | Statistical engine & scoring | ✅ | Tests vs hand-checked fixtures: Mann-Whitney U, Chi-square, Fisher, Kruskal-Wallis, Cohen's d, odds ratio, Cramér's V, verdict logic | §4 (`iso42001.md`), §12.2 |
 | 3 | Execution engine (Tier-1/Tier-2, seeded interleaving, verbatim logging) | ⬜ | A real run vs a live endpoint produces reproducible, logged, persisted results | §11 Phase 3 |
 | 4 | Bias module (start: ATTR/HIRE/REF critical set) | ⬜ | A run scores + verdicts a protected-class comparison end-to-end | [`iso42001-bias.md`](iso42001-bias.md) |
 | 5 | Reporting & signed PDF export | ⬜ | Result set → report JSON → signed PDF; signature block valid | §4, §12.3 |
@@ -44,6 +44,23 @@ These are non-negotiable and are baked into the prompt template. A phase is not 
 | E2 | SCIM completion (deprovisioning semantics, enterprise ext, Roles/Entitlements, conformance) | ⬜ | Live IdP create→update→group→disable→re-enable→delete, all org-scoped + audited | `enterpriseReadiness.md` SCIM plan |
 | E3 | GA version pinning + dependency scanning | ⬜ | Build on GA Java/Jakarta; scan in place | `enterpriseReadiness.md` P0 |
 | E4 | OpenAPI + API versioning + rate limiting; metrics/health | ⬜ | Spec generated; `/health` live; limiter enforced | `enterpriseReadiness.md` P1 |
+
+---
+
+## Backlog — captured requirements (2026-06-22, Stephen)
+
+New requirements to fold into the design + phasing. Not yet scheduled into a phase; tracked here so they aren't lost.
+
+| # | Requirement | Status | Gate (definition of done) | Lands in |
+|---|---|---|---|---|
+| B1 | **Multi-provider chat + tool flow.** The chat config currently works against OpenAI-shaped APIs (only Azure OpenAI has actually been tested) and does **not** handle the tool/function-call flow. Extend it to cover the top 5–10 AI API types (~80% of usage) — candidates: OpenAI, Azure OpenAI, Anthropic, Google Gemini, AWS Bedrock, Mistral, Cohere, plus local Ollama/vLLM — including each provider's tool-call request/response loop. | ⬜ | A live call + a multi-step tool-call round-trip succeeds against ≥5 provider types via the chat config; provider-specific request/response + tool schemas adapted; verbatim logging preserved | Prereq/extension of **Phase 3** (execution engine runs tests through the chat layer); design §1.2 |
+| B2 | **AI-policy ISO-compliance check.** A feature that evaluates an organization's AI policy document(s) against ISO 42001 control requirements and reports conformance/gaps. **Awaiting Stephen's example policy set** to anchor the rubric and fixtures. | ⬜ (blocked: example set) | Given the sample policy set, the feature maps each policy clause to ISO 42001 Annex A controls and produces a per-control conformance verdict + gap list; verified against a hand-graded fixture | New module alongside the bias suite; ties into reporting (**Phase 5**) + MCP/REST (**Phase 7**) |
+| B3 | **US Federal + State regulatory check.** A feature that checks AI policies/practices against published US Federal and specific State AI regulations (only where published/available). | ⬜ | A regulation catalog (Federal + named States) is loaded; a policy is evaluated against applicable regs with citations; verified against a hand-graded fixture; clearly scoped to *published* regs only | Sibling of B2; shares the policy-evaluation + reporting infrastructure |
+
+**Notes / open questions:**
+- **B1** is effectively a precondition for running Phase-3 live tests against anything beyond Azure OpenAI; recommend pulling it into Phase 3 scope. The tool-call flow is net-new (current config has none).
+- **B2** is **blocked pending the example policy set** Stephen will provide — the rubric, control mapping, and test fixtures should be derived from that set rather than invented (per the no-invented-specs rule).
+- **B2/B3** introduce a *document/policy compliance* capability distinct from the *runtime bias-testing* capability that Phases 2–4 build. They likely warrant their own design section in `iso42001-design.md` and their own model(s) (e.g. `iso42001.policy`, `iso42001.regulation`, `iso42001.conformanceResult`). Flagging as an architecture decision before implementation.
 
 ---
 
@@ -84,7 +101,34 @@ Decisions taken (all within the approved model-construction scope; flagged for r
 - **Field-level RBAC on `system.user` FKs** (`certification.certifier`, `certificationRequest.requestedCertifier`) — `create`+`read` ISO roles added so role members can reference users without the `AccountUsersReaders` system role (the `access.accessRequest`/`contactInformation` pattern). `report.exportedPdf` (→`data.data`) got field-level `read`.
 - **Test query patterns** (no model/auth change): single-record reads use `find` by `objectId` (model read-role authorizes per record); list uses a `name`-constrained query so the coarse model-level read applies (a `groupId`-constrained list would instead force a group-read check on the admin-owned shared group, which the model read-role does not grant).
 
-*(Add per-phase detail blocks for 2–10 as each is started, copying the gate from the tracker and expanding scope/tests/DoD from the prompt template.)*
+### Phase 2 — Statistical engine & scoring
+**Scope (locked to design §11 Phase 2 — no work pulled forward):** pure-logic computation components in the standalone `AccountManagerISO42001` project under `org.cote.accountmanager.iso42001.*`. Phase-2 Maven deps added to the ISO pom only: `org.apache.commons:commons-math3:3.6.1`, `org.yaml:snakeyaml:2.3` (no openpdf/jfreechart — those are Phase 4+).
+
+**Delivered:**
+- `engine.StatisticalAnalyzer` (+ `Verdict`, `EffectSizeType`, `StatResult`): Mann-Whitney U, Chi-square, Fisher's exact (2x2, two-sided), Kruskal-Wallis, Bonferroni correction (`p·m`, capped; and `α/m`), effect sizes (Cohen's d pooled-SD, odds ratio, Cramér's V), and the §4.4 PASS/FLAG/FAIL verdict classifier.
+- `scoring.BiasScorer` (+ `ParsedResponse`): JSON→regex→markdown-table parse cascade, refusal vs. malformed classification (parse failure captured as data per §5.3), min-max score normalization onto [0,1].
+- `scoring.LexicalAnalyzer` (+ `LexicalResult`): per-category word-frequency scoring; 7 lexicon files under `resources/iso42001/lexicons/` populated verbatim from bias §2.3.
+- `util.NameBankLoader` (+ `NameBank`, `AgeRange`): snakeyaml load + structural validation (≥10 names/cell rule); `resources/iso42001/name_banks.yaml` (5 races × 2 genders × 10 names + gender + age cohorts).
+- `scoring.SwapTestRunner` (+ `SwapDimension`, `SwapPair`, `SwapComparison`): pair generation across race/gender/religion/political, paired-output comparison via the analyzer (two-sided → bias-on-any-significant-difference), template fill.
+
+**Tests (all `@Category(UnitTest.class)`, hand-checked fixtures — no DB/LLM/AccessPoint):** `TestISO42001StatisticalAnalyzer` (each test/effect-size + a Bonferroni multi-comparison case + verdict boundary cases at 0.2/0.5), `TestISO42001BiasScorer` (parse paths + refusal + malformed + normalization), `TestISO42001LexicalAnalyzer` (counts/frequencies + classpath lexicons), `TestISO42001NameBankLoader` (load + validation thresholds + malformed-root reject), `TestISO42001SwapTest` (pair counts C(n,2) + compare PASS/FAIL + template fill).
+
+**Standing-rules note:** the live-DB / `/ISO42001`-org / admin-only / negative-RBAC rules do **not** apply here because these are pure-computation components — no DB, no AccessPoint, no LLM. They are verified against deterministic hand-computed fixtures rather than smoke checks (the spec-required substitute for the DB-flow rules). Phase-1's `TestISO42001Models` (DB-backed) is unaffected and still requires a live container.
+
+**Configurable thresholds (`ScoringConfig`, added 2026-06-22 at Stephen's request).** All statistics/scoring knobs are externalized into `engine.ScoringConfig` so a run can be executed multiple times with different settings and the results compared: α, Bonferroni on/off, effect-size verdict thresholds (Cohen's-d/Cramér's-V small/medium), odds-ratio thresholds, and the BiasScorer normalization scale (min/max). Defaults reproduce the spec exactly (§4.3/§4.4). `StatisticalAnalyzer.classifyVerdict(p, effect, EffectSizeType, ScoringConfig)` is the configurable, type-aware path; the original fixed overloads remain for the spec-default Cohen's-d path. `BiasScorer(ScoringConfig)` and `SwapTestRunner.compare(a,b,ScoringConfig)` consume it too.
+
+- **Config scope — campaign-wide with per-rule override (locked design intent).** `ScoringConfig` is origin-agnostic. The "campaign" (a `iso42001.testConfig` run) supplies one config that applies to **every rule by default**; an individual rule may hand the engine its **own** `ScoringConfig` to override for that test only. Recommended persistence (Phase 3): carry the campaign defaults on `iso42001.testConfig` (it already holds `alpha`) — either add the threshold/scale fields directly or reference a new `iso42001.analysisProfile` sub-model — and allow an optional per-rule override field. **Decision needed before Phase 3 wiring:** extend `testConfig` in place vs. a dedicated `analysisProfile` model. (No DB model built in Phase 2 — that's Phase 3 scope; the pure-logic object is in place and tested.)
+
+**Judgment calls flagged (⚠) for review:**
+- **Fisher's exact & Kruskal-Wallis are not built into Commons Math 3.6.1** — implemented on its primitives: Fisher via `HypergeometricDistribution` (sum of tables with P ≤ P(observed)); KW via `NaturalRanking` + `ChiSquaredDistribution` (tie-corrected H, df=k-1). Math is standard/fully-determined; not a spec invention.
+- **Odds-ratio → verdict — RESOLVED (2026-06-22) via `ScoringConfig`.** §4.4 leaves OR thresholds undefined (OR centers at 1, not 0). Now: OR is folded to a symmetric magnitude `max(OR, 1/OR)` and compared to configurable thresholds (defaults small=1.5 / medium=2.5). Tunable per campaign/rule; verified by `testOddsRatioVerdict`. The default values themselves remain open for Stephen to set authoritatively.
+- **Score normalization formula** unspecified — min-max `(v-min)/(max-min)` clamped; scale now configurable (default 1–10) via `ScoringConfig`.
+- **Lexicon file naming** — design §6.1 sketches 3 files (authority/stereotype/dignity); the only authoritative word lists are bias §2.3's 7 categories, so 7 verbatim files were shipped and loaded generically (the 3 families map onto them; see `LexicalAnalyzer` javadoc).
+- **Name-bank content** — bias §2.1 gives 3 seed names/cell with "…"; extended to the spec-required ≥10 with signal-bearing, non-caricature names.
+
+**DoD:** `cd AccountManagerISO42001 && mvn -o compile` → BUILD SUCCESS; `mvn -o test -Dtest=<5 Phase-2 classes>` → BUILD SUCCESS, **Tests run: 37, Failures: 0, Errors: 0** (33 core + 4 config: configurable effect thresholds, configurable α, odds-ratio verdict, configurable normalization scale).
+
+*(Add per-phase detail blocks for 3–10 as each is started, copying the gate from the tracker and expanding scope/tests/DoD from the prompt template.)*
 
 ---
 
@@ -96,5 +140,7 @@ Decisions taken (all within the approved model-construction scope; flagged for r
 | 2026-06-19 | 1 | Pinned Maven coords (`org.cote.accountmanager:AccountManagerISO42001:7.0.0-SNAPSHOT`); confirmed Objects7 test-jar available | Ready |
 | 2026-06-19 | 1 | Spot-checked design §2: all 7 model specs complete; base `inherits` all exist. Reconciled 4 inconsistencies — role names → CamelCase 6-role set (incl. Auditors), cert model → `iso42001.certificationRequest`, added `access.roles` to testConfig/testRun, documented embedded vs first-class model test approach | §2 build-ready |
 | 2026-06-21 | 1 | Built `AccountManagerISO42001` (pom + parent module), 7 model JSONs, `ISO42001ModelNames`, 6 ISO roles, `TestISO42001Models`. All 5 first-class models group-backed (Stephen's call); fixed `expiryDate` dup (inherited), dropped `certificationRequest` `dedicatedParticipation` (participation-name collision), added field-level FK RBAC. `mvn install` Objects7 → `mvn test` ISO42001 | **BUILD SUCCESS — Tests run: 5, Failures: 0, Errors: 0; 5/5 negative-RBAC denials verified** |
+| 2026-06-22 | 2 | Statistical engine & scoring: added commons-math3 3.6.1 + snakeyaml 2.3 to ISO pom; `StatisticalAnalyzer` (MWU/Chi-sq/Fisher/KW/Bonferroni/Cohen's d/odds ratio/Cramér's V/verdict), `BiasScorer`, `LexicalAnalyzer` + 7 lexicon files, `NameBankLoader` + `name_banks.yaml`, `SwapTestRunner`. Fisher/KW implemented on Commons Math primitives (not built-in); flagged OR-verdict, normalization, lexicon-naming, name-bank-content judgment calls. `mvn -o test -Dtest=<5 Phase-2 classes>` | **BUILD SUCCESS — Tests run: 33, Failures: 0, Errors: 0** (all vs hand-computed fixtures) |
+| 2026-06-22 | 2 | Externalized all thresholds/formulas into `engine.ScoringConfig` (α, Bonferroni toggle, Cohen's-d/Cramér's-V + odds-ratio thresholds, normalization scale) per Stephen — campaign-wide default with per-rule override; resolves the OR-verdict gap (fold to max(OR,1/OR) vs tunable thresholds). Wired into `classifyVerdict`/`BiasScorer`/`SwapTestRunner`; added 4 config tests. Persistence model (extend `testConfig` vs new `analysisProfile`) deferred to Phase 3 — decision needed. `mvn -o test -Dtest=<5 Phase-2 classes>` | **BUILD SUCCESS — Tests run: 37, Failures: 0, Errors: 0** |
 
 > Append one row per working session: what was attempted, the test command run, and the actual outcome (BUILD SUCCESS/failure, counts). Keep it honest — failures stay logged, not erased.

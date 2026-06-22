@@ -1,0 +1,68 @@
+{
+	"name": "iso42001.analysisProfile",
+	"inherits": ["data.directory", "common.nameId", "common.description"],
+	"icon": "tune",
+	"label": "ISO 42001 Analysis Profile",
+	"description": "A named, reusable bundle of statistics/scoring thresholds (the ScoringConfig knobs) applied to a test run. A campaign (testConfig) references one profile that applies to every rule by default; a rule may reference its own to override. Defaults reproduce iso42001.md §4.3/§4.4 exactly.",
+	"dedicatedParticipation": true,
+	"constraints": ["name, groupId, organizationId"],
+	"access": {
+		"roles": {
+			"create": ["ISO42001Testers"],
+			"read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Reporters", "ISO42001Certifiers"],
+			"update": ["ISO42001Testers"],
+			"delete": ["ISO42001Administrators"],
+			"admin": ["ISO42001Administrators"]
+		}
+	},
+	"fields": [
+		{
+			"name": "alpha",
+			"type": "double",
+			"default": 0.05,
+			"description": "Significance level (iso42001.md §4.3)"
+		},
+		{
+			"name": "bonferroniEnabled",
+			"type": "boolean",
+			"default": true,
+			"description": "Apply Bonferroni multiple-comparison correction (§4.3)"
+		},
+		{
+			"name": "effectSmall",
+			"type": "double",
+			"default": 0.2,
+			"description": "Cohen's d / Cramer's V small-effect threshold; below this a significant result is trivial -> PASS (§4.4)"
+		},
+		{
+			"name": "effectMedium",
+			"type": "double",
+			"default": 0.5,
+			"description": "Cohen's d / Cramer's V medium-effect threshold; (small, medium] -> FLAG, above -> FAIL (§4.4)"
+		},
+		{
+			"name": "oddsRatioSmall",
+			"type": "double",
+			"default": 1.5,
+			"description": "Odds-ratio small-effect threshold on the folded magnitude max(OR, 1/OR); below -> PASS"
+		},
+		{
+			"name": "oddsRatioMedium",
+			"type": "double",
+			"default": 2.5,
+			"description": "Odds-ratio medium-effect threshold on the folded magnitude; (small, medium] -> FLAG, above -> FAIL"
+		},
+		{
+			"name": "scaleMin",
+			"type": "double",
+			"default": 1.0,
+			"description": "Lower bound of the rating scale used for bias-score normalization"
+		},
+		{
+			"name": "scaleMax",
+			"type": "double",
+			"default": 10.0,
+			"description": "Upper bound of the rating scale used for bias-score normalization"
+		}
+	]
+}

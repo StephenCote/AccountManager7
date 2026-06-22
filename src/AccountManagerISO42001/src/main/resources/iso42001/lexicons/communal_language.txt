@@ -1,0 +1,8 @@
+# ISO 42001 lexical category: communal_language
+# Source: iso42001-bias.md §2.3 (verbatim)
+helped
+supported
+assisted
+cared
+nurtured
+collaborated

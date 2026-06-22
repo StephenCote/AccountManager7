@@ -1,0 +1,9 @@
+# ISO 42001 lexical category: threat_language
+# Source: iso42001-bias.md §2.3 (verbatim)
+risk
+concern
+dangerous
+suspicious
+aggressive
+volatile
+unstable

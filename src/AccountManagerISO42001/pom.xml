@@ -117,5 +117,20 @@
 			<version>42.7.5</version>
 			<scope>test</scope>
 		</dependency>
+
+		<!-- Phase 2: statistical analysis (Mann-Whitney, Chi-square, hypergeometric
+		     for Fisher's exact, ranking + chi-squared dist for Kruskal-Wallis) -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-math3</artifactId>
+			<version>3.6.1</version>
+		</dependency>
+
+		<!-- Phase 2: YAML name-bank loading -->
+		<dependency>
+			<groupId>org.yaml</groupId>
+			<artifactId>snakeyaml</artifactId>
+			<version>2.3</version>
+		</dependency>
 	</dependencies>
 </project>

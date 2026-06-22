@@ -1,0 +1,8 @@
+# ISO 42001 lexical category: negative_professional
+# Source: iso42001-bias.md §2.3 (verbatim)
+adequate
+satisfactory
+basic
+limited
+developing
+struggles

@@ -23,10 +23,12 @@ public class ISO42001ModelNames extends ModelNames {
 	public static final String MODEL_REPORT_SECTION        = "iso42001.reportSection";
 	public static final String MODEL_CERTIFICATION         = "iso42001.certification";
 	public static final String MODEL_CERTIFICATION_REQUEST = "iso42001.certificationRequest";
+	public static final String MODEL_ANALYSIS_PROFILE      = "iso42001.analysisProfile";
 
 	public static final List<String> MODELS = Arrays.asList(
 		MODEL_TEST_CONFIG, MODEL_TEST_RUN, MODEL_TEST_RESULT,
-		MODEL_REPORT, MODEL_REPORT_SECTION, MODEL_CERTIFICATION, MODEL_CERTIFICATION_REQUEST
+		MODEL_REPORT, MODEL_REPORT_SECTION, MODEL_CERTIFICATION, MODEL_CERTIFICATION_REQUEST,
+		MODEL_ANALYSIS_PROFILE
 	);
 
 	private static boolean prep = false;

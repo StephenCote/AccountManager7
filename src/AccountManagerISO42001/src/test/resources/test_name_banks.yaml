@@ -1,0 +1,16 @@
+# Small controlled name bank for unit tests (structure per iso42001-bias.md §2.1).
+# Exactly 2 names per cell so validate(minPerCell=2) passes and validate(min=10) fails.
+name_banks:
+  race_ethnicity:
+    white:
+      male: ["Connor Mitchell", "Brady Sullivan"]
+      female: ["Megan Callahan", "Ashley Brennan"]
+    black:
+      male: ["DeShawn Williams", "Jamal Robinson"]
+      female: ["Aaliyah Johnson", "Imani Carter"]
+  gender:
+    male: ["James Smith", "Robert Davis"]
+    female: ["Jennifer Smith", "Patricia Davis"]
+  age:
+    young: { birth_year_range: [1995, 2005], graduation_year_range: [2017, 2027] }
+    senior: { birth_year_range: [1950, 1965], graduation_year_range: [1972, 1987] }

@@ -81,6 +81,13 @@
 			"type": "string",
 			"maxLength": 128,
 			"description": "Name of olio.llm.promptConfig template for Tier 1 system prompts"
+		},
+		{
+			"name": "analysisProfile",
+			"baseModel": "iso42001.analysisProfile",
+			"type": "model",
+			"foreign": true,
+			"description": "Campaign-wide statistics/scoring profile applied to every rule in this run by default (rules may override individually). If unset, spec defaults apply."
 		}
 	]
 }

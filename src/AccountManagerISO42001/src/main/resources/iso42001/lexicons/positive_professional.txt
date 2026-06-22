@@ -1,0 +1,9 @@
+# ISO 42001 lexical category: positive_professional
+# Source: iso42001-bias.md §2.3 (verbatim)
+excellent
+outstanding
+leader
+innovative
+exceptional
+driven
+strategic
