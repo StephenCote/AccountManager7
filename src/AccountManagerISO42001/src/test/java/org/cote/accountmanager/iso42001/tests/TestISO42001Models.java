@@ -8,18 +8,12 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.iso42001.schema.ISO42001ModelNames;
-import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.RoleEnumType;
-import org.junit.Before;
 import org.junit.Test;
 
 /**
@@ -41,82 +35,7 @@ import org.junit.Test;
  * (no reset, no drops). {@link ISO42001ModelNames#use()} is therefore called BEFORE
  * {@code super.setup()} opens the IO context.
  */
-public class TestISO42001Models extends BaseTest {
-
-	private OrganizationContext isoOrg;
-	private long orgId;
-	private BaseRecord adminUser;
-
-	private BaseRecord isoTester;
-	private BaseRecord isoReporter;
-	private BaseRecord isoCertifier;
-	private BaseRecord isoReader;
-	private BaseRecord isoAdmin;
-
-	private long sharedGroupId;
-
-	@Override
-	@Before
-	public void setup() {
-		/// Register ISO 42001 model names BEFORE the IO context opens so the schema scan
-		/// creates the iso42001 tables (additive — never resets/drops).
-		ISO42001ModelNames.use();
-		/// Run against the /ISO42001 development org. BaseTest.resetIO initializes this org
-		/// (created fresh here, with its keystore under this module's working dir). The default
-		/// System/Development orgs' keystores live under another module's CWD; their init misses
-		/// inside IOSystem.open are caught there and are non-fatal to this run.
-		organizationPath = "/ISO42001";
-		super.setup();
-		setupIso();
-	}
-
-	private void setupIso() {
-		isoOrg = getTestOrganization("/ISO42001");
-		orgId = isoOrg.getOrganizationId();
-		adminUser = isoOrg.getAdminUser();
-		assertNotNull("ISO org admin is null", adminUser);
-
-		/// The 6 ISO 42001 auth.role names referenced by model access.roles (CamelCase),
-		/// created at the org role root ("/Name") so the modelAccess pattern resolves them.
-		BaseRecord testersRole     = ensureRole("ISO42001Testers");
-		BaseRecord reportersRole   = ensureRole("ISO42001Reporters");
-		BaseRecord certifiersRole  = ensureRole("ISO42001Certifiers");
-		BaseRecord readersRole     = ensureRole("ISO42001Readers");
-		ensureRole("ISO42001Auditors");
-		BaseRecord adminsRole      = ensureRole("ISO42001Administrators");
-
-		/// Admin creates the non-admin role users (the ONLY admin-user usage).
-		isoTester    = getCreateUser("isoTester", isoOrg);
-		isoReporter  = getCreateUser("isoReporter", isoOrg);
-		isoCertifier = getCreateUser("isoCertifier", isoOrg);
-		isoReader    = getCreateUser("isoReader", isoOrg);
-		isoAdmin     = getCreateUser("isoAdmin", isoOrg);
-
-		ensureMember(testersRole, isoTester);
-		ensureMember(reportersRole, isoReporter);
-		ensureMember(certifiersRole, isoCertifier);
-		ensureMember(readersRole, isoReader);
-		ensureMember(adminsRole, isoAdmin);
-
-		/// A shared, ADMIN-owned data group. Role users are NOT owners, so the model-level
-		/// access.roles are the only permit path — making the negative RBAC check genuine.
-		BaseRecord g = ioContext.getPathUtil().makePath(adminUser, ModelNames.MODEL_GROUP, "~/ISO42001Shared", "DATA", orgId);
-		assertNotNull("Shared group is null", g);
-		sharedGroupId = g.get(FieldNames.FIELD_ID);
-	}
-
-	private BaseRecord ensureRole(String name) {
-		BaseRecord role = ioContext.getPathUtil().makePath(adminUser, ModelNames.MODEL_ROLE, "/" + name, RoleEnumType.USER.toString(), orgId);
-		assertNotNull("Role " + name + " is null", role);
-		return role;
-	}
-
-	private void ensureMember(BaseRecord role, BaseRecord user) {
-		if (!ioContext.getMemberUtil().isMember(user, role, null)) {
-			boolean ok = ioContext.getMemberUtil().member(adminUser, role, user, null, true);
-			assertTrue("Failed to assign " + user.get(FieldNames.FIELD_NAME) + " to role", ok);
-		}
-	}
+public class TestISO42001Models extends ISO42001BaseTest {
 
 	/**
 	 * Full create/read(as owner)/read(as reader role)/patch/list/negative-create/delete
@@ -197,29 +116,6 @@ public class TestISO42001Models extends BaseTest {
 		assertTrue(model + " DELETE as authorized role user failed", deleted);
 
 		return full;
-	}
-
-	private BaseRecord findByObjectId(BaseRecord user, String model, String objectId) {
-		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
-		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		q.planMost(true);
-		return ioContext.getAccessPoint().find(user, q);
-	}
-
-	private void set(BaseRecord rec, String field, Object value) {
-		try {
-			rec.set(field, value);
-		} catch (Exception e) {
-			throw new RuntimeException("Failed to set " + field + " on " + rec.getSchema(), e);
-		}
-	}
-
-	private BaseRecord newRec(String model) {
-		try {
-			return RecordFactory.model(model).newInstance();
-		} catch (Exception e) {
-			throw new RuntimeException("newInstance failed for " + model, e);
-		}
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────
