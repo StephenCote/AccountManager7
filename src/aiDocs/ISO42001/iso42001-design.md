@@ -107,6 +107,7 @@ All ISO 42001 models use the `iso42001` namespace prefix:
 ```
 models/iso42001/
 ├── testConfigModel.json
+├── analysisProfileModel.json
 ├── testRunModel.json
 ├── testResultModel.json
 ├── reportModel.json
@@ -201,10 +202,19 @@ models/iso42001/
       "type": "string",
       "maxLength": 128,
       "description": "Name of olio.llm.promptConfig template for Tier 1 system prompts"
+    },
+    {
+      "name": "analysisProfile",
+      "baseModel": "iso42001.analysisProfile",
+      "type": "model",
+      "foreign": true,
+      "description": "Campaign-wide statistics/scoring profile applied to every rule by default (a rule may override). If unset, spec defaults apply."
     }
   ]
 }
 ```
+
+> **Added 2026-06-22:** the `alpha` field above is retained for back-compat, but the full set of statistical thresholds now lives in the referenced `iso42001.analysisProfile` (§2.9). When a profile is set, its `alpha` governs; `testConfig.alpha` is the fallback.
 
 ### 2.3 Test Run Model
 
@@ -686,6 +696,45 @@ Extends the existing `access.accessRequest` pattern:
 }
 ```
 
+### 2.9 Analysis Profile Model
+
+**Added 2026-06-22 (Stephen).** A named, reusable bundle of the statistics/scoring thresholds — the runtime `engine.ScoringConfig` knobs — so a run can be repeated under different settings and the results compared directly. Dedicated model (not inlined on `testConfig`) precisely so profiles are reusable, nameable, and diffable across runs.
+
+**Scope semantics — campaign-wide with per-rule override:** `testConfig.analysisProfile` (§2.2) is the **campaign** default applied to every rule in the run; an individual rule may reference its own profile to override for that test only. The engine (`StatisticalAnalyzer.classifyVerdict(p, effect, EffectSizeType, ScoringConfig)`, `BiasScorer(ScoringConfig)`, `SwapTestRunner.compare(a,b,ScoringConfig)`) is origin-agnostic — it just consumes whichever profile it is handed. Defaults reproduce §4.3/§4.4 exactly. Odds-ratio thresholds (which §4.4 leaves undefined, since OR centers at 1) are explicit here and applied to the folded magnitude `max(OR, 1/OR)`.
+
+```json
+{
+  "name": "iso42001.analysisProfile",
+  "inherits": ["data.directory", "common.nameId", "common.description"],
+  "icon": "tune",
+  "label": "ISO 42001 Analysis Profile",
+  "description": "Named, reusable statistics/scoring thresholds (the ScoringConfig knobs) applied to a test run.",
+  "dedicatedParticipation": true,
+  "constraints": ["name, groupId, organizationId"],
+  "access": {
+    "roles": {
+      "create": ["ISO42001Testers"],
+      "read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Reporters", "ISO42001Certifiers"],
+      "update": ["ISO42001Testers"],
+      "delete": ["ISO42001Administrators"],
+      "admin": ["ISO42001Administrators"]
+    }
+  },
+  "fields": [
+    { "name": "alpha",           "type": "double",  "default": 0.05, "description": "Significance level (§4.3)" },
+    { "name": "bonferroniEnabled","type": "boolean","default": true, "description": "Apply Bonferroni correction (§4.3)" },
+    { "name": "effectSmall",     "type": "double",  "default": 0.2,  "description": "Cohen's d / Cramér's V small threshold; below => trivial => PASS (§4.4)" },
+    { "name": "effectMedium",    "type": "double",  "default": 0.5,  "description": "Cohen's d / Cramér's V medium threshold; (small,medium] => FLAG, above => FAIL (§4.4)" },
+    { "name": "oddsRatioSmall",  "type": "double",  "default": 1.5,  "description": "OR small threshold on folded magnitude max(OR,1/OR)" },
+    { "name": "oddsRatioMedium", "type": "double",  "default": 2.5,  "description": "OR medium threshold on folded magnitude" },
+    { "name": "scaleMin",        "type": "double",  "default": 1.0,  "description": "Lower bound of the bias-score rating scale (normalization)" },
+    { "name": "scaleMax",        "type": "double",  "default": 10.0, "description": "Upper bound of the bias-score rating scale (normalization)" }
+  ]
+}
+```
+
+> Schema is emitted on first IO open (additive, `generateNewSchemaOnly`) — no manual DB change. Registered via `ISO42001ModelNames` (§6.3). Live CRUD/RBAC verification lands with the Phase-3 wiring (mapping `analysisProfile` records ⇄ `ScoringConfig`).
+
 ---
 
 ## 3. Certification Mechanism
@@ -1146,10 +1195,12 @@ public class ISO42001ModelNames extends ModelNames {
     public static final String MODEL_REPORT_SECTION = "iso42001.reportSection";
     public static final String MODEL_CERTIFICATION         = "iso42001.certification";
     public static final String MODEL_CERTIFICATION_REQUEST = "iso42001.certificationRequest";
+    public static final String MODEL_ANALYSIS_PROFILE      = "iso42001.analysisProfile";
 
     public static final List<String> MODELS = Arrays.asList(
         MODEL_TEST_CONFIG, MODEL_TEST_RUN, MODEL_TEST_RESULT,
-        MODEL_REPORT, MODEL_REPORT_SECTION, MODEL_CERTIFICATION, MODEL_CERTIFICATION_REQUEST
+        MODEL_REPORT, MODEL_REPORT_SECTION, MODEL_CERTIFICATION, MODEL_CERTIFICATION_REQUEST,
+        MODEL_ANALYSIS_PROFILE
     );
 
     private static boolean prep = false;
@@ -2593,3 +2644,38 @@ The design includes PostgreSQL in-container for simplicity. For production deplo
 
 ### 12.5 Frontend: Ux752 feature system (supersedes Ux7)
 The legacy Ux7 monolith is superseded by **AccountManagerUx752**, whose feature manifest + profile + server-side `featureConfig` system provides the carve-out natively (§9). The ISO deployment is the new `compliance` profile rather than a `build.js` carve-out; disabled features are tree-shaken via dynamic `import()`. No Ux7 work is planned. The §9A wireframes remain valid functional specs with paths resolving under `AccountManagerUx752/src/features/iso42001/`.
+
+---
+
+## 13. SCM Repository AI-Usage Scanner
+
+**Added 2026-06-22 (Stephen).** A capability to connect to a source-control repository (Git first; pluggable for other SCMs) and scan it for **uses of AI** — SDK/library usage, **model references**, **prompt references**, and AI API endpoints. This builds the **AI system inventory** that ISO 42001 impact assessment and risk management depend on: you cannot assess or govern AI usage you have not discovered. Distinct from the runtime bias suite (Phases 2–4) and from the policy/regulation checks (backlog B2/B3) — this scans *code*, not behavior or documents.
+
+**ISO 42001 relevance:** A.5.4 (AI impact assessment) and Clause 6 (planning / risk) require knowing where and how AI is used across systems. The scanner produces a discoverable, auditable inventory feeding the risk register and the compliance report's methodology/appendix sections.
+
+### 13.1 What it detects
+
+| Category | Examples of signatures |
+|---|---|
+| **SDK / library usage** | `anthropic`, `@anthropic-ai/*`, `openai`, `langchain*`, `google-generativeai` / `genai`, `mistralai`, `cohere`, `ollama`, `boto3` bedrock clients, `azure-openai`, `transformers`, `vllm` (imports + dependency manifests: `pom.xml`, `package.json`, `requirements.txt`, `go.mod`, etc.) |
+| **Model references** | model-id patterns: `claude-*`, `gpt-*`, `gemini-*`, `llama*`, `mistral*`, `qwen*`, `us.anthropic.*`, `claude-opus/sonnet/haiku`, embedding-model ids |
+| **Prompt references** | prompt template files / dirs, system & user prompt string literals, prompt-config files (e.g. AM7 `prompt.config.json`, `chatOperations.json`) |
+| **AI API endpoints** | `api.openai.com`, `api.anthropic.com`, Bedrock/Vertex endpoints, Azure OpenAI deployment URLs, local `:11434` (Ollama), etc. |
+
+A finding records: repo, ref/commit, file path, line, category, matched signature, provider (when inferable), and a redacted snippet. Detection is signature-driven from a maintained catalog (the same provider-signature knowledge already encoded in this project's tooling), so it is extensible without code changes.
+
+### 13.2 Architecture
+
+- Lives in the standalone `AccountManagerISO42001` project (`…iso42001.scan` package); no Objects7 changes.
+- **Git access via JGit** (`org.eclipse.jgit`) — clone/fetch a ref or scan a checked-out working tree; SCM access is abstracted behind an interface so other providers can be added. *(New Maven dependency — Phase-gated; add only when this phase is scheduled, do not pull forward.)*
+- **Pure-logic core, library-independent of the network:** the matchers (signature catalog + per-file scanning) operate on file contents, so they are **unit-testable against fixture files** with hand-checked expected findings — the same fixture-based discipline used in Phase 2 — independent of any live repo clone. The JGit/working-tree traversal is the only part needing a live repo.
+- Secrets/tokens for private repos resolve through the existing AM7 credential/vault infrastructure; scanning is org-scoped and RBAC-gated like the rest of the suite.
+
+### 13.3 Suggested models (mirror the run/result shape of §2.3–2.4)
+
+- `iso42001.repoScan` — a scan execution: repo URL, ref/commit, timestamp, status, counts by category, `data.directory`-backed, ISO RBAC; child findings list.
+- `iso42001.aiUsageFinding` — embedded list element (inherits `common.nameId`): filePath, line, category, signature, provider, snippet, severity/notes.
+
+Findings feed the report (§2.5) and the dashboard (§9A.4). Exact field sets to be finalized when the phase is scheduled (do not invent until then).
+
+> **Status:** backlog item **B4** in `iso42001-implementation-plan.md`. Not yet scheduled into a numbered phase. JGit dependency and the two models are **not** added yet — they land when B4 is scheduled (ask before adding the dependency / emitting the new tables, per the standing DB rule).
