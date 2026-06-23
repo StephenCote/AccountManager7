@@ -4,6 +4,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import org.cote.accountmanager.io.IOFactory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
@@ -150,5 +151,61 @@ public abstract class ISO42001BaseTest extends BaseTest {
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
 		q.planMost(true);
 		return ioContext.getAccessPoint().find(user, q);
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Deterministic fixtures (constructed directly — no live LLM) for the
+	// reporting/PDF tests, which take persisted testRun+testResult records as input.
+	// ─────────────────────────────────────────────────────────────────────────
+
+	/** Build an (unpersisted) {@code iso42001.testResult} with the given verdict + statistics. */
+	protected BaseRecord fixtureResult(String testId, String module, String protectedClass,
+			String verdict, double effectSize, String effectSizeType, double correctedPValue) {
+		BaseRecord r = newRec(ISO42001ModelNames.MODEL_TEST_RESULT);
+		set(r, FieldNames.FIELD_NAME, testId + "-" + protectedClass);
+		set(r, "testId", testId);
+		set(r, "testModule", module);
+		set(r, "protectedClass", protectedClass);
+		set(r, "verdict", verdict);
+		set(r, "effectSize", effectSize);
+		set(r, "effectSizeType", effectSizeType);
+		set(r, "pValue", correctedPValue);
+		set(r, "correctedPValue", correctedPValue);
+		set(r, "testStatistic", "fixture stat for " + testId);
+		return r;
+	}
+
+	/**
+	 * Create a persisted {@code iso42001.testRun} (COMPLETED) in the shared group owned by {@code creator}
+	 * (a Testers-role user), carrying the supplied embedded results. Returns the re-read (planMost) run
+	 * so its embedded {@code results} are populated for the report generator.
+	 */
+	protected BaseRecord createFixtureTestRun(BaseRecord creator, String modelEndpoint, java.util.List<BaseRecord> results) {
+		BaseRecord run = newRec(ISO42001ModelNames.MODEL_TEST_RUN);
+		set(run, FieldNames.FIELD_NAME, "fixture-run-" + java.util.UUID.randomUUID());
+		set(run, FieldNames.FIELD_GROUP_ID, sharedGroupId);
+		set(run, FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		set(run, FieldNames.FIELD_OWNER_ID, (long) creator.get(FieldNames.FIELD_ID));
+		set(run, "status", "COMPLETED");
+		set(run, "modelEndpoint", modelEndpoint);
+		java.util.List<BaseRecord> embedded = run.get("results");
+		embedded.addAll(results);
+		set(run, "results", embedded);
+		BaseRecord created = ioContext.getAccessPoint().create(creator, run);
+		assertNotNull("fixture testRun CREATE returned null", created);
+		return findByObjectId(creator, ISO42001ModelNames.MODEL_TEST_RUN, created.get(FieldNames.FIELD_OBJECT_ID));
+	}
+
+	/** Read a {@code data.data} byte store (blob) as raw bytes, populating the restricted field. */
+	protected byte[] readDataBytes(BaseRecord user, String objectId) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.planMost(true);
+		BaseRecord data = ioContext.getAccessPoint().find(user, q);
+		if (data == null) {
+			return null;
+		}
+		IOSystem.getActiveContext().getReader().populate(data, new String[] { FieldNames.FIELD_BYTE_STORE });
+		return data.get(FieldNames.FIELD_BYTE_STORE);
 	}
 }
