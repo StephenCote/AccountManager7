@@ -22,38 +22,34 @@ import org.junit.Before;
  * pointing, model registration, org/role/user/shared-group creation, and the small CRUD
  * helpers.
  *
- * <p><b>File base.</b> {@link IOFactory#DEFAULT_FILE_BASE} stays at the module-local {@code "./am7"}.
- * This module owns a <em>dedicated</em> org ({@code /ISO42001}); its vault/keystore was generated under
- * the ISO module's local {@code am7/.jks/<orgId>} on first run and lives there. Agent7 points its base
- * at {@code ../AccountManagerObjects7/am7} because Agent7 reuses the default {@code /Development} org,
- * whose keystore Objects7 already created there. We can <b>not</b> do that: Objects7's {@code am7/.jks}
- * holds only the default orgs (1–13); the {@code /ISO42001} org is a new org (14) whose keystore is local —
- * pointing at Objects7's am7 finds 1–13 but not 14, so that org fails to initialize and every ISO test
- * fails (verified 2026-06-22).</p>
+ * <p><b>Dedicated ISO test database (option #2, in effect 2026-06-22).</b> ISO tests run against their
+ * OWN postgres database {@code am7isotestdb} (configured in this module's {@code resource.properties};
+ * same host/port/creds as Objects7's {@code am7db} but a separate database). ISO therefore owns <em>every</em>
+ * org from a blank DB — there is no shared Objects7 org to borrow — so {@link IOFactory#DEFAULT_FILE_BASE}
+ * stays at the module-local {@code "./am7"} and ALL keystores/vaults/streams are generated locally on first
+ * run. This eliminates the earlier cross-module keystore log noise entirely (verified: zero
+ * {@code Key store does not exist} / "Organization already exists" lines).</p>
  *
- * <p><b>Residual non-fatal log noise.</b> {@code BaseTest} always initializes the shared {@code am7db}'s
- * default System/Development orgs (1/2/3), whose keystores are not local to this module — so the run logs
- * {@code Key store does not exist at ./am7/.jks/{1,2,3}/...} and "Organization already exists" for them.
- * ISO never asserts against those orgs, so it is non-fatal; the {@code /ISO42001} org (local keystore)
- * initializes fine. <b>The clean elimination is a dedicated ISO test database (option #2 below)</b>, where
- * ISO would own every org from a one-shot reset and no foreign keystore would be missing.</p>
+ * <p><b>Do NOT point the base at {@code ../AccountManagerObjects7/am7} under this dedicated-DB setup.</b>
+ * Agent7 points there because it shares Objects7's {@code am7db} and its default {@code /Development} org,
+ * whose keystore already lives there — for a shared DB that base path is correct by design (the org records
+ * and their keystores stay consistent as long as the base path is the one in effect when the org was created).
+ * ISO no longer shares that DB: its orgs live in {@code am7isotestdb} with keystores generated under this
+ * module's {@code ./am7}, so pointing at Objects7's am7 would not find them.</p>
+ *
+ * <p>The DB is created/blank externally (never dropped or recreated by the tests); committed
+ * {@code test.db.reset=false}. The schema and orgs build additively on first IO open
+ * ({@code generateNewSchemaOnly}). If the {@code am7isotestdb} container is ever recreated empty, just
+ * re-run — the first run rebuilds schema + orgs + a fresh local {@code ./am7}.</p>
  *
  * <p>Registers the {@code iso42001} model namespace and targets the {@code /ISO42001}
  * development org <b>before</b> {@code super.setup()} opens the IO context, so the additive
- * schema scan ({@code generateNewSchemaOnly}) creates the iso42001 tables — no reset/drop.</p>
+ * schema scan creates the iso42001 tables.</p>
  *
  * <p>Standing rules baked in: the org Admin user is used ONLY here to create the role users,
  * assign roles, and make the shared (admin-owned) data group. No test assertion runs as Admin;
  * every operation under test runs as a non-admin role user, and the shared group's model-level
  * {@code access.roles} are the only permit path (so the negative-RBAC checks are genuine).</p>
- *
- * <p><b>Implementation note / TODO (Stephen, 2026-06-22): dedicated iso42001 test DB (option #2).</b>
- * The ISO tests currently share the {@code am7db} unit-test database with Objects7 (its default orgs live
- * there). A dedicated ISO postgres database + keystore would let ISO own every org from a one-shot reset,
- * isolate it from Objects7's dev keys/data, reset independently, and remove the residual default-org
- * keystore log noise above. Deferred until someone provisions the db. When it exists, point ISO
- * {@code resource.properties} {@code test.db.url} (and, if the keystore moves with it, {@code DEFAULT_FILE_BASE})
- * at the dedicated db/keystore.</p>
  */
 public abstract class ISO42001BaseTest extends BaseTest {
 
@@ -72,8 +68,8 @@ public abstract class ISO42001BaseTest extends BaseTest {
 	@Override
 	@Before
 	public void setup() {
-		/// Module-local keystore/data dir: the /ISO42001 org's keystore lives here (am7/.jks/<orgId>).
-		/// Do NOT point at Objects7's am7 (it holds only the default orgs 1–13, not the ISO org). See class javadoc.
+		/// Module-local keystore/data dir. With the dedicated am7isotestdb, ISO owns every org and all
+		/// keystores/vaults/streams are generated here. Do NOT point at Objects7's am7. See class javadoc.
 		IOFactory.DEFAULT_FILE_BASE = "./am7";
 		/// Register ISO model names BEFORE IO opens so the additive schema scan creates the tables.
 		ISO42001ModelNames.use();
