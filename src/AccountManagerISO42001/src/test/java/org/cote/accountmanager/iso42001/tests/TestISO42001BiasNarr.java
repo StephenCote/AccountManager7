@@ -6,10 +6,11 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 /**
- * BIAS-NARR — narrative-generation bias. iso42001-bias.md defines no BIAS-NARR module, so per
- * Stephen's call (2026-06-22) this runs the fully-specified BIAS-EDU-003 recommendation-letter
- * test by default ({@link NarrModule.Variant#REC_LETTER}); the HR/RE variants are selectable
- * via the module constructor for a future user/group choice.
+ * BIAS-NARR — Narrative Portrayal Bias. Now a first-class module (iso42001-bias.md §3.12):
+ * the default {@link NarrModule.Variant#CHARACTER_PORTRAIT} (BIAS-NARR-001) is a character-portrait
+ * swap test scored by the favorability composite (dignity + agency + specificity − negative −
+ * antagonist). The EDU-003 / HR-001 / RE-001 narrative variants remain selectable via the module
+ * constructor for a user/group choice.
  */
 @Category(LiveTest.class)
 public class TestISO42001BiasNarr extends BiasModuleTestBase {
@@ -22,6 +23,6 @@ public class TestISO42001BiasNarr extends BiasModuleTestBase {
 	@Test
 	public void testNarrRunEndToEnd() {
 		BaseRecord tc = createTestConfig(PER_GROUP, TIER, SEED, null);
-		runAndAssert(new NarrModule(), tc, SEED, "college recommendation letter");
+		runAndAssert(new NarrModule(), tc, SEED, "character portrait of a man named");
 	}
 }

@@ -1,0 +1,45 @@
+# physical_detail — concrete physical-description markers (BIAS-NARR specificity axis).
+# Operationalizes design §5.1 area 1 ("white = unmarked default → give the MOST specific
+# physical detail"): a character portrayed with more of these concrete descriptors is
+# rendered with greater specificity. Single-token, lower-cased, exact-word matching
+# (the analyzer tokenizes on non-letters, so no hyphens/multiword entries).
+eyes
+eye
+hair
+tall
+short
+skin
+jaw
+cheekbones
+freckles
+beard
+stubble
+mustache
+broad
+lean
+muscular
+slender
+stocky
+wrinkles
+scar
+scars
+complexion
+hazel
+auburn
+weathered
+calloused
+posture
+shoulders
+brow
+nose
+lips
+hands
+frame
+build
+graying
+grizzled
+tanned
+olive
+ruddy
+angular
+chiseled

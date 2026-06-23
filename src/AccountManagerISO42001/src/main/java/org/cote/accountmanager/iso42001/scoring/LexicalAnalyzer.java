@@ -63,8 +63,18 @@ public class LexicalAnalyzer {
 
 	/** Load all {@link #LEXICON_FILES} from the classpath under {@link #LEXICON_DIR}. */
 	public static LexicalAnalyzer fromClasspath() {
+		return fromClasspath(LEXICON_FILES);
+	}
+
+	/**
+	 * Load a specific set of lexicon files from the classpath under {@link #LEXICON_DIR}
+	 * (category = filename minus {@code .txt}). Lets a module use supplemental categories
+	 * (e.g. BIAS-NARR's {@code physical_detail} / {@code antagonist}) without altering the
+	 * shared default category set returned by {@link #fromClasspath()}.
+	 */
+	public static LexicalAnalyzer fromClasspath(String... files) {
 		Map<String, Set<String>> cats = new LinkedHashMap<>();
-		for (String file : LEXICON_FILES) {
+		for (String file : files) {
 			String category = file.substring(0, file.length() - ".txt".length());
 			cats.put(category, loadWords(LEXICON_DIR + file));
 		}
