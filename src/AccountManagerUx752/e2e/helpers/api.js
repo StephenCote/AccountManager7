@@ -344,6 +344,74 @@ export async function ensureSharedTestUser(request, opts = {}) {
     return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
 }
 
+/** Add an actor to a container (role/group) via the authorization member endpoint (null field = default participation). */
+async function memberCtx(ctx, containerType, containerObjectId, actorType, actorObjectId, enable) {
+    let resp = await ctx.get(sAuthZ(containerType, containerObjectId, actorType, actorObjectId, enable));
+    let text = await resp.text();
+    return text === 'true';
+}
+
+function sAuthZ(containerType, containerObjectId, actorType, actorObjectId, enable) {
+    return REST + '/authorization/' + containerType + '/' + containerObjectId
+        + '/member/null/' + actorType + '/' + actorObjectId + '/' + (enable ? 'true' : 'false');
+}
+
+/**
+ * Ensure a persistent ISO 42001 test user that is a member of the requested ISO roles (default: the full
+ * working set Testers/Reporters/Certifiers/Administrators so the positive create→run→report→certify flow is
+ * exercisable). Admin-only is used to create the user + assign roles; the roles themselves are provisioned by
+ * Service7 at startup (ISO42001Provisioning.ensureRoles). Idempotent.
+ *
+ * @returns { user, testUserName, testPassword, rolesAssigned }
+ */
+const ISO_USER = 'e2etest_iso42001';
+const ISO_PASSWORD = 'password';
+const ISO_ROLES_DEFAULT = ['ISO42001Testers', 'ISO42001Reporters', 'ISO42001Certifiers', 'ISO42001Administrators'];
+
+export async function ensureIso42001TestUser(request, opts = {}) {
+    const org = opts.org || '/Development';
+    const roleNames = opts.roles || ISO_ROLES_DEFAULT;
+
+    let ctx = await newApiContext();
+    let user;
+    let rolesAssigned = [];
+    try {
+        await loginCtx(ctx, { org });
+
+        user = await searchCtx(ctx, 'system.user', 'name', ISO_USER);
+        if (!user || !user.objectId) {
+            user = await createUserCtx(ctx, ISO_USER);
+            if (user && user.objectId) {
+                await setCredentialCtx(ctx, user.objectId, ISO_PASSWORD);
+            }
+        }
+
+        // Assign the ISO roles (provisioned at Service7 startup). Search by name → member via authZ endpoint.
+        for (let roleName of roleNames) {
+            let role = await searchCtx(ctx, 'auth.role', 'name', roleName, ['objectId', 'name']);
+            if (role && role.objectId && user && user.objectId) {
+                let ok = await memberCtx(ctx, 'auth.role', role.objectId, 'system.user', user.objectId, true);
+                if (ok) rolesAssigned.push(roleName);
+            }
+        }
+
+        await logoutCtx(ctx);
+    } finally {
+        await ctx.dispose();
+    }
+
+    // Log in as the ISO user once to initialize its home directory.
+    let userCtx = await newApiContext();
+    try {
+        await loginCtx(userCtx, { org, user: ISO_USER, password: ISO_PASSWORD });
+        await logoutCtx(userCtx);
+    } finally {
+        await userCtx.dispose();
+    }
+
+    return { user, testUserName: ISO_USER, testPassword: ISO_PASSWORD, rolesAssigned };
+}
+
 /**
  * Setup workflow test data: create test user + charPerson + data.data objects.
  * Uses its own isolated APIRequestContext.

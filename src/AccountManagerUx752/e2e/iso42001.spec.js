@@ -10,7 +10,7 @@
  * Run: npx playwright test e2e/iso42001.spec.js --project=chromium
  */
 import { test, expect } from './helpers/fixtures.js';
-import { ensureSharedTestUser, apiLogin, apiLogout } from './helpers/api.js';
+import { ensureSharedTestUser, ensureIso42001TestUser, apiLogin, apiLogout, ensurePath } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
 const BASE_URL = 'https://localhost:8899';
@@ -103,6 +103,55 @@ test.describe('ISO 42001 REST + MCP shim (live)', () => {
             expect(body, 'tools/list must include iso42001_run_test').toContain('iso42001_run_test');
             expect(body, 'tools/list must include iso42001_certify').toContain('iso42001_certify');
             expect(body, 'tools/list must still include the core am7_ tools').toContain('am7_');
+
+            await apiLogout(ctx);
+        } finally {
+            await ctx.dispose();
+        }
+    });
+});
+
+test.describe('ISO 42001 positive flow as an ISO-role user (live)', () => {
+    let iso = {};
+
+    test.beforeAll(async ({ request }) => {
+        iso = await ensureIso42001TestUser(request);
+    });
+
+    test('provisioning assigned the ISO Tester role', () => {
+        expect(iso.rolesAssigned, 'role assignment must include ISO42001Testers').toContain('ISO42001Testers');
+    });
+
+    test('an ISO Tester can create + read a testConfig over REST', async () => {
+        let ctx = await newApiContext();
+        try {
+            await apiLogin(ctx, { user: iso.testUserName, password: iso.testPassword });
+
+            // Place the config in the user's own home group (the user owns it; the ISO Tester role authorizes create).
+            let group = await ensurePath(ctx, 'auth.group', 'data', '~/ISO42001');
+            expect(group && group.id, 'home group should resolve').toBeTruthy();
+
+            let create = await ctx.post(REST + '/iso42001/config', {
+                headers: { 'Content-Type': 'application/json' },
+                data: {
+                    schema: 'iso42001.testConfig',
+                    name: 'e2e-iso-cfg-' + Date.now().toString(36),
+                    groupId: group.id,
+                    organizationId: group.organizationId,
+                    moduleId: 'BIAS',
+                    endpointName: 'spark-ollama',
+                    endpointType: 'ollama',
+                    samplesPerGroup: 2,
+                    tier: 1
+                }
+            });
+            expect(create.status(), 'ISO Tester create should succeed (200): ' + (await create.text())).toBe(200);
+            let created = JSON.parse(await create.text());
+            expect(created.objectId, 'created config must carry an objectId').toBeTruthy();
+
+            let got = await ctx.get(REST + '/iso42001/config/' + created.objectId);
+            expect(got.status()).toBe(200);
+            expect(await got.text()).toContain(created.objectId);
 
             await apiLogout(ctx);
         } finally {

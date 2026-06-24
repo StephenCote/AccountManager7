@@ -293,6 +293,18 @@ function setContextRoles(app) {
     ctxRoles.objectAdmin = hasRole(roles, 'objectadministrators');
     ctxRoles.scriptExecutor = hasRole(roles, 'scriptexecutors');
     ctxRoles.admin = (ctxRoles.systemAdmin || ctxRoles.accountAdmin);
+
+    // ISO 42001 roles (design §9A.1) — AM7 role names are CamelCase; context keys camelCase.
+    ctxRoles.iso42001Tester = hasRole(roles, 'iso42001testers');
+    ctxRoles.iso42001Reporter = hasRole(roles, 'iso42001reporters');
+    ctxRoles.iso42001Certifier = hasRole(roles, 'iso42001certifiers');
+    ctxRoles.iso42001Reader = hasRole(roles, 'iso42001readers');
+    ctxRoles.iso42001Auditor = hasRole(roles, 'iso42001auditors');
+    ctxRoles.iso42001Admin = hasRole(roles, 'iso42001administrators');
+    ctxRoles.iso42001Any = (
+        ctxRoles.iso42001Tester || ctxRoles.iso42001Reporter || ctxRoles.iso42001Certifier ||
+        ctxRoles.iso42001Reader || ctxRoles.iso42001Auditor || ctxRoles.iso42001Admin || ctxRoles.admin
+    );
 }
 
 export { init, refreshApplication, layout, pageLayout };

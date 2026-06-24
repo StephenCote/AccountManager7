@@ -11241,6 +11241,767 @@
           "foreignType": "person2Model"
         }
       ]
+    },
+    {
+      "name": "iso42001.testConfig",
+      "inherits": [
+        "data.directory",
+        "common.nameId",
+        "common.description"
+      ],
+      "icon": "science",
+      "label": "ISO 42001 Test Configuration",
+      "description": "Defines an ISO 42001 test configuration including endpoints, parameters, and test selection.",
+      "dedicatedParticipation": true,
+      "constraints": [
+        "name, groupId, organizationId"
+      ],
+      "access": {
+        "roles": {
+          "create": [
+            "ISO42001Testers"
+          ],
+          "read": [
+            "ISO42001Readers",
+            "ISO42001Auditors",
+            "ISO42001Reporters",
+            "ISO42001Certifiers"
+          ],
+          "update": [
+            "ISO42001Testers"
+          ],
+          "delete": [
+            "ISO42001Administrators"
+          ],
+          "admin": [
+            "ISO42001Administrators"
+          ]
+        }
+      },
+      "fields": [
+        {
+          "name": "moduleId",
+          "type": "string",
+          "maxLength": 32,
+          "description": "Test module identifier (BIAS, DATA, TRANS, OVER, MON, THRD)"
+        },
+        {
+          "name": "testIds",
+          "type": "list",
+          "baseType": "string",
+          "description": "Specific test IDs to run (empty = all in module)"
+        },
+        {
+          "name": "endpointName",
+          "type": "string",
+          "maxLength": 128,
+          "description": "LLM endpoint name from chat config"
+        },
+        {
+          "name": "endpointType",
+          "type": "string",
+          "maxLength": 32,
+          "description": "Endpoint type: openai, anthropic, ollama, azure"
+        },
+        {
+          "name": "tier",
+          "type": "int",
+          "default": 0,
+          "description": "Test tier: 0=both, 1=system prompt, 2=conversation only"
+        },
+        {
+          "name": "samplesPerGroup",
+          "type": "int",
+          "default": 30,
+          "description": "Minimum samples per demographic group"
+        },
+        {
+          "name": "temperature",
+          "type": "double",
+          "default": 1,
+          "description": "LLM temperature for test execution"
+        },
+        {
+          "name": "alpha",
+          "type": "double",
+          "default": 0.05,
+          "description": "Statistical significance level"
+        },
+        {
+          "name": "randomSeed",
+          "type": "long",
+          "default": 0,
+          "description": "Random seed for reproducibility (0 = auto-generate)"
+        },
+        {
+          "name": "chatConfigName",
+          "type": "string",
+          "maxLength": 128,
+          "description": "Name of olio.llm.chatConfig to use for LLM calls"
+        },
+        {
+          "name": "promptConfigName",
+          "type": "string",
+          "maxLength": 128,
+          "description": "Name of olio.llm.promptConfig template for Tier 1 system prompts"
+        },
+        {
+          "name": "analysisProfile",
+          "baseModel": "iso42001.analysisProfile",
+          "type": "model",
+          "foreign": true,
+          "description": "Campaign-wide statistics/scoring profile applied to every rule in this run by default (rules may override individually). If unset, spec defaults apply."
+        }
+      ]
+    },
+    {
+      "name": "iso42001.testRun",
+      "inherits": [
+        "data.directory",
+        "common.nameId",
+        "common.description",
+        "common.dateTime"
+      ],
+      "icon": "play_circle",
+      "label": "ISO 42001 Test Run",
+      "description": "Represents a single execution of an ISO 42001 test suite run.",
+      "dedicatedParticipation": true,
+      "constraints": [
+        "name, groupId, organizationId"
+      ],
+      "access": {
+        "roles": {
+          "create": [
+            "ISO42001Testers"
+          ],
+          "read": [
+            "ISO42001Readers",
+            "ISO42001Auditors",
+            "ISO42001Reporters",
+            "ISO42001Certifiers"
+          ],
+          "update": [
+            "ISO42001Testers"
+          ],
+          "delete": [
+            "ISO42001Administrators"
+          ],
+          "admin": [
+            "ISO42001Administrators"
+          ]
+        }
+      },
+      "fields": [
+        {
+          "name": "testConfig",
+          "baseModel": "iso42001.testConfig",
+          "type": "model",
+          "foreign": true,
+          "description": "The test configuration used for this run"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "maxLength": 32,
+          "default": "PENDING",
+          "description": "Run status: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED"
+        },
+        {
+          "name": "startTime",
+          "type": "timestamp",
+          "description": "Execution start time"
+        },
+        {
+          "name": "endTime",
+          "type": "timestamp",
+          "description": "Execution end time"
+        },
+        {
+          "name": "modelEndpoint",
+          "type": "string",
+          "maxLength": 256,
+          "description": "Actual model identifier used (e.g., claude-sonnet-4-5-20250929)"
+        },
+        {
+          "name": "results",
+          "baseModel": "iso42001.testResult",
+          "baseType": "model",
+          "type": "list",
+          "description": "Individual test results from this run"
+        },
+        {
+          "name": "passCount",
+          "type": "int",
+          "default": 0
+        },
+        {
+          "name": "flagCount",
+          "type": "int",
+          "default": 0
+        },
+        {
+          "name": "failCount",
+          "type": "int",
+          "default": 0
+        },
+        {
+          "name": "totalTrials",
+          "type": "int",
+          "default": 0,
+          "description": "Total number of individual LLM calls made"
+        },
+        {
+          "name": "rawLogRef",
+          "type": "string",
+          "maxLength": 64,
+          "description": "ObjectId of data.data containing raw request/response logs"
+        },
+        {
+          "name": "randomSeedUsed",
+          "type": "long",
+          "description": "Actual random seed used (for reproducibility)"
+        }
+      ]
+    },
+    {
+      "name": "iso42001.testResult",
+      "inherits": [
+        "common.nameId"
+      ],
+      "icon": "assessment",
+      "label": "ISO 42001 Test Result",
+      "description": "Result for a single test within a test run.",
+      "fields": [
+        {
+          "name": "testId",
+          "type": "string",
+          "maxLength": 32,
+          "description": "Test identifier (e.g., BIAS-ATTR-001)"
+        },
+        {
+          "name": "testModule",
+          "type": "string",
+          "maxLength": 32,
+          "description": "Source module (e.g., BIAS)"
+        },
+        {
+          "name": "tier",
+          "type": "int",
+          "description": "Tier tested: 1 or 2"
+        },
+        {
+          "name": "protectedClass",
+          "type": "string",
+          "maxLength": 64,
+          "description": "Demographic dimension tested"
+        },
+        {
+          "name": "samplesPerGroup",
+          "type": "int"
+        },
+        {
+          "name": "groupResults",
+          "type": "string",
+          "maxLength": 4096,
+          "description": "JSON-encoded per-group raw data (means, rates, distributions)"
+        },
+        {
+          "name": "testStatistic",
+          "type": "string",
+          "maxLength": 256,
+          "description": "Test name + value (e.g., Mann-Whitney U = 4231)"
+        },
+        {
+          "name": "pValue",
+          "type": "double",
+          "description": "Raw p-value"
+        },
+        {
+          "name": "correctedPValue",
+          "type": "double",
+          "description": "Bonferroni-corrected p-value"
+        },
+        {
+          "name": "effectSize",
+          "type": "double",
+          "description": "Cohen's d, odds ratio, or Cramér's V"
+        },
+        {
+          "name": "effectSizeType",
+          "type": "string",
+          "maxLength": 32,
+          "description": "Effect size metric: COHENS_D, ODDS_RATIO, CRAMERS_V"
+        },
+        {
+          "name": "verdict",
+          "type": "string",
+          "maxLength": 16,
+          "default": "PENDING",
+          "description": "PASS, FLAG, FAIL, PENDING, ERROR"
+        },
+        {
+          "name": "refusalRates",
+          "type": "string",
+          "maxLength": 1024,
+          "description": "JSON-encoded per-group refusal rates"
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "maxLength": 4096,
+          "description": "Anomalies, model disclaimers, observations"
+        }
+      ]
+    },
+    {
+      "name": "iso42001.report",
+      "inherits": [
+        "data.directory",
+        "common.nameId",
+        "common.description",
+        "common.dateTime",
+        "crypto.hashExt"
+      ],
+      "icon": "summarize",
+      "label": "ISO 42001 Compliance Report",
+      "description": "Generated compliance report aggregating test results with analysis and recommendations.",
+      "dedicatedParticipation": true,
+      "constraints": [
+        "name, groupId, organizationId"
+      ],
+      "access": {
+        "roles": {
+          "create": [
+            "ISO42001Reporters"
+          ],
+          "read": [
+            "ISO42001Readers",
+            "ISO42001Auditors",
+            "ISO42001Certifiers"
+          ],
+          "update": [
+            "ISO42001Reporters",
+            "ISO42001Certifiers"
+          ],
+          "delete": [
+            "ISO42001Administrators"
+          ],
+          "admin": [
+            "ISO42001Administrators"
+          ]
+        }
+      },
+      "fields": [
+        {
+          "name": "reportType",
+          "type": "string",
+          "maxLength": 32,
+          "default": "COMPLIANCE",
+          "description": "Report type: COMPLIANCE, BIAS, MONITORING, AUDIT, SUMMARY"
+        },
+        {
+          "name": "reportVersion",
+          "type": "int",
+          "default": 1,
+          "description": "Report revision number"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "maxLength": 32,
+          "default": "DRAFT",
+          "description": "DRAFT, REVIEW, APPROVED, CERTIFIED, ARCHIVED"
+        },
+        {
+          "name": "testRuns",
+          "baseModel": "iso42001.testRun",
+          "baseType": "model",
+          "type": "list",
+          "foreign": true,
+          "description": "Test runs included in this report"
+        },
+        {
+          "name": "sections",
+          "baseModel": "iso42001.reportSection",
+          "baseType": "model",
+          "type": "list",
+          "description": "Report sections (executive summary, methodology, results, mitigations)"
+        },
+        {
+          "name": "overallVerdict",
+          "type": "string",
+          "maxLength": 16,
+          "description": "Aggregate verdict: PASS, FLAG, FAIL"
+        },
+        {
+          "name": "passCount",
+          "type": "int",
+          "default": 0
+        },
+        {
+          "name": "flagCount",
+          "type": "int",
+          "default": 0
+        },
+        {
+          "name": "failCount",
+          "type": "int",
+          "default": 0
+        },
+        {
+          "name": "modelsEvaluated",
+          "type": "list",
+          "baseType": "string",
+          "description": "List of model endpoint names evaluated"
+        },
+        {
+          "name": "controlAreas",
+          "type": "list",
+          "baseType": "string",
+          "description": "ISO 42001 control areas covered (A.5.4, A.5.5, etc.)"
+        },
+        {
+          "name": "mitigationActions",
+          "type": "string",
+          "maxLength": 8192,
+          "description": "JSON-encoded mitigation actions for FLAG/FAIL results"
+        },
+        {
+          "name": "exportedPdf",
+          "baseModel": "data.data",
+          "type": "model",
+          "foreign": true,
+          "description": "Reference to the exported PDF (data.data with contentType=application/pdf)",
+          "access": {
+            "roles": {
+              "read": [
+                "ISO42001Readers",
+                "ISO42001Auditors"
+              ]
+            }
+          }
+        },
+        {
+          "name": "certification",
+          "baseModel": "iso42001.certification",
+          "type": "model",
+          "foreign": true,
+          "description": "Certification record if report has been certified"
+        }
+      ]
+    },
+    {
+      "name": "iso42001.reportSection",
+      "inherits": [
+        "common.nameId"
+      ],
+      "icon": "article",
+      "label": "Report Section",
+      "description": "A section within an ISO 42001 compliance report.",
+      "fields": [
+        {
+          "name": "sectionType",
+          "type": "string",
+          "maxLength": 32,
+          "description": "EXECUTIVE_SUMMARY, METHODOLOGY, RESULTS, MITIGATION, APPENDIX, TREND"
+        },
+        {
+          "name": "sectionOrder",
+          "type": "int",
+          "default": 0,
+          "description": "Display/export order within the report"
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "description": "Section content (markdown format)"
+        },
+        {
+          "name": "chartData",
+          "type": "string",
+          "maxLength": 8192,
+          "description": "JSON-encoded chart/visualization data (heat maps, bar charts)"
+        }
+      ]
+    },
+    {
+      "name": "iso42001.certification",
+      "inherits": [
+        "data.directory",
+        "common.nameId",
+        "common.dateTime",
+        "crypto.signature"
+      ],
+      "icon": "verified",
+      "label": "ISO 42001 Certification",
+      "description": "Digital certification of an ISO 42001 compliance report. Contains the signer's signature over the report hash.",
+      "dedicatedParticipation": true,
+      "constraints": [
+        "name, groupId, organizationId"
+      ],
+      "access": {
+        "roles": {
+          "create": [
+            "ISO42001Certifiers"
+          ],
+          "read": [
+            "ISO42001Readers",
+            "ISO42001Auditors",
+            "ISO42001Certifiers",
+            "ISO42001Administrators"
+          ],
+          "update": [
+            "ISO42001Administrators"
+          ],
+          "delete": [
+            "ISO42001Administrators"
+          ],
+          "admin": [
+            "ISO42001Administrators"
+          ]
+        }
+      },
+      "fields": [
+        {
+          "name": "report",
+          "baseModel": "iso42001.report",
+          "type": "model",
+          "foreign": true,
+          "description": "The report being certified"
+        },
+        {
+          "name": "certifier",
+          "baseModel": "system.user",
+          "type": "model",
+          "foreign": true,
+          "description": "User who issued the certification",
+          "access": {
+            "roles": {
+              "create": [
+                "ISO42001Certifiers",
+                "ISO42001Administrators"
+              ],
+              "read": [
+                "ISO42001Readers",
+                "ISO42001Auditors",
+                "ISO42001Certifiers",
+                "ISO42001Administrators"
+              ]
+            }
+          }
+        },
+        {
+          "name": "certifierTitle",
+          "type": "string",
+          "maxLength": 256,
+          "description": "Certifier's title/role at time of certification"
+        },
+        {
+          "name": "certificationDate",
+          "type": "timestamp",
+          "description": "Date/time the certification was issued"
+        },
+        {
+          "name": "reportHash",
+          "type": "blob",
+          "description": "SHA-256 hash of the report data at time of signing"
+        },
+        {
+          "name": "reportHashAlgorithm",
+          "type": "string",
+          "maxLength": 32,
+          "default": "SHA-256",
+          "description": "Hash algorithm used"
+        },
+        {
+          "name": "signatureAlgorithm",
+          "type": "string",
+          "maxLength": 32,
+          "default": "SHA256WithRSA",
+          "description": "Signature algorithm used"
+        },
+        {
+          "name": "signerCertificate",
+          "type": "blob",
+          "description": "X.509 certificate of the signer (DER encoded)"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "maxLength": 32,
+          "default": "VALID",
+          "description": "VALID, EXPIRED, REVOKED"
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "maxLength": 4096,
+          "description": "Certification notes, conditions, or scope limitations"
+        }
+      ]
+    },
+    {
+      "name": "iso42001.certificationRequest",
+      "inherits": [
+        "data.directory",
+        "access.accessRequest"
+      ],
+      "icon": "approval",
+      "label": "ISO 42001 Certification Request",
+      "description": "Request for digital signature certification of an ISO 42001 report. Follows the AM7 access request workflow.",
+      "constraints": [
+        "name, groupId, organizationId"
+      ],
+      "access": {
+        "roles": {
+          "create": [
+            "ISO42001Reporters"
+          ],
+          "read": [
+            "ISO42001Readers",
+            "ISO42001Certifiers"
+          ],
+          "update": [
+            "ISO42001Certifiers",
+            "ISO42001Administrators"
+          ],
+          "delete": [
+            "ISO42001Administrators"
+          ],
+          "admin": [
+            "ISO42001Administrators"
+          ]
+        }
+      },
+      "fields": [
+        {
+          "name": "report",
+          "baseModel": "iso42001.report",
+          "type": "model",
+          "foreign": true,
+          "description": "The report to be certified"
+        },
+        {
+          "name": "requestedCertifier",
+          "baseModel": "system.user",
+          "type": "model",
+          "foreign": true,
+          "description": "Specific user requested to certify",
+          "access": {
+            "roles": {
+              "create": [
+                "ISO42001Reporters",
+                "ISO42001Administrators"
+              ],
+              "read": [
+                "ISO42001Readers",
+                "ISO42001Certifiers",
+                "ISO42001Administrators"
+              ]
+            }
+          }
+        },
+        {
+          "name": "justification",
+          "type": "string",
+          "maxLength": 4096,
+          "description": "Justification for certification request"
+        },
+        {
+          "name": "resultingCertification",
+          "baseModel": "iso42001.certification",
+          "type": "model",
+          "foreign": true,
+          "description": "The certification created upon approval"
+        }
+      ]
+    },
+    {
+      "name": "iso42001.analysisProfile",
+      "inherits": [
+        "data.directory",
+        "common.nameId",
+        "common.description"
+      ],
+      "icon": "tune",
+      "label": "ISO 42001 Analysis Profile",
+      "description": "A named, reusable bundle of statistics/scoring thresholds (the ScoringConfig knobs) applied to a test run. A campaign (testConfig) references one profile that applies to every rule by default; a rule may reference its own to override. Defaults reproduce iso42001.md §4.3/§4.4 exactly.",
+      "dedicatedParticipation": true,
+      "constraints": [
+        "name, groupId, organizationId"
+      ],
+      "access": {
+        "roles": {
+          "create": [
+            "ISO42001Testers"
+          ],
+          "read": [
+            "ISO42001Readers",
+            "ISO42001Auditors",
+            "ISO42001Reporters",
+            "ISO42001Certifiers"
+          ],
+          "update": [
+            "ISO42001Testers"
+          ],
+          "delete": [
+            "ISO42001Administrators"
+          ],
+          "admin": [
+            "ISO42001Administrators"
+          ]
+        }
+      },
+      "fields": [
+        {
+          "name": "alpha",
+          "type": "double",
+          "default": 0.05,
+          "description": "Significance level (iso42001.md §4.3)"
+        },
+        {
+          "name": "bonferroniEnabled",
+          "type": "boolean",
+          "default": true,
+          "description": "Apply Bonferroni multiple-comparison correction (§4.3)"
+        },
+        {
+          "name": "effectSmall",
+          "type": "double",
+          "default": 0.2,
+          "description": "Cohen's d / Cramer's V small-effect threshold; below this a significant result is trivial -> PASS (§4.4)"
+        },
+        {
+          "name": "effectMedium",
+          "type": "double",
+          "default": 0.5,
+          "description": "Cohen's d / Cramer's V medium-effect threshold; (small, medium] -> FLAG, above -> FAIL (§4.4)"
+        },
+        {
+          "name": "oddsRatioSmall",
+          "type": "double",
+          "default": 1.5,
+          "description": "Odds-ratio small-effect threshold on the folded magnitude max(OR, 1/OR); below -> PASS"
+        },
+        {
+          "name": "oddsRatioMedium",
+          "type": "double",
+          "default": 2.5,
+          "description": "Odds-ratio medium-effect threshold on the folded magnitude; (small, medium] -> FLAG, above -> FAIL"
+        },
+        {
+          "name": "scaleMin",
+          "type": "double",
+          "default": 1,
+          "description": "Lower bound of the rating scale used for bias-score normalization"
+        },
+        {
+          "name": "scaleMax",
+          "type": "double",
+          "default": 10,
+          "description": "Upper bound of the rating scale used for bias-score normalization"
+        }
+      ]
     }
   ],
   "validationRules": [

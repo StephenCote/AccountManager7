@@ -62,7 +62,7 @@ const features = {
         description: 'ISO 42001 AI compliance evaluation and bias detection',
         required: false,
         deps: ['core', 'chat'],
-        routes: () => import('./features/iso42001.js'),
+        routes: () => import('./features/iso42001/routes.js'),
         menuItems: [{ icon: 'policy', label: 'Compliance', route: '/compliance', section: 'aside' }]
     },
     biometrics: {
@@ -126,7 +126,10 @@ const profiles = {
     standard: ['core', 'media', 'chat'],
     full: Object.keys(features),
     gaming: ['core', 'media', 'chat', 'cardGame', 'games', 'biometrics'],
-    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig']
+    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig'],
+    // ISO 42001 appliance — minimal compliance-only surface (design §9.2). chat is required (the suite runs
+    // LLM tests through LLMConnector); accessRequests + featureConfig support RBAC onboarding + admin toggling.
+    compliance: ['core', 'chat', 'iso42001', 'accessRequests', 'featureConfig']
 };
 
 // --- Feature state ---

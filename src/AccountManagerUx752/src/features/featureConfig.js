@@ -228,6 +228,7 @@ let featureConfigView = {
                 m("div", { class: "flex gap-2 flex-wrap" }, [
                     profileButton("Minimal", ["core"]),
                     profileButton("Standard", ["core", "chat"]),
+                    profileButton("Compliance", ["core", "chat", "iso42001", "accessRequests", "featureConfig"]),
                     profileButton("Enterprise", ["core", "chat", "iso42001", "schema", "webauthn", "accessRequests", "featureConfig"]),
                     profileButton("Gaming", ["core", "chat", "cardGame", "games", "biometrics"]),
                     profileButton("Full", availableFeatures.map(function (f) { return f.id; }))
