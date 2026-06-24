@@ -9,7 +9,7 @@
 	"access": {
 		"roles": {
 			"create": ["ISO42001Certifiers"],
-			"read": ["ISO42001Readers", "ISO42001Auditors"],
+			"read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Certifiers", "ISO42001Administrators"],
 			"update": ["ISO42001Administrators"],
 			"delete": ["ISO42001Administrators"],
 			"admin": ["ISO42001Administrators"]

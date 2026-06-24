@@ -104,14 +104,13 @@ public class PdfExporter {
 				}
 			}
 
-			/// Certification block — NOT CERTIFIED until Phase 6 (design §4.2).
+			/// Certification block (design §4.2) — full signer/signature detail for a CERTIFIED report,
+			/// "NOT CERTIFIED" placeholder otherwise.
 			doc.add(new Paragraph(" ", bodyFont));
 			doc.add(new Paragraph("Certification", headFont));
-			doc.add(new Paragraph("Status: NOT CERTIFIED", bodyFont));
-			doc.add(new Paragraph("Report Hash (SHA-256): " + hashHex(report), bodyFont));
-			doc.add(new Paragraph("Signature Algorithm: SHA256WithRSA (pending certification)", bodyFont));
-			doc.add(new Paragraph("This report has not yet been digitally signed. Certification is "
-				+ "performed in the ISO 42001 certification workflow (Phase 6).", bodyFont));
+			for (String line : certificationBlockLines(report)) {
+				doc.add(new Paragraph(line.isEmpty() ? " " : line, bodyFont));
+			}
 
 			doc.close();
 			return bos.toByteArray();
@@ -240,21 +239,85 @@ public class PdfExporter {
 		}
 	}
 
-	private static String hashHex(BaseRecord report) {
+	/**
+	 * Build the §4.2 certification-block lines for the report. When the report carries a populated
+	 * {@code certification}, the full signer/signature detail is rendered; otherwise the "NOT CERTIFIED"
+	 * placeholder. Exposed (and overloaded) so the certification content can be asserted directly without
+	 * extracting text from the compressed PDF content stream.
+	 */
+	public static List<String> certificationBlockLines(BaseRecord report) {
+		BaseRecord certification = null;
 		try {
-			Object h = report.get("hash");
-			if (h instanceof byte[]) {
-				byte[] b = (byte[]) h;
-				StringBuilder sb = new StringBuilder(b.length * 2);
-				for (byte x : b) {
-					sb.append(String.format("%02x", x));
-				}
-				return sb.length() == 0 ? "(not set)" : sb.toString();
+			certification = report != null ? report.get("certification") : null;
+		} catch (Exception e) {
+			/* none */
+		}
+		return certificationBlockLines(report, certification);
+	}
+
+	public static List<String> certificationBlockLines(BaseRecord report, BaseRecord certification) {
+		List<String> lines = new ArrayList<>();
+		if (certification == null) {
+			lines.add("Status: NOT CERTIFIED");
+			lines.add("Report Hash (SHA-256): " + hashHex(report));
+			lines.add("Signature Algorithm: SHA256WithRSA (pending certification)");
+			lines.add("This report has not yet been digitally signed. Certification is performed in the "
+				+ "ISO 42001 certification workflow.");
+			return lines;
+		}
+		lines.add("Certified by: " + certifierName(certification));
+		lines.add("Title: " + str(certification.get("certifierTitle")));
+		lines.add("Date: " + str(certification.get("certificationDate")));
+		lines.add("Valid until: " + str(certification.get(FieldNames.FIELD_EXPIRY_DATE)));
+		lines.add("Report Hash (" + str(certification.get("reportHashAlgorithm")) + "): "
+			+ bytesHex(certification.get("reportHash")));
+		lines.add("Signature Algorithm: " + str(certification.get("signatureAlgorithm")));
+		lines.add("Signature: " + bytesBase64(certification.get(FieldNames.FIELD_SIGNATURE)));
+		lines.add("Certificate: " + bytesBase64(certification.get("signerCertificate")));
+		lines.add("Status: " + str(certification.get("status")));
+		return lines;
+	}
+
+	private static String certifierName(BaseRecord certification) {
+		try {
+			BaseRecord certifier = certification.get("certifier");
+			if (certifier != null && certifier.get(FieldNames.FIELD_NAME) != null) {
+				return certifier.get(FieldNames.FIELD_NAME);
 			}
 		} catch (Exception e) {
 			/* fall through */
 		}
-		return "(not set)";
+		return "(certifier)";
+	}
+
+	private static String hashHex(BaseRecord report) {
+		try {
+			return report == null ? "(not set)" : bytesHex(report.get("hash"));
+		} catch (Exception e) {
+			return "(not set)";
+		}
+	}
+
+	private static String bytesHex(Object o) {
+		if (!(o instanceof byte[])) {
+			return "(not set)";
+		}
+		byte[] b = (byte[]) o;
+		if (b.length == 0) {
+			return "(not set)";
+		}
+		StringBuilder sb = new StringBuilder(b.length * 2);
+		for (byte x : b) {
+			sb.append(String.format("%02x", x));
+		}
+		return sb.toString();
+	}
+
+	private static String bytesBase64(Object o) {
+		if (!(o instanceof byte[]) || ((byte[]) o).length == 0) {
+			return "(not set)";
+		}
+		return java.util.Base64.getEncoder().encodeToString((byte[]) o);
 	}
 
 	private static String joinList(Object listObj) {

@@ -2,6 +2,7 @@ package org.cote.accountmanager.iso42001.reporting;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -133,7 +134,7 @@ public class ReportGenerator {
 			List<BaseRecord> sections = buildSections(data, name);
 			report.set("sections", sections);
 
-			byte[] hash = CryptoUtil.getDigest(HASH_ALGORITHM, canonicalJson(report, data, sections), new byte[0]);
+			byte[] hash = computeReportHash(report);
 			report.set("hash", hash);
 		} catch (Exception e) {
 			logger.error("Failed to build report record", e);
@@ -188,51 +189,74 @@ public class ReportGenerator {
 	}
 
 	/**
-	 * Canonical JSON over the report's salient content — deterministic for a given input run set, so
-	 * the SHA-256 hash is stable and Phase-6 verification can recompute it. Field insertion order is
-	 * fixed; nondeterministic fields (timestamps, ids) are excluded.
+	 * Compute the SHA-256 content hash over the canonical report JSON. This is the value Phase-6
+	 * certification signs (task: "the report.hash ... is the value to sign") and the value Phase-6
+	 * verification recomputes to detect tampering — so it MUST be a pure, deterministic function of the
+	 * <b>persisted</b> report record, computable identically at generate time (in-memory record) and at
+	 * verify time (re-read record).
+	 *
+	 * <p>To guarantee generate==verify regardless of how the DB returns list/section order, the inputs
+	 * are normalized: sections are sorted by {@code sectionOrder} and only the fields that are confirmed
+	 * to round-trip through {@code AccessPoint} (asserted by {@code TestISO42001Report}) participate:
+	 * {@code reportType}, {@code reportVersion}, {@code overallVerdict}, the three counts, and each
+	 * section's {@code sectionType}/{@code sectionOrder}/{@code content}. Field insertion order is fixed;
+	 * timestamps/ids/chartData are excluded (nondeterministic or bounded-truncated).</p>
+	 *
+	 * <p><b>⚠ Judgment call (flagged):</b> the Phase-5 canonical basis previously also folded in the
+	 * flattened per-result rows + {@code modelsEvaluated}/{@code controlAreas} (sourced from the input
+	 * testRuns, which are not re-read at verify time and whose list order is not guaranteed to
+	 * round-trip). Those are dropped here so verification can recompute deterministically from the report
+	 * alone. The substance of the results is still covered: the RESULTS/EXECUTIVE_SUMMARY section
+	 * {@code content} (hashed) embeds the per-test verdicts, the models evaluated, and the control areas.
+	 * {@code TestISO42001Report} asserts only that the hash is 32 bytes (not a specific value), so this
+	 * refinement does not regress Phase 5.</p>
 	 */
-	private byte[] canonicalJson(BaseRecord report, ReportData data, List<BaseRecord> sections) {
+	public static byte[] computeReportHash(BaseRecord report) {
 		try {
 			ObjectNode root = MAPPER.createObjectNode();
-			root.put("reportType", (String) report.get("reportType"));
-			root.put("reportVersion", (int) report.get("reportVersion"));
-			root.put("overallVerdict", data.overallVerdict());
-			root.put("passCount", data.getPassCount());
-			root.put("flagCount", data.getFlagCount());
-			root.put("failCount", data.getFailCount());
+			root.put("reportType", str(report.get("reportType")));
+			root.put("reportVersion", intval(report, "reportVersion"));
+			root.put("overallVerdict", str(report.get("overallVerdict")));
+			root.put("passCount", intval(report, "passCount"));
+			root.put("flagCount", intval(report, "flagCount"));
+			root.put("failCount", intval(report, "failCount"));
 
-			ArrayNode models = root.putArray("modelsEvaluated");
-			for (String m : data.getModels()) {
-				models.add(m);
+			List<BaseRecord> sections = report.get("sections");
+			if (sections == null) {
+				sections = new ArrayList<>();
+			} else {
+				sections = new ArrayList<>(sections);
 			}
-			ArrayNode controls = root.putArray("controlAreas");
-			controls.add("A.5.4");
-			controls.add("A.5.5");
-
-			ArrayNode results = root.putArray("results");
-			for (ReportData.Row r : data.getRows()) {
-				ObjectNode o = results.addObject();
-				o.put("testId", nv(r.testId));
-				o.put("testModule", nv(r.testModule));
-				o.put("protectedClass", nv(r.protectedClass));
-				o.put("verdict", nv(r.verdict));
-				o.put("effectSize", r.effectSize);
-				o.put("correctedPValue", r.correctedPValue);
-			}
+			sections.sort(Comparator.comparingInt(s -> intval(s, "sectionOrder")));
 
 			ArrayNode secs = root.putArray("sections");
 			for (BaseRecord s : sections) {
 				ObjectNode o = secs.addObject();
-				o.put("sectionType", (String) s.get("sectionType"));
-				o.put("sectionOrder", (int) s.get("sectionOrder"));
-				o.put("content", (String) s.get("content"));
+				o.put("sectionType", str(s.get("sectionType")));
+				o.put("sectionOrder", intval(s, "sectionOrder"));
+				o.put("content", str(s.get("content")));
 			}
-			return MAPPER.writeValueAsBytes(root);
+			return CryptoUtil.getDigest(HASH_ALGORITHM, MAPPER.writeValueAsBytes(root), new byte[0]);
 		} catch (Exception e) {
-			logger.error("Failed to build canonical report JSON; hashing empty payload", e);
+			logger.error("Failed to compute canonical report hash; returning empty digest", e);
 			return new byte[0];
 		}
+	}
+
+	private static int intval(BaseRecord r, String field) {
+		try {
+			Object v = r.get(field);
+			if (v instanceof Number) {
+				return ((Number) v).intValue();
+			}
+		} catch (Exception e) {
+			/* default */
+		}
+		return 0;
+	}
+
+	private static String str(Object o) {
+		return o == null ? "" : String.valueOf(o);
 	}
 
 	private static double dbl(BaseRecord r, String field) {
@@ -245,9 +269,5 @@ public class ReportGenerator {
 			/* default */
 		}
 		return 0.0;
-	}
-
-	private static String nv(String s) {
-		return s == null ? "" : s;
 	}
 }

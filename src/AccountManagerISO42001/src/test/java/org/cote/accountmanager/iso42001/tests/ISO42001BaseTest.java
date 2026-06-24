@@ -9,6 +9,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.iso42001.schema.ISO42001ModelNames;
+import org.cote.accountmanager.iso42001.schema.ISO42001Provisioning;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -85,13 +86,17 @@ public abstract class ISO42001BaseTest extends BaseTest {
 		adminUser = isoOrg.getAdminUser();
 		assertNotNull("ISO org admin is null", adminUser);
 
-		/// The 6 ISO 42001 auth.role names referenced by model access.roles (CamelCase),
-		/// created at the org role root ("/Name") so the modelAccess pattern resolves them.
+		/// Provision the 6 ISO roles + their PBAC wiring via the production-reusable utility (created at
+		/// the org role root "/Name" so the modelAccess pattern resolves them; Certifiers/Administrators
+		/// are wired into the system Approvers/RequestUpdaters roles so they may transition the inherited
+		/// access.accessRequest approvalStatus field). This is on-demand provisioning with the admin user,
+		/// exactly what a Service7 startup hook will call in Phase 7 — not test-only scaffolding.
+		ISO42001Provisioning.ensureRoles(adminUser, orgId);
+
 		BaseRecord testersRole    = ensureRole("ISO42001Testers");
 		BaseRecord reportersRole  = ensureRole("ISO42001Reporters");
 		BaseRecord certifiersRole = ensureRole("ISO42001Certifiers");
 		BaseRecord readersRole    = ensureRole("ISO42001Readers");
-		ensureRole("ISO42001Auditors");
 		BaseRecord adminsRole     = ensureRole("ISO42001Administrators");
 
 		/// Admin creates the non-admin role users (the ONLY admin-user usage).
@@ -101,6 +106,9 @@ public abstract class ISO42001BaseTest extends BaseTest {
 		isoReader    = getCreateUser("isoReader", isoOrg);
 		isoAdmin     = getCreateUser("isoAdmin", isoOrg);
 
+		/// Assign each non-admin role user to its ISO role (the operational membership — who is a tester,
+		/// reporter, certifier, etc.). The approval-capability wiring lives in ISO42001Provisioning at the
+		/// ROLE level, so no per-user system-role grants are needed here.
 		ensureMember(testersRole, isoTester);
 		ensureMember(reportersRole, isoReporter);
 		ensureMember(certifiersRole, isoCertifier);
