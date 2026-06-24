@@ -13,7 +13,6 @@ import javax.imageio.ImageIO;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
@@ -54,7 +53,11 @@ public class RestServiceEventListener implements ApplicationEventListener {
 	
 	@Context
 	private ServletContext context = null;
-	private static boolean debugEnableVector = true;
+	/// Vector DB support master switch + embedding-server startup probe toggle (web.xml: vector.enabled,
+	/// vector.probe.embedding). A failed embedding probe NO LONGER disables vector support — only an explicit
+	/// vector.enabled=false does. Defaults preserve vector support being on.
+	private boolean vectorEnabled = true;
+	private boolean probeEmbedding = true;
 
 	public RestServiceEventListener() {
 		
@@ -146,25 +149,37 @@ public class RestServiceEventListener implements ApplicationEventListener {
 	private void testVectorStore(IOContext ioContext, OrganizationContext octx) {
 
 		DBUtil util = ioContext.getDbUtil();
-		if (!debugEnableVector) {
+		/// Master switch: vector support is governed by config, NOT by embedding-server availability.
+		if (!vectorEnabled) {
+			logger.info("Vector DB support disabled by configuration (vector.enabled=false)");
 			util.setEnableVectorExtension(false);
+			return;
+		}
+		if (!util.isEnableVectorExtension()) {
+			/// The database itself doesn't support pgvector — nothing to probe.
+			return;
+		}
+		if (!probeEmbedding) {
+			logger.info("Vector DB support enabled; embedding-server startup probe skipped (vector.probe.embedding=false)");
+			return;
+		}
+		/// Probe the embedding server as an informational health check ONLY. A failure (e.g. the embedding
+		/// server is down) is logged as a warning and DOES NOT disable vector support for the session — the
+		/// pgvector extension stays enabled so it recovers automatically once the embedding server returns.
+		List<BaseRecord> store = new ArrayList<>();
+		try {
+			store = IOSystem.getActiveContext().getVectorUtil().createVectorStore(octx.getDocumentControl(),
+					"Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
+		} catch (Exception e) {
+			logger.warn("Embedding-server startup probe failed (vector support remains ENABLED): " + e.getMessage());
+			return;
+		}
+		if (store == null || store.size() == 0) {
+			logger.warn("Embedding-server startup probe returned no vector store (server may be down at "
+					+ context.getInitParameter("embedding.server") + "). Vector support remains ENABLED and will "
+					+ "recover when the embedding server is reachable.");
 		} else {
-			List<BaseRecord> store = new ArrayList<>();
-			if (util.isEnableVectorExtension()) {
-				try {
-					/// NOTE: This only tests the vector storage capability
-					/// Any failure of the embedding API is allowed/not handled here.
-					///
-					store = IOSystem.getActiveContext().getVectorUtil().createVectorStore(octx.getDocumentControl(),
-							"Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
-				} catch (FieldException e) {
-					logger.error(e);
-				}
-				if (store == null || store.size() == 0) {
-					logger.error("Expected a vector store.  Disabling vector store.");
-					util.setEnableVectorExtension(false);
-				}
-			}
+			logger.info("Embedding-server startup probe OK; vector DB support enabled");
 		}
 	}
 
@@ -214,6 +229,10 @@ public class RestServiceEventListener implements ApplicationEventListener {
 					LLMServiceEnumType.valueOf(context.getInitParameter("voice.type").toUpperCase()),
 					context.getInitParameter("voice.tts.server"), context.getInitParameter("voice.stt.server"), authToken));
 			
+			/// Vector support is config-governed (decoupled from embedding-server health). Default ON.
+			vectorEnabled = parseBoolean(context.getInitParameter("vector.enabled"), true);
+			probeEmbedding = parseBoolean(context.getInitParameter("vector.probe.embedding"), true);
+
 			boolean testVector = false;
 			for (String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
 				OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
@@ -300,6 +319,14 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			logger.error(e);
 		}
 	}
+
+    /** Parse a context-param boolean, returning {@code def} when the value is absent/blank. */
+    private static boolean parseBoolean(String value, boolean def) {
+        if (value == null || value.isBlank()) {
+            return def;
+        }
+        return Boolean.parseBoolean(value.trim());
+    }
 
     @Override
     public RequestEventListener onRequest(RequestEvent requestEvent) {
