@@ -22,6 +22,8 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.iso42001.schema.ISO42001ModelNames;
+import org.cote.accountmanager.iso42001.schema.ISO42001Provisioning;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
@@ -186,6 +188,9 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		String path = context.getInitParameter("store.path");
 		ImageIO.setCacheDirectory(new File(path));
 		OlioModelNames.use();
+		/// Phase 7: register the ISO 42001 model namespace before IOSystem.open so the additive schema scan
+		/// creates the iso42001.* tables (the production seam for what Track A did in test setup).
+		ISO42001ModelNames.use();
 
 		IOFactory.DEFAULT_FILE_BASE = path;
 		IOFactory.addPermittedPath(path + "/.streams");
@@ -222,6 +227,13 @@ public class RestServiceEventListener implements ApplicationEventListener {
 					if (!testVector) {
 						testVectorStore(ioContext, octx);
 						testVector = true;
+					}
+					/// Phase 7: idempotently provision the 6 ISO 42001 roles + their PBAC entitlement wiring
+					/// for this org (the production seam for what ISO42001BaseTest does in test setup).
+					try {
+						ISO42001Provisioning.ensureRoles(octx.getAdminUser(), octx.getOrganizationId());
+					} catch (Exception e) {
+						logger.error("Failed to provision ISO 42001 roles for " + org, e);
 					}
 				}
 			}

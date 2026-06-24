@@ -2,10 +2,10 @@ package org.cote.rest.services;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.mcp.server.Am7ResourceProvider;
-import org.cote.accountmanager.mcp.server.Am7ToolProvider;
 import org.cote.accountmanager.mcp.server.McpServer;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.rest.mcp.CompositeResourceProvider;
+import org.cote.rest.mcp.CompositeToolProvider;
 import org.cote.service.util.ServiceUtil;
 
 import jakarta.annotation.security.DeclareRoles;
@@ -34,8 +34,10 @@ public class McpService {
 
 	private static synchronized McpServer getServer() {
 		if (mcpServer == null) {
-			Am7ResourceProvider rp = new Am7ResourceProvider();
-			Am7ToolProvider tp = new Am7ToolProvider();
+			// Compose the core Am7 providers with the ISO 42001 providers (Phase 7). The ISO MCP tools/resources
+			// live in the ISO module (Objects7 cannot depend on it), so they are merged here at the transport layer.
+			CompositeResourceProvider rp = new CompositeResourceProvider();
+			CompositeToolProvider tp = new CompositeToolProvider();
 			mcpServer = new McpServer(rp, tp);
 		}
 		return mcpServer;
