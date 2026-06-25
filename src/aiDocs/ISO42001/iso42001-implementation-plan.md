@@ -4,6 +4,8 @@
 
 **Last updated:** 2026-06-24 (Phase 7 ✅ REST/MCP shim + ComplianceService; Phase 8 ✅ Ux752 views + `compliance` profile + 8 models into `modelDef.js` + self-service ISO test-user provisioning; live e2e green incl. positive ISO-Tester create over REST. Also: Service7 vector-support startup made config-governed so an embedding-server outage no longer disables vector DB. Next: Phase 9 Docker appliance, Phase 10 integration.)
 
+> **End-user UAT in progress (Stephen, 2026-06-24).** Stephen is manually testing the Phase 7/8 deliverables. Test script: [`iso42001-enduser-tests.md`](iso42001-enduser-tests.md) (A–H: feature/profile, dashboard, test runner, results, reports, certification, RBAC, MCP). Issues found there will be triaged + fixed before Phase 8 is considered field-validated. Test accounts (live `/Development`): `e2etest_iso42001`/`password` (all ISO roles) and `e2etest_shared`/`password` (no ISO role).
+
 Status legend: ⬜ Not started · 🟡 In progress · ✅ Done · ⏸ Blocked
 
 ---
